@@ -1,0 +1,3137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily Quilt</title>
+  <style>
+    /* ===== RESET & BASE STYLES ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    html, body {
+      height: 100%;
+      width: 100%;
+      max-width: 100vw;
+      margin: 0;
+      padding: 0;
+      background-color: #f6f4f1;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #000;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+    
+
+
+    /* ===== LAYOUT ===== */
+    #app {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 100vh;
+      width: 100%;
+      max-width: 100vw;
+      padding: 0;
+      position: relative;
+      background-color: #f6f4f1;
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+    
+
+
+    /* ===== SCREENS ===== */
+    .screen {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 100vw;
+      opacity: 0;
+      background-color: #f6f4f1;
+      pointer-events: none;
+      transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      position: absolute;
+      top: 0; left: 0;
+      min-height: 100vh;
+      padding: 3rem 0 10px 0;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+    
+    .screen.active {
+      opacity: 1;
+      pointer-events: auto;
+      position: relative;
+    }
+
+    /* ===== TYPOGRAPHY ===== */
+    .portal-header h1 {
+      font-weight: 900;
+      font-size: clamp(2rem, 5vw, 3rem);
+      margin-bottom: 0.1rem;
+      letter-spacing: -0.02em;
+    }
+    
+    .portal-header .date {
+      font-weight: 200;
+      font-size: clamp(1.2rem, 3vw, 1.6rem);
+      margin-top: 0.1rem;
+    }
+    
+    .portal-question {
+      font-size: clamp(1.8rem, 4vw, 2.5rem);
+      font-style: italic;
+      font-weight: 200;
+      margin: 0;
+      max-width: 600px;
+      width: 90%;
+      animation: fadeInBreath 1.2s ease forwards;
+      text-align: center;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    
+    @keyframes fadeInBreath {
+      0% {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      50% {
+        opacity: 0.8;
+        transform: translateY(-2px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    #screen-portal {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      gap: 2rem;
+      width: 100%;
+      max-width: 100vw;
+    }
+
+    /* ===== QUOTE CARD ===== */
+    .quote-card {
+      border: 2px solid #000;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin: 3rem auto 2rem;
+      background: #f6f4f1;
+      width: 90%;
+      max-width: 500px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 150px;
+    }
+    
+    .quote-line { 
+      font-size: clamp(1.2rem, 3vw, 1.5rem); 
+      font-style: italic; 
+      font-weight: 300; 
+      line-height: 1.4;
+    }
+    
+    .quote-author { 
+      font-size: clamp(1rem, 2.5vw, 1.2rem); 
+      font-weight: 200; 
+      margin-top: 0.5rem;
+    }
+    
+    .quote-prompt { 
+      font-size: clamp(1.2rem, 3vw, 1.5rem); 
+      margin: 2rem 0 1rem; 
+    }
+    
+    .arrow-down {
+      font-size: 2rem;
+      text-align: center;
+      margin: 1rem auto;
+    }
+
+    /* ===== COLOR PICKER ===== */
+    .color-picker-container { 
+      position: relative; 
+      margin: 2rem 0;
+    }
+    
+    #colorWheelCanvas {
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s ease;
+      /* Ensure proper rendering on mobile */
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      backface-visibility: hidden;
+      perspective: 1000px;
+    }
+    
+    #colorWheelCanvas:hover {
+      transform: scale(1.02);
+    }
+    
+    #colorWheelCanvas:focus {
+      outline: 2px solid #000;
+      outline-offset: 4px;
+    }
+    
+    .color-picker-indicator {
+      position: absolute;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    #colorPickerControls {
+      display: flex; align-items: center; gap: 15px;
+      margin-top: 1rem;
+    }
+    
+    #valueSlider {
+      width: 200px; cursor: pointer; appearance: none;
+      height: 15px; border-radius: 10px;
+      background: linear-gradient(to right, hsl(0, 90%, 25%), hsl(0, 90%, 85%));
+      outline: none; border: none;
+    }
+    
+    #valueSlider::-webkit-slider-thumb, #valueSlider::-moz-range-thumb {
+      width: 24px; height: 24px;
+      background: #fff; border: 2px solid #333;
+      border-radius: 50%; cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    
+    #valueSlider::-webkit-slider-thumb:hover,
+    #valueSlider::-moz-range-thumb:hover {
+      transform: scale(1.1);
+    }
+    
+    #selectedColorPreview {
+      width: 50px; height: 50px; border-radius: 50%;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      border: 2px solid #fff;
+    }
+
+    /* ===== QUILT ===== */
+
+    
+    #quilt {
+      width: 90vw; height: 90vw;
+      max-width: 600px; max-height: 600px;
+      margin: 2rem auto;
+      background: transparent;
+      position: relative;
+      display: block;
+    }
+    
+    /* Mobile override for maximum quilt size */
+    @media (max-width: 768px) {
+      #quilt {
+        max-width: none !important;
+        max-height: none !important;
+      }
+    }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      background: transparent;
+      border: 1px solid #000;
+      color: #000;
+      padding: 12px 30px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      width: auto;
+      align-self: center;
+      margin: 0.5rem;
+      font-family: inherit;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .thank-you-message {
+      font-size: clamp(1.3rem, 3.5vw, 1.8rem);
+      text-align: center;
+      margin: 1rem 0 2rem 0;
+      font-weight: 300;
+      line-height: 1.4;
+    }
+    
+    #shareBtnCompleted {
+      margin-bottom: 4rem;
+    }
+    
+    .btn:hover { 
+      background: #000; color: #fff; 
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .btn:focus {
+      outline: 2px solid #000;
+      outline-offset: 2px;
+    }
+    
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ===== ARCHIVE SCREEN ===== */
+    .archive-header h1 {
+      font-weight: 900;
+      font-size: clamp(2rem, 5vw, 3rem);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    
+    .archive-subtitle {
+      font-weight: 200;
+      font-size: clamp(1.2rem, 3vw, 1.6rem);
+      margin-bottom: 2rem;
+    }
+    
+    .archive-content {
+      max-width: 600px;
+      margin: 0 auto;
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+    
+    .archive-placeholder {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      font-weight: 300;
+      margin-bottom: 1rem;
+      color: #666;
+    }
+    
+    .archive-description {
+      font-size: clamp(1rem, 2.5vw, 1.2rem);
+      line-height: 1.6;
+      color: #444;
+      margin-bottom: 2rem;
+    }
+    
+    .archive-example {
+      margin-top: 2rem;
+      padding: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      background: #fafafa;
+    }
+    
+    .archived-quilt {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.5rem;
+      padding: 1rem;
+    }
+    
+    /* Desktop: Two-column layout */
+    @media (min-width: 769px) {
+      .archived-quilt {
+        align-items: flex-start;
+      }
+      
+      .quilt-thumbnail {
+        flex-shrink: 0;
+        width: 200px;
+      }
+      
+      .quilt-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      .archived-quilt {
+        flex-direction: column;
+        text-align: center;
+        gap: 1.5rem;
+      }
+      
+      .quilt-thumbnail {
+        margin: 0 auto;
+        order: 1;
+      }
+      
+      .quilt-info {
+        width: 100%;
+        order: 2;
+      }
+      
+      .quilt-info h3 {
+        order: 3;
+      }
+      
+      .quilt-quote {
+        order: 2;
+      }
+      
+      .quilt-stats {
+        order: 4;
+      }
+    }
+    
+    .quilt-thumbnail {
+      flex-shrink: 0;
+      border: 2px solid #000;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    .quilt-info {
+      flex: 1;
+    }
+    
+    .quilt-info h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #000;
+    }
+    
+    .quilt-quote {
+      margin-bottom: 0.5rem;
+    }
+    
+    .quilt-quote .quote-text {
+      font-style: italic;
+      font-size: 1rem;
+      margin-bottom: 0.25rem;
+      color: #333;
+    }
+    
+    .quilt-quote .quote-author {
+      font-size: 0.9rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    .quilt-stats {
+      font-size: 0.9rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    /* About Screen Styles */
+    .about-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .about-header h1 {
+      font-size: 2.5rem;
+      font-weight: 900;
+      margin-bottom: 0.5rem;
+      color: #000;
+    }
+    
+    .about-subtitle {
+      font-size: 1.2rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    .about-content {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+    
+    .about-placeholder {
+      font-size: 1.5rem;
+      color: #999;
+      text-align: center;
+      margin: 2rem 0;
+      font-style: italic;
+    }
+    
+    .about-description {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #333;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+    
+    .about-info {
+      background: #f6f4f1;
+      border: 2px solid #000;
+      border-radius: 12px;
+      padding: 2rem;
+      margin: 2rem 0;
+    }
+    
+    .about-info h3 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.5rem 0;
+      color: #000;
+    }
+    
+    .about-info h3:first-child {
+      margin-top: 0;
+    }
+    
+    .about-info p {
+      font-size: 1rem;
+      line-height: 1.5;
+      color: #333;
+      margin: 0 0 1rem 0;
+    }
+    
+    /* Welcome Screen Styles */
+    .welcome-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .welcome-header h1 {
+      font-size: 2.5rem;
+      font-weight: 900;
+      margin-bottom: 0.5rem;
+      color: #000;
+    }
+    
+    .welcome-subtitle {
+      font-size: 1.2rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    .welcome-content {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+    
+    .welcome-info {
+      background: #f6f4f1;
+      border: 2px solid #000;
+      border-radius: 12px;
+      padding: 2rem;
+      margin: 2rem 0;
+    }
+    
+    .welcome-info h3 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.5rem 0;
+      color: #000;
+    }
+    
+    .welcome-info h3:first-child {
+      margin-top: 0;
+    }
+    
+    .welcome-info p {
+      font-size: 1rem;
+      line-height: 1.5;
+      color: #333;
+      margin: 0 0 1rem 0;
+    }
+    
+    .welcome-preview {
+      margin: 2rem 0;
+    }
+    
+    .welcome-preview h3 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #000;
+      text-align: center;
+    }
+    
+    .quote-preview-card {
+      border: 2px solid #000;
+      border-radius: 12px;
+      padding: 1.5rem;
+      background: #f6f4f1;
+      text-align: center;
+    }
+    
+    .quote-preview-text {
+      font-size: 1.2rem;
+      font-style: italic;
+      font-weight: 300;
+      line-height: 1.4;
+      margin-bottom: 0.5rem;
+      color: #333;
+    }
+    
+    .quote-preview-author {
+      font-size: 1rem;
+      font-weight: 200;
+      color: #666;
+      margin: 0;
+    }
+    
+    /* Clickable quilt thumbnails */
+    .quilt-thumbnail {
+      position: relative;
+      transition: transform 0.2s ease;
+      cursor: pointer;
+      pointer-events: auto;
+      z-index: 1;
+    }
+    
+    /* Only allow clicks when parent screen is active */
+    .screen:not(.active) .quilt-thumbnail {
+      pointer-events: none;
+    }
+    
+    .quilt-thumbnail:hover {
+      transform: scale(1.05);
+    }
+    
+    .quilt-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    
+    .quilt-thumbnail:hover .quilt-overlay {
+      opacity: 1;
+    }
+    
+    .enlarge-hint {
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    
+    /* Modal styles */
+    .quilt-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    
+    .modal-content {
+      background: #f6f4f1;
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow-y: auto;
+      position: relative;
+    }
+    
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      font-size: 2rem;
+      cursor: pointer;
+      color: #666;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: background-color 0.2s ease;
+    }
+    
+    .modal-close:hover {
+      background: rgba(0, 0, 0, 0.1);
+    }
+    
+    .modal-quilt {
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    
+    .modal-quilt svg {
+      max-width: 100%;
+      height: auto;
+    }
+    
+    .modal-info h3 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #000;
+    }
+    
+    .modal-quote .modal-quote-text {
+      font-style: italic;
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+      color: #333;
+    }
+    
+    .modal-quote .modal-quote-author {
+      font-size: 1rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    .modal-stats {
+      font-size: 1rem;
+      color: #666;
+      margin-top: 1rem;
+    }
+    
+    .modal-share-btn {
+      display: flex !important;
+      align-items: center;
+      gap: 8px;
+      background: #000 !important;
+      color: #fff !important;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 1.5rem;
+      transition: background-color 0.2s ease;
+      position: relative;
+      z-index: 10;
+    }
+    
+    .modal-share-btn:hover {
+      background: #333;
+    }
+    
+    .modal-share-btn:active {
+      background: #555;
+    }
+
+    /* ===== ANIMATIONS ===== */
+    .new-block {
+      transform-origin: center;
+      animation: scaleUpSpring 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    
+    .block-transparent {
+      animation: blockTransparent 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    
+    @keyframes scaleUpSpring {
+      0% { transform: scale(0); opacity: 0; }
+      40% { transform: scale(0.8); opacity: 0; }
+      60% { transform: scale(1.05); opacity: 1; }
+      80% { transform: scale(0.98); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    
+    @keyframes blockTransparent {
+      0% { 
+        opacity: 1; 
+      }
+      50% { 
+        opacity: 0; 
+      }
+      100% { 
+        opacity: 1; 
+      }
+    }
+    
+    /* Fabric texture using CSS */
+    .quilt-block {
+      background-image: 
+        radial-gradient(circle at 25% 25%, rgba(255,255,255,0.1) 1px, transparent 1px),
+        radial-gradient(circle at 75% 75%, rgba(0,0,0,0.05) 1px, transparent 1px);
+      background-size: 8px 8px, 12px 12px;
+      background-position: 0 0, 4px 4px;
+    }
+
+    /* ===== LOADING ===== */
+    .loading {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(246, 244, 241, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    
+    .loading.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #f6f4f1;
+      border-top: 3px solid #000;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      color: #fff; padding: 12px 24px;
+      border-radius: 24px;
+      opacity: 0; transition: opacity 0.3s ease;
+      pointer-events: none; font-size: 0.9rem;
+      font-weight: 500;
+      z-index: 1001;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .toast.show { opacity: 1; }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 768px) {
+      .screen { 
+        padding: 2rem 1rem 10px 1rem; /* Restored original value */
+        width: 100vw;
+        max-width: 100vw;
+        box-sizing: border-box;
+      }
+      .portal-question {
+        width: 100%;
+        max-width: 100%;
+        padding: 0 1rem;
+        box-sizing: border-box;
+      }
+      .quote-card { width: 95%; padding: 1rem; }
+      #colorWheelCanvas { 
+        width: 240px; 
+        height: 240px; 
+        /* Mobile-specific canvas rendering fixes */
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+      }
+      
+      /* Reduce top spacing for specific screens on mobile */
+      #screen-portal {
+        padding-top: 1rem !important;
+        justify-content: flex-start !important;
+        padding-top: 9.4rem !important; /* Increased by 100% from 4.7rem */
+      }
+      
+      #screen-quote {
+        padding-top: 1rem !important;
+        justify-content: flex-start !important;
+        padding-top: 9.4rem !important; /* Increased by 100% from 4.7rem */
+      }
+      
+      #screen-color {
+        padding-top: 1rem !important;
+        justify-content: flex-start !important;
+        padding-top: 9.4rem !important; /* Increased by 100% from 4.7rem */
+      }
+      #quilt { 
+        width: 95vw; 
+        height: 95vw; 
+        margin: 0;
+        display: block;
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 2rem;
+      }
+      
+      /* Force maximum quilt size on mobile */
+      @media (max-width: 768px) {
+        #quilt {
+          width: 99vw !important;
+          height: 99vw !important;
+          max-width: none !important;
+          max-height: none !important;
+          margin: 0 !important;
+          position: relative !important;
+          left: auto !important;
+          transform: none !important;
+          top: auto !important;
+        }
+      }
+      
+      /* Quilt screen specific mobile adjustments */
+      #screen-quilt {
+        padding: 0.125rem !important;
+        justify-content: flex-start !important;
+        padding-top: 1rem !important;
+      }
+      
+      #screen-quilt .thank-you-message {
+        margin-bottom: 0.5rem;
+        padding: 0 0.5rem;
+        font-size: clamp(1rem, 2.5vw, 1.2rem);
+      }
+      
+      #screen-quilt #quilt {
+        position: relative;
+        top: 0;
+        margin: 0.25rem auto;
+        width: 98vw !important;
+        height: 98vw !important;
+        max-width: none !important;
+        max-height: none !important;
+      }
+      
+      #screen-quilt .btn {
+        margin: 0.5rem;
+      }
+      
+      #screen-quilt #testAddBlock {
+        margin-top: 1rem;
+      }
+      
+      #screen-quilt #shareBtnCompleted {
+        margin-top: 1rem;
+        margin-bottom: 2rem;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .portal-header h1 { font-size: 2rem; }
+      .portal-question { font-size: 1.8rem; margin: 1rem 0 3rem; }
+      #colorWheelCanvas { width: 200px; height: 200px; }
+      #colorPickerControls { flex-direction: column; gap: 10px; }
+      
+      /* Extra small screen quilt adjustments */
+      #screen-quilt {
+        padding: 0.0625rem !important;
+        justify-content: flex-start !important;
+        padding-top: 0.75rem !important;
+      }
+      
+      /* Extra small screen general adjustments */
+      .screen {
+        padding: 1.5rem 1rem 10px 1rem; /* Restored original value */
+      }
+      
+      #screen-quilt .thank-you-message {
+        font-size: 1rem;
+        margin-bottom: 0.25rem;
+      }
+      
+      #screen-quilt #quilt {
+        width: 96vw !important;
+        height: 96vw !important;
+        margin: 0.125rem auto;
+      }
+      
+      #screen-quilt .btn {
+        margin: 0.3rem;
+        padding: 10px 20px;
+        font-size: 0.9rem;
+      }
+      
+      /* Extra small screen specific screen adjustments */
+      #screen-portal {
+        padding-top: 6.25rem !important; /* Increased by 100% from 3.125rem */
+        justify-content: flex-start !important;
+      }
+      
+      #screen-quote {
+        padding-top: 6.25rem !important; /* Increased by 100% from 3.125rem */
+        justify-content: flex-start !important;
+      }
+      
+      #screen-color {
+        padding-top: 6.25rem !important; /* Increased by 100% from 3.125rem */
+        justify-content: flex-start !important;
+      }
+    }
+
+    /* ===== ACCESSIBILITY ===== */
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      .new-block { animation: none; }
+    }
+    
+    @media (prefers-contrast: high) {
+      .btn { border-width: 2px; }
+      .quote-card { border-width: 3px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app">
+    <!-- Portal Screen -->
+    <section class="screen active" id="screen-portal" role="main" aria-label="Welcome screen">
+      <div class="portal-header">
+        <h1>OUR DAILY</h1>
+        <p class="date" id="date-text" aria-live="polite"></p>
+      </div>
+      <p class="portal-question">What if today started with just one good thought?</p>
+      <button class="btn" data-next="screen-welcome" aria-label="Start the daily experience">LET'S BEGIN</button>
+    </section>
+
+    <!-- Welcome Screen (First Time Only) -->
+    <section class="screen" id="screen-welcome" role="main" aria-label="Welcome to Our Daily">
+      <div class="welcome-header">
+        <h1>WELCOME TO OUR DAILY</h1>
+        <p class="welcome-subtitle">A collaborative community quilt</p>
+      </div>
+      
+      <div class="welcome-content">
+        <div class="welcome-info">
+          <h3>How it works</h3>
+          <p>Read today's inspiring quote, choose a color that speaks to you, and add it to our community quilt. Watch as we create something beautiful together.</p>
+          
+          <h3>Your contribution matters</h3>
+          <p>Each color you add becomes part of a larger story - a daily quilt that grows with every person who participates.</p>
+          
+          <h3>Share the beauty</h3>
+          <p>Download and share your quilt block or the entire community quilt to inspire others to join in.</p>
+        </div>
+        
+        <div class="welcome-preview">
+          <h3>Today's Quote</h3>
+          <div class="quote-preview-card">
+            <p class="quote-preview-text">"Great things are done by a series of small things brought together."</p>
+            <p class="quote-preview-author">— Vincent Van Gogh</p>
+          </div>
+        </div>
+      </div>
+      
+      <button class="btn" data-next="screen-quote" aria-label="Get started">Get Started</button>
+    </section>
+
+    <!-- Quote Screen -->
+    <section class="screen" id="screen-quote" role="main" aria-label="Daily quote screen">
+      <div class="quote-card">
+        <div class="quote-inner">
+          <p class="quote-line" aria-live="polite"></p>
+          <p class="quote-author" aria-live="polite"></p>
+        </div>
+      </div>
+      <p class="quote-prompt">What color comes to mind when you read this?</p>
+      <div class="arrow-down">↓</div>
+      <button class="btn" data-next="screen-color" aria-label="Add your color to the quilt" onclick="console.log('Add your color button clicked'); event.stopPropagation();">ADD YOUR COLOR</button>
+    </section>
+
+    <!-- Color Picker Screen -->
+    <section class="screen" id="screen-color" role="main" aria-label="Color picker screen">
+      <div class="color-picker-container">
+        <canvas id="colorWheelCanvas" width="280" height="280" role="button" tabindex="0" aria-label="Color wheel - click or drag to select hue"></canvas>
+        <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
+        <div id="colorPickerControls">
+          <input type="range" id="valueSlider" min="35" max="90" value="70" aria-label="Adjust color brightness" aria-describedby="selectedColorPreview" />
+          <div id="selectedColorPreview" role="img" aria-label="Selected color preview"></div>
+        </div>
+      </div>
+      <button class="btn" id="addColorBtn" aria-label="Add selected color to the community quilt">ADD COLOR TO QUILT</button>
+    </section>
+
+    <!-- Quilt Screen -->
+                <section class="screen" id="screen-quilt" role="main" aria-label="Community quilt display">
+
+        <svg id="quilt" viewBox="-100 -50 800 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Community quilt with colorful blocks"></svg>
+              <p class="thank-you-message" aria-live="polite">Thank you for adding your block! Look what we're making together <3</p>
+        <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white; margin: 0.5rem;">TEST: Add Random Block</button>
+        <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
+        <button class="btn" data-next="screen-archive" aria-label="View quilt archive">View Archive</button>
+        <button class="btn" data-next="screen-about" aria-label="About this project">About</button>
+    </section>
+
+    <!-- Archive Screen -->
+    <section class="screen" id="screen-archive" role="main" aria-label="Quilt archive">
+      <div class="archive-header">
+        <h1>QUILT ARCHIVE</h1>
+        <p class="archive-subtitle">Past community quilts</p>
+      </div>
+      
+      <div class="archive-content">
+        <p class="archive-placeholder">Archive coming soon...</p>
+        <p class="archive-description">Browse through past community quilts and see how our collective creativity has grown over time.</p>
+        <button onclick="testModal()" style="margin: 1rem; padding: 10px; background: #000; color: #fff; border: none; border-radius: 4px;">Test Modal</button>
+        
+        <!-- Example of how archived quilts will look -->
+        <div class="archive-example">
+          <div class="archived-quilt">
+            <div class="quilt-thumbnail" style="cursor: pointer;">
+              <svg width="200" height="200" viewBox="-100 -50 800 700">
+                <rect x="0" y="0" width="600" height="600" fill="#f7b733"/>
+              </svg>
+              <div class="quilt-overlay">
+                <span class="enlarge-hint">Click to enlarge</span>
+              </div>
+            </div>
+            <div class="quilt-info">
+              <div class="quilt-quote">
+                <p class="quote-text">"Great things are done by a series of small things brought together."</p>
+                <p class="quote-author">— Vincent Van Gogh</p>
+              </div>
+              <h3>July 30, 2025</h3>
+              <p class="quilt-stats">127 contributors</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <button class="btn" data-next="screen-quilt" aria-label="Back to current quilt">Back to Today's Quilt</button>
+    </section>
+
+    <!-- About Screen -->
+    <section class="screen" id="screen-about" role="main" aria-label="About this project">
+      <div class="about-header">
+        <h1>ABOUT OUR DAILY</h1>
+        <p class="about-subtitle">A community art project</p>
+      </div>
+      
+      <div class="about-content">
+        <p class="about-placeholder">About page coming soon...</p>
+        <p class="about-description">Learn more about this collaborative quilt project and how it brings people together through color and creativity.</p>
+        
+        <div class="about-info">
+          <h3>What is Our Daily?</h3>
+          <p>A collaborative digital quilt where each person adds their color to create something beautiful together.</p>
+          
+          <h3>How it works</h3>
+          <p>Read today's quote, choose a color that speaks to you, and add it to our community quilt. Watch as we create something unique together.</p>
+          
+          <h3>Share your contribution</h3>
+          <p>Download and share your quilt block or the entire community quilt to inspire others to join in.</p>
+        </div>
+      </div>
+      
+      <button class="btn" data-next="screen-quilt" aria-label="Back to current quilt">Back to Today's Quilt</button>
+    </section>
+  </main>
+
+  <!-- Loading indicator -->
+  <div id="loading" class="loading" aria-hidden="true">
+    <div class="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+  <!-- Quilt Modal -->
+  <div id="quiltModal" class="quilt-modal">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="closeQuiltModal()">&times;</button>
+      <div class="modal-quilt"></div>
+      <div class="modal-info">
+        <h3 class="modal-date"></h3>
+        <div class="modal-quote">
+          <p class="modal-quote-text"></p>
+          <p class="modal-quote-author"></p>
+        </div>
+        <p class="modal-stats"></p>
+        <button class="modal-share-btn" onclick="console.log('Share button clicked'); shareArchivedQuilt(this);" style="display: flex !important; background: #000 !important; color: #fff !important;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/>
+          </svg>
+          Share Quilt
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- External dependencies -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+    // Configuration
+    const CONFIG = {
+      APP: {
+        name: 'Our Daily',
+        version: '2.0.0',
+        defaultColor: '#f7b733',
+        quiltSize: 600,
+        minBlockSize: 40,
+        animationDuration: 2000,
+        toastDuration: 3000
+      },
+      FIREBASE: {
+        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+        authDomain: "our-daily.firebaseapp.com",
+        projectId: "our-daily",
+        storageBucket: "our-daily.firebasestorage.app",
+        messagingSenderId: "337201931314",
+        appId: "1:337201931314:web:fb5677846d03eb285ac82b",
+        measurementId: "G-65XB7QC1F4"
+      },
+      COLOR_PICKER: {
+        wheelSize: 280,
+        defaultHue: 45,
+        defaultLightness: 75,
+        saturation: 35
+      }
+    };
+
+    // Utility functions
+    function debounce(func, delay) {
+      let timeoutId;
+      return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func.apply(null, args), delay);
+      };
+    }
+
+    function hslToHex(h, s, l) {
+      h /= 360;
+      s /= 100;
+      l /= 100;
+      
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      
+      let r, g, b;
+      
+      if (s === 0) {
+        r = g = b = l; // achromatic
+      } else {
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      
+      const toHex = (c) => {
+        const hex = Math.round(c * 255).toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      };
+      
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    function validateHexColor(color) {
+      const hexRegex = /^#[0-9A-F]{6}$/i;
+      return hexRegex.test(color);
+    }
+
+    function getTodayKey() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function formatDate(date = new Date()) {
+      return date.toLocaleDateString(undefined, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    }
+
+    function showToast(message, duration = CONFIG.APP.toastDuration) {
+      const toast = document.getElementById('toast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), duration);
+    }
+
+    function showLoading(show = true) {
+      const loading = document.getElementById('loading');
+      if (!loading) return;
+      if (show) {
+        loading.classList.add('show');
+      } else {
+        loading.classList.remove('show');
+      }
+    }
+
+    function handleError(error, context = 'Unknown') {
+      console.error(`Error in ${context}:`, error);
+      const errorMessages = {
+        'loadQuilt': 'Failed to load quilt data. Starting fresh.',
+        'saveQuilt': 'Failed to save your color. Please try again.',
+        'shareFlow': 'Failed to create share image. Saving instead.',
+        'colorPicker': 'Color picker error. Please try again.'
+      };
+      const message = errorMessages[context] || 'Something went wrong. Please try again.';
+      showToast(message);
+    }
+
+    // Main application class
+    class OurDailyApp {
+          constructor() {
+      this.blocks = [{ x: 0, y: 0, width: CONFIG.APP.quiltSize, height: CONFIG.APP.quiltSize, color: CONFIG.APP.defaultColor }];
+      this.lastAddedIndex = null;
+      this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
+      this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
+      this.db = null;
+      this.quiltDoc = null;
+      this.currentScreen = 'screen-portal';
+      this.contributorCount = 1; // Start with 1 for the initial block
+        
+        this.quotes = [
+          { text: "Art washes away from the soul the dust of everyday life.", author: "— Pablo Picasso" },
+          { text: "Creativity takes courage.", author: "— Henri Matisse" },
+          { text: "Every artist was first an amateur.", author: "— Ralph Waldo Emerson" },
+          { text: "Color is the keyboard, the eyes are the harmonies, the soul is the piano with many strings.", author: "— Wassily Kandinsky" },
+          { text: "Great things are done by a series of small things brought together.", author: "— Vincent Van Gogh" },
+          { text: "You can't use up creativity. The more you use, the more you have.", author: "— Maya Angelou" }
+        ];
+        this.shuffledIndexes = [2, 4, 0, 5, 3, 1];
+      }
+
+      async initialize() {
+        try {
+          showLoading(true);
+          await this.initializeFirebase();
+          this.setupEventListeners();
+          this.initializeUI();
+          await this.loadQuilt();
+          showLoading(false);
+        } catch (error) {
+          handleError(error, 'App initialization');
+          showLoading(false);
+        }
+      }
+
+      async initializeFirebase() {
+        try {
+          const app = initializeApp(CONFIG.FIREBASE);
+          this.db = getFirestore(app);
+          this.quiltDoc = doc(this.db, "quilts", "main");
+        } catch (error) {
+          handleError(error, 'Firebase initialization');
+          throw error;
+        }
+      }
+
+      setupEventListeners() {
+        // Navigation
+        document.querySelectorAll(".btn[data-next]").forEach(btn => {
+          btn.addEventListener("click", e => {
+            console.log('Navigation button clicked:', btn.textContent, 'target:', btn.getAttribute("data-next"));
+            e.preventDefault();
+            const targetId = btn.getAttribute("data-next");
+            console.log('About to show screen:', targetId);
+            if (targetId) {
+              this.showScreen(targetId);
+              console.log('showScreen called for:', targetId);
+            }
+          });
+        });
+
+        // Add color button
+        const addColorBtn = document.getElementById('addColorBtn');
+        if (addColorBtn) {
+          addColorBtn.addEventListener('click', this.handleAddColor.bind(this));
+        }
+
+        // Share button
+        const shareBtnCompleted = document.getElementById('shareBtnCompleted');
+        if (shareBtnCompleted) {
+          shareBtnCompleted.addEventListener('click', this.handleShare.bind(this));
+        }
+
+        // Test button
+        const testAddBlock = document.getElementById('testAddBlock');
+        if (testAddBlock) {
+          testAddBlock.addEventListener('click', this.handleTestAddBlock.bind(this));
+        }
+
+        // Color picker
+        this.setupColorPicker();
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+      }
+
+      setupColorPicker() {
+        const colorWheel = document.getElementById('colorWheelCanvas');
+        const indicator = document.getElementById('colorIndicator');
+        const preview = document.getElementById('selectedColorPreview');
+        const valueSlider = document.getElementById('valueSlider');
+
+        if (!colorWheel || !indicator || !preview || !valueSlider) return;
+
+        // Draw color wheel
+        this.drawColorWheel();
+        this.updatePreview();
+        
+        // Redraw color wheel on window resize to fix mobile rendering
+        const debouncedRedraw = debounce(() => {
+          this.drawColorWheel();
+        }, 100);
+        
+        window.addEventListener('resize', debouncedRedraw);
+        
+        // Adjust quilt viewBox on resize
+        const debouncedQuiltAdjust = debounce(() => {
+          this.adjustQuiltViewBox();
+        }, 100);
+        
+        window.addEventListener('resize', debouncedQuiltAdjust);
+        
+        // Set initial indicator position
+        const rect = colorWheel.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const radius = rect.width / 2;
+        const angle = this.selectedHue * Math.PI / 180;
+        const x = centerX + radius * Math.cos(angle);
+        const y = centerY + radius * Math.sin(angle);
+        
+        if (indicator) {
+          // Position relative to the color wheel container
+          const container = colorWheel.parentElement;
+          const containerRect = container.getBoundingClientRect();
+          const relativeX = x + rect.left - containerRect.left;
+          const relativeY = y + rect.top - containerRect.top;
+          indicator.style.left = `${relativeX}px`;
+          indicator.style.top = `${relativeY}px`;
+        }
+
+        // Event listeners
+        const debouncedSetHue = debounce(this.setHueFromCoords.bind(this), 16);
+        
+        colorWheel.addEventListener('click', e => {
+          const rect = colorWheel.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          
+          // Only update if click is within the wheel bounds
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+          const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+          const radius = rect.width / 2;
+          
+          if (distance <= radius) {
+            this.setHueFromCoords(x, y);
+          }
+        });
+
+        colorWheel.addEventListener('mousedown', e => {
+          const rect = colorWheel.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          
+          // Only update if click is within the wheel bounds
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+          const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+          const radius = rect.width / 2;
+          
+          if (distance <= radius) {
+            this.setHueFromCoords(x, y);
+          }
+        });
+
+        document.addEventListener('mousemove', e => {
+          if (e.buttons === 1) {
+            const rect = colorWheel.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Only update if mouse is within the wheel bounds
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+            const radius = rect.width / 2;
+            
+            if (distance <= radius) {
+              debouncedSetHue(x, y);
+            }
+          }
+        });
+
+        valueSlider.addEventListener('input', () => {
+          this.selectedLightness = Number(valueSlider.value);
+          this.updatePreview();
+        });
+
+
+      }
+
+      drawColorWheel() {
+        const colorWheel = document.getElementById('colorWheelCanvas');
+        const ctx = colorWheel.getContext('2d');
+        const radius = colorWheel.width / 2;
+        const centerX = radius;
+        const centerY = radius;
+
+        // Clear the canvas first
+        ctx.clearRect(0, 0, colorWheel.width, colorWheel.height);
+        
+        // Enable anti-aliasing for smoother rendering
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        // Use pixel-based approach for smoother rendering on mobile
+        const imageData = ctx.createImageData(colorWheel.width, colorWheel.height);
+        const data = imageData.data;
+        
+        for (let y = 0; y < colorWheel.height; y++) {
+          for (let x = 0; x < colorWheel.width; x++) {
+            const dx = x - centerX;
+            const dy = y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Only color pixels within the circle
+            if (distance <= radius) {
+              // Calculate angle for this pixel
+              let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+              if (angle < 0) angle += 360;
+              
+              // Convert HSL to RGB
+              const hue = angle;
+              const saturation = CONFIG.COLOR_PICKER.saturation;
+              const lightness = 50;
+              
+              const rgb = this.hslToRgb(hue, saturation, lightness);
+              
+              const index = (y * colorWheel.width + x) * 4;
+              data[index] = rgb.r;     // Red
+              data[index + 1] = rgb.g; // Green
+              data[index + 2] = rgb.b; // Blue
+              data[index + 3] = 255;   // Alpha
+            }
+          }
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+      }
+      
+      hslToRgb(h, s, l) {
+        h /= 360;
+        s /= 100;
+        l /= 100;
+        
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        
+        let r, g, b;
+        
+        if (s === 0) {
+          r = g = b = l; // achromatic
+        } else {
+          const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          const p = 2 * l - q;
+          r = hue2rgb(p, q, h + 1/3);
+          g = hue2rgb(p, q, h);
+          b = hue2rgb(p, q, h - 1/3);
+        }
+        
+        return {
+          r: Math.round(r * 255),
+          g: Math.round(g * 255),
+          b: Math.round(b * 255)
+        };
+      }
+
+      updatePreview() {
+        const preview = document.getElementById('selectedColorPreview');
+        const valueSlider = document.getElementById('valueSlider');
+        
+        if (preview) {
+          const hslColor = `hsl(${this.selectedHue}, ${CONFIG.COLOR_PICKER.saturation}%, ${this.selectedLightness}%)`;
+          const hexColor = hslToHex(this.selectedHue, CONFIG.COLOR_PICKER.saturation, this.selectedLightness);
+          preview.style.backgroundColor = hexColor; // Use hex instead of HSL for consistency
+          
+          console.log('Color preview:', {
+            hue: this.selectedHue,
+            saturation: CONFIG.COLOR_PICKER.saturation,
+            lightness: this.selectedLightness,
+            hsl: hslColor,
+            hex: hexColor
+          });
+        }
+        
+        if (valueSlider) {
+          valueSlider.style.background = `linear-gradient(to right,
+            hsl(${this.selectedHue}, ${CONFIG.COLOR_PICKER.saturation}%, 20%), 
+            hsl(${this.selectedHue}, ${CONFIG.COLOR_PICKER.saturation}%, 90%))`;
+        }
+      }
+
+      setHueFromCoords(x, y) {
+        const colorWheel = document.getElementById('colorWheelCanvas');
+        const indicator = document.getElementById('colorIndicator');
+        const rect = colorWheel.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const radius = rect.width / 2;
+
+        if (distance > radius) {
+          // Clamp to the edge of the wheel
+          const clampedDistance = radius;
+          const clampedX = centerX + (dx / distance) * clampedDistance;
+          const clampedY = centerY + (dy / distance) * clampedDistance;
+          
+          let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+          if (angle < 0) angle += 360;
+          this.selectedHue = Math.round(angle);
+          
+          if (indicator) {
+            // Position relative to the color wheel container
+            const container = colorWheel.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const relativeX = clampedX + rect.left - containerRect.left;
+            const relativeY = clampedY + rect.top - containerRect.top;
+            indicator.style.left = `${relativeX}px`;
+            indicator.style.top = `${relativeY}px`;
+          }
+        } else {
+          let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+          if (angle < 0) angle += 360;
+          
+          this.selectedHue = Math.round(angle);
+          
+          if (indicator) {
+            // Position relative to the color wheel container
+            const container = colorWheel.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const relativeX = x + rect.left - containerRect.left;
+            const relativeY = y + rect.top - containerRect.top;
+            indicator.style.left = `${relativeX}px`;
+            indicator.style.top = `${relativeY}px`;
+          }
+        }
+        
+        this.updatePreview();
+      }
+
+      initializeUI() {
+        const dateText = document.getElementById("date-text");
+        if (dateText) {
+          dateText.textContent = formatDate();
+        }
+        this.displayQuote();
+        
+        // Check if this is the first visit
+        const hasVisited = localStorage.getItem('ourDailyHasVisited');
+        if (!hasVisited) {
+          // First time visitor - show welcome screen
+          this.showScreen('screen-welcome');
+          localStorage.setItem('ourDailyHasVisited', 'true');
+        } else {
+          // Returning visitor - show portal screen
+          this.showScreen('screen-portal');
+        }
+        
+        // Adjust quilt viewBox for mobile
+        this.adjustQuiltViewBox();
+      }
+      
+      adjustQuiltViewBox() {
+        const quilt = document.getElementById('quilt');
+        if (quilt && window.innerWidth <= 768) {
+          // For mobile, use a larger viewBox to fill more space
+          quilt.setAttribute('viewBox', '-50 -25 700 650');
+        }
+      }
+
+      showScreen(screenId) {
+        console.log('showScreen called with:', screenId);
+        document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+        const target = document.getElementById(screenId);
+        console.log('Target element:', target);
+        if (target) {
+          target.classList.add("active");
+          this.currentScreen = screenId;
+          console.log('Screen changed to:', screenId);
+        } else {
+          console.log('Target element not found!');
+        }
+      }
+
+      async loadQuilt() {
+        try {
+          showLoading(true);
+          const todayKey = getTodayKey();
+          const quiltDocSnap = await getDoc(this.quiltDoc);
+          
+          if (!quiltDocSnap.exists() || quiltDocSnap.data().date !== todayKey) {
+            this.blocks = [{ x: 0, y: 0, width: CONFIG.APP.quiltSize, height: CONFIG.APP.quiltSize, color: CONFIG.APP.defaultColor }];
+            this.contributorCount = 1;
+            await this.saveQuilt();
+          } else {
+            const data = quiltDocSnap.data();
+            if (data.blocks) {
+              this.blocks = data.blocks;
+            }
+            if (data.contributorCount) {
+              this.contributorCount = data.contributorCount;
+            } else {
+              // Calculate contributor count from blocks (fallback)
+              this.contributorCount = Math.max(1, this.blocks.length - 1);
+            }
+          }
+          
+          this.renderBlocks();
+          this.updateThankYouMessage();
+          showLoading(false);
+        } catch (error) {
+          handleError(error, 'loadQuilt');
+          showLoading(false);
+          this.blocks = [{ x: 0, y: 0, width: CONFIG.APP.quiltSize, height: CONFIG.APP.quiltSize, color: CONFIG.APP.defaultColor }];
+          this.contributorCount = 1;
+          this.renderBlocks();
+          this.updateThankYouMessage();
+        }
+      }
+
+      async saveQuilt() {
+        try {
+          const todayQuote = this.getTodayQuote();
+          await setDoc(this.quiltDoc, { 
+            blocks: this.blocks, 
+            date: getTodayKey(),
+            contributorCount: this.contributorCount,
+            quote: {
+              text: todayQuote.text,
+              author: todayQuote.author
+            }
+          });
+        } catch (error) {
+          handleError(error, 'saveQuilt');
+          throw error;
+        }
+      }
+
+      renderBlocks() {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) return;
+
+        quiltSVG.innerHTML = '';
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs.innerHTML = `
+          <filter id="wavyEdges" x="0" y="0" width="200%" height="200%">
+            <feTurbulence baseFrequency="0.012" numOctaves="3" result="turb"/>
+            <feDisplacementMap in="SourceGraphic" in2="turb" scale="3"/>
+          </filter>
+
+          <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,0,0.15)"/>
+          </filter>
+          
+          <!-- Paper texture filter -->
+          <filter id="paperTexture" x="0" y="0" width="100%" height="100%">
+            <feTurbulence baseFrequency="0.6" numOctaves="3" result="noise" type="fractalNoise"/>
+            <feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.15 0" in="noise" result="texture"/>
+            <feBlend mode="multiply" in="SourceGraphic" in2="texture"/>
+          </filter>
+          
+
+          
+          <!-- Luminescent glow effect -->
+          <filter id="luminescentGlow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="8" result="glow"/>
+            <feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.3 0" in="glow" result="coloredGlow"/>
+            <feBlend mode="screen" in="SourceGraphic" in2="coloredGlow"/>
+          </filter>
+          
+          <!-- Inner glow effect -->
+          <filter id="innerGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="innerBlur"/>
+            <feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.2 0" in="innerBlur" result="innerColored"/>
+            <feBlend mode="screen" in="SourceGraphic" in2="innerColored"/>
+          </filter>
+          
+          <!-- Overlap transparency effect -->
+          <filter id="overlapTransparency" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="1" result="blur"/>
+            <feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.3 0" in="blur" result="transparent"/>
+            <feBlend mode="multiply" in="SourceGraphic" in2="transparent"/>
+          </filter>
+          
+          <!-- Organic edge distortion -->
+          <filter id="organicEdges" x="-20%" y="-20%" width="140%" height="140%">
+            <feTurbulence baseFrequency="0.15" numOctaves="2" result="turbulence" type="fractalNoise"/>
+            <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="2" xChannelSelector="R" yChannelSelector="G"/>
+          </filter>
+          
+          <filter id="watercolorTexture" x="0" y="0" width="100%" height="100%">
+            <feTurbulence baseFrequency="0.3" numOctaves="2" result="noise" type="fractalNoise"/>
+            <feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.1 0" in="noise" result="texture"/>
+            <feBlend mode="multiply" in="SourceGraphic" in2="texture"/>
+          </filter>
+          
+          <!-- Plastic highlight gradient -->
+          <linearGradient id="plasticHighlight" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="white" stop-opacity="0"/>
+            <stop offset="10%" stop-color="white" stop-opacity="0.6"/>
+            <stop offset="20%" stop-color="white" stop-opacity="0"/>
+            <stop offset="40%" stop-color="white" stop-opacity="0.5"/>
+            <stop offset="50%" stop-color="white" stop-opacity="0"/>
+            <stop offset="70%" stop-color="white" stop-opacity="0.7"/>
+            <stop offset="80%" stop-color="white" stop-opacity="0"/>
+            <stop offset="100%" stop-color="white" stop-opacity="0.3"/>
+          </linearGradient>
+
+`;
+        quiltSVG.appendChild(defs);
+        
+        // Create organic outer boundary for the entire quilt
+        const quiltBounds = this.getQuiltBounds();
+        const organicBoundary = this.createOrganicQuiltBoundary(quiltBounds);
+        
+        // Add the organic boundary as a background shape - clear plastic dropcloth effect
+        const boundaryPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        boundaryPath.setAttribute('d', organicBoundary);
+        boundaryPath.setAttribute('fill', '#e8e4df'); // Slightly darker, more visible
+        boundaryPath.setAttribute('opacity', '0.95');
+        
+        // Add subtle plastic highlights
+        const highlightPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        highlightPath.setAttribute('d', organicBoundary);
+        highlightPath.setAttribute('fill', 'url(#plasticHighlight)');
+        highlightPath.setAttribute('opacity', '0.8');
+
+        quiltSVG.appendChild(boundaryPath);
+        quiltSVG.appendChild(highlightPath);
+        
+        this.blocks.forEach((block, i) => {
+          // Add jiggered positioning - more freedom to break square
+          const jiggerX = (Math.random() - 0.5) * 6; // Reduced horizontal jitter
+          const jiggerY = (Math.random() - 0.5) * 6; // Reduced vertical jitter
+          const jiggerRotation = (Math.random() - 0.5) * 3; // Reduced rotation in degrees
+          
+          // Apply jiggered positioning to block coordinates
+          const jiggeredBlock = {
+            x: block.x + jiggerX,
+            y: block.y + jiggerY,
+            width: block.width,
+            height: block.height,
+            color: block.color,
+            rotation: jiggerRotation
+          };
+          
+          // Randomly decide if this block should have bleed effect
+          const shouldBleed = Math.random() < 0.4; // 40% chance of bleed
+          const bleedIntensity = shouldBleed ? Math.random() * 0.3 + 0.1 : 0;
+          
+          // Dynamic edge variation based on number of blocks - reduces gaps as quilt fills up
+          const baseEdgeVariation = shouldBleed ? 4 : 2;
+          const blockCount = this.blocks.length;
+          const dynamicReduction = Math.min(0.95, blockCount * 0.08); // Reduce by up to 95% as blocks increase
+          const edgeVariation = baseEdgeVariation * (1 - dynamicReduction);
+          
+          // Create watercolor edges with organic curves
+          const createWatercolorEdge = (startX, startY, endX, endY, isVertical = false, edgePosition = '') => {
+            const numPoints = 5; // More points for smoother curves
+            const points = [];
+            
+            // Check if this edge is likely to overlap with other blocks
+            const hasAdjacentBlock = this.checkEdgeAdjacency(block, edgePosition);
+            const isOuter = this.isOuterEdge(block, edgePosition);
+            
+            // Watercolor variation - organic curves
+            let variationMultiplier = 0.8;
+            const edgeStyle = Math.random();
+            
+            if (isOuter) {
+              // Outer edges get more organic curves to break square
+              variationMultiplier = 0.7;
+            } else if (edgeStyle < 0.2) {
+              // Straight edge (20% chance) - some edges are straight
+              variationMultiplier = 0;
+            } else {
+              // Organic curve (80% chance) - like watercolor pooling
+              variationMultiplier = 0.8;
+            }
+            
+            for (let i = 0; i <= numPoints; i++) {
+              const t = i / numPoints;
+              const x = startX + (endX - startX) * t;
+              const y = startY + (endY - startY) * t;
+              
+              // Create watercolor curves
+              let variation = 0;
+              if (variationMultiplier !== 0) {
+                // Use smooth curves for watercolor look
+                const smoothCurve = Math.sin(t * Math.PI) * Math.sin(t * Math.PI); // Double sine for smoother curve
+                const curveIntensity = smoothCurve * edgeVariation * variationMultiplier * 0.7;
+                variation = curveIntensity + (Math.random() - 0.5) * edgeVariation * 0.2; // More randomness for organic feel
+              }
+              
+              // Add very subtle diagonal variation for more organic feel
+              const diagonalVariation = (Math.random() - 0.5) * edgeVariation * 0.1;
+              
+              const organicX = x + (isVertical ? variation : diagonalVariation);
+              const organicY = y + (isVertical ? diagonalVariation : variation);
+              
+              points.push({ x: organicX, y: organicY });
+            }
+            
+            return points;
+          };
+          
+          // Generate watercolor edges for each side with jiggered positioning
+          const topEdge = createWatercolorEdge(jiggeredBlock.x, jiggeredBlock.y, jiggeredBlock.x + jiggeredBlock.width, jiggeredBlock.y, false, 'top');
+          const rightEdge = createWatercolorEdge(jiggeredBlock.x + jiggeredBlock.width, jiggeredBlock.y, jiggeredBlock.x + jiggeredBlock.width, jiggeredBlock.y + jiggeredBlock.height, true, 'right');
+          const bottomEdge = createWatercolorEdge(jiggeredBlock.x + jiggeredBlock.width, jiggeredBlock.y + jiggeredBlock.height, jiggeredBlock.x, jiggeredBlock.y + jiggeredBlock.height, false, 'bottom');
+          const leftEdge = createWatercolorEdge(jiggeredBlock.x, jiggeredBlock.y + jiggeredBlock.height, jiggeredBlock.x, jiggeredBlock.y, true, 'left');
+          
+          // Ensure connectivity by adjusting corner points
+          const ensureConnectivity = (edge1, edge2, isCorner = false) => {
+            if (isCorner) {
+              // For corners, use the exact corner point to maintain connectivity
+              return edge1[edge1.length - 1];
+            }
+            return edge1[edge1.length - 1];
+          };
+          
+          // Check for overlaps with previous blocks to determine transparency
+          const hasOverlap = this.checkForOverlaps(jiggeredBlock, i);
+          const overlapTransparency = 1.0; // Fully opaque
+          
+          // Create path with organic edges, ensuring connectivity
+          const pathData = `M ${topEdge[0].x},${topEdge[0].y}
+                            ${topEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                            L ${topEdge[topEdge.length - 1].x},${topEdge[topEdge.length - 1].y}
+                            ${rightEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                            L ${rightEdge[rightEdge.length - 1].x},${rightEdge[rightEdge.length - 1].y}
+                            ${bottomEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                            L ${bottomEdge[bottomEdge.length - 1].x},${bottomEdge[bottomEdge.length - 1].y}
+                            ${leftEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                            L ${leftEdge[leftEdge.length - 1].x},${leftEdge[leftEdge.length - 1].y} Z`;
+          
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', pathData);
+          // Create natural watercolor effect with transparency and bleeding edges
+          const centerColor = block.color; // Original color
+          const edgeColor = block.color; // Same color for bleeding effect
+          
+          // Create a radial gradient for natural watercolor effect
+          const gradientId = `watercolor-${i}`;
+          const defs = quiltSVG.querySelector('defs');
+          const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+          gradient.setAttribute('id', gradientId);
+          gradient.setAttribute('cx', '50%');
+          gradient.setAttribute('cy', '50%');
+          gradient.setAttribute('r', '70%');
+          
+          const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+          stop1.setAttribute('offset', '0%');
+          stop1.setAttribute('stop-color', centerColor);
+          stop1.setAttribute('stop-opacity', '1.0'); // Fully opaque
+          
+          const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+          stop2.setAttribute('offset', '100%');
+          stop2.setAttribute('stop-color', edgeColor);
+          stop2.setAttribute('stop-opacity', '1.0'); // Fully opaque
+          
+          gradient.appendChild(stop1);
+          gradient.appendChild(stop2);
+          defs.appendChild(gradient);
+          
+          path.setAttribute('fill', jiggeredBlock.color);
+          
+          // Apply rotation transform for jiggered effect
+          const centerX = jiggeredBlock.x + jiggeredBlock.width / 2;
+          const centerY = jiggeredBlock.y + jiggeredBlock.height / 2;
+          path.setAttribute('transform', `rotate(${jiggeredBlock.rotation} ${centerX} ${centerY})`);
+          
+          // No filters applied for clean look
+          
+          // Add natural watercolor effect to blocks
+          path.setAttribute('opacity', '1.0'); // Fully opaque
+          
+
+
+          
+
+          
+
+          
+          if (i === this.lastAddedIndex) {
+            // Start the new block completely transparent
+            path.setAttribute('opacity', '0');
+            path.classList.add('new-block');
+            path.addEventListener('animationend', () => {
+              path.classList.remove('new-block');
+              path.removeAttribute('opacity');
+            }, { once: true });
+          } else if (this.lastAddedIndex !== null && i === this.lastAddedIndex - 1) {
+            // Make the original block transparent to create a "hole" effect
+            path.classList.add('block-transparent');
+            path.addEventListener('animationend', () => path.classList.remove('block-transparent'), { once: true });
+          }
+          
+          quiltSVG.appendChild(path);
+          
+
+        });
+
+        this.lastAddedIndex = null;
+      }
+
+      splitBlock(blockIndex, newColor) {
+        try {
+          if (!validateHexColor(newColor)) {
+            throw new Error(`Invalid color format: ${newColor}`);
+          }
+
+          const block = this.blocks[blockIndex];
+          const splitVertically = block.width >= block.height;
+          const splitRatio = 0.3 + Math.random() * 0.4;
+          
+          let block1, block2;
+          if (splitVertically) {
+            const splitX = block.width * splitRatio;
+            block1 = { ...block, width: splitX };
+            block2 = { ...block, x: block.x + splitX, width: block.width - splitX, color: newColor };
+          } else {
+            const splitY = block.height * splitRatio;
+            block1 = { ...block, height: splitY };
+            block2 = { ...block, y: block.y + splitY, height: block.height - splitY, color: newColor };
+          }
+          
+          this.blocks.splice(blockIndex, 1, block1, block2);
+          this.lastAddedIndex = blockIndex + 1; // Point to the second piece (block2)
+          
+          // Debug: Log which piece gets the new color
+          console.log('Split pieces:', {
+            block1: { ...block1, getsNewColor: block1.color === newColor },
+            block2: { ...block2, getsNewColor: block2.color === newColor },
+            newColor
+          });
+          
+          return true;
+        } catch (error) {
+          handleError(error, 'splitBlock');
+          return false;
+        }
+      }
+
+      async handleAddColor() {
+        try {
+          const saturationSlider = document.getElementById('saturationSlider');
+          const selectedSaturation = saturationSlider ? parseInt(saturationSlider.value) : CONFIG.COLOR_PICKER.saturation;
+          const selectedColor = hslToHex(this.selectedHue, selectedSaturation, this.selectedLightness);
+          
+          console.log('Adding color to quilt:', {
+            hue: this.selectedHue,
+            saturation: CONFIG.COLOR_PICKER.saturation,
+            lightness: this.selectedLightness,
+            hexColor: selectedColor
+          });
+          
+          if (!selectedColor) {
+            showToast('Please select a color first');
+            return;
+          }
+
+          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
+          let indexToSplit;
+          
+          if (eligibleBlocks.length > 0) {
+            const largestEligible = eligibleBlocks.reduce((largest, current) => {
+              const largestArea = largest.width * largest.height;
+              const currentArea = current.width * current.height;
+              return currentArea > largestArea ? current : largest;
+            });
+            indexToSplit = this.blocks.indexOf(largestEligible);
+          } else {
+            let maxArea = 0;
+            indexToSplit = 0;
+            this.blocks.forEach((b, i) => {
+              const area = b.width * b.height;
+              if (area > maxArea) {
+                maxArea = area;
+                indexToSplit = i;
+              }
+            });
+          }
+
+          const success = this.splitBlock(indexToSplit, selectedColor);
+          
+          if (success) {
+            // Increment contributor count
+            this.contributorCount++;
+            
+            // Store the last added index for sharing before renderBlocks resets it
+            this.lastAddedForShare = this.lastAddedIndex;
+            
+            // Debug: Log the split details
+            console.log('Split details:', {
+              indexToSplit,
+              lastAddedIndex: this.lastAddedIndex,
+              splitBlock: this.blocks[this.lastAddedIndex],
+              blockCenter: {
+                x: this.blocks[this.lastAddedIndex].x + this.blocks[this.lastAddedIndex].width / 2,
+                y: this.blocks[this.lastAddedIndex].y + this.blocks[this.lastAddedIndex].height / 2
+              },
+              contributorCount: this.contributorCount
+            });
+            
+            await this.saveQuilt();
+            this.renderBlocks();
+            this.updateThankYouMessage();
+            this.showScreen('screen-quilt');
+          }
+        } catch (error) {
+          handleError(error, 'handleAddColor');
+          showToast('Failed to add color. Please try again.');
+        }
+      }
+
+      async handleTestAddBlock() {
+        try {
+          // Generate random color - full natural palette range
+          const randomHue = Math.floor(Math.random() * 360);
+          const randomSaturation = 15 + Math.random() * 55; // Between 15-70 saturation (low to medium-high)
+          const randomLightness = 35 + Math.random() * 55; // Between 35-90 lightness (dark to light)
+          const randomColor = hslToHex(randomHue, randomSaturation, randomLightness);
+          
+          console.log('Test adding random color:', {
+            hue: randomHue,
+            lightness: randomLightness,
+            hexColor: randomColor
+          });
+          
+          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
+          let indexToSplit;
+          
+          if (eligibleBlocks.length > 0) {
+            const largestEligible = eligibleBlocks.reduce((largest, current) => {
+              const largestArea = largest.width * largest.height;
+              const currentArea = current.width * current.height;
+              return currentArea > largestArea ? current : largest;
+            });
+            indexToSplit = this.blocks.indexOf(largestEligible);
+          } else {
+            let maxArea = 0;
+            indexToSplit = 0;
+            this.blocks.forEach((b, i) => {
+              const area = b.width * b.height;
+              if (area > maxArea) {
+                maxArea = area;
+                indexToSplit = i;
+              }
+            });
+          }
+
+          const success = this.splitBlock(indexToSplit, randomColor);
+          
+          if (success) {
+            // Increment contributor count for test blocks too
+            this.contributorCount++;
+            this.lastAddedForShare = this.lastAddedIndex;
+            await this.saveQuilt();
+            this.renderBlocks();
+            this.updateThankYouMessage();
+            showToast(`Added block ${this.blocks.length}! (${this.contributorCount} contributors)`);
+          }
+        } catch (error) {
+          handleError(error, 'handleTestAddBlock');
+          showToast('Test add failed.');
+        }
+      }
+
+      async handleShare() {
+        try {
+          const shareBtn = document.getElementById('shareBtnCompleted');
+          if (shareBtn) shareBtn.disabled = true;
+          
+          showToast("Preparing flyer...");
+          await this.shareFlow();
+          
+          if (shareBtn) shareBtn.disabled = false;
+        } catch (error) {
+          handleError(error, 'handleShare');
+          showToast('Share failed. Saving instead.');
+          
+          const shareBtn = document.getElementById('shareBtnCompleted');
+          if (shareBtn) shareBtn.disabled = false;
+        }
+      }
+
+      async shareFlow() {
+        try {
+          // Show loading immediately
+          showToast("Preparing image...");
+          
+          // Use the stored last added index for sharing
+          const lastAddedIndex = this.lastAddedForShare;
+          
+          // Also store the index of the block that was split
+          const splitBlockIndex = this.lastSplitBlockIndex;
+          
+
+          
+          const quiltElement = document.getElementById('quilt');
+          const clonedSVG = quiltElement.cloneNode(true);
+          clonedSVG.removeAttribute('id');
+          clonedSVG.setAttribute('width', '800');
+          clonedSVG.setAttribute('height', '800');
+          clonedSVG.style.transform = "rotate(-5deg)";
+          
+          // Expand viewBox by small fixed amount for all instances
+          const originalViewBox = clonedSVG.getAttribute('viewBox');
+          if (originalViewBox) {
+            const [x, y, width, height] = originalViewBox.split(' ').map(Number);
+            const fixedPadding = 20; // Small, consistent padding for all instances
+            
+            console.log('ViewBox expansion:', {
+              original: { x, y, width, height },
+              padding: fixedPadding,
+              newCoords: {
+                x: x - fixedPadding,
+                y: y - fixedPadding,
+                width: width + fixedPadding * 2,
+                height: height + fixedPadding * 2
+              }
+            });
+            
+            const newViewBox = `${x - fixedPadding} ${y - fixedPadding} ${width + fixedPadding * 2} ${height + fixedPadding * 2}`;
+            clonedSVG.setAttribute('viewBox', newViewBox);
+            
+            // Add background rect FIRST (before any quilt blocks) to ensure it's behind everything
+            const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bgRect.setAttribute('x', x - fixedPadding);
+            bgRect.setAttribute('y', y - fixedPadding);
+            bgRect.setAttribute('width', width + fixedPadding * 2);
+            bgRect.setAttribute('height', height + fixedPadding * 2);
+            bgRect.setAttribute('fill', '#f6f4f1');
+            bgRect.setAttribute('stroke', 'none');
+            bgRect.setAttribute('opacity', '1'); // Ensure fully opaque
+            bgRect.setAttribute('filter', 'none'); // Explicitly disable any filters
+            bgRect.setAttribute('style', 'filter: none !important;'); // Force no filters
+            clonedSVG.insertBefore(bgRect, clonedSVG.firstChild);
+            
+            // Also set the SVG background color to match
+            clonedSVG.style.backgroundColor = '#f6f4f1';
+            
+            console.log('New viewBox:', newViewBox);
+          }
+
+          // Create simpler wrapper for mobile
+          const isMobile = window.innerWidth <= 768;
+          const wrapper = document.createElement('div');
+          wrapper.style.width = isMobile ? '600px' : '1080px';
+          wrapper.style.height = isMobile ? '800px' : '1920px';
+          wrapper.style.background = '#f6f4f1';
+          wrapper.style.display = 'flex';
+          wrapper.style.flexDirection = 'column';
+          wrapper.style.alignItems = 'center';
+          wrapper.style.padding = isMobile ? '40px 30px 40px 30px' : '100px 60px 80px 60px';
+          wrapper.style.fontFamily = "system-ui, sans-serif";
+
+          const title = document.createElement('h1');
+          title.textContent = "OUR DAILY";
+          title.style.fontSize = isMobile ? '48px' : '96px';
+          title.style.fontWeight = '900';
+          title.style.margin = '0';
+
+          const date = document.createElement('p');
+          date.textContent = formatDate();
+          date.style.fontSize = isMobile ? '24px' : '48px';
+          date.style.margin = isMobile ? '0 0 20px 0' : '0 0 40px 0';
+
+          const quoteCard = document.createElement('div');
+          quoteCard.style.border = '4px solid #000';
+          quoteCard.style.borderRadius = '16px';
+          quoteCard.style.padding = isMobile ? '15px 20px' : '20px 30px';
+          quoteCard.style.marginBottom = isMobile ? '30px' : '60px';
+          quoteCard.style.maxWidth = isMobile ? '500px' : '800px';
+          quoteCard.style.textAlign = 'left';
+
+          const quoteLine = document.createElement('p');
+          quoteLine.textContent = `"${this.getTodayQuote().text}"`;
+          quoteLine.style.fontSize = isMobile ? '30px' : '60px';
+          quoteLine.style.fontStyle = 'italic';
+          quoteLine.style.fontWeight = '600';
+          quoteLine.style.margin = '0 0 10px 0';
+          quoteLine.style.lineHeight = '1.1';
+
+          const quoteAuthor = document.createElement('p');
+          quoteAuthor.textContent = this.getTodayQuote().author;
+          quoteAuthor.style.fontSize = isMobile ? '30px' : '60px';
+          quoteAuthor.style.fontWeight = '500';
+          quoteAuthor.style.margin = '0';
+          quoteAuthor.style.lineHeight = '1.1';
+
+          quoteCard.appendChild(quoteLine);
+          quoteCard.appendChild(quoteAuthor);
+
+          const quiltContainer = document.createElement('div');
+          quiltContainer.style.width = isMobile ? '400px' : '800px';
+          quiltContainer.style.height = isMobile ? '400px' : '800px';
+          quiltContainer.style.transform = "rotate(-5deg)";
+          quiltContainer.style.position = "relative";
+          quiltContainer.appendChild(clonedSVG);
+          
+          // DEBUG: Identify the last added block by local user
+          if (lastAddedIndex !== null && lastAddedIndex < this.blocks.length) {
+            console.log('=== DEBUG: LAST ADDED BLOCK IDENTIFICATION ===');
+            console.log('lastAddedIndex:', lastAddedIndex);
+            
+            const lastAddedBlock = this.blocks[lastAddedIndex];
+            console.log('Last added block details:', {
+              index: lastAddedIndex,
+              color: lastAddedBlock.color,
+              position: { x: lastAddedBlock.x, y: lastAddedBlock.y },
+              size: { width: lastAddedBlock.width, height: lastAddedBlock.height },
+              center: { 
+                x: lastAddedBlock.x + lastAddedBlock.width / 2, 
+                y: lastAddedBlock.y + lastAddedBlock.height / 2 
+              }
+            });
+            
+            // Show all blocks for comparison
+            console.log('All blocks in quilt:');
+            this.blocks.forEach((block, index) => {
+              console.log(`Block ${index}:`, {
+                color: block.color,
+                position: { x: block.x, y: block.y },
+                size: { width: block.width, height: block.height },
+                center: { 
+                  x: block.x + block.width / 2, 
+                  y: block.y + block.height / 2 
+                }
+              });
+            });
+            
+            // Find blocks with similar colors to the target
+            const similarBlocks = this.blocks.filter(block => {
+              const targetColor = lastAddedBlock.color;
+              return block.color === targetColor || 
+                     block.color.includes(targetColor.substring(1, 4)) ||
+                     block.color.includes(targetColor.substring(4, 7));
+            });
+            console.log('Blocks with similar colors to target:', similarBlocks);
+            
+            console.log('=== END DEBUG ===');
+            
+            // ADD VISUAL INDICATOR: Simple dot on the last added block
+            const blockCenterX = lastAddedBlock.x + lastAddedBlock.width / 2;
+            const blockCenterY = lastAddedBlock.y + lastAddedBlock.height / 2;
+            
+            console.log('Block center (SVG coordinates):', blockCenterX, blockCenterY);
+            console.log('Block details:', {
+              x: lastAddedBlock.x,
+              y: lastAddedBlock.y,
+              width: lastAddedBlock.width,
+              height: lastAddedBlock.height,
+              centerX: blockCenterX,
+              centerY: blockCenterY
+            });
+            
+            // Create SVG circle element that encircles the block
+            const blockWidth = lastAddedBlock.width;
+            const blockHeight = lastAddedBlock.height;
+            
+            // Calculate circle radius to fit around the block with padding
+            const padding = 8; // Padding around the block
+            const radius = Math.max(blockWidth, blockHeight) / 2 + padding;
+            
+            const circleSVG = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circleSVG.setAttribute('cx', blockCenterX);
+            circleSVG.setAttribute('cy', blockCenterY);
+            circleSVG.setAttribute('r', radius);
+            circleSVG.setAttribute('fill', 'none'); // Transparent fill
+            circleSVG.setAttribute('stroke', '#000000');
+            circleSVG.setAttribute('stroke-width', '3');
+            circleSVG.setAttribute('opacity', '0.6'); // Semi-transparent
+            
+            console.log('Circle details:', {
+              blockSize: { width: blockWidth, height: blockHeight },
+              radius: radius,
+              center: { x: blockCenterX, y: blockCenterY }
+            });
+            
+            console.log('SVG circle position:', blockCenterX, blockCenterY);
+            console.log('Circle should encircle block with color:', lastAddedBlock.color);
+            
+            // Add the circle to the SVG
+            clonedSVG.appendChild(circleSVG);
+            
+          } else {
+            console.log('DEBUG: No lastAddedIndex available');
+            console.log('lastAddedIndex:', lastAddedIndex);
+            console.log('Total blocks:', this.blocks.length);
+          }  
+
+          const footer = document.createElement('div');
+          footer.style.width = '100%';
+          footer.style.display = 'flex';
+          footer.style.flexDirection = 'column';
+          footer.style.alignItems = 'flex-end';
+          footer.style.marginTop = isMobile ? '30px' : '60px';
+          footer.style.paddingRight = isMobile ? '20px' : '40px';
+
+          const bigLine = document.createElement('span');
+          bigLine.textContent = 'ADD YOUR COLOR';
+          bigLine.style.fontSize = isMobile ? '28px' : '55px';
+          bigLine.style.fontWeight = '900';
+
+          const smallLine = document.createElement('span');
+          smallLine.innerHTML = 'Visit <strong>@zakfoster.quilts</strong> — link in bio';
+          smallLine.style.fontSize = isMobile ? '22px' : '44px';
+          smallLine.style.fontWeight = '400';
+
+          footer.appendChild(bigLine);
+          footer.appendChild(smallLine);
+
+          const headerGroup = document.createElement('div');
+          headerGroup.style.alignSelf = 'flex-start';
+          headerGroup.style.textAlign = 'left';
+          headerGroup.style.marginLeft = isMobile ? '30px' : '60px';
+
+          headerGroup.appendChild(title);
+          headerGroup.appendChild(date);
+          headerGroup.appendChild(quoteCard);
+
+          wrapper.appendChild(headerGroup);
+          wrapper.appendChild(quiltContainer);
+          wrapper.appendChild(footer);
+
+          document.body.appendChild(wrapper);
+
+          try {
+            console.log('Starting image generation...');
+            
+            let canvas;
+            
+            if (window.innerWidth <= 768) {
+              // For mobile: Create simple canvas instantly (no html2canvas)
+              canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              canvas.width = 600;
+              canvas.height = 800;
+              
+              // Fill background
+              ctx.fillStyle = '#f6f4f1';
+              ctx.fillRect(0, 0, 600, 800);
+              
+              // Draw title
+              ctx.fillStyle = '#000';
+              ctx.font = 'bold 48px system-ui';
+              ctx.textAlign = 'center';
+              ctx.fillText('OUR DAILY', 300, 80);
+              
+              // Draw date
+              ctx.font = '24px system-ui';
+              ctx.fillText(formatDate(), 300, 120);
+              
+              // Draw quote
+              const quote = this.getTodayQuote();
+              ctx.font = 'italic 30px system-ui';
+              ctx.textAlign = 'center';
+              ctx.fillText(`"${quote.text}"`, 300, 180);
+              ctx.font = '24px system-ui';
+              ctx.fillText(quote.author, 300, 210);
+              
+              // Draw simple quilt representation
+              ctx.fillStyle = '#f7b733';
+              ctx.fillRect(100, 250, 400, 400);
+              
+              // Draw footer
+              ctx.font = 'bold 28px system-ui';
+              ctx.textAlign = 'center';
+              ctx.fillText('ADD YOUR COLOR', 300, 720);
+              ctx.font = '22px system-ui';
+              ctx.fillText('Visit @zakfoster.quilts', 300, 750);
+              
+              console.log('Simple canvas generation completed');
+            } else {
+              // For desktop: Use html2canvas as before
+              const canvasPromise = html2canvas(wrapper, {
+                scale: 1,
+                backgroundColor: '#f6f4f1',
+                useCORS: true,
+                allowTaint: true,
+                logging: false,
+                width: 1080,
+                height: 1920
+              });
+              
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Image generation timeout')), 15000);
+              });
+              
+              canvas = await Promise.race([canvasPromise, timeoutPromise]);
+              console.log('html2canvas conversion completed');
+            }
+
+            document.body.removeChild(wrapper);
+
+            // Use toDataURL instead of toBlob for better compatibility
+            const dataURL = canvas.toDataURL('image/png', 0.9);
+            console.log('Canvas converted to data URL');
+
+            // Try native sharing first
+            if (navigator.canShare) {
+              try {
+                // Convert data URL to blob
+                const response = await fetch(dataURL);
+                const blob = await response.blob();
+                console.log('Blob created from data URL, size:', blob.size);
+                
+                const filesArray = [new File([blob], 'community-quilt.png', { type: 'image/png' })];
+                const shareData = {
+                  files: filesArray,
+                  title: "Today's Community Quilt",
+                  text: "Tag me on Instagram if you're sharing! @zakfoster.quilts 🌈✨"
+                };
+
+                console.log('Attempting native share...');
+                await navigator.share(shareData);
+                showToast("Thanks for sharing! Tag me @zakfoster.quilts 🌈✨");
+                return;
+              } catch (shareError) {
+                console.log('Native sharing failed, falling back to download:', shareError);
+              }
+            }
+
+            // Fallback to download
+            console.log('Using download fallback...');
+            const link = document.createElement('a');
+            link.download = 'community-quilt.png';
+            link.href = dataURL;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("Image saved! Tag me @zakfoster.quilts 🌈✨");
+            
+          } catch (canvasError) {
+            console.error('Error in html2canvas:', canvasError);
+            if (document.body.contains(wrapper)) {
+              document.body.removeChild(wrapper);
+            }
+            
+
+            
+            handleError(canvasError, 'shareFlow');
+          }
+
+        } catch (error) {
+          handleError(error, 'shareFlow');
+          throw error;
+        }
+      }
+
+      getTodayQuote() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const todayString = `${year}-${month}-${day}`;
+        const dayIndex = Math.floor(new Date(todayString).getTime() / (1000 * 60 * 60 * 24));
+        const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
+        return this.quotes[quoteIndex];
+      }
+
+      displayQuote() {
+        try {
+          const { text, author } = this.getTodayQuote();
+          const quoteLine = document.querySelector('.quote-line');
+          const quoteAuthor = document.querySelector('.quote-author');
+          
+          if (quoteLine) quoteLine.textContent = text;
+          if (quoteAuthor) quoteAuthor.textContent = author;
+        } catch (error) {
+          handleError(error, 'displayQuote');
+        }
+      }
+
+      checkForOverlaps(currentBlock, currentIndex) {
+        // Check if current block overlaps with any previous blocks
+        for (let i = 0; i < currentIndex; i++) {
+          const previousBlock = this.blocks[i];
+          
+          // Simple rectangle overlap detection
+          const overlapX = Math.max(0, 
+            Math.min(currentBlock.x + currentBlock.width, previousBlock.x + previousBlock.width) - 
+            Math.max(currentBlock.x, previousBlock.x)
+          );
+          
+          const overlapY = Math.max(0,
+            Math.min(currentBlock.y + currentBlock.height, previousBlock.y + previousBlock.height) - 
+            Math.max(currentBlock.y, previousBlock.y)
+          );
+          
+          // If there's significant overlap (more than 20% of either block's area)
+          const overlapArea = overlapX * overlapY;
+          const currentArea = currentBlock.width * currentBlock.height;
+          const previousArea = previousBlock.width * previousBlock.height;
+          
+          if (overlapArea > 0 && (overlapArea > currentArea * 0.2 || overlapArea > previousArea * 0.2)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      checkEdgeAdjacency(currentBlock, edgePosition) {
+        // Check if a specific edge of the current block is adjacent to other blocks
+        const tolerance = 10; // Distance tolerance for adjacency
+        
+        for (let i = 0; i < this.blocks.length; i++) {
+          const otherBlock = this.blocks[i];
+          if (otherBlock === currentBlock) continue;
+          
+          let isAdjacent = false;
+          
+          switch (edgePosition) {
+            case 'top':
+              // Check if this block's top edge is near another block's bottom edge
+              isAdjacent = Math.abs(currentBlock.y - (otherBlock.y + otherBlock.height)) < tolerance;
+              break;
+            case 'right':
+              // Check if this block's right edge is near another block's left edge
+              isAdjacent = Math.abs((currentBlock.x + currentBlock.width) - otherBlock.x) < tolerance;
+              break;
+            case 'bottom':
+              // Check if this block's bottom edge is near another block's top edge
+              isAdjacent = Math.abs((currentBlock.y + currentBlock.height) - otherBlock.y) < tolerance;
+              break;
+            case 'left':
+              // Check if this block's left edge is near another block's right edge
+              isAdjacent = Math.abs(currentBlock.x - (otherBlock.x + otherBlock.width)) < tolerance;
+              break;
+          }
+          
+          if (isAdjacent) return true;
+        }
+        
+        return false;
+      }
+
+      isOuterEdge(currentBlock, edgePosition) {
+        // Check if this edge is on the outer boundary of the quilt
+        const quiltBounds = this.getQuiltBounds();
+        const tolerance = 15; // Larger tolerance to allow more freedom
+        
+        switch (edgePosition) {
+          case 'top':
+            return Math.abs(currentBlock.y - quiltBounds.top) < tolerance;
+          case 'right':
+            return Math.abs((currentBlock.x + currentBlock.width) - quiltBounds.right) < tolerance;
+          case 'bottom':
+            return Math.abs((currentBlock.y + currentBlock.height) - quiltBounds.bottom) < tolerance;
+          case 'left':
+            return Math.abs(currentBlock.x - quiltBounds.left) < tolerance;
+          default:
+            return false;
+        }
+      }
+
+      getQuiltBounds() {
+        // Calculate the bounding box of all blocks
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
+        this.blocks.forEach(block => {
+          minX = Math.min(minX, block.x);
+          minY = Math.min(minY, block.y);
+          maxX = Math.max(maxX, block.x + block.width);
+          maxY = Math.max(maxY, block.y + block.height);
+        });
+        
+        return { top: minY, right: maxX, bottom: maxY, left: minX };
+      }
+
+      createOrganicQuiltBoundary(bounds) {
+        // Create an organic boundary around the entire quilt
+        const padding = 30; // More padding to allow blocks to break out
+        const variation = 25; // More organic edge variation
+        
+        // Expand bounds with more padding to allow freedom
+        const expandedBounds = {
+          top: bounds.top - padding,
+          right: bounds.right + padding,
+          bottom: bounds.bottom + padding,
+          left: bounds.left - padding
+        };
+        
+        // Create organic edge points for each side
+        const createOrganicSide = (startX, startY, endX, endY, isVertical = false) => {
+          const numPoints = 8; // More points for smoother curves
+          const points = [];
+          
+          for (let i = 0; i <= numPoints; i++) {
+            const t = i / numPoints;
+            const x = startX + (endX - startX) * t;
+            const y = startY + (endY - startY) * t;
+            
+            // Add organic variation
+            const variationAmount = (Math.random() - 0.5) * variation;
+            const organicX = x + (isVertical ? variationAmount : 0);
+            const organicY = y + (isVertical ? 0 : variationAmount);
+            
+            points.push({ x: organicX, y: organicY });
+          }
+          
+          return points;
+        };
+        
+        // Generate organic sides
+        const topSide = createOrganicSide(expandedBounds.left, expandedBounds.top, expandedBounds.right, expandedBounds.top, false);
+        const rightSide = createOrganicSide(expandedBounds.right, expandedBounds.top, expandedBounds.right, expandedBounds.bottom, true);
+        const bottomSide = createOrganicSide(expandedBounds.right, expandedBounds.bottom, expandedBounds.left, expandedBounds.bottom, false);
+        const leftSide = createOrganicSide(expandedBounds.left, expandedBounds.bottom, expandedBounds.left, expandedBounds.top, true);
+        
+        // Create path with organic boundary
+        const pathData = `M ${topSide[0].x},${topSide[0].y}
+                          ${topSide.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                          L ${topSide[topSide.length - 1].x},${topSide[topSide.length - 1].y}
+                          ${rightSide.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                          L ${rightSide[rightSide.length - 1].x},${rightSide[rightSide.length - 1].y}
+                          ${bottomSide.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                          L ${bottomSide[bottomSide.length - 1].x},${bottomSide[bottomSide.length - 1].y}
+                          ${leftSide.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
+                          L ${leftSide[leftSide.length - 1].x},${leftSide[leftSide.length - 1].y} Z`;
+        
+        return pathData;
+      }
+
+      updateThankYouMessage() {
+        const thankYouElement = document.querySelector('.thank-you-message');
+        if (thankYouElement) {
+          if (this.contributorCount === 1) {
+            thankYouElement.textContent = "Thank you for adding your block! Look what we're making together <3";
+          } else {
+            thankYouElement.textContent = `Thank you for adding your block! Look what ${this.contributorCount} people are making together <3`;
+          }
+        }
+      }
+
+      handleKeyDown(event) {
+        if (event.key === 'Escape') {
+          if (this.currentScreen === 'screen-quote') {
+            this.showScreen('screen-portal');
+          } else if (this.currentScreen === 'screen-color') {
+            this.showScreen('screen-quote');
+          } else if (this.currentScreen === 'screen-quilt') {
+            this.showScreen('screen-color');
+          }
+        }
+      }
+    }
+
+    // Modal functions - moved to global scope
+    window.showQuiltModal = function(thumbnail) {
+      console.log('showQuiltModal called from:', new Error().stack);
+      const modal = document.getElementById('quiltModal');
+      console.log('Modal element:', modal);
+      const modalQuilt = modal.querySelector('.modal-quilt');
+      const modalDate = modal.querySelector('.modal-date');
+      const modalQuoteText = modal.querySelector('.modal-quote-text');
+      const modalQuoteAuthor = modal.querySelector('.modal-quote-author');
+      const modalStats = modal.querySelector('.modal-stats');
+      
+      // Get data from the thumbnail's parent
+      const quiltInfo = thumbnail.parentElement.querySelector('.quilt-info');
+      const date = quiltInfo.querySelector('h3').textContent;
+      const quoteText = quiltInfo.querySelector('.quote-text').textContent;
+      const quoteAuthor = quiltInfo.querySelector('.quote-author').textContent;
+      const stats = quiltInfo.querySelector('.quilt-stats').textContent;
+      
+      // Clone the SVG and make it larger
+      const originalSvg = thumbnail.querySelector('svg');
+      const clonedSvg = originalSvg.cloneNode(true);
+      clonedSvg.setAttribute('width', '400');
+      clonedSvg.setAttribute('height', '400');
+      
+      // Populate modal
+      modalQuilt.innerHTML = '';
+      modalQuilt.appendChild(clonedSvg);
+      modalDate.textContent = date;
+      modalQuoteText.textContent = quoteText;
+      modalQuoteAuthor.textContent = quoteAuthor;
+      modalStats.textContent = stats;
+      
+      // Show modal
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+    
+    window.closeQuiltModal = function() {
+      const modal = document.getElementById('quiltModal');
+      modal.style.display = 'none';
+      document.body.style.overflow = 'auto';
+    }
+    
+    // Close modal with Escape key
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeQuiltModal();
+      }
+    });
+    
+    // Test modal function - moved to global scope
+    window.testModal = function() {
+      console.log('testModal called');
+      const modal = document.getElementById('quiltModal');
+      console.log('Modal element:', modal);
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+    
+    // Add click handlers when DOM is loaded
+    function addQuiltThumbnailHandlers() {
+      const thumbnails = document.querySelectorAll('.quilt-thumbnail');
+      console.log('Found thumbnails:', thumbnails.length);
+      thumbnails.forEach((thumbnail, index) => {
+        console.log('Adding click handler to thumbnail', index);
+        thumbnail.addEventListener('click', function(e) {
+          console.log('Thumbnail clicked via addEventListener', this);
+          // Only allow clicks when the archive screen is active
+          const archiveScreen = document.getElementById('screen-archive');
+          if (!archiveScreen || !archiveScreen.classList.contains('active')) {
+            console.log('Archive screen not active, ignoring click');
+            return; // Don't prevent default or stop propagation when ignoring
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          showQuiltModal(this);
+        });
+      });
+      
+      // Add modal background click handler
+      const modal = document.getElementById('quiltModal');
+      if (modal) {
+        modal.addEventListener('click', function(e) {
+          if (e.target === modal) {
+            closeQuiltModal();
+          }
+        });
+      }
+    }
+    
+    // Share archived quilt function - moved to global scope
+    window.shareArchivedQuilt = async function(button) {
+      console.log('shareArchivedQuilt function called');
+      try {
+        console.log('Disabling button...');
+        button.disabled = true;
+        console.log('Showing toast...');
+        showToast("Preparing image...");
+        
+        // Get data from the modal
+        const modal = document.getElementById('quiltModal');
+        const modalQuilt = modal.querySelector('.modal-quilt svg');
+        const modalDate = modal.querySelector('.modal-date').textContent;
+        const modalQuoteText = modal.querySelector('.modal-quote-text').textContent;
+        const modalQuoteAuthor = modal.querySelector('.modal-quote-author').textContent;
+        const modalStats = modal.querySelector('.modal-stats').textContent;
+        
+        // Clone the SVG for sharing
+        const clonedSVG = modalQuilt.cloneNode(true);
+        clonedSVG.setAttribute('width', '800');
+        clonedSVG.setAttribute('height', '800');
+        clonedSVG.style.transform = "rotate(-5deg)";
+        
+        // Expand viewBox by small fixed amount
+        const originalViewBox = clonedSVG.getAttribute('viewBox');
+        if (originalViewBox) {
+          const [x, y, width, height] = originalViewBox.split(' ').map(Number);
+          const fixedPadding = 20;
+          const newViewBox = `${x - fixedPadding} ${y - fixedPadding} ${width + fixedPadding * 2} ${height + fixedPadding * 2}`;
+          clonedSVG.setAttribute('viewBox', newViewBox);
+          
+          // Add background rect
+          const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          bgRect.setAttribute('x', x - fixedPadding);
+          bgRect.setAttribute('y', y - fixedPadding);
+          bgRect.setAttribute('width', width + fixedPadding * 2);
+          bgRect.setAttribute('height', height + fixedPadding * 2);
+          bgRect.setAttribute('fill', '#f6f4f1');
+          bgRect.setAttribute('stroke', 'none');
+          bgRect.setAttribute('opacity', '1');
+          bgRect.setAttribute('filter', 'none');
+          bgRect.setAttribute('style', 'filter: none !important;');
+          clonedSVG.insertBefore(bgRect, clonedSVG.firstChild);
+          
+          clonedSVG.style.backgroundColor = '#f6f4f1';
+        }
+
+        // Create wrapper
+        const isMobile = window.innerWidth <= 768;
+        const wrapper = document.createElement('div');
+        wrapper.style.width = isMobile ? '600px' : '1080px';
+        wrapper.style.height = isMobile ? '800px' : '1920px';
+        wrapper.style.background = '#f6f4f1';
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'column';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.padding = isMobile ? '40px 30px 40px 30px' : '100px 60px 80px 60px';
+        wrapper.style.fontFamily = "system-ui, sans-serif";
+
+        const title = document.createElement('h1');
+        title.textContent = "OUR DAILY";
+        title.style.fontSize = isMobile ? '48px' : '96px';
+        title.style.fontWeight = '900';
+        title.style.margin = '0';
+
+        const date = document.createElement('p');
+        date.textContent = modalDate;
+        date.style.fontSize = isMobile ? '24px' : '48px';
+        date.style.margin = isMobile ? '0 0 20px 0' : '0 0 40px 0';
+
+        const quoteCard = document.createElement('div');
+        quoteCard.style.border = '4px solid #000';
+        quoteCard.style.borderRadius = '16px';
+        quoteCard.style.padding = isMobile ? '15px 20px' : '20px 30px';
+        quoteCard.style.marginBottom = isMobile ? '30px' : '60px';
+        quoteCard.style.maxWidth = isMobile ? '500px' : '800px';
+        quoteCard.style.textAlign = 'left';
+
+        const quoteLine = document.createElement('p');
+        quoteLine.textContent = `"${modalQuoteText}"`;
+        quoteLine.style.fontSize = isMobile ? '30px' : '60px';
+        quoteLine.style.fontStyle = 'italic';
+        quoteLine.style.fontWeight = '600';
+        quoteLine.style.margin = '0 0 10px 0';
+        quoteLine.style.lineHeight = '1.1';
+
+        const quoteAuthor = document.createElement('p');
+        quoteAuthor.textContent = modalQuoteAuthor;
+        quoteAuthor.style.fontSize = isMobile ? '30px' : '60px';
+        quoteAuthor.style.fontWeight = '500';
+        quoteAuthor.style.margin = '0';
+        quoteAuthor.style.lineHeight = '1.1';
+
+        quoteCard.appendChild(quoteLine);
+        quoteCard.appendChild(quoteAuthor);
+
+        const quiltContainer = document.createElement('div');
+        quiltContainer.style.width = isMobile ? '400px' : '800px';
+        quiltContainer.style.height = isMobile ? '400px' : '800px';
+        quiltContainer.style.transform = "rotate(-5deg)";
+        quiltContainer.style.position = "relative";
+        quiltContainer.appendChild(clonedSVG);
+
+        const footer = document.createElement('div');
+        footer.style.width = '100%';
+        footer.style.display = 'flex';
+        footer.style.flexDirection = 'column';
+        footer.style.alignItems = 'flex-end';
+        footer.style.marginTop = isMobile ? '30px' : '60px';
+        footer.style.paddingRight = isMobile ? '20px' : '40px';
+
+        const bigLine = document.createElement('span');
+        bigLine.textContent = 'ADD YOUR COLOR';
+        bigLine.style.fontSize = isMobile ? '28px' : '55px';
+        bigLine.style.fontWeight = '900';
+
+        const smallLine = document.createElement('span');
+        smallLine.innerHTML = 'Visit <strong>@zakfoster.quilts</strong> — link in bio';
+        smallLine.style.fontSize = isMobile ? '22px' : '44px';
+        smallLine.style.fontWeight = '400';
+
+        footer.appendChild(bigLine);
+        footer.appendChild(smallLine);
+
+        const headerGroup = document.createElement('div');
+        headerGroup.style.alignSelf = 'flex-start';
+        headerGroup.style.textAlign = 'left';
+        headerGroup.style.marginLeft = isMobile ? '30px' : '60px';
+
+        headerGroup.appendChild(title);
+        headerGroup.appendChild(date);
+        headerGroup.appendChild(quoteCard);
+
+        wrapper.appendChild(headerGroup);
+        wrapper.appendChild(quiltContainer);
+        wrapper.appendChild(footer);
+
+        document.body.appendChild(wrapper);
+
+        try {
+          let canvas;
+          
+          if (window.innerWidth <= 768) {
+            // For mobile: Create simple canvas instantly
+            canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 600;
+            canvas.height = 800;
+            
+            // Fill background
+            ctx.fillStyle = '#f6f4f1';
+            ctx.fillRect(0, 0, 600, 800);
+            
+            // Draw title
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 48px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText('OUR DAILY', 300, 80);
+            
+            // Draw date
+            ctx.font = '24px system-ui';
+            ctx.fillText(modalDate, 300, 120);
+            
+            // Draw quote
+            ctx.font = 'italic 30px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText(`"${modalQuoteText}"`, 300, 180);
+            ctx.font = '24px system-ui';
+            ctx.fillText(modalQuoteAuthor, 300, 210);
+            
+            // Draw simple quilt representation
+            ctx.fillStyle = '#f7b733';
+            ctx.fillRect(100, 250, 400, 400);
+            
+            // Draw footer
+            ctx.font = 'bold 28px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText('ADD YOUR COLOR', 300, 720);
+            ctx.font = '22px system-ui';
+            ctx.fillText('Visit @zakfoster.quilts', 300, 750);
+          } else {
+            // For desktop: Use html2canvas
+            const canvasPromise = html2canvas(wrapper, {
+              scale: 1,
+              backgroundColor: '#f6f4f1',
+              useCORS: true,
+              allowTaint: true,
+              logging: false,
+              width: 1080,
+              height: 1920
+            });
+            
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Image generation timeout')), 15000);
+            });
+            
+            canvas = await Promise.race([canvasPromise, timeoutPromise]);
+          }
+
+          document.body.removeChild(wrapper);
+
+          // Use toDataURL instead of toBlob for better compatibility
+          const dataURL = canvas.toDataURL('image/png', 0.9);
+
+          // Try native sharing first
+          if (navigator.canShare) {
+            try {
+              // Convert data URL to blob
+              const response = await fetch(dataURL);
+              const blob = await response.blob();
+              
+              const filesArray = [new File([blob], 'archived-quilt.png', { type: 'image/png' })];
+              const shareData = {
+                files: filesArray,
+                title: "Archived Community Quilt",
+                text: "Tag me on Instagram if you're sharing! @zakfoster.quilts 🌈✨"
+              };
+
+              await navigator.share(shareData);
+              showToast("Thanks for sharing! Tag me @zakfoster.quilts 🌈✨");
+              return;
+            } catch (shareError) {
+              console.log('Native sharing failed, falling back to download:', shareError);
+            }
+          }
+
+          // Fallback to download
+          const link = document.createElement('a');
+          link.download = 'archived-quilt.png';
+          link.href = dataURL;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          showToast("Image saved! Tag me @zakfoster.quilts 🌈✨");
+          
+        } catch (canvasError) {
+          console.error('Error in canvas generation:', canvasError);
+          if (document.body.contains(wrapper)) {
+            document.body.removeChild(wrapper);
+          }
+          handleError(canvasError, 'shareArchivedQuilt');
+        }
+        
+        button.disabled = false;
+      } catch (error) {
+        handleError(error, 'shareArchivedQuilt');
+        showToast('Share failed. Please try again.');
+        button.disabled = false;
+      }
+    }
+
+    // Initialize the application
+    document.addEventListener('DOMContentLoaded', async () => {
+      const app = new OurDailyApp();
+      await app.initialize();
+      
+      // Add click handlers for quilt thumbnails
+      addQuiltThumbnailHandlers();
+    });
+  </script>
+</body>
+</html> 
