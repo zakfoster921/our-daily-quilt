@@ -748,6 +748,8 @@
         <svg id="quilt" viewBox="-100 -100 800 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Community quilt with colorful blocks"></svg>
               <p class="thank-you-message" aria-live="polite">Thank you for adding your block! Look what we're making together <3</p>
         <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white; margin: 0.5rem;">TEST: Add Random Block</button>
+        <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white; margin: 0.5rem;">SHOW ME MY PIECE</button>
+        <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white; margin: 0.5rem;">TEST: Simulate Different User</button>
         <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
         <button class="btn" data-next="screen-archive" aria-label="View quilt archive">View Archive</button>
         <button class="btn" data-next="screen-about" aria-label="About this project">About</button>
@@ -886,6 +888,16 @@
       return hexRegex.test(color);
     }
 
+    // User identification helper
+    function getOrCreateUserId() {
+      let userId = localStorage.getItem('ourDailyUserId');
+      if (!userId) {
+        userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        localStorage.setItem('ourDailyUserId', userId);
+      }
+      return userId;
+    }
+
     function getTodayKey() {
       const now = new Date();
       const year = now.getFullYear();
@@ -949,6 +961,10 @@
         this.quiltDoc = null;
         this.currentScreen = 'screen-portal';
         
+        // User identification system
+        this.currentUserId = this.getOrCreateUserId();
+        this.userPiecesHighlighted = false;
+        
         this.quotes = [
           { text: "Art washes away from the soul the dust of everyday life.", author: "— Pablo Picasso" },
           { text: "Creativity takes courage.", author: "— Henri Matisse" },
@@ -958,6 +974,15 @@
           { text: "You can't use up creativity. The more you use, the more you have.", author: "— Maya Angelou" }
         ];
         this.shuffledIndexes = [2, 4, 0, 5, 3, 1];
+      }
+
+      getOrCreateUserId() {
+        let userId = localStorage.getItem('ourDailyUserId');
+        if (!userId) {
+          userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          localStorage.setItem('ourDailyUserId', userId);
+        }
+        return userId;
       }
 
       async initialize() {
@@ -1045,6 +1070,18 @@
         const testAddBlock = document.getElementById('testAddBlock');
         if (testAddBlock) {
           testAddBlock.addEventListener('click', this.handleTestAddBlock.bind(this));
+        }
+
+        // Show my piece button
+        const showMyPieceBtn = document.getElementById('showMyPieceBtn');
+        if (showMyPieceBtn) {
+          showMyPieceBtn.addEventListener('click', this.handleShowMyPiece.bind(this));
+        }
+
+        // Test different user button
+        const testDifferentUserBtn = document.getElementById('testDifferentUserBtn');
+        if (testDifferentUserBtn) {
+          testDifferentUserBtn.addEventListener('click', this.handleTestDifferentUser.bind(this));
         }
 
         // Color picker
@@ -1335,12 +1372,21 @@
           // Clear existing content
           this.quiltSVG.innerHTML = '';
           
-          // Create SVG definitions for organic edges
+          // Create SVG definitions for organic edges and user highlight
           const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
           defs.innerHTML = `
             <filter id="organicEdges" x="0" y="0" width="200%" height="200%">
               <feTurbulence baseFrequency="0.015" numOctaves="2" result="turb"/>
               <feDisplacementMap in="SourceGraphic" in2="turb" scale="2"/>
+            </filter>
+            <filter id="userHighlight" x="0" y="0" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feFlood flood-color="#FFD700" flood-opacity="0.6" result="glow"/>
+              <feComposite in="glow" in2="blur" operator="in" result="glowBlur"/>
+              <feMerge>
+                <feMergeNode in="glowBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
             </filter>`;
           this.quiltSVG.appendChild(defs);
           
@@ -1389,7 +1435,13 @@
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', pathData);
         path.setAttribute('fill', piece.color);
-        path.setAttribute('filter', 'url(#organicEdges)');
+        
+        // Apply user highlight if this is the current user's piece and highlighting is active
+        if (piece.userId === this.currentUserId && this.userPiecesHighlighted) {
+          path.setAttribute('filter', 'url(#userHighlight)');
+        } else {
+          path.setAttribute('filter', 'url(#organicEdges)');
+        }
         
         // Animate all pieces that are newly added (last 4 pieces for first 5 submissions, last 2 for others)
         const piecesToAnimate = this.submissionCount <= 5 ? 4 : 2;
@@ -1609,6 +1661,88 @@
         } catch (error) {
           handleError(error, 'handleTestAddBlock');
           showToast('Test add failed.');
+        }
+      }
+
+      handleShowMyPiece() {
+        try {
+          // Toggle highlighting
+          this.userPiecesHighlighted = !this.userPiecesHighlighted;
+          
+          console.log(`Current user ID: ${this.currentUserId}`);
+          console.log(`Total pieces: ${this.pieces.length}`);
+          console.log(`Total patches: ${this.patches.length}`);
+          console.log(`Total blocks: ${this.blocks.length}`);
+          
+          // Count user's pieces
+          const userPieces = this.pieces.filter(piece => piece.userId === this.currentUserId);
+          const userPatches = this.patches.filter(patch => 
+            patch.pieces && patch.pieces.some(piece => piece.userId === this.currentUserId)
+          );
+          const userBlocks = this.blocks.filter(block => 
+            block.patches && block.patches.some(patch => 
+              patch.pieces && patch.pieces.some(piece => piece.userId === this.currentUserId)
+            )
+          );
+          
+          console.log(`User pieces found: ${userPieces.length}`);
+          console.log(`User patches found: ${userPatches.length}`);
+          console.log(`User blocks found: ${userBlocks.length}`);
+          
+          const totalUserPieces = userPieces.length + userPatches.length + userBlocks.length;
+          
+          if (this.userPiecesHighlighted) {
+            if (totalUserPieces > 0) {
+              showToast(`Found ${totalUserPieces} of your pieces! ✨`);
+            } else {
+              showToast("You haven't added any pieces yet. Try adding your first color!");
+            }
+          } else {
+            showToast('Highlighting turned off');
+          }
+          
+          // Re-render to show/hide highlights
+          if (this.isInitialized) {
+            this.renderBlocks();
+          }
+          
+        } catch (error) {
+          handleError(error, 'handleShowMyPiece');
+          showToast('Failed to highlight your pieces. Please try again.');
+        }
+      }
+
+      handleTestDifferentUser() {
+        try {
+          // Temporarily change the user ID to simulate a different user
+          const originalUserId = this.currentUserId;
+          this.currentUserId = `test_user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          console.log(`Switched from user: ${originalUserId} to: ${this.currentUserId}`);
+          showToast(`Now simulating user: ${this.currentUserId.substring(0, 20)}...`);
+          
+          // Add a test piece with the new user ID
+          const randomColor = hslToHex(Math.floor(Math.random() * 360), 65, 50);
+          const success = this.addPieceToQuilt(randomColor);
+          
+          if (success) {
+            this.lastAddedForShare = this.lastAddedIndex;
+            if (this.isInitialized) {
+              this.renderBlocks();
+            }
+            showToast(`Added piece for different user! Now try "SHOW ME MY PIECE"`);
+          }
+          
+          // Reset back to original user after a delay
+          setTimeout(() => {
+            this.currentUserId = originalUserId;
+            console.log(`Switched back to original user: ${originalUserId}`);
+            showToast('Switched back to original user');
+          }, 5000); // 5 seconds
+          
+        } catch (error) {
+          handleError(error, 'handleTestDifferentUser');
+          showToast('Failed to simulate different user.');
         }
       }
 
@@ -2186,7 +2320,6 @@
         const baseY = gridStartY + gridY * cellHeight + cellHeight / 2;
         
         console.log(`Piece ${pieceIndex}: Grid position (${gridX}, ${gridY}), Cell size: ${cellWidth.toFixed(1)}x${cellHeight.toFixed(1)}, Max piece size: ${maxPieceSize.toFixed(1)}px, Jitter: ${actualJitter.toFixed(1)}px`);
-        console.log(`Grid start: (${gridStartX.toFixed(1)}, ${gridStartY.toFixed(1)}), ViewBox: -100 to 700, Final position: (${baseX.toFixed(1)}, ${baseY.toFixed(1)})`);
         
         // Add jitter for organic feel (reduced to prevent touching)
         const jitterX = (Math.random() - 0.5) * Math.min(actualJitter, 8); // Reduced max jitter
@@ -2210,8 +2343,12 @@
         x = Math.max(-100, Math.min(x, 700 - width));
         y = Math.max(-100, Math.min(y, 700 - height));
         
-        return {
+        const piece = {
           id: `piece_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          userId: this.currentUserId,
+          submissionId: this.submissionCount,
+          pieceIndex: pieceIndex,
+          timestamp: Date.now(),
           x: x,
           y: y,
           width: width,
@@ -2220,6 +2357,9 @@
           type: 'piece',
           edges: this.calculateEdges(width, height) // Store edge lengths for matching
         };
+        
+        console.log(`Created piece for user: ${this.currentUserId} (submission ${this.submissionCount}, piece ${pieceIndex})`);
+        return piece;
       }
 
 
