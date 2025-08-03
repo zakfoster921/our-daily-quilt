@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download Survey Data</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+      background-color: #f6f4f1;
+      line-height: 1.6;
+    }
+    
+    .container {
+      background: white;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      color: #333;
+      margin-bottom: 1rem;
+    }
+    
+    .btn {
+      background: #000;
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin: 1rem 0;
+      transition: background-color 0.2s;
+    }
+    
+    .btn:hover {
+      background: #333;
+    }
+    
+    .btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .status {
+      margin: 1rem 0;
+      padding: 1rem;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    
+    .status.loading {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    
+    .status.success {
+      background: #e8f5e8;
+      color: #2e7d32;
+    }
+    
+    .status.error {
+      background: #ffebee;
+      color: #c62828;
+    }
+    
+    .summary {
+      background: #f5f5f5;
+      padding: 1rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Download Survey Data</h1>
+    <p>Click the button below to download all survey responses from Firebase.</p>
+    
+    <button id="downloadBtn" class="btn">Download Survey Data</button>
+    
+    <div id="status" class="status" style="display: none;"></div>
+    <div id="summary" class="summary" style="display: none;"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+    // Firebase configuration
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+      authDomain: "our-daily.firebaseapp.com",
+      projectId: "our-daily",
+      storageBucket: "our-daily.firebasestorage.app",
+      messagingSenderId: "337201931314",
+      appId: "1:337201931314:web:fb5677846d03eb285ac82b",
+      measurementId: "G-65XB7QC1F4"
+    };
+
+    let db = null;
+
+    function showStatus(message, type = 'loading') {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = `status ${type}`;
+      status.style.display = 'block';
+    }
+
+    function showSummary(data) {
+      const summary = document.getElementById('summary');
+      summary.innerHTML = `
+        <strong>Export Summary:</strong><br>
+        • Total surveys: ${data.totalSurveys}<br>
+        • Total responses: ${data.totalResponses}<br>
+        • Date range: ${data.dateRange.start} to ${data.dateRange.end}
+      `;
+      summary.style.display = 'block';
+    }
+
+    async function downloadSurveyData() {
+      const downloadBtn = document.getElementById('downloadBtn');
+      downloadBtn.disabled = true;
+      
+      try {
+        showStatus('Initializing Firebase...', 'loading');
+        
+        // Initialize Firebase
+        const app = initializeApp(FIREBASE_CONFIG);
+        db = getFirestore(app);
+        
+        showStatus('Fetching survey data...', 'loading');
+        
+        // Get all surveys
+        const surveysCollection = collection(db, "surveys");
+        const querySnapshot = await getDocs(surveysCollection);
+        
+        const allSurveys = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          allSurveys.push({
+            id: doc.id,
+            ...data
+          });
+        });
+        
+        showStatus(`Found ${allSurveys.length} surveys. Creating export...`, 'loading');
+        
+        // Create export data
+        const exportData = {
+          exportTimestamp: new Date().toISOString(),
+          exportSummary: {
+            totalSurveys: allSurveys.length,
+            totalResponses: allSurveys.reduce((sum, survey) => sum + (survey.responses ? survey.responses.length : 0), 0),
+            dateRange: {
+              start: allSurveys.length > 0 ? allSurveys[allSurveys.length - 1].timestamp : null,
+              end: allSurveys.length > 0 ? allSurveys[0].timestamp : null
+            }
+          },
+          surveys: allSurveys
+        };
+        
+        // Create downloadable file
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const dataBlob = new Blob([dataStr], {type: 'application/json'});
+        const url = URL.createObjectURL(dataBlob);
+        
+        // Trigger download
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `survey-data-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        showStatus(`✅ Successfully exported ${allSurveys.length} surveys!`, 'success');
+        showSummary(exportData.exportSummary);
+        
+      } catch (error) {
+        console.error('Failed to download survey data:', error);
+        showStatus(`❌ Error: ${error.message}`, 'error');
+      } finally {
+        downloadBtn.disabled = false;
+      }
+    }
+
+    // Set up event listener
+    document.getElementById('downloadBtn').addEventListener('click', downloadSurveyData);
+  </script>
+</body>
+</html> 

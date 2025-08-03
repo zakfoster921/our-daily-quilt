@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -544,28 +543,12 @@
       animation: scaleUpSpring 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     }
     
-    .block-transparent {
-      animation: blockTransparent 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-    }
-    
     @keyframes scaleUpSpring {
       0% { transform: scale(0); opacity: 0; }
       40% { transform: scale(0.8); opacity: 0; }
       60% { transform: scale(1.05); opacity: 1; }
       80% { transform: scale(0.98); opacity: 1; }
       100% { transform: scale(1); opacity: 1; }
-    }
-    
-    @keyframes blockTransparent {
-      0% { 
-        opacity: 1; 
-      }
-      50% { 
-        opacity: 0; 
-      }
-      100% { 
-        opacity: 1; 
-      }
     }
     
     /* Fabric texture using CSS */
@@ -953,7 +936,7 @@
     // Main application class
     class OurDailyApp {
       constructor() {
-        this.blocks = [{ x: 0, y: 0, width: CONFIG.APP.quiltSize, height: CONFIG.APP.quiltSize, color: CONFIG.APP.defaultColor }];
+        this.blocks = []; // Start with empty quilt - first user submission creates the first piece
         this.lastAddedIndex = null;
         this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
         this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
@@ -1040,28 +1023,11 @@
 
         if (!colorWheel || !indicator || !valueSlider) return;
         
-        // Debug: Check for any preview elements and remove them
+        // Remove any existing preview elements
         const previewElement = document.getElementById('selectedColorPreview');
         if (previewElement) {
-          console.log('Found preview element:', previewElement);
-          console.log('Preview element parent:', previewElement.parentElement);
-          console.log('Preview element styles:', window.getComputedStyle(previewElement));
-          // Forcefully remove the element
           previewElement.remove();
-          console.log('Preview element removed');
-        } else {
-          console.log('No preview element found by ID');
         }
-        
-        // Debug: Check for any elements with similar styling
-        const allElements = document.querySelectorAll('*');
-        const circularElements = Array.from(allElements).filter(el => {
-          const styles = window.getComputedStyle(el);
-          return styles.borderRadius === '50%' && 
-                 (styles.width === '50px' || styles.height === '50px') &&
-                 el.id !== 'colorIndicator';
-        });
-        console.log('Circular elements found:', circularElements);
 
         // Draw color wheel
         this.drawColorWheel();
@@ -1167,12 +1133,7 @@
       updatePreview() {
         const valueSlider = document.getElementById('valueSlider');
         
-        // Debug: Check if preview element exists during update
-        const previewElement = document.getElementById('selectedColorPreview');
-        if (previewElement) {
-          console.log('Preview element found during update:', previewElement);
-          console.log('Preview element HTML:', previewElement.outerHTML);
-        }
+
         
         const hslColor = `hsl(${this.selectedHue}, ${CONFIG.COLOR_PICKER.saturation}%, ${this.selectedLightness}%)`;
         const hexColor = hslToHex(this.selectedHue, CONFIG.COLOR_PICKER.saturation, this.selectedLightness);
@@ -1183,13 +1144,7 @@
           colorScreen.style.backgroundColor = hexColor;
         }
         
-        console.log('Color preview:', {
-          hue: this.selectedHue,
-          saturation: CONFIG.COLOR_PICKER.saturation,
-          lightness: this.selectedLightness,
-          hsl: hslColor,
-          hex: hexColor
-        });
+
         
         if (valueSlider) {
           valueSlider.style.background = `linear-gradient(to right,
@@ -1221,16 +1176,7 @@
           // Adjust for CSS conic-gradient coordinate system (starts at top, not right)
           this.selectedHue = Math.round((angle + 90) % 360);
           
-          console.log('Color selection:', {
-            x: x,
-            y: y,
-            centerX: centerX,
-            centerY: centerY,
-            dx: dx,
-            dy: dy,
-            angle: angle,
-            selectedHue: this.selectedHue
-          });
+
           
           if (indicator) {
             // Position relative to the color wheel container
@@ -1248,16 +1194,7 @@
           // Adjust for CSS conic-gradient coordinate system (starts at top, not right)
           this.selectedHue = Math.round((angle + 90) % 360);
           
-          console.log('Color selection (center):', {
-            x: x,
-            y: y,
-            centerX: centerX,
-            centerY: centerY,
-            dx: dx,
-            dy: dy,
-            angle: angle,
-            selectedHue: this.selectedHue
-          });
+
           
           if (indicator) {
             // Position relative to the color wheel container
@@ -1320,7 +1257,7 @@
           const quiltDocSnap = await getDoc(this.quiltDoc);
           
           if (!quiltDocSnap.exists() || quiltDocSnap.data().date !== todayKey) {
-            this.blocks = [{ x: 0, y: 0, width: CONFIG.APP.quiltSize, height: CONFIG.APP.quiltSize, color: CONFIG.APP.defaultColor }];
+            this.blocks = []; // Start with empty quilt - first user submission creates the first piece
             await this.saveQuilt();
           } else {
             const data = quiltDocSnap.data();
@@ -1334,7 +1271,7 @@
         } catch (error) {
           handleError(error, 'loadQuilt');
           showLoading(false);
-          this.blocks = [{ x: 0, y: 0, width: CONFIG.APP.quiltSize, height: CONFIG.APP.quiltSize, color: CONFIG.APP.defaultColor }];
+          this.blocks = []; // Start with empty quilt - first user submission creates the first piece
           this.renderBlocks();
         }
       }
@@ -1442,9 +1379,9 @@
         
         this.blocks.forEach((block, i) => {
           // Add jiggered positioning - more freedom to break square
-          const jiggerX = (Math.random() - 0.5) * 6; // Reduced horizontal jitter
-          const jiggerY = (Math.random() - 0.5) * 6; // Reduced vertical jitter
-          const jiggerRotation = (Math.random() - 0.5) * 3; // Reduced rotation in degrees
+          const jiggerX = 0; // Disabled for testing clean joins
+          const jiggerY = 0; // Disabled for testing clean joins
+          const jiggerRotation = 0; // Disabled for testing clean joins
           
           // Apply jiggered positioning to block coordinates
           const jiggeredBlock = {
@@ -1461,7 +1398,7 @@
           const bleedIntensity = shouldBleed ? Math.random() * 0.3 + 0.1 : 0;
           
           // Dynamic edge variation based on number of blocks - reduces gaps as quilt fills up
-          const baseEdgeVariation = shouldBleed ? 4 : 2;
+          const baseEdgeVariation = shouldBleed ? 1 : 0.5; // Reduced for cleaner joins
           const blockCount = this.blocks.length;
           const dynamicReduction = Math.min(0.95, blockCount * 0.08); // Reduce by up to 95% as blocks increase
           const edgeVariation = baseEdgeVariation * (1 - dynamicReduction);
@@ -1602,11 +1539,8 @@
               path.classList.remove('new-block');
               path.removeAttribute('opacity');
             }, { once: true });
-          } else if (this.lastAddedIndex !== null && i === this.lastAddedIndex - 1) {
-            // Make the original block transparent to create a "hole" effect
-            path.classList.add('block-transparent');
-            path.addEventListener('animationend', () => path.classList.remove('block-transparent'), { once: true });
           }
+
           
           quiltSVG.appendChild(path);
           
@@ -1616,41 +1550,491 @@
         this.lastAddedIndex = null;
       }
 
-      splitBlock(blockIndex, newColor) {
+      addPieceToQuilt(newColor) {
         try {
           if (!validateHexColor(newColor)) {
             throw new Error(`Invalid color format: ${newColor}`);
           }
 
-          const block = this.blocks[blockIndex];
-          const splitVertically = block.width >= block.height;
-          const splitRatio = 0.3 + Math.random() * 0.4;
+          // Track submission count for tiered approach
+          const submissionCount = this.blocks.length + 1;
           
-          let block1, block2;
-          if (splitVertically) {
-            const splitX = block.width * splitRatio;
-            block1 = { ...block, width: splitX };
-            block2 = { ...block, x: block.x + splitX, width: block.width - splitX, color: newColor };
+          if (submissionCount <= 20) {
+            // Phase 1: Create pieces and form patches
+            return this.handlePiecePhase(newColor, submissionCount);
+          } else if (submissionCount === 21) {
+            // Phase 2: Assess patterns and create blocks
+            return this.handleBlockPhase();
           } else {
-            const splitY = block.height * splitRatio;
-            block1 = { ...block, height: splitY };
-            block2 = { ...block, y: block.y + splitY, height: block.height - splitY, color: newColor };
+            // Phase 3: Continue adding to existing blocks
+            return this.handleContinuedPhase(newColor);
           }
           
-          this.blocks.splice(blockIndex, 1, block1, block2);
-          this.lastAddedIndex = blockIndex + 1; // Point to the second piece (block2)
-          
-          // Debug: Log which piece gets the new color
-          console.log('Split pieces:', {
-            block1: { ...block1, getsNewColor: block1.color === newColor },
-            block2: { ...block2, getsNewColor: block2.color === newColor },
-            newColor
-          });
-          
-          return true;
         } catch (error) {
-          handleError(error, 'splitBlock');
+          handleError(error, 'addPieceToQuilt');
           return false;
+        }
+      }
+
+      handlePiecePhase(newColor, submissionCount) {
+        if (submissionCount % 2 === 0) {
+          // Even submissions: create piece and join with previous piece
+          const recentPieces = this.blocks.filter(block => block.type === 'piece');
+          if (recentPieces.length > 0) {
+            const previousPiece = recentPieces[recentPieces.length - 1];
+            
+            // Create a new piece that will be sized to match
+            const newPiece = {
+              color: newColor,
+              type: 'piece',
+              submissionCount: submissionCount,
+              width: 40 + Math.random() * 80, // Random initial size
+              height: 40 + Math.random() * 80
+            };
+            
+            // Size and position the new piece to join with previous piece
+            const sizedPiece = this.sizePieceToMatch(newPiece, previousPiece);
+            
+            // Add the new piece that joins with the previous piece
+            this.blocks.push(sizedPiece);
+            this.lastAddedIndex = this.blocks.length - 1;
+          } else {
+            // Fallback: just add a piece
+            const piece = this.createPiece(newColor, submissionCount);
+            this.blocks.push(piece);
+            this.lastAddedIndex = this.blocks.length - 1;
+
+          }
+        } else {
+          // Odd submissions: just add the piece
+          const piece = this.createPiece(newColor, submissionCount);
+          this.blocks.push(piece);
+          this.lastAddedIndex = this.blocks.length - 1;
+          
+
+        }
+        
+        return true;
+      }
+
+      handleBlockPhase() {
+        // Analyze patches for value, color, and size patterns
+        const patternAnalysis = this.analyzePatchesForPatterns();
+        
+        // Create blocks based on pattern analysis
+        const blocks = this.createBlocksFromPatches(patternAnalysis);
+        
+        // Add blocks while keeping existing pieces and patches visible
+        this.blocks.push(...blocks);
+        this.lastAddedIndex = this.blocks.length - 1;
+        return true;
+      }
+
+      handleContinuedPhase(newColor) {
+        // Continue adding pieces that can join with existing blocks
+        const piece = this.createPiece(newColor, this.blocks.length + 1);
+        
+        // Try to join with existing blocks
+        const joinedBlock = this.tryToJoinWithExistingBlocks(piece);
+        
+        if (joinedBlock) {
+          // Replace the existing block with the joined version
+          const blockIndex = this.findBlockToReplace(joinedBlock);
+          if (blockIndex !== -1) {
+            this.blocks[blockIndex] = joinedBlock;
+            this.lastAddedIndex = blockIndex;
+          }
+        } else {
+          // Add as new piece if no good join found
+          this.blocks.push(piece);
+          this.lastAddedIndex = this.blocks.length - 1;
+        }
+        
+        return true;
+      }
+
+      createPiece(color, submissionCount) {
+        const minSize = 40;
+        const maxSize = 120;
+        
+        let width, height;
+        
+        if (submissionCount % 2 === 0) {
+          // Even submissions: size will be determined by sizePieceToMatch
+          width = minSize + Math.random() * (maxSize - minSize);
+          height = minSize + Math.random() * (maxSize - minSize);
+        } else {
+          // Odd submissions: random size
+          width = minSize + Math.random() * (maxSize - minSize);
+          height = minSize + Math.random() * (maxSize - minSize);
+        }
+        
+        const position = this.findGoodPosition(width, height);
+        
+        return {
+          x: position.x,
+          y: position.y,
+          width: width,
+          height: height,
+          color: color,
+          type: 'piece',
+          submissionCount: submissionCount
+        };
+      }
+
+      sizePieceToMatch(newPiece, previousPiece) {
+        // Size the new piece to have at least one matching edge with previous piece
+        const edgeChoices = ['width', 'height'];
+        const matchingEdge = edgeChoices[Math.floor(Math.random() * edgeChoices.length)];
+        
+        const sizedPiece = { ...newPiece };
+        
+        // Set default dimensions if not already set
+        if (!sizedPiece.width) {
+          sizedPiece.width = 40 + Math.random() * 80; // 40-120 range
+        }
+        if (!sizedPiece.height) {
+          sizedPiece.height = 40 + Math.random() * 80; // 40-120 range
+        }
+        
+        if (matchingEdge === 'width') {
+          sizedPiece.width = previousPiece.width;
+          // Join horizontally - position exactly touching (no overlap)
+          sizedPiece.x = previousPiece.x + previousPiece.width;
+          sizedPiece.y = previousPiece.y;
+        } else {
+          sizedPiece.height = previousPiece.height;
+          // Join vertically - position exactly touching (no overlap)
+          sizedPiece.x = previousPiece.x;
+          sizedPiece.y = previousPiece.y + previousPiece.height;
+        }
+        
+        return sizedPiece;
+      }
+
+      createPatchFromPieces(piece1, piece2) {
+        // Determine if joining horizontally or vertically based on positioning
+        const isHorizontalJoin = Math.abs((piece1.x + piece1.width) - piece2.x) < 1; // Exact touching
+        const isVerticalJoin = Math.abs((piece1.y + piece1.height) - piece2.y) < 1; // Exact touching
+        
+        if (isHorizontalJoin) {
+          // Join horizontally - pieces are exactly touching
+          return {
+            x: piece1.x,
+            y: piece1.y,
+            width: piece1.width + piece2.width,
+            height: Math.max(piece1.height, piece2.height),
+            color: piece2.color, // Use the new piece's color (user's selection)
+            type: 'patch',
+            pieces: [piece1, piece2]
+          };
+        } else if (isVerticalJoin) {
+          // Join vertically - pieces are exactly touching
+          return {
+            x: piece1.x,
+            y: piece1.y,
+            width: Math.max(piece1.width, piece2.width),
+            height: piece1.height + piece2.height,
+            color: piece2.color, // Use the new piece's color (user's selection)
+            type: 'patch',
+            pieces: [piece1, piece2]
+          };
+        } else {
+          // Fallback: just return the second piece as a patch
+          return {
+            x: piece2.x,
+            y: piece2.y,
+            width: piece2.width,
+            height: piece2.height,
+            color: piece2.color,
+            type: 'patch',
+            pieces: [piece2]
+          };
+        }
+      }
+
+      analyzePatchesForPatterns() {
+        const patches = this.blocks.filter(block => block.type === 'patch');
+        
+        // Analyze by value (lightness)
+        const valueGroups = this.groupByValue(patches);
+        
+        // Analyze by color (hue)
+        const colorGroups = this.groupByColor(patches);
+        
+        // Analyze by size
+        const sizeGroups = this.groupBySize(patches);
+        
+        return {
+          valueGroups,
+          colorGroups,
+          sizeGroups,
+          patches
+        };
+      }
+
+      groupByValue(patches) {
+        const groups = { light: [], medium: [], dark: [] };
+        
+        patches.forEach(patch => {
+          const lightness = this.getColorLightness(patch.color);
+          if (lightness < 0.4) groups.dark.push(patch);
+          else if (lightness < 0.7) groups.medium.push(patch);
+          else groups.light.push(patch);
+        });
+        
+        return groups;
+      }
+
+      groupByColor(patches) {
+        const groups = {};
+        
+        patches.forEach(patch => {
+          const hue = this.getColorHue(patch.color);
+          const hueGroup = Math.floor(hue / 60) * 60; // Group by 60° hue ranges
+          
+          if (!groups[hueGroup]) groups[hueGroup] = [];
+          groups[hueGroup].push(patch);
+        });
+        
+        return groups;
+      }
+
+      groupBySize(patches) {
+        const groups = { small: [], medium: [], large: [] };
+        
+        patches.forEach(patch => {
+          const area = patch.width * patch.height;
+          if (area < 4000) groups.small.push(patch);
+          else if (area < 8000) groups.medium.push(patch);
+          else groups.large.push(patch);
+        });
+        
+        return groups;
+      }
+
+      getColorLightness(color) {
+        // Convert hex to HSL and return lightness
+        const hex = color.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16) / 255;
+        const g = parseInt(hex.substr(2, 2), 16) / 255;
+        const b = parseInt(hex.substr(4, 2), 16) / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        return (max + min) / 2;
+      }
+
+      getColorHue(color) {
+        // Convert hex to HSL and return hue
+        const hex = color.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16) / 255;
+        const g = parseInt(hex.substr(2, 2), 16) / 255;
+        const b = parseInt(hex.substr(4, 2), 16) / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        
+        if (delta === 0) return 0;
+        
+        let hue = 0;
+        if (max === r) hue = ((g - b) / delta) % 6;
+        else if (max === g) hue = (b - r) / delta + 2;
+        else hue = (r - g) / delta + 4;
+        
+        return hue * 60;
+      }
+
+      createBlocksFromPatches(analysis) {
+        const blocks = [];
+        const patches = analysis.patches;
+        
+        // Prioritize value patterns, then color, then size
+        const valuePairs = this.findBestPairs(analysis.valueGroups);
+        const colorPairs = this.findBestPairs(analysis.colorGroups);
+        const sizePairs = this.findBestPairs(analysis.sizeGroups);
+        
+        // Combine pairs to create 5 blocks
+        let usedPatches = new Set();
+        
+        // First try value pairs
+        for (const pair of valuePairs) {
+          if (blocks.length >= 5) break;
+          if (!usedPatches.has(pair[0]) && !usedPatches.has(pair[1])) {
+            const block = this.createBlockFromPatches(pair[0], pair[1]);
+            blocks.push(block);
+            usedPatches.add(pair[0]);
+            usedPatches.add(pair[1]);
+          }
+        }
+        
+        // Then try color pairs
+        for (const pair of colorPairs) {
+          if (blocks.length >= 5) break;
+          if (!usedPatches.has(pair[0]) && !usedPatches.has(pair[1])) {
+            const block = this.createBlockFromPatches(pair[0], pair[1]);
+            blocks.push(block);
+            usedPatches.add(pair[0]);
+            usedPatches.add(pair[1]);
+          }
+        }
+        
+        // Finally try size pairs
+        for (const pair of sizePairs) {
+          if (blocks.length >= 5) break;
+          if (!usedPatches.has(pair[0]) && !usedPatches.has(pair[1])) {
+            const block = this.createBlockFromPatches(pair[0], pair[1]);
+            blocks.push(block);
+            usedPatches.add(pair[0]);
+            usedPatches.add(pair[1]);
+          }
+        }
+        
+        // Add remaining patches as individual blocks if needed
+        for (const patch of patches) {
+          if (blocks.length >= 5) break;
+          if (!usedPatches.has(patch)) {
+            blocks.push(patch); // Keep as patch if no good pairing found
+            usedPatches.add(patch);
+          }
+        }
+        
+        return blocks;
+      }
+
+      findBestPairs(groups) {
+        const pairs = [];
+        
+        // Find pairs within each group
+        Object.values(groups).forEach(group => {
+          for (let i = 0; i < group.length - 1; i += 2) {
+            pairs.push([group[i], group[i + 1]]);
+          }
+        });
+        
+        return pairs;
+      }
+
+      createBlockFromPatches(patch1, patch2) {
+        // Try to join patches with matching edges
+        const block = this.tryToJoinPatches(patch1, patch2);
+        
+        if (block) {
+          return block;
+        } else {
+          // If no good join, resize one patch to match
+          const resizedPatch = this.resizePatchToMatch(patch2, patch1);
+          return this.tryToJoinPatches(patch1, resizedPatch);
+        }
+      }
+
+      resizePatchToMatch(patchToResize, targetPatch) {
+        // Resize patch to have at least one matching edge
+        const resized = { ...patchToResize };
+        
+        // Choose which edge to match
+        const edgeChoices = ['width', 'height'];
+        const matchingEdge = edgeChoices[Math.floor(Math.random() * edgeChoices.length)];
+        
+        if (matchingEdge === 'width') {
+          resized.width = targetPatch.width;
+        } else {
+          resized.height = targetPatch.height;
+        }
+        
+        return resized;
+      }
+
+      tryToJoinWithExistingBlocks(piece) {
+        // Try to join piece with existing blocks
+        for (let i = 0; i < this.blocks.length; i++) {
+          const block = this.blocks[i];
+          const joinedBlock = this.tryToJoinPatches(piece, block);
+          if (joinedBlock) {
+            return joinedBlock;
+          }
+        }
+        return null;
+      }
+
+      findBlockToReplace(joinedBlock) {
+        // Find which existing block should be replaced
+        // This is a simplified version - you might want more sophisticated logic
+        return this.blocks.length - 1; // Replace the last block for now
+      }
+
+      findGoodPosition(width, height) {
+        // Find a good position for a new piece
+        if (this.blocks.length === 0) {
+          // First piece: place in center of quilt area
+          const centerX = 300 - width / 2; // Center of 600px quilt
+          const centerY = 300 - height / 2;
+          return { 
+            x: centerX + (Math.random() - 0.5) * 50, // Small random offset
+            y: centerY + (Math.random() - 0.5) * 50
+          };
+        } else {
+          // For odd submissions (3, 5, 7, etc.): place away from existing pieces/patches
+          const submissionCount = this.blocks.length + 1;
+          
+          if (submissionCount % 2 === 1) {
+            // Find a position that doesn't overlap with existing pieces
+            const attempts = 20; // Try multiple positions
+            
+            for (let attempt = 0; attempt < attempts; attempt++) {
+              // Try different positions around the dropcloth
+              let x, y;
+              
+              if (attempt < 5) {
+                // Try positions to the right of existing pieces
+                x = 500 + Math.random() * 300;
+                y = 100 + Math.random() * 400;
+              } else if (attempt < 10) {
+                // Try positions below existing pieces
+                x = 100 + Math.random() * 400;
+                y = 500 + Math.random() * 300;
+              } else if (attempt < 15) {
+                // Try positions to the left of existing pieces
+                x = -100 + Math.random() * 200;
+                y = 100 + Math.random() * 400;
+              } else {
+                // Try positions above existing pieces
+                x = 100 + Math.random() * 400;
+                y = -100 + Math.random() * 200;
+              }
+              
+              // Check if this position overlaps with any existing pieces
+              const newPiece = { x, y, width, height };
+              let hasOverlap = false;
+              
+              for (const existingBlock of this.blocks) {
+                if (this.checkForOverlaps(newPiece, this.blocks.indexOf(existingBlock))) {
+                  hasOverlap = true;
+                  break;
+                }
+              }
+              
+              if (!hasOverlap) {
+                return { x, y };
+              }
+            }
+            
+            // If all attempts failed, place in a corner
+            return {
+              x: -50 + Math.random() * 200,
+              y: -50 + Math.random() * 200
+            };
+          }
+          
+          // Fallback: place near existing blocks
+          const quiltBounds = this.getQuiltBounds();
+          let x = quiltBounds.left + (quiltBounds.right - quiltBounds.left) / 2 - width / 2;
+          let y = quiltBounds.top + (quiltBounds.bottom - quiltBounds.top) / 2 - height / 2;
+          x += (Math.random() - 0.5) * 100;
+          y += (Math.random() - 0.5) * 100;
+          
+          return { x, y };
         }
       }
 
@@ -1664,56 +2048,20 @@
           const warmSaturation = Math.min(selectedSaturation + 5, 100); // Slightly increase saturation for warmth
           const selectedColor = hslToHex(warmHue, warmSaturation, this.selectedLightness);
           
-          console.log('Adding color to quilt:', {
-            hue: this.selectedHue,
-            saturation: CONFIG.COLOR_PICKER.saturation,
-            lightness: this.selectedLightness,
-            hexColor: selectedColor
-          });
+
           
           if (!selectedColor) {
             showToast('Please select a color first');
             return;
           }
 
-          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
-          let indexToSplit;
-          
-          if (eligibleBlocks.length > 0) {
-            const largestEligible = eligibleBlocks.reduce((largest, current) => {
-              const largestArea = largest.width * largest.height;
-              const currentArea = current.width * current.height;
-              return currentArea > largestArea ? current : largest;
-            });
-            indexToSplit = this.blocks.indexOf(largestEligible);
-          } else {
-            let maxArea = 0;
-            indexToSplit = 0;
-            this.blocks.forEach((b, i) => {
-              const area = b.width * b.height;
-              if (area > maxArea) {
-                maxArea = area;
-                indexToSplit = i;
-              }
-            });
-          }
-
-          const success = this.splitBlock(indexToSplit, selectedColor);
+          const success = this.addPieceToQuilt(selectedColor);
           
           if (success) {
             // Store the last added index for sharing before renderBlocks resets it
             this.lastAddedForShare = this.lastAddedIndex;
             
-            // Debug: Log the split details
-            console.log('Split details:', {
-              indexToSplit,
-              lastAddedIndex: this.lastAddedIndex,
-              splitBlock: this.blocks[this.lastAddedIndex],
-              blockCenter: {
-                x: this.blocks[this.lastAddedIndex].x + this.blocks[this.lastAddedIndex].width / 2,
-                y: this.blocks[this.lastAddedIndex].y + this.blocks[this.lastAddedIndex].height / 2
-              }
-            });
+
             
             await this.saveQuilt();
             this.renderBlocks();
@@ -1737,35 +2085,9 @@
           const warmSaturation = Math.min(randomSaturation + 5, 100); // Slightly increase saturation for warmth
           const randomColor = hslToHex(warmHue, warmSaturation, randomLightness);
           
-          console.log('Test adding random color:', {
-            hue: randomHue,
-            lightness: randomLightness,
-            hexColor: randomColor
-          });
-          
-          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
-          let indexToSplit;
-          
-          if (eligibleBlocks.length > 0) {
-            const largestEligible = eligibleBlocks.reduce((largest, current) => {
-              const largestArea = largest.width * largest.height;
-              const currentArea = current.width * current.height;
-              return currentArea > largestArea ? current : largest;
-            });
-            indexToSplit = this.blocks.indexOf(largestEligible);
-          } else {
-            let maxArea = 0;
-            indexToSplit = 0;
-            this.blocks.forEach((b, i) => {
-              const area = b.width * b.height;
-              if (area > maxArea) {
-                maxArea = area;
-                indexToSplit = i;
-              }
-            });
-          }
 
-          const success = this.splitBlock(indexToSplit, randomColor);
+          
+          const success = this.addPieceToQuilt(randomColor);
           
           if (success) {
             this.lastAddedForShare = this.lastAddedIndex;
@@ -1802,8 +2124,7 @@
                       // Use the stored last added index for sharing
             const lastAddedIndex = this.lastAddedForShare;
             
-            // Also store the index of the block that was split
-            const splitBlockIndex = this.lastSplitBlockIndex;
+
           const quiltElement = document.getElementById('quilt');
           const clonedSVG = quiltElement.cloneNode(true);
           clonedSVG.removeAttribute('id');
@@ -1817,16 +2138,7 @@
             const [x, y, width, height] = originalViewBox.split(' ').map(Number);
             const fixedPadding = 20; // Small, consistent padding for all instances
             
-            console.log('ViewBox expansion:', {
-              original: { x, y, width, height },
-              padding: fixedPadding,
-              newCoords: {
-                x: x - fixedPadding,
-                y: y - fixedPadding,
-                width: width + fixedPadding * 2,
-                height: height + fixedPadding * 2
-              }
-            });
+
             
             const newViewBox = `${x - fixedPadding} ${y - fixedPadding} ${width + fixedPadding * 2} ${height + fixedPadding * 2}`;
             clonedSVG.setAttribute('viewBox', newViewBox);
@@ -1847,7 +2159,7 @@
             // Also set the SVG background color to match
             clonedSVG.style.backgroundColor = '#f6f4f1';
             
-            console.log('New viewBox:', newViewBox);
+
           }
 
           const wrapper = document.createElement('div');
@@ -1904,61 +2216,12 @@
           quiltContainer.style.position = "relative";
           quiltContainer.appendChild(clonedSVG);
           
-          // DEBUG: Identify the last added block by local user
-          if (lastAddedIndex !== null && lastAddedIndex < this.blocks.length) {
-            console.log('=== DEBUG: LAST ADDED BLOCK IDENTIFICATION ===');
-            console.log('lastAddedIndex:', lastAddedIndex);
-            
-            const lastAddedBlock = this.blocks[lastAddedIndex];
-            console.log('Last added block details:', {
-              index: lastAddedIndex,
-              color: lastAddedBlock.color,
-              position: { x: lastAddedBlock.x, y: lastAddedBlock.y },
-              size: { width: lastAddedBlock.width, height: lastAddedBlock.height },
-              center: { 
-                x: lastAddedBlock.x + lastAddedBlock.width / 2, 
-                y: lastAddedBlock.y + lastAddedBlock.height / 2 
-              }
-            });
-            
-            // Show all blocks for comparison
-            console.log('All blocks in quilt:');
-            this.blocks.forEach((block, index) => {
-              console.log(`Block ${index}:`, {
-                color: block.color,
-                position: { x: block.x, y: block.y },
-                size: { width: block.width, height: block.height },
-                center: { 
-                  x: block.x + block.width / 2, 
-                  y: block.y + block.height / 2 
-                }
-              });
-            });
-            
-            // Find blocks with similar colors to the target
-            const similarBlocks = this.blocks.filter(block => {
-              const targetColor = lastAddedBlock.color;
-              return block.color === targetColor || 
-                     block.color.includes(targetColor.substring(1, 4)) ||
-                     block.color.includes(targetColor.substring(4, 7));
-            });
-            console.log('Blocks with similar colors to target:', similarBlocks);
-            
-            console.log('=== END DEBUG ===');
+                      // Identify the last added block by local user
+            if (lastAddedIndex !== null && lastAddedIndex < this.blocks.length) {
             
             // ADD VISUAL INDICATOR: Simple dot on the last added block
             const blockCenterX = lastAddedBlock.x + lastAddedBlock.width / 2;
             const blockCenterY = lastAddedBlock.y + lastAddedBlock.height / 2;
-            
-            console.log('Block center (SVG coordinates):', blockCenterX, blockCenterY);
-            console.log('Block details:', {
-              x: lastAddedBlock.x,
-              y: lastAddedBlock.y,
-              width: lastAddedBlock.width,
-              height: lastAddedBlock.height,
-              centerX: blockCenterX,
-              centerY: blockCenterY
-            });
             
             // Create SVG circle element that encircles the block
             const blockWidth = lastAddedBlock.width;
@@ -1977,22 +2240,9 @@
             circleSVG.setAttribute('stroke-width', '3');
             circleSVG.setAttribute('opacity', '0.6'); // Semi-transparent
             
-            console.log('Circle details:', {
-              blockSize: { width: blockWidth, height: blockHeight },
-              radius: radius,
-              center: { x: blockCenterX, y: blockCenterY }
-            });
-            
-            console.log('SVG circle position:', blockCenterX, blockCenterY);
-            console.log('Circle should encircle block with color:', lastAddedBlock.color);
-            
             // Add the circle to the SVG
             clonedSVG.appendChild(circleSVG);
             
-          } else {
-            console.log('DEBUG: No lastAddedIndex available');
-            console.log('lastAddedIndex:', lastAddedIndex);
-            console.log('Total blocks:', this.blocks.length);
           }  
 
           const footer = document.createElement('div');
@@ -2032,7 +2282,6 @@
           document.body.appendChild(wrapper);
 
           try {
-            console.log('Starting html2canvas conversion...');
             const canvas = await html2canvas(wrapper, {
               scale: 1, // Reduced scale for better performance
               backgroundColor: '#f6f4f1',
@@ -2042,13 +2291,11 @@
               width: 1080,
               height: 1920
             });
-            console.log('html2canvas conversion completed');
 
             document.body.removeChild(wrapper);
 
             // Use toDataURL instead of toBlob for better compatibility
             const dataURL = canvas.toDataURL('image/png', 0.9);
-            console.log('Canvas converted to data URL');
 
             // Try native sharing first
             if (navigator.canShare) {
@@ -2056,7 +2303,7 @@
                 // Convert data URL to blob
                 const response = await fetch(dataURL);
                 const blob = await response.blob();
-                console.log('Blob created from data URL, size:', blob.size);
+    
                 
                 const filesArray = [new File([blob], 'community-quilt.png', { type: 'image/png' })];
                 const shareData = {
@@ -2065,17 +2312,15 @@
                   text: "Tag me on Instagram if you're sharing! @zakfoster.quilts 🌈✨"
                 };
 
-                console.log('Attempting native share...');
                 await navigator.share(shareData);
                 showToast("Thanks for sharing! Tag me @zakfoster.quilts 🌈✨");
                 return;
               } catch (shareError) {
-                console.log('Native sharing failed, falling back to download:', shareError);
+                // Native sharing failed, fall back to download
               }
             }
 
             // Fallback to download
-            console.log('Using download fallback...');
             const link = document.createElement('a');
             link.download = 'community-quilt.png';
             link.href = dataURL;
@@ -2206,6 +2451,11 @@
 
       getQuiltBounds() {
         // Calculate the bounding box of all blocks
+        if (this.blocks.length === 0) {
+          // Return default bounds for empty quilt
+          return { top: 0, right: 600, bottom: 600, left: 0 };
+        }
+        
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         
         this.blocks.forEach(block => {
@@ -2219,17 +2469,21 @@
       }
 
       createOrganicQuiltBoundary(bounds) {
-        // Create an organic boundary around the entire quilt
-        const padding = 30; // More padding to allow blocks to break out
-        const variation = 25; // More organic edge variation
+        // Create a fixed, large plastic dropcloth that doesn't change size
+        const dropclothSize = 800; // Large fixed size
+        const centerX = 300; // Center of 600px quilt area
+        const centerY = 300;
         
-        // Expand bounds with more padding to allow freedom
+        // Create fixed bounds for the dropcloth
         const expandedBounds = {
-          top: bounds.top - padding,
-          right: bounds.right + padding,
-          bottom: bounds.bottom + padding,
-          left: bounds.left - padding
+          top: centerY - dropclothSize / 2,
+          right: centerX + dropclothSize / 2,
+          bottom: centerY + dropclothSize / 2,
+          left: centerX - dropclothSize / 2
         };
+        
+        // Organic edge variation for the dropcloth
+        const variation = 25; // More organic edge variation
         
         // Create organic edge points for each side
         const createOrganicSide = (startX, startY, endX, endY, isVertical = false) => {
@@ -2282,6 +2536,63 @@
             this.showScreen('screen-color');
           }
         }
+      }
+
+      tryToJoinPatches(patch1, patch2) {
+        // Check if patches can be joined along edges of similar length
+        const tolerance = 0.2; // 20% tolerance for "similar" lengths
+        
+        // Check horizontal joining (patch1 right edge to patch2 left edge)
+        if (Math.abs(patch1.height - patch2.height) / Math.max(patch1.height, patch2.height) < tolerance) {
+          if (this.canJoinHorizontally(patch1, patch2)) {
+            return this.joinPatchesHorizontally(patch1, patch2);
+          }
+        }
+        
+        // Check vertical joining (patch1 bottom edge to patch2 top edge)
+        if (Math.abs(patch1.width - patch2.width) / Math.max(patch1.width, patch2.width) < tolerance) {
+          if (this.canJoinVertically(patch1, patch2)) {
+            return this.joinPatchesVertically(patch1, patch2);
+          }
+        }
+        
+        return null; // Cannot join
+      }
+
+      canJoinHorizontally(item1, item2) {
+        // Check if items can be joined horizontally (right edge of item1 to left edge of item2)
+        const gap = Math.abs((item1.x + item1.width) - item2.x);
+        return gap < 20; // Allow small gap for organic feel
+      }
+
+      canJoinVertically(item1, item2) {
+        // Check if items can be joined vertically (bottom edge of item1 to top edge of item2)
+        const gap = Math.abs((item1.y + item1.height) - item2.y);
+        return gap < 20; // Allow small gap for organic feel
+      }
+
+      joinPatchesHorizontally(patch1, patch2) {
+        return {
+          x: Math.min(patch1.x, patch2.x),
+          y: Math.min(patch1.y, patch2.y),
+          width: patch1.width + patch2.width,
+          height: Math.max(patch1.height, patch2.height),
+          color: patch2.color, // Use the newer patch's color
+          type: 'block',
+          patches: [patch1, patch2]
+        };
+      }
+
+      joinPatchesVertically(patch1, patch2) {
+        return {
+          x: Math.min(patch1.x, patch2.x),
+          y: Math.min(patch1.y, patch2.y),
+          width: Math.max(patch1.width, patch2.width),
+          height: patch1.height + patch2.height,
+          color: patch2.color, // Use the newer patch's color
+          type: 'block',
+          patches: [patch1, patch2]
+        };
       }
     }
 

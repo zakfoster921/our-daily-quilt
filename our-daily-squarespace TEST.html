@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Color Survey</title>
+  <style>
+    /* ===== RESET & BASE STYLES ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    html, body {
+      height: 100%;
+      width: 100%;
+      max-width: 100vw;
+      margin: 0;
+      padding: 0;
+      background-color: #f6f4f1;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #000;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+
+    /* ===== LAYOUT ===== */
+    #app {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 100vh;
+      width: 100%;
+      max-width: 100vw;
+      padding: 0;
+      position: relative;
+      background-color: #f6f4f1;
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+
+    /* ===== SCREENS ===== */
+    .screen {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 100vw;
+      opacity: 0;
+      background-color: #f6f4f1;
+      pointer-events: none;
+      transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      position: absolute;
+      top: 0; left: 0;
+      min-height: 100vh;
+      padding: 3rem 0 10px 0;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+    
+    .screen.active {
+      opacity: 1;
+      pointer-events: auto;
+      position: relative;
+    }
+
+    /* ===== TYPOGRAPHY ===== */
+    .welcome-header h1 {
+      font-weight: 900;
+      font-size: clamp(2rem, 5vw, 3rem);
+      margin-bottom: 0.1rem;
+      letter-spacing: -0.02em;
+    }
+    
+    .welcome-subtitle {
+      font-weight: 200;
+      font-size: clamp(1.2rem, 3vw, 1.6rem);
+      margin-top: 0.1rem;
+    }
+    
+    .welcome-content {
+      font-size: clamp(1.8rem, 4vw, 2.5rem);
+      font-style: italic;
+      font-weight: 200;
+      margin: 2rem 0;
+      max-width: 600px;
+      width: 90%;
+      animation: fadeInBreath 1.2s ease forwards;
+      text-align: center;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    
+    @keyframes fadeInBreath {
+      0% {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      50% {
+        opacity: 0.8;
+        transform: translateY(-2px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ===== QUOTE CARD ===== */
+    .quote-card {
+      border: 2px solid #000;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin: 3rem auto 2rem;
+      background: #f6f4f1;
+      width: 90%;
+      max-width: 500px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: left;
+      min-height: 150px;
+    }
+    
+    .quote-line { 
+      font-size: clamp(1.2rem, 3vw, 1.5rem); 
+      font-style: italic; 
+      font-weight: 300; 
+      line-height: 1.4;
+    }
+    
+    .quote-author { 
+      font-size: clamp(1rem, 2.5vw, 1.2rem); 
+      font-weight: 200; 
+      margin-top: 0.5rem;
+    }
+    
+    .quote-prompt { 
+      font-size: clamp(1.2rem, 3vw, 1.5rem); 
+      margin: 2rem 0 1rem; 
+    }
+    
+    .arrow-down {
+      font-size: 2rem;
+      text-align: center;
+      margin: 1rem auto;
+    }
+
+    /* ===== COLOR PICKER ===== */
+    .color-picker-container { 
+      position: relative; 
+      margin: 2rem 0;
+    }
+    
+    .css-color-wheel {
+      width: 336px;
+      height: 336px;
+      border-radius: 50%;
+      /* Fallback for browsers that don't support conic-gradient */
+      background: hsl(0, 95%, 55%);
+      /* Modern browsers with conic-gradient support */
+      background: conic-gradient(
+        hsl(0, 100%, 55%),
+        hsl(30, 100%, 55%),
+        hsl(60, 100%, 55%),
+        hsl(90, 100%, 55%),
+        hsl(120, 100%, 55%),
+        hsl(150, 100%, 55%),
+        hsl(180, 100%, 55%),
+        hsl(210, 100%, 55%),
+        hsl(240, 100%, 55%),
+        hsl(270, 100%, 55%),
+        hsl(300, 100%, 55%),
+        hsl(330, 100%, 55%),
+        hsl(360, 100%, 55%)
+      );
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s ease;
+      /* Add a subtle overlay to tone down the visual intensity */
+      position: relative;
+    }
+    
+    .css-color-wheel::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.25);
+      pointer-events: none;
+    }
+    
+    .css-color-wheel:hover {
+      transform: scale(1.02);
+    }
+    
+    .css-color-wheel:focus {
+      outline: 2px solid #000;
+      outline-offset: 4px;
+    }
+    
+    .color-picker-indicator {
+      position: absolute;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    #colorPickerControls1, #colorPickerControls2, #colorPickerControls3 {
+      display: flex; align-items: center;
+      margin-top: 4rem;
+      width: 100%;
+    }
+    
+    #valueSlider1, #valueSlider2, #valueSlider3 {
+      width: 100%; cursor: pointer; appearance: none;
+      height: 30px; border-radius: 15px;
+      background: linear-gradient(to right, hsl(0, 90%, 25%), hsl(0, 90%, 85%));
+      outline: none; border: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    
+    #valueSlider1::-webkit-slider-thumb,
+    #valueSlider2::-webkit-slider-thumb,
+    #valueSlider3::-webkit-slider-thumb {
+      width: 24px; height: 24px;
+      background: #ffffff !important; border: 1px solid #333;
+      border-radius: 50%; cursor: pointer;
+      transition: transform 0.1s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    
+    #valueSlider1::-moz-range-thumb,
+    #valueSlider2::-moz-range-thumb,
+    #valueSlider3::-moz-range-thumb {
+      width: 24px; height: 24px;
+      background: #ffffff !important; border: 1px solid #333;
+      border-radius: 50%; cursor: pointer;
+      transition: transform 0.1s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      -moz-appearance: none;
+      appearance: none;
+    }
+    
+    #valueSlider1::-webkit-slider-thumb:hover,
+    #valueSlider2::-webkit-slider-thumb:hover,
+    #valueSlider3::-webkit-slider-thumb:hover,
+    #valueSlider1::-moz-range-thumb:hover,
+    #valueSlider2::-moz-range-thumb:hover,
+    #valueSlider3::-moz-range-thumb:hover {
+      transform: scale(1.1);
+    }
+    
+    #valueSlider1::-ms-thumb,
+    #valueSlider2::-ms-thumb,
+    #valueSlider3::-ms-thumb {
+      width: 24px; height: 24px;
+      background: #ffffff !important; border: 1px solid #333;
+      border-radius: 50%; cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    #selectedColorPreview {
+      display: none !important;
+    }
+    
+    .color-screen {
+      background-color: #f6f4f1;
+      transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+    }
+    
+    @media (max-width: 768px) {
+      .color-screen {
+        padding: 0 !important;
+        min-height: 100vh !important;
+      }
+      
+      .css-color-wheel {
+        width: 280px;
+        height: 280px;
+        /* Ensure conic-gradient works on mobile */
+        background: hsl(0, 100%, 55%);
+        background: -webkit-conic-gradient(
+          hsl(0, 100%, 55%),
+          hsl(30, 100%, 55%),
+          hsl(60, 100%, 55%),
+          hsl(90, 100%, 55%),
+          hsl(120, 100%, 55%),
+          hsl(150, 100%, 55%),
+          hsl(180, 100%, 55%),
+          hsl(210, 100%, 55%),
+          hsl(240, 100%, 55%),
+          hsl(270, 100%, 55%),
+          hsl(300, 100%, 55%),
+          hsl(330, 100%, 55%),
+          hsl(360, 100%, 55%)
+        );
+        background: conic-gradient(
+          hsl(0, 100%, 55%),
+          hsl(30, 100%, 55%),
+          hsl(60, 100%, 55%),
+          hsl(90, 100%, 55%),
+          hsl(120, 100%, 55%),
+          hsl(150, 100%, 55%),
+          hsl(180, 100%, 55%),
+          hsl(210, 100%, 55%),
+          hsl(240, 100%, 55%),
+          hsl(270, 100%, 55%),
+          hsl(300, 100%, 55%),
+          hsl(330, 100%, 55%),
+          hsl(360, 100%, 55%)
+        );
+      }
+    }
+    
+    /* ===== BUTTONS ===== */
+    .btn {
+      background: transparent;
+      border: 1px solid #000;
+      color: #000;
+      padding: 12px 30px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      width: auto;
+      align-self: center;
+      margin: 0.5rem;
+      font-family: inherit;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .thank-you-message {
+      font-size: clamp(1.3rem, 3.5vw, 1.8rem);
+      text-align: center;
+      margin: 1rem 0 2rem 0;
+      font-weight: 300;
+      line-height: 1.4;
+    }
+    
+    .btn:hover { 
+      background: #000; color: #fff; 
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .btn:focus {
+      outline: 2px solid #000;
+      outline-offset: 2px;
+    }
+    
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ===== LOADING ===== */
+    .loading {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(246, 244, 241, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    
+    .loading.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #f6f4f1;
+      border-top: 3px solid #000;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      color: #fff; padding: 12px 24px;
+      border-radius: 24px;
+      opacity: 0; transition: opacity 0.3s ease;
+      pointer-events: none; font-size: 0.9rem;
+      font-weight: 500;
+      z-index: 1001;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .toast.show { opacity: 1; }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 768px) {
+      .screen { 
+        padding: 2rem 1rem 10px 1rem; 
+        width: 100vw;
+        max-width: 100vw;
+        box-sizing: border-box;
+      }
+      .welcome-content {
+        width: 100%;
+        max-width: 100%;
+        padding: 0 1rem;
+        box-sizing: border-box;
+      }
+      .quote-card { width: 95%; padding: 1rem; }
+      .css-color-wheel { 
+        width: 288px; 
+        height: 288px; 
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .welcome-header h1 { font-size: 2rem; }
+      .welcome-content { font-size: 1.8rem; margin: 1rem 0 3rem; }
+      .css-color-wheel { 
+        width: 240px; 
+        height: 240px; 
+      }
+      #colorPickerControls1, #colorPickerControls2, #colorPickerControls3 { flex-direction: column; gap: 10px; }
+    }
+
+    /* ===== ACCESSIBILITY ===== */
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+    
+    @media (prefers-contrast: high) {
+      .btn { border-width: 2px; }
+      .quote-card { border-width: 3px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app">
+    <!-- Welcome Screen -->
+    <section class="screen active" id="screen-welcome" role="main" aria-label="Welcome to color survey">
+      <div class="welcome-header">
+        <h1>COLOR SURVEY</h1>
+      </div>
+      
+      <div class="welcome-content">
+        <p style="margin-bottom: 1rem;">You'll see 3 inspiring quotes.</p>
+        <p>For each quote, pick a color that comes to mind.</p>
+      </div>
+      
+      <button class="btn" data-next="screen-quote-1" aria-label="Start the survey">START SURVEY</button>
+    </section>
+
+    <!-- Quote 1 Screen -->
+    <section class="screen" id="screen-quote-1" role="main" aria-label="First quote">
+      <div class="quote-card">
+        <div class="quote-inner">
+          <p class="quote-line" aria-live="polite"></p>
+          <p class="quote-author" aria-live="polite"></p>
+        </div>
+      </div>
+      <p class="quote-prompt">What color comes to mind when you read this?</p>
+      <div class="arrow-down">↓</div>
+      <button class="btn" data-next="screen-color-1" aria-label="Choose color for first quote">CHOOSE COLOR</button>
+    </section>
+
+    <!-- Color Picker 1 Screen -->
+    <section class="screen color-screen" id="screen-color-1" role="main" aria-label="Color picker for first quote">
+      <div class="color-picker-container">
+        <div class="css-color-wheel" id="colorWheelCanvas1" role="button" tabindex="0" aria-label="Color wheel - click or drag to select hue"></div>
+        <div class="color-picker-indicator" id="colorIndicator1" aria-hidden="true"></div>
+        <div id="colorPickerControls1">
+          <input type="range" id="valueSlider1" min="35" max="90" value="50" aria-label="Adjust color brightness" />
+        </div>
+      </div>
+      <button class="btn" id="nextBtn1" aria-label="Continue to next quote">NEXT QUOTE</button>
+    </section>
+
+    <!-- Quote 2 Screen -->
+    <section class="screen" id="screen-quote-2" role="main" aria-label="Second quote">
+      <div class="quote-card">
+        <div class="quote-inner">
+          <p class="quote-line" aria-live="polite"></p>
+          <p class="quote-author" aria-live="polite"></p>
+        </div>
+      </div>
+      <p class="quote-prompt">What color comes to mind when you read this?</p>
+      <div class="arrow-down">↓</div>
+      <button class="btn" data-next="screen-color-2" aria-label="Choose color for second quote">CHOOSE COLOR</button>
+    </section>
+
+    <!-- Color Picker 2 Screen -->
+    <section class="screen color-screen" id="screen-color-2" role="main" aria-label="Color picker for second quote">
+      <div class="color-picker-container">
+        <div class="css-color-wheel" id="colorWheelCanvas2" role="button" tabindex="0" aria-label="Color wheel - click or drag to select hue"></div>
+        <div class="color-picker-indicator" id="colorIndicator2" aria-hidden="true"></div>
+        <div id="colorPickerControls2">
+          <input type="range" id="valueSlider2" min="35" max="90" value="50" aria-label="Adjust color brightness" />
+        </div>
+      </div>
+      <button class="btn" id="nextBtn2" aria-label="Continue to next quote">NEXT QUOTE</button>
+    </section>
+
+    <!-- Quote 3 Screen -->
+    <section class="screen" id="screen-quote-3" role="main" aria-label="Third quote">
+      <div class="quote-card">
+        <div class="quote-inner">
+          <p class="quote-line" aria-live="polite"></p>
+          <p class="quote-author" aria-live="polite"></p>
+        </div>
+      </div>
+      <p class="quote-prompt">What color comes to mind when you read this?</p>
+      <div class="arrow-down">↓</div>
+      <button class="btn" data-next="screen-color-3" aria-label="Choose color for third quote">CHOOSE COLOR</button>
+    </section>
+
+    <!-- Color Picker 3 Screen -->
+    <section class="screen color-screen" id="screen-color-3" role="main" aria-label="Color picker for third quote">
+      <div class="color-picker-container">
+        <div class="css-color-wheel" id="colorWheelCanvas3" role="button" tabindex="0" aria-label="Color wheel - click or drag to select hue"></div>
+        <div class="color-picker-indicator" id="colorIndicator3" aria-hidden="true"></div>
+        <div id="colorPickerControls3">
+          <input type="range" id="valueSlider3" min="35" max="90" value="50" aria-label="Adjust color brightness" />
+        </div>
+      </div>
+      <button class="btn" id="finishBtn" aria-label="Finish survey">FINISH SURVEY</button>
+    </section>
+
+    <!-- Thank You Screen -->
+    <section class="screen" id="screen-thank-you" role="main" aria-label="Thank you message">
+      <div class="welcome-header">
+        <h1>THANK YOU!</h1>
+        <p class="welcome-subtitle">Your responses have been recorded</p>
+      </div>
+      
+      <div class="welcome-content">
+        <p>Thank you! Your responses help me plan this fun new app <3 Stay tuned ! XOZ</p>
+      </div>
+      
+      <button class="btn" id="shareBtn" aria-label="Share survey">SHARE</button>
+      <button class="btn" id="testExportBtn" aria-label="Test export" style="margin-top: 1rem; background: #999; font-size: 0.8rem;">TEST EXPORT</button>
+    </section>
+  </main>
+
+  <!-- Loading indicator -->
+  <div id="loading" class="loading" aria-hidden="true">
+    <div class="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+    import { getFirestore, doc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+    // Configuration
+    const CONFIG = {
+      APP: {
+        name: 'Color Survey',
+        version: '1.0.0',
+        defaultColor: '#f7b733'
+      },
+      FIREBASE: {
+        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+        authDomain: "our-daily.firebaseapp.com",
+        projectId: "our-daily",
+        storageBucket: "our-daily.firebasestorage.app",
+        messagingSenderId: "337201931314",
+        appId: "1:337201931314:web:fb5677846d03eb285ac82b",
+        measurementId: "G-65XB7QC1F4"
+      },
+      COLOR_PICKER: {
+        wheelSize: 280,
+        defaultHue: 45,
+        defaultLightness: 62.5,
+        saturation: 65
+      }
+    };
+
+    // Utility functions
+    function hslToHex(h, s, l) {
+      h /= 360;
+      s /= 100;
+      l /= 100;
+      
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      
+      let r, g, b;
+      
+      if (s === 0) {
+        r = g = b = l; // achromatic
+      } else {
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      
+      const toHex = (c) => {
+        const hex = Math.round(c * 255).toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      };
+      
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    function showToast(message, duration = 3000) {
+      const toast = document.getElementById('toast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), duration);
+    }
+
+    function showLoading(show = true) {
+      const loading = document.getElementById('loading');
+      if (!loading) return;
+      if (show) {
+        loading.classList.add('show');
+      } else {
+        loading.classList.remove('show');
+      }
+    }
+
+    function handleError(error, context = 'Unknown') {
+      console.error(`Error in ${context}:`, error);
+      const message = 'Something went wrong. Please try again.';
+      showToast(message);
+    }
+
+    // Main application class
+    class ColorSurveyApp {
+      constructor() {
+        this.currentQuestion = 1;
+        this.responses = [];
+        this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
+        this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
+        this.colorHasBeenSelected = false;
+        this.db = null;
+        this.currentScreen = 'screen-welcome';
+        
+        this.quotes = [
+          { text: "Let yourself be silently drawn by the strange pull of what you really love. It will not lead you astray.", author: "— Rumi" },
+          { text: "Nobody sees a flower really; it is so small. We haven't time, and to see takes time - like to have a friend takes time.", author: "— Georgia O'Keeffe" },
+          { text: "Creativity is the power to reject the past, to change the status quo, and to seek new potential. Simply put... creativity is the power to act.", author: "— Ai Weiwei" }
+        ];
+      }
+
+      async initialize() {
+        try {
+          showLoading(true);
+          await this.initializeFirebase();
+          this.setupEventListeners();
+          this.initializeUI();
+          showLoading(false);
+        } catch (error) {
+          handleError(error, 'App initialization');
+          showLoading(false);
+        }
+      }
+
+      async initializeFirebase() {
+        try {
+          const app = initializeApp(CONFIG.FIREBASE);
+          this.db = getFirestore(app);
+        } catch (error) {
+          handleError(error, 'Firebase initialization');
+          throw error;
+        }
+      }
+
+      setupEventListeners() {
+        // Navigation
+        document.querySelectorAll(".btn[data-next]").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.preventDefault();
+            const targetId = btn.getAttribute("data-next");
+            if (targetId) this.showScreen(targetId);
+          });
+        });
+
+        // Color picker buttons
+        const nextBtn1 = document.getElementById('nextBtn1');
+        const nextBtn2 = document.getElementById('nextBtn2');
+        const finishBtn = document.getElementById('finishBtn');
+
+        if (nextBtn1) {
+          nextBtn1.addEventListener('click', e => {
+            e.preventDefault();
+            this.handleNextQuestion(1);
+          });
+        }
+
+        if (nextBtn2) {
+          nextBtn2.addEventListener('click', e => {
+            e.preventDefault();
+            this.handleNextQuestion(2);
+          });
+        }
+
+        if (finishBtn) {
+          finishBtn.addEventListener('click', e => {
+            e.preventDefault();
+            this.handleFinishSurvey();
+          });
+        }
+
+        // Share button
+        const shareBtn = document.getElementById('shareBtn');
+        if (shareBtn) {
+          shareBtn.addEventListener('click', e => {
+            e.preventDefault();
+            this.handleShare();
+          });
+        }
+
+        // Test export button
+        const testExportBtn = document.getElementById('testExportBtn');
+        if (testExportBtn) {
+          testExportBtn.addEventListener('click', e => {
+            e.preventDefault();
+            console.log('🔧 Test export button clicked');
+            this.exportAllSurveyData();
+          });
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', e => this.handleKeyDown(e));
+      }
+
+      setupColorPicker(questionNumber) {
+        const colorWheel = document.getElementById(`colorWheelCanvas${questionNumber}`);
+        const indicator = document.getElementById(`colorIndicator${questionNumber}`);
+        const valueSlider = document.getElementById(`valueSlider${questionNumber}`);
+
+        if (!colorWheel || !indicator || !valueSlider) {
+          console.log('Color picker elements not found:', { colorWheel, indicator, valueSlider });
+          return;
+        }
+        
+        console.log(`Setting up color picker for question ${questionNumber}`);
+        
+        // Reset color picker state
+        this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
+        this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
+        this.colorHasBeenSelected = false;
+        
+        // Set slider to default value
+        valueSlider.value = this.selectedLightness;
+        
+        // Update preview immediately
+        this.updatePreview(questionNumber);
+        
+        // Set initial indicator position
+        this.updateIndicatorPosition(questionNumber);
+        
+        // Event listeners for CSS-based color wheel
+        colorWheel.addEventListener('click', e => {
+          this.handleColorWheelClick(e, questionNumber);
+        });
+
+        valueSlider.addEventListener('input', e => {
+          this.selectedLightness = parseInt(e.target.value);
+          this.colorHasBeenSelected = true;
+          this.updatePreview(questionNumber);
+        });
+      }
+      
+      handleColorWheelClick(e, questionNumber) {
+        const colorWheel = document.getElementById(`colorWheelCanvas${questionNumber}`);
+        const rect = colorWheel.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Only update if click is within the wheel bounds
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+        const radius = rect.width / 2;
+        
+        if (distance <= radius) {
+          this.setHueFromCoords(x, y, questionNumber);
+        }
+      }
+      
+      updateIndicatorPosition(questionNumber) {
+        const colorWheel = document.getElementById(`colorWheelCanvas${questionNumber}`);
+        const indicator = document.getElementById(`colorIndicator${questionNumber}`);
+        
+        if (!colorWheel || !indicator) return;
+        
+        const rect = colorWheel.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const radius = rect.width / 2;
+        
+        // Convert hue to radians and adjust for coordinate system
+        const angleRad = (this.selectedHue - 90) * Math.PI / 180;
+        const x = centerX + radius * Math.cos(angleRad);
+        const y = centerY + radius * Math.sin(angleRad);
+        
+        // Position relative to the color wheel container
+        const container = colorWheel.parentElement;
+        const containerRect = container.getBoundingClientRect();
+        const relativeX = x + rect.left - containerRect.left;
+        const relativeY = y + rect.top - containerRect.top;
+        
+        indicator.style.left = `${relativeX}px`;
+        indicator.style.top = `${relativeY}px`;
+      }
+
+      positionIndicatorAtCoords(x, y, questionNumber) {
+        const colorWheel = document.getElementById(`colorWheelCanvas${questionNumber}`);
+        const indicator = document.getElementById(`colorIndicator${questionNumber}`);
+        
+        if (!colorWheel || !indicator) return;
+        
+        const rect = colorWheel.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const radius = rect.width / 2;
+        
+        // Calculate distance from center
+        const deltaX = x - centerX;
+        const deltaY = y - centerY;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // If click is outside the wheel, clamp to the edge
+        let finalX = x;
+        let finalY = y;
+        if (distance > radius) {
+          finalX = centerX + (deltaX / distance) * radius;
+          finalY = centerY + (deltaY / distance) * radius;
+        }
+        
+        // Position relative to the color wheel container
+        const container = colorWheel.parentElement;
+        const containerRect = container.getBoundingClientRect();
+        const relativeX = finalX + rect.left - containerRect.left;
+        const relativeY = finalY + rect.top - containerRect.top;
+        
+        indicator.style.left = `${relativeX}px`;
+        indicator.style.top = `${relativeY}px`;
+      }
+      
+      setHueFromCoords(x, y, questionNumber) {
+        const colorWheel = document.getElementById(`colorWheelCanvas${questionNumber}`);
+        const rect = colorWheel.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        // Calculate angle from center
+        const deltaX = x - centerX;
+        const deltaY = y - centerY;
+        let angle = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
+        
+        // Convert to hue (0-360)
+        angle = (angle + 90 + 360) % 360;
+        
+        this.selectedHue = Math.round(angle);
+        this.colorHasBeenSelected = true;
+        this.updatePreview(questionNumber);
+        this.positionIndicatorAtCoords(x, y, questionNumber);
+      }
+
+      updatePreview(questionNumber) {
+        const valueSlider = document.getElementById(`valueSlider${questionNumber}`);
+        
+        const hslColor = `hsl(${this.selectedHue}, ${CONFIG.COLOR_PICKER.saturation}%, ${this.selectedLightness}%)`;
+        const hexColor = hslToHex(this.selectedHue, CONFIG.COLOR_PICKER.saturation, this.selectedLightness);
+        
+        // Update color screen background only after a color has been selected
+        const colorScreen = document.getElementById(`screen-color-${questionNumber}`);
+        if (colorScreen && this.colorHasBeenSelected) {
+          colorScreen.style.backgroundColor = hexColor;
+        }
+        
+        console.log(`Color preview for question ${questionNumber}:`, {
+          hue: this.selectedHue,
+          saturation: CONFIG.COLOR_PICKER.saturation,
+          lightness: this.selectedLightness,
+          hsl: hslColor,
+          hex: hexColor
+        });
+        
+        if (valueSlider) {
+          valueSlider.style.background = `linear-gradient(to right,
+            hsl(${this.selectedHue}, ${CONFIG.COLOR_PICKER.saturation}%, 20%), 
+            hsl(${this.selectedHue}, ${CONFIG.COLOR_PICKER.saturation}%, 90%))`;
+        }
+      }
+
+      initializeUI() {
+        this.displayQuote(1);
+        this.showScreen('screen-welcome');
+      }
+
+      showScreen(screenId) {
+        document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+        const target = document.getElementById(screenId);
+        if (target) {
+          target.classList.add("active");
+          this.currentScreen = screenId;
+          
+          // Reset color selection when entering color screen
+          if (screenId.startsWith('screen-color-')) {
+            this.colorHasBeenSelected = false;
+            const questionNumber = screenId.split('-')[2];
+            const colorScreen = document.getElementById(screenId);
+            if (colorScreen) {
+              colorScreen.style.backgroundColor = '#f6f4f1';
+            }
+            // Setup color picker for this question
+            this.setupColorPicker(questionNumber);
+          }
+          
+          // Scroll to top
+          window.scrollTo(0, 0);
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+        }
+      }
+
+      displayQuote(questionNumber) {
+        try {
+          // Use different quotes for each question
+          const quoteIndex = (questionNumber - 1) % this.quotes.length;
+          const { text, author } = this.quotes[quoteIndex];
+          
+          const quoteLine = document.querySelector(`#screen-quote-${questionNumber} .quote-line`);
+          const quoteAuthor = document.querySelector(`#screen-quote-${questionNumber} .quote-author`);
+          
+          if (quoteLine) quoteLine.textContent = text;
+          if (quoteAuthor) quoteAuthor.textContent = author;
+        } catch (error) {
+          handleError(error, 'displayQuote');
+        }
+      }
+
+      handleNextQuestion(questionNumber) {
+        // Save current response
+        const selectedColor = hslToHex(this.selectedHue, CONFIG.COLOR_PICKER.saturation, this.selectedLightness);
+        this.responses[questionNumber - 1] = {
+          question: questionNumber,
+          quote: this.quotes[(questionNumber - 1) % this.quotes.length],
+          color: selectedColor,
+          hue: this.selectedHue,
+          lightness: this.selectedLightness
+        };
+        
+        console.log(`Question ${questionNumber} response:`, this.responses[questionNumber - 1]);
+        
+        // Move to next question
+        const nextQuestion = questionNumber + 1;
+        this.displayQuote(nextQuestion);
+        this.showScreen(`screen-quote-${nextQuestion}`);
+      }
+
+      async handleFinishSurvey() {
+        // Save final response
+        const selectedColor = hslToHex(this.selectedHue, CONFIG.COLOR_PICKER.saturation, this.selectedLightness);
+        this.responses[2] = {
+          question: 3,
+          quote: this.quotes[2 % this.quotes.length],
+          color: selectedColor,
+          hue: this.selectedHue,
+          lightness: this.selectedLightness
+        };
+        
+        console.log('Final response:', this.responses[2]);
+        console.log('All responses:', this.responses);
+        
+        // Save to Firebase with unique document ID
+        try {
+          console.log('🔧 DEBUG: Starting to save survey with unique ID...');
+          const timestamp = new Date().toISOString();
+          const uniqueId = `survey_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          console.log('🔧 DEBUG: Generated unique ID:', uniqueId);
+          const surveyDoc = doc(this.db, "surveys", uniqueId);
+          
+          await setDoc(surveyDoc, {
+            responses: this.responses,
+            timestamp: timestamp,
+            surveyId: uniqueId
+          });
+          console.log('✅ Survey responses saved to Firebase with ID:', uniqueId);
+          
+        } catch (error) {
+          console.error('Failed to save survey responses:', error);
+        }
+        
+        // Show thank you screen
+        this.showScreen('screen-thank-you');
+      }
+
+      handleShare() {
+        const shareText = "Just took a fun color + quote survey! Check it out:";
+        const shareUrl = window.location.href;
+        
+        // Try native sharing first
+        if (navigator.share) {
+          navigator.share({
+            title: 'Color Survey',
+            text: shareText,
+            url: shareUrl
+          }).catch(err => {
+            console.log('Native sharing failed, falling back to clipboard');
+            this.copyToClipboard(shareUrl);
+          });
+        } else {
+          // Fallback to clipboard
+          this.copyToClipboard(shareUrl);
+        }
+      }
+      
+      copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('Survey link copied to clipboard!');
+        }).catch(err => {
+          console.error('Failed to copy to clipboard:', err);
+          showToast('Share link: ' + text);
+        });
+      }
+
+      handleKeyDown(event) {
+        console.log('🔧 Key pressed:', event.key, 'Ctrl:', event.ctrlKey, 'Shift:', event.shiftKey);
+        
+        if (event.key === 'Escape') {
+          if (this.currentScreen.startsWith('screen-quote-')) {
+            this.showScreen('screen-welcome');
+          } else if (this.currentScreen.startsWith('screen-color-')) {
+            const questionNumber = this.currentScreen.split('-')[2];
+            this.showScreen(`screen-quote-${questionNumber}`);
+          }
+        }
+        
+        // Developer export shortcut: Ctrl+Shift+E (or Cmd+Shift+E on Mac)
+        console.log('🔧 Checking export condition:', {
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+          key: event.key,
+          condition: (event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'E'
+        });
+        
+        if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'e') {
+          event.preventDefault();
+          console.log('🔧 Developer export triggered');
+          console.log('🔧 App instance:', this);
+          console.log('🔧 Firebase db:', this.db);
+          this.exportAllSurveyData();
+        }
+      }
+
+      // Export all survey data from Firebase
+      async exportAllSurveyData() {
+        console.log('🔧 Export function called');
+        try {
+          showLoading(true);
+          console.log('🔧 Starting export of all survey data...');
+          console.log('🔧 Firebase db available:', !!this.db);
+          
+          const surveysCollection = collection(this.db, "surveys");
+          const querySnapshot = await getDocs(surveysCollection);
+          
+          const allSurveys = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            allSurveys.push({
+              id: doc.id,
+              ...data
+            });
+          });
+          
+          console.log(`✅ Found ${allSurveys.length} surveys in database`);
+          
+          // Create comprehensive export
+          const exportData = {
+            exportTimestamp: new Date().toISOString(),
+            exportSummary: {
+              totalSurveys: allSurveys.length,
+              totalResponses: allSurveys.reduce((sum, survey) => sum + (survey.responses ? survey.responses.length : 0), 0),
+              dateRange: {
+                start: allSurveys.length > 0 ? allSurveys[allSurveys.length - 1].timestamp : null,
+                end: allSurveys.length > 0 ? allSurveys[0].timestamp : null
+              }
+            },
+            surveys: allSurveys
+          };
+          
+          // Create downloadable file
+          const dataStr = JSON.stringify(exportData, null, 2);
+          const dataBlob = new Blob([dataStr], {type: 'application/json'});
+          const url = URL.createObjectURL(dataBlob);
+          
+          // Trigger download
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `all-survey-data-${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          
+          showToast(`✅ Exported ${allSurveys.length} surveys!`);
+          console.log('✅ Export completed successfully');
+          
+        } catch (error) {
+          console.error('Failed to export survey data:', error);
+          showToast('❌ Failed to export survey data');
+          handleError(error, 'Export survey data');
+        } finally {
+          showLoading(false);
+        }
+      }
+    }
+
+    // Initialize the application
+    document.addEventListener('DOMContentLoaded', async () => {
+      console.log('🔧 DOM loaded, initializing app...');
+      const app = new ColorSurveyApp();
+      await app.initialize();
+      console.log('🔧 App initialized, keyboard shortcuts ready');
+      console.log('🔧 Try Ctrl+Shift+E to export survey data');
+      
+      // Make app globally accessible for testing
+      window.testApp = app;
+      console.log('🔧 Type "testApp.exportAllSurveyData()" in console to test export');
+    });
+  </script>
+</body>
+</html> 
