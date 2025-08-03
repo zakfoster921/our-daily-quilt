@@ -61,7 +61,11 @@
     .screen.active {
       opacity: 1;
       pointer-events: auto;
-      position: relative;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
     }
 
     /* ===== TYPOGRAPHY ===== */
@@ -340,6 +344,16 @@
     .welcome-header {
       text-align: center;
       margin-bottom: 2rem;
+    }
+    
+    /* Debug: Ensure proper vertical centering */
+    #screen-welcome {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
     }
     
     .welcome-header h1 {
@@ -1012,6 +1026,149 @@
         this.shuffledIndexes = [2, 4, 0, 5, 3, 1];
       }
 
+      // Add temporary grid borders for visualization
+      addGridBorders(rows, cols, cellWidth, cellHeight, startX, startY, edgePadding, type) {
+        console.log(`🔍 addGridBorders called for ${type}: quiltSVG exists = ${!!this.quiltSVG}`);
+        if (!this.quiltSVG) {
+          console.warn('❌ quiltSVG not found, cannot add grid borders');
+          return;
+        }
+        
+        // Remove existing grid borders
+        const existingBorders = this.quiltSVG.querySelectorAll('.grid-border');
+        existingBorders.forEach(border => border.remove());
+        
+        // Create grid borders
+        const borderGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        borderGroup.setAttribute('class', 'grid-border');
+        borderGroup.setAttribute('style', 'pointer-events: none;');
+        
+        const borderColor = type === 'patches' ? '#ff6b6b' : 
+                           type === 'blocks' ? '#4ecdc4' : 
+                           '#ffa726'; // pieces
+        
+        // Draw vertical lines
+        for (let i = 0; i <= cols; i++) {
+          const x = startX + edgePadding + (i * cellWidth);
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', x);
+          line.setAttribute('y1', startY + edgePadding);
+          line.setAttribute('x2', x);
+          line.setAttribute('y2', startY + edgePadding + (rows * cellHeight));
+          line.setAttribute('stroke', borderColor);
+          line.setAttribute('stroke-width', '3');
+          line.setAttribute('stroke-dasharray', '8,4');
+          line.setAttribute('opacity', '0.9');
+          borderGroup.appendChild(line);
+        }
+        
+        // Draw horizontal lines
+        for (let i = 0; i <= rows; i++) {
+          const y = startY + edgePadding + (i * cellHeight);
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', startX + edgePadding);
+          line.setAttribute('y1', y);
+          line.setAttribute('x2', startX + edgePadding + (cols * cellWidth));
+          line.setAttribute('y2', y);
+          line.setAttribute('stroke', borderColor);
+          line.setAttribute('stroke-width', '3');
+          line.setAttribute('stroke-dasharray', '8,4');
+          line.setAttribute('opacity', '0.9');
+          borderGroup.appendChild(line);
+        }
+        
+        // Add cell labels
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const cellIndex = row * cols + col;
+            const x = startX + edgePadding + (col * cellWidth) + (cellWidth / 2);
+            const y = startY + edgePadding + (row * cellHeight) + (cellHeight / 2);
+            
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', x);
+            text.setAttribute('y', y);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('dominant-baseline', 'middle');
+            text.setAttribute('fill', borderColor);
+            text.setAttribute('font-size', '14');
+            text.setAttribute('font-weight', 'bold');
+            text.setAttribute('opacity', '1.0');
+            text.textContent = `${type.charAt(0).toUpperCase()}${cellIndex}`;
+            borderGroup.appendChild(text);
+          }
+        }
+        
+        this.quiltSVG.appendChild(borderGroup);
+        
+        console.log(`📐 Added ${type} grid borders: ${rows}x${cols} grid, cell size: ${cellWidth.toFixed(1)}x${cellHeight.toFixed(1)}`);
+        console.log(`📐 Border group created with ${borderGroup.children.length} elements`);
+        console.log(`📐 SVG now has ${this.quiltSVG.children.length} total children`);
+      }
+
+      // Draw final grid borders after all positioning is complete
+      drawFinalGridBorders() {
+        console.log(`🔍 drawFinalGridBorders called for phase: ${this.currentPhase}`);
+        
+        if (this.currentPhase === 'patch-formation') {
+          // For patch formation, draw grid for all elements (patches + unmatched pieces)
+          const totalElements = (this.patches ? this.patches.length : 0) + (this.unmatchedPieces ? this.unmatchedPieces.length : 0);
+          console.log(`🔍 Total elements for grid: ${totalElements} (${this.patches ? this.patches.length : 0} patches + ${this.unmatchedPieces ? this.unmatchedPieces.length : 0} pieces)`);
+          
+          if (totalElements > 0) {
+            const viewBoxWidth = 800;
+            const viewBoxHeight = 800;
+            const viewBoxStartX = -100;
+            const viewBoxStartY = -100;
+            const edgePadding = 20;
+            const availableWidth = viewBoxWidth - (2 * edgePadding);
+            const availableHeight = viewBoxHeight - (2 * edgePadding);
+            
+            // Use the full available space by calculating optimal grid dimensions
+            const aspectRatio = availableWidth / availableHeight; // 760/760 = 1.0
+            const cols = Math.ceil(Math.sqrt(totalElements * aspectRatio));
+            const rows = Math.ceil(totalElements / cols);
+            
+            // Calculate average element size
+            const allElements = [...(this.patches || []), ...(this.unmatchedPieces || [])];
+            const avgWidth = allElements.reduce((sum, el) => sum + el.width, 0) / allElements.length;
+            const avgHeight = allElements.reduce((sum, el) => sum + el.height, 0) / allElements.length;
+            
+            // Use full available space with centered positioning
+            const cellWidth = availableWidth / cols;  // 760/4 = 190px per cell
+            const cellHeight = availableHeight / rows; // 760/3 = 253px per cell
+            
+            console.log(`🔍 Drawing final grid: ${rows}x${cols} for ${totalElements} elements`);
+            this.addGridBorders(rows, cols, cellWidth, cellHeight, -100, -100, 20, 'patches');
+          }
+        } else if (this.currentPhase === 'block-formation') {
+          // For block formation, draw grid for blocks
+          if (this.blocks && this.blocks.length > 0) {
+            const viewBoxWidth = 800;
+            const viewBoxHeight = 800;
+            const viewBoxStartX = -100;
+            const viewBoxStartY = -100;
+            const edgePadding = 20;
+            const availableWidth = viewBoxWidth - (2 * edgePadding);
+            const availableHeight = viewBoxHeight - (2 * edgePadding);
+            
+            // Use the full available space by calculating optimal grid dimensions
+            const aspectRatio = availableWidth / availableHeight; // 760/760 = 1.0
+            const cols = Math.ceil(Math.sqrt(this.blocks.length * aspectRatio));
+            const rows = Math.ceil(this.blocks.length / cols);
+            
+            const avgWidth = this.blocks.reduce((sum, block) => sum + block.width, 0) / this.blocks.length;
+            const avgHeight = this.blocks.reduce((sum, block) => sum + block.height, 0) / this.blocks.length;
+            
+            // Use full available space with centered positioning
+            const cellWidth = availableWidth / cols;  // 760/cols per cell
+            const cellHeight = availableHeight / rows; // 760/rows per cell
+            
+            console.log(`🔍 Drawing final grid: ${rows}x${cols} for ${this.blocks.length} blocks`);
+            this.addGridBorders(rows, cols, cellWidth, cellHeight, -100, -100, 20, 'blocks');
+          }
+        }
+      }
+
       getOrCreateUserId() {
         let userId = localStorage.getItem('ourDailyUserId');
         if (!userId) {
@@ -1048,7 +1205,10 @@
             if (!this.quiltSVG) {
               this.quiltSVG = document.getElementById('quilt');
             }
-            this.renderBlocks();
+            // Only render blocks if we're not in collection phase
+            if (this.currentPhase !== 'collection') {
+              this.renderBlocks();
+            }
             this.updateUserCounter(); // Initialize user counter display
           }, 100);
           
@@ -1435,20 +1595,35 @@
               this.renderPiece(piece, i);
             });
           } else if (this.currentPhase === 'patch-formation') {
-            // Render patches
+            // Position all elements (patches + unmatched pieces) together in the same grid
+            const allElements = [...this.patches, ...(this.unmatchedPieces || [])];
+            
+            // Position patches in the grid
+            this.positionPatchesInGrid(this.patches);
+            
+            // Position unmatched pieces in the remaining grid spaces
+            console.log(`🔍 Debug unmatched pieces:`, this.unmatchedPieces);
+            console.log(`🔍 Unmatched pieces length:`, this.unmatchedPieces ? this.unmatchedPieces.length : 'undefined');
+            if (this.unmatchedPieces && this.unmatchedPieces.length > 0) {
+              // Calculate the starting index for unmatched pieces (after all patches)
+              const startIndex = this.patches.length;
+              console.log(`🔍 Positioning ${this.unmatchedPieces.length} unmatched pieces starting at index ${startIndex}`);
+              this.positionUnmatchedPiecesInGrid(this.unmatchedPieces, startIndex);
+            } else {
+              console.log(`🔍 No unmatched pieces to position`);
+            }
+            
+            // Render all elements
             this.patches.forEach((patch, i) => {
               this.renderPatch(patch, i);
             });
             
-                             // Also render any unmatched pieces
-                 if (this.unmatchedPieces && this.unmatchedPieces.length > 0) {
-           
-                   // Position unmatched pieces in remaining grid spaces
-                   this.positionUnmatchedPiecesInGrid(this.unmatchedPieces, this.patches.length);
-                   this.unmatchedPieces.forEach((piece, i) => {
-                     this.renderPiece(piece, i);
-                   });
-                 }
+            if (this.unmatchedPieces && this.unmatchedPieces.length > 0) {
+              this.unmatchedPieces.forEach((piece, i) => {
+                // Render unmatched pieces using their positioned coordinates
+                this.renderPositionedPiece(piece, i);
+              });
+            }
           } else if (this.currentPhase === 'block-formation') {
             // Render blocks
             console.log(`🎨 Rendering ${this.blocks.length} blocks in block formation phase`);
@@ -1491,6 +1666,9 @@
           // Update phase indicator
           this.updatePhaseIndicator();
           
+          // Draw grid borders after all positioning is complete
+          this.drawFinalGridBorders();
+          
           this.lastAddedIndex = null;
         } catch (error) {
           handleError(error, 'renderBlocks');
@@ -1523,6 +1701,23 @@
         this.quiltSVG.appendChild(path);
       }
 
+      renderPositionedPiece(piece, index) {
+        // Render individual piece using its positioned coordinates (no animation)
+        const pathData = this.createOrganicPath(piece);
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', pathData);
+        path.setAttribute('fill', piece.color);
+        
+        // Apply user highlight if this is the current user's piece and highlighting is active
+        if (piece.userId === this.currentUserId && this.userPiecesHighlighted) {
+          path.setAttribute('filter', 'url(#userHighlight)');
+        } else {
+          path.setAttribute('filter', 'url(#organicEdges)');
+        }
+        
+        this.quiltSVG.appendChild(path);
+      }
+
       renderPatch(patch, index) {
         // Render patch by rendering each individual piece with its original color
 
@@ -1547,7 +1742,15 @@
           const jitteredPatchX = patch.x + patchJitterX;
           const jitteredPatchY = patch.y + patchJitterY;
           
-          if (patch.width > patch.height) {
+          // Check if patch was rotated for grid positioning
+          const isRotated = patch.rotation === 90;
+          
+          // Use effective dimensions (rotated if patch was rotated)
+          const effectiveWidth = isRotated ? patch.height : patch.width;
+          const effectiveHeight = isRotated ? patch.width : patch.height;
+          
+          // Determine piece orientation based on effective dimensions
+          if (effectiveWidth > effectiveHeight) {
             // Horizontal join - pieces side by side, resized to fill patch with jitter
             const piece1Ratio = piece1.width / (piece1.width + piece2.width);
             const piece2Ratio = piece2.width / (piece1.width + piece2.width);
@@ -1559,15 +1762,15 @@
               ...piece1,
               x: jitteredPatchX,
               y: jitteredPatchY,
-              width: (patch.width * piece1Ratio) + joinJitter,
-              height: patch.height + (Math.random() - 0.5) * 4 // ±2px height jitter
+              width: (effectiveWidth * piece1Ratio) + joinJitter,
+              height: effectiveHeight + (Math.random() - 0.5) * 4 // ±2px height jitter
             };
             positionedPiece2 = {
               ...piece2,
-              x: jitteredPatchX + (patch.width * piece1Ratio) + joinJitter,
+              x: jitteredPatchX + (effectiveWidth * piece1Ratio) + joinJitter,
               y: jitteredPatchY,
-              width: (patch.width * piece2Ratio) - joinJitter,
-              height: patch.height + (Math.random() - 0.5) * 4 // ±2px height jitter
+              width: (effectiveWidth * piece2Ratio) - joinJitter,
+              height: effectiveHeight + (Math.random() - 0.5) * 4 // ±2px height jitter
             };
           } else {
             // Vertical join - pieces stacked, resized to fill patch with jitter
@@ -1581,15 +1784,15 @@
               ...piece1,
               x: jitteredPatchX,
               y: jitteredPatchY,
-              width: patch.width + (Math.random() - 0.5) * 4, // ±2px width jitter
-              height: (patch.height * piece1Ratio) + joinJitter
+              width: effectiveWidth + (Math.random() - 0.5) * 4, // ±2px width jitter
+              height: (effectiveHeight * piece1Ratio) + joinJitter
             };
             positionedPiece2 = {
               ...piece2,
               x: jitteredPatchX,
-              y: jitteredPatchY + (patch.height * piece1Ratio) + joinJitter,
-              width: patch.width + (Math.random() - 0.5) * 4, // ±2px width jitter
-              height: (patch.height * piece2Ratio) - joinJitter
+              y: jitteredPatchY + (effectiveHeight * piece1Ratio) + joinJitter,
+              width: effectiveWidth + (Math.random() - 0.5) * 4, // ±2px width jitter
+              height: (effectiveHeight * piece2Ratio) - joinJitter
             };
           }
           
@@ -1607,6 +1810,14 @@
             path.setAttribute('d', pathData);
             path.setAttribute('fill', piece.color); // Use the piece's original color
             path.setAttribute('filter', 'url(#organicEdges)');
+            
+            // Apply rotation if patch was rotated to fit in cell
+            if (patch.rotation === 90) {
+              // Calculate center point for rotation
+              const centerX = piece.x + piece.width / 2;
+              const centerY = piece.y + piece.height / 2;
+              path.setAttribute('transform', `rotate(90 ${centerX} ${centerY})`);
+            }
             
             // Apply user highlight if this is the current user's piece and highlighting is active
             if (piece.userId === this.currentUserId && this.userPiecesHighlighted) {
@@ -2644,6 +2855,11 @@
         const baseX = gridStartX + gridX * cellWidth + cellWidth / 2;
         const baseY = gridStartY + gridY * cellHeight + cellHeight / 2;
         
+        // Debug logging for first few pieces
+        if (pieceIndex < 3) {
+          console.log(`🔍 Piece ${pieceIndex} positioning: gridStartX=${gridStartX.toFixed(1)}, gridStartY=${gridStartY.toFixed(1)}, baseX=${baseX.toFixed(1)}, baseY=${baseY.toFixed(1)}`);
+        }
+        
 
         
         // Add jitter for organic feel (reduced to prevent touching)
@@ -2877,17 +3093,32 @@
         const patches = [];
         const unmatchedPieces = []; // Track pieces that don't get matched
         
-        while (pieces.length >= 2) {
+        console.log(`🔍 formPatchesFromPieces: Starting with ${pieces.length} pieces`);
+        
+        // Calculate how many patches we need to create
+        const totalPieces = pieces.length;
+        const targetPatches = Math.floor(totalPieces / 2) - 1; // Leave exactly 2 pieces unmatched
+        const maxMatches = targetPatches;
+        
+        console.log(`🔍 Target: ${targetPatches} patches, leaving exactly 2 pieces unmatched`);
+        
+        let matchesMade = 0;
+        
+        while (pieces.length >= 2 && matchesMade < maxMatches) {
           const piece1 = pieces.shift();
           const bestMatch = this.findBestMatch(pieces, piece1);
           
-          if (bestMatch && bestMatch.score < 0.3) { // Good enough match
-            const piece2 = bestMatch.item;
-            pieces.splice(pieces.indexOf(piece2), 1);
+          // Force creation of patches until we reach the target
+          if (matchesMade < maxMatches) {
+            // Take the best match available, even if not great
+            const piece2 = bestMatch ? bestMatch.item : pieces[0];
+            if (!bestMatch) {
+              pieces.splice(0, 1); // Remove the first piece if no match found
+            } else {
+              pieces.splice(pieces.indexOf(piece2), 1);
+            }
             
-    
-            
-            const combined = this.combineItems(piece1, piece2, bestMatch.joinType);
+            const combined = this.combineItems(piece1, piece2, bestMatch ? bestMatch.joinType : 'horizontal');
             const patch = this.createPatch([piece1, piece2]);
             if (patch) {
               patch.x = combined.x;
@@ -2896,21 +3127,24 @@
               patch.height = combined.height;
               patches.push(patch);
             }
+            matchesMade++;
           } else {
-            // No good match found, keep as individual piece
+            // We've reached our target, keep remaining pieces unmatched
             unmatchedPieces.push(piece1);
-    
           }
         }
         
-        // Handle remaining single piece
-        if (pieces.length === 1) {
-          unmatchedPieces.push(pieces[0]);
-  
+        // Add all remaining pieces as unmatched
+        while (pieces.length > 0) {
+          unmatchedPieces.push(pieces.shift());
         }
         
         // Store unmatched pieces for rendering
         this.unmatchedPieces = unmatchedPieces;
+        console.log(`🔍 formPatchesFromPieces: Created ${patches.length} patches and ${unmatchedPieces.length} unmatched pieces`);
+        if (unmatchedPieces.length > 0) {
+          console.log(`🔍 Unmatched pieces:`, unmatchedPieces.map(p => p.id));
+        }
 
         
         // Position patches in a grid layout with jitter
@@ -2920,342 +3154,191 @@
       }
 
       positionBlocksInGrid(blocks) {
-        // Position blocks in a packed layout similar to patches
+        if (blocks.length === 0) return;
+        
+        const gridSize = Math.ceil(Math.sqrt(blocks.length));
         const viewBoxWidth = 800;
         const viewBoxHeight = 800;
         const viewBoxStartX = -100;
         const viewBoxStartY = -100;
-        const minSpacing = 30; // Slightly more spacing for blocks
-        const edgePadding = 60; // More padding for blocks
+        const edgePadding = 20;
+        const spacing = 100; // Much more spacing for blocks
         
-        console.log(`🔍 Positioning ${blocks.length} blocks in packed layout`);
+        const availableWidth = viewBoxWidth - (2 * edgePadding);
+        const availableHeight = viewBoxHeight - (2 * edgePadding);
         
-        // Start with first block in top-left
-        if (blocks.length > 0 && blocks[0] && typeof blocks[0].width !== 'undefined' && typeof blocks[0].height !== 'undefined') {
-          blocks[0].x = edgePadding;
-          blocks[0].y = edgePadding;
-          console.log(`Block 0 positioned at (${blocks[0].x}, ${blocks[0].y})`);
-        }
+        // Calculate average block size for cell sizing
+        const validBlocks = blocks.filter(block => block && typeof block.width !== 'undefined' && typeof block.height !== 'undefined');
+        if (validBlocks.length === 0) return;
         
-        // Position remaining blocks
-        for (let i = 1; i < blocks.length; i++) {
-          const block = blocks[i];
-          
+        const avgWidth = validBlocks.reduce((sum, block) => sum + block.width, 0) / validBlocks.length;
+        const avgHeight = validBlocks.reduce((sum, block) => sum + block.height, 0) / validBlocks.length;
+        
+        // Use larger spacing based on actual block sizes
+        const cellSpacing = Math.max(spacing, Math.max(avgWidth, avgHeight) * 0.6); // 60% of max dimension
+        const cellWidth = Math.max(avgWidth + cellSpacing, availableWidth / gridSize);
+        const cellHeight = Math.max(avgHeight + cellSpacing, availableHeight / gridSize);
+        
+        console.log(`🔍 Positioning ${blocks.length} blocks in ${gridSize}x${gridSize} grid`);
+        
+        // Add temporary grid borders for visualization
+        this.addGridBorders(gridSize, cellWidth, cellHeight, viewBoxStartX, viewBoxStartY, edgePadding, 'blocks');
+        
+        blocks.forEach((block, index) => {
           // Skip null or undefined blocks
           if (!block || typeof block.width === 'undefined' || typeof block.height === 'undefined') {
-            console.warn(`Skipping invalid block at index ${i}:`, block);
-            continue;
+            console.warn(`Skipping invalid block at index ${index}:`, block);
+            return;
           }
           
-          let bestX = null;
-          let bestY = null;
-          let bestScore = Infinity;
-          let foundValidPosition = false;
+          const row = Math.floor(index / gridSize);
+          const col = index % gridSize;
           
-          // Try different positions
-          for (let attempt = 0; attempt < 100; attempt++) { // Increased attempts
-            const testX = viewBoxStartX + edgePadding + Math.random() * (viewBoxWidth - block.width - 2 * edgePadding);
-            const testY = viewBoxStartY + edgePadding + Math.random() * (viewBoxHeight - block.height - 2 * edgePadding);
-            
-            // Ensure we're within bounds
-            const maxX = viewBoxStartX + viewBoxWidth - edgePadding - block.width;
-            const maxY = viewBoxStartY + viewBoxHeight - edgePadding - block.height;
-            
-            if (testX < viewBoxStartX + edgePadding || testX > maxX || testY < viewBoxStartY + edgePadding || testY > maxY) {
-              continue; // Skip this position if it would go outside bounds
-            }
-            
-            // Check distance from all existing blocks
-            let minDistance = Infinity;
-            let tooClose = false;
-            const minSpacing = 20; // Minimum spacing between blocks
-            
-            for (let j = 0; j < i; j++) {
-              const existingBlock = blocks[j];
-              if (!existingBlock) continue;
-              
-              const distance = Math.sqrt(
-                Math.pow(testX - existingBlock.x, 2) + 
-                Math.pow(testY - existingBlock.y, 2)
-              );
-              
-              if (distance < minDistance) {
-                minDistance = distance;
-              }
-              
-              // Check if blocks would overlap (use strict overlap detection)
-              const horizontalOverlap = !(testX + block.width <= existingBlock.x || 
-                                       testX >= existingBlock.x + existingBlock.width);
-              const verticalOverlap = !(testY + block.height <= existingBlock.y || 
-                                      testY >= existingBlock.y + existingBlock.height);
-              
-              // Check if blocks are too close (minimum spacing)
-              const horizontalGap = Math.min(
-                Math.abs(testX + block.width - existingBlock.x),
-                Math.abs(existingBlock.x + existingBlock.width - testX)
-              );
-              const verticalGap = Math.min(
-                Math.abs(testY + block.height - existingBlock.y),
-                Math.abs(existingBlock.y + existingBlock.height - testY)
-              );
-              
-              if ((horizontalOverlap && verticalOverlap) || 
-                  (horizontalGap < minSpacing && verticalGap < minSpacing)) {
-                tooClose = true;
-                break;
-              }
-            }
-            
-            // Score this position (prefer positions with good spacing)
-            const score = tooClose ? Infinity : -minDistance;
-            
-            if (score < bestScore) {
-              bestScore = score;
-              bestX = testX;
-              bestY = testY;
-              foundValidPosition = true;
-            }
-          }
+          // Calculate position within the grid
+          const x = viewBoxStartX + edgePadding + (col * cellWidth);
+          const y = viewBoxStartY + edgePadding + (row * cellHeight);
           
-          // If no valid position found, use a fallback position
-          if (!foundValidPosition) {
-            console.warn(`No valid position found for block ${i}, using fallback positioning`);
-            // Use a grid-based fallback position
-            const gridSize = Math.ceil(Math.sqrt(blocks.length));
-            const gridX = (i % gridSize) * (block.width + minSpacing) + edgePadding;
-            const gridY = Math.floor(i / gridSize) * (block.height + minSpacing) + edgePadding;
-            block.x = gridX;
-            block.y = gridY;
-          } else {
-            // Set the best position found
-            block.x = bestX;
-            block.y = bestY;
-          }
+          // Center the block within its cell
+          const centerX = x + (cellWidth - block.width) / 2;
+          const centerY = y + (cellHeight - block.height) / 2;
           
-          console.log(`📍 Block ${i} positioned at (${block.x.toFixed(1)}, ${block.y.toFixed(1)})`);
-        }
+          // Ensure block stays within bounds
+          const maxX = viewBoxStartX + viewBoxWidth - edgePadding - block.width;
+          const maxY = viewBoxStartY + viewBoxHeight - edgePadding - block.height;
+          
+          block.x = Math.max(viewBoxStartX + edgePadding, Math.min(maxX, centerX));
+          block.y = Math.max(viewBoxStartY + edgePadding, Math.min(maxY, centerY));
+          
+          console.log(`📍 Block ${index} positioned at (${block.x.toFixed(1)}, ${block.y.toFixed(1)})`);
+        });
       }
 
+      // Grid-based positioning service
       positionPatchesInGrid(patches) {
-        // Position patches in a packed layout to avoid touching and stay within bounds
+        console.log(`🔍 positionPatchesInGrid called with ${patches.length} patches`);
+        if (patches.length === 0) return;
+        
+        // Calculate optimal grid dimensions for better space utilization
+        const elementCount = patches.length;
         const viewBoxWidth = 800;
         const viewBoxHeight = 800;
         const viewBoxStartX = -100;
         const viewBoxStartY = -100;
-        const minSpacing = 50; // Increased minimum space between patches
-        const edgePadding = 60; // More padding from viewBox edges for safety
+        const edgePadding = 20;
+        const spacing = 120; // Much larger spacing to prevent overlaps
         
-        console.log(`Positioning ${patches.length} patches in packed layout`);
+        const availableWidth = viewBoxWidth - (2 * edgePadding);
+        const availableHeight = viewBoxHeight - (2 * edgePadding);
         
-        // Start with first patch in top-left
-        if (patches.length > 0) {
-          patches[0].x = edgePadding;
-          patches[0].y = edgePadding;
-          console.log(`Patch 0 positioned at (${patches[0].x}, ${patches[0].y})`);
-        }
+        // Use the full available space by calculating optimal grid dimensions
+        const aspectRatio = availableWidth / availableHeight; // 760/760 = 1.0
+        const cols = Math.ceil(Math.sqrt(elementCount * aspectRatio));
+        const rows = Math.ceil(elementCount / cols);
         
-        // Position remaining patches
-        for (let i = 1; i < patches.length; i++) {
-          const patch = patches[i];
-          let bestX = null;
-          let bestY = null;
-          let bestScore = Infinity;
-          let foundValidPosition = false;
+        // Calculate average patch size for cell sizing
+        const avgWidth = patches.reduce((sum, patch) => sum + patch.width, 0) / patches.length;
+        const avgHeight = patches.reduce((sum, patch) => sum + patch.height, 0) / patches.length;
+        
+        // Use full available space with centered positioning
+        const cellWidth = availableWidth / cols;
+        const cellHeight = availableHeight / rows;
+        
+        console.log(`Positioning ${patches.length} patches in ${rows}x${cols} grid (${rows * cols} cells)`);
+        
+        // Grid borders will be drawn separately to avoid conflicts
+        console.log('🔍 Grid borders will be drawn after all positioning is complete');
+        
+        patches.forEach((patch, index) => {
+          const row = Math.floor(index / cols);
+          const col = index % cols;
           
-          // Try different positions
-          for (let attempt = 0; attempt < 200; attempt++) { // Increased attempts for better positioning
-            // Calculate valid bounds for this patch
-            const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
-            const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
-            const minX = viewBoxStartX + edgePadding;
-            const minY = viewBoxStartY + edgePadding;
-            
-            // Generate random position within valid bounds
-            const testX = minX + Math.random() * (maxX - minX);
-            const testY = minY + Math.random() * (maxY - minY);
-            
-            // Double-check bounds (should always be true with the above calculation)
-            if (testX < minX || testX > maxX || testY < minY || testY > maxY) {
-              console.warn(`Generated position outside bounds: (${testX.toFixed(1)}, ${testY.toFixed(1)})`);
-              continue;
-            }
-            
-            // Check distance from all existing patches
-            let minDistance = Infinity;
-            let tooClose = false;
-            
-            for (let j = 0; j < i; j++) {
-              const existingPatch = patches[j];
-              const distance = Math.sqrt(
-                Math.pow(testX - existingPatch.x, 2) + 
-                Math.pow(testY - existingPatch.y, 2)
-              );
-              
-              if (distance < minDistance) {
-                minDistance = distance;
-              }
-              
-              // Check if patches would overlap (with more strict spacing)
-              const horizontalOverlap = !(testX + patch.width + minSpacing < existingPatch.x || 
-                                       testX > existingPatch.x + existingPatch.width + minSpacing);
-              const verticalOverlap = !(testY + patch.height + minSpacing < existingPatch.y || 
-                                      testY > existingPatch.y + existingPatch.height + minSpacing);
-              
-              // Also check center-to-center distance for better spacing
-              const centerDistance = Math.sqrt(
-                Math.pow(testX + patch.width/2 - (existingPatch.x + existingPatch.width/2), 2) + 
-                Math.pow(testY + patch.height/2 - (existingPatch.y + existingPatch.height/2), 2)
-              );
-              
-              if ((horizontalOverlap && verticalOverlap) || centerDistance < minSpacing) {
-                tooClose = true;
-                break;
-              }
-            }
-            
-            // Score this position (prefer positions with good spacing)
-            const score = tooClose ? Infinity : -minDistance;
-            
-            if (score < bestScore) {
-              bestScore = score;
-              bestX = testX;
-              bestY = testY;
-              foundValidPosition = true;
-            }
+          // Calculate position within the grid
+          const x = viewBoxStartX + edgePadding + (col * cellWidth);
+          const y = viewBoxStartY + edgePadding + (row * cellHeight);
+          
+          // Calculate fit scores for both orientations
+          // Penalize overflow more heavily by using negative values for overflow
+          const horizontalFitScore = Math.min(cellWidth - patch.width, 0) + Math.min(cellHeight - patch.height, 0);
+          const verticalFitScore = Math.min(cellWidth - patch.height, 0) + Math.min(cellHeight - patch.width, 0);
+          
+          let finalWidth = patch.width;
+          let finalHeight = patch.height;
+          let shouldRotate = false;
+          
+          // Debug logging for fit scores
+          console.log(`🔍 Patch ${index} (${patch.width.toFixed(1)}x${patch.height.toFixed(1)}): horizontalFit=${horizontalFitScore.toFixed(1)}, verticalFit=${verticalFitScore.toFixed(1)}, cell=${cellWidth.toFixed(1)}x${cellHeight.toFixed(1)}`);
+          
+          // Choose the orientation with better fit
+          if (verticalFitScore > horizontalFitScore) {
+            finalWidth = patch.height;
+            finalHeight = patch.width;
+            shouldRotate = true;
+            console.log(`🔄 Rotating patch ${index} for better fit (${patch.width}x${patch.height} → ${finalWidth}x${finalHeight})`);
           }
           
-          // If no valid position found, use a fallback grid-based position
-          if (!foundValidPosition) {
-            console.warn(`No valid position found for patch ${i}, using fallback positioning`);
-            // Use a grid-based fallback position with bounds checking
-            const gridSize = Math.ceil(Math.sqrt(patches.length));
-            const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
-            const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
-            const minX = viewBoxStartX + edgePadding;
-            const minY = viewBoxStartY + edgePadding;
-            
-            let gridX = (i % gridSize) * (patch.width + minSpacing) + edgePadding;
-            let gridY = Math.floor(i / gridSize) * (patch.height + minSpacing) + edgePadding;
-            
-            // Ensure grid position is within bounds
-            gridX = Math.max(minX, Math.min(maxX, gridX));
-            gridY = Math.max(minY, Math.min(maxY, gridY));
-            
-            patch.x = gridX;
-            patch.y = gridY;
-          } else {
-            // Set the best position found
-            patch.x = bestX;
-            patch.y = bestY;
-          }
+          // Center the patch within its cell
+          const centerX = x + (cellWidth - finalWidth) / 2;
+          const centerY = y + (cellHeight - finalHeight) / 2;
           
-          console.log(`Patch ${i} positioned at (${patch.x.toFixed(1)}, ${patch.y.toFixed(1)})`);
-        }
+          // Ensure patch stays within bounds
+          const maxX = viewBoxStartX + viewBoxWidth - edgePadding - finalWidth;
+          const maxY = viewBoxStartY + viewBoxHeight - edgePadding - finalHeight;
+          
+          patch.x = Math.max(viewBoxStartX + edgePadding, Math.min(maxX, centerX));
+          patch.y = Math.max(viewBoxStartY + edgePadding, Math.min(maxY, centerY));
+          
+          // Store rotation info for rendering
+          patch.rotation = shouldRotate ? 90 : 0;
+          
+          console.log(`Patch ${index} positioned at (${patch.x.toFixed(1)}, ${patch.y.toFixed(1)})`);
+        });
       }
 
-      positionUnmatchedPiecesInGrid(unmatchedPieces, patchesCount) {
-        // Position unmatched pieces using packed layout
+      positionUnmatchedPiecesInGrid(unmatchedPieces, startIndex = 0) {
+        console.log(`🔍 positionUnmatchedPiecesInGrid called with ${unmatchedPieces.length} pieces starting at index ${startIndex}`);
+        if (unmatchedPieces.length === 0) return;
+        
+        // Use the same grid dimensions as patches (3x4 grid)
+        const totalElements = 12; // 3x4 grid
+        const cols = 4;
+        const rows = 3;
+        
         const viewBoxWidth = 800;
         const viewBoxHeight = 800;
         const viewBoxStartX = -100;
         const viewBoxStartY = -100;
-        const edgePadding = 50; // More padding for safety
+        const edgePadding = 20;
         
-
+        const availableWidth = viewBoxWidth - (2 * edgePadding);
+        const availableHeight = viewBoxHeight - (2 * edgePadding);
+        
+        // Use the same cell dimensions as patches
+        const cellWidth = availableWidth / cols;
+        const cellHeight = availableHeight / rows;
+        
+        console.log(`Positioning ${unmatchedPieces.length} unmatched pieces in remaining grid cells starting at index ${startIndex}`);
         
         unmatchedPieces.forEach((piece, index) => {
-          let bestX = edgePadding;
-          let bestY = edgePadding;
-          let bestScore = Infinity;
+          const gridIndex = startIndex + index;
+          const row = Math.floor(gridIndex / cols);
+          const col = gridIndex % cols;
           
-          // Try different positions
-          for (let attempt = 0; attempt < 30; attempt++) {
-            const testX = viewBoxStartX + edgePadding + Math.random() * (viewBoxWidth - piece.width - 2 * edgePadding);
-            const testY = viewBoxStartY + edgePadding + Math.random() * (viewBoxHeight - piece.height - 2 * edgePadding);
-            
-            // Ensure we're within bounds
-            const maxX = viewBoxStartX + viewBoxWidth - edgePadding - piece.width;
-            const maxY = viewBoxStartY + viewBoxHeight - edgePadding - piece.height;
-            
-            if (testX < viewBoxStartX + edgePadding || testX > maxX || testY < viewBoxStartY + edgePadding || testY > maxY) {
-              continue; // Skip this position if it would go outside bounds
-            }
-            
-            // Check distance from all existing patches and pieces
-            let minDistance = Infinity;
-            let tooClose = false;
-            
-            // Check against patches
-            for (let j = 0; j < this.patches.length; j++) {
-              const existingPatch = this.patches[j];
-              const distance = Math.sqrt(
-                Math.pow(testX - existingPatch.x, 2) + 
-                Math.pow(testY - existingPatch.y, 2)
-              );
-              
-              if (distance < minDistance) {
-                minDistance = distance;
-              }
-              
-              // Check if piece would overlap with patch
-              const horizontalOverlap = !(testX + piece.width < existingPatch.x || 
-                                       testX > existingPatch.x + existingPatch.width);
-              const verticalOverlap = !(testY + piece.height < existingPatch.y || 
-                                      testY > existingPatch.y + existingPatch.height);
-              
-              if (horizontalOverlap && verticalOverlap) {
-                tooClose = true;
-                break;
-              }
-            }
-            
-            // Check against other unmatched pieces
-            for (let j = 0; j < index; j++) {
-              const existingPiece = unmatchedPieces[j];
-              const distance = Math.sqrt(
-                Math.pow(testX - existingPiece.x, 2) + 
-                Math.pow(testY - existingPiece.y, 2)
-              );
-              
-              if (distance < minDistance) {
-                minDistance = distance;
-              }
-              
-              // Check if pieces would overlap
-              const horizontalOverlap = !(testX + piece.width < existingPiece.x || 
-                                       testX > existingPiece.x + existingPiece.width);
-              const verticalOverlap = !(testY + piece.height < existingPiece.y || 
-                                      testY > existingPiece.y + existingPiece.height);
-              
-              if (horizontalOverlap && verticalOverlap) {
-                tooClose = true;
-                break;
-              }
-            }
-            
-            // Score this position
-            const score = tooClose ? Infinity : -minDistance;
-            
-            if (score < bestScore) {
-              bestScore = score;
-              bestX = testX;
-              bestY = testY;
-            }
-          }
+          // Calculate position within the grid
+          const x = viewBoxStartX + edgePadding + (col * cellWidth);
+          const y = viewBoxStartY + edgePadding + (row * cellHeight);
           
-                                // Final bounds check
-                      const maxX = viewBoxStartX + viewBoxWidth - edgePadding - piece.width;
-                      const maxY = viewBoxStartY + viewBoxHeight - edgePadding - piece.height;
-                      
-                      if (bestX < viewBoxStartX + edgePadding || bestX > maxX || bestY < viewBoxStartY + edgePadding || bestY > maxY) {
-                        console.error(`ERROR: Unmatched piece ${index} would be positioned outside bounds at (${bestX.toFixed(1)}, ${bestY.toFixed(1)}). Max allowed: (${maxX.toFixed(1)}, ${maxY.toFixed(1)})`);
-                        // Force it to be within bounds
-                        piece.x = Math.max(viewBoxStartX + edgePadding, Math.min(maxX, bestX));
-                        piece.y = Math.max(viewBoxStartY + edgePadding, Math.min(maxY, bestY));
-                      } else {
-                        piece.x = bestX;
-                        piece.y = bestY;
-                      }
+          // Center the piece within its cell
+          const centerX = x + (cellWidth - piece.width) / 2;
+          const centerY = y + (cellHeight - piece.height) / 2;
+          
+          // Ensure piece stays within bounds
+          const maxX = viewBoxStartX + viewBoxWidth - edgePadding - piece.width;
+          const maxY = viewBoxStartY + viewBoxHeight - edgePadding - piece.height;
+          
+          piece.x = Math.max(viewBoxStartX + edgePadding, Math.min(maxX, centerX));
+          piece.y = Math.max(viewBoxStartY + edgePadding, Math.min(maxY, centerY));
+          
+          console.log(`Unmatched piece ${index} (grid index ${gridIndex}) positioned at (${piece.x.toFixed(1)}, ${piece.y.toFixed(1)}) in cell (${row}, ${col})`);
         });
       }
 
