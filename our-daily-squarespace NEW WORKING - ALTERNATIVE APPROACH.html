@@ -745,6 +745,7 @@
     <!-- Quilt Screen -->
                 <section class="screen" id="screen-quilt" role="main" aria-label="Community quilt display">
         <div id="phase-indicator" style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; color: #666;">Collection Phase (0/5)</div>
+        <div id="user-counter" style="font-size: 1rem; font-weight: 500; margin-bottom: 0.5rem; color: #888; background: #f0f0f0; padding: 0.5rem; border-radius: 4px;">Submission #0</div>
         <svg id="quilt" viewBox="-100 -100 800 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Community quilt with colorful blocks"></svg>
               <p class="thank-you-message" aria-live="polite">Thank you for adding your block! Look what we're making together <3</p>
         <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white; margin: 0.5rem;">TEST: Add Random Block</button>
@@ -981,7 +982,10 @@
       constructor() {
         this.blocks = []; // Start with empty quilt - first user submission creates the first piece
         this.pieces = []; // New: Individual pieces before patch formation
+        this.allPieces = []; // New: Store ALL pieces throughout the entire process
         this.patches = []; // New: Patches before block formation
+        this.originalPatches = []; // Store original patches for rendering in block phase
+        this.quilt = null; // New: Final quilt
         this.submissionCount = 0; // New: Track submissions for phase transitions
         this.currentPhase = 'collection'; // New: 'collection', 'patch-formation', 'block-formation'
         this.lastAddedIndex = null;
@@ -1045,6 +1049,7 @@
               this.quiltSVG = document.getElementById('quilt');
             }
             this.renderBlocks();
+            this.updateUserCounter(); // Initialize user counter display
           }, 100);
           
           showLoading(false);
@@ -1444,6 +1449,38 @@
                      this.renderPiece(piece, i);
                    });
                  }
+          } else if (this.currentPhase === 'block-formation') {
+            // Render blocks
+            console.log(`🎨 Rendering ${this.blocks.length} blocks in block formation phase`);
+            this.blocks.forEach((block, i) => {
+              console.log(`🎨 Rendering block ${i}:`, block);
+              this.renderBlock(block, i);
+            });
+            
+            // Also render any unmatched pieces (like user 8's single piece)
+            if (this.unmatchedPieces && this.unmatchedPieces.length > 0) {
+              console.log(`🎨 Rendering ${this.unmatchedPieces.length} unmatched pieces`);
+              // Position unmatched pieces in remaining grid spaces
+              this.positionUnmatchedPiecesInGrid(this.unmatchedPieces, this.blocks.length);
+              this.unmatchedPieces.forEach((piece, i) => {
+                this.renderPiece(piece, i);
+              });
+            }
+            
+            // Render unmatched patches as individual patches
+            if (this.unmatchedPatches && this.unmatchedPatches.length > 0) {
+              console.log(`🎨 Rendering ${this.unmatchedPatches.length} unmatched patches as individual patches`);
+              // Position unmatched patches in remaining grid spaces
+              this.positionPatchesInGrid(this.unmatchedPatches);
+              this.unmatchedPatches.forEach((patch, i) => {
+                this.renderPatch(patch, i);
+              });
+            }
+          } else if (this.currentPhase === 'quilt-formation') {
+            // Render the final quilt
+            if (this.quilt) {
+              this.renderQuilt(this.quilt);
+            }
           } else {
             // Render blocks
             this.blocks.forEach((block, i) => {
@@ -1474,13 +1511,14 @@
           path.setAttribute('filter', 'url(#organicEdges)');
         }
         
-        // Only animate the user's new pieces, not all pieces
-        const isCurrentUserPiece = piece.userId === this.currentUserId;
-        const isLatestSubmission = piece.submissionId === this.submissionCount;
-        
-        if (isCurrentUserPiece && isLatestSubmission) {
-          path.classList.add('new-block');
-        }
+                    // Only animate the user's new pieces, not all pieces
+            const isCurrentUserPiece = piece.userId === this.currentUserId;
+            const isLatestSubmission = piece.submissionId === this.submissionCount;
+            
+            // During patch formation, only animate pieces from the current submission
+            if (isCurrentUserPiece && isLatestSubmission) {
+              path.classList.add('new-block');
+            }
         
         this.quiltSVG.appendChild(path);
       }
@@ -1575,13 +1613,14 @@
               path.setAttribute('filter', 'url(#userHighlight)');
             }
             
-            // Only animate the two individual pieces that the user chose
-            // Check if this piece belongs to the current user and is from the latest submission
+            // Only animate the pieces from the current submission
             const isCurrentUserPiece = piece.userId === this.currentUserId;
             const isLatestSubmission = piece.submissionId === this.submissionCount;
             
+            // Only animate pieces from the current user's latest submission
             if (isCurrentUserPiece && isLatestSubmission) {
               path.classList.add('new-block');
+              console.log(`Animating piece from submission ${piece.submissionId}, current submission: ${this.submissionCount}`);
             }
             
             this.quiltSVG.appendChild(path);
@@ -1612,162 +1651,81 @@
           return;
         }
         
+        // Check if block has required properties
+        if (!block.width || !block.height) {
+          console.error('Block missing width or height:', block);
+          return;
+        }
+        
         // Render each patch in the block with its original color
         if (block.patches && block.patches.length > 0) {
-          // Calculate how patches should be positioned within the block
-          const patch1 = block.patches[0];
-          const patch2 = block.patches[1];
-          
-          // Position patches to fill the block rectangle properly with organic jitter
-          let positionedPatch1, positionedPatch2;
-          
           // Add some organic jitter to the block positioning
           const blockJitterX = (Math.random() - 0.5) * 8; // ±4px jitter
           const blockJitterY = (Math.random() - 0.5) * 8; // ±4px jitter
           const jitteredBlockX = block.x + blockJitterX;
           const jitteredBlockY = block.y + blockJitterY;
           
-          if (block.width > block.height) {
-            // Horizontal join - patches side by side, resized to fill block with jitter
-            const patch1Ratio = patch1.width / (patch1.width + patch2.width);
-            const patch2Ratio = patch2.width / (patch1.width + patch2.width);
+          if (block.patches.length >= 2) {
+            // Multi-patch block
+            console.log(`🎨 Rendering multi-patch block ${block.id} with ${block.patches.length} patches`);
+            const patch1 = block.patches[0];
+            const patch2 = block.patches[1];
             
-            // Add slight jitter to the join line
-            const joinJitter = (Math.random() - 0.5) * 6; // ±3px jitter on join
+            // Position patches to fill the block rectangle properly with organic jitter
+            let positionedPatch1, positionedPatch2;
             
-            positionedPatch1 = {
-              ...patch1,
-              x: jitteredBlockX,
-              y: jitteredBlockY,
-              width: (block.width * patch1Ratio) + joinJitter,
-              height: block.height + (Math.random() - 0.5) * 4 // ±2px height jitter
-            };
-            positionedPatch2 = {
-              ...patch2,
-              x: jitteredBlockX + (block.width * patch1Ratio) + joinJitter,
-              y: jitteredBlockY,
-              width: (block.width * patch2Ratio) - joinJitter,
-              height: block.height + (Math.random() - 0.5) * 4 // ±2px height jitter
-            };
-          } else {
-            // Vertical join - patches stacked, resized to fill block with jitter
-            const patch1Ratio = patch1.height / (patch1.height + patch2.height);
-            const patch2Ratio = patch2.height / (patch1.height + patch2.height);
-            
-            // Add slight jitter to the join line
-            const joinJitter = (Math.random() - 0.5) * 6; // ±3px jitter on join
-            
-            positionedPatch1 = {
-              ...patch1,
-              x: jitteredBlockX,
-              y: jitteredBlockY,
-              width: block.width + (Math.random() - 0.5) * 4, // ±2px width jitter
-              height: (block.height * patch1Ratio) + joinJitter
-            };
-            positionedPatch2 = {
-              ...patch2,
-              x: jitteredBlockX,
-              y: jitteredBlockY + (block.height * patch1Ratio) + joinJitter,
-              width: block.width + (Math.random() - 0.5) * 4, // ±2px width jitter
-              height: (block.height * patch2Ratio) - joinJitter
-            };
-          }
-          
-          // Render the positioned patches
-          [positionedPatch1, positionedPatch2].forEach((patch, patchIndex) => {
-            // Render each piece in the patch with its original color
-            if (patch.pieces && patch.pieces.length > 0) {
-              const piece1 = patch.pieces[0];
-              const piece2 = patch.pieces[1];
+            if (block.width > block.height) {
+              // Horizontal join - patches side by side, resized to fill block with jitter
+              const patch1Ratio = patch1.width / (patch1.width + patch2.width);
+              const patch2Ratio = patch2.width / (patch1.width + patch2.width);
               
-              // Position pieces within the patch
-              let positionedPiece1, positionedPiece2;
+              // Add slight jitter to the join line
+              const joinJitter = (Math.random() - 0.5) * 6; // ±3px jitter on join
               
-              if (patch.width > patch.height) {
-                // Horizontal join - pieces side by side
-                const piece1Ratio = piece1.width / (piece1.width + piece2.width);
-                const piece2Ratio = piece2.width / (piece1.width + piece2.width);
-                
-                positionedPiece1 = {
-                  ...piece1,
-                  x: patch.x,
-                  y: patch.y,
-                  width: patch.width * piece1Ratio,
-                  height: patch.height
-                };
-                positionedPiece2 = {
-                  ...piece2,
-                  x: patch.x + (patch.width * piece1Ratio),
-                  y: patch.y,
-                  width: patch.width * piece2Ratio,
-                  height: patch.height
-                };
-              } else {
-                // Vertical join - pieces stacked
-                const piece1Ratio = piece1.height / (piece1.height + piece2.height);
-                const piece2Ratio = piece2.height / (piece1.height + piece2.height);
-                
-                positionedPiece1 = {
-                  ...piece1,
-                  x: patch.x,
-                  y: patch.y,
-                  width: patch.width,
-                  height: patch.height * piece1Ratio
-                };
-                positionedPiece2 = {
-                  ...piece2,
-                  x: patch.x,
-                  y: patch.y + (patch.height * piece1Ratio),
-                  width: patch.width,
-                  height: patch.height * piece2Ratio
-                };
-              }
-              
-              // Render each piece with its original color
-              [positionedPiece1, positionedPiece2].forEach((piece, pieceIndex) => {
-                const pathData = this.createOrganicPath(piece);
-                if (!pathData) {
-                  console.error('Failed to create path data for piece:', piece);
-                  return;
-                }
-                
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', pathData);
-                path.setAttribute('fill', piece.color); // Use the piece's original color
-                path.setAttribute('filter', 'url(#organicEdges)');
-                
-                // Apply user highlight if this is the current user's piece and highlighting is active
-                if (piece.userId === this.currentUserId && this.userPiecesHighlighted) {
-                  path.setAttribute('filter', 'url(#userHighlight)');
-                }
-                
-                // Only animate the user's new pieces
-                const isCurrentUserPiece = piece.userId === this.currentUserId;
-                const isLatestSubmission = piece.submissionId === this.submissionCount;
-                
-                if (isCurrentUserPiece && isLatestSubmission) {
-                  path.classList.add('new-block');
-                }
-                
-                this.quiltSVG.appendChild(path);
-              });
+              positionedPatch1 = {
+                ...patch1,
+                x: jitteredBlockX,
+                y: jitteredBlockY,
+                width: (block.width * patch1Ratio) + joinJitter,
+                height: block.height + (Math.random() - 0.5) * 4 // ±2px height jitter
+              };
+              positionedPatch2 = {
+                ...patch2,
+                x: jitteredBlockX + (block.width * patch1Ratio) + joinJitter,
+                y: jitteredBlockY,
+                width: (block.width * patch2Ratio) - joinJitter,
+                height: block.height + (Math.random() - 0.5) * 4 // ±2px height jitter
+              };
             } else {
-              // Fallback: render the patch as a single shape
-              const pathData = this.createOrganicPath(patch);
-              if (!pathData) {
-                console.error('Failed to create path data for patch:', patch);
-                return;
-              }
+              // Vertical join - patches stacked, resized to fill block with jitter
+              const patch1Ratio = patch1.height / (patch1.height + patch2.height);
+              const patch2Ratio = patch2.height / (patch1.height + patch2.height);
               
-              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-              path.setAttribute('d', pathData);
-              path.setAttribute('fill', patch.color);
-              path.setAttribute('filter', 'url(#organicEdges)');
+              // Add slight jitter to the join line
+              const joinJitter = (Math.random() - 0.5) * 6; // ±3px jitter on join
               
-              this.quiltSVG.appendChild(path);
+              positionedPatch1 = {
+                ...patch1,
+                x: jitteredBlockX,
+                y: jitteredBlockY,
+                width: block.width + (Math.random() - 0.5) * 4, // ±2px width jitter
+                height: (block.height * patch1Ratio) + joinJitter
+              };
+              positionedPatch2 = {
+                ...patch2,
+                x: jitteredBlockX,
+                y: jitteredBlockY + (block.height * patch1Ratio) + joinJitter,
+                width: block.width + (Math.random() - 0.5) * 4, // ±2px width jitter
+                height: (block.height * patch2Ratio) - joinJitter
+              };
             }
-          });
-        } else {
+            
+            // Render the positioned patches
+            [positionedPatch1, positionedPatch2].forEach((patch, patchIndex) => {
+              this.renderPatch(patch);
+            });
+          }
+        } else if (!block.patches || block.patches.length === 0) {
           // Fallback: render the block as a single shape (for backward compatibility)
           const jiggerX = (Math.random() - 0.5) * 8;
           const jiggerY = (Math.random() - 0.5) * 8;
@@ -1822,9 +1780,29 @@
           const phaseText = {
             'collection': `Collection Phase (${this.submissionCount}/5)`,
             'patch-formation': 'Patch Formation Phase',
-            'block-formation': 'Block Formation Phase'
+            'block-formation': 'Block Formation Phase',
+            'quilt-formation': 'Quilt Formation Phase'
           };
           phaseIndicator.textContent = phaseText[this.currentPhase] || 'Unknown Phase';
+        }
+      }
+
+      updateUserCounter() {
+        // Update UI to show current submission progress and phase
+        const userCounterElement = document.getElementById('user-counter');
+        if (userCounterElement) {
+          let phaseInfo = '';
+          if (this.currentPhase === 'collection') {
+            phaseInfo = `Collection Phase (${this.submissionCount}/5)`;
+          } else if (this.currentPhase === 'patch-formation') {
+            phaseInfo = `Patch Formation Phase (${this.patches.length} patches)`;
+          } else if (this.currentPhase === 'block-formation') {
+            phaseInfo = `Block Formation Phase (${this.blocks.length} blocks)`;
+          } else if (this.currentPhase === 'quilt-formation') {
+            phaseInfo = `Quilt Formation Phase`;
+          }
+          
+          userCounterElement.textContent = `Submission #${this.submissionCount} - ${phaseInfo}`;
         }
       }
 
@@ -1836,8 +1814,8 @@
 
           this.submissionCount++;
           
-          // Early bird special: First 5 users get 4 pieces each
-          const piecesToCreate = this.submissionCount <= 5 ? 4 : 2;
+          // Early bird special: First 5 users get 4 pieces each, users 6-7 get 2 pieces, users 8+ get 1 piece
+          const piecesToCreate = this.submissionCount <= 5 ? 4 : (this.submissionCount <= 7 ? 2 : 1);
           
           // Create pieces for this submission
           const startIndex = this.pieces.length;
@@ -1846,6 +1824,7 @@
     
             const piece = this.createPiece(newColor, currentIndex);
             this.pieces.push(piece);
+            this.allPieces.push(piece); // Store in allPieces for quilt formation
           }
           
           // Phase transitions
@@ -1859,22 +1838,60 @@
             // Trigger block formation
             this.currentPhase = 'block-formation';
             
-            // Add the new pieces to the existing patches array
-            // (The pieces from this submission will be added to patches in the next phase)
-            
-            // Form blocks from all existing patches plus the new pieces
-            // First, create patches from the new pieces
-            const newPieces = this.pieces.slice(-2); // Get the last 2 pieces from this submission
-            const newPatches = this.formPatchesFromPieces(newPieces);
-            
-            // Combine existing patches with new patches
-            const allPatches = [...this.patches, ...newPatches];
+            // Create patches from ALL pieces (1-7)
+            const allPatches = this.formPatchesFromPieces(this.allPieces);
             
             // Form blocks from all patches
-            this.blocks = this.formBlocksFromPatches(allPatches);
+            const blockFormationResult = this.formBlocksFromPatches(allPatches);
+            this.blocks = blockFormationResult.blocks;
+            this.unmatchedPatches = blockFormationResult.unmatchedPatches;
+            this.originalPatches = [...allPatches]; // Store original patches for rendering
             this.patches = []; // Clear patches after block formation
             this.pieces = []; // Clear pieces after block formation
             showToast('Block formation phase activated!');
+          } else if (this.submissionCount === 8) {
+            // Trigger block formation (not quilt formation yet)
+            this.currentPhase = 'block-formation';
+            
+            // Create patches from ALL pieces (1-7)
+            const allPatches = this.formPatchesFromPieces(this.allPieces);
+            
+            // Form blocks from all patches
+            const blockFormationResult = this.formBlocksFromPatches(allPatches);
+            this.blocks = blockFormationResult.blocks;
+            this.unmatchedPatches = blockFormationResult.unmatchedPatches;
+            this.originalPatches = [...allPatches]; // Store original patches for rendering
+            this.patches = []; // Clear patches after block formation
+            this.pieces = []; // Clear pieces after block formation
+            
+            // Keep the single piece from user 8 as unmatched
+            this.unmatchedPieces = this.pieces.slice(-1); // Keep the last piece (user 8's piece)
+            
+            showToast('Block formation phase activated!');
+          } else if (this.submissionCount === 9) {
+            // Trigger quilt formation
+            this.currentPhase = 'quilt-formation';
+            
+            // Use ALL pieces from the entire process to create the final quilt
+            // This ensures every piece created is included in the final quilt
+            
+            // First, create patches from ALL pieces
+            const allPatches = this.formPatchesFromPieces(this.allPieces);
+            
+            // Then, create blocks from ALL patches
+            const allBlocks = this.formBlocksFromPatches(allPatches);
+            
+            // Finally, form the quilt from ALL blocks
+            this.quilt = this.formQuiltFromBlocks(allBlocks);
+            
+            // Clear all arrays after quilt formation
+            this.blocks = [];
+            this.patches = [];
+            this.pieces = [];
+            this.unmatchedPieces = [];
+            this.allPieces = [];
+            
+            showToast('Quilt formation phase activated! All pieces included!');
           }
           
           this.lastAddedIndex = this.blocks.length - 1;
@@ -1943,6 +1960,9 @@
           
           const success = this.addPieceToQuilt(randomColor);
           
+          // Update counter to show new submission
+          this.updateUserCounter();
+          
           if (success) {
             this.lastAddedForShare = this.lastAddedIndex;
             await this.saveQuilt();
@@ -1956,8 +1976,12 @@
               message = `Added ${this.submissionCount <= 5 ? 4 : 2} pieces! (${this.pieces.length} total pieces)`;
             } else if (this.currentPhase === 'patch-formation') {
               message = `Added pieces! (${this.patches.length} patches formed)`;
-            } else {
+            } else if (this.currentPhase === 'block-formation') {
               message = `Added pieces! (${this.blocks.length} blocks formed)`;
+            } else if (this.currentPhase === 'quilt-formation') {
+              message = `Added pieces! Final quilt formed!`;
+            } else {
+              message = `Added pieces!`;
             }
             showToast(message);
           }
@@ -2010,18 +2034,21 @@
         }
       }
 
-      handleTestDifferentUser() {
+            handleTestDifferentUser() {
         try {
           // Temporarily change the user ID to simulate a different user
           const originalUserId = this.currentUserId;
           this.currentUserId = `test_user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           
-  
+
           showToast(`Now simulating user: ${this.currentUserId.substring(0, 20)}...`);
           
           // Add a test piece with the new user ID
           const randomColor = hslToHex(Math.floor(Math.random() * 360), 65, 50);
           const success = this.addPieceToQuilt(randomColor);
+          
+          // Update counter to show new submission
+          this.updateUserCounter();
           
           if (success) {
             this.lastAddedForShare = this.lastAddedIndex;
@@ -2700,7 +2727,7 @@
 
       createBlock(patches) {
         // Combine patches into a block
-        if (patches.length < 2) return null;
+        if (patches.length < 2) return null; // Only allow blocks with 2 or more patches
         
         // Calculate block bounds
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -2729,6 +2756,8 @@
         let bestMatch = null;
         let bestScore = Infinity;
         const tolerance = 0.2; // 20% tolerance for "similar" lengths
+        
+        console.log(`🔍 Finding best match for item ${targetItem.id || 'unknown'} among ${items.length} candidates`);
         
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
@@ -2761,6 +2790,7 @@
           
           const sameColor = targetItem.color === item.color;
 
+          console.log(`  📊 Candidate ${i}: edge scores (H:${horizontalEdgeScore.toFixed(3)}, V:${verticalEdgeScore.toFixed(3)}), contrast:${valueContrastScore.toFixed(3)}, sameColor:${sameColor}, final score:${score.toFixed(3)}`);
           
           if (score < bestScore) {
             bestScore = score;
@@ -2771,9 +2801,11 @@
               edgeScore: Math.min(horizontalEdgeScore, verticalEdgeScore),
               valueContrastScore: valueContrastScore
             };
+            console.log(`  ✅ New best match found with score ${score.toFixed(3)}`);
           }
         }
         
+        console.log(`🎯 Best match score: ${bestMatch ? bestMatch.score.toFixed(3) : 'none'}`);
         return bestMatch;
       }
 
@@ -2896,7 +2928,7 @@
         const minSpacing = 30; // Slightly more spacing for blocks
         const edgePadding = 60; // More padding for blocks
         
-        console.log(`Positioning ${blocks.length} blocks in packed layout`);
+        console.log(`🔍 Positioning ${blocks.length} blocks in packed layout`);
         
         // Start with first block in top-left
         if (blocks.length > 0 && blocks[0] && typeof blocks[0].width !== 'undefined' && typeof blocks[0].height !== 'undefined') {
@@ -2915,12 +2947,13 @@
             continue;
           }
           
-          let bestX = edgePadding;
-          let bestY = edgePadding;
+          let bestX = null;
+          let bestY = null;
           let bestScore = Infinity;
+          let foundValidPosition = false;
           
           // Try different positions
-          for (let attempt = 0; attempt < 50; attempt++) {
+          for (let attempt = 0; attempt < 100; attempt++) { // Increased attempts
             const testX = viewBoxStartX + edgePadding + Math.random() * (viewBoxWidth - block.width - 2 * edgePadding);
             const testY = viewBoxStartY + edgePadding + Math.random() * (viewBoxHeight - block.height - 2 * edgePadding);
             
@@ -2935,9 +2968,12 @@
             // Check distance from all existing blocks
             let minDistance = Infinity;
             let tooClose = false;
+            const minSpacing = 20; // Minimum spacing between blocks
             
             for (let j = 0; j < i; j++) {
               const existingBlock = blocks[j];
+              if (!existingBlock) continue;
+              
               const distance = Math.sqrt(
                 Math.pow(testX - existingBlock.x, 2) + 
                 Math.pow(testY - existingBlock.y, 2)
@@ -2947,13 +2983,24 @@
                 minDistance = distance;
               }
               
-              // Check if blocks would overlap
-              const horizontalOverlap = !(testX + block.width < existingBlock.x || 
-                                       testX > existingBlock.x + existingBlock.width);
-              const verticalOverlap = !(testY + block.height < existingBlock.y || 
-                                      testY > existingBlock.y + existingBlock.height);
+              // Check if blocks would overlap (use strict overlap detection)
+              const horizontalOverlap = !(testX + block.width <= existingBlock.x || 
+                                       testX >= existingBlock.x + existingBlock.width);
+              const verticalOverlap = !(testY + block.height <= existingBlock.y || 
+                                      testY >= existingBlock.y + existingBlock.height);
               
-              if (horizontalOverlap && verticalOverlap) {
+              // Check if blocks are too close (minimum spacing)
+              const horizontalGap = Math.min(
+                Math.abs(testX + block.width - existingBlock.x),
+                Math.abs(existingBlock.x + existingBlock.width - testX)
+              );
+              const verticalGap = Math.min(
+                Math.abs(testY + block.height - existingBlock.y),
+                Math.abs(existingBlock.y + existingBlock.height - testY)
+              );
+              
+              if ((horizontalOverlap && verticalOverlap) || 
+                  (horizontalGap < minSpacing && verticalGap < minSpacing)) {
                 tooClose = true;
                 break;
               }
@@ -2966,13 +3013,26 @@
               bestScore = score;
               bestX = testX;
               bestY = testY;
+              foundValidPosition = true;
             }
           }
           
-          // Set the best position found
-          block.x = bestX;
-          block.y = bestY;
-          console.log(`Block ${i} positioned at (${block.x}, ${block.y})`);
+          // If no valid position found, use a fallback position
+          if (!foundValidPosition) {
+            console.warn(`No valid position found for block ${i}, using fallback positioning`);
+            // Use a grid-based fallback position
+            const gridSize = Math.ceil(Math.sqrt(blocks.length));
+            const gridX = (i % gridSize) * (block.width + minSpacing) + edgePadding;
+            const gridY = Math.floor(i / gridSize) * (block.height + minSpacing) + edgePadding;
+            block.x = gridX;
+            block.y = gridY;
+          } else {
+            // Set the best position found
+            block.x = bestX;
+            block.y = bestY;
+          }
+          
+          console.log(`📍 Block ${i} positioned at (${block.x.toFixed(1)}, ${block.y.toFixed(1)})`);
         }
       }
 
@@ -2982,8 +3042,8 @@
         const viewBoxHeight = 800;
         const viewBoxStartX = -100;
         const viewBoxStartY = -100;
-        const minSpacing = 20; // Minimum space between patches
-        const edgePadding = 50; // More padding from viewBox edges for safety
+        const minSpacing = 50; // Increased minimum space between patches
+        const edgePadding = 60; // More padding from viewBox edges for safety
         
         console.log(`Positioning ${patches.length} patches in packed layout`);
         
@@ -2997,22 +3057,28 @@
         // Position remaining patches
         for (let i = 1; i < patches.length; i++) {
           const patch = patches[i];
-          let bestX = edgePadding;
-          let bestY = edgePadding;
+          let bestX = null;
+          let bestY = null;
           let bestScore = Infinity;
+          let foundValidPosition = false;
           
-                      // Try different positions
-            for (let attempt = 0; attempt < 50; attempt++) {
-              const testX = viewBoxStartX + edgePadding + Math.random() * (viewBoxWidth - patch.width - 2 * edgePadding);
-              const testY = viewBoxStartY + edgePadding + Math.random() * (viewBoxHeight - patch.height - 2 * edgePadding);
-              
-                            // Ensure we're within bounds
-              const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
-              const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
-              
-              if (testX < viewBoxStartX + edgePadding || testX > maxX || testY < viewBoxStartY + edgePadding || testY > maxY) {
-                continue; // Skip this position if it would go outside bounds
-              }
+          // Try different positions
+          for (let attempt = 0; attempt < 200; attempt++) { // Increased attempts for better positioning
+            // Calculate valid bounds for this patch
+            const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
+            const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
+            const minX = viewBoxStartX + edgePadding;
+            const minY = viewBoxStartY + edgePadding;
+            
+            // Generate random position within valid bounds
+            const testX = minX + Math.random() * (maxX - minX);
+            const testY = minY + Math.random() * (maxY - minY);
+            
+            // Double-check bounds (should always be true with the above calculation)
+            if (testX < minX || testX > maxX || testY < minY || testY > maxY) {
+              console.warn(`Generated position outside bounds: (${testX.toFixed(1)}, ${testY.toFixed(1)})`);
+              continue;
+            }
             
             // Check distance from all existing patches
             let minDistance = Infinity;
@@ -3029,13 +3095,19 @@
                 minDistance = distance;
               }
               
-              // Check if patches would overlap
-              const horizontalOverlap = !(testX + patch.width < existingPatch.x || 
-                                       testX > existingPatch.x + existingPatch.width);
-              const verticalOverlap = !(testY + patch.height < existingPatch.y || 
-                                      testY > existingPatch.y + existingPatch.height);
+              // Check if patches would overlap (with more strict spacing)
+              const horizontalOverlap = !(testX + patch.width + minSpacing < existingPatch.x || 
+                                       testX > existingPatch.x + existingPatch.width + minSpacing);
+              const verticalOverlap = !(testY + patch.height + minSpacing < existingPatch.y || 
+                                      testY > existingPatch.y + existingPatch.height + minSpacing);
               
-              if (horizontalOverlap && verticalOverlap) {
+              // Also check center-to-center distance for better spacing
+              const centerDistance = Math.sqrt(
+                Math.pow(testX + patch.width/2 - (existingPatch.x + existingPatch.width/2), 2) + 
+                Math.pow(testY + patch.height/2 - (existingPatch.y + existingPatch.height/2), 2)
+              );
+              
+              if ((horizontalOverlap && verticalOverlap) || centerDistance < minSpacing) {
                 tooClose = true;
                 break;
               }
@@ -3044,26 +3116,40 @@
             // Score this position (prefer positions with good spacing)
             const score = tooClose ? Infinity : -minDistance;
             
-                                    if (score < bestScore) {
-                          bestScore = score;
-                          bestX = testX;
-                          bestY = testY;
-                        }
+            if (score < bestScore) {
+              bestScore = score;
+              bestX = testX;
+              bestY = testY;
+              foundValidPosition = true;
+            }
           }
           
-                                // Final bounds check
-                      const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
-                      const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
-                      
-                      if (bestX < viewBoxStartX + edgePadding || bestX > maxX || bestY < viewBoxStartY + edgePadding || bestY > maxY) {
-                        console.error(`ERROR: Patch ${i} would be positioned outside bounds at (${bestX.toFixed(1)}, ${bestY.toFixed(1)}). Max allowed: (${maxX.toFixed(1)}, ${maxY.toFixed(1)})`);
-                        // Force it to be within bounds
-                        patch.x = Math.max(viewBoxStartX + edgePadding, Math.min(maxX, bestX));
-                        patch.y = Math.max(viewBoxStartY + edgePadding, Math.min(maxY, bestY));
-                      } else {
-                        patch.x = bestX;
-                        patch.y = bestY;
-                      }
+          // If no valid position found, use a fallback grid-based position
+          if (!foundValidPosition) {
+            console.warn(`No valid position found for patch ${i}, using fallback positioning`);
+            // Use a grid-based fallback position with bounds checking
+            const gridSize = Math.ceil(Math.sqrt(patches.length));
+            const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
+            const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
+            const minX = viewBoxStartX + edgePadding;
+            const minY = viewBoxStartY + edgePadding;
+            
+            let gridX = (i % gridSize) * (patch.width + minSpacing) + edgePadding;
+            let gridY = Math.floor(i / gridSize) * (patch.height + minSpacing) + edgePadding;
+            
+            // Ensure grid position is within bounds
+            gridX = Math.max(minX, Math.min(maxX, gridX));
+            gridY = Math.max(minY, Math.min(maxY, gridY));
+            
+            patch.x = gridX;
+            patch.y = gridY;
+          } else {
+            // Set the best position found
+            patch.x = bestX;
+            patch.y = bestY;
+          }
+          
+          console.log(`Patch ${i} positioned at (${patch.x.toFixed(1)}, ${patch.y.toFixed(1)})`);
         }
       }
 
@@ -3179,6 +3265,8 @@
         const blocks = [];
         const unmatchedPatches = []; // Track patches that don't get matched
         
+        console.log(`🔍 Starting block formation with ${patches.length} patches`);
+        
         while (patches.length >= 2) {
           const patch1 = patches.shift();
           
@@ -3188,11 +3276,14 @@
             continue;
           }
           
+          console.log(`🔍 Looking for match for patch ${patch1.id || 'unknown'} (${patches.length} patches remaining)`);
           const bestMatch = this.findBestMatch(patches, patch1);
           
           if (bestMatch && bestMatch.score < 0.3) { // Good enough match
             const patch2 = bestMatch.item;
             patches.splice(patches.indexOf(patch2), 1);
+            
+            console.log(`✅ Found match: patch ${patch1.id || 'unknown'} + patch ${patch2.id || 'unknown'} (score: ${bestMatch.score.toFixed(3)})`);
             
             // Resize patches to match edges if needed
             let resizedPatch1 = { ...patch1 };
@@ -3226,32 +3317,262 @@
               block.width = combined.width;
               block.height = combined.height;
               blocks.push(block);
+              console.log(`✅ Created block ${blocks.length} from 2 patches`);
             }
           } else {
             // No good match found, keep as individual patch
+            console.log(`❌ No good match found for patch ${patch1.id || 'unknown'} (best score: ${bestMatch ? bestMatch.score.toFixed(3) : 'none'})`);
             unmatchedPatches.push(patch1);
           }
         }
         
         // Handle remaining single patch
         if (patches.length === 1) {
+          console.log(`📝 Adding remaining single patch to unmatched`);
           unmatchedPatches.push(patches[0]);
         }
         
-        // Create single blocks from unmatched patches
-        unmatchedPatches.forEach(patch => {
-          if (patch) {
-            const singleBlock = this.createBlock([patch]);
-            if (singleBlock) {
-              blocks.push(singleBlock);
-            }
-          }
-        });
+        console.log(`📊 Block formation summary: ${blocks.length} blocks created, ${unmatchedPatches.length} unmatched patches`);
+        
+        // Don't create single-patch blocks - unmatched patches should remain as patches
+        console.log(`📝 Keeping ${unmatchedPatches.length} unmatched patches as individual patches`);
+        
+        console.log(`🎯 Final result: ${blocks.length} total blocks created`);
+        console.log(`📋 Block details:`, blocks.map((block, i) => ({
+          blockIndex: i,
+          patchCount: block.patches ? block.patches.length : 0,
+          patches: block.patches ? block.patches.map(p => p.id) : []
+        })));
         
         // Position blocks in a grid layout
         this.positionBlocksInGrid(blocks);
         
-        return blocks;
+        return {
+          blocks: blocks,
+          unmatchedPatches: unmatchedPatches
+        };
+      }
+
+      formQuiltFromBlocks(blocks) {
+        // Combine blocks into a single square quilt using edge matching
+        const allBlocks = [...blocks];
+        const quiltBlocks = [];
+        const unmatchedBlocks = []; // Track blocks that don't get matched
+        
+        while (allBlocks.length >= 2) {
+          const block1 = allBlocks.shift();
+          
+          // Skip null blocks
+          if (!block1) {
+            console.warn('Skipping null block1');
+            continue;
+          }
+          
+          const bestMatch = this.findBestMatch(allBlocks, block1);
+          
+          if (bestMatch && bestMatch.score < 0.3) { // Good enough match
+            const block2 = bestMatch.item;
+            allBlocks.splice(allBlocks.indexOf(block2), 1);
+            
+            // Resize blocks to match edges if needed
+            let resizedBlock1 = { ...block1 };
+            let resizedBlock2 = { ...block2 };
+            
+            if (bestMatch.joinType === 'horizontal') {
+              // Match heights for horizontal join
+              const targetHeight = Math.max(block1.height, block2.height);
+              if (block1.height !== targetHeight) {
+                resizedBlock1.height = targetHeight;
+              }
+              if (block2.height !== targetHeight) {
+                resizedBlock2.height = targetHeight;
+              }
+            } else {
+              // Match widths for vertical join
+              const targetWidth = Math.max(block1.width, block2.width);
+              if (block1.width !== targetWidth) {
+                resizedBlock1.width = targetWidth;
+              }
+              if (block2.width !== targetWidth) {
+                resizedBlock2.width = targetWidth;
+              }
+            }
+            
+            const combined = this.combineItems(resizedBlock1, resizedBlock2, bestMatch.joinType);
+            const quiltBlock = this.createQuiltBlock([resizedBlock1, resizedBlock2]);
+            if (quiltBlock) {
+              quiltBlock.x = combined.x;
+              quiltBlock.y = combined.y;
+              quiltBlock.width = combined.width;
+              quiltBlock.height = combined.height;
+              quiltBlocks.push(quiltBlock);
+            }
+          } else {
+            // No good match found, keep as individual block
+            unmatchedBlocks.push(block1);
+          }
+        }
+        
+        // Handle remaining single block
+        if (allBlocks.length === 1) {
+          unmatchedBlocks.push(allBlocks[0]);
+        }
+        
+        // Create single quilt blocks from unmatched blocks
+        unmatchedBlocks.forEach(block => {
+          if (block) {
+            const singleQuiltBlock = this.createQuiltBlock([block]);
+            if (singleQuiltBlock) {
+              quiltBlocks.push(singleQuiltBlock);
+            }
+          }
+        });
+        
+        // Position quilt blocks to form a square
+        this.positionQuiltBlocks(quiltBlocks);
+        
+        return {
+          id: `quilt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'quilt',
+          blocks: quiltBlocks,
+          width: 600,
+          height: 600
+        };
+      }
+
+      createQuiltBlock(blocks) {
+        // Combine blocks into a quilt block
+        if (blocks.length < 2) return null;
+        
+        // Calculate quilt block bounds
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        blocks.forEach(block => {
+          minX = Math.min(minX, block.x);
+          minY = Math.min(minY, block.y);
+          maxX = Math.max(maxX, block.x + block.width);
+          maxY = Math.max(maxY, block.y + block.height);
+        });
+        
+        return {
+          id: `quilt_block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          x: minX,
+          y: minY,
+          width: maxX - minX,
+          height: maxY - minY,
+          type: 'quilt_block',
+          blocks: blocks,
+          edges: this.calculateEdges(maxX - minX, maxY - minY)
+        };
+      }
+
+      positionQuiltBlocks(quiltBlocks) {
+        // Position quilt blocks to form a square quilt where blocks touch but don't overlap
+        const quiltSize = 600;
+        const padding = 20;
+        const availableSize = quiltSize - 2 * padding;
+        
+        console.log(`Positioning ${quiltBlocks.length} quilt blocks in touching layout`);
+        
+        if (quiltBlocks.length === 0) return;
+        
+        // Start with first block in top-left
+        quiltBlocks[0].x = padding;
+        quiltBlocks[0].y = padding;
+        console.log(`Quilt block 0 positioned at (${quiltBlocks[0].x}, ${quiltBlocks[0].y})`);
+        
+        // Position remaining blocks to touch previous blocks
+        for (let i = 1; i < quiltBlocks.length; i++) {
+          const block = quiltBlocks[i];
+          
+          // Skip null blocks
+          if (!block || typeof block.width === 'undefined' || typeof block.height === 'undefined') {
+            console.warn(`Skipping invalid quilt block at index ${i}:`, block);
+            continue;
+          }
+          
+          // Find the best position where this block touches existing blocks
+          let bestX = padding;
+          let bestY = padding;
+          let bestScore = Infinity;
+          
+          // Try different positions
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const testX = padding + Math.random() * (availableSize - block.width);
+            const testY = padding + Math.random() * (availableSize - block.height);
+            
+            // Check if this position touches any existing blocks
+            let touchesExisting = false;
+            let minDistance = Infinity;
+            
+            for (let j = 0; j < i; j++) {
+              const existingBlock = quiltBlocks[j];
+              if (!existingBlock) continue;
+              
+              // Check if blocks would overlap
+              const horizontalOverlap = !(testX + block.width <= existingBlock.x || 
+                                       testX >= existingBlock.x + existingBlock.width);
+              const verticalOverlap = !(testY + block.height <= existingBlock.y || 
+                                      testY >= existingBlock.y + existingBlock.height);
+              
+              if (horizontalOverlap && verticalOverlap) {
+                // Overlap detected, skip this position
+                touchesExisting = false;
+                break;
+              }
+              
+              // Check if blocks touch (adjacent)
+              const horizontalTouch = (testX + block.width === existingBlock.x) || 
+                                   (existingBlock.x + existingBlock.width === testX);
+              const verticalTouch = (testY + block.height === existingBlock.y) || 
+                                 (existingBlock.y + existingBlock.height === testY);
+              
+              if (horizontalTouch && verticalTouch) {
+                touchesExisting = true;
+              }
+              
+              // Calculate distance to existing blocks
+              const distance = Math.sqrt(
+                Math.pow(testX - existingBlock.x, 2) + 
+                Math.pow(testY - existingBlock.y, 2)
+              );
+              if (distance < minDistance) {
+                minDistance = distance;
+              }
+            }
+            
+            // Score this position (prefer positions that touch existing blocks)
+            const score = touchesExisting ? -minDistance : minDistance + 1000; // Penalize non-touching positions
+            
+            if (score < bestScore) {
+              bestScore = score;
+              bestX = testX;
+              bestY = testY;
+            }
+          }
+          
+          // Set the best position found
+          block.x = bestX;
+          block.y = bestY;
+          console.log(`Quilt block ${i} positioned at (${block.x}, ${block.y})`);
+        }
+      }
+
+      renderQuilt(quilt) {
+        // Render the final quilt
+        if (!quilt || !quilt.blocks) {
+          console.error('Invalid quilt for rendering');
+          return;
+        }
+        
+        // Render each block in the quilt with its original colors
+        quilt.blocks.forEach((quiltBlock, index) => {
+          if (quiltBlock && quiltBlock.blocks) {
+            // Render each block within the quilt block
+            quiltBlock.blocks.forEach((block, blockIndex) => {
+              this.renderBlock(block, blockIndex);
+            });
+          }
+        });
       }
 
       isOverlapping(x, y, width, height) {
