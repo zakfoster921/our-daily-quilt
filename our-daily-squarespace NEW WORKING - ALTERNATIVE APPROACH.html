@@ -1019,40 +1019,30 @@
 
       async initialize() {
         try {
-          console.log('Starting initialization...');
           showLoading(true);
           await this.initializeFirebase();
-          console.log('Firebase initialized');
           this.setupEventListeners();
-          console.log('Event listeners setup');
           this.initializeUI();
-          console.log('UI initialized');
           await this.loadQuilt();
-          console.log('Quilt loaded');
           
           // Initialize quilt SVG reference
           this.quiltSVG = document.getElementById('quilt');
-          console.log('Quilt SVG found:', this.quiltSVG);
           if (!this.quiltSVG) {
             // Try to show the quilt screen first
             this.showScreen('screen-quilt');
             this.quiltSVG = document.getElementById('quilt');
-            console.log('Quilt SVG after showing screen:', this.quiltSVG);
           }
           if (!this.quiltSVG) {
             throw new Error('Quilt SVG element not found');
           }
           
           this.isInitialized = true; // Set initialization flag
-          console.log('App initialized successfully - isInitialized set to true');
           
           // Force initial render with a small delay to ensure DOM is ready
           setTimeout(() => {
-            console.log('Delayed renderBlocks call - isInitialized:', this.isInitialized);
             // Double-check that quiltSVG is still available
             if (!this.quiltSVG) {
               this.quiltSVG = document.getElementById('quilt');
-              console.log('Re-checking quiltSVG:', this.quiltSVG);
             }
             this.renderBlocks();
           }, 100);
@@ -1067,7 +1057,6 @@
       async initializeFirebase() {
         try {
           // Disable Firebase for easier testing
-          console.log('Firebase disabled for testing');
           this.db = null;
           this.quiltDoc = null;
         } catch (error) {
@@ -1361,7 +1350,7 @@
         try {
           showLoading(true);
           // Disable Firestore for easier testing
-          console.log('loadQuilt: Firestore disabled, starting with empty quilt');
+          // Firestore disabled, starting with empty quilt
           this.blocks = []; // Start with empty quilt - first user submission creates the first piece
           
           if (this.isInitialized) {
@@ -1381,7 +1370,7 @@
       async saveQuilt() {
         try {
           // Disable Firestore for easier testing
-          console.log('saveQuilt: Firestore disabled, skipping save');
+          // Firestore disabled, skipping save
         } catch (error) {
           handleError(error, 'saveQuilt');
           throw error;
@@ -1389,7 +1378,7 @@
       }
 
       renderBlocks() {
-        console.log('renderBlocks called, isInitialized:', this.isInitialized, 'quiltSVG:', !!this.quiltSVG);
+        // renderBlocks called
         if (!this.isInitialized) {
           console.warn('QuiltManager not initialized - returning early');
           return;
@@ -1448,7 +1437,7 @@
             
                              // Also render any unmatched pieces
                  if (this.unmatchedPieces && this.unmatchedPieces.length > 0) {
-                   console.log(`Rendering ${this.unmatchedPieces.length} unmatched pieces`);
+           
                    // Position unmatched pieces in remaining grid spaces
                    this.positionUnmatchedPiecesInGrid(this.unmatchedPieces, this.patches.length);
                    this.unmatchedPieces.forEach((piece, i) => {
@@ -1497,7 +1486,7 @@
 
       renderPatch(patch, index) {
         // Render patch by rendering each individual piece with its original color
-        console.log(`Rendering patch ${index}:`, patch);
+
         
         if (!patch) {
           console.error('Attempted to render null patch');
@@ -1567,7 +1556,7 @@
           
           // Render the positioned pieces
           [positionedPiece1, positionedPiece2].forEach((piece, pieceIndex) => {
-            console.log(`Rendering piece ${pieceIndex} in patch ${index}: ${piece.color} at (${piece.x}, ${piece.y})`);
+
             
             const pathData = this.createOrganicPath(piece);
             if (!pathData) {
@@ -1692,7 +1681,7 @@
           const startIndex = this.pieces.length;
           for (let i = 0; i < piecesToCreate; i++) {
             const currentIndex = startIndex + i;
-            console.log(`Creating piece ${currentIndex} for submission ${this.submissionCount}`);
+    
             const piece = this.createPiece(newColor, currentIndex);
             this.pieces.push(piece);
           }
@@ -1820,10 +1809,7 @@
           // Toggle highlighting
           this.userPiecesHighlighted = !this.userPiecesHighlighted;
           
-          console.log(`Current user ID: ${this.currentUserId}`);
-          console.log(`Total pieces: ${this.pieces.length}`);
-          console.log(`Total patches: ${this.patches.length}`);
-          console.log(`Total blocks: ${this.blocks.length}`);
+          
           
           // Count user's pieces
           const userPieces = this.pieces.filter(piece => piece.userId === this.currentUserId);
@@ -1836,9 +1822,7 @@
             )
           );
           
-          console.log(`User pieces found: ${userPieces.length}`);
-          console.log(`User patches found: ${userPatches.length}`);
-          console.log(`User blocks found: ${userBlocks.length}`);
+          
           
           const totalUserPieces = userPieces.length + userPatches.length + userBlocks.length;
           
@@ -1869,7 +1853,7 @@
           const originalUserId = this.currentUserId;
           this.currentUserId = `test_user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           
-          console.log(`Switched from user: ${originalUserId} to: ${this.currentUserId}`);
+  
           showToast(`Now simulating user: ${this.currentUserId.substring(0, 20)}...`);
           
           // Add a test piece with the new user ID
@@ -1887,7 +1871,7 @@
           // Reset back to original user after a delay
           setTimeout(() => {
             this.currentUserId = originalUserId;
-            console.log(`Switched back to original user: ${originalUserId}`);
+    
             showToast('Switched back to original user');
           }, 5000); // 5 seconds
           
@@ -2406,7 +2390,7 @@
       }
 
       createPiece(color, pieceIndex) {
-        console.log('createPiece: LOOSE GRID PLACEMENT for piece', pieceIndex);
+
         
         // Simple sequential loose grid placement
         const viewBoxWidth = 800;
@@ -2470,7 +2454,7 @@
         const baseX = gridStartX + gridX * cellWidth + cellWidth / 2;
         const baseY = gridStartY + gridY * cellHeight + cellHeight / 2;
         
-        console.log(`Piece ${pieceIndex}: Grid position (${gridX}, ${gridY}), Cell size: ${cellWidth.toFixed(1)}x${cellHeight.toFixed(1)}, Max piece size: ${maxPieceSize.toFixed(1)}px, Jitter: ${actualJitter.toFixed(1)}px`);
+
         
         // Add jitter for organic feel (reduced to prevent touching)
         const jitterX = (Math.random() - 0.5) * Math.min(actualJitter, 8); // Reduced max jitter
@@ -2509,7 +2493,7 @@
           edges: this.calculateEdges(width, height) // Store edge lengths for matching
         };
         
-        console.log(`Created piece for user: ${this.currentUserId} (submission ${this.submissionCount}, piece ${pieceIndex})`);
+
         return piece;
       }
 
@@ -2613,7 +2597,7 @@
           const score = Math.min(horizontalScore, verticalScore);
           
           const sameColor = targetItem.color === item.color;
-          console.log(`Match candidate: ${targetItem.color} + ${item.color} | Edge: ${Math.min(horizontalEdgeScore, verticalEdgeScore).toFixed(3)} | Contrast: ${valueContrastScore.toFixed(3)} | Same color: ${sameColor} | Final score: ${score.toFixed(3)}`);
+
           
           if (score < bestScore) {
             bestScore = score;
@@ -2653,7 +2637,7 @@
         // This gives bonus points for good contrast but doesn't penalize too much for similar values
         const contrastScore = Math.pow(normalizedContrast, 0.7);
         
-        console.log(`Value contrast: ${color1} (${hsl1.l}%) vs ${color2} (${hsl2.l}%) = ${contrastScore.toFixed(3)}`);
+
         
         return contrastScore;
       }
@@ -2706,7 +2690,7 @@
             const piece2 = bestMatch.item;
             pieces.splice(pieces.indexOf(piece2), 1);
             
-            console.log(`Forming patch: ${piece1.color} + ${piece2.color} (${bestMatch.joinType} join, edge score: ${bestMatch.edgeScore.toFixed(3)}, contrast score: ${bestMatch.valueContrastScore.toFixed(3)})`);
+    
             
             const combined = this.combineItems(piece1, piece2, bestMatch.joinType);
             const patch = this.createPatch([piece1, piece2]);
@@ -2720,19 +2704,19 @@
           } else {
             // No good match found, keep as individual piece
             unmatchedPieces.push(piece1);
-            console.log(`No good match found for piece ${piece1.color}, keeping as individual piece`);
+    
           }
         }
         
         // Handle remaining single piece
         if (pieces.length === 1) {
           unmatchedPieces.push(pieces[0]);
-          console.log(`Remaining single piece ${pieces[0].color} kept as individual piece`);
+  
         }
         
         // Store unmatched pieces for rendering
         this.unmatchedPieces = unmatchedPieces;
-        console.log(`Formed ${patches.length} patches and ${unmatchedPieces.length} unmatched pieces`);
+
         
         // Position patches in a grid layout with jitter
         this.positionPatchesInGrid(patches);
@@ -2770,16 +2754,11 @@
               const testX = viewBoxStartX + edgePadding + Math.random() * (viewBoxWidth - patch.width - 2 * edgePadding);
               const testY = viewBoxStartY + edgePadding + Math.random() * (viewBoxHeight - patch.height - 2 * edgePadding);
               
-              console.log(`Patch ${i} attempt ${attempt}: testX=${testX.toFixed(1)}, testY=${testY.toFixed(1)}, patch.width=${patch.width.toFixed(1)}, patch.height=${patch.height.toFixed(1)}`);
-            
-                          // Ensure we're within bounds
+                            // Ensure we're within bounds
               const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
               const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
               
-              console.log(`  Bounds check: edgePadding=${edgePadding}, maxX=${maxX.toFixed(1)}, maxY=${maxY.toFixed(1)}`);
-              
               if (testX < viewBoxStartX + edgePadding || testX > maxX || testY < viewBoxStartY + edgePadding || testY > maxY) {
-                console.log(`  SKIPPING: testX=${testX.toFixed(1)} (min:${edgePadding}, max:${maxX.toFixed(1)}), testY=${testY.toFixed(1)} (min:${edgePadding}, max:${maxY.toFixed(1)})`);
                 continue; // Skip this position if it would go outside bounds
               }
             
@@ -2813,30 +2792,25 @@
             // Score this position (prefer positions with good spacing)
             const score = tooClose ? Infinity : -minDistance;
             
-            if (score < bestScore) {
-              bestScore = score;
-              bestX = testX;
-              bestY = testY;
-              console.log(`  ACCEPTED: (${testX.toFixed(1)}, ${testY.toFixed(1)}) with score ${score.toFixed(3)}`);
-            }
+                                    if (score < bestScore) {
+                          bestScore = score;
+                          bestX = testX;
+                          bestY = testY;
+                        }
           }
           
                                 // Final bounds check
                       const maxX = viewBoxStartX + viewBoxWidth - edgePadding - patch.width;
                       const maxY = viewBoxStartY + viewBoxHeight - edgePadding - patch.height;
                       
-                      console.log(`Final bounds check for patch ${i}: bestX=${bestX.toFixed(1)}, bestY=${bestY.toFixed(1)}, maxX=${maxX.toFixed(1)}, maxY=${maxY.toFixed(1)}`);
-                      
                       if (bestX < viewBoxStartX + edgePadding || bestX > maxX || bestY < viewBoxStartY + edgePadding || bestY > maxY) {
                         console.error(`ERROR: Patch ${i} would be positioned outside bounds at (${bestX.toFixed(1)}, ${bestY.toFixed(1)}). Max allowed: (${maxX.toFixed(1)}, ${maxY.toFixed(1)})`);
                         // Force it to be within bounds
                         patch.x = Math.max(viewBoxStartX + edgePadding, Math.min(maxX, bestX));
                         patch.y = Math.max(viewBoxStartY + edgePadding, Math.min(maxY, bestY));
-                        console.log(`Forced patch ${i} to safe position: (${patch.x.toFixed(1)}, ${patch.y.toFixed(1)})`);
                       } else {
                         patch.x = bestX;
                         patch.y = bestY;
-                        console.log(`Patch ${i} positioned at (${bestX.toFixed(1)}, ${bestY.toFixed(1)})`);
                       }
         }
       }
@@ -2849,7 +2823,7 @@
         const viewBoxStartY = -100;
         const edgePadding = 50; // More padding for safety
         
-        console.log(`Positioning ${unmatchedPieces.length} unmatched pieces after ${patchesCount} patches`);
+
         
         unmatchedPieces.forEach((piece, index) => {
           let bestX = edgePadding;
@@ -2866,7 +2840,6 @@
             const maxY = viewBoxStartY + viewBoxHeight - edgePadding - piece.height;
             
             if (testX < viewBoxStartX + edgePadding || testX > maxX || testY < viewBoxStartY + edgePadding || testY > maxY) {
-              console.log(`Skipping unmatched piece position (${testX.toFixed(1)}, ${testY.toFixed(1)}) - would go outside bounds. Max allowed: (${maxX.toFixed(1)}, ${maxY.toFixed(1)})`);
               continue; // Skip this position if it would go outside bounds
             }
             
@@ -2929,7 +2902,6 @@
               bestScore = score;
               bestX = testX;
               bestY = testY;
-              console.log(`  ACCEPTED unmatched piece: (${testX.toFixed(1)}, ${testY.toFixed(1)}) with score ${score.toFixed(3)}`);
             }
           }
           
@@ -2942,11 +2914,9 @@
                         // Force it to be within bounds
                         piece.x = Math.max(viewBoxStartX + edgePadding, Math.min(maxX, bestX));
                         piece.y = Math.max(viewBoxStartY + edgePadding, Math.min(maxY, bestY));
-                        console.log(`Forced unmatched piece ${index} to safe position: (${piece.x.toFixed(1)}, ${piece.y.toFixed(1)})`);
                       } else {
                         piece.x = bestX;
                         piece.y = bestY;
-                        console.log(`Unmatched piece ${index} positioned at (${bestX.toFixed(1)}, ${bestY.toFixed(1)})`);
                       }
         });
       }
@@ -2991,15 +2961,14 @@
         // Check if the new piece overlaps with any existing pieces
         const newPiece = { x, y, width, height };
         
-        console.log(`Checking overlap for new piece: x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}`);
-        console.log(`Existing pieces: ${this.pieces.length}`);
+
         
         // Check against existing pieces
         for (let i = 0; i < this.pieces.length; i++) {
           const piece = this.pieces[i];
           const overlaps = this.rectanglesOverlap(newPiece, piece);
           const tooClose = this.isTooClose(newPiece, piece);
-          console.log(`Piece ${i}: x=${piece.x.toFixed(1)}, y=${piece.y.toFixed(1)}, w=${piece.width.toFixed(1)}, h=${piece.height.toFixed(1)}, overlaps=${overlaps}, tooClose=${tooClose}`);
+
           
           if (overlaps || tooClose) {
             return true;
@@ -3046,7 +3015,7 @@
         );
         
         const overlaps = overlapX > tolerance || overlapY > tolerance;
-        console.log(`  Overlap check: X=${overlapX.toFixed(1)}, Y=${overlapY.toFixed(1)}, tolerance=${tolerance}, overlaps=${overlaps}`);
+
         
         // If there's significant overlap (more than tolerance), consider it overlapping
         return overlaps;
@@ -3068,7 +3037,7 @@
 
     // Initialize the application
     document.addEventListener('DOMContentLoaded', async () => {
-      console.log('DOM loaded, initializing app...');
+      
       const app = new OurDailyApp();
       await app.initialize();
     });
