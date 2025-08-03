@@ -1474,10 +1474,11 @@
           path.setAttribute('filter', 'url(#organicEdges)');
         }
         
-        // Animate all pieces that are newly added (last 4 pieces for first 5 submissions, last 2 for others)
-        const piecesToAnimate = this.submissionCount <= 5 ? 4 : 2;
-        const startIndex = this.pieces.length - piecesToAnimate;
-        if (index >= startIndex) {
+        // Only animate the user's new pieces, not all pieces
+        const isCurrentUserPiece = piece.userId === this.currentUserId;
+        const isLatestSubmission = piece.submissionId === this.submissionCount;
+        
+        if (isCurrentUserPiece && isLatestSubmission) {
           path.classList.add('new-block');
         }
         
@@ -1574,8 +1575,12 @@
               path.setAttribute('filter', 'url(#userHighlight)');
             }
             
-            // Animate if this is the newest patch
-            if (index === this.patches.length - 1) {
+            // Only animate the two individual pieces that the user chose
+            // Check if this piece belongs to the current user and is from the latest submission
+            const isCurrentUserPiece = piece.userId === this.currentUserId;
+            const isLatestSubmission = piece.submissionId === this.submissionCount;
+            
+            if (isCurrentUserPiece && isLatestSubmission) {
               path.classList.add('new-block');
             }
             
@@ -1594,9 +1599,7 @@
           path.setAttribute('fill', patch.color);
           path.setAttribute('filter', 'url(#organicEdges)');
           
-          if (index === this.patches.length - 1) {
-            path.classList.add('new-block');
-          }
+          // Don't animate patches - they should appear as if already matched up
           
           this.quiltSVG.appendChild(path);
         }
@@ -1625,9 +1628,7 @@
         const centerY = jiggeredBlock.y + jiggeredBlock.height / 2;
         path.setAttribute('transform', `rotate(${jiggeredBlock.rotation} ${centerX} ${centerY})`);
         
-        if (index === this.blocks.length - 1) {
-          path.classList.add('new-block');
-        }
+        // Don't animate blocks - they should appear as if already formed
         
         this.quiltSVG.appendChild(path);
       }
