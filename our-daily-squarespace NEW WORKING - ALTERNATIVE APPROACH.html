@@ -1606,31 +1606,192 @@
       }
 
       renderBlock(block, index) {
-        // Render block with organic edges (existing logic)
-        const jiggerX = (Math.random() - 0.5) * 8;
-        const jiggerY = (Math.random() - 0.5) * 8;
-        const jiggeredBlock = {
-          x: block.x + jiggerX,
-          y: block.y + jiggerY,
-          width: block.width,
-          height: block.height,
-          color: block.color,
-          rotation: (Math.random() - 0.5) * 4
-        };
+        // Render block by rendering each individual patch with its original color
+        if (!block) {
+          console.error('Attempted to render null block');
+          return;
+        }
+        
+        // Render each patch in the block with its original color
+        if (block.patches && block.patches.length > 0) {
+          // Calculate how patches should be positioned within the block
+          const patch1 = block.patches[0];
+          const patch2 = block.patches[1];
+          
+          // Position patches to fill the block rectangle properly with organic jitter
+          let positionedPatch1, positionedPatch2;
+          
+          // Add some organic jitter to the block positioning
+          const blockJitterX = (Math.random() - 0.5) * 8; // ±4px jitter
+          const blockJitterY = (Math.random() - 0.5) * 8; // ±4px jitter
+          const jitteredBlockX = block.x + blockJitterX;
+          const jitteredBlockY = block.y + blockJitterY;
+          
+          if (block.width > block.height) {
+            // Horizontal join - patches side by side, resized to fill block with jitter
+            const patch1Ratio = patch1.width / (patch1.width + patch2.width);
+            const patch2Ratio = patch2.width / (patch1.width + patch2.width);
+            
+            // Add slight jitter to the join line
+            const joinJitter = (Math.random() - 0.5) * 6; // ±3px jitter on join
+            
+            positionedPatch1 = {
+              ...patch1,
+              x: jitteredBlockX,
+              y: jitteredBlockY,
+              width: (block.width * patch1Ratio) + joinJitter,
+              height: block.height + (Math.random() - 0.5) * 4 // ±2px height jitter
+            };
+            positionedPatch2 = {
+              ...patch2,
+              x: jitteredBlockX + (block.width * patch1Ratio) + joinJitter,
+              y: jitteredBlockY,
+              width: (block.width * patch2Ratio) - joinJitter,
+              height: block.height + (Math.random() - 0.5) * 4 // ±2px height jitter
+            };
+          } else {
+            // Vertical join - patches stacked, resized to fill block with jitter
+            const patch1Ratio = patch1.height / (patch1.height + patch2.height);
+            const patch2Ratio = patch2.height / (patch1.height + patch2.height);
+            
+            // Add slight jitter to the join line
+            const joinJitter = (Math.random() - 0.5) * 6; // ±3px jitter on join
+            
+            positionedPatch1 = {
+              ...patch1,
+              x: jitteredBlockX,
+              y: jitteredBlockY,
+              width: block.width + (Math.random() - 0.5) * 4, // ±2px width jitter
+              height: (block.height * patch1Ratio) + joinJitter
+            };
+            positionedPatch2 = {
+              ...patch2,
+              x: jitteredBlockX,
+              y: jitteredBlockY + (block.height * patch1Ratio) + joinJitter,
+              width: block.width + (Math.random() - 0.5) * 4, // ±2px width jitter
+              height: (block.height * patch2Ratio) - joinJitter
+            };
+          }
+          
+          // Render the positioned patches
+          [positionedPatch1, positionedPatch2].forEach((patch, patchIndex) => {
+            // Render each piece in the patch with its original color
+            if (patch.pieces && patch.pieces.length > 0) {
+              const piece1 = patch.pieces[0];
+              const piece2 = patch.pieces[1];
+              
+              // Position pieces within the patch
+              let positionedPiece1, positionedPiece2;
+              
+              if (patch.width > patch.height) {
+                // Horizontal join - pieces side by side
+                const piece1Ratio = piece1.width / (piece1.width + piece2.width);
+                const piece2Ratio = piece2.width / (piece1.width + piece2.width);
+                
+                positionedPiece1 = {
+                  ...piece1,
+                  x: patch.x,
+                  y: patch.y,
+                  width: patch.width * piece1Ratio,
+                  height: patch.height
+                };
+                positionedPiece2 = {
+                  ...piece2,
+                  x: patch.x + (patch.width * piece1Ratio),
+                  y: patch.y,
+                  width: patch.width * piece2Ratio,
+                  height: patch.height
+                };
+              } else {
+                // Vertical join - pieces stacked
+                const piece1Ratio = piece1.height / (piece1.height + piece2.height);
+                const piece2Ratio = piece2.height / (piece1.height + piece2.height);
+                
+                positionedPiece1 = {
+                  ...piece1,
+                  x: patch.x,
+                  y: patch.y,
+                  width: patch.width,
+                  height: patch.height * piece1Ratio
+                };
+                positionedPiece2 = {
+                  ...piece2,
+                  x: patch.x,
+                  y: patch.y + (patch.height * piece1Ratio),
+                  width: patch.width,
+                  height: patch.height * piece2Ratio
+                };
+              }
+              
+              // Render each piece with its original color
+              [positionedPiece1, positionedPiece2].forEach((piece, pieceIndex) => {
+                const pathData = this.createOrganicPath(piece);
+                if (!pathData) {
+                  console.error('Failed to create path data for piece:', piece);
+                  return;
+                }
+                
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathData);
+                path.setAttribute('fill', piece.color); // Use the piece's original color
+                path.setAttribute('filter', 'url(#organicEdges)');
+                
+                // Apply user highlight if this is the current user's piece and highlighting is active
+                if (piece.userId === this.currentUserId && this.userPiecesHighlighted) {
+                  path.setAttribute('filter', 'url(#userHighlight)');
+                }
+                
+                // Only animate the user's new pieces
+                const isCurrentUserPiece = piece.userId === this.currentUserId;
+                const isLatestSubmission = piece.submissionId === this.submissionCount;
+                
+                if (isCurrentUserPiece && isLatestSubmission) {
+                  path.classList.add('new-block');
+                }
+                
+                this.quiltSVG.appendChild(path);
+              });
+            } else {
+              // Fallback: render the patch as a single shape
+              const pathData = this.createOrganicPath(patch);
+              if (!pathData) {
+                console.error('Failed to create path data for patch:', patch);
+                return;
+              }
+              
+              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+              path.setAttribute('d', pathData);
+              path.setAttribute('fill', patch.color);
+              path.setAttribute('filter', 'url(#organicEdges)');
+              
+              this.quiltSVG.appendChild(path);
+            }
+          });
+        } else {
+          // Fallback: render the block as a single shape (for backward compatibility)
+          const jiggerX = (Math.random() - 0.5) * 8;
+          const jiggerY = (Math.random() - 0.5) * 8;
+          const jiggeredBlock = {
+            x: block.x + jiggerX,
+            y: block.y + jiggerY,
+            width: block.width,
+            height: block.height,
+            color: block.color,
+            rotation: (Math.random() - 0.5) * 4
+          };
 
-        const pathData = this.createOrganicPath(jiggeredBlock);
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', pathData);
-        path.setAttribute('fill', jiggeredBlock.color);
-        path.setAttribute('filter', 'url(#organicEdges)');
-        
-        const centerX = jiggeredBlock.x + jiggeredBlock.width / 2;
-        const centerY = jiggeredBlock.y + jiggeredBlock.height / 2;
-        path.setAttribute('transform', `rotate(${jiggeredBlock.rotation} ${centerX} ${centerY})`);
-        
-        // Don't animate blocks - they should appear as if already formed
-        
-        this.quiltSVG.appendChild(path);
+          const pathData = this.createOrganicPath(jiggeredBlock);
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', pathData);
+          path.setAttribute('fill', jiggeredBlock.color);
+          path.setAttribute('filter', 'url(#organicEdges)');
+          
+          const centerX = jiggeredBlock.x + jiggeredBlock.width / 2;
+          const centerY = jiggeredBlock.y + jiggeredBlock.height / 2;
+          path.setAttribute('transform', `rotate(${jiggeredBlock.rotation} ${centerX} ${centerY})`);
+          
+          this.quiltSVG.appendChild(path);
+        }
       }
 
       createOrganicPath(item) {
@@ -1698,20 +1859,21 @@
             // Trigger block formation
             this.currentPhase = 'block-formation';
             
-            // Create 2 additional pieces from 6th and 7th submissions
-            const additionalPieces = [];
-            for (let i = 0; i < 2; i++) {
-              const piece = this.createPiece(newColor);
-              additionalPieces.push(piece);
-            }
+            // Add the new pieces to the existing patches array
+            // (The pieces from this submission will be added to patches in the next phase)
             
-            // Form additional patches from 6th + 7th submissions
-            const additionalPatches = this.formPatchesFromPieces();
-            this.patches.push(...additionalPatches);
+            // Form blocks from all existing patches plus the new pieces
+            // First, create patches from the new pieces
+            const newPieces = this.pieces.slice(-2); // Get the last 2 pieces from this submission
+            const newPatches = this.formPatchesFromPieces(newPieces);
+            
+            // Combine existing patches with new patches
+            const allPatches = [...this.patches, ...newPatches];
             
             // Form blocks from all patches
-            this.blocks = this.formBlocksFromPatches();
+            this.blocks = this.formBlocksFromPatches(allPatches);
             this.patches = []; // Clear patches after block formation
+            this.pieces = []; // Clear pieces after block formation
             showToast('Block formation phase activated!');
           }
           
@@ -2677,9 +2839,9 @@
         };
       }
 
-      formPatchesFromPieces() {
+      formPatchesFromPieces(specificPieces = null) {
         // Combine pieces into patches using edge matching
-        const pieces = [...this.pieces];
+        const pieces = specificPieces ? [...specificPieces] : [...this.pieces];
         const patches = [];
         const unmatchedPieces = []; // Track pieces that don't get matched
         
@@ -2723,6 +2885,95 @@
         this.positionPatchesInGrid(patches);
         
         return patches;
+      }
+
+      positionBlocksInGrid(blocks) {
+        // Position blocks in a packed layout similar to patches
+        const viewBoxWidth = 800;
+        const viewBoxHeight = 800;
+        const viewBoxStartX = -100;
+        const viewBoxStartY = -100;
+        const minSpacing = 30; // Slightly more spacing for blocks
+        const edgePadding = 60; // More padding for blocks
+        
+        console.log(`Positioning ${blocks.length} blocks in packed layout`);
+        
+        // Start with first block in top-left
+        if (blocks.length > 0 && blocks[0] && typeof blocks[0].width !== 'undefined' && typeof blocks[0].height !== 'undefined') {
+          blocks[0].x = edgePadding;
+          blocks[0].y = edgePadding;
+          console.log(`Block 0 positioned at (${blocks[0].x}, ${blocks[0].y})`);
+        }
+        
+        // Position remaining blocks
+        for (let i = 1; i < blocks.length; i++) {
+          const block = blocks[i];
+          
+          // Skip null or undefined blocks
+          if (!block || typeof block.width === 'undefined' || typeof block.height === 'undefined') {
+            console.warn(`Skipping invalid block at index ${i}:`, block);
+            continue;
+          }
+          
+          let bestX = edgePadding;
+          let bestY = edgePadding;
+          let bestScore = Infinity;
+          
+          // Try different positions
+          for (let attempt = 0; attempt < 50; attempt++) {
+            const testX = viewBoxStartX + edgePadding + Math.random() * (viewBoxWidth - block.width - 2 * edgePadding);
+            const testY = viewBoxStartY + edgePadding + Math.random() * (viewBoxHeight - block.height - 2 * edgePadding);
+            
+            // Ensure we're within bounds
+            const maxX = viewBoxStartX + viewBoxWidth - edgePadding - block.width;
+            const maxY = viewBoxStartY + viewBoxHeight - edgePadding - block.height;
+            
+            if (testX < viewBoxStartX + edgePadding || testX > maxX || testY < viewBoxStartY + edgePadding || testY > maxY) {
+              continue; // Skip this position if it would go outside bounds
+            }
+            
+            // Check distance from all existing blocks
+            let minDistance = Infinity;
+            let tooClose = false;
+            
+            for (let j = 0; j < i; j++) {
+              const existingBlock = blocks[j];
+              const distance = Math.sqrt(
+                Math.pow(testX - existingBlock.x, 2) + 
+                Math.pow(testY - existingBlock.y, 2)
+              );
+              
+              if (distance < minDistance) {
+                minDistance = distance;
+              }
+              
+              // Check if blocks would overlap
+              const horizontalOverlap = !(testX + block.width < existingBlock.x || 
+                                       testX > existingBlock.x + existingBlock.width);
+              const verticalOverlap = !(testY + block.height < existingBlock.y || 
+                                      testY > existingBlock.y + existingBlock.height);
+              
+              if (horizontalOverlap && verticalOverlap) {
+                tooClose = true;
+                break;
+              }
+            }
+            
+            // Score this position (prefer positions with good spacing)
+            const score = tooClose ? Infinity : -minDistance;
+            
+            if (score < bestScore) {
+              bestScore = score;
+              bestX = testX;
+              bestY = testY;
+            }
+          }
+          
+          // Set the best position found
+          block.x = bestX;
+          block.y = bestY;
+          console.log(`Block ${i} positioned at (${block.x}, ${block.y})`);
+        }
       }
 
       positionPatchesInGrid(patches) {
@@ -2922,21 +3173,53 @@
         });
       }
 
-      formBlocksFromPatches() {
-        // Combine patches into blocks using edge matching
-        const patches = [...this.patches];
+      formBlocksFromPatches(specificPatches = null) {
+        // Combine patches into blocks using edge matching (similar to pieces → patches)
+        const patches = specificPatches ? [...specificPatches] : [...this.patches];
         const blocks = [];
+        const unmatchedPatches = []; // Track patches that don't get matched
         
         while (patches.length >= 2) {
           const patch1 = patches.shift();
+          
+          // Skip null patches
+          if (!patch1) {
+            console.warn('Skipping null patch1');
+            continue;
+          }
+          
           const bestMatch = this.findBestMatch(patches, patch1);
           
           if (bestMatch && bestMatch.score < 0.3) { // Good enough match
             const patch2 = bestMatch.item;
             patches.splice(patches.indexOf(patch2), 1);
             
-            const combined = this.combineItems(patch1, patch2, bestMatch.joinType);
-            const block = this.createBlock([patch1, patch2]);
+            // Resize patches to match edges if needed
+            let resizedPatch1 = { ...patch1 };
+            let resizedPatch2 = { ...patch2 };
+            
+            if (bestMatch.joinType === 'horizontal') {
+              // Match heights for horizontal join
+              const targetHeight = Math.max(patch1.height, patch2.height);
+              if (patch1.height !== targetHeight) {
+                resizedPatch1.height = targetHeight;
+              }
+              if (patch2.height !== targetHeight) {
+                resizedPatch2.height = targetHeight;
+              }
+            } else {
+              // Match widths for vertical join
+              const targetWidth = Math.max(patch1.width, patch2.width);
+              if (patch1.width !== targetWidth) {
+                resizedPatch1.width = targetWidth;
+              }
+              if (patch2.width !== targetWidth) {
+                resizedPatch2.width = targetWidth;
+              }
+            }
+            
+            const combined = this.combineItems(resizedPatch1, resizedPatch2, bestMatch.joinType);
+            const block = this.createBlock([resizedPatch1, resizedPatch2]);
             if (block) {
               block.x = combined.x;
               block.y = combined.y;
@@ -2946,14 +3229,27 @@
             }
           } else {
             // No good match found, keep as individual patch
-            blocks.push(this.createBlock([patch1]));
+            unmatchedPatches.push(patch1);
           }
         }
         
         // Handle remaining single patch
         if (patches.length === 1) {
-          blocks.push(this.createBlock([patches[0]]));
+          unmatchedPatches.push(patches[0]);
         }
+        
+        // Create single blocks from unmatched patches
+        unmatchedPatches.forEach(patch => {
+          if (patch) {
+            const singleBlock = this.createBlock([patch]);
+            if (singleBlock) {
+              blocks.push(singleBlock);
+            }
+          }
+        });
+        
+        // Position blocks in a grid layout
+        this.positionBlocksInGrid(blocks);
         
         return blocks;
       }
