@@ -765,6 +765,7 @@
       <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white; margin: 0.5rem;">TEST: Add Random Block</button>
       <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white; margin: 0.5rem;">SHOW ME MY PIECE</button>
       <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white; margin: 0.5rem;">TEST: Simulate Different User</button>
+      <button id="testUniversalMatchingBtn" class="btn" style="background: #FF9800; color: white; margin: 0.5rem;">TEST: Universal Matching</button>
       <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
       <button class="btn" data-next="screen-archive" aria-label="View quilt archive">View Archive</button>
       <button class="btn" data-next="screen-about" aria-label="About this project">About</button>
@@ -2348,6 +2349,219 @@
          }
      }
 
+     // ===== UNIVERSAL MATCHING SERVICE =====
+     class UniversalMatchingService {
+       constructor(logger) {
+         this.logger = logger;
+       }
+
+       /**
+        * Universal matching algorithm that works for any element type
+        * @param {Array} elements - Array of elements to match against
+        * @param {Object} targetElement - The element to find a match for
+        * @param {Object} options - Matching options (tolerance, valueContrastWeight, etc.)
+        * @returns {Object|null} - Best match or null
+        */
+       findBestMatch(elements, targetElement, options = {}) {
+         const {
+           edgeTolerance = CONFIG.PHASES.patchFormation.edgeTolerance,
+           valueContrastWeight = CONFIG.PHASES.patchFormation.valueContrastWeight
+         } = options;
+
+         let bestMatch = null;
+         let bestScore = Infinity;
+         
+         this.logger.log(`Universal matching: Finding best match for ${targetElement.type || 'element'} ${targetElement.id || 'unknown'} among ${elements.length} candidates`);
+         
+         for (let i = 0; i < elements.length; i++) {
+           const element = elements[i];
+           if (element === targetElement) continue;
+           
+           const targetEdges = targetElement.edges;
+           const elementEdges = element.edges;
+           
+           const horizontalEdgeScore = this.calculateEdgeScore(targetEdges.right, elementEdges.left);
+           const verticalEdgeScore = this.calculateEdgeScore(targetEdges.bottom, elementEdges.top);
+           const valueContrastScore = this.calculateValueContrastScore(targetElement.color, element.color);
+           const sameColorPenalty = targetElement.color === element.color ? 1.0 : 0;
+           
+           const horizontalScore = horizontalEdgeScore - valueContrastScore * valueContrastWeight + sameColorPenalty;
+           const verticalScore = verticalEdgeScore - valueContrastScore * valueContrastWeight + sameColorPenalty;
+           
+           const score = Math.min(horizontalScore, verticalScore);
+           const sameColor = targetElement.color === element.color;
+           
+           this.logger.log(`  Candidate ${i}: edge scores (H:${horizontalEdgeScore.toFixed(3)}, V:${verticalEdgeScore.toFixed(3)}), contrast:${valueContrastScore.toFixed(3)}, sameColor:${sameColor}, final score:${score.toFixed(3)}`);
+           
+           if (score < bestScore) {
+             bestScore = score;
+             bestMatch = {
+               item: element,
+               score: score,
+               joinType: score === horizontalScore ? 'horizontal' : 'vertical',
+               edgeScore: Math.min(horizontalEdgeScore, verticalEdgeScore),
+               valueContrastScore: valueContrastScore
+             };
+             this.logger.log(`  New best match found with score ${score.toFixed(3)}`);
+           }
+         }
+         
+         this.logger.log(`Best match score: ${bestMatch ? bestMatch.score.toFixed(3) : 'none'}`);
+         return bestMatch;
+       }
+
+       /**
+        * Universal edge scoring algorithm
+        */
+       calculateEdgeScore(length1, length2) {
+         const difference = Math.abs(length1 - length2);
+         const averageLength = (length1 + length2) / 2;
+         return difference / averageLength;
+       }
+
+       /**
+        * Universal value contrast scoring
+        */
+       calculateValueContrastScore(color1, color2) {
+         const hsl1 = Utils.hexToHsl(color1);
+         const hsl2 = Utils.hexToHsl(color2);
+         const valueDifference = Math.abs(hsl1.l - hsl2.l);
+         const normalizedContrast = valueDifference / 100;
+         const contrastScore = Math.pow(normalizedContrast, 0.7);
+         return contrastScore;
+       }
+
+       /**
+        * Universal element joining logic
+        */
+       combineElements(element1, element2, joinType) {
+         let combinedWidth, combinedHeight, combinedX, combinedY;
+         
+         if (joinType === 'horizontal') {
+           const targetLength = (element1.edges.right + element2.edges.left) / 2;
+           const adjustedWidth1 = element1.width;
+           const adjustedWidth2 = element2.width;
+           
+           combinedWidth = element1.width + adjustedWidth2;
+           combinedHeight = Math.max(element1.height, element2.height);
+           combinedX = element1.x;
+           combinedY = Math.min(element1.y, element2.y);
+         } else {
+           const targetLength = (element1.edges.bottom + element2.edges.top) / 2;
+           const adjustedHeight1 = element1.height;
+           const adjustedHeight2 = element2.height;
+           
+           combinedWidth = Math.max(element1.width, element2.width);
+           combinedHeight = element1.height + adjustedHeight2;
+           combinedX = Math.min(element1.x, element2.x);
+           combinedY = element1.y;
+         }
+         
+         return {
+           width: combinedWidth,
+           height: combinedHeight,
+           x: combinedX,
+           y: combinedY
+         };
+       }
+
+       /**
+        * Universal element resizing for better edge alignment
+        */
+       resizeElementsForAlignment(element1, element2, joinType) {
+         let resizedElement1 = { ...element1 };
+         let resizedElement2 = { ...element2 };
+         
+         if (joinType === 'horizontal') {
+           const targetHeight = Math.max(element1.height, element2.height);
+           if (element1.height !== targetHeight) resizedElement1.height = targetHeight;
+           if (element2.height !== targetHeight) resizedElement2.height = targetHeight;
+         } else {
+           const targetWidth = Math.max(element1.width, element2.width);
+           if (element1.width !== targetWidth) resizedElement1.width = targetWidth;
+           if (element2.width !== targetWidth) resizedElement2.width = targetWidth;
+         }
+         
+         return { resizedElement1, resizedElement2 };
+       }
+
+                /**
+          * Universal formation algorithm that works for any element type
+          */
+         formCompositeElements(elements, targetType, options = {}) {
+           const {
+             edgeTolerance = CONFIG.PHASES.patchFormation.edgeTolerance,
+             valueContrastWeight = CONFIG.PHASES.patchFormation.valueContrastWeight,
+             createCompositeFunction = null,
+             maxMatches = Math.floor(elements.length / 2) // Default to half the elements
+           } = options;
+
+           const compositeElements = [];
+           const unmatchedElements = [];
+           const workingElements = [...elements];
+           
+           this.logger.log(`Universal formation: Starting with ${workingElements.length} elements to form ${targetType}, max matches: ${maxMatches}`);
+           
+           let matchesMade = 0;
+           
+           while (workingElements.length >= 2 && matchesMade < maxMatches) {
+             const element1 = workingElements.shift();
+             
+             if (!element1) {
+               this.logger.warn('Skipping null element1');
+               continue;
+             }
+             
+             const bestMatch = this.findBestMatch(workingElements, element1, { edgeTolerance, valueContrastWeight });
+             
+             // Use fallback mechanism like the current system
+             if (matchesMade < maxMatches) {
+               const element2 = bestMatch ? bestMatch.item : workingElements[0];
+               if (!bestMatch) {
+                 workingElements.splice(0, 1);
+               } else {
+                 workingElements.splice(workingElements.indexOf(element2), 1);
+               }
+               
+               this.logger.log(`Creating composite: ${element1.type || 'element'} ${element1.id || 'unknown'} + ${element2.type || 'element'} ${element2.id || 'unknown'} (score: ${bestMatch ? bestMatch.score.toFixed(3) : 'fallback'})`);
+               
+               // Resize elements for better alignment
+               const { resizedElement1, resizedElement2 } = this.resizeElementsForAlignment(element1, element2, bestMatch ? bestMatch.joinType : 'horizontal');
+               
+               // Combine elements
+               const combined = this.combineElements(resizedElement1, resizedElement2, bestMatch ? bestMatch.joinType : 'horizontal');
+               
+               // Create composite element
+               if (createCompositeFunction) {
+                 const compositeElement = createCompositeFunction([resizedElement1, resizedElement2]);
+                 if (compositeElement) {
+                   compositeElement.x = combined.x;
+                   compositeElement.y = combined.y;
+                   compositeElement.width = combined.width;
+                   compositeElement.height = combined.height;
+                   compositeElements.push(compositeElement);
+                 }
+               }
+               matchesMade++;
+             } else {
+               unmatchedElements.push(element1);
+             }
+           }
+           
+           // Handle remaining elements
+           while (workingElements.length > 0) {
+             unmatchedElements.push(workingElements.shift());
+           }
+           
+           this.logger.log(`Universal formation summary: ${compositeElements.length} composite elements created, ${unmatchedElements.length} unmatched elements`);
+           
+           return {
+             compositeElements,
+             unmatchedElements
+           };
+         }
+     }
+
      // ===== RENDERING SERVICE =====
      class RenderingService {
        constructor(logger, errorHandler) {
@@ -2774,6 +2988,7 @@
            this.quoteService = new QuoteService();
            this.positioningService = new PositioningService(this.logger);
            this.renderingService = new RenderingService(this.logger, this.errorHandler);
+           this.universalMatchingService = new UniversalMatchingService(this.logger);
            
            // Color picker state
            this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
@@ -2847,6 +3062,11 @@
            const testDifferentUserBtn = document.getElementById('testDifferentUserBtn');
            if (testDifferentUserBtn) {
              testDifferentUserBtn.addEventListener('click', this.handleTestDifferentUser.bind(this));
+           }
+
+           const testUniversalMatchingBtn = document.getElementById('testUniversalMatchingBtn');
+           if (testUniversalMatchingBtn) {
+             testUniversalMatchingBtn.addEventListener('click', this.testUniversalMatching.bind(this));
            }
 
            // Color picker
@@ -3005,122 +3225,51 @@
 
          formPatchesFromPieces(specificPieces = null) {
            const pieces = specificPieces ? [...specificPieces] : [...this.state.pieces];
-           const patches = [];
-           const unmatchedPieces = [];
            
            this.logger.log(`formPatchesFromPieces: Starting with ${pieces.length} pieces`);
            
-           const totalPieces = pieces.length;
-           const targetPatches = Math.floor(totalPieces / 2); // Use all pieces to create patches
-           const maxMatches = targetPatches;
-           
-           this.logger.log(`Target: ${targetPatches} patches, using all ${totalPieces} pieces`);
-           
-           let matchesMade = 0;
-           
-           while (pieces.length >= 2 && matchesMade < maxMatches) {
-             const piece1 = pieces.shift();
-             const bestMatch = this.findBestMatch(pieces, piece1);
-             
-             if (matchesMade < maxMatches) {
-               const piece2 = bestMatch ? bestMatch.item : pieces[0];
-               if (!bestMatch) {
-                 pieces.splice(0, 1);
-               } else {
-                 pieces.splice(pieces.indexOf(piece2), 1);
-               }
-               
-               const combined = this.combineItems(piece1, piece2, bestMatch ? bestMatch.joinType : 'horizontal');
-               const patch = this.createPatch([piece1, piece2]);
-               if (patch) {
-                 patch.x = combined.x;
-                 patch.y = combined.y;
-                 patch.width = combined.width;
-                 patch.height = combined.height;
-                 patches.push(patch);
-               }
-               matchesMade++;
-             } else {
-               unmatchedPieces.push(piece1);
+           const result = this.universalMatchingService.formCompositeElements(
+             pieces,
+             'patch',
+             {
+               edgeTolerance: CONFIG.PHASES.patchFormation.edgeTolerance,
+               valueContrastWeight: CONFIG.PHASES.patchFormation.valueContrastWeight,
+               createCompositeFunction: this.createPatch.bind(this),
+               maxMatches: Math.floor(pieces.length / 2)
              }
-           }
+           );
            
-           while (pieces.length > 0) {
-             unmatchedPieces.push(pieces.shift());
-           }
+           this.state.unmatchedPieces = result.unmatchedElements;
+           this.logger.log(`formPatchesFromPieces: Created ${result.compositeElements.length} patches and ${result.unmatchedElements.length} unmatched pieces`);
            
-           this.state.unmatchedPieces = unmatchedPieces;
-           this.logger.log(`formPatchesFromPieces: Created ${patches.length} patches and ${unmatchedPieces.length} unmatched pieces`);
+           this.positioningService.positionElementsInGrid(result.compositeElements, 0, 'patches');
            
-           this.positioningService.positionElementsInGrid(patches, 0, 'patches');
-           
-           return patches;
+           return result.compositeElements;
          }
 
          formBlocksFromPatches(specificPatches = null) {
            const patches = specificPatches ? [...specificPatches] : [...this.state.patches];
-           const blocks = [];
-           const unmatchedPatches = [];
            
            this.logger.log(`Starting block formation with ${patches.length} patches`);
            
-           while (patches.length >= 2) {
-             const patch1 = patches.shift();
-             
-             if (!patch1) {
-               this.logger.warn('Skipping null patch1');
-               continue;
+           const result = this.universalMatchingService.formCompositeElements(
+             patches,
+             'block',
+             {
+               edgeTolerance: CONFIG.PHASES.blockFormation.edgeTolerance,
+               valueContrastWeight: CONFIG.PHASES.blockFormation.valueContrastWeight,
+               createCompositeFunction: this.createBlock.bind(this),
+               maxMatches: Math.floor(patches.length / 2)
              }
-             
-             const bestMatch = this.findBestMatch(patches, patch1);
-             
-             if (bestMatch && bestMatch.score < CONFIG.PHASES.blockFormation.edgeTolerance) {
-               const patch2 = bestMatch.item;
-               patches.splice(patches.indexOf(patch2), 1);
-               
-               this.logger.log(`Found match: patch ${patch1.id || 'unknown'} + patch ${patch2.id || 'unknown'} (score: ${bestMatch.score.toFixed(3)})`);
-               
-               let resizedPatch1 = { ...patch1 };
-               let resizedPatch2 = { ...patch2 };
-               
-               if (bestMatch.joinType === 'horizontal') {
-                 const targetHeight = Math.max(patch1.height, patch2.height);
-                 if (patch1.height !== targetHeight) resizedPatch1.height = targetHeight;
-                 if (patch2.height !== targetHeight) resizedPatch2.height = targetHeight;
-               } else {
-                 const targetWidth = Math.max(patch1.width, patch2.width);
-                 if (patch1.width !== targetWidth) resizedPatch1.width = targetWidth;
-                 if (patch2.width !== targetWidth) resizedPatch2.width = targetWidth;
-               }
-               
-               const combined = this.combineItems(resizedPatch1, resizedPatch2, bestMatch.joinType);
-               const block = this.createBlock([resizedPatch1, resizedPatch2]);
-               if (block) {
-                 block.x = combined.x;
-                 block.y = combined.y;
-                 block.width = combined.width;
-                 block.height = combined.height;
-                 blocks.push(block);
-                 this.logger.log(`Created block ${blocks.length} from 2 patches`);
-               }
-             } else {
-               this.logger.log(`No good match found for patch ${patch1.id || 'unknown'} (best score: ${bestMatch ? bestMatch.score.toFixed(3) : 'none'})`);
-               unmatchedPatches.push(patch1);
-             }
-           }
+           );
            
-           if (patches.length === 1) {
-             this.logger.log(`Adding remaining single patch to unmatched`);
-             unmatchedPatches.push(patches[0]);
-           }
+           this.logger.log(`Block formation summary: ${result.compositeElements.length} blocks created, ${result.unmatchedElements.length} unmatched patches`);
            
-           this.logger.log(`Block formation summary: ${blocks.length} blocks created, ${unmatchedPatches.length} unmatched patches`);
-           
-           this.positioningService.positionElementsInGrid(blocks, 0, 'blocks');
+           this.positioningService.positionElementsInGrid(result.compositeElements, 0, 'blocks');
            
            return {
-             blocks: blocks,
-             unmatchedPatches: unmatchedPatches
+             blocks: result.compositeElements,
+             unmatchedPatches: result.unmatchedElements
            };
          }
 
@@ -3128,69 +3277,36 @@
 
          formQuiltFromBlocks(blocks) {
            const allBlocks = [...blocks];
-           const quiltBlocks = [];
-           const unmatchedBlocks = [];
            
-           while (allBlocks.length >= 2) {
-             const block1 = allBlocks.shift();
-             
-             if (!block1) {
-               this.logger.warn('Skipping null block1');
-               continue;
+           this.logger.log(`Starting quilt formation with ${allBlocks.length} blocks`);
+           
+           const result = this.universalMatchingService.formCompositeElements(
+             allBlocks,
+             'quilt_block',
+             {
+               edgeTolerance: CONFIG.PHASES.blockFormation.edgeTolerance,
+               valueContrastWeight: CONFIG.PHASES.blockFormation.valueContrastWeight,
+               createCompositeFunction: this.createQuiltBlock.bind(this),
+               maxMatches: Math.floor(allBlocks.length / 2)
              }
-             
-             const bestMatch = this.findBestMatch(allBlocks, block1);
-             
-             if (bestMatch && bestMatch.score < CONFIG.PHASES.blockFormation.edgeTolerance) {
-               const block2 = bestMatch.item;
-               allBlocks.splice(allBlocks.indexOf(block2), 1);
-               
-               let resizedBlock1 = { ...block1 };
-               let resizedBlock2 = { ...block2 };
-               
-               if (bestMatch.joinType === 'horizontal') {
-                 const targetHeight = Math.max(block1.height, block2.height);
-                 if (block1.height !== targetHeight) resizedBlock1.height = targetHeight;
-                 if (block2.height !== targetHeight) resizedBlock2.height = targetHeight;
-               } else {
-                 const targetWidth = Math.max(block1.width, block2.width);
-                 if (block1.width !== targetWidth) resizedBlock1.width = targetWidth;
-                 if (block2.width !== targetWidth) resizedBlock2.width = targetWidth;
-               }
-               
-               const combined = this.combineItems(resizedBlock1, resizedBlock2, bestMatch.joinType);
-               const quiltBlock = this.createQuiltBlock([resizedBlock1, resizedBlock2]);
-               if (quiltBlock) {
-                 quiltBlock.x = combined.x;
-                 quiltBlock.y = combined.y;
-                 quiltBlock.width = combined.width;
-                 quiltBlock.height = combined.height;
-                 quiltBlocks.push(quiltBlock);
-               }
-             } else {
-               unmatchedBlocks.push(block1);
-             }
-           }
+           );
            
-           if (allBlocks.length === 1) {
-             unmatchedBlocks.push(allBlocks[0]);
-           }
-           
-           unmatchedBlocks.forEach(block => {
+           // Handle single unmatched blocks
+           result.unmatchedElements.forEach(block => {
              if (block) {
                const singleQuiltBlock = this.createQuiltBlock([block]);
                if (singleQuiltBlock) {
-                 quiltBlocks.push(singleQuiltBlock);
+                 result.compositeElements.push(singleQuiltBlock);
                }
              }
            });
            
-           this.positionQuiltBlocks(quiltBlocks);
+           this.positionQuiltBlocks(result.compositeElements);
            
            return {
              id: `quilt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
              type: 'quilt',
-             blocks: quiltBlocks,
+             blocks: result.compositeElements,
              width: 600,
              height: 600
            };
@@ -3794,6 +3910,46 @@
                  this.uiService.showScreen('screen-color');
                }
              }
+           }
+         }
+
+         // ===== UNIVERSAL MATCHING TEST FUNCTIONS =====
+         
+         /**
+          * Test function to verify universal matching produces same results as current system
+          */
+         testUniversalMatching() {
+           this.logger.log('🧪 Testing universal matching system...');
+           
+           // Test 1: Patch formation
+           const testPieces = this.state.pieces.slice(0, 4); // Use first 4 pieces
+           if (testPieces.length >= 2) {
+             this.logger.log('Testing patch formation with universal service...');
+             
+             // Current method
+             const currentPatches = this.formPatchesFromPieces(testPieces);
+             
+             // Universal method
+             const universalResult = this.universalMatchingService.formCompositeElements(
+               testPieces, 
+               'patch',
+               {
+                 edgeTolerance: CONFIG.PHASES.patchFormation.edgeTolerance,
+                 valueContrastWeight: CONFIG.PHASES.patchFormation.valueContrastWeight,
+                 createCompositeFunction: this.createPatch.bind(this)
+               }
+             );
+             
+             this.logger.log(`Current method created ${currentPatches.length} patches`);
+             this.logger.log(`Universal method created ${universalResult.compositeElements.length} patches`);
+             
+             if (currentPatches.length === universalResult.compositeElements.length) {
+               this.uiService.showToast('✅ Universal matching test passed!');
+             } else {
+               this.uiService.showToast('❌ Universal matching test failed - different results');
+             }
+           } else {
+             this.uiService.showToast('Need at least 2 pieces to test universal matching');
            }
          }
        }
