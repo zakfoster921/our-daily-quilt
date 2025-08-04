@@ -872,13 +872,13 @@
           piecesPerSubmission: [4, 4, 4, 4, 4, 4, 1, 1, 1] // pieces for submissions 1-9
         },
         patchFormation: {
-          triggerSubmission: 6,
+          triggerSubmission: 6, // User 6 triggers block formation
           targetPatches: 2,
           edgeTolerance: 0.2,
           valueContrastWeight: 0.8
         },
         blockFormation: {
-          triggerSubmission: 7,
+          triggerSubmission: 6, // User 6 sees blocks, not patches
           edgeTolerance: 1.5, // Increased tolerance to ensure all patches get matched
           valueContrastWeight: 0.8
         },
@@ -900,12 +900,12 @@
         spacing: {
           pieces: 120,
           patches: 120,
-          blocks: 200  // Increased spacing for blocks to prevent overlapping
+          blocks: 250  // Increased spacing for blocks to prevent overlapping
         },
         jitter: {
           pieces: 8,
           patches: 8,
-          blocks: 8
+          blocks: 5  // Reduced jitter for blocks to prevent overlap
         }
       }
     };
@@ -1426,61 +1426,926 @@
          };
        }
 
-       positionElementsInGrid(elements, startIndex = 0, type = 'pieces') {
-         if (elements.length === 0) return;
-         
-         const config = CONFIG.QUILT;
-         const spacing = CONFIG.POSITIONING.spacing[type] || 120;
-         const jitter = CONFIG.POSITIONING.jitter[type] || 8;
-         
-         // Calculate optimal grid dimensions
-         const elementCount = elements.length;
-         const aspectRatio = config.viewBoxWidth / config.viewBoxHeight;
-         
-         // Use different grid calculations for blocks vs pieces/patches
-         let cols, rows;
-         if (type === 'blocks') {
-           // For blocks, use a more conservative grid (2x3 for 6 blocks)
-           cols = Math.ceil(Math.sqrt(elementCount * 1.5)); // Wider grid for blocks
-           rows = Math.ceil(elementCount / cols);
-         } else {
-           cols = Math.ceil(Math.sqrt(elementCount * aspectRatio));
-           rows = Math.ceil(elementCount / cols);
+                positionElementsInGrid(elements, startIndex = 0, type = 'pieces') {
+           if (elements.length === 0) return;
+           
+           const config = CONFIG.QUILT;
+           const spacing = CONFIG.POSITIONING.spacing[type] || 120;
+           const jitter = CONFIG.POSITIONING.jitter[type] || 8;
+           
+           // For blocks, use touching layout instead of grid
+           if (type === 'blocks') {
+             this.positionBlocksInTouchingLayout(elements);
+             return;
+           }
+           
+           // Calculate optimal grid dimensions for pieces/patches
+           const elementCount = elements.length;
+           const aspectRatio = config.viewBoxWidth / config.viewBoxHeight;
+           const cols = Math.ceil(Math.sqrt(elementCount * aspectRatio));
+           const rows = Math.ceil(elementCount / cols);
+           
+           const availableWidth = config.viewBoxWidth - (2 * config.edgePadding);
+           const availableHeight = config.viewBoxHeight - (2 * config.edgePadding);
+           const cellWidth = availableWidth / cols;
+           const cellHeight = availableHeight / rows;
+           
+           this.logger.log(`Positioning ${elements.length} ${type} in ${rows}x${cols} grid`);
+           
+           elements.forEach((element, index) => {
+             const gridIndex = startIndex + index;
+             const row = Math.floor(gridIndex / cols);
+             const col = gridIndex % cols;
+             
+             const x = config.viewBoxStartX + config.edgePadding + (col * cellWidth);
+             const y = config.viewBoxStartY + config.edgePadding + (row * cellHeight);
+             
+             // Center element in cell
+             const centerX = x + (cellWidth - element.width) / 2;
+             const centerY = y + (cellHeight - element.height) / 2;
+             
+             // Add jitter
+             const jitterX = (Math.random() - 0.5) * jitter;
+             const jitterY = (Math.random() - 0.5) * jitter;
+             
+             // Ensure element stays within bounds
+             const maxX = config.viewBoxStartX + config.viewBoxWidth - config.edgePadding - element.width;
+             const maxY = config.viewBoxStartY + config.viewBoxHeight - config.edgePadding - element.height;
+             
+             element.x = Math.max(config.viewBoxStartX + config.edgePadding, Math.min(maxX, centerX + jitterX));
+             element.y = Math.max(config.viewBoxStartY + config.edgePadding, Math.min(maxY, centerY + jitterY));
+             
+             this.logger.position(type, index, element.x, element.y);
+           });
          }
          
-         const availableWidth = config.viewBoxWidth - (2 * config.edgePadding);
-         const availableHeight = config.viewBoxHeight - (2 * config.edgePadding);
-         const cellWidth = availableWidth / cols;
-         const cellHeight = availableHeight / rows;
+         positionBlocksInTouchingLayout(blocks) {
+           if (blocks.length === 0) return;
+           
+           const config = CONFIG.QUILT;
+           const padding = config.edgePadding;
+           
+           this.logger.log(`Positioning ${blocks.length} blocks using pairing logic`);
+           
+           // For 6 blocks, use the new pairing approach
+           if (blocks.length === 6) {
+             this.positionBlocksWithPairing(blocks);
+             return;
+           }
+           
+           // Fallback to original logic for other block counts
+           this.positionBlocksIteratively(blocks);
+         }
          
-         this.logger.log(`Positioning ${elements.length} ${type} in ${rows}x${cols} grid`);
+         positionBlocksWithPairing(blocks) {
+           const config = CONFIG.QUILT;
+           const padding = config.edgePadding;
+           
+           this.logger.log('Using pairing approach for 6 blocks');
+           
+           // Phase 1: Create 3 paired blocks
+           const pairedBlocks = this.createPairedBlocks(blocks);
+           
+           // Phase 2: Combine 2 paired blocks into a 4-block section
+           const fourBlockSection = this.combinePairedBlocks(pairedBlocks);
+           
+           // Phase 3: Add the remaining paired block
+           this.addFinalPairedBlock(fourBlockSection, pairedBlocks[2]);
+           
+           // Position the final quilt at the center
+           this.centerQuilt(blocks);
+         }
          
-         elements.forEach((element, index) => {
-           const gridIndex = startIndex + index;
-           const row = Math.floor(gridIndex / cols);
-           const col = gridIndex % cols;
+         createPairedBlocks(blocks) {
+           this.logger.log('Phase 1: Creating paired blocks');
+           this.logger.log(`Initial blocks:`, blocks.map(b => ({ id: b.id, width: b.width, height: b.height, color: b.color })));
            
-           const x = config.viewBoxStartX + config.edgePadding + (col * cellWidth);
-           const y = config.viewBoxStartY + config.edgePadding + (row * cellHeight);
+           // Generate all possible pairs
+           const allPairs = [];
+           for (let i = 0; i < blocks.length; i++) {
+             for (let j = i + 1; j < blocks.length; j++) {
+               const pair = this.evaluateBlockPair(blocks[i], blocks[j]);
+               allPairs.push(pair);
+               this.logger.log(`Pair ${i}-${j}: score=${pair.score.toFixed(2)}, joinType=${pair.joinType}, edgeDiff=${Math.abs(pair.edgeMatch?.edge1.length - pair.edgeMatch?.edge2.length) || 'N/A'}`);
+             }
+           }
            
-           // Center element in cell
-           const centerX = x + (cellWidth - element.width) / 2;
-           const centerY = y + (cellHeight - element.height) / 2;
+           // Sort by score (lower is better)
+           allPairs.sort((a, b) => a.score - b.score);
            
-           // Add jitter
-           const jitterX = (Math.random() - 0.5) * jitter;
-           const jitterY = (Math.random() - 0.5) * jitter;
+           // Select the 3 best pairs, ensuring no block is used twice
+           const selectedPairs = [];
+           const usedBlocks = new Set();
            
-           // Ensure element stays within bounds
-           const maxX = config.viewBoxStartX + config.viewBoxWidth - config.edgePadding - element.width;
-           const maxY = config.viewBoxStartY + config.viewBoxHeight - config.edgePadding - element.height;
+           for (const pair of allPairs) {
+             if (!usedBlocks.has(pair.block1) && !usedBlocks.has(pair.block2)) {
+               selectedPairs.push(pair);
+               usedBlocks.add(pair.block1);
+               usedBlocks.add(pair.block2);
+               
+               if (selectedPairs.length === 3) break;
+             }
+           }
            
-           element.x = Math.max(config.viewBoxStartX + config.edgePadding, Math.min(maxX, centerX + jitterX));
-           element.y = Math.max(config.viewBoxStartY + config.edgePadding, Math.min(maxY, centerY + jitterY));
+           // Create paired blocks
+           const pairedBlocks = selectedPairs.map(pair => this.createPairedBlock(pair));
            
-           this.logger.position(type, index, element.x, element.y);
-         });
-       }
+           this.logger.log(`Created ${pairedBlocks.length} paired blocks`);
+           this.logger.log('Paired blocks details:', pairedBlocks.map(pb => ({
+             width: pb.width,
+             height: pb.height,
+             joinType: pb.joinType,
+             score: pb.score,
+             blockIds: pb.blocks.map(b => b.id)
+           })));
+           return pairedBlocks;
+         }
+         
+         evaluateBlockPair(block1, block2) {
+           let bestScore = Infinity;
+           let bestJoinType = null;
+           let bestEdgeMatch = null;
+           
+           // Check all possible edge combinations
+           const edges1 = [
+             { type: 'horizontal', length: block1.width, side: 'right' },
+             { type: 'horizontal', length: block1.width, side: 'left' },
+             { type: 'vertical', length: block1.height, side: 'bottom' },
+             { type: 'vertical', length: block1.height, side: 'top' }
+           ];
+           
+           const edges2 = [
+             { type: 'horizontal', length: block2.width, side: 'right' },
+             { type: 'horizontal', length: block2.width, side: 'left' },
+             { type: 'vertical', length: block2.height, side: 'bottom' },
+             { type: 'vertical', length: block2.height, side: 'top' }
+           ];
+           
+           for (const edge1 of edges1) {
+             for (const edge2 of edges2) {
+               if (edge1.type === edge2.type) {
+                 const lengthDiff = Math.abs(edge1.length - edge2.length);
+                 const valueContrast = this.calculateValueContrastScore(block1.color, block2.color);
+                 
+                 // Combined score: edge compatibility + value contrast
+                 const score = lengthDiff + (1 - valueContrast) * 50;
+                 
+                 if (score < bestScore) {
+                   bestScore = score;
+                   bestJoinType = edge1.type;
+                   bestEdgeMatch = { edge1, edge2 };
+                 }
+               }
+             }
+           }
+           
+           return {
+             block1,
+             block2,
+             score: bestScore,
+             joinType: bestJoinType,
+             edgeMatch: bestEdgeMatch
+           };
+         }
+         
+         createPairedBlock(pair) {
+           const { block1, block2, joinType, edgeMatch } = pair;
+           
+           this.logger.log(`Creating paired block: ${block1.id} + ${block2.id}, joinType=${joinType}`);
+           this.logger.log(`Before resize: block1=${block1.width}x${block1.height}, block2=${block2.width}x${block2.height}`);
+           
+           // Resize blocks slightly if needed for better edge alignment
+           if (joinType === 'horizontal') {
+             const targetLength = Math.max(edgeMatch.edge1.length, edgeMatch.edge2.length);
+             if (edgeMatch.edge1.length < targetLength) {
+               block1.width = targetLength;
+               this.logger.log(`Resized block1 width to ${targetLength}`);
+             }
+             if (edgeMatch.edge2.length < targetLength) {
+               block2.width = targetLength;
+               this.logger.log(`Resized block2 width to ${targetLength}`);
+             }
+           } else {
+             const targetLength = Math.max(edgeMatch.edge1.length, edgeMatch.edge2.length);
+             if (edgeMatch.edge1.length < targetLength) {
+               block1.height = targetLength;
+               this.logger.log(`Resized block1 height to ${targetLength}`);
+             }
+             if (edgeMatch.edge2.length < targetLength) {
+               block2.height = targetLength;
+               this.logger.log(`Resized block2 height to ${targetLength}`);
+             }
+           }
+           
+           this.logger.log(`After resize: block1=${block1.width}x${block1.height}, block2=${block2.width}x${block2.height}`);
+           
+           // Calculate combined dimensions
+           let combinedWidth, combinedHeight;
+           if (joinType === 'horizontal') {
+             combinedWidth = block1.width + block2.width;
+             combinedHeight = Math.max(block1.height, block2.height);
+           } else {
+             combinedWidth = Math.max(block1.width, block2.width);
+             combinedHeight = block1.height + block2.height;
+           }
+           
+           // Position the two blocks within the paired block
+           block1.x = 0;
+           block1.y = 0;
+           
+           if (joinType === 'horizontal') {
+             // For horizontal join, place block2 to the right of block1
+             block2.x = block1.width;
+             block2.y = 0;
+           } else {
+             // For vertical join, place block2 below block1
+             block2.x = 0;
+             block2.y = block1.height;
+           }
+           
+           this.logger.log(`Positioned blocks in pair: ${block1.id} at (${block1.x}, ${block1.y}), ${block2.id} at (${block2.x}, ${block2.y})`);
+           this.logger.log(`Paired block dimensions: ${combinedWidth}x${combinedHeight}, joinType=${joinType}`);
+           
+           return {
+             blocks: [block1, block2],
+             width: combinedWidth,
+             height: combinedHeight,
+             joinType,
+             score: pair.score
+           };
+         }
+         
+         combinePairedBlocks(pairedBlocks) {
+           this.logger.log('Phase 2: Combining paired blocks');
+           
+           // Evaluate all possible combinations of 2 paired blocks
+           const combinations = [];
+           for (let i = 0; i < pairedBlocks.length; i++) {
+             for (let j = i + 1; j < pairedBlocks.length; j++) {
+               const combination = this.evaluatePairedBlockCombination(pairedBlocks[i], pairedBlocks[j]);
+               combinations.push(combination);
+               this.logger.log(`Combination ${i}-${j}: score=${combination.score.toFixed(2)}, joinType=${combination.joinType}`);
+             }
+           }
+           
+           // Select the best combination
+           combinations.sort((a, b) => a.score - b.score);
+           const bestCombination = combinations[0];
+           
+           // Create the 4-block section
+           const fourBlockSection = this.createFourBlockSection(bestCombination);
+           
+           this.logger.log('Created 4-block section');
+           return fourBlockSection;
+         }
+         
+         evaluatePairedBlockCombination(pair1, pair2) {
+           let bestScore = Infinity;
+           let bestJoinType = null;
+           let bestEdgeMatch = null;
+           
+           // Check all possible edge combinations between the paired blocks
+           const edges1 = [
+             { type: 'horizontal', length: pair1.width, side: 'right' },
+             { type: 'horizontal', length: pair1.width, side: 'left' },
+             { type: 'vertical', length: pair1.height, side: 'bottom' },
+             { type: 'vertical', length: pair1.height, side: 'top' }
+           ];
+           
+           const edges2 = [
+             { type: 'horizontal', length: pair2.width, side: 'right' },
+             { type: 'horizontal', length: pair2.width, side: 'left' },
+             { type: 'vertical', length: pair2.height, side: 'bottom' },
+             { type: 'vertical', length: pair2.height, side: 'top' }
+           ];
+           
+           for (const edge1 of edges1) {
+             for (const edge2 of edges2) {
+               if (edge1.type === edge2.type) {
+                 const lengthDiff = Math.abs(edge1.length - edge2.length);
+                 const score = lengthDiff;
+                 
+                 if (score < bestScore) {
+                   bestScore = score;
+                   bestJoinType = edge1.type;
+                   bestEdgeMatch = { edge1, edge2 };
+                 }
+               }
+             }
+           }
+           
+           return {
+             pair1,
+             pair2,
+             score: bestScore,
+             joinType: bestJoinType,
+             edgeMatch: bestEdgeMatch
+           };
+         }
+         
+         createFourBlockSection(combination) {
+           const { pair1, pair2, joinType, edgeMatch } = combination;
+           
+           this.logger.log(`Creating four-block section: pair1=${pair1.width}x${pair1.height}, pair2=${pair2.width}x${pair2.height}, joinType=${joinType}`);
+           
+           // Resize paired blocks slightly if needed
+           if (joinType === 'horizontal') {
+             const targetLength = Math.max(edgeMatch.edge1.length, edgeMatch.edge2.length);
+             if (edgeMatch.edge1.length < targetLength) {
+               pair1.width = targetLength;
+               this.logger.log(`Resized pair1 width to ${targetLength}`);
+             }
+             if (edgeMatch.edge2.length < targetLength) {
+               pair2.width = targetLength;
+               this.logger.log(`Resized pair2 width to ${targetLength}`);
+             }
+           } else {
+             const targetLength = Math.max(edgeMatch.edge1.length, edgeMatch.edge2.length);
+             if (edgeMatch.edge1.length < targetLength) {
+               pair1.height = targetLength;
+               this.logger.log(`Resized pair1 height to ${targetLength}`);
+             }
+             if (edgeMatch.edge2.length < targetLength) {
+               pair2.height = targetLength;
+               this.logger.log(`Resized pair2 height to ${targetLength}`);
+             }
+           }
+           
+           // Calculate combined dimensions
+           let combinedWidth, combinedHeight;
+           if (joinType === 'horizontal') {
+             combinedWidth = pair1.width + pair2.width;
+             combinedHeight = Math.max(pair1.height, pair2.height);
+           } else {
+             combinedWidth = Math.max(pair1.width, pair2.width);
+             combinedHeight = pair1.height + pair2.height;
+           }
+           
+           this.logger.log(`Four-block section dimensions: ${combinedWidth}x${combinedHeight}`);
+           
+                       // Position the blocks within the four-block section
+            let currentX = 0;
+            let currentY = 0;
+            
+            // Position blocks from pair1 first
+            for (const block of pair1.blocks) {
+              // Add the pair1 offset to the block's existing relative position
+              block.x = currentX + block.x;
+              block.y = currentY + block.y;
+              
+              if (pair1.joinType === 'horizontal') {
+                currentX += block.width;
+              } else {
+                currentY += block.height;
+              }
+              
+              this.logger.log(`Positioned pair1 block ${block.id} at (${block.x}, ${block.y})`);
+            }
+            
+            // Reset position for pair2
+            if (joinType === 'horizontal') {
+              // Attach pair2 to the right of pair1 - ensure they touch
+              currentX = pair1.width;
+              currentY = 0;
+            } else {
+              // Attach pair2 below pair1 - ensure they touch
+              currentX = 0;
+              currentY = pair1.height;
+            }
+            
+            // Position blocks from pair2
+            for (const block of pair2.blocks) {
+              // Add the pair2 offset to the block's existing relative position
+              block.x = currentX + block.x;
+              block.y = currentY + block.y;
+              
+              // Update current position based on the four-block section's join type, not the pair's join type
+              if (joinType === 'horizontal') {
+                currentX += block.width;
+              } else {
+                currentY += block.height;
+              }
+              
+              this.logger.log(`Positioned pair2 block ${block.id} at (${block.x}, ${block.y})`);
+            }
+           
+           this.logger.log('Final four-block section positions:', [...pair1.blocks, ...pair2.blocks].map(b => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: b.height })));
+           
+           // Check for overlaps in the four-block section
+           this.logger.log('Checking for overlaps in four-block section...');
+           const allBlocks = [...pair1.blocks, ...pair2.blocks];
+           for (let i = 0; i < allBlocks.length; i++) {
+             for (let j = i + 1; j < allBlocks.length; j++) {
+               const block1 = allBlocks[i];
+               const block2 = allBlocks[j];
+               
+               // Check for horizontal overlap
+               const horizontalOverlap = Math.min(block1.x + block1.width, block2.x + block2.width) - Math.max(block1.x, block2.x);
+               if (horizontalOverlap > 0) {
+                 const verticalOverlap = Math.min(block1.y + block1.height, block2.y + block2.height) - Math.max(block1.y, block2.y);
+                 if (verticalOverlap > 0) {
+                   this.logger.log(`FOUR-BLOCK OVERLAP detected between ${block1.id} and ${block2.id}: ${horizontalOverlap}x${verticalOverlap}px`);
+                 }
+               }
+             }
+           }
+           
+           return {
+             blocks: [...pair1.blocks, ...pair2.blocks],
+             width: combinedWidth,
+             height: combinedHeight,
+             joinType,
+             score: combination.score
+           };
+         }
+         
+         addFinalPairedBlock(fourBlockSection, remainingPairedBlock) {
+           this.logger.log('Phase 3: Adding final paired block');
+           
+           // Find the best way to add the remaining paired block
+           const bestAttachment = this.findBestAttachment(fourBlockSection, remainingPairedBlock);
+           
+           // Apply the attachment
+           this.applyAttachment(fourBlockSection, remainingPairedBlock, bestAttachment);
+           
+           this.logger.log('Final quilt layout complete');
+         }
+         
+         findBestAttachment(fourBlockSection, pairedBlock) {
+           let bestScore = Infinity;
+           let bestPosition = null;
+           let bestJoinType = null;
+           
+           // Try different attachment positions
+           const attachmentPositions = [
+             { side: 'right', x: fourBlockSection.width, y: 0 },
+             { side: 'left', x: -pairedBlock.width, y: 0 },
+             { side: 'bottom', x: 0, y: fourBlockSection.height },
+             { side: 'top', x: 0, y: -pairedBlock.height }
+           ];
+           
+           for (const position of attachmentPositions) {
+             const score = this.evaluateAttachmentPosition(fourBlockSection, pairedBlock, position);
+             if (score < bestScore) {
+               bestScore = score;
+               bestPosition = position;
+               bestJoinType = position.side === 'right' || position.side === 'left' ? 'horizontal' : 'vertical';
+             }
+           }
+           
+           return {
+             position: bestPosition,
+             joinType: bestJoinType,
+             score: bestScore
+           };
+         }
+         
+         evaluateAttachmentPosition(fourBlockSection, pairedBlock, position) {
+           // Simple scoring based on edge alignment and shape balance
+           let score = 0;
+           
+           // Edge alignment score
+           if (position.side === 'right' || position.side === 'left') {
+             const lengthDiff = Math.abs(fourBlockSection.height - pairedBlock.height);
+             score += lengthDiff;
+           } else {
+             const lengthDiff = Math.abs(fourBlockSection.width - pairedBlock.width);
+             score += lengthDiff;
+           }
+           
+           // Shape balance score (prefer more square shapes)
+           const combinedWidth = position.side === 'right' || position.side === 'left' 
+             ? fourBlockSection.width + pairedBlock.width 
+             : Math.max(fourBlockSection.width, pairedBlock.width);
+           const combinedHeight = position.side === 'top' || position.side === 'bottom'
+             ? fourBlockSection.height + pairedBlock.height
+             : Math.max(fourBlockSection.height, pairedBlock.height);
+           
+           const aspectRatio = Math.max(combinedWidth, combinedHeight) / Math.min(combinedWidth, combinedHeight);
+           score += (aspectRatio - 1) * 10; // Penalize very long/thin shapes
+           
+           return score;
+         }
+         
+         applyAttachment(fourBlockSection, pairedBlock, attachment) {
+           const { position, joinType } = attachment;
+           
+           this.logger.log(`Applying attachment: joinType=${joinType}, position=${JSON.stringify(position)}`);
+           this.logger.log(`Before attachment: fourBlockSection=${fourBlockSection.width}x${fourBlockSection.height}, pairedBlock=${pairedBlock.width}x${pairedBlock.height}`);
+           
+           // Resize if needed for better alignment
+           if (joinType === 'horizontal') {
+             const targetHeight = Math.max(fourBlockSection.height, pairedBlock.height);
+             if (fourBlockSection.height < targetHeight) {
+               fourBlockSection.height = targetHeight;
+               this.logger.log(`Resized fourBlockSection height to ${targetHeight}`);
+             }
+             if (pairedBlock.height < targetHeight) {
+               pairedBlock.height = targetHeight;
+               this.logger.log(`Resized pairedBlock height to ${targetHeight}`);
+             }
+           } else {
+             const targetWidth = Math.max(fourBlockSection.width, pairedBlock.width);
+             if (fourBlockSection.width < targetWidth) {
+               fourBlockSection.width = targetWidth;
+               this.logger.log(`Resized fourBlockSection width to ${targetWidth}`);
+             }
+             if (pairedBlock.width < targetWidth) {
+               pairedBlock.width = targetWidth;
+               this.logger.log(`Resized pairedBlock width to ${targetWidth}`);
+             }
+           }
+           
+           // Position blocks based on the attachment position
+           const allBlocks = [...fourBlockSection.blocks, ...pairedBlock.blocks];
+           
+           this.logger.log(`Positioning ${allBlocks.length} blocks based on attachment position`);
+           
+           // Calculate the offset for the paired block based on attachment position
+           let pairedBlockOffsetX = 0;
+           let pairedBlockOffsetY = 0;
+           
+           if (position.side === 'right') {
+             // Attach to the right - paired block starts where four-block section ends
+             pairedBlockOffsetX = fourBlockSection.width;
+             pairedBlockOffsetY = 0;
+           } else if (position.side === 'left') {
+             // Attach to the left - paired block ends where four-block section starts
+             pairedBlockOffsetX = -pairedBlock.width;
+             pairedBlockOffsetY = 0;
+           } else if (position.side === 'bottom') {
+             // Attach below - paired block starts where four-block section ends
+             pairedBlockOffsetX = 0;
+             pairedBlockOffsetY = fourBlockSection.height;
+           } else if (position.side === 'top') {
+             // Attach above - paired block ends where four-block section starts
+             pairedBlockOffsetX = 0;
+             pairedBlockOffsetY = -pairedBlock.height;
+           }
+           
+           this.logger.log(`Paired block offset: (${pairedBlockOffsetX}, ${pairedBlockOffsetY})`);
+           
+           // Position blocks from the four-block section (they stay at their current positions)
+           for (const block of fourBlockSection.blocks) {
+             this.logger.log(`Four-block section block ${block.id} stays at (${block.x}, ${block.y})`);
+           }
+           
+           // Position blocks from the paired block with the calculated offset
+           for (const block of pairedBlock.blocks) {
+             // Add the paired block offset to the block's existing relative position
+             block.x = pairedBlockOffsetX + block.x;
+             block.y = pairedBlockOffsetY + block.y;
+             
+             this.logger.log(`Positioned paired block ${block.id} at (${block.x}, ${block.y})`);
+           }
+           
+           this.logger.log('Final block positions:', allBlocks.map(b => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: b.height })));
+           
+           // Check for overlaps and gaps by analyzing all block pairs
+           this.logger.log('Checking for overlaps and gaps between blocks...');
+           for (let i = 0; i < allBlocks.length; i++) {
+             for (let j = i + 1; j < allBlocks.length; j++) {
+               const block1 = allBlocks[i];
+               const block2 = allBlocks[j];
+               
+               // Check for horizontal overlap
+               const horizontalOverlap = Math.min(block1.x + block1.width, block2.x + block2.width) - Math.max(block1.x, block2.x);
+               if (horizontalOverlap > 0) {
+                 const verticalOverlap = Math.min(block1.y + block1.height, block2.y + block2.height) - Math.max(block1.y, block2.y);
+                 if (verticalOverlap > 0) {
+                   this.logger.log(`OVERLAP detected between ${block1.id} and ${block2.id}: ${horizontalOverlap}x${verticalOverlap}px`);
+                 }
+               }
+               
+               // Check if blocks are adjacent horizontally
+               if (Math.abs(block1.y - block2.y) < 1) {
+                 const gap = Math.abs(block1.x + block1.width - block2.x);
+                 if (gap > 1) {
+                   this.logger.log(`Gap detected between ${block1.id} and ${block2.id}: ${gap}px`);
+                 }
+               }
+               
+               // Check if blocks are adjacent vertically
+               if (Math.abs(block1.x - block2.x) < 1) {
+                 const gap = Math.abs(block1.y + block1.height - block2.y);
+                 if (gap > 1) {
+                   this.logger.log(`Gap detected between ${block1.id} and ${block2.id}: ${gap}px`);
+                 }
+               }
+             }
+           }
+         }
+         
+         centerQuilt(blocks) {
+           const config = CONFIG.QUILT;
+           const padding = config.edgePadding;
+           
+           this.logger.log('Centering quilt...');
+           this.logger.log('Before centering:', blocks.map(b => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: b.height })));
+           
+           // Calculate quilt bounds
+           const bounds = this.getQuiltBounds(blocks);
+           this.logger.log('Quilt bounds:', bounds);
+           
+           // Calculate center position
+           const centerX = config.viewBoxStartX + (config.viewBoxWidth / 2) - (bounds.width / 2);
+           const centerY = config.viewBoxStartY + (config.viewBoxHeight / 2) - (bounds.height / 2);
+           
+           this.logger.log(`Target center: (${centerX}, ${centerY})`);
+           
+           // Adjust all block positions
+           const offsetX = centerX - bounds.x;
+           const offsetY = centerY - bounds.y;
+           
+           this.logger.log(`Applying offset: (${offsetX}, ${offsetY})`);
+           
+           for (const block of blocks) {
+             const oldX = block.x;
+             const oldY = block.y;
+             
+             block.x += offsetX;
+             block.y += offsetY;
+             
+             // Ensure blocks stay within bounds
+             const newX = Math.max(config.viewBoxStartX + padding, 
+                              Math.min(config.viewBoxStartX + config.viewBoxWidth - padding - block.width, block.x));
+             const newY = Math.max(config.viewBoxStartY + padding, 
+                              Math.min(config.viewBoxStartY + config.viewBoxHeight - padding - block.height, block.y));
+             
+             if (newX !== block.x || newY !== block.y) {
+               this.logger.log(`Bounds adjustment for block ${block.id}: (${block.x}, ${block.y}) -> (${newX}, ${newY})`);
+             }
+             
+             block.x = newX;
+             block.y = newY;
+           }
+           
+           this.logger.log('After centering:', blocks.map(b => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: b.height })));
+         }
+         
+         positionBlocksIteratively(blocks) {
+           if (blocks.length === 0) return;
+           
+           const config = CONFIG.QUILT;
+           const padding = config.edgePadding;
+           
+           this.logger.log(`Positioning ${blocks.length} blocks using iterative edge-matching logic`);
+           
+           // Start with the first block at the center
+           blocks[0].x = config.viewBoxStartX + (config.viewBoxWidth / 2) - (blocks[0].width / 2);
+           blocks[0].y = config.viewBoxStartY + (config.viewBoxHeight / 2) - (blocks[0].height / 2);
+           
+           // Create a list of available blocks to join
+           const availableBlocks = blocks.slice(1);
+           const joinedBlocks = [blocks[0]];
+           
+           // Iteratively join blocks using edge matching
+           while (availableBlocks.length > 0) {
+             let bestMatch = null;
+             let bestScore = Infinity;
+             let bestJoinType = null;
+             let bestBlockIndex = -1;
+             let bestJoinedIndex = -1;
+             
+             // Find the best edge match between available blocks and joined blocks
+             for (let i = 0; i < availableBlocks.length; i++) {
+               const availableBlock = availableBlocks[i];
+               
+               for (let j = 0; j < joinedBlocks.length; j++) {
+                 const joinedBlock = joinedBlocks[j];
+                 
+                 // Check all four edges of each block
+                 const edges = [
+                   { type: 'horizontal', length: availableBlock.width, block: availableBlock, side: 'right' },
+                   { type: 'horizontal', length: availableBlock.width, block: availableBlock, side: 'left' },
+                   { type: 'vertical', length: availableBlock.height, block: availableBlock, side: 'bottom' },
+                   { type: 'vertical', length: availableBlock.height, block: availableBlock, side: 'top' }
+                 ];
+                 
+                 const joinedEdges = [
+                   { type: 'horizontal', length: joinedBlock.width, block: joinedBlock, side: 'right' },
+                   { type: 'horizontal', length: joinedBlock.width, block: joinedBlock, side: 'left' },
+                   { type: 'vertical', length: joinedBlock.height, block: joinedBlock, side: 'bottom' },
+                   { type: 'vertical', length: joinedBlock.height, block: joinedBlock, side: 'top' }
+                 ];
+                 
+                 // Find best matching edges
+                 for (const edge of edges) {
+                   for (const joinedEdge of joinedEdges) {
+                     if (edge.type === joinedEdge.type) {
+                       const lengthDiff = Math.abs(edge.length - joinedEdge.length);
+                       const score = lengthDiff;
+                       
+                       if (score < bestScore) {
+                         bestScore = score;
+                         bestMatch = { available: edge, joined: joinedEdge };
+                         bestJoinType = edge.type;
+                         bestBlockIndex = i;
+                         bestJoinedIndex = j;
+                       }
+                     }
+                   }
+                 }
+               }
+             }
+             
+             if (bestMatch) {
+               // Join the blocks
+               const availableBlock = availableBlocks[bestBlockIndex];
+               const joinedBlock = joinedBlocks[bestJoinedIndex];
+               
+               // Calculate position based on join type
+               let newX, newY;
+               
+               if (bestJoinType === 'horizontal') {
+                 // Join horizontally
+                 if (bestMatch.available.side === 'right' && bestMatch.joined.side === 'left') {
+                   newX = joinedBlock.x + joinedBlock.width;
+                   newY = joinedBlock.y;
+                 } else if (bestMatch.available.side === 'left' && bestMatch.joined.side === 'right') {
+                   newX = joinedBlock.x - availableBlock.width;
+                   newY = joinedBlock.y;
+                 } else {
+                   // Resize to match
+                   const targetLength = Math.max(bestMatch.available.length, bestMatch.joined.length);
+                   if (bestMatch.available.length < targetLength) {
+                     availableBlock.width = targetLength;
+                   }
+                   if (bestMatch.joined.length < targetLength) {
+                     joinedBlock.width = targetLength;
+                   }
+                   newX = joinedBlock.x + joinedBlock.width;
+                   newY = joinedBlock.y;
+                 }
+               } else {
+                 // Join vertically
+                 if (bestMatch.available.side === 'bottom' && bestMatch.joined.side === 'top') {
+                   newX = joinedBlock.x;
+                   newY = joinedBlock.y + joinedBlock.height;
+                 } else if (bestMatch.available.side === 'top' && bestMatch.joined.side === 'bottom') {
+                   newX = joinedBlock.x;
+                   newY = joinedBlock.y - availableBlock.height;
+                 } else {
+                   // Resize to match
+                   const targetLength = Math.max(bestMatch.available.length, bestMatch.joined.length);
+                   if (bestMatch.available.length < targetLength) {
+                     availableBlock.height = targetLength;
+                   }
+                   if (bestMatch.joined.length < targetLength) {
+                     joinedBlock.height = targetLength;
+                   }
+                   newX = joinedBlock.x;
+                   newY = joinedBlock.y + joinedBlock.height;
+                 }
+               }
+               
+               // Ensure the block stays within bounds
+               newX = Math.max(config.viewBoxStartX + padding, 
+                              Math.min(config.viewBoxStartX + config.viewBoxWidth - padding - availableBlock.width, newX));
+               newY = Math.max(config.viewBoxStartY + padding, 
+                              Math.min(config.viewBoxStartY + config.viewBoxHeight - padding - availableBlock.height, newY));
+               
+               availableBlock.x = newX;
+               availableBlock.y = newY;
+               
+               // Move block from available to joined
+               joinedBlocks.push(availableBlock);
+               availableBlocks.splice(bestBlockIndex, 1);
+               
+               this.logger.log(`Joined block ${bestBlockIndex} to block ${bestJoinedIndex} with score ${bestScore}`);
+             } else {
+               // Fallback: position remaining blocks around the quilt
+               const remainingBlock = availableBlocks[0];
+               const quiltBounds = this.getQuiltBounds(joinedBlocks);
+               
+               remainingBlock.x = quiltBounds.x + quiltBounds.width;
+               remainingBlock.y = quiltBounds.y;
+               
+               joinedBlocks.push(remainingBlock);
+               availableBlocks.splice(0, 1);
+               
+               this.logger.log(`Fallback positioning for remaining block`);
+             }
+           }
+         }
+         
+         positionPieceWithQuilt(piece, existingBlocks) {
+           if (existingBlocks.length === 0) {
+             // If no existing blocks, position piece normally
+             piece.x = CONFIG.QUILT.viewBoxStartX + CONFIG.QUILT.edgePadding;
+             piece.y = CONFIG.QUILT.viewBoxStartY + CONFIG.QUILT.edgePadding;
+             return;
+           }
+           
+           const config = CONFIG.QUILT;
+           const padding = config.edgePadding;
+           
+           this.logger.log(`Positioning piece with ${existingBlocks.length} existing blocks`);
+           
+           // Find the best position to attach the piece to the quilt
+           let bestX = config.viewBoxStartX + padding;
+           let bestY = config.viewBoxStartY + padding;
+           let bestScore = Infinity;
+           
+           // Try different attachment points around the existing quilt
+           for (let attempt = 0; attempt < 20; attempt++) {
+             let testX, testY;
+             
+             if (attempt < 5) {
+               // Try attaching to the right edge of the quilt
+               const rightmostBlock = existingBlocks.reduce((rightmost, block) => 
+                 block.x + block.width > rightmost.x + rightmost.width ? block : rightmost
+               );
+               testX = rightmostBlock.x + rightmostBlock.width;
+               testY = rightmostBlock.y + (Math.random() - 0.5) * rightmostBlock.height;
+             } else if (attempt < 10) {
+               // Try attaching to the bottom edge of the quilt
+               const bottommostBlock = existingBlocks.reduce((bottommost, block) => 
+                 block.y + block.height > bottommost.y + bottommost.height ? block : bottommost
+               );
+               testX = bottommostBlock.x + (Math.random() - 0.5) * bottommostBlock.width;
+               testY = bottommostBlock.y + bottommostBlock.height;
+             } else {
+               // Try random positions near the quilt
+               const quiltBounds = this.getQuiltBounds(existingBlocks);
+               testX = quiltBounds.x + (Math.random() - 0.5) * quiltBounds.width;
+               testY = quiltBounds.y + (Math.random() - 0.5) * quiltBounds.height;
+             }
+             
+             // Ensure piece stays within bounds
+             testX = Math.max(config.viewBoxStartX + padding, 
+                            Math.min(config.viewBoxStartX + config.viewBoxWidth - padding - piece.width, testX));
+             testY = Math.max(config.viewBoxStartY + padding, 
+                            Math.min(config.viewBoxStartY + config.viewBoxHeight - padding - piece.height, testY));
+             
+             // Check if this position touches at least one existing block
+             let touchesExisting = false;
+             let minDistance = Infinity;
+             
+             for (const block of existingBlocks) {
+               const horizontalTouch = (testX + piece.width === block.x) || 
+                                    (block.x + block.width === testX);
+               const verticalTouch = (testY + piece.height === block.y) || 
+                                  (block.y + block.height === testY);
+               
+               if (horizontalTouch || verticalTouch) {
+                 touchesExisting = true;
+                 break;
+               }
+               
+               // Calculate distance to block
+               const distance = Math.sqrt(
+                 Math.pow(testX - block.x, 2) + Math.pow(testY - block.y, 2)
+               );
+               minDistance = Math.min(minDistance, distance);
+             }
+             
+             // Prefer positions that touch existing blocks
+             const score = touchesExisting ? minDistance : minDistance + 1000;
+             
+             if (score < bestScore) {
+               bestScore = score;
+               bestX = testX;
+               bestY = testY;
+             }
+           }
+           
+           piece.x = bestX;
+           piece.y = bestY;
+           
+           this.logger.log(`Piece positioned at (${piece.x}, ${piece.y}) with score ${bestScore}`);
+         }
+         
+         getQuiltBounds(blocks) {
+           if (blocks.length === 0) {
+             return { x: 0, y: 0, width: 0, height: 0 };
+           }
+           
+           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+           
+           blocks.forEach(block => {
+             minX = Math.min(minX, block.x);
+             minY = Math.min(minY, block.y);
+             maxX = Math.max(maxX, block.x + block.width);
+             maxY = Math.max(maxY, block.y + block.height);
+           });
+           
+           return {
+             x: minX,
+             y: minY,
+             width: maxX - minX,
+             height: maxY - minY
+           };
+         }
+         
+         calculateValueContrastScore(color1, color2) {
+           const hsl1 = Utils.hexToHsl(color1);
+           const hsl2 = Utils.hexToHsl(color2);
+           const valueDifference = Math.abs(hsl1.l - hsl2.l);
+           const normalizedContrast = valueDifference / 100;
+           const contrastScore = Math.pow(normalizedContrast, 0.7);
+           return contrastScore;
+         }
      }
 
      // ===== RENDERING SERVICE =====
@@ -2087,24 +2952,37 @@
            
            if (submissionCount === CONFIG.PHASES.patchFormation.triggerSubmission) {
              this.logger.log('🔄 Transitioning to patch-formation phase');
-             this.state.setPhase('patch-formation');
-             this.state.patches = this.formPatchesFromPieces();
-             this.state.pieces = [];
-             this.logger.log(`📊 Formed ${this.state.patches.length} patches`);
-             this.uiService.showToast('Patch formation phase activated!');
-           } else if (submissionCount === CONFIG.PHASES.blockFormation.triggerSubmission) {
-             this.logger.log('🔄 Transitioning to block-formation phase');
              this.state.setPhase('block-formation');
+             
+             // Form patches from all pieces (24 pieces → 12 patches)
              const allPatches = this.formPatchesFromPieces(this.state.allPieces);
-             this.logger.log(`📊 Processing ${allPatches.length} patches for block formation`);
+             this.logger.log(`📊 Formed ${allPatches.length} patches from all pieces`);
+             
+             // Form blocks from patches (12 patches → 6 blocks)
              const blockFormationResult = this.formBlocksFromPatches(allPatches);
              this.state.blocks = blockFormationResult.blocks;
              this.state.unmatchedPatches = blockFormationResult.unmatchedPatches;
              this.state.originalPatches = [...allPatches];
-             this.state.patches = [];
+             
+             // Clear pieces and patches, show blocks
              this.state.pieces = [];
-             this.logger.log(`📊 Formed ${this.state.blocks.length} blocks, ${this.state.unmatchedPatches.length} unmatched patches`);
+             this.state.patches = [];
+             this.state.allPieces = [];
+             
+             this.logger.log(`📊 User 6 sees ${this.state.blocks.length} blocks`);
              this.uiService.showToast('Block formation phase activated!');
+                       } else if (submissionCount === CONFIG.PHASES.blockFormation.triggerSubmission && submissionCount > 6) {
+              this.logger.log('🔄 User 7+ adding piece to existing blocks');
+              
+              // Create the new piece
+              const newPiece = this.createPiece();
+              this.state.pieces = [newPiece];
+              
+              // Position the piece to attach to the existing quilt
+              this.positioningService.positionPieceWithQuilt(newPiece, this.state.blocks);
+              
+              this.logger.log(`📊 User ${submissionCount} adds piece to existing ${this.state.blocks.length} blocks`);
+              this.uiService.showToast(`Your piece added to the quilt!`);
            } else if (submissionCount === CONFIG.PHASES.quiltFormation.triggerSubmission) {
              this.logger.log('🔄 Transitioning to quilt-formation phase');
              this.state.setPhase('quilt-formation');
