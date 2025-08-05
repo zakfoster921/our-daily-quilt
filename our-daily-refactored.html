@@ -496,6 +496,16 @@
       position: relative;
       display: block;
     }
+    
+    /* MOBILE-FIRST: Override constraints when time-based engine is active */
+    #quilt[data-time-based-active="true"] {
+      width: 100vw !important;
+      height: auto !important;
+      max-width: none !important;
+      max-height: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
 
     /* ===== BUTTONS ===== */
     .btn {
@@ -759,6 +769,18 @@
       display: block !important;
       box-sizing: border-box !important;
     }
+    
+    /* MOBILE-FIRST: Override the !important constraints when time-based engine is active */
+    #quilt[data-time-based-active="true"] {
+      width: 100vw !important;
+      height: auto !important;
+      min-width: unset !important;
+      min-height: unset !important;
+      max-width: unset !important;
+      max-height: unset !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
 
     /* Fix screen centering for quilt */
     #screen-quilt {
@@ -796,6 +818,17 @@
         margin: 1rem auto !important;
         display: block !important;
         position: relative;
+      }
+      
+      /* MOBILE-FIRST: Override responsive constraints for time-based engine */
+      #quilt[data-time-based-active="true"] { 
+        width: 100vw !important; 
+        height: auto !important; 
+        min-width: unset !important;
+        min-height: unset !important;
+        max-width: unset !important;
+        max-height: unset !important;
+        margin: 0 !important;
         box-sizing: border-box !important;
       }
       
@@ -832,6 +865,17 @@
         min-width: 280px !important;
         min-height: 280px !important;
         margin: 0.5rem auto !important;
+      }
+      
+      /* MOBILE-FIRST: Override extra small device constraints for time-based engine */
+      #quilt[data-time-based-active="true"] { 
+        width: 100vw !important; 
+        height: auto !important; 
+        min-width: unset !important;
+        min-height: unset !important;
+        max-width: unset !important;
+        max-height: unset !important;
+        margin: 0 !important;
       }
       
       #screen-quilt .thank-you-message {
@@ -3619,7 +3663,7 @@
           
           // Collection phase: quilter's workspace with color family columns
           this.colorColumns = new Map(); // hue range -> column info
-          this.columnSpacing = 1.2; // Tight spacing between color family columns
+          this.columnSpacing = 1.2; // NO OVERLAP - spread columns to see available space
           this.nextColumnX = 0; // Track where to place next new column
         }
 
@@ -3662,7 +3706,15 @@
         
         getColorFamilyPosition(color) {
           const hue = this.getColorHue(color);
-          const colorFamily = this.getColorFamily(hue);
+          const saturation = this.getColorSaturation(color);
+          
+          // Override to neutrals if saturation is very low (grays, whites, blacks)
+          let colorFamily;
+          if (saturation < 15) { // Less than 15% saturation = neutral
+            colorFamily = 'neutrals';
+          } else {
+            colorFamily = this.getColorFamily(hue);
+          }
           
           // Find or create column for this color family
           let column = this.colorColumns.get(colorFamily);
@@ -3758,7 +3810,25 @@
           return h * 360; // Convert to degrees
         }
         
+        getColorSaturation(hexColor) {
+          // Convert hex to RGB
+          const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+          const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+          const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+          
+          // Calculate saturation
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const delta = max - min;
+          
+          if (max === 0) return 0; // Black
+          return (delta / max) * 100; // Return as percentage
+        }
+        
         getColorFamily(hue) {
+          // First check if this is a neutral color (low saturation)
+          // Note: This function only gets hue, so we need to check saturation in getColorFamilyPosition
+          
           // Define color families based on hue ranges
           if (hue >= 345 || hue < 15) return 'reds';
           if (hue >= 15 && hue < 45) return 'oranges';
@@ -4742,14 +4812,16 @@
              
              this.renderingService.initialize();
              
-             // Force initial render
+             // Force initial render with time-based engine
              setTimeout(() => {
-               this.renderingService.renderQuilt(this.state);
+               this.renderTimeBasedQuilt();
                this.updateUI();
              }, 100);
              
-             this.uiService.showLoading(false);
-             this.logger.log('App initialization complete');
+                         this.uiService.showLoading(false);
+            this.logger.log('App initialization complete');
+            
+            // ROOT CAUSE FIX: All renderQuilt calls now use time-based engine
            } catch (error) {
              this.errorHandler.handleError(error, 'App initialization');
              this.uiService.showLoading(false);
@@ -4818,20 +4890,20 @@
          async loadQuilt() {
            try {
              this.uiService.showLoading(true);
-             const blocks = await this.dataService.loadQuilt();
-             this.state.blocks = blocks;
-             
-             if (this.renderingService.isInitialized) {
-               this.renderingService.renderQuilt(this.state);
-             }
+                         const blocks = await this.dataService.loadQuilt();
+            this.state.blocks = blocks;
+            
+            if (this.renderingService.isInitialized) {
+              this.renderTimeBasedQuilt();
+            }
              this.uiService.showLoading(false);
            } catch (error) {
              this.errorHandler.handleError(error, 'loadQuilt');
              this.uiService.showLoading(false);
-             this.state.blocks = [];
-             if (this.renderingService.isInitialized) {
-               this.renderingService.renderQuilt(this.state);
-             }
+                         this.state.blocks = [];
+            if (this.renderingService.isInitialized) {
+              this.renderTimeBasedQuilt();
+            }
            }
          }
 
@@ -5402,28 +5474,118 @@
           const gridWidth = maxX - minX + 1;
           const gridHeight = maxY - minY + 1;
           
-          // MOBILE-FIRST: Use fixed block sizes, don't shrink blocks as grid grows
-          let scale;
+          // MOBILE-FIRST: MAXIMIZE block size for 8 color families
+          const screenWidth = window.innerWidth;
+          const numberOfColorFamilies = 8;
+          const smallPadding = 4; // Even less padding for bigger blocks
+          const columnSpacing = 3; // Tighter spacing for more block space
           
-          if (engineState.phase === 'collection') {
-            // Collection phase: large, touch-friendly blocks for quilter's workspace
-            scale = 45; // Fixed size for mobile-friendly touch interaction
+          // Use maximum screen width for bigger blocks
+          const availableWidthForBlocks = screenWidth - smallPadding - (columnSpacing * (numberOfColorFamilies - 1));
+          const optimalBlockSize = Math.floor(availableWidthForBlocks / numberOfColorFamilies);
+          
+          // MUCH bigger blocks using all available space!
+          const minBlockSize = 70; // Much bigger for excellent mobile experience
+          const maxBlockSize = 120; // Even bigger maximum to use available space
+          const scale = Math.min(maxBlockSize, Math.max(minBlockSize, optimalBlockSize));
+          
+          console.log(`📱 MAXIMIZE WIDTH: screen=${screenWidth}px - ${smallPadding}px padding = ${availableWidthForBlocks}px ÷ 8 = ${optimalBlockSize}px → 🎯 ${scale}px final`);
+          console.log(`📱 LAYOUT: ${numberOfColorFamilies} columns × 🎯 ${scale}px blocks + ${columnSpacing}px spacing = ${(numberOfColorFamilies * scale) + (columnSpacing * (numberOfColorFamilies - 1))}px total width`);
+          console.log(`🔍 SCALE CHECK: Using ${scale}px scale for all blocks in this render`);
+          
+          // Calculate how much horizontal space we're actually using
+          const actualUsedWidth = (numberOfColorFamilies * scale) + (columnSpacing * (numberOfColorFamilies - 1));
+          const remainingSpace = screenWidth - actualUsedWidth;
+          const spacePercentage = ((actualUsedWidth / screenWidth) * 100).toFixed(1);
+          console.log(`📏 SPACE USAGE: Using ${actualUsedWidth}px of ${screenWidth}px (${spacePercentage}%) - ${remainingSpace}px remaining`);
+          
+          // MOBILE-FIRST: Calculate available height by measuring actual DOM elements
+          const availableHeight = this.calculateAvailableCanvasHeight();
+          
+          // Calculate ideal quilt height without compression
+          const idealQuiltHeight = gridHeight * scale;
+          
+          // MOBILE-FIRST: Canvas should use full screen width for bigger visual impact
+          const canvasWidth = screenWidth; // Use full screen width, not just grid width
+          
+          // Apply dynamic compression based on individual column needs
+          let compressionApplied = false;
+          const targetCanvasHeight = availableHeight - 30; // Reserve minimal padding since we're using full height
+          
+          console.log(`📱 COMPRESSION CHECK: Overall quilt needs ${idealQuiltHeight}px, full canvas height = ${targetCanvasHeight}px`);
+          
+          // Check if ANY column might need compression (smarter trigger)
+          const columnGroups = new Map();
+          engineState.colors.forEach(colorObj => {
+            const family = colorObj.position.colorFamily || 'unknown';
+            if (!columnGroups.has(family)) {
+              columnGroups.set(family, []);
+            }
+            columnGroups.get(family).push(colorObj);
+          });
+          
+          let anyColumnNeedsCompression = false;
+          columnGroups.forEach((columnColors, family) => {
+            const columnMaxY = Math.max(...columnColors.map(c => c.position.y));
+            const columnMinY = Math.min(...columnColors.map(c => c.position.y));
+            const columnHeight = (columnMaxY - columnMinY) * scale;
+            const columnHeightRatio = columnHeight / targetCanvasHeight;
+            
+            if (columnHeightRatio > 0.9) { // More conservative since we have much more space now
+              anyColumnNeedsCompression = true;
+              console.log(`📱 TRIGGER: ${family} column (${columnHeight.toFixed(0)}px, ${Math.round(columnHeightRatio * 100)}%) needs compression`);
+            }
+          });
+          
+          if (anyColumnNeedsCompression) {
+            console.log(`📱 🚨 COLUMN-SPECIFIC COMPRESSION TRIGGERED`);
+            compressionApplied = this.applyDynamicCompression(engineState.colors, targetCanvasHeight, scale);
+            console.log(`📱 Compression result: ${compressionApplied ? 'SUCCESS' : 'FAILED'}`);
           } else {
-            // Other phases: standard mobile-friendly block size
-            scale = 30; // Fixed size, never shrinks
+            console.log(`📱 ✅ NO COMPRESSION NEEDED: All columns fit comfortably`);
           }
           
-          // Calculate total canvas area needed (no constraints)
-          const canvasWidth = gridWidth * scale + 100; // Extra padding
-          const canvasHeight = gridHeight * scale + 150; // Extra padding
+          // USE FULL AVAILABLE HEIGHT instead of just fitting content
+          const actualQuiltHeight = compressionApplied ? 
+            this.calculateCompressedQuiltHeight(engineState.colors, scale) : idealQuiltHeight;
+          
+          // Reserve small buffer for padding, but use most of available space
+          const canvasHeight = availableHeight - 30; // Use nearly all available height!
+          
+          console.log(`📱 MAXIMIZED CANVAS: Using ${canvasHeight}px of ${availableHeight}px available (quilt needs ${actualQuiltHeight.toFixed(1)}px)`);
+          console.log(`📱 🎯 CANVAS SIZE: ${canvasWidth}px × ${canvasHeight}px - FULL VIEWPORT USAGE`);
           
           // Setup SVG with responsive canvas size
           quiltSVG.innerHTML = '';
           console.log('🎨 DEBUG: Cleared SVG content');
           
-          quiltSVG.setAttribute('width', Math.max(600, canvasWidth));
-          quiltSVG.setAttribute('height', Math.max(600, canvasHeight));
-          quiltSVG.setAttribute('viewBox', `0 0 ${Math.max(600, canvasWidth)} ${Math.max(600, canvasHeight)}`);
+          // MOBILE-FIRST: Use full screen width, no artificial minimums!
+          const finalWidth = canvasWidth; // Use full screen width (412px)
+          const finalHeight = canvasHeight; // Use full available height
+          
+          quiltSVG.setAttribute('width', finalWidth);
+          quiltSVG.setAttribute('height', finalHeight);
+          quiltSVG.setAttribute('viewBox', `0 0 ${finalWidth} ${finalHeight}`);
+          
+          // AGGRESSIVE HEIGHT FORCING - prevent any CSS override
+          quiltSVG.style.setProperty('width', finalWidth + 'px', 'important');
+          quiltSVG.style.setProperty('height', finalHeight + 'px', 'important');
+          quiltSVG.style.setProperty('max-height', 'none', 'important');
+          quiltSVG.style.setProperty('min-height', 'auto', 'important');
+          
+          console.log(`📱 SVG ATTRIBUTES: width=${finalWidth}px, height=${finalHeight}px (using full viewport!)`);
+          console.log(`📱 SVG VIEWBOX: 0 0 ${finalWidth} ${finalHeight}`);
+          console.log('🔧 AGGRESSIVE HEIGHT FORCING: Applied !important styles to prevent CSS override');
+          console.log(`🔧 AGGRESSIVE HEIGHT FORCING: Applied style.cssText: ${quiltSVG.style.cssText}`);
+          console.log(`🔧 AGGRESSIVE HEIGHT FORCING: Computed style height: ${window.getComputedStyle(quiltSVG).height}`);
+          console.log(`🔧 AGGRESSIVE HEIGHT FORCING: Computed style width: ${window.getComputedStyle(quiltSVG).width}`);
+          
+          // Height monitor is now debug-only - run manually with startHeightMonitor() if needed
+          console.log('🔍 Height monitor available for debugging: startHeightMonitor() / stopHeightMonitor()');
+          
+          // Verify we're using the viewport space properly
+          const usagePercent = Math.round((finalHeight / availableHeight) * 100);
+          console.log(`📱 ✅ VIEWPORT USAGE: ${usagePercent}% of available height (${finalHeight}px / ${availableHeight}px)`);
           
           // Add background
           const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -5433,21 +5595,39 @@
           quiltSVG.appendChild(background);
           console.log('🎨 DEBUG: Added background');
           
-          // Simple centered positioning for mobile-first design
-          const offsetX = 50; // Standard left padding
-          const offsetY = 75; // Standard top padding
+          // MOBILE-FIRST: Center the quilt properly based on actual width used
+          const actualQuiltWidth = gridWidth * scale; // How wide the quilt actually is
+          const remainingWidth = canvasWidth - actualQuiltWidth; // How much space is left
+          
+          // Horizontal centering: simply center the actual quilt width within the canvas
+          const offsetX = remainingWidth / 2; // Fixed to remove min padding and gridXAdjustment
+          
+          // MOBILE-FIRST: Calculate offsetY to prevent off-screen rendering
+          // Account for negative grid bounds and add minimal top padding
+          const baseTopPadding = 20; // Minimal top padding for mobile
+          const gridAdjustment = (minY < 0) ? Math.abs(minY * scale) : 0; // Account for negative Y bounds
+          const offsetY = baseTopPadding + gridAdjustment;
+          
+          console.log(`📱 MOBILE OFFSET: baseTopPadding=${baseTopPadding}, gridAdjustment=${gridAdjustment.toFixed(1)}, final offsetY=${offsetY.toFixed(1)}`);
+          console.log(`🎯 CENTERING: actualQuiltWidth=${actualQuiltWidth.toFixed(1)}px, remainingWidth=${remainingWidth.toFixed(1)}px`);
+          console.log(`🎯 X-OFFSET: remainingWidth=${remainingWidth.toFixed(1)}px / 2 = ${offsetX.toFixed(1)}px final`);
           
           console.log(`🎨 DEBUG: Grid bounds: (${minX},${minY}) to (${maxX},${maxY})`);
           console.log(`🎨 DEBUG: Grid size: ${gridWidth}x${gridHeight}, scale: ${scale.toFixed(1)}px (${engineState.phase} phase)`);
           console.log(`🎨 DEBUG: Offset: (${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
           
           if (engineState.phase === 'collection') {
-            console.log(`📱 Mobile-first: Fixed block size (${scale}px) for touch-friendly interaction - adaptive overlap maintains consistency`);
+            if (compressionApplied) {
+              console.log(`📱 Mobile-first: Fixed ${scale}px blocks + DYNAMIC COMPRESSION applied to fit ${availableHeight}px viewport`);
+            } else {
+              console.log(`📱 Mobile-first: Fixed block size (${scale}px) for touch-friendly interaction - no compression needed`);
+            }
           } else {
             console.log(`📱 Mobile-first: Fixed block size (${scale}px) - no shrinking as grid grows`);
           }
           
           // Render placed colors with phase-specific styling
+          console.log(`🎨 DEBUG: About to render colors with scale: ${scale}`);
           console.log('🎨 DEBUG: About to render colors...', engineState.colors);
           engineState.colors.forEach((colorObj, index) => {
             console.log(`🎨 DEBUG: Rendering color ${index + 1}:`, colorObj);
@@ -5568,7 +5748,26 @@
                return colorObj.position.overlapFactor && colorObj.position.overlapFactor <= 0.45;
              });
              
-            if (hasLongColumns) {
+            // Check if compression is active and count compressed columns
+            const compressedColumns = new Set();
+            const uncompressedColumns = new Set();
+            
+            engineState.colors.forEach(colorObj => {
+              const family = colorObj.position.colorFamily;
+              if (colorObj.position.compressionLevel === 'none') {
+                uncompressedColumns.add(family);
+              } else if (colorObj.position.compressionLevel !== undefined) {
+                compressedColumns.add(family);
+              }
+            });
+            
+            if (compressedColumns.size > 0) {
+              if (uncompressedColumns.size > 0) {
+                dayInfo.textContent = `Collection: ${compressedColumns.size}/${compressedColumns.size + uncompressedColumns.size} columns compressed`;
+              } else {
+                dayInfo.textContent = 'Collection: All columns compressed';
+              }
+            } else if (hasLongColumns) {
               dayInfo.textContent = 'Collection: Mobile-optimized columns';
             } else {
               dayInfo.textContent = 'Collection: Family columns';
@@ -5605,8 +5804,16 @@
            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
            rect.setAttribute('x', x);
            rect.setAttribute('y', y);
-           rect.setAttribute('width', Math.max(scale - 2, 5));
-           rect.setAttribute('height', Math.max(scale - 2, 5));
+           
+           // DEBUG: Log block size calculation
+           const blockWidth = Math.max(scale - 2, 5);
+           const blockHeight = Math.max(scale - 2, 5);
+           if (window.debugBlockRendering) {
+             console.log(`🎨 RENDERING: Block scale=${scale} → size=${blockWidth}×${blockHeight} at (${x}, ${y})`);
+           }
+           
+           rect.setAttribute('width', blockWidth);
+           rect.setAttribute('height', blockHeight);
            rect.setAttribute('fill', colorObj.color);
            rect.setAttribute('rx', Math.max(2, scale * 0.06)); // Scale corner radius with block size
            
@@ -5662,8 +5869,16 @@
            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
            rect.setAttribute('x', x);
            rect.setAttribute('y', y);
-           rect.setAttribute('width', Math.max(scale - 2, 5));
-           rect.setAttribute('height', Math.max(scale - 2, 5));
+           
+           // DEBUG: Log standard block size calculation
+           const blockWidth = Math.max(scale - 2, 5);
+           const blockHeight = Math.max(scale - 2, 5);
+           if (window.debugBlockRendering) {
+             console.log(`🎨 STANDARD BLOCK: scale=${scale} → size=${blockWidth}×${blockHeight} at (${x}, ${y})`);
+           }
+           
+           rect.setAttribute('width', blockWidth);
+           rect.setAttribute('height', blockHeight);
            rect.setAttribute('fill', colorObj.color);
            rect.setAttribute('stroke', '#000');
            rect.setAttribute('stroke-width', '0.5');
@@ -5688,12 +5903,31 @@
            
            switch (result.phase) {
              case 'collection':
-               // Check if mobile optimization is active
+               // Check column-specific compression status
+               const compressedCols = new Set();
+               const uncompressedCols = new Set();
+               
+               engineState.colors.forEach(colorObj => {
+                 const family = colorObj.position.colorFamily;
+                 if (colorObj.position.compressionLevel === 'none') {
+                   uncompressedCols.add(family);
+                 } else if (colorObj.position.compressionLevel !== undefined) {
+                   compressedCols.add(family);
+                 }
+               });
+               
+               // Check if mobile optimization is active  
                const hasCompressedColumns = engineState.colors.some(colorObj => {
                  return colorObj.position.overlapFactor && colorObj.position.overlapFactor <= 0.45;
                });
                
-               if (hasCompressedColumns) {
+               if (compressedCols.size > 0) {
+                 if (uncompressedCols.size > 0) {
+                   message = `Column compressed! ${compressedCols.size} of ${compressedCols.size + uncompressedCols.size} columns optimized... (${totalColors} colors)`;
+                 } else {
+                   message = `All columns compressed! Mobile-optimized... (${totalColors} colors)`;
+                 }
+               } else if (hasCompressedColumns) {
                  message = `Color stacked! Mobile-optimized workspace... (${totalColors} colors)`;
                } else {
                  message = `Color added! Collecting in family columns... (${totalColors} colors)`;
@@ -5716,14 +5950,135 @@
                message = 'Color added to the community quilt!';
            }
            
-           this.uiService.showToast(message);
-         }
+                     this.uiService.showToast(message);
+        }
 
-         async handleTestAddBlock() {
+        // MOBILE-FIRST: Dynamic compression helper methods for fitting quilt in viewport
+        calculateAvailableCanvasHeight() {
+          try {
+            // Simple, reliable calculation instead of complex DOM measurement
+            const viewportHeight = window.innerHeight;
+            console.log(`📱 DEBUG: Viewport height = ${viewportHeight}px`);
+            
+            // MAXIMIZE CANVAS: Minimize UI height estimate to push more content below fold
+            // Only keep thank you message + first button visible, push rest below
+            const estimatedUIHeight = 120; // Only essential elements above canvas
+            
+            const availableHeight = viewportHeight - estimatedUIHeight;
+            console.log(`📱 SIMPLE CALC: viewport ${viewportHeight}px - estimated UI ${estimatedUIHeight}px = ${availableHeight}px available for canvas`);
+            
+            return Math.max(300, availableHeight); // Minimum 300px canvas for proper testing
+          } catch (error) {
+            console.warn('Height calculation failed, using fallback:', error);
+            const fallback = Math.max(300, window.innerHeight - 170);
+            console.log(`📱 FALLBACK HEIGHT: ${fallback}px`);
+            return fallback;
+          }
+        }
+
+        applyDynamicCompression(colors, targetHeight, scale) {
+          if (!colors || colors.length === 0) return false;
+          
+          // Group colors by their columns for individual column analysis
+          const columnGroups = new Map();
+          colors.forEach(colorObj => {
+            const family = colorObj.position.colorFamily || 'unknown';
+            if (!columnGroups.has(family)) {
+              columnGroups.set(family, []);
+            }
+            columnGroups.get(family).push(colorObj);
+          });
+          
+          console.log(`📱 COLUMN-SPECIFIC COMPRESSION: Analyzing ${columnGroups.size} columns for individual compression needs`);
+          
+          let totalRepositioned = 0;
+          let columnsCompressed = 0;
+          
+          // Apply compression column by column based on individual needs
+          columnGroups.forEach((columnColors, family) => {
+            // Sort by original stack level to maintain order
+            columnColors.sort((a, b) => (a.position.stackLevel || 0) - (b.position.stackLevel || 0));
+            
+            // Calculate this column's natural height
+            const columnMaxY = Math.max(...columnColors.map(c => c.position.y));
+            const columnMinY = Math.min(...columnColors.map(c => c.position.y));
+            const columnHeight = (columnMaxY - columnMinY) * scale;
+            const columnHeightRatio = columnHeight / targetHeight;
+            
+            // Determine if this column needs compression and how much
+            let compressionLevel = null;
+            
+            if (columnHeightRatio <= 0.8) {
+              // Column fits comfortably - no compression needed
+              console.log(`📱 ${family.toUpperCase()}: ${columnHeight.toFixed(0)}px (${Math.round(columnHeightRatio * 100)}%) - NO COMPRESSION`);
+              columnColors.forEach(colorObj => {
+                colorObj.position.compressionLevel = 'none';
+              });
+              return; // Skip this column entirely
+            } else if (columnHeightRatio <= 1.2) {
+              compressionLevel = 0.85; // 85% overlap - gentle compression
+            } else if (columnHeightRatio <= 1.5) {
+              compressionLevel = 0.75; // 75% overlap - medium compression
+            } else if (columnHeightRatio <= 2.0) {
+              compressionLevel = 0.65; // 65% overlap - heavy compression
+            } else if (columnHeightRatio <= 3.0) {
+              compressionLevel = 0.55; // 55% overlap - extreme compression
+            } else {
+              compressionLevel = 0.45; // 45% overlap - maximum compression
+            }
+            
+            console.log(`📱 ${family.toUpperCase()}: ${columnHeight.toFixed(0)}px (${Math.round(columnHeightRatio * 100)}%) - COMPRESSING to ${Math.round((1 - compressionLevel) * 100)}% overlap`);
+            columnsCompressed++;
+            
+            // Apply compression to this specific column
+            columnColors.forEach((colorObj, index) => {
+              const oldY = colorObj.position.y;
+              
+              if (index === 0) {
+                // First block stays at base position
+                colorObj.position.compressionLevel = compressionLevel;
+                return;
+              }
+              
+              // Calculate compressed position relative to previous block
+              const previousBlock = columnColors[index - 1];
+              const spacing = 1 - compressionLevel;
+              colorObj.position.y = previousBlock.position.y + spacing;
+              colorObj.position.compressionLevel = compressionLevel;
+              
+              console.log(`📱   ${family} Block ${index}: y ${oldY.toFixed(1)} → ${colorObj.position.y.toFixed(1)} (spacing ${spacing.toFixed(2)})`);
+              totalRepositioned++;
+            });
+          });
+          
+          console.log(`📱 COMPRESSION COMPLETE: ${columnsCompressed}/${columnGroups.size} columns compressed, ${totalRepositioned} blocks repositioned`);
+          
+          return columnsCompressed > 0; // Compression applied if any columns were compressed
+        }
+
+        calculateCompressedQuiltHeight(colors, scale) {
+          if (!colors || colors.length === 0) return 0;
+          const maxY = Math.max(...colors.map(c => c.position.y));
+          const height = maxY * scale;
+          console.log(`📱 COMPRESSED HEIGHT: maxY=${maxY.toFixed(1)} × scale=${scale} = ${height.toFixed(1)}px`);
+          return height;
+        }
+
+        async handleTestAddBlock() {
            try {
              const randomHue = Math.floor(Math.random() * 360);
-             const randomSaturation = CONFIG.COLOR_PICKER.saturation;
-             const randomLightness = 35 + Math.floor(Math.random() * 56);
+             
+             // 20% chance to generate a neutral color (low saturation)
+             let randomSaturation, randomLightness;
+             if (Math.random() < 0.2) {
+               // Generate neutral color (gray/white/black)
+               randomSaturation = Math.floor(Math.random() * 10); // 0-10% saturation
+               randomLightness = 20 + Math.floor(Math.random() * 60); // 20-80% lightness
+             } else {
+               // Generate colorful color
+               randomSaturation = CONFIG.COLOR_PICKER.saturation;
+               randomLightness = 35 + Math.floor(Math.random() * 56);
+             }
              
              const warmHue = (randomHue + 25) % 360;
              const warmSaturation = Math.min(randomSaturation + 5, 100);
@@ -5773,11 +6128,11 @@
                } else {
                  this.uiService.showToast("You haven't added any pieces yet. Try adding your first color!");
                }
-             } else {
-               this.uiService.showToast('Highlighting turned off');
-             }
-             
-             this.renderingService.renderQuilt(this.state);
+                         } else {
+              this.uiService.showToast('Highlighting turned off');
+            }
+            
+            this.renderTimeBasedQuilt();
              
            } catch (error) {
              this.errorHandler.handleError(error, 'handleShowMyPiece');
@@ -5797,9 +6152,9 @@
              
              this.updateUI();
              
-             if (success) {
-               this.lastAddedForShare = this.state.lastAddedIndex;
-               this.renderingService.renderQuilt(this.state);
+                         if (success) {
+              this.lastAddedForShare = this.state.lastAddedIndex;
+              this.renderTimeBasedQuilt();
                
                // Update user counter to reflect multiple contributors
                const uniqueUsers = new Set(this.state.pieces.map(piece => piece.userId));
@@ -6566,6 +6921,791 @@
           app.renderTimeBasedQuilt();
           const colors = app.timeBasedEngine.gridState.getAllColors();
           console.log(`✅ Rendered ${colors.length} colors to screen`);
+        };
+
+        // BLOCK SIZE DEBUGGING - Let's see what's actually happening!
+        window.debugBlockSizes = function() {
+          console.log('\n🔍 === BLOCK SIZE DEBUG ===');
+          
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          console.log(`📐 SVG Dimensions: ${svg.getAttribute('width')} × ${svg.getAttribute('height')}`);
+          console.log(`📐 SVG ViewBox: ${svg.getAttribute('viewBox')}`);
+          console.log(`🏷️ Data attribute: data-time-based-active="${svg.getAttribute('data-time-based-active')}"`);
+          
+          const blocks = svg.querySelectorAll('rect');
+          console.log(`🎨 Total blocks found: ${blocks.length}`);
+          
+          if (blocks.length > 0) {
+            const firstBlock = blocks[0];
+            console.log(`📦 First block: width=${firstBlock.getAttribute('width')} height=${firstBlock.getAttribute('height')}`);
+            console.log(`📍 First block position: x=${firstBlock.getAttribute('x')} y=${firstBlock.getAttribute('y')}`);
+            
+            // Check a few more blocks
+            for (let i = 0; i < Math.min(5, blocks.length); i++) {
+              const block = blocks[i];
+              console.log(`Block ${i}: ${block.getAttribute('width')}×${block.getAttribute('height')} at (${block.getAttribute('x')}, ${block.getAttribute('y')})`);
+            }
+          }
+          
+          // Check CSS that might be affecting size
+          const computedStyle = window.getComputedStyle(svg);
+          console.log(`💄 SVG CSS: width=${computedStyle.width}, height=${computedStyle.height}`);
+          console.log(`💄 Max dimensions: max-width=${computedStyle.maxWidth}, max-height=${computedStyle.maxHeight}`);
+          console.log(`💄 Min dimensions: min-width=${computedStyle.minWidth}, min-height=${computedStyle.minHeight}`);
+          
+          return { svg, blocks: Array.from(blocks) };
+        };
+
+        window.debugRenderProcess = function() {
+          console.log('\n🎨 === RENDER PROCESS DEBUG ===');
+          console.log('Screen width:', window.innerWidth);
+          console.log('Screen height:', window.innerHeight);
+          
+          if (window.app && window.app.timeBasedEngine) {
+            const engine = window.app.timeBasedEngine;
+            const state = engine.getState();
+            console.log('Phase:', state.phase);
+            console.log('Colors count:', state.colors.length);
+            console.log('Grid bounds:', {
+              minX: Math.min(...state.colors.map(c => c.position.x)),
+              maxX: Math.max(...state.colors.map(c => c.position.x)),
+              minY: Math.min(...state.colors.map(c => c.position.y)),
+              maxY: Math.max(...state.colors.map(c => c.position.y))
+            });
+          }
+        };
+
+        // Toggle detailed block rendering debug
+        window.toggleBlockDebug = function() {
+          window.debugBlockRendering = !window.debugBlockRendering;
+          console.log(`🔧 Block rendering debug: ${window.debugBlockRendering ? 'ON' : 'OFF'}`);
+          if (window.debugBlockRendering) {
+            console.log('Next blocks rendered will show size details...');
+          }
+        };
+
+        // Quick debug combo - run all debug functions
+        window.debugAll = function() {
+          console.log('\n🚀 === FULL DEBUG COMBO ===');
+          window.debugRenderProcess();
+          window.debugBlockSizes();
+          window.debugStatus();
+        };
+
+        // Test ultra-big blocks manually
+        window.testUltraBigBlocks = function() {
+          console.log('🚀 TESTING ULTRA-BIG BLOCKS');
+          
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          // Clear and create one massive test block
+          svg.innerHTML = '';
+          svg.setAttribute('width', '412');
+          svg.setAttribute('height', '765');
+          svg.setAttribute('viewBox', '0 0 412 765');
+          svg.setAttribute('data-time-based-active', 'true');
+          
+          // AGGRESSIVE HEIGHT FORCING
+          svg.style.setProperty('height', '765px', 'important');
+          svg.style.setProperty('width', '412px', 'important');
+          svg.style.setProperty('max-height', 'none', 'important');
+          svg.style.setProperty('min-height', 'auto', 'important');
+          
+          // Create background
+          const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          bg.setAttribute('width', '100%');
+          bg.setAttribute('height', '100%');
+          bg.setAttribute('fill', '#f8f9fa');
+          svg.appendChild(bg);
+          
+          // Create one massive test block to see maximum size
+          const testBlock = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          testBlock.setAttribute('x', '50');
+          testBlock.setAttribute('y', '100');
+          testBlock.setAttribute('width', '100'); // Much bigger test block
+          testBlock.setAttribute('height', '100');
+          testBlock.setAttribute('fill', '#ff6b6b');
+          testBlock.setAttribute('stroke', '#000');
+          testBlock.setAttribute('stroke-width', '2');
+          svg.appendChild(testBlock);
+          
+          console.log('✅ Ultra-big test block created (100×100px) with aggressive height forcing!');
+          setTimeout(() => window.debugBlockSizes(), 200);
+        };
+
+        // Force SVG to use proper dimensions during normal rendering
+        window.aggressivelyFixSVGHeight = function() {
+          const svg = document.querySelector('#quilt');
+          if (!svg) return false;
+          
+          const currentWidth = svg.getAttribute('width') || '412';
+          const currentHeight = svg.getAttribute('height') || '765';
+          
+          console.log(`🔧 AGGRESSIVE FIX: Setting SVG to ${currentWidth}×${currentHeight}`);
+          
+          // Multiple ways to force the height
+          svg.style.setProperty('width', currentWidth + 'px', 'important');
+          svg.style.setProperty('height', currentHeight + 'px', 'important');
+          svg.style.setProperty('max-width', 'none', 'important');
+          svg.style.setProperty('max-height', 'none', 'important');
+          svg.style.setProperty('min-width', 'auto', 'important');
+          svg.style.setProperty('min-height', 'auto', 'important');
+          
+          return true;
+        };
+
+        // Height monitoring system to catch when something overrides our styles
+        window.startHeightMonitor = function() {
+          if (window.heightMonitorInterval) {
+            clearInterval(window.heightMonitorInterval);
+          }
+          
+          console.log('🔍 Starting SVG height monitor...');
+          
+          window.heightMonitorInterval = setInterval(() => {
+            const svg = document.querySelector('#quilt');
+            if (!svg) return;
+            
+            const attributeHeight = svg.getAttribute('height');
+            const computedStyle = window.getComputedStyle(svg);
+            const cssHeight = computedStyle.height;
+            
+            // Only log when there's a mismatch
+            if (attributeHeight && cssHeight !== attributeHeight + 'px') {
+              console.log(`🚨 HEIGHT OVERRIDE DETECTED!`);
+              console.log(`   Attribute: ${attributeHeight}px`);
+              console.log(`   CSS: ${cssHeight}`);
+              
+              // Get detailed CSS information
+              const computedStyle = window.getComputedStyle(svg);
+              console.log(`   Max-height: ${computedStyle.maxHeight}`);
+              console.log(`   Min-height: ${computedStyle.minHeight}`);
+              console.log(`   Box-sizing: ${computedStyle.boxSizing}`);
+              console.log(`   Display: ${computedStyle.display}`);
+              console.log(`   Position: ${computedStyle.position}`);
+              
+              // Check for aspect ratio constraints
+              if (computedStyle.aspectRatio && computedStyle.aspectRatio !== 'auto') {
+                console.log(`   🎯 ASPECT RATIO CONSTRAINT: ${computedStyle.aspectRatio}`);
+              }
+              
+              // Check parent container constraints
+              const parent = svg.parentElement;
+              if (parent) {
+                const parentStyle = window.getComputedStyle(parent);
+                console.log(`   Parent height: ${parentStyle.height}`);
+                console.log(`   Parent max-height: ${parentStyle.maxHeight}`);
+                console.log(`   Parent overflow: ${parentStyle.overflow}`);
+              }
+              
+              console.log(`   Forcing back to ${attributeHeight}px with nuclear option...`);
+              
+              // NUCLEAR OPTION: Multiple aggressive overrides
+              svg.style.cssText += `
+                width: ${svg.getAttribute('width')}px !important;
+                height: ${attributeHeight}px !important;
+                max-width: none !important;
+                max-height: none !important;
+                min-width: auto !important;
+                min-height: auto !important;
+                aspect-ratio: auto !important;
+                flex: none !important;
+                flex-shrink: 0 !important;
+                flex-grow: 0 !important;
+              `;
+            }
+          }, 100); // Check every 100ms
+        };
+
+        window.stopHeightMonitor = function() {
+          if (window.heightMonitorInterval) {
+            clearInterval(window.heightMonitorInterval);
+            window.heightMonitorInterval = null;
+            console.log('🔍 Height monitor stopped');
+          }
+        };
+
+        // Deep dive into what's constraining the SVG
+        window.debugSVGConstraints = function() {
+          console.log('\n🔬 === SVG CONSTRAINT ANALYSIS ===');
+          
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          const computedStyle = window.getComputedStyle(svg);
+          
+          console.log('📏 SVG Attributes:');
+          console.log(`   width="${svg.getAttribute('width')}" height="${svg.getAttribute('height')}"`);
+          console.log(`   viewBox="${svg.getAttribute('viewBox')}"`);
+          
+          console.log('🎨 Computed CSS:');
+          console.log(`   width: ${computedStyle.width}`);
+          console.log(`   height: ${computedStyle.height}`);
+          console.log(`   max-width: ${computedStyle.maxWidth}`);
+          console.log(`   max-height: ${computedStyle.maxHeight}`);
+          console.log(`   min-width: ${computedStyle.minWidth}`);
+          console.log(`   min-height: ${computedStyle.minHeight}`);
+          console.log(`   aspect-ratio: ${computedStyle.aspectRatio}`);
+          console.log(`   box-sizing: ${computedStyle.boxSizing}`);
+          console.log(`   display: ${computedStyle.display}`);
+          console.log(`   position: ${computedStyle.position}`);
+          console.log(`   flex: ${computedStyle.flex}`);
+          console.log(`   flex-shrink: ${computedStyle.flexShrink}`);
+          console.log(`   flex-grow: ${computedStyle.flexGrow}`);
+          
+          // Check parent constraints
+          let parent = svg.parentElement;
+          let level = 1;
+          while (parent && level <= 3) {
+            const parentStyle = window.getComputedStyle(parent);
+            console.log(`🏠 Parent ${level} (${parent.tagName}#${parent.id || 'no-id'}.${parent.className || 'no-class'}):`);
+            console.log(`   height: ${parentStyle.height}`);
+            console.log(`   max-height: ${parentStyle.maxHeight}`);
+            console.log(`   overflow: ${parentStyle.overflow}`);
+            console.log(`   display: ${parentStyle.display}`);
+            console.log(`   position: ${parentStyle.position}`);
+            
+            parent = parent.parentElement;
+            level++;
+          }
+          
+          // Check specific CSS rules targeting #quilt
+          const rules = Array.from(document.styleSheets).flatMap(sheet => {
+            try {
+              return Array.from(sheet.cssRules || []);
+            } catch (e) {
+              return [];
+            }
+          });
+          
+          console.log('📋 CSS Rules affecting #quilt:');
+          rules.forEach((rule, index) => {
+            if (rule.selectorText && rule.selectorText.includes('#quilt')) {
+              console.log(`   Rule ${index}: ${rule.selectorText}`);
+              console.log(`      ${rule.cssText}`);
+            }
+          });
+        };
+
+        // Debug current scale calculation
+        window.debugScaleCalculation = function() {
+          console.log('\n🔢 === SCALE CALCULATION DEBUG ===');
+          
+          const screenWidth = window.innerWidth;
+          const numberOfColorFamilies = 8;
+          const smallPadding = 8;
+          const columnSpacing = 4;
+          
+          const availableWidthForBlocks = screenWidth - smallPadding - (columnSpacing * (numberOfColorFamilies - 1));
+          const optimalBlockSize = Math.floor(availableWidthForBlocks / numberOfColorFamilies);
+          
+          const minBlockSize = 40;
+          const maxBlockSize = 80;
+          const scale = Math.min(maxBlockSize, Math.max(minBlockSize, optimalBlockSize));
+          
+          console.log(`📱 Screen width: ${screenWidth}px`);
+          console.log(`📏 Small padding: ${smallPadding}px`);
+          console.log(`📏 Column spacing: ${columnSpacing}px × 7 gaps = ${columnSpacing * 7}px`);
+          console.log(`📦 Available for blocks: ${availableWidthForBlocks}px`);
+          console.log(`🔢 Optimal block size: ${optimalBlockSize}px`);
+          console.log(`🎯 Final scale (min=${minBlockSize}, max=${maxBlockSize}): ${scale}px`);
+          console.log(`📐 Rendered block size: ${scale - 2}px × ${scale - 2}px (scale - 2px padding)`);
+          
+          return scale;
+        };
+
+        // Emergency visual scaling debug
+        window.debugVisualScaling = function() {
+          console.log('\n🔍 === VISUAL SCALING DEBUG ===');
+          
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          // Get actual visual measurements
+          const svgRect = svg.getBoundingClientRect();
+          const svgStyle = window.getComputedStyle(svg);
+          
+          console.log('📏 VISUAL MEASUREMENTS:');
+          console.log(`   getBoundingClientRect: ${svgRect.width.toFixed(1)}×${svgRect.height.toFixed(1)}`);
+          console.log(`   CSS width/height: ${svgStyle.width} / ${svgStyle.height}`);
+          console.log(`   SVG attributes: ${svg.getAttribute('width')}×${svg.getAttribute('height')}`);
+          
+          // Check viewport scaling
+          console.log('📱 VIEWPORT SCALING:');
+          console.log(`   window.devicePixelRatio: ${window.devicePixelRatio}`);
+          console.log(`   window.innerWidth: ${window.innerWidth}`);
+          console.log(`   screen.width: ${screen.width}`);
+          console.log(`   document.documentElement.clientWidth: ${document.documentElement.clientWidth}`);
+          
+          // Check for zoom/transform
+          const transform = svgStyle.transform;
+          const zoom = svgStyle.zoom;
+          console.log(`   CSS transform: ${transform}`);
+          console.log(`   CSS zoom: ${zoom}`);
+          
+          // Check viewport meta tag
+          const viewportMeta = document.querySelector('meta[name="viewport"]');
+          console.log(`   Viewport meta: ${viewportMeta ? viewportMeta.content : 'MISSING!'}`);
+          
+          // Check actual block measurements
+          const blocks = svg.querySelectorAll('rect:not([width="100%"])');
+          if (blocks.length > 0) {
+            const firstBlock = blocks[0];
+            const blockRect = firstBlock.getBoundingClientRect();
+            console.log('🎨 FIRST BLOCK:');
+            console.log(`   SVG attributes: ${firstBlock.getAttribute('width')}×${firstBlock.getAttribute('height')}`);
+            console.log(`   Visual size: ${blockRect.width.toFixed(1)}×${blockRect.height.toFixed(1)}`);
+            console.log(`   Visual/Attribute ratio: ${(blockRect.width / parseFloat(firstBlock.getAttribute('width'))).toFixed(2)}x`);
+            
+            // Calculate what size they SHOULD be for good mobile visibility
+            const screenWidth = window.innerWidth;
+            const idealBlockSize = Math.floor(screenWidth / 8); // 8 color families
+            console.log(`🎯 IDEAL MOBILE SIZE: ${idealBlockSize}px (screen ${screenWidth}px ÷ 8 families)`);
+            console.log(`🔍 SIZE COMPARISON: Current ${firstBlock.getAttribute('width')}px vs Ideal ${idealBlockSize}px`);
+          }
+        };
+
+        // Fix visual scaling by making blocks actually bigger
+        window.makeMobileFriendlyBlocks = function() {
+          console.log('🔧 MAKING BLOCKS MOBILE-FRIENDLY...');
+          
+          const screenWidth = window.innerWidth;
+          const optimalSize = Math.floor(screenWidth / 6); // 6 instead of 8 for bigger blocks
+          const biggerSize = Math.max(60, optimalSize); // Minimum 60px
+          
+          console.log(`📱 Screen: ${screenWidth}px → Making blocks ${biggerSize}px (vs current 47px)`);
+          
+          // Force bigger scale in the engine
+          if (window.app && window.app.timeBasedEngine) {
+            console.log('🎯 Forcing bigger scale in time-based engine...');
+            
+            // Override the scale calculation temporarily
+            const originalRender = window.app.renderTimeBasedQuilt;
+            window.app.renderTimeBasedQuilt = function() {
+              console.log(`🔧 OVERRIDE: Using ${biggerSize}px blocks instead of calculated size`);
+              
+              // Temporarily override scale calculation
+              const originalCalc = window.innerWidth;
+              window.innerWidth = biggerSize * 8 + 50; // Fake screen width to get bigger blocks
+              
+              const result = originalRender.call(this);
+              
+              // Restore original
+              window.innerWidth = originalCalc;
+              
+              return result;
+            };
+            
+            // Re-render with bigger blocks
+            window.app.renderTimeBasedQuilt();
+          }
+        };
+
+        // Manual CSS fix test
+        window.fixSVGSize = function() {
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          console.log('🔧 MANUAL CSS FIX: Applying inline styles to override all constraints');
+          svg.style.setProperty('width', '100vw', 'important');
+          svg.style.setProperty('height', 'auto', 'important');
+          svg.style.setProperty('max-width', 'none', 'important');
+          svg.style.setProperty('max-height', 'none', 'important');
+          svg.style.setProperty('min-width', 'unset', 'important');
+          svg.style.setProperty('min-height', 'unset', 'important');
+          svg.style.setProperty('margin', '0', 'important');
+          svg.style.setProperty('padding', '0', 'important');
+          
+          console.log('✅ Inline styles applied - check visual result');
+          setTimeout(() => window.debugBlockSizes(), 100);
+        };
+
+        // Check parent container constraints
+        window.debugParents = function() {
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          console.log('\n🏗️ === PARENT CONTAINER DEBUG ===');
+          let element = svg;
+          let level = 0;
+          
+          while (element && level < 5) {
+            const styles = window.getComputedStyle(element);
+            console.log(`Level ${level}: <${element.tagName.toLowerCase()}${element.id ? ' id="' + element.id + '"' : ''}${element.className ? ' class="' + element.className + '"' : ''}>`);
+            console.log(`  width: ${styles.width}, height: ${styles.height}`);
+            console.log(`  max-width: ${styles.maxWidth}, max-height: ${styles.maxHeight}`);
+            console.log(`  overflow: ${styles.overflow}, position: ${styles.position}`);
+            
+            element = element.parentElement;
+            level++;
+          }
+        };
+
+        // Force parent containers to not constrain
+        window.fixParents = function() {
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          console.log('🔧 FIXING PARENT CONTAINERS');
+          let element = svg.parentElement;
+          let level = 1;
+          
+          while (element && level < 4) {
+            console.log(`Fixing parent level ${level}: ${element.tagName}`);
+            element.style.setProperty('height', 'auto', 'important');
+            element.style.setProperty('max-height', 'none', 'important');
+            element.style.setProperty('min-height', 'unset', 'important');
+            element.style.setProperty('overflow', 'visible', 'important');
+            
+            element = element.parentElement;
+            level++;
+          }
+          
+          console.log('✅ Parent fixes applied');
+          setTimeout(() => window.debugBlockSizes(), 100);
+        };
+
+        // Force time-based engine to activate
+        window.forceTimeBasedEngine = function() {
+          console.log('🚀 FORCING TIME-BASED ENGINE ACTIVATION');
+          
+          if (!window.app || !window.app.timeBasedEngine) {
+            console.log('❌ No time-based engine found');
+            return;
+          }
+          
+          const svg = document.querySelector('#quilt');
+          if (svg) {
+            console.log('🧹 Clearing old legacy content...');
+            svg.innerHTML = '';
+            svg.removeAttribute('width');
+            svg.removeAttribute('height'); 
+            svg.removeAttribute('viewBox');
+          }
+          
+          console.log('🔄 Triggering renderTimeBasedQuilt...');
+          window.app.renderTimeBasedQuilt();
+          
+          setTimeout(() => {
+            console.log('✅ Time-based engine should now be active');
+            window.debugBlockSizes();
+          }, 200);
+        };
+
+        // Clear everything and start fresh
+        window.resetToTimeBasedEngine = function() {
+          console.log('🔄 COMPLETE RESET TO TIME-BASED ENGINE');
+          
+          const svg = document.querySelector('#quilt');
+          if (svg) {
+            console.log('🧹 Completely clearing SVG...');
+            svg.innerHTML = '';
+            svg.removeAttribute('width');
+            svg.removeAttribute('height'); 
+            svg.removeAttribute('viewBox');
+            svg.setAttribute('data-time-based-active', 'true');
+          }
+          
+          if (window.app && window.app.timeBasedEngine) {
+            console.log('🎨 Forcing fresh render with current colors...');
+            const state = window.app.timeBasedEngine.getState();
+            console.log(`Colors in engine: ${state.colors.length}`);
+            
+            // Force a complete re-render
+            window.app.renderTimeBasedQuilt();
+          }
+          
+          setTimeout(() => {
+            console.log('✅ Fresh time-based render complete');
+            window.debugBlockSizes();
+          }, 300);
+        };
+
+        // Diagnose why blocks become small again
+        window.diagnoseSmallBlocks = function() {
+          console.log('🔍 DIAGNOSING SMALL BLOCKS ISSUE...');
+          
+          const svg = document.getElementById('quilt');
+          if (!svg) {
+            console.error('❌ SVG element not found');
+            return;
+          }
+          
+          // Check if time-based engine is active
+          const isTimeBasedActive = svg.getAttribute('data-time-based-active');
+          console.log(`🔍 Time-based engine active: ${isTimeBasedActive}`);
+          
+          // Check SVG dimensions vs computed style
+          const svgAttribs = {
+            width: svg.getAttribute('width'),
+            height: svg.getAttribute('height'),
+            viewBox: svg.getAttribute('viewBox')
+          };
+          console.log('🔍 SVG Attributes:', svgAttribs);
+          
+          const computedStyle = window.getComputedStyle(svg);
+          const computedDims = {
+            width: computedStyle.width,
+            height: computedStyle.height,
+            maxHeight: computedStyle.maxHeight,
+            minHeight: computedStyle.minHeight
+          };
+          console.log('🔍 Computed SVG Style:', computedDims);
+          
+          // Check inline styles
+          console.log('🔍 SVG Inline Style:', svg.style.cssText);
+          
+          // Check blocks
+          const blocks = svg.querySelectorAll('rect[data-color]');
+          console.log(`🔍 Total blocks found: ${blocks.length}`);
+          
+          if (blocks.length > 0) {
+            const firstBlock = blocks[0];
+            const blockAttribs = {
+              width: firstBlock.getAttribute('width'),
+              height: firstBlock.getAttribute('height'),
+              x: firstBlock.getAttribute('x'),
+              y: firstBlock.getAttribute('y')
+            };
+            console.log('🔍 First block attributes:', blockAttribs);
+          }
+          
+          // Check engine state
+          if (window.app && window.app.timeBasedEngine) {
+            const engineState = window.app.timeBasedEngine.getState();
+            console.log('🔍 Engine state:', {
+              phase: engineState.phase,
+              colorCount: engineState.colors.length,
+              isReorganizing: engineState.isReorganizing
+            });
+          }
+          
+          // Check if legacy system took over
+          const legacyBlocks = svg.querySelectorAll('rect:not([data-color])');
+          if (legacyBlocks.length > 0) {
+            console.warn(`🚨 LEGACY BLOCKS DETECTED: ${legacyBlocks.length} blocks without data-color attribute`);
+            console.warn('🚨 This suggests the legacy rendering system has taken over');
+          }
+          
+          console.log('🔍 Diagnosis complete. Run resetToTimeBasedEngine() if legacy system detected.');
+        };
+
+        // Check engine state and add a test block if needed
+        window.testWithBlock = function() {
+          console.log('🧪 TESTING WITH BLOCK ADDITION');
+          
+          if (!window.app || !window.app.timeBasedEngine) {
+            console.log('❌ No time-based engine found');
+            return;
+          }
+          
+          const state = window.app.timeBasedEngine.getState();
+          console.log(`Current colors in engine: ${state.colors.length}`);
+          console.log(`Phase: ${state.phase}`);
+          
+          if (state.colors.length === 0) {
+            console.log('🎨 No colors found, adding a test color...');
+            window.app.timeBasedEngine.addColor('#ff6b6b');
+          } else {
+            console.log('🔄 Colors exist, forcing re-render...');
+            window.app.renderTimeBasedQuilt();
+          }
+          
+          setTimeout(() => {
+            console.log('✅ Test complete');
+            window.debugBlockSizes();
+          }, 500);
+        };
+
+        // Check for viewport scaling issues
+        window.checkViewportScaling = function() {
+          console.log('\n🔍 === VIEWPORT SCALING DEBUG ===');
+          
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          // Get actual visual dimensions
+          const rect = svg.getBoundingClientRect();
+          console.log(`🖼️ Visual SVG size: ${rect.width.toFixed(1)} × ${rect.height.toFixed(1)}`);
+          
+          // Compare to computed style
+          const computed = window.getComputedStyle(svg);
+          console.log(`💄 Computed style: ${computed.width} × ${computed.height}`);
+          
+          // Check for scaling
+          const scaleX = rect.width / parseFloat(computed.width);
+          const scaleY = rect.height / parseFloat(computed.height);
+          console.log(`📏 Scale factors: X=${scaleX.toFixed(3)}, Y=${scaleY.toFixed(3)}`);
+          
+          // Check viewport meta tag
+          const viewport = document.querySelector('meta[name="viewport"]');
+          console.log(`📱 Viewport meta: ${viewport ? viewport.content : 'MISSING!'}`);
+          
+          // Check zoom level
+          console.log(`🔍 Browser zoom: ${(window.devicePixelRatio || 1)}x`);
+          console.log(`📺 Screen: ${screen.width}×${screen.height}, Window: ${window.innerWidth}×${window.innerHeight}`);
+          
+          return { rect, computed, scaleX, scaleY };
+        };
+
+        // Force proper viewport and remove all scaling
+        window.fixViewportScaling = function() {
+          console.log('🔧 FIXING VIEWPORT SCALING');
+          
+          // Fix viewport meta tag
+          let viewport = document.querySelector('meta[name="viewport"]');
+          if (!viewport) {
+            viewport = document.createElement('meta');
+            viewport.name = 'viewport';
+            document.head.appendChild(viewport);
+          }
+          viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+          console.log('✅ Viewport meta tag fixed');
+          
+          // Remove any transforms on the SVG and parents
+          const svg = document.querySelector('#quilt');
+          if (svg) {
+            let element = svg;
+            let level = 0;
+            while (element && level < 5) {
+              element.style.setProperty('transform', 'none', 'important');
+              element.style.setProperty('zoom', '1', 'important');
+              element.style.setProperty('scale', '1', 'important');
+              element = element.parentElement;
+              level++;
+            }
+            console.log('✅ Removed scaling transforms');
+          }
+          
+          setTimeout(() => {
+            console.log('📊 Post-fix scaling check:');
+            window.checkViewportScaling();
+          }, 200);
+        };
+
+        // Nuclear option - completely disable old system and force time-based
+        window.forceTimeBasedOnly = function() {
+          console.log('💥 NUCLEAR OPTION: Completely disabling old system');
+          
+          // Disable old rendering functions
+          if (window.app && window.app.renderBlocks) {
+            window.app.renderBlocks = function() {
+              console.log('🚫 Old renderBlocks() disabled - using time-based engine instead');
+              return window.app.renderTimeBasedQuilt();
+            };
+          }
+          
+          if (window.app && window.app.renderQuilt) {
+            window.app.renderQuilt = function() {
+              console.log('🚫 Old renderQuilt() disabled - using time-based engine instead');
+              return window.app.renderTimeBasedQuilt();
+            };
+          }
+          
+          // Clear and setup SVG
+          const svg = document.querySelector('#quilt');
+          if (svg) {
+            console.log('🧹 Clearing and setting up SVG...');
+            svg.innerHTML = '';
+            svg.removeAttribute('width');
+            svg.removeAttribute('height'); 
+            svg.removeAttribute('viewBox');
+            svg.setAttribute('data-time-based-active', 'true');
+            
+            // Apply CSS overrides directly
+            svg.style.setProperty('width', '100vw', 'important');
+            svg.style.setProperty('height', 'auto', 'important');
+            svg.style.setProperty('max-width', 'none', 'important');
+            svg.style.setProperty('max-height', 'none', 'important');
+            svg.style.setProperty('min-width', 'unset', 'important');
+            svg.style.setProperty('min-height', 'unset', 'important');
+          }
+          
+          // Force time-based engine render
+          if (window.app && window.app.timeBasedEngine) {
+            console.log('🚀 Forcing time-based engine render...');
+            const state = window.app.timeBasedEngine.getState();
+            
+            if (state.colors.length === 0) {
+              console.log('Adding test colors...');
+              window.app.timeBasedEngine.addColor('#ff6b6b');
+              window.app.timeBasedEngine.addColor('#4ecdc4');
+              window.app.timeBasedEngine.addColor('#45b7d1');
+            }
+            
+            window.app.renderTimeBasedQuilt();
+          }
+          
+          setTimeout(() => {
+            console.log('✅ Nuclear option complete - check results');
+            window.debugBlockSizes();
+          }, 800);
+        };
+
+        // Test ultra-big blocks to see maximum possible size
+        window.testUltraBigBlocks = function() {
+          console.log('🚀 TESTING ULTRA-BIG BLOCKS');
+          
+          const svg = document.querySelector('#quilt');
+          if (!svg) {
+            console.log('❌ No SVG found');
+            return;
+          }
+          
+          // Clear and create one massive test block
+          svg.innerHTML = '';
+          svg.setAttribute('width', '412');
+          svg.setAttribute('height', '765');
+          svg.setAttribute('viewBox', '0 0 412 765');
+          svg.setAttribute('data-time-based-active', 'true');
+          
+          // Create background
+          const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          bg.setAttribute('width', '100%');
+          bg.setAttribute('height', '100%');
+          bg.setAttribute('fill', '#f8f9fa');
+          svg.appendChild(bg);
+          
+          // Create one massive test block to see maximum size
+          const testBlock = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          testBlock.setAttribute('x', '50');
+          testBlock.setAttribute('y', '100');
+          testBlock.setAttribute('width', '100'); // Much bigger test block
+          testBlock.setAttribute('height', '100');
+          testBlock.setAttribute('fill', '#ff6b6b');
+          testBlock.setAttribute('stroke', '#000');
+          testBlock.setAttribute('stroke-width', '2');
+          svg.appendChild(testBlock);
+          
+          console.log('✅ Ultra-big test block created (100×100px)');
+          setTimeout(() => window.debugBlockSizes(), 200);
         };
 
         // DEBUG STATUS - comprehensive status check
