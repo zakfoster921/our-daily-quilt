@@ -496,7 +496,7 @@
       position: relative;
       display: block;
     }
-    
+
     /* MOBILE-FIRST: Override constraints when time-based engine is active */
     #quilt[data-time-based-active="true"] {
       width: 100vw !important;
@@ -757,22 +757,24 @@
 
     /* ===== QUILT ===== */
     #quilt {
-      width: 90vw !important; 
-      height: 90vw !important;
-      min-width: 600px !important;
-      min-height: 600px !important;
-      max-width: 1200px !important;
-      max-height: 1200px !important;
+      /* REMOVED CONSTRAINTS: Let JavaScript control the size dynamically */
+      /* width: 90vw !important; - REMOVED! */
+      /* height: 90vw !important; - REMOVED! */
+      /* min-width: 600px !important; - REMOVED! */
+      /* min-height: 600px !important; - REMOVED! */
+      /* max-width: 1200px !important; - REMOVED! */
+      /* max-height: 1200px !important; - REMOVED! */
       margin: 10rem auto 1rem auto !important;
       background: transparent;
       position: relative;
       display: block !important;
       box-sizing: border-box !important;
+      border: 3px solid purple !important; /* DEBUG: Base SVG styles */
     }
     
-    /* MOBILE-FIRST: Override the !important constraints when time-based engine is active */
+    /* MOBILE-FIRST: Override the !important constraints when time-based engine is active - DEBUG */
     #quilt[data-time-based-active="true"] {
-      width: 100vw !important;
+      /* REMOVED: width: 100vw !important; - THIS WAS FORCING VIEWPORT WIDTH! */
       height: auto !important;
       min-width: unset !important;
       min-height: unset !important;
@@ -780,13 +782,15 @@
       max-height: unset !important;
       margin: 0 !important;
       padding: 0 !important;
+      border: 5px solid orange !important; /* DEBUG: SVG container */
     }
 
-    /* Fix screen centering for quilt */
+    /* Fix screen centering for quilt - DEBUG BORDERS */
     #screen-quilt {
       justify-content: center !important;
       align-items: center !important;
       padding: 3rem 0 1rem 0 !important;
+      border: 3px solid blue !important; /* DEBUG: Screen container */
     }
 
     /* ===== RESPONSIVE ===== */
@@ -800,6 +804,7 @@
       
       #screen-quilt {
         padding: 6rem 0 1rem 0 !important;
+        border: 3px solid green !important; /* DEBUG: Mobile screen container */
       }
       
       #phase-indicator {
@@ -1029,7 +1034,7 @@
   </div>
 
   <!-- Toast notifications -->
-      <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
 
     <!-- Admin Panel -->
     <button id="adminToggle">ADMIN</button>
@@ -3243,7 +3248,7 @@
                   (state.unmatchedPieces ? state.unmatchedPieces.length : 0) + 
                   (state.unmatchedPatches ? state.unmatchedPatches.length : 0);
          }
-      }
+       }
 
       // ===== TIME-BASED QUILT ENGINE =====
       class TimeBasedQuiltEngine {
@@ -3655,7 +3660,7 @@
           
           // Collection phase: quilter's workspace with color family columns
           this.colorColumns = new Map(); // hue range -> column info
-          this.columnSpacing = 1.2; // NO OVERLAP - spread columns to see available space
+          this.columnSpacing = 0.8; // BALANCED - proper spacing between columns while keeping blocks big
           this.nextColumnX = 0; // Track where to place next new column
         }
 
@@ -4763,7 +4768,7 @@
         }
       };
 
-      // ===== MAIN APPLICATION =====
+       // ===== MAIN APPLICATION =====
        class OurDailyApp {
          constructor() {
            // Initialize services
@@ -4810,8 +4815,8 @@
                this.updateUI();
              }, 100);
              
-                         this.uiService.showLoading(false);
-            this.logger.log('App initialization complete');
+             this.uiService.showLoading(false);
+             this.logger.log('App initialization complete');
             
             // ROOT CAUSE FIX: All renderQuilt calls now use time-based engine
            } catch (error) {
@@ -4879,10 +4884,10 @@
          async loadQuilt() {
            try {
              this.uiService.showLoading(true);
-                         const blocks = await this.dataService.loadQuilt();
-            this.state.blocks = blocks;
-            
-            if (this.renderingService.isInitialized) {
+             const blocks = await this.dataService.loadQuilt();
+             this.state.blocks = blocks;
+             
+             if (this.renderingService.isInitialized) {
               this.renderTimeBasedQuilt();
               
               // Update square counter when loading existing data
@@ -4890,20 +4895,20 @@
               const totalSquares = engineState.colors.length + engineState.queuedColors.length;
               console.log(`🏁 LOAD QUILT: Engine loaded with ${engineState.colors.length} placed + ${engineState.queuedColors.length} queued = ${totalSquares} total squares`);
               window.updateUserCounter(totalSquares);
-            }
+             }
              this.uiService.showLoading(false);
            } catch (error) {
              this.errorHandler.handleError(error, 'loadQuilt');
              this.uiService.showLoading(false);
-                         this.state.blocks = [];
-            if (this.renderingService.isInitialized) {
+             this.state.blocks = [];
+             if (this.renderingService.isInitialized) {
               this.renderTimeBasedQuilt();
               
               // Update square counter (starts at 0 if loading failed)
               const engineState = this.timeBasedEngine.getState();
               const totalSquares = engineState.colors.length + engineState.queuedColors.length;
               window.updateUserCounter(totalSquares);
-            }
+             }
            }
          }
 
@@ -5396,7 +5401,7 @@
                this.logger.log('Saving quilt data');
                await this.saveQuilt();
                
-                             this.logger.log('Rendering updated quilt');
+               this.logger.log('Rendering updated quilt');
               this.renderTimeBasedQuilt();
               
               // Update square counter in community message
@@ -5405,7 +5410,7 @@
               console.log(`🔢 DEBUG: About to update counter - colors: ${engineState.colors.length}, queued: ${engineState.queuedColors.length}, total: ${totalSquares}`);
               window.updateUserCounter(totalSquares);
               
-              this.updateUI();
+               this.updateUI();
               this.showPhaseMessage(result);
                this.uiService.showScreen('screen-quilt');
              } else {
@@ -5465,119 +5470,127 @@
            // Mark that time-based rendering is active to prevent legacy interference
            quiltSVG.setAttribute('data-time-based-active', 'true');
            
-           // Calculate grid bounds for mobile-first sizing
-          if (engineState.colors.length === 0) {
-            console.log('🎨 DEBUG: No colors to render');
-            return;
-          }
+                     // FIXED OPTIMAL LAYOUT: Design for perfect mobile experience
+         const numberOfColorFamilies = 8;
+         
+         // RESPONSIVE BLOCK SIZING: Scale based on device for optimal touch experience
+         const screenWidth = window.innerWidth || 412;
+         const isMobile = screenWidth < 768;
+         
+         console.log(`🔍 SCREEN DEBUG: innerWidth=${window.innerWidth}, screenWidth=${screenWidth}, isMobile=${isMobile}`);
+         console.log(`🔍 VIEWPORT DEBUG: clientWidth=${document.documentElement.clientWidth}, offsetWidth=${document.documentElement.offsetWidth}`);
+         
+         // Calculate optimal block size to fit 8 columns perfectly with spacing
+         const targetSpacing = isMobile ? 8 : 12; // More generous spacing for better visual separation
+         const sidePadding = isMobile ? 8 : 16; // Less padding on mobile for more block space
+         const availableWidth = screenWidth - (sidePadding * 2); // Space available for quilt
+         const spacingTotal = (numberOfColorFamilies - 1) * targetSpacing; // Total spacing between columns
+         const blockSpaceAvailable = availableWidth - spacingTotal; // Space left for actual blocks
+         const optimalBlockSize = Math.floor(blockSpaceAvailable / numberOfColorFamilies); // Perfect fit
+         
+         // BIGGER BLOCKS: Now that centering works, let's maximize the block size
+         let finalBlockSize;
+         if (isMobile) {
+           // MOBILE: Much bigger blocks for better touch experience
+           finalBlockSize = 80; // Bigger and better for touch!
+           console.log(`📱 MOBILE CHOICE: 80px blocks (excellent touch target)`);
+         } else {
+           // DESKTOP: Even bigger since there's more space
+           finalBlockSize = Math.max(100, Math.floor(optimalBlockSize));
+           console.log(`🖥️ DESKTOP CHOICE: ${finalBlockSize}px blocks (large and comfortable)`);
+         }
+         
+         console.log(`🔢 SIZE CALC: availableWidth=${availableWidth}, spacingTotal=${spacingTotal}, blockSpace=${blockSpaceAvailable}`);
+         console.log(`🔢 BLOCK CALC: optimal=${optimalBlockSize}, FITTED final=${finalBlockSize}`);
+         
+         console.log(`🎯 RESPONSIVE SIZING: ${screenWidth}px screen → ${availableWidth}px available → ${finalBlockSize}px blocks (${numberOfColorFamilies} columns)`);
+         console.log(`📱 SPACING: ${targetSpacing}px gaps + ${sidePadding * 2}px padding = ${(numberOfColorFamilies * finalBlockSize) + spacingTotal + (sidePadding * 2)}px total`);
+         
+         // ADAPTIVE CANVAS: Size for content on mobile, full width on desktop
+         const contentWidth = (numberOfColorFamilies * finalBlockSize) + (7 * targetSpacing) + (sidePadding * 2);
+         let canvasWidth;
+         
+         if (isMobile && contentWidth > screenWidth) {
+           // MOBILE: If content is wider than screen, allow horizontal scroll
+           canvasWidth = contentWidth;
+           console.log(`📱 MOBILE SCROLL: Canvas=${canvasWidth}px (wider than ${screenWidth}px screen) - horizontal scroll enabled`);
+         } else {
+           // DESKTOP or mobile fits: Use full screen width
+           canvasWidth = Math.max(screenWidth, contentWidth);
+           console.log(`🖥️ FULL WIDTH: Canvas=${canvasWidth}px, Content=${contentWidth}px`);
+         }
+         
+         const scale = finalBlockSize;
+         
+         // Skip dynamic bounds calculation entirely - handle empty state
+         if (engineState.colors.length === 0) {
+           console.log('🎨 DEBUG: No colors to render');
+           return;
+         }
+         
+         // Calculate how efficiently we're using screen space
+         const spaceEfficiency = ((canvasWidth / screenWidth) * 100).toFixed(1);
+         console.log(`📏 SPACE EFFICIENCY: Using ${canvasWidth}px of ${screenWidth}px screen (${spaceEfficiency}%)`);
+         
+                  // MOBILE-FIRST: Calculate available height by measuring actual DOM elements
+         const availableHeight = this.calculateAvailableCanvasHeight();
+         
+         // FIXED HEIGHT: Use maximum available space for optimal mobile experience
+         const targetCanvasHeight = availableHeight - 20; // Small padding for mobile breathing room
+         
+         console.log(`📱 FIXED CANVAS: Using ${targetCanvasHeight}px of ${availableHeight}px available height`);
           
-          const positions = engineState.colors.map(c => c.position);
-          const minX = Math.min(...positions.map(p => p.x));
-          const maxX = Math.max(...positions.map(p => p.x));
-          const minY = Math.min(...positions.map(p => p.y));
-          const maxY = Math.max(...positions.map(p => p.y));
+                            // FIXED CANVAS: Use optimal fixed height regardless of content
+         const canvasHeight = targetCanvasHeight;
+         
+         console.log(`📱 🎯 FIXED CANVAS SIZE: ${canvasWidth}px × ${canvasHeight}px - OPTIMAL FOR ALL DEVICES`);
+         
+         // Setup SVG with fixed optimal canvas size
+         quiltSVG.innerHTML = '';
+         console.log('🎨 DEBUG: Cleared SVG content');
+         
+         // FIXED LAYOUT: Use our calculated optimal dimensions
+         const finalWidth = canvasWidth;
+         const finalHeight = canvasHeight;
           
-          const gridWidth = maxX - minX + 1;
-          const gridHeight = maxY - minY + 1;
-          
-          // MOBILE-FIRST: MAXIMIZE block size for 8 color families
-          const screenWidth = window.innerWidth;
-          const numberOfColorFamilies = 8;
-          const smallPadding = 4; // Even less padding for bigger blocks
-          const columnSpacing = 3; // Tighter spacing for more block space
-          
-          // Use maximum screen width for bigger blocks
-          const availableWidthForBlocks = screenWidth - smallPadding - (columnSpacing * (numberOfColorFamilies - 1));
-          const optimalBlockSize = Math.floor(availableWidthForBlocks / numberOfColorFamilies);
-          
-          // MUCH bigger blocks using all available space!
-          const minBlockSize = 70; // Much bigger for excellent mobile experience
-          const maxBlockSize = 120; // Even bigger maximum to use available space
-          const scale = Math.min(maxBlockSize, Math.max(minBlockSize, optimalBlockSize));
-          
-          console.log(`📱 MAXIMIZE WIDTH: screen=${screenWidth}px - ${smallPadding}px padding = ${availableWidthForBlocks}px ÷ 8 = ${optimalBlockSize}px → 🎯 ${scale}px final`);
-          console.log(`📱 LAYOUT: ${numberOfColorFamilies} columns × 🎯 ${scale}px blocks + ${columnSpacing}px spacing = ${(numberOfColorFamilies * scale) + (columnSpacing * (numberOfColorFamilies - 1))}px total width`);
-          console.log(`🔍 SCALE CHECK: Using ${scale}px scale for all blocks in this render`);
-          
-          // Calculate how much horizontal space we're actually using
-          const actualUsedWidth = (numberOfColorFamilies * scale) + (columnSpacing * (numberOfColorFamilies - 1));
-          const remainingSpace = screenWidth - actualUsedWidth;
-          const spacePercentage = ((actualUsedWidth / screenWidth) * 100).toFixed(1);
-          console.log(`📏 SPACE USAGE: Using ${actualUsedWidth}px of ${screenWidth}px (${spacePercentage}%) - ${remainingSpace}px remaining`);
-          
-          // MOBILE-FIRST: Calculate available height by measuring actual DOM elements
-          const availableHeight = this.calculateAvailableCanvasHeight();
-          
-          // Calculate ideal quilt height without compression
-          const idealQuiltHeight = gridHeight * scale;
-          
-          // MOBILE-FIRST: Canvas should use full screen width for bigger visual impact
-          const canvasWidth = screenWidth; // Use full screen width, not just grid width
-          
-          // Apply dynamic compression based on individual column needs
-          let compressionApplied = false;
-          const targetCanvasHeight = availableHeight - 30; // Reserve minimal padding since we're using full height
-          
-          console.log(`📱 COMPRESSION CHECK: Overall quilt needs ${idealQuiltHeight}px, full canvas height = ${targetCanvasHeight}px`);
-          
-          // Check if ANY column might need compression (smarter trigger)
-          const columnGroups = new Map();
-          engineState.colors.forEach(colorObj => {
-            const family = colorObj.position.colorFamily || 'unknown';
-            if (!columnGroups.has(family)) {
-              columnGroups.set(family, []);
-            }
-            columnGroups.get(family).push(colorObj);
-          });
-          
-          let anyColumnNeedsCompression = false;
-          columnGroups.forEach((columnColors, family) => {
-            const columnMaxY = Math.max(...columnColors.map(c => c.position.y));
-            const columnMinY = Math.min(...columnColors.map(c => c.position.y));
-            const columnHeight = (columnMaxY - columnMinY) * scale;
-            const columnHeightRatio = columnHeight / targetCanvasHeight;
-            
-            if (columnHeightRatio > 0.9) { // More conservative since we have much more space now
-              anyColumnNeedsCompression = true;
-              console.log(`📱 TRIGGER: ${family} column (${columnHeight.toFixed(0)}px, ${Math.round(columnHeightRatio * 100)}%) needs compression`);
-            }
-          });
-          
-          if (anyColumnNeedsCompression) {
-            console.log(`📱 🚨 COLUMN-SPECIFIC COMPRESSION TRIGGERED`);
-            compressionApplied = this.applyDynamicCompression(engineState.colors, targetCanvasHeight, scale);
-            console.log(`📱 Compression result: ${compressionApplied ? 'SUCCESS' : 'FAILED'}`);
-          } else {
-            console.log(`📱 ✅ NO COMPRESSION NEEDED: All columns fit comfortably`);
-          }
-          
-          // USE FULL AVAILABLE HEIGHT instead of just fitting content
-          const actualQuiltHeight = compressionApplied ? 
-            this.calculateCompressedQuiltHeight(engineState.colors, scale) : idealQuiltHeight;
-          
-          // Reserve small buffer for padding, but use most of available space
-          const canvasHeight = availableHeight - 30; // Use nearly all available height!
-          
-          console.log(`📱 MAXIMIZED CANVAS: Using ${canvasHeight}px of ${availableHeight}px available (quilt needs ${actualQuiltHeight.toFixed(1)}px)`);
-          console.log(`📱 🎯 CANVAS SIZE: ${canvasWidth}px × ${canvasHeight}px - FULL VIEWPORT USAGE`);
-          
-          // Setup SVG with responsive canvas size
-          quiltSVG.innerHTML = '';
-          console.log('🎨 DEBUG: Cleared SVG content');
-          
-          // MOBILE-FIRST: Use full screen width, no artificial minimums!
-          const finalWidth = canvasWidth; // Use full screen width (412px)
-          const finalHeight = canvasHeight; // Use full available height
-          
-          quiltSVG.setAttribute('width', finalWidth);
-          quiltSVG.setAttribute('height', finalHeight);
-          quiltSVG.setAttribute('viewBox', `0 0 ${finalWidth} ${finalHeight}`);
-          
-          // AGGRESSIVE HEIGHT FORCING - prevent any CSS override
-          quiltSVG.style.setProperty('width', finalWidth + 'px', 'important');
-          quiltSVG.style.setProperty('height', finalHeight + 'px', 'important');
-          quiltSVG.style.setProperty('max-height', 'none', 'important');
-          quiltSVG.style.setProperty('min-height', 'auto', 'important');
+                   // DEBUG: Log what we're trying to set vs what actually happens
+         console.log(`🔧 SETTING SVG: width=${finalWidth}px, height=${finalHeight}px`);
+         
+         // FULL-WIDTH SVG: Make the coordinate system match the container
+         const svgWidth = screenWidth; // Use full screen width for SVG container
+         const svgHeight = finalHeight; // Keep calculated height
+         
+         quiltSVG.setAttribute('width', svgWidth);
+         quiltSVG.setAttribute('height', svgHeight);
+         quiltSVG.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+         
+         console.log(`🔧 FULL-WIDTH SVG: container=${svgWidth}px, content=${finalWidth}px, viewBox="0 0 ${svgWidth} ${svgHeight}"`);
+         
+         // NUCLEAR OPTION: Force the SVG size no matter what
+         quiltSVG.style.cssText = `
+           width: ${svgWidth}px !important;
+           height: ${svgHeight}px !important;
+           max-width: none !important;
+           min-width: auto !important;
+           max-height: none !important;
+           min-height: auto !important;
+           margin: 0 !important;
+           padding: 0 !important;
+           border: 5px solid orange !important; /* DEBUG: SVG container */
+         `;
+         
+         // Also try setting it directly
+         quiltSVG.setAttribute('style', quiltSVG.style.cssText);
+         
+         // DEBUG: Check what actually got applied
+         setTimeout(() => {
+           const computedStyle = window.getComputedStyle(quiltSVG);
+           const actualWidth = quiltSVG.getBoundingClientRect().width;
+           const actualHeight = quiltSVG.getBoundingClientRect().height;
+           console.log(`🔍 ACTUAL SVG: computed width=${computedStyle.width}, computed height=${computedStyle.height}`);
+           console.log(`🔍 MEASURED SVG: actual width=${actualWidth}px, actual height=${actualHeight}px`);
+           console.log(`🔍 OVERRIDE CHECK: ${finalWidth}px requested vs ${actualWidth}px actual = ${finalWidth === actualWidth ? 'MATCH ✅' : 'MISMATCH ❌'}`);
+         }, 100);
           
           console.log(`📱 SVG ATTRIBUTES: width=${finalWidth}px, height=${finalHeight}px (using full viewport!)`);
           console.log(`📱 SVG VIEWBOX: 0 0 ${finalWidth} ${finalHeight}`);
@@ -5593,73 +5606,86 @@
           const usagePercent = Math.round((finalHeight / availableHeight) * 100);
           console.log(`📱 ✅ VIEWPORT USAGE: ${usagePercent}% of available height (${finalHeight}px / ${availableHeight}px)`);
           
-          // Add background
-          const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-          background.setAttribute('width', '100%');
-          background.setAttribute('height', '100%');
-          background.setAttribute('fill', '#f6f4f1');
-          quiltSVG.appendChild(background);
-          console.log('🎨 DEBUG: Added background');
+                   // Add background with DEBUG BORDER
+         const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+         background.setAttribute('width', '100%');
+         background.setAttribute('height', '100%');
+         background.setAttribute('fill', '#f6f4f1');
+         background.setAttribute('stroke', 'red');
+         background.setAttribute('stroke-width', '3');
+         quiltSVG.appendChild(background);
+         console.log('🎨 DEBUG: Added background with RED BORDER');
           
-          // MOBILE-FIRST: Center the quilt properly based on actual width used
-          const actualQuiltWidth = gridWidth * scale; // How wide the quilt actually is
-          const remainingWidth = canvasWidth - actualQuiltWidth; // How much space is left
+                   // FULL-WIDTH POSITIONING: Spread columns across entire screen width
+         const colorFamilies = ['reds', 'oranges', 'yellows', 'greens', 'blues', 'purples', 'magentas', 'neutrals'];
+         const columnPositions = new Map();
+         
+         // CENTER CONTENT: Position the content blocks in the center of the full-width SVG
+         const quiltContentWidth = (numberOfColorFamilies * scale) + ((numberOfColorFamilies - 1) * targetSpacing);
+         const startX = (svgWidth - quiltContentWidth) / 2; // Center the content horizontally
+         
+         console.log(`🎯 CENTERING: SVG=${svgWidth}px, content=${quiltContentWidth}px, startX=${startX.toFixed(1)}px`);
+         
+         colorFamilies.forEach((family, index) => {
+           const x = startX + (index * (scale + targetSpacing));
+           columnPositions.set(family, x);
+           console.log(`🎯 CENTERED COLUMN: ${family} → x=${x.toFixed(1)}px`);
+         });
+         
+         // FIXED POSITIONING: Top padding and stacking for mobile
+         const topPadding = 30; // Fixed top padding for clean mobile layout
+         
+         console.log(`🎯 FIXED LAYOUT: ${colorFamilies.length} columns @ ${scale}px blocks + ${targetSpacing}px spacing`);
+         console.log(`🎯 MOBILE POSITIONING: ${sidePadding}px side padding + ${topPadding}px top padding`);
+         console.log(`📱 OPTIMAL: Fixed ${scale}px blocks - perfect for touch interaction`);
           
-          // Horizontal centering: simply center the actual quilt width within the canvas
-          const offsetX = remainingWidth / 2; // Fixed to remove min padding and gridXAdjustment
-          
-          // MOBILE-FIRST: Calculate offsetY to prevent off-screen rendering
-          // Account for negative grid bounds and add minimal top padding
-          const baseTopPadding = 20; // Minimal top padding for mobile
-          const gridAdjustment = (minY < 0) ? Math.abs(minY * scale) : 0; // Account for negative Y bounds
-          const offsetY = baseTopPadding + gridAdjustment;
-          
-          console.log(`📱 MOBILE OFFSET: baseTopPadding=${baseTopPadding}, gridAdjustment=${gridAdjustment.toFixed(1)}, final offsetY=${offsetY.toFixed(1)}`);
-          console.log(`🎯 CENTERING: actualQuiltWidth=${actualQuiltWidth.toFixed(1)}px, remainingWidth=${remainingWidth.toFixed(1)}px`);
-          console.log(`🎯 X-OFFSET: remainingWidth=${remainingWidth.toFixed(1)}px / 2 = ${offsetX.toFixed(1)}px final`);
-          
-          console.log(`🎨 DEBUG: Grid bounds: (${minX},${minY}) to (${maxX},${maxY})`);
-          console.log(`🎨 DEBUG: Grid size: ${gridWidth}x${gridHeight}, scale: ${scale.toFixed(1)}px (${engineState.phase} phase)`);
-          console.log(`🎨 DEBUG: Offset: (${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
-          
-          if (engineState.phase === 'collection') {
-            if (compressionApplied) {
-              console.log(`📱 Mobile-first: Fixed ${scale}px blocks + DYNAMIC COMPRESSION applied to fit ${availableHeight}px viewport`);
-            } else {
-              console.log(`📱 Mobile-first: Fixed block size (${scale}px) for touch-friendly interaction - no compression needed`);
-            }
-          } else {
-            console.log(`📱 Mobile-first: Fixed block size (${scale}px) - no shrinking as grid grows`);
-          }
-          
-          // Render placed colors with phase-specific styling
-          console.log(`🎨 DEBUG: About to render colors with scale: ${scale}`);
-          console.log('🎨 DEBUG: About to render colors...', engineState.colors);
-          engineState.colors.forEach((colorObj, index) => {
-            console.log(`🎨 DEBUG: Rendering color ${index + 1}:`, colorObj);
-            
-            // Normalize position relative to grid bounds and apply scaling
-            const normalizedX = colorObj.position.x - minX;
-            const normalizedY = colorObj.position.y - minY;
-            const x = normalizedX * scale + offsetX;
-            const y = normalizedY * scale + offsetY;
-            
-            console.log(`🎨 DEBUG: Position (${colorObj.position.x}, ${colorObj.position.y}) → normalized (${normalizedX}, ${normalizedY}) → SVG (${x.toFixed(1)}, ${y.toFixed(1)})`);
-            
-            // Create group for stacking effects (collection phase)
-            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            
-            // Collection phase: quilter's workspace stacking
-            if (engineState.phase === 'collection' && colorObj.position.isStacked) {
-              this.renderStackedBlock(group, colorObj, x, y, scale, index);
-            } else {
-              // Standard rendering for other phases
-              this.renderStandardBlock(group, colorObj, x, y, scale, index);
-            }
-            
-            quiltSVG.appendChild(group);
-            console.log(`🎨 DEBUG: Added ${engineState.phase} styled block for color ${colorObj.color}`);
-          });
+                   // FIXED POSITIONING: Render colors using predefined column layout
+         console.log(`🎨 DEBUG: About to render ${engineState.colors.length} colors with fixed positioning`);
+         
+         // Group colors by family and stack them in their fixed columns
+         const familyStacks = new Map();
+         colorFamilies.forEach(family => familyStacks.set(family, []));
+         
+         // Sort colors into their family stacks
+         engineState.colors.forEach(colorObj => {
+           const family = colorObj.position.colorFamily || 'neutrals';
+           if (familyStacks.has(family)) {
+             familyStacks.get(family).push(colorObj);
+           } else {
+             familyStacks.get('neutrals').push(colorObj); // Fallback to neutrals
+           }
+         });
+         
+         // Render each family stack in its fixed column
+         familyStacks.forEach((familyColors, family) => {
+           if (familyColors.length === 0) return;
+           
+           const columnX = columnPositions.get(family);
+           console.log(`🎨 COLUMN: ${family} (${familyColors.length} colors) → x=${columnX}px`);
+           
+           familyColors.forEach((colorObj, stackIndex) => {
+             // FIXED COLUMN POSITIONING: Use predefined column X and stack Y
+             const x = columnX;
+             const baseY = topPadding + (stackIndex * scale * 0.25); // 75% overlap for tight mobile stacking
+             const y = baseY;
+             
+             console.log(`🎨 FIXED POS: ${colorObj.color} → column=${family}, stack=${stackIndex}, xy=(${x}, ${y.toFixed(1)})`);
+             
+             // Create group for stacking effects (collection phase)
+             const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+             
+             // Collection phase: quilter's workspace stacking
+             if (engineState.phase === 'collection' && colorObj.position.isStacked) {
+               this.renderStackedBlock(group, colorObj, x, y, scale, stackIndex);
+             } else {
+               // Standard rendering for other phases
+               this.renderStandardBlock(group, colorObj, x, y, scale, stackIndex);
+             }
+             
+             quiltSVG.appendChild(group);
+             console.log(`🎨 DEBUG: Added ${engineState.phase} styled block for color ${colorObj.color}`);
+           });
+         });
            
            console.log('🎨 DEBUG: Finished rendering all colors');
            console.log('🎨 DEBUG: Final SVG children count:', quiltSVG.children.length);
@@ -5990,9 +6016,9 @@
           const height = maxY * scale;
           console.log(`📱 COMPRESSED HEIGHT: maxY=${maxY.toFixed(1)} × scale=${scale} = ${height.toFixed(1)}px`);
           return height;
-        }
+         }
 
-        async handleTestAddBlock() {
+         async handleTestAddBlock() {
            try {
              const randomHue = Math.floor(Math.random() * 360);
              
@@ -6018,8 +6044,8 @@
              if (result.success) {
                // Update the legacy state for UI compatibility
                this.syncEngineStateToLegacyState();
-               
-                             await this.saveQuilt();
+             
+               await this.saveQuilt();
               this.renderTimeBasedQuilt();
               
               // Update square counter for test blocks too
@@ -6062,10 +6088,10 @@
                } else {
                  this.uiService.showToast("You haven't added any pieces yet. Try adding your first color!");
                }
-                         } else {
-              this.uiService.showToast('Highlighting turned off');
-            }
-            
+             } else {
+               this.uiService.showToast('Highlighting turned off');
+             }
+             
             this.renderTimeBasedQuilt();
              
            } catch (error) {
@@ -6086,8 +6112,8 @@
              
              this.updateUI();
              
-                         if (success) {
-              this.lastAddedForShare = this.state.lastAddedIndex;
+             if (success) {
+               this.lastAddedForShare = this.state.lastAddedIndex;
               this.renderTimeBasedQuilt();
                
                // Update user counter to reflect multiple contributors
@@ -6360,6 +6386,49 @@
         }
       };
 
+      // Force massive blocks for mobile testing
+      window.forceMassiveBlocks = function() {
+        console.log('🔧 FORCING MASSIVE BLOCKS FOR MOBILE...');
+        
+        // Override the scale calculation temporarily
+        const originalRender = window.app.renderTimeBasedQuilt;
+        window.app.renderTimeBasedQuilt = function() {
+          // Temporarily force massive blocks
+          const originalCode = originalRender.toString();
+          
+          console.log('🔧 Overriding block size calculation...');
+          console.log(`📱 Screen width: ${window.innerWidth}px`);
+          
+          // Force huge blocks
+          const forceScale = Math.min(200, Math.floor(window.innerWidth / 6)); // Use 6 columns instead of 8
+          console.log(`🔧 FORCED SCALE: ${forceScale}px (using 6 columns instead of 8)`);
+          
+          // Call original but with debugging
+          const result = originalRender.call(this);
+          
+          // Override any blocks that were created
+          const blocks = document.querySelectorAll('#quilt rect[data-color]');
+          blocks.forEach((block, i) => {
+            const currentWidth = block.getAttribute('width');
+            const currentHeight = block.getAttribute('height');
+            
+            block.setAttribute('width', forceScale);
+            block.setAttribute('height', forceScale);
+            
+            console.log(`🔧 Block ${i+1}: ${currentWidth}×${currentHeight} → ${forceScale}×${forceScale}`);
+          });
+          
+          console.log(`🔧 FORCED ${blocks.length} blocks to ${forceScale}×${forceScale}px`);
+          
+          return result;
+        };
+        
+        // Re-render with massive blocks
+        window.app.renderTimeBasedQuilt();
+        
+        console.log('✅ Massive blocks applied! Refresh page to return to normal.');
+      };
+
       // ===== ADMIN SYSTEM =====
       class AdminController {
         constructor(app) {
@@ -6440,7 +6509,7 @@
         togglePanel() {
           if (this.isVisible) {
             this.hidePanel();
-          } else {
+             } else {
             this.showPanel();
           }
         }
@@ -6498,7 +6567,7 @@
               if (result.success) {
                 successCount++;
                 console.log(`✅ Added sample ${i + 1}/${samples.length}: ${color}`);
-              } else {
+           } else {
                 console.log(`❌ Failed to add sample ${i + 1}: ${color} (${result.reason || 'unknown'})`);
               }
             } catch (error) {
@@ -6576,7 +6645,7 @@
               samples.push(randomColor);
               usedColors.add(randomColor);
             }
-          } else {
+        } else {
             // We have more colors than needed - create a representative sample
             const diverseSample = this.createDiverseSample(existingColors, count);
             samples.push(...diverseSample);
