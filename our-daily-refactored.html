@@ -786,7 +786,7 @@
     #screen-quilt {
       justify-content: center !important;
       align-items: center !important;
-      padding: 1rem 0 !important;
+      padding: 3rem 0 1rem 0 !important;
     }
 
     /* ===== RESPONSIVE ===== */
@@ -796,6 +796,14 @@
         width: 100vw;
         max-width: 100vw;
         box-sizing: border-box;
+      }
+      
+      #screen-quilt {
+        padding: 6rem 0 1rem 0 !important;
+      }
+      
+      #phase-indicator {
+        margin-top: 4rem !important;
       }
       .portal-question {
         width: 100%;
@@ -960,14 +968,14 @@
 
     <!-- Quilt Screen -->
     <section class="screen" id="screen-quilt" role="main" aria-label="Community quilt display">
-      <div id="phase-indicator" style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; color: #666;">Collection Phase (0/5)</div>
-      <div id="user-counter" style="font-size: 1rem; font-weight: 500; margin-bottom: 0.5rem; color: #888; background: #f0f0f0; padding: 0.5rem; border-radius: 4px;">Submission #0</div>
+              <div id="phase-indicator" style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; margin-top: 2rem; color: #666;">Cutting up squares til noon!<br>Check back later!</div>
+
       <svg id="quilt" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Community quilt with colorful blocks"></svg>
-      <p class="thank-you-message" aria-live="polite" id="community-message">Thank you for adding your block! <span id="user-count">1 quilter</span> contributing together <3</p>
+      <p class="thank-you-message" aria-live="polite" id="community-message"><span id="user-count">1</span> squares today and counting!</p>
       <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white; margin: 0.5rem;">TEST: Add Random Block</button>
       <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white; margin: 0.5rem;">SHOW ME MY PIECE</button>
       <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white; margin: 0.5rem;">TEST: Simulate Different User</button>
-      <button id="testUniversalMatchingBtn" class="btn" style="background: #FF9800; color: white; margin: 0.5rem;">TEST: Universal Matching</button>
+
       <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
       <button class="btn" data-next="screen-archive" aria-label="View quilt archive">View Archive</button>
       <button class="btn" data-next="screen-about" aria-label="About this project">About</button>
@@ -1381,32 +1389,16 @@
         const phaseIndicator = document.getElementById('phase-indicator');
         if (phaseIndicator) {
           const phaseText = {
-            'collection': `Collection Phase (${submissionCount}/5)`,
+            'collection': `Cutting up squares til noon!<br>Check back later!`,
             'patch-formation': 'Patch Formation Phase',
             'block-formation': 'Block Formation Phase',
             'quilt-formation': 'Quilt Formation Phase'
           };
-          phaseIndicator.textContent = phaseText[phase] || 'Unknown Phase';
+          phaseIndicator.innerHTML = phaseText[phase] || 'Unknown Phase';
         }
       }
 
-      updateUserCounter(submissionCount, phase, elementCounts) {
-        const userCounterElement = document.getElementById('user-counter');
-        if (userCounterElement) {
-          let phaseInfo = '';
-          if (phase === 'collection') {
-            phaseInfo = `Collection Phase (${submissionCount}/5)`;
-          } else if (phase === 'patch-formation') {
-            phaseInfo = `Patch Formation Phase (${elementCounts.patches || 0} patches)`;
-          } else if (phase === 'block-formation') {
-            phaseInfo = `Block Formation Phase (${elementCounts.blocks || 0} blocks)`;
-          } else if (phase === 'quilt-formation') {
-            phaseInfo = `Quilt Formation Phase`;
-          }
-          
-          userCounterElement.textContent = `Submission #${submissionCount} - ${phaseInfo}`;
-        }
-      }
+
     }
 
          // ===== ERROR HANDLING SERVICE =====
@@ -4866,10 +4858,7 @@
              testDifferentUserBtn.addEventListener('click', this.handleTestDifferentUser.bind(this));
            }
 
-           const testUniversalMatchingBtn = document.getElementById('testUniversalMatchingBtn');
-           if (testUniversalMatchingBtn) {
-             testUniversalMatchingBtn.addEventListener('click', this.testUniversalMatching.bind(this));
-           }
+           
 
            // Color picker
            this.setupColorPicker();
@@ -4895,6 +4884,12 @@
             
             if (this.renderingService.isInitialized) {
               this.renderTimeBasedQuilt();
+              
+              // Update square counter when loading existing data
+              const engineState = this.timeBasedEngine.getState();
+              const totalSquares = engineState.colors.length + engineState.queuedColors.length;
+              console.log(`🏁 LOAD QUILT: Engine loaded with ${engineState.colors.length} placed + ${engineState.queuedColors.length} queued = ${totalSquares} total squares`);
+              window.updateUserCounter(totalSquares);
             }
              this.uiService.showLoading(false);
            } catch (error) {
@@ -4903,6 +4898,11 @@
                          this.state.blocks = [];
             if (this.renderingService.isInitialized) {
               this.renderTimeBasedQuilt();
+              
+              // Update square counter (starts at 0 if loading failed)
+              const engineState = this.timeBasedEngine.getState();
+              const totalSquares = engineState.colors.length + engineState.queuedColors.length;
+              window.updateUserCounter(totalSquares);
             }
            }
          }
@@ -5356,7 +5356,7 @@
 
          updateUI() {
            this.uiService.updatePhaseIndicator(this.state.currentPhase, this.state.submissionCount);
-           this.uiService.updateUserCounter(this.state.submissionCount, this.state.currentPhase, this.state.getElementCounts());
+   
          }
 
          async handleAddColor() {
@@ -5372,14 +5372,14 @@
              
              if (!selectedColor) {
                this.logger.warn('No color selected');
-               this.uiService.showToast('Please select a color first');
+               // this.uiService.showToast('Please select a color first'); // Toast removed
                return;
              }
 
              // Validate the color
              if (!Utils.validateHexColor(selectedColor)) {
                this.logger.error(`Invalid color generated: ${selectedColor}`);
-               this.uiService.showToast('Invalid color generated. Please try again.');
+               // this.uiService.showToast('Invalid color generated. Please try again.'); // Toast removed
                return;
              }
 
@@ -5396,19 +5396,25 @@
                this.logger.log('Saving quilt data');
                await this.saveQuilt();
                
-               this.logger.log('Rendering updated quilt');
-               this.renderTimeBasedQuilt();
-               
-               this.updateUI();
-               this.showPhaseMessage(result);
+                             this.logger.log('Rendering updated quilt');
+              this.renderTimeBasedQuilt();
+              
+              // Update square counter in community message
+              const engineState = this.timeBasedEngine.getState();
+              const totalSquares = engineState.colors.length + engineState.queuedColors.length;
+              console.log(`🔢 DEBUG: About to update counter - colors: ${engineState.colors.length}, queued: ${engineState.queuedColors.length}, total: ${totalSquares}`);
+              window.updateUserCounter(totalSquares);
+              
+              this.updateUI();
+              this.showPhaseMessage(result);
                this.uiService.showScreen('screen-quilt');
              } else {
                this.logger.warn('Failed to add color to time-based engine:', result.reason);
-               this.uiService.showToast(result.reason || 'Failed to add color');
+               // this.uiService.showToast(result.reason || 'Failed to add color'); // Toast removed
              }
            } catch (error) {
              this.errorHandler.handleError(error, 'handleAddColor');
-             this.uiService.showToast('Failed to add color. Please try again.');
+             // this.uiService.showToast('Failed to add color. Please try again.'); // Toast removed
            }
          }
 
@@ -5711,75 +5717,9 @@
              quiltSVG.appendChild(patternText);
            }
            
-           // Show phase info and progress
-           const totalColors = engineState.colors.length + engineState.queuedColors.length;
-           const phaseText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-           phaseText.setAttribute('x', '450');
-           phaseText.setAttribute('y', '45');
-           phaseText.setAttribute('font-family', 'Arial, sans-serif');
-           phaseText.setAttribute('font-size', '12');
-           phaseText.setAttribute('fill', '#666');
-           phaseText.textContent = `Phase: ${engineState.phase}`;
-           quiltSVG.appendChild(phaseText);
            
-           // Show progress
-           const progressText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-           progressText.setAttribute('x', '450');
-           progressText.setAttribute('y', '65');
-           progressText.setAttribute('font-family', 'Arial, sans-serif');
-           progressText.setAttribute('font-size', '12');
-           progressText.setAttribute('fill', '#666');
-           progressText.textContent = `Colors: ${totalColors}`;
-           quiltSVG.appendChild(progressText);
            
-           // Show daily cycle info at bottom (mobile-friendly positioning)  
-           const hour = new Date().getHours();
-           const dayInfo = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-           dayInfo.setAttribute('x', '20'); // Left-aligned, doesn't constrain canvas width
-           dayInfo.setAttribute('y', Math.max(600, canvasHeight) - 20); // Bottom of canvas
-           dayInfo.setAttribute('font-family', 'Arial, sans-serif');
-           dayInfo.setAttribute('font-size', '11');
-           dayInfo.setAttribute('fill', '#666');
            
-           // Show phase-specific info with mobile optimization status
-           if (engineState.phase === 'collection') {
-             // Check if any columns have high overlap (mobile optimization active)
-             const hasLongColumns = engineState.colors.some(colorObj => {
-               return colorObj.position.overlapFactor && colorObj.position.overlapFactor <= 0.45;
-             });
-             
-            // Check if compression is active and count compressed columns
-            const compressedColumns = new Set();
-            const uncompressedColumns = new Set();
-            
-            engineState.colors.forEach(colorObj => {
-              const family = colorObj.position.colorFamily;
-              if (colorObj.position.compressionLevel === 'none') {
-                uncompressedColumns.add(family);
-              } else if (colorObj.position.compressionLevel !== undefined) {
-                compressedColumns.add(family);
-              }
-            });
-            
-            if (compressedColumns.size > 0) {
-              if (uncompressedColumns.size > 0) {
-                dayInfo.textContent = `Collection: ${compressedColumns.size}/${compressedColumns.size + uncompressedColumns.size} columns compressed`;
-              } else {
-                dayInfo.textContent = 'Collection: All columns compressed';
-              }
-            } else if (hasLongColumns) {
-              dayInfo.textContent = 'Collection: Mobile-optimized columns';
-            } else {
-              dayInfo.textContent = 'Collection: Family columns';
-            }
-           } else if (engineState.phase === 'pattern_selection') {
-             dayInfo.textContent = 'Pattern: Organized layout';
-           } else if (engineState.phase === 'pattern_filling') {
-             dayInfo.textContent = 'Filling: Completing pattern';
-           } else {
-             dayInfo.textContent = 'Final: Polishing touches';
-           }
-           quiltSVG.appendChild(dayInfo);
            
            this.logger.log(`Time-based quilt rendered: ${engineState.colors.length} colors, pattern: ${engineState.pattern}`);
          }
@@ -5849,19 +5789,7 @@
            
            group.appendChild(rect);
            
-           // Add family label for first block in each column (scale with block size)
-           if (stackLevel === 0) {
-             const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-             label.setAttribute('x', x + (scale / 2));
-             label.setAttribute('y', y - Math.max(8, scale * 0.15)); // Scale label distance
-             label.setAttribute('text-anchor', 'middle');
-             label.setAttribute('font-family', 'Arial, sans-serif');
-             label.setAttribute('font-size', Math.max(9, scale * 0.25)); // Scale font size
-             label.setAttribute('fill', '#666');
-             label.setAttribute('opacity', '0.7');
-             label.textContent = colorFamily;
-             group.appendChild(label);
-           }
+           
          }
 
          // Helper method: Standard block rendering for non-collection phases
@@ -5950,7 +5878,7 @@
                message = 'Color added to the community quilt!';
            }
            
-                     this.uiService.showToast(message);
+                     // this.uiService.showToast(message); // Toast removed
         }
 
         // MOBILE-FIRST: Dynamic compression helper methods for fitting quilt in viewport
@@ -6091,18 +6019,24 @@
                // Update the legacy state for UI compatibility
                this.syncEngineStateToLegacyState();
                
-               await this.saveQuilt();
-               this.renderTimeBasedQuilt();
-               this.updateUI();
-               
-               // Show test-specific message
-               const engineState = this.timeBasedEngine.getState();
-               const message = `🧪 Test color added! Phase: ${result.phase}, Pattern: ${engineState.pattern || 'analyzing'}, Total: ${engineState.colors.length + engineState.queuedColors.length}`;
-               this.uiService.showToast(message);
+                             await this.saveQuilt();
+              this.renderTimeBasedQuilt();
+              
+              // Update square counter for test blocks too
+              const engineState = this.timeBasedEngine.getState();
+              const totalSquares = engineState.colors.length + engineState.queuedColors.length;
+              console.log(`🧪 TEST BLOCK: Engine has ${engineState.colors.length} placed + ${engineState.queuedColors.length} queued = ${totalSquares} total squares`);
+              window.updateUserCounter(totalSquares);
+              
+              this.updateUI();
+              
+              // Show test-specific message
+              // const message = `🧪 Test color added! Phase: ${result.phase}, Pattern: ${engineState.pattern || 'analyzing'}, Total: ${totalSquares}`;
+              // this.uiService.showToast(message); // Toast removed
              }
            } catch (error) {
              this.errorHandler.handleError(error, 'handleTestAddBlock');
-             this.uiService.showToast('Test add failed.');
+             // this.uiService.showToast('Test add failed.'); // Toast removed
            }
          }
 
@@ -6158,7 +6092,7 @@
                
                // Update user counter to reflect multiple contributors
                const uniqueUsers = new Set(this.state.pieces.map(piece => piece.userId));
-               window.updateUserCounter(uniqueUsers.size);
+     
                
                this.uiService.showToast(`Added piece for different user! Now try "SHOW ME MY PIECE"`);
              }
@@ -6378,58 +6312,53 @@
            }
          }
 
-         // ===== UNIVERSAL MATCHING TEST FUNCTIONS =====
          
-         /**
-          * Test function to verify universal matching produces same results as current system
-          */
-         testUniversalMatching() {
-           this.logger.log('🧪 Testing universal matching system...');
-           
-           // Test 1: Patch formation
-           const testPieces = this.state.pieces.slice(0, 4); // Use first 4 pieces
-           if (testPieces.length >= 2) {
-             this.logger.log('Testing patch formation with universal service...');
-             
-             // Current method
-             const currentPatches = this.formPatchesFromPieces(testPieces);
-             
-             // Universal method
-             const universalResult = this.universalMatchingService.formCompositeElements(
-               testPieces, 
-               'patch',
-               {
-                 edgeTolerance: CONFIG.PHASES.patchFormation.edgeTolerance,
-                 valueContrastWeight: CONFIG.PHASES.patchFormation.valueContrastWeight,
-                 createCompositeFunction: this.createPatch.bind(this)
-               }
-             );
-             
-             this.logger.log(`Current method created ${currentPatches.length} patches`);
-             this.logger.log(`Universal method created ${universalResult.compositeElements.length} patches`);
-             
-             if (currentPatches.length === universalResult.compositeElements.length) {
-               this.uiService.showToast('✅ Universal matching test passed!');
-             } else {
-               this.uiService.showToast('❌ Universal matching test failed - different results');
-             }
-           } else {
-             this.uiService.showToast('Need at least 2 pieces to test universal matching');
-           }
-         }
        }
 
-             // Global function to update user counter in community message
-      window.updateUserCounter = function(userCount) {
+             // Global function to update square counter in community message
+      window.updateUserCounter = function(squareCount) {
+        console.log(`🔢 COUNTER UPDATE: Attempting to set squares to ${squareCount}`);
         const userCountSpan = document.getElementById('user-count');
         if (userCountSpan) {
-          const suffix = userCount === 1 ? 'quilter' : 'quilters';
-          userCountSpan.textContent = `${userCount} ${suffix}`;
-          console.log(`Updated user counter to: ${userCount} ${suffix}`);
+          userCountSpan.textContent = `${squareCount}`;
+          console.log(`✅ COUNTER UPDATE: Successfully updated to ${squareCount} squares`);
         } else {
-          console.log('Could not find user-count element');
+          console.error('❌ COUNTER UPDATE: Could not find user-count element in DOM');
+          console.log('🔍 Available elements with IDs:', Array.from(document.querySelectorAll('[id]')).map(el => el.id));
         }
       }
+
+      // Debug function to test square counter
+      window.testSquareCounter = function() {
+        console.log('🧪 TESTING SQUARE COUNTER...');
+        
+        // Check if element exists
+        const userCountSpan = document.getElementById('user-count');
+        console.log('Element found:', userCountSpan);
+        
+        if (userCountSpan) {
+          console.log('Current text content:', userCountSpan.textContent);
+          
+          // Test setting a value
+          userCountSpan.textContent = '999';
+          console.log('Set to 999, now reads:', userCountSpan.textContent);
+          
+          // Check engine state
+          if (window.app && window.app.timeBasedEngine) {
+            const engineState = window.app.timeBasedEngine.getState();
+            const totalSquares = engineState.colors.length + engineState.queuedColors.length;
+            console.log(`Engine state: ${engineState.colors.length} placed + ${engineState.queuedColors.length} queued = ${totalSquares} total`);
+            
+            // Update with real count
+            setTimeout(() => {
+              window.updateUserCounter(totalSquares);
+            }, 1000);
+          }
+        } else {
+          console.error('❌ user-count element not found!');
+          console.log('Available elements:', Array.from(document.querySelectorAll('[id]')).map(el => `${el.tagName}#${el.id}`));
+        }
+      };
 
       // ===== ADMIN SYSTEM =====
       class AdminController {
@@ -7853,7 +7782,7 @@
         };
         
         // Set initial user counter (will be updated as users are added)
-        window.updateUserCounter(1);
+        
         
         console.log('🛠️ Admin system initialized. Use Ctrl+Shift+A or click ADMIN button to access.');
       });
