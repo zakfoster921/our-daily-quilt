@@ -47,13 +47,13 @@
       opacity: 0;
       background-color: #f6f4f1;
       pointer-events: none;
-      transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: opacity 0.8s ease-in-out;
       position: absolute;
       top: 0; left: 0;
       min-height: 100vh;
-      padding: 3rem 0 10px 0;
+      padding: 0.5rem 0 10px 0;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       box-sizing: border-box;
       overflow-x: hidden;
     }
@@ -70,10 +70,18 @@
 
     /* ===== TYPOGRAPHY ===== */
     .portal-header h1 {
-      font-weight: 900;
+      font-weight: 500;
       font-size: clamp(2rem, 5vw, 3rem);
-      margin-bottom: 0.1rem;
-      letter-spacing: -0.02em;
+      margin-bottom: 0.0em;
+      letter-spacing:.02em;
+    }
+    
+    .portal-header .quilt-text {
+      font-weight: 900;
+      font-size: clamp(3.25rem, 7vw, 8rem);
+      margin-top: -.5rem;
+      margin-bottom: 1rem;
+      letter-spacing: 0.05em;
     }
     
     .portal-header .date {
@@ -126,7 +134,7 @@
       border: 2px solid #000;
       border-radius: 16px;
       padding: 1.5rem;
-      margin: 3rem auto 2rem;
+      margin: 2rem auto 2rem;
       background: #f6f4f1;
       width: 90%;
       max-width: 500px;
@@ -490,17 +498,19 @@
     
     #quilt {
       /* REMOVED: width: 90vw; height: 90vw; - THIS WAS FORCING 90% VIEWPORT WIDTH! */
-      max-width: 600px; max-height: 600px;
-      margin: 2rem auto;
+      max-width: 600px; /* REMOVED: max-height: 600px - WAS FORCING SQUARE! */
+      margin: 1rem auto; /* Reduced margins */
       background: transparent;
       position: relative;
       display: block;
+      flex-grow: 1; /* Take up available space and push buttons down! */
+      min-height: 70vh; /* Ensure SVG takes up most of viewport to push buttons below fold */
     }
 
     /* MOBILE-FIRST: Override constraints when time-based engine is active */
     #quilt[data-time-based-active="true"] {
       width: 100vw !important;
-      height: auto !important;
+      height: 80vh !important; /* FORCE HEIGHT: Take up 80% of viewport to push buttons below! */
       max-width: none !important;
       max-height: none !important;
       min-width: 100vw !important;
@@ -508,7 +518,7 @@
       margin-top: 0 !important;
       padding: 0 !important;
       flex-shrink: 0 !important;
-      flex-grow: 0 !important;
+      flex-grow: 1 !important; /* FIXED: Allow SVG to expand and push buttons below fold! */
       position: relative !important;
       top: 0px !important; /* Eliminate internal spacing - text padding handles positioning */
     }
@@ -793,10 +803,11 @@
 
     /* Fix screen centering for quilt - DEBUG BORDERS */
     #screen-quilt {
-      justify-content: center !important;
+      justify-content: flex-start !important; 
       align-items: center !important;
-      padding: 4rem 0 1rem 0 !important;
+      padding: 0 !important; /* REMOVED: All padding to eliminate white space */
       border: 3px solid blue !important; /* DEBUG: Screen container */
+      min-height: 100vh; /* Ensure full viewport height */
     }
 
     /* ===== RESPONSIVE ===== */
@@ -809,26 +820,25 @@
       }
       
       #screen-quilt {
-        padding: 10rem 0 1rem 0 !important;
-        padding-top: 10rem !important;
-        margin-top: 3rem !important;
+        padding: 0 !important; /* REMOVED: All padding to eliminate top white space */
+        margin-top: 0 !important; /* FIXED: Remove excessive margin */
         border: 3px solid green !important; /* DEBUG: Mobile screen container */
       }
       
       /* NUCLEAR OPTION: More specific selector */
       body #screen-quilt.screen {
-        padding-top: 6rem !important;
-        margin-top: 1rem !important;
+        padding-top: 0 !important; /* REMOVED: All padding to eliminate white space */
+        margin-top: 0 !important; /* FIXED: Remove margin */
       }
       
       /* ULTRA SPECIFIC: Just in case */
       html body #screen-quilt {
-        padding-top: 6rem !important;
-        margin-top: 1rem !important;
+        padding-top: 0 !important; /* REMOVED: All padding to eliminate white space */
+        margin-top: 0 !important; /* FIXED: Remove margin */
       }
       
       #phase-indicator {
-        margin-top: 4rem !important;
+        margin-top: 15px !important; /* PERFECT: 15px breathing room at top */
       }
       .portal-question {
         width: 100%;
@@ -939,10 +949,10 @@
     <section class="screen active" id="screen-portal" role="main" aria-label="Welcome screen">
       <div class="portal-header">
         <h1>OUR DAILY</h1>
+        <h1 class="quilt-text">QUILT</h1>
         <p class="date" id="date-text" aria-live="polite"></p>
       </div>
       <p class="portal-question">What if today started with just one good thought?</p>
-      <button class="btn" data-next="screen-welcome" aria-label="Start the daily experience">LET'S BEGIN</button>
     </section>
 
     <!-- Welcome Screen (First Time Only) -->
@@ -993,17 +1003,27 @@
 
     <!-- Quilt Screen -->
     <section class="screen" id="screen-quilt" role="main" aria-label="Community quilt display">
-              <div id="phase-indicator" style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; margin-top: 2rem; color: #666;">Cutting up squares til noon!<br>Check back later!</div>
+      <!-- ABOVE THE FOLD: Essential text and count -->
+      <div id="phase-indicator" style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; margin-top: 0; color: #666;">Cutting up squares til noon!<br>Check back later!</div>
+      
+      <!-- COUNT MESSAGE: Above fold for user feedback -->
+      <p class="thank-you-message" aria-live="polite" id="community-message" style="margin: 0 0 1rem 0; font-size: 1.3rem; font-weight: 600; text-align: center;"><span id="user-count">1</span> squares today and counting!</p>
 
+      <!-- MAXIMIZED CANVAS: Sized to push buttons below fold -->
       <svg id="quilt" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Community quilt with colorful blocks"></svg>
-      <p class="thank-you-message" aria-live="polite" id="community-message"><span id="user-count">1</span> squares today and counting!</p>
-      <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white; margin: 0.5rem;">TEST: Add Random Block</button>
+      
+      <!-- BELOW THE FOLD: All interactive buttons -->
+      <div style="margin-top: 1.5rem;">
+        <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white; margin: 0.5rem;">TEST: ADD RANDOM BLOCK</button>
       <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white; margin: 0.5rem;">SHOW ME MY PIECE</button>
       <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white; margin: 0.5rem;">TEST: Simulate Different User</button>
-
+      </div>
+      
+      <div style="margin-top: 1rem;">
       <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
       <button class="btn" data-next="screen-archive" aria-label="View quilt archive">View Archive</button>
       <button class="btn" data-next="screen-about" aria-label="About this project">About</button>
+      </div>
     </section>
 
     <!-- Archive Screen -->
@@ -4820,7 +4840,7 @@
 
          async initialize() {
            try {
-             this.uiService.showLoading(true);
+            // REMOVED: showLoading - no network calls during init
              
              await this.dataService.initialize();
              this.setupEventListeners();
@@ -4829,19 +4849,21 @@
              
              this.renderingService.initialize();
              
-             // Force initial render with time-based engine
+            // Force initial render with time-based engine
              setTimeout(() => {
-               this.renderTimeBasedQuilt();
+              this.renderTimeBasedQuilt();
                this.updateUI();
              }, 100);
              
-             this.uiService.showLoading(false);
              this.logger.log('App initialization complete');
-            
-            // ROOT CAUSE FIX: All renderQuilt calls now use time-based engine
+           
+           // Auto-transition from portal screen after 1.5 seconds
+           this.setupAutoTransition();
+          
+          // ROOT CAUSE FIX: All renderQuilt calls now use time-based engine
            } catch (error) {
              this.errorHandler.handleError(error, 'App initialization');
-             this.uiService.showLoading(false);
+            // REMOVED: showLoading(false) - wasn't showing loading anyway
            }
          }
 
@@ -4901,31 +4923,60 @@
            this.uiService.showScreen('screen-portal');
          }
 
-         async loadQuilt() {
-           try {
-             this.uiService.showLoading(true);
-             const blocks = await this.dataService.loadQuilt();
-             this.state.blocks = blocks;
+        setupAutoTransition() {
+          // Check if user is on portal screen and auto-transition after 1.5 seconds
+          const currentScreen = document.querySelector('.screen.active');
+          if (currentScreen && currentScreen.id === 'screen-portal') {
+            setTimeout(() => {
+              this.autoTransitionFromPortal();
+            }, 1500);
+          }
+        }
+
+        autoTransitionFromPortal() {
+          // Check if user is a first-time visitor
+          const hasVisitedBefore = localStorage.getItem('ourDailyHasVisited');
+          
+          if (!hasVisitedBefore) {
+            // First time - show welcome/instructions screen
+            localStorage.setItem('ourDailyHasVisited', 'true');
+            this.uiService.showScreen('screen-welcome');
+            
+            // Then auto-transition from welcome to quote after another 3 seconds
+            setTimeout(() => {
+              this.uiService.showScreen('screen-quote');
+            }, 3000);
+          } else {
+            // Returning visitor - go straight to quote
+            this.uiService.showScreen('screen-quote');
+          }
+        }
+
+                 async loadQuilt() {
+          try {
+            // REMOVED: showLoading - dataService.loadQuilt() returns instantly (no Firebase)
+            const blocks = await this.dataService.loadQuilt();
+            this.state.blocks = blocks;
+            
+            if (this.renderingService.isInitialized) {
+             this.renderTimeBasedQuilt();
              
-             if (this.renderingService.isInitialized) {
-              this.renderTimeBasedQuilt();
-              
-              // Update square counter when loading existing data
-              const engineState = this.timeBasedEngine.getState();
-              const totalSquares = engineState.colors.length + engineState.queuedColors.length;
-              console.log(`🏁 LOAD QUILT: Engine loaded with ${engineState.colors.length} placed + ${engineState.queuedColors.length} queued = ${totalSquares} total squares`);
-              window.updateUserCounter(totalSquares);
-             }
-             this.uiService.showLoading(false);
-           } catch (error) {
-             this.errorHandler.handleError(error, 'loadQuilt');
-             this.uiService.showLoading(false);
-             this.state.blocks = [];
-             if (this.renderingService.isInitialized) {
-              this.renderTimeBasedQuilt();
-              
-              // Update square counter (starts at 0 if loading failed)
-              const engineState = this.timeBasedEngine.getState();
+             // Update square counter when loading existing data
+             const engineState = this.timeBasedEngine.getState();
+             const totalSquares = engineState.colors.length + engineState.queuedColors.length;
+             console.log(`🏁 LOAD QUILT: Engine loaded with ${engineState.colors.length} placed + ${engineState.queuedColors.length} queued = ${totalSquares} total squares`);
+             window.updateUserCounter(totalSquares);
+            }
+            // REMOVED: showLoading(false) - not needed since we don't show loading
+          } catch (error) {
+            this.errorHandler.handleError(error, 'loadQuilt');
+            // REMOVED: showLoading(false) - not showing loading anyway
+            this.state.blocks = [];
+            if (this.renderingService.isInitialized) {
+             this.renderTimeBasedQuilt();
+             
+             // Update square counter (starts at 0 if loading failed)
+             const engineState = this.timeBasedEngine.getState();
               const totalSquares = engineState.colors.length + engineState.queuedColors.length;
               window.updateUserCounter(totalSquares);
              }
@@ -5622,6 +5673,7 @@
          const canvasHeight = targetCanvasHeight;
          
          console.log(`📱 🎯 FIXED CANVAS SIZE: ${canvasWidth}px × ${canvasHeight}px - OPTIMAL FOR ALL DEVICES`);
+         console.log(`📐 ASPECT RATIO: ${(canvasHeight/canvasWidth).toFixed(2)}:1 ${canvasHeight > canvasWidth ? '(TALL ✅)' : '(WIDE ❌)'}`);
          
          // Setup SVG with fixed optimal canvas size
          quiltSVG.innerHTML = '';
@@ -5643,7 +5695,7 @@
          console.log(`🔧 ABOUT TO SET: svgWidth=${svgWidth}, svgHeight=${svgHeight}, finalWidth=${finalWidth}, finalHeight=${finalHeight}`);
          
          quiltSVG.setAttribute('width', svgWidth);
-         quiltSVG.setAttribute('height', svgHeight);
+         // REMOVED: height attribute - let CSS height: 80vh take control!
          quiltSVG.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
          
          console.log(`🔧 AFTER SETTING: width attr="${quiltSVG.getAttribute('width')}", height attr="${quiltSVG.getAttribute('height')}"`);
@@ -5652,10 +5704,10 @@
          
          // PROTECT AGAINST ATTRIBUTE CLEARING: Re-enforce periodically
          const protectAttributes = () => {
-           if (quiltSVG.getAttribute('width') !== svgWidth.toString() || quiltSVG.getAttribute('height') !== svgHeight.toString()) {
-             console.log(`🛡️ RESTORING CLEARED ATTRIBUTES: Re-setting width=${svgWidth}, height=${svgHeight}`);
+           if (quiltSVG.getAttribute('width') !== svgWidth.toString()) {
+             console.log(`🛡️ RESTORING CLEARED ATTRIBUTES: Re-setting width=${svgWidth} (height controlled by CSS)`);
              quiltSVG.setAttribute('width', svgWidth);
-             quiltSVG.setAttribute('height', svgHeight);
+             // REMOVED: height protection - let CSS height: 80vh control it!
              quiltSVG.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
            }
          };
@@ -5718,18 +5770,245 @@
          
          // DEBUG: Check what the red background actually represents
          setTimeout(() => {
+           // Prevent multiple debug runs
+           if (window.debugAlreadyRan) return;
+           window.debugAlreadyRan = true;
            const bgRect = background.getBoundingClientRect();
            console.log(`🔴 RED BACKGROUND: ${bgRect.width}px × ${bgRect.height}px (actual rendered size)`);
            console.log(`🔴 RED vs SCREEN: ${bgRect.width}px background vs ${screenWidth}px screen width`);
            console.log(`🔧 SVG ATTRIBUTE: data-time-based-active="${quiltSVG.getAttribute('data-time-based-active')}"`);
            console.log(`🔧 SVG ID: "${quiltSVG.id}"`);
            
+           // CHECK ASPECT RATIO: Compare calculated vs actual
+           const actualAspectRatio = (bgRect.height / bgRect.width).toFixed(2);
+           const expectedAspectRatio = (canvasHeight / canvasWidth).toFixed(2);
+           console.log(`📐 EXPECTED: ${canvasWidth}×${canvasHeight} (${expectedAspectRatio}:1)`);
+           console.log(`📐 ACTUAL: ${bgRect.width.toFixed(1)}×${bgRect.height.toFixed(1)} (${actualAspectRatio}:1)`);
+           console.log(`📐 MATCH: ${actualAspectRatio === expectedAspectRatio ? '✅ Perfect' : '❌ CSS Scaling Issue'}`);
+           
            // DEBUG POSITIONING: Where is everything located?
            const svgRect = quiltSVG.getBoundingClientRect();
            console.log(`📍 SVG POSITION: top=${svgRect.top}px, left=${svgRect.left}px, bottom=${svgRect.bottom}px`);
+           console.log(`📍 SVG DIMENSIONS: ${svgRect.width.toFixed(1)}×${svgRect.height.toFixed(1)} (${(svgRect.height/svgRect.width).toFixed(2)}:1)`);
+           console.log(`📍 SVG VISUAL CHECK: ${svgRect.height > svgRect.width ? 'TALL ✅' : 'WIDE/SQUARE ❌'}`);
            console.log(`📍 VIEWPORT: height=${window.innerHeight}px, width=${window.innerWidth}px`);
            console.log(`📍 CLIPPING CHECK: SVG top=${svgRect.top}px ${svgRect.top < 0 ? '❌ CUT OFF TOP' : '✅ VISIBLE'}`);
            console.log(`📍 SCREEN USAGE: SVG bottom=${svgRect.bottom}px vs screen=${window.innerHeight}px`);
+           
+           // 🚨 NEW: BUTTON POSITION DEBUGGING
+           console.log('\n🔍 === TRUE FOLD CALCULATION ===');
+           
+           // Calculate different fold measurements
+           const viewportHeight = window.innerHeight;
+           const documentHeight = document.documentElement.scrollHeight;
+           const currentScroll = window.scrollY;
+           const visibleBottom = currentScroll + viewportHeight;
+           
+           console.log(`📱 VIEWPORT HEIGHT: ${viewportHeight}px (device screen)`);
+           console.log(`📄 DOCUMENT HEIGHT: ${documentHeight}px (total content)`);
+           console.log(`📍 CURRENT SCROLL: ${currentScroll}px`);
+           console.log(`👁️ VISIBLE BOTTOM: ${visibleBottom}px (what user sees at bottom)`);
+           console.log(`🔍 CONTENT OVERFLOW: ${documentHeight > viewportHeight ? (documentHeight - viewportHeight) + 'px LONGER than screen' : 'fits on screen'}`);
+           
+           // The TRUE fold is the bottom of the viewport (what's visible without scrolling)
+           const trueFold = viewportHeight; // The actual bottom of what users see on page load
+           console.log(`📱 TRUE FOLD (actual): ${trueFold}px (bottom of visible area without scrolling)`);
+           
+           const foldLine = trueFold; // Use actual viewport bottom as fold line
+           
+           // 🚨 ADD VISUAL FOLD LINE - positioned at TRUE FOLD LINE
+           let foldMarker = document.getElementById('fold-line-marker');
+           if (!foldMarker) {
+             foldMarker = document.createElement('div');
+             foldMarker.id = 'fold-line-marker';
+             foldMarker.style.cssText = `
+               position: fixed;
+               top: ${trueFold}px;
+               left: 0;
+               width: 100vw;
+               height: 8px;
+               background: red;
+               z-index: 9999;
+               pointer-events: none;
+               box-shadow: 0 0 15px red;
+               border: 2px solid darkred;
+             `;
+             document.body.appendChild(foldMarker);
+             console.log(`🔴 FOLD LINE MARKER: Added red line at 90% of viewport (highly visible)`);
+           }
+           
+           // Check each button position
+           const buttons = ['testAddBlock', 'showMyPieceBtn', 'testDifferentUserBtn'];
+           buttons.forEach(btnId => {
+             const btn = document.getElementById(btnId);
+             if (btn) {
+               const btnRect = btn.getBoundingClientRect();
+               const isAboveFold = btnRect.top < foldLine;
+               console.log(`🔘 ${btnId}: top=${btnRect.top.toFixed(1)}px ${isAboveFold ? '❌ ABOVE FOLD' : '✅ BELOW FOLD'}`);
+             }
+           });
+           
+           // Check SVG bottom vs first button top
+           const firstBtn = document.getElementById('testAddBlock');
+           if (firstBtn) {
+             const btnRect = firstBtn.getBoundingClientRect();
+             const gapSize = btnRect.top - svgRect.bottom;
+             console.log(`📏 GAP: SVG bottom=${svgRect.bottom.toFixed(1)}px → Button top=${btnRect.top.toFixed(1)}px (gap=${gapSize.toFixed(1)}px)`);
+           
+           // 🚨 SVG HEIGHT OVERRIDE DEBUG
+           const expectedVh = Math.round(window.innerHeight * 0.8);
+           console.log(`🎯 EXPECTED 80vh: ${expectedVh}px vs ACTUAL SVG: ${svgRect.height.toFixed(1)}px`);
+           console.log(`🎯 HEIGHT DIFFERENCE: ${(expectedVh - svgRect.height).toFixed(1)}px missing!`);
+           
+           // Check CSS vs SVG attributes
+           const svgStyle = window.getComputedStyle(quiltSVG);
+           console.log(`🎨 CSS HEIGHT: ${svgStyle.height}`);
+           console.log(`🎨 SVG ATTR HEIGHT: ${quiltSVG.getAttribute('height')}px`);
+           console.log(`🎨 CSS MAX-HEIGHT: ${svgStyle.maxHeight}`);
+           
+           // 🚨 CSS OVERRIDE DEBUGGING
+           console.log(`🔍 CSS DEBUGGING:`);
+           console.log(`   data-time-based-active: ${quiltSVG.getAttribute('data-time-based-active')}`);
+           console.log(`   CSS display: ${svgStyle.display}`);
+           console.log(`   CSS position: ${svgStyle.position}`);
+           console.log(`   CSS flex-grow: ${svgStyle.flexGrow}`);
+           console.log(`   CSS min-height: ${svgStyle.minHeight}`);
+           
+           // 🔍 DEEP DEBUG: What's preventing SVG height expansion?
+           console.log(`🔍 === SVG HEIGHT CONSTRAINT ANALYSIS ===`);
+           
+           // Check if viewBox is constraining height
+           const viewBox = quiltSVG.getAttribute('viewBox');
+           console.log(`📐 ViewBox: ${viewBox}`);
+           
+           // Check all parent elements for height constraints
+           let currentElement = quiltSVG;
+           let level = 0;
+           while (currentElement && level < 5) {
+             const styles = window.getComputedStyle(currentElement);
+             const rect = currentElement.getBoundingClientRect();
+             console.log(`🔗 Level ${level} (${currentElement.tagName}#${currentElement.id}): height=${styles.height}, maxHeight=${styles.maxHeight}, overflow=${styles.overflow}, actualHeight=${rect.height.toFixed(1)}px`);
+             currentElement = currentElement.parentElement;
+             level++;
+           }
+           
+           // 🎯 UNIVERSAL RESPONSIVE HEIGHT: Works on any device size
+           const originalViewBox = quiltSVG.getAttribute('viewBox');
+           
+           // Calculate text space dynamically by measuring actual elements
+           const phaseIndicator = document.getElementById('phase-indicator');
+           const countMessage = document.getElementById('community-message');
+           
+           let actualTextHeight = 0;
+           if (phaseIndicator) actualTextHeight += phaseIndicator.getBoundingClientRect().height;
+           if (countMessage) actualTextHeight += countMessage.getBoundingClientRect().height;
+           
+           // Add some breathing room (20px margins)
+           const textSpaceAbove = Math.ceil(actualTextHeight) + 40; 
+           
+           // Calculate height to fill viewport but ensure buttons go below fold
+           const availableSpace = viewportHeight - textSpaceAbove;
+           // Use 90% for maximum canvas space while keeping buttons below fold
+           const optimalHeight = Math.floor(availableSpace * 0.90);
+           
+           const newViewBox = `0 0 380 ${optimalHeight}`;
+           quiltSVG.setAttribute('viewBox', newViewBox);
+           quiltSVG.style.height = `${optimalHeight}px`;
+           
+           console.log(`📱 UNIVERSAL CALC: viewport=${viewportHeight}px, textSpace=${textSpaceAbove}px, available=${availableSpace}px`);
+           console.log(`🎯 OPTIMAL HEIGHT: ${optimalHeight}px (90% of available space - maximum canvas)`);
+           console.log(`🎯 RESPONSIVE CHECK: ${optimalHeight + textSpaceAbove <= viewportHeight ? '✅ Fits any viewport' : '❌ Calculation error'}`);
+           console.log(`🔧 FIXED ViewBox: ${originalViewBox} → ${newViewBox}`);
+           
+           // 🚨 HEIGHT CONSTRAINT DEBUG: What's preventing height changes?
+           console.log('\n🔍 === HEIGHT CONSTRAINT DEBUG ===');
+           setTimeout(() => {
+             const actualRect = quiltSVG.getBoundingClientRect();
+             const actualStyle = window.getComputedStyle(quiltSVG);
+             console.log(`📏 CALCULATED: ${optimalHeight}px`);
+             console.log(`📏 ACTUAL: ${actualRect.height.toFixed(1)}px`);
+             console.log(`📏 DIFFERENCE: ${(actualRect.height - optimalHeight).toFixed(1)}px ${actualRect.height === optimalHeight ? '✅ MATCH' : '❌ CONSTRAINED'}`);
+             console.log(`🎨 CSS height: ${actualStyle.height}`);
+             console.log(`🎨 CSS max-height: ${actualStyle.maxHeight}`);
+             console.log(`🎨 CSS min-height: ${actualStyle.minHeight}`);
+             console.log(`📐 ViewBox: ${quiltSVG.getAttribute('viewBox')}`);
+             
+             // Check parent constraints
+             const parent = quiltSVG.parentElement;
+             const parentStyle = window.getComputedStyle(parent);
+             const parentRect = parent.getBoundingClientRect();
+             console.log(`📦 PARENT (${parent.tagName}): height=${parentRect.height.toFixed(1)}px, maxHeight=${parentStyle.maxHeight}`);
+           }, 50);
+           
+           // 🚨 WHITE SPACE DEBUG: Find what's creating the top spacing
+           console.log('\n🔍 === WHITE SPACE DEBUG ===');
+           
+           // Check screen container position (reuse existing variable)
+           const screenRect = document.getElementById('screen-quilt').getBoundingClientRect();
+           const screenStyle = window.getComputedStyle(document.getElementById('screen-quilt'));
+           console.log(`📦 SCREEN-QUILT: top=${screenRect.top}px, paddingTop=${screenStyle.paddingTop}, marginTop=${screenStyle.marginTop}`);
+           
+           // Check text element positions
+           if (phaseIndicator) {
+             const phaseRect = phaseIndicator.getBoundingClientRect();
+             const phaseStyle = window.getComputedStyle(phaseIndicator);
+             console.log(`📝 PHASE TEXT: top=${phaseRect.top}px, marginTop=${phaseStyle.marginTop}, paddingTop=${phaseStyle.paddingTop}`);
+           }
+           
+           // Check canvas position
+           const canvasRect = quiltSVG.getBoundingClientRect();
+           const canvasStyle = window.getComputedStyle(quiltSVG);
+           console.log(`🎨 CANVAS: top=${canvasRect.top}px, marginTop=${canvasStyle.marginTop}, paddingTop=${canvasStyle.paddingTop}`);
+           
+           // Calculate actual white space
+           const whiteSpaceHeight = (phaseIndicator ? phaseIndicator.getBoundingClientRect().top : canvasRect.top) - screenRect.top;
+           console.log(`⚠️ WHITE SPACE: ${whiteSpaceHeight.toFixed(1)}px between screen container and first content`);
+           
+           setTimeout(() => {
+             const newRect = quiltSVG.getBoundingClientRect();
+             console.log(`🎯 FINAL RESULT: SVG height = ${newRect.height.toFixed(1)}px (${newRect.height >= 750 ? '✅ SUCCESS!' : '❌ Still failed'})`);
+             
+             // Check if buttons moved below fold
+             const testBtn = document.getElementById('testAddBlock');
+             if (testBtn) {
+               const btnRect = testBtn.getBoundingClientRect();
+               const nowBelowFold = btnRect.top > window.innerHeight;
+               console.log(`🔘 BUTTON RESULT: top=${btnRect.top.toFixed(1)}px ${nowBelowFold ? '✅ NOW BELOW FOLD!' : '❌ Still above fold'}`);
+             }
+           }, 100);
+           
+           // 🚨 ALSO FIX PARENT CONTAINERS
+           const screenQuilt = document.getElementById('screen-quilt');
+           const app = document.getElementById('app');
+           
+           if (screenQuilt) {
+             screenQuilt.style.maxHeight = 'none';
+             screenQuilt.style.height = 'auto';
+             console.log(`🔧 FIXED SCREEN-QUILT: removed max-height constraints`);
+           }
+           
+           if (app) {
+             app.style.maxHeight = 'none';  
+             app.style.height = 'auto';
+             console.log(`🔧 FIXED APP: removed max-height constraints`);
+           }
+           
+           console.log(`🔧 AFTER FORCE: height=${quiltSVG.style.height}, minHeight=${quiltSVG.style.minHeight}`);
+           
+           // Re-measure after forcing height
+           setTimeout(() => {
+             const newRect = quiltSVG.getBoundingClientRect();
+             console.log(`🔧 NEW SVG HEIGHT: ${newRect.height.toFixed(1)}px (${newRect.height >= 700 ? '✅ SUCCESS' : '❌ STILL FAILED'})`);
+             
+             // Check button positions after height change
+             const newBtn = document.getElementById('testAddBlock');
+             if (newBtn) {
+               const newBtnRect = newBtn.getBoundingClientRect();
+               const nowBelowFold = newBtnRect.top >= window.innerHeight;
+               console.log(`🔘 AFTER HEIGHT FIX: testAddBlock top=${newBtnRect.top.toFixed(1)}px ${nowBelowFold ? '✅ NOW BELOW FOLD!' : '❌ STILL ABOVE FOLD'}`);
+             }
+           }, 50);
+           }
            
            // DEBUG CONTAINER PADDING: Check what's happening with spacing
            const screenQuilt = document.getElementById('screen-quilt');
@@ -6100,9 +6379,9 @@
             const viewportHeight = window.innerHeight;
             console.log(`📱 DEBUG: Viewport height = ${viewportHeight}px`);
             
-            // MAXIMIZE CANVAS: Minimize UI height estimate to push more content below fold
-            // Only keep thank you message + first button visible, push rest below
-            const estimatedUIHeight = 120; // Only essential elements above canvas
+            // MAXIMIZE CANVAS: Only phase text + count text above canvas, all buttons below!
+            // Above fold: "Cutting up squares til noon!" + "X squares today and counting!" 
+            const estimatedUIHeight = 80; // Minimal text-only UI above canvas
             
             const availableHeight = viewportHeight - estimatedUIHeight;
             console.log(`📱 SIMPLE CALC: viewport ${viewportHeight}px - estimated UI ${estimatedUIHeight}px = ${availableHeight}px available for canvas`);
@@ -7586,9 +7865,10 @@
           if (svg) {
             console.log('🧹 Clearing old legacy content...');
             svg.innerHTML = '';
-            svg.removeAttribute('width');
-            svg.removeAttribute('height'); 
-            svg.removeAttribute('viewBox');
+            // REMOVED: Don't clear attributes - this causes white rectangle flash!
+            // svg.removeAttribute('width');
+            // svg.removeAttribute('height'); 
+            // svg.removeAttribute('viewBox');
           }
           
           console.log('🔄 Triggering renderTimeBasedQuilt...');
@@ -7608,9 +7888,10 @@
           if (svg) {
             console.log('🧹 Completely clearing SVG...');
             svg.innerHTML = '';
-            svg.removeAttribute('width');
-            svg.removeAttribute('height'); 
-            svg.removeAttribute('viewBox');
+            // REMOVED: Don't clear attributes - this causes white rectangle flash!
+            // svg.removeAttribute('width');
+            // svg.removeAttribute('height'); 
+            // svg.removeAttribute('viewBox');
             svg.setAttribute('data-time-based-active', 'true');
           }
           
@@ -7818,9 +8099,10 @@
           if (svg) {
             console.log('🧹 Clearing and setting up SVG...');
             svg.innerHTML = '';
-            svg.removeAttribute('width');
-            svg.removeAttribute('height'); 
-            svg.removeAttribute('viewBox');
+            // REMOVED: Don't clear attributes - this causes white rectangle flash!
+            // svg.removeAttribute('width');
+            // svg.removeAttribute('height'); 
+            // svg.removeAttribute('viewBox');
             svg.setAttribute('data-time-based-active', 'true');
             
             // Apply CSS overrides directly
