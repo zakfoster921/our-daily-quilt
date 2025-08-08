@@ -752,6 +752,34 @@
       font-weight: 700;
       color: #000;
     }
+
+    /* Admin Actions */
+    .admin-actions {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #e0e0e0;
+      text-align: center;
+    }
+
+    .archive-delete-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      font-weight: 500;
+    }
+
+    .archive-delete-btn:hover {
+      background: #c82333;
+    }
+
+    .archive-delete-btn:active {
+      background: #bd2130;
+    }
     
     @media (max-width: 768px) {
       .admin-analytics-grid {
@@ -761,6 +789,11 @@
       
       .admin-metric {
         padding: 0.2rem 0;
+      }
+
+      .archive-delete-btn {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
       }
     }
     
@@ -2713,51 +2746,51 @@
            
            this.logger.log(`Four-block section dimensions: ${combinedWidth}x${combinedHeight}`);
            
-                       // Position the blocks within the four-block section
-            let currentX = 0;
-            let currentY = 0;
-            
-            // Position blocks from pair1 first
-            for (const block of pair1.blocks) {
-              // Add the pair1 offset to the block's existing relative position
-              block.x = currentX + block.x;
-              block.y = currentY + block.y;
-              
-              if (pair1.joinType === 'horizontal') {
-                currentX += block.width;
-              } else {
-                currentY += block.height;
-              }
-              
-              this.logger.log(`Positioned pair1 block ${block.id} at (${block.x}, ${block.y})`);
-            }
-            
-            // Reset position for pair2
-            if (joinType === 'horizontal') {
-              // Attach pair2 to the right of pair1 - ensure they touch
-              currentX = pair1.width;
-              currentY = 0;
-            } else {
-              // Attach pair2 below pair1 - ensure they touch
-              currentX = 0;
-              currentY = pair1.height;
-            }
-            
-            // Position blocks from pair2
-            for (const block of pair2.blocks) {
-              // Add the pair2 offset to the block's existing relative position
-              block.x = currentX + block.x;
-              block.y = currentY + block.y;
-              
-              // Update current position based on the four-block section's join type, not the pair's join type
-              if (joinType === 'horizontal') {
-                currentX += block.width;
-              } else {
-                currentY += block.height;
-              }
-              
-              this.logger.log(`Positioned pair2 block ${block.id} at (${block.x}, ${block.y})`);
-            }
+           // Position the blocks within the four-block section
+           let currentX = 0;
+           let currentY = 0;
+           
+           // Position blocks from pair1 first
+           for (const block of pair1.blocks) {
+             // Add the pair1 offset to the block's existing relative position
+             block.x = currentX + block.x;
+             block.y = currentY + block.y;
+             
+             if (pair1.joinType === 'horizontal') {
+               currentX += block.width;
+             } else {
+               currentY += block.height;
+             }
+             
+             this.logger.log(`Positioned pair1 block ${block.id} at (${block.x}, ${block.y})`);
+           }
+           
+           // Reset position for pair2
+           if (joinType === 'horizontal') {
+             // Attach pair2 to the right of pair1 - ensure they touch
+             currentX = pair1.width;
+             currentY = 0;
+           } else {
+             // Attach pair2 below pair1 - ensure they touch
+             currentX = 0;
+             currentY = pair1.height;
+           }
+           
+           // Position blocks from pair2
+           for (const block of pair2.blocks) {
+             // Add the pair2 offset to the block's existing relative position
+             block.x = currentX + block.x;
+             block.y = currentY + block.y;
+             
+             // Update current position based on the four-block section's join type, not the pair's join type
+             if (joinType === 'horizontal') {
+               currentX += block.width;
+             } else {
+               currentY += block.height;
+             }
+             
+             this.logger.log(`Positioned pair2 block ${block.id} at (${block.x}, ${block.y})`);
+           }
            
            this.logger.log('Final four-block section positions:', [...pair1.blocks, ...pair2.blocks].map(b => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: b.height })));
            
@@ -4018,6 +4051,20 @@
           // Fallback (should never happen)
           return 'collection';
         }
+
+        getCurrentScale() {
+          // Return the current scale being used for rendering
+          // This is used by pattern templates to match the rendering scale
+          const phase = this.getCurrentPhase();
+          if (phase === 'pattern_filling' && this.patternGenerator.getCurrentPattern()) {
+            // For pattern phase, we'll calculate this dynamically in renderTimeBasedQuilt
+            // For now, return a reasonable default that will be overridden
+            return 25; // Default fallback
+          } else {
+            // For collection phase, use the standard block size
+            return 46; // Standard collection phase block size
+          }
+        }
         
                  // Helper method to check current time and phase
          getCurrentTimeAndPhase() {
@@ -4398,30 +4445,19 @@
         }
 
         selectPattern(analysis) {
-          let selectedPattern;
-
-          if (analysis.isMonochromatic) {
-            selectedPattern = 'gradient_flow';
-          } else if (analysis.dominantTheme === 'warm_cool_split') {
-            selectedPattern = 'warm_cool_split';
-          } else if (analysis.hasContrasts) {
-            selectedPattern = 'checkerboard';
-          } else if (analysis.hueDistribution && analysis.hueDistribution.size > 4) {
-            selectedPattern = 'spiral';
-          } else {
-            selectedPattern = 'radial';
-          }
+          // TEMPORARY: Limit to gradient_flow only for debugging
+          let selectedPattern = 'gradient_flow';
 
           this.currentPattern = selectedPattern;
-          this.logger.log(`Pattern selected: ${selectedPattern} based on analysis`);
+          this.logger.log(`Pattern selected: ${selectedPattern} (temporarily limited to gradient_flow only)`);
           return selectedPattern;
         }
 
         getOptimalPosition(color, occupiedPositions = new Set()) {
           if (!this.currentPattern) {
-            // Auto-select a default pattern if none is chosen yet
+            // Auto-select gradient_flow pattern (temporarily limited)
             this.currentPattern = 'gradient_flow';
-            this.logger.log(`🎯 Auto-selected gradient_flow pattern (no pattern was set)`);
+            this.logger.log(`🎯 Auto-selected gradient_flow pattern (temporarily limited to gradient_flow only)`);
           }
           return this.patternTemplates[this.currentPattern].getNextPosition(color, occupiedPositions);
         }
@@ -4437,6 +4473,11 @@
 
         getCurrentPattern() {
           return this.currentPattern;
+        }
+
+        setCurrentPattern(pattern) {
+          this.currentPattern = pattern;
+          this.logger.log(`Pattern set to: ${pattern}`);
         }
         
         resetPattern() {
@@ -4690,8 +4731,31 @@
 
         reorganizeToPattern(colors, patternName) {
           this.logger.log(`Reorganizing ${colors.length} colors to ${patternName} pattern`);
-          // TODO: Implement smooth transitions between scattered and organized layouts
-          // This will involve CSS animations and position calculations
+          
+          // Get the pattern template for the selected pattern
+          // Access through the engine's pattern generator
+          const engine = window.app.timeBasedEngine;
+          const patternTemplate = engine.patternGenerator.patternTemplates[patternName];
+          if (!patternTemplate) {
+            this.logger.log(`⚠️ Pattern template not found for ${patternName}`);
+            return;
+          }
+          
+          // Initialize the pattern with all colors
+          patternTemplate.initializeWithColors(colors);
+          
+          // Reorganize each color to its new pattern position
+          colors.forEach((colorObj, index) => {
+            // Get new position from pattern template
+            const newPosition = patternTemplate.getNextPosition(colorObj.color);
+            
+            // Update the color object's position
+            colorObj.position = newPosition;
+            
+            this.logger.log(`🎨 Reorganized ${colorObj.color} to pattern position (${newPosition.x}, ${newPosition.y})`);
+          });
+          
+          this.logger.log(`✅ Reorganized ${colors.length} colors to ${patternName} pattern`);
         }
       }
 
@@ -4739,120 +4803,124 @@
           this.placedColors = [];
           this.sortedColors = [];
           this.totalExpectedColors = 0;
+          this.colorUsageCount = {}; // Track how many times each color has been used
         }
 
         initializeWithColors(allColors) {
+          // Extract just the color strings from color objects
+          const colorStrings = allColors.map(colorObj => 
+            typeof colorObj === 'string' ? colorObj : colorObj.color
+          );
+          
           // Pre-sort ALL colors by hue for proper organization
-          this.sortedColors = this.sortColorsByHue([...allColors]);
-          this.totalExpectedColors = allColors.length;
+          this.sortedColors = this.sortColorsByHue([...colorStrings]);
+          this.totalExpectedColors = colorStrings.length;
           this.placedColors = []; // Track which we've placed so far
+          this.colorUsageCount = {}; // Reset color usage tracking
         }
 
         getNextPosition(color, occupiedPositions = new Set()) {
           // Add this color to placed list
           this.placedColors.push(color);
           
-          console.log(`🎨 GradientPattern.getNextPosition(${color})`);
-          console.log(`- placedColors now: ${this.placedColors.length} [${this.placedColors.join(', ')}]`);
-          console.log(`- sortedColors: ${this.sortedColors.length} [${this.sortedColors.join(', ')}]`);
-          console.log(`- totalExpectedColors: ${this.totalExpectedColors}`);
-          console.log(`- occupiedPositions: [${Array.from(occupiedPositions).join('], [')}]`);
+          console.log(`🎨 GradientPattern.getNextPosition called for ${color}`);
           
-          // If this is a reorganization (pattern was pre-initialized)
-          if (this.sortedColors.length > 0 && this.totalExpectedColors > 0) {
-            console.log(`📐 Using reorganization mode`);
-            // Find where this color should go in the pre-sorted order
-            const colorIndex = this.sortedColors.findIndex(c => c === color);
-            console.log(`- colorIndex in sorted array: ${colorIndex}`);
-            
-            // If color not found in sorted array, it's a new color added after reorganization
-            if (colorIndex === -1) {
-              console.log(`➕ Adding new color to sorted array for smart placement`);
-              // Add the new color to sortedColors in the right position (by hue)
-              const newColorHue = this.getHue(color);
-              let insertIndex = this.sortedColors.length;
-              for (let i = 0; i < this.sortedColors.length; i++) {
-                const existingHue = this.getHue(this.sortedColors[i]);
-                if (newColorHue < existingHue) {
-                  insertIndex = i;
-                  break;
-                }
+          // HORIZONTAL RAINBOW GRADIENT: Arrange colors in horizontal bands from top to bottom
+          const colorCount = this.placedColors.length;
+          
+          // Calculate grid dimensions based on total expected colors (maintain grid structure)
+          const gridWidth = Math.ceil(Math.sqrt(this.totalExpectedColors));
+          const gridHeight = Math.ceil(this.totalExpectedColors / gridWidth);
+          
+          // Handle duplicate colors properly
+          // Count how many times this color has been used so far
+          const colorUsageCount = this.placedColors.filter(c => c === color).length;
+          
+          // Find the Nth occurrence of this color in the sorted array
+          let index = -1;
+          let occurrenceCount = 0;
+          
+          for (let i = 0; i < this.sortedColors.length; i++) {
+            if (this.sortedColors[i] === color) {
+              occurrenceCount++;
+              if (occurrenceCount === colorUsageCount) {
+                index = i;
+                break;
               }
-              this.sortedColors.splice(insertIndex, 0, color);
-              this.totalExpectedColors++;
-              console.log(`- inserted at index ${insertIndex}, new total: ${this.totalExpectedColors}`);
-              
-              // Find the next available position using actual occupied positions
-              const gridSize = Math.ceil(Math.sqrt(this.totalExpectedColors));
-              console.log(`- smart placement: finding available position in ${gridSize}x${gridSize} grid`);
-              
-              // Find first available position in the new grid
-              for (let i = 0; i < gridSize * gridSize; i++) {
-                const x = i % gridSize;
-                const y = Math.floor(i / gridSize);
-                const posKey = `${x},${y}`;
-                
-                if (!occupiedPositions.has(posKey)) {
-                  console.log(`- found available position: (${x}, ${y})`);
-                  return { x, y };
-                }
-              }
-              
-              // Fallback: expand grid if all positions filled
-              console.log(`- fallback: expanding to (${gridSize}, 0)`);
-              return { x: gridSize, y: 0 };
             }
-            
-            // Calculate grid size based on TOTAL expected colors
-            const gridSize = Math.ceil(Math.sqrt(this.totalExpectedColors));
-            
-            // Calculate position based on sorted index in the complete grid
-            const x = colorIndex % gridSize;
-            const y = Math.floor(colorIndex / gridSize);
-            
-            console.log(`- reorganization: colorIndex=${colorIndex}, grid=${gridSize} → (${x}, ${y})`);
-            console.log(`- checking if position (${x},${y}) is occupied: ${occupiedPositions.has(`${x},${y}`)}`);
-            
-            // During reorganization, positions SHOULD be deterministic and collision-free
-            // But if there's a collision, find the next available position
-            if (occupiedPositions.has(`${x},${y}`)) {
-              console.warn(`⚠️ REORGANIZATION COLLISION: Position (${x},${y}) occupied, finding alternative...`);
-              
-              // Find the next available position in the grid
-              const maxPositions = gridSize * gridSize * 2; // Prevent infinite loop
-              for (let offset = 1; offset < maxPositions; offset++) {
-                const altIndex = colorIndex + offset;
-                const altX = altIndex % gridSize;
-                const altY = Math.floor(altIndex / gridSize);
-                const altKey = `${altX},${altY}`;
-                
-                if (!occupiedPositions.has(altKey)) {
-                  console.log(`✅ Found alternative position: (${altX}, ${altY}) for color ${color}`);
-                  return { x: altX, y: altY };
-                }
-              }
-              
-              // If we still can't find a spot, expand the grid
-              console.log(`🔄 No space in ${gridSize}x${gridSize} grid, expanding...`);
-              return { x: gridSize, y: 0 };
-            }
-            
-            return { x, y };
-          } else {
-            console.log(`📍 Using sequential mode`);
-            // For normal operation, place sequentially to avoid collisions
-            // Reorganization will sort them later
-            const colorCount = this.placedColors.length;
-            const gridSize = Math.max(1, Math.ceil(Math.sqrt(colorCount)));
-            
-            // Ensure we never get negative positions
-            const index = Math.max(0, colorCount - 1);
-            const x = index % gridSize;
-            const y = Math.floor(index / gridSize);
-            
-            console.log(`- sequential: count=${colorCount}, grid=${gridSize}, index=${index} → (${x}, ${y})`);
-            return { x, y };
           }
+          
+          // If we didn't find the Nth occurrence, use the current count as index
+          if (index === -1) {
+            index = colorCount - 1;
+          }
+          
+          // DYNAMIC SCALE CALCULATION: Use the exact same calculation as the rendering phase
+          const engine = window.app.timeBasedEngine;
+          let blockSize = 25; // Default fallback
+          
+          if (engine && engine.getCurrentPhase() === 'pattern_filling') {
+            // Use the EXACT same calculation as the rendering phase
+            const totalColors = this.totalExpectedColors;
+            
+            // Get the actual SVG dimensions (same as rendering phase)
+            const screenWidth = window.innerWidth || 800;
+            const sideMargin = 20; // Same as rendering phase
+            const svgWidth = screenWidth - (sideMargin * 2); // Same as rendering phase
+            const svgHeight = 600; // Approximate SVG height (same as rendering phase)
+            const availableWidth = svgWidth; // Use full width - no padding
+            const availableHeight = svgHeight; // Use full height - no padding
+            
+            // Calculate grid dimensions (same as rendering phase)
+            const gridWidthForScale = Math.ceil(Math.sqrt(totalColors));
+            const gridHeightForScale = Math.ceil(totalColors / gridWidthForScale);
+            
+            // Calculate block size to fit the grid without overlap (same as rendering phase)
+            const maxBlockWidth = availableWidth / gridWidthForScale;
+            const maxBlockHeight = availableHeight / gridHeightForScale;
+            const dynamicBlockSize = Math.min(maxBlockWidth, maxBlockHeight, 30); // Cap at 30px max
+            
+            blockSize = Math.max(15, dynamicBlockSize); // Minimum 15px - EXACTLY match rendering scale
+          }
+          
+          // HORIZONTAL BAND POSITIONING: Fill from top to bottom, left to right
+          // Each row represents a different hue range
+          const row = Math.floor(index / gridWidth); // Which horizontal band
+          const col = index % gridWidth; // Position within that band
+          
+          // CENTER THE GRID: Calculate total grid dimensions and center them
+          // Use the actual grid dimensions being used for positioning
+          const actualGridWidth = gridWidth;
+          const actualGridHeight = gridHeight;
+          const totalGridWidth = actualGridWidth * blockSize;
+          const totalGridHeight = actualGridHeight * blockSize;
+          
+          // Calculate centering offsets to ensure equal spacing on both sides
+          let centerOffsetX = 0;
+          let centerOffsetY = 0;
+          
+          if (engine && engine.getCurrentPhase() === 'pattern_filling') {
+            // Get the actual SVG dimensions (same as rendering phase)
+            const screenWidth = window.innerWidth || 800;
+            const sideMargin = 20; // Same as rendering phase
+            const svgWidth = screenWidth - (sideMargin * 2); // Same as rendering phase
+            const svgHeight = 600; // Approximate SVG height (same as rendering phase)
+            const availableWidth = svgWidth; // Use full width - no padding
+            const availableHeight = svgHeight; // Use full height - no padding
+            
+            // Center the grid horizontally only (no vertical centering - position at top)
+            centerOffsetX = Math.max(0, (availableWidth - totalGridWidth) / 2);
+            centerOffsetY = 0; // Position at top with no vertical centering
+          }
+          
+          // Use exact blockSize to ensure blocks touch (no gaps) - multiply by exact scale
+          // Add centering offsets to position the grid in the center horizontally, at the top vertically
+          const x = (col * blockSize) + centerOffsetX;
+          const y = (row * blockSize) + centerOffsetY;
+          
+          console.log(`🎨 GradientPattern: ${color} → position (${x}, ${y}) in row ${row}, col ${col} (index: ${index}, colorCount: ${colorCount}, blockSize: ${blockSize}, grid: ${actualGridWidth}x${actualGridHeight}, centered: +${centerOffsetX.toFixed(1)}, +${centerOffsetY.toFixed(1)})`);
+          
+          return { x, y };
         }
 
         sortColorsByHue(colors) {
@@ -5692,6 +5760,123 @@
            return newCount;
          }
 
+         // Delete an archive entry (admin only)
+         async deleteArchive(date) {
+           if (!date) {
+             this.logger.error('❌ No date provided for archive deletion');
+             return false;
+           }
+
+           try {
+             // Remove from local cache
+             const deleted = this.archives.delete(date);
+             if (!deleted) {
+               this.logger.warn(`⚠️ Archive for ${date} not found in local cache`);
+             }
+
+             // Remove from Firebase if available
+             if (this.dataService.db) {
+               try {
+                 const { doc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js');
+                 const archiveDoc = doc(this.dataService.db, 'archives', date);
+                 await deleteDoc(archiveDoc);
+                 this.logger.log(`🔥 Archive deleted from Firebase: ${date}`);
+               } catch (error) {
+                 this.logger.error('❌ Failed to delete archive from Firebase:', error);
+                 // Continue even if Firebase deletion fails
+               }
+             }
+
+             this.logger.log(`🗑️ Archive deleted: ${date}`);
+             return true;
+           } catch (error) {
+             this.logger.error('❌ Failed to delete archive:', error);
+             return false;
+           }
+         }
+
+         // Delete archive entry with confirmation and UI updates
+         async deleteArchiveEntry(date, buttonElement) {
+           if (!date) {
+             this.logger.error('❌ No date provided for archive deletion');
+             return false;
+           }
+
+           // Check if user is admin
+           const isAdmin = localStorage.getItem('isAdmin') === 'true';
+           if (!isAdmin) {
+             this.logger.warn('⚠️ Non-admin user attempted to delete archive');
+             return false;
+           }
+
+           // Show confirmation dialog
+           const formattedDate = new Date(date).toLocaleDateString('en-US', {
+             year: 'numeric',
+             month: 'long',
+             day: 'numeric'
+           });
+
+           const confirmed = confirm(`Are you sure you want to delete the archive for ${formattedDate}?\n\nThis action cannot be undone.`);
+           if (!confirmed) {
+             this.logger.log('🗑️ Archive deletion cancelled by user');
+             return false;
+           }
+
+           // Disable button and show loading state
+           if (buttonElement) {
+             buttonElement.disabled = true;
+             buttonElement.textContent = '🗑️ Deleting...';
+             buttonElement.style.opacity = '0.6';
+           }
+
+           try {
+             // Delete the archive
+             const success = await this.deleteArchive(date);
+             
+             if (success) {
+               // Remove the post from the UI
+               const postElement = buttonElement?.closest('.archive-post');
+               if (postElement) {
+                 // Add fade-out animation
+                 postElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                 postElement.style.opacity = '0';
+                 postElement.style.transform = 'scale(0.95)';
+                 
+                 // Remove from DOM after animation
+                 setTimeout(() => {
+                   postElement.remove();
+                   this.logger.log(`🗑️ Archive post removed from UI: ${date}`);
+                 }, 300);
+               }
+
+               // Show success message
+               if (window.app && window.app.uiService) {
+                 window.app.uiService.showToast(`Archive deleted: ${formattedDate}`, 'success');
+               }
+             } else {
+               throw new Error('Failed to delete archive');
+             }
+
+             return success;
+           } catch (error) {
+             this.logger.error('❌ Failed to delete archive entry:', error);
+             
+             // Re-enable button
+             if (buttonElement) {
+               buttonElement.disabled = false;
+               buttonElement.textContent = '🗑️ DELETE POST';
+               buttonElement.style.opacity = '1';
+             }
+
+             // Show error message
+             if (window.app && window.app.uiService) {
+               window.app.uiService.showToast(`Failed to delete archive: ${error.message}`, 'error');
+             }
+
+             return false;
+           }
+         }
+
          // Share an archived quilt
          async shareArchiveQuilt(date) {
            try {
@@ -5969,6 +6154,12 @@
                          <span class="metric-value">${adminAnalytics.shareCount}</span>
                        </div>
                      </div>
+                     <!-- Admin Delete Button -->
+                     <div class="admin-actions">
+                       <button class="archive-delete-btn" data-date="${archiveEntry.date}" title="Delete this archive (admin only)">
+                         🗑️ DELETE POST
+                       </button>
+                     </div>
                    </div>
                  </div>
                </div>
@@ -6054,6 +6245,16 @@
                e.stopPropagation(); // Prevent triggering image click
                const date = btn.getAttribute('data-date');
                await this.shareArchiveQuilt(date);
+             });
+           });
+
+           // Archive delete button click handlers (admin only)
+           const deleteButtons = container.querySelectorAll('.archive-delete-btn');
+           deleteButtons.forEach(btn => {
+             btn.addEventListener('click', async (e) => {
+               e.stopPropagation(); // Prevent triggering image click
+               const date = btn.getAttribute('data-date');
+               await this.deleteArchiveEntry(date, btn);
              });
            });
          }
@@ -6442,22 +6643,62 @@
         }
 
         autoTransitionFromPortal() {
-          // Check if user is a first-time visitor
+          // Check if user is a first-time visitor OR if it's a new day
           const hasVisitedBefore = localStorage.getItem('ourDailyHasVisited');
+          const lastVisitDate = localStorage.getItem('ourDailyLastVisitDate');
           
-          if (!hasVisitedBefore) {
-            // First time - show welcome/instructions screen
+          // Get current date in Chicago timezone
+          const now = new Date();
+          const chicagoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Chicago"}));
+          const currentDate = chicagoTime.toDateString();
+          
+          // Check if this is a new day (different from last visit)
+          const isNewDay = lastVisitDate !== currentDate;
+          
+          if (!hasVisitedBefore || isNewDay) {
+            // First time OR new day - show welcome/instructions screen
             localStorage.setItem('ourDailyHasVisited', 'true');
+            localStorage.setItem('ourDailyLastVisitDate', currentDate);
+            
+            // Reset the quilt for the new day
+            if (isNewDay) {
+              this.logger.log(`🔄 New day detected: ${currentDate} (was: ${lastVisitDate})`);
+              this.resetQuiltForNewDay();
+            }
+            
             this.uiService.showScreen('screen-welcome');
             
             // Then auto-transition from welcome to quote after another 3 seconds
             setTimeout(() => {
               this.uiService.showScreen('screen-quote');
-            }, 3000);
+            }, 1500);
           } else {
-            // Returning visitor - go straight to quote
+            // Returning visitor on same day - go straight to quote
             this.uiService.showScreen('screen-quote');
           }
+        }
+        
+        resetQuiltForNewDay() {
+          this.logger.log('🔄 Resetting quilt for new day...');
+          
+          // Clear all colors from the engine
+          this.timeBasedEngine.gridState.clearAll();
+          this.timeBasedEngine.colorsSinceReorganization = 0;
+          
+          // Reset pattern generator
+          this.timeBasedEngine.patternGenerator.resetPattern();
+          
+          // Reset color analyzer
+          this.timeBasedEngine.colorAnalyzer = new ColorAnalyzer(this.timeBasedEngine.logger);
+          
+          // Clear any queued colors
+          this.timeBasedEngine.gridState.clearQueue();
+          
+          // Update the display
+          this.renderTimeBasedQuilt();
+          window.updateUserCounter(0);
+          
+          this.logger.log('✅ Quilt reset complete for new day');
         }
 
                  async loadQuilt() {
@@ -7148,7 +7389,8 @@
            // console.log(`🖥️ FULL WIDTH: Canvas=${canvasWidth}px, Content=${contentWidth}px`);
          }
          
-         const scale = finalBlockSize;
+         // Use fixed block size initially - will be updated for pattern phase after SVG dimensions are set
+         let scale = finalBlockSize;
          
          // console.log(`🎨 RENDER PREP: finalBlockSize=${finalBlockSize}px, scale=${scale}px (should be identical)`);
          
@@ -7221,6 +7463,26 @@
          // FULL-WIDTH SVG: Make the coordinate system match the container
          const svgWidth = screenWidth - (sideMargin * 2); // Make canvas narrower to show side margins (sideMargin defined earlier)
          const svgHeight = finalHeight; // Keep calculated height
+         
+         // DYNAMIC SCALE FOR PATTERN PHASE: Calculate optimal block size to fit all squares without overlap
+         if (engineState.phase === 'pattern_filling' && engineState.pattern) {
+           // Pattern phase: Calculate dynamic block size to fit all squares in available space
+           const totalColors = engineState.colors.length;
+           const availableWidth = svgWidth; // Use full width - no padding
+           const availableHeight = svgHeight; // Use full height - no padding
+           
+           // Calculate grid dimensions
+           const gridWidth = Math.ceil(Math.sqrt(totalColors));
+           const gridHeight = Math.ceil(totalColors / gridWidth);
+           
+           // Calculate block size to fit the grid without overlap
+           const maxBlockWidth = availableWidth / gridWidth;
+           const maxBlockHeight = availableHeight / gridHeight;
+           const dynamicBlockSize = Math.min(maxBlockWidth, maxBlockHeight, 30); // Cap at 30px max
+           
+           scale = Math.max(15, dynamicBlockSize); // Minimum 15px
+           console.log(`🎨 PATTERN SCALE: ${totalColors} colors → ${gridWidth}x${gridHeight} grid → ${scale.toFixed(1)}px blocks`);
+         }
          
          // FIX COORDINATE MISMATCH: Make content coordinates match container size
          const finalWidth = svgWidth; // Content coordinate system = container size
@@ -7699,17 +7961,32 @@
              // Create group for stacking effects (collection phase)
              const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
              
+             // Apply positioning based on phase
+             let finalX, finalY;
+             
+             if (engineState.phase === 'pattern_filling' && engineState.pattern) {
+               // Pattern filling phase: use pattern positions
+               finalX = colorObj.position.x;
+               finalY = colorObj.position.y;
+               console.log(`🎨 PATTERN POSITION: ${colorObj.color} → (${finalX}, ${finalY}) - colorObj.position:`, colorObj.position);
+             } else {
+               // Collection phase: use calculated positions
+               finalX = x;
+               finalY = y;
+             }
+             
              // Apply organic positioning and rotation
-             const centerX = x + scale/2; // Center of the block for rotation
-             const centerY = y + scale/2;
-             group.setAttribute('transform', `translate(${x}, ${y}) rotate(${rotation.toFixed(1)}, ${scale/2}, ${scale/2})`);
+             const centerX = finalX + scale/2; // Center of the block for rotation
+             const centerY = finalY + scale/2;
+             group.setAttribute('transform', `translate(${finalX}, ${finalY}) rotate(${rotation.toFixed(1)}, ${scale/2}, ${scale/2})`);
              
                         // Collection phase: quilter's workspace stacking
-           if (engineState.phase === 'collection' && colorObj.position.isStacked) {
-             this.renderStackedBlock(group, colorObj, 0, 0, scale, stackIndex); // Group handles positioning
-           } else if (engineState.phase === 'pattern_filling' && engineState.pattern) {
+           if (engineState.phase === 'pattern_filling' && engineState.pattern) {
              // Pattern filling phase: use pattern-based positioning
-             this.renderPatternBlock(group, colorObj, 0, 0, scale, stackIndex);
+             console.log(`🎨 RENDERING PATTERN BLOCK: ${colorObj.color} at (${finalX}, ${finalY})`);
+             this.renderPatternBlock(group, colorObj, 0, 0, scale, stackIndex); // Group transform handles positioning
+           } else if (engineState.phase === 'collection' && colorObj.position.isStacked) {
+             this.renderStackedBlock(group, colorObj, 0, 0, scale, stackIndex); // Group handles positioning
            } else {
              // Standard rendering for other phases
              this.renderStandardBlock(group, colorObj, 0, 0, scale, stackIndex); // Group handles positioning
@@ -7793,16 +8070,6 @@
            const blockHeight = Math.max(scale - 2, 5);
            const wobbleAmount = Math.max(0.5, scale * 0.02); // Much more subtle wobble
            
-           // Create drop shadow for depth (more prominent for larger blocks)
-           const shadowOffset = Math.max(2, scale * 0.08); // Scale shadow with block size
-           const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-           
-           // Generate irregular shadow path with subtle wobble
-           const shadowPathData = this.createIrregularBlockPath(x + shadowOffset, y + shadowOffset, blockWidth, blockHeight, wobbleAmount);
-           shadow.setAttribute('d', shadowPathData);
-           shadow.setAttribute('fill', 'rgba(0, 0, 0, 0.2)'); // Slightly more prominent
-           group.appendChild(shadow);
-           
            // Main color block with irregular wobble
            
            if (window.debugBlockRendering) {
@@ -7857,6 +8124,7 @@
          // Helper method: Create irregular block path with visible wobble
          createIrregularBlockPath(x, y, width, height, wobbleAmount) {
            // Create more pronounced irregularity with multiple variation points per side
+           // BUT ensure the path always fills the exact dimensions to prevent gaps
            const topVariations = [
              Math.random() * wobbleAmount - wobbleAmount/2,
              Math.random() * wobbleAmount - wobbleAmount/2,
@@ -7879,6 +8147,8 @@
            ];
            
            // Generate path with irregular edges - each side has multiple variation points
+           // BUT ensure the path extends to the full dimensions to prevent gaps
+           // Use Math.max to ensure the path always extends to the full dimensions
            const path = [
              `M ${x + topVariations[0]} ${y + topVariations[0]}`, // Top-left with variation
              `L ${x + width/3 + topVariations[1]} ${y + topVariations[1]}`, // Top middle-left
@@ -7939,8 +8209,69 @@
          
          // Helper method: Render pattern-based blocks for pattern filling phase
          renderPatternBlock(group, colorObj, x, y, scale, index) {
-           // Use the same irregular block rendering as standard blocks
-           this.renderStandardBlock(group, colorObj, x, y, scale, index);
+           // UNIFIED BLOCK STYLING: Use same visual styling as collection phase for consistency
+           const colorFamily = colorObj.position.colorFamily || 'pattern';
+           
+           // Calculate block dimensions first - use full scale for touching blocks in pattern phase
+           const blockWidth = scale;
+           const blockHeight = scale;
+           const wobbleAmount = Math.max(0.5, scale * 0.015); // Smaller wobble for pattern phase but still organic
+           
+           // Create irregular block shape with subtle wobble (same as collection phase)
+           const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+           
+           // Generate irregular path with subtle wobble (use 0,0 since group handles positioning)
+           const pathData = this.createIrregularBlockPath(0, 0, blockWidth, blockHeight, wobbleAmount);
+           path.setAttribute('d', pathData);
+           path.setAttribute('fill', colorObj.color);
+           
+           // Fixed opacity for pattern phase (no stacking variation)
+           const patternOpacity = 0.9;
+           path.setAttribute('opacity', patternOpacity);
+           
+           // Enhanced settling animation for new blocks (same as collection phase)
+           const dropDistance = Math.max(10, scale * 0.2); // Scale drop distance
+           const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animateTransform');
+           animate.setAttribute('attributeName', 'transform');
+           animate.setAttribute('type', 'translate');
+           animate.setAttribute('values', `0,-${dropDistance}; 0,0`); // Gentle drop scaled to block size
+           animate.setAttribute('dur', '1.2s');
+           animate.setAttribute('begin', '0s');
+           animate.setAttribute('fill', 'freeze');
+           path.appendChild(animate);
+           
+           // Enhanced opacity fade-in with subtle bounce (same as collection phase)
+           const fadeIn = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+           fadeIn.setAttribute('attributeName', 'opacity');
+           fadeIn.setAttribute('values', `0; ${patternOpacity * 1.2}; ${patternOpacity}`); // Slight overshoot then settle
+           fadeIn.setAttribute('dur', '1.2s');
+           fadeIn.setAttribute('begin', '0s');
+           fadeIn.setAttribute('fill', 'freeze');
+           path.appendChild(fadeIn);
+           
+           group.appendChild(path);
+           
+           // Trigger highlight animation for new pattern blocks (use color family if available)
+           if (window.app && window.app.addColumnHighlightAnimation) {
+             window.app.addColumnHighlightAnimation(colorFamily, x, y, scale);
+           }
+         }
+
+         // Helper method to adjust color brightness for gradient flow effects
+         adjustBrightness(color, factor) {
+           // Convert hex to RGB
+           const hex = color.replace('#', '');
+           const r = parseInt(hex.substr(0, 2), 16);
+           const g = parseInt(hex.substr(2, 2), 16);
+           const b = parseInt(hex.substr(4, 2), 16);
+           
+           // Adjust brightness
+           const newR = Math.min(255, Math.max(0, Math.round(r * factor)));
+           const newG = Math.min(255, Math.max(0, Math.round(g * factor)));
+           const newB = Math.min(255, Math.max(0, Math.round(b * factor)));
+           
+           // Convert back to hex
+           return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
          }
 
          showPhaseMessage(result) {
@@ -8124,7 +8455,7 @@
              } else {
                // Generate colorful color
                randomSaturation = CONFIG.COLOR_PICKER.saturation;
-               randomLightness = 35 + Math.floor(Math.random() * 56);
+             randomLightness = 35 + Math.floor(Math.random() * 56);
              }
              
              const warmHue = (randomHue + 25) % 360;
@@ -9884,46 +10215,23 @@
             console.log(`Unique Colors: ${uniqueColors}`);
             console.log(`Duplicate Colors: ${duplicates.length > 0 ? duplicates.map(([color, count]) => `${color}(${count}x)`).join(', ') : 'None'}`);
             
-            // Show coordinate bounds
-            const positions = state.colors.map(c => c.position);
-            const minX = Math.min(...positions.map(p => p.x));
-            const maxX = Math.max(...positions.map(p => p.x));
-            const minY = Math.min(...positions.map(p => p.y));
-            const maxY = Math.max(...positions.map(p => p.y));
-            console.log(`Grid Bounds: X(${minX} to ${maxX}), Y(${minY} to ${maxY})`);
-            console.log(`Grid Size: ${maxX - minX + 1} x ${maxY - minY + 1}`);
+            // Show column positions for tight spacing analysis
+            const columnPositions = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
+              .map(([family, column]) => `${family}@x${column.x.toFixed(1)}`);
+            console.log(`🧵 Column positions: ${columnPositions.join(' | ')}`);
             
-            // Collection phase: show color family columns
-            if (state.phase === 'collection') {
-              const columnInfo = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
-                .map(([family, column]) => `${family}(${column.colors.length})`);
-              console.log(`🧵 Color Family Columns: ${columnInfo.join(', ')}`);
-              console.log(`🧵 Tight column spacing (1.2) - no reorganization in collection phase!`);
-              
-              // Show column positions for tight spacing analysis
-              const columnPositions = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
-                .map(([family, column]) => `${family}@x${column.x.toFixed(1)}`);
-              console.log(`🧵 Column positions: ${columnPositions.join(' | ')}`);
-              
-              // Mobile optimization analysis
-              const columnHeights = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
-                .map(([family, column]) => {
-                  const height = column.colors.length;
-                  let overlap;
-                  if (height <= 3) overlap = '0.8';
-                  else if (height <= 6) overlap = '0.6';
-                  else if (height <= 10) overlap = '0.45';
-                  else overlap = '0.35';
-                  return `${family}(${height}@${overlap})`;
-                });
-              console.log(`📱 Mobile columns: ${columnHeights.join(' | ')}`);
-            }
-            
-            // Check for negative coordinates
-            const negativeCoords = positions.filter(p => p.x < 0 || p.y < 0);
-            if (negativeCoords.length > 0) {
-              console.warn(`⚠️ ${negativeCoords.length} blocks have negative coordinates:`, negativeCoords);
-            }
+            // Mobile optimization analysis
+            const columnHeights = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
+              .map(([family, column]) => {
+                const height = column.colors.length;
+                let overlap;
+                if (height <= 3) overlap = '0.8';
+                else if (height <= 6) overlap = '0.6';
+                else if (height <= 10) overlap = '0.45';
+                else overlap = '0.35';
+                return `${family}(${height}@${overlap})`;
+              });
+            console.log(`📱 Mobile columns: ${columnHeights.join(' | ')}`);
           }
           
           const svg = document.getElementById('quilt');
