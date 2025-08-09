@@ -4097,8 +4097,8 @@
                this.patternGenerator.setCurrentPattern(selectedPattern);
                this.logger.log(`🎯 Pattern selected: ${selectedPattern}`);
                
-               // Reorganize existing colors to the pattern
-               this.transitionManager.reorganizeToPattern(colors, selectedPattern);
+                               // Reorganize existing colors to the pattern
+                this.transitionManager.reorganizeToPattern(colors, selectedPattern);
                
                return true;
              } else {
@@ -4729,13 +4729,13 @@
           this.logger = logger;
         }
 
-        reorganizeToPattern(colors, patternName) {
-          this.logger.log(`Reorganizing ${colors.length} colors to ${patternName} pattern`);
-          
-          // Get the pattern template for the selected pattern
-          // Access through the engine's pattern generator
-          const engine = window.app.timeBasedEngine;
-          const patternTemplate = engine.patternGenerator.patternTemplates[patternName];
+                              reorganizeToPattern(colors, patternName) {
+                        this.logger.log(`Reorganizing ${colors.length} colors to ${patternName} pattern`);
+                        
+                        // Get the pattern template for the selected pattern
+                        // Access through the engine's pattern generator
+                        const engine = window.app.timeBasedEngine;
+                        const patternTemplate = engine.patternGenerator.patternTemplates[patternName];
           if (!patternTemplate) {
             this.logger.log(`⚠️ Pattern template not found for ${patternName}`);
             return;
@@ -4906,6 +4906,7 @@
             }
             
             // CRITICAL: Use the EXACT same scale as the main rendering function - no local calculation!
+            console.log(`🔧 SCALE CHECK: window.currentPatternScale = ${window.currentPatternScale} (type: ${typeof window.currentPatternScale})`);
             if (window.currentPatternScale) {
               blockSize = window.currentPatternScale;
               console.log(`🔧 SCALE SYNC: Using main render scale ${blockSize}px (no local calculation)`);
@@ -4921,7 +4922,7 @@
               // Round down to nearest pixel to prevent gaps from floating point precision
               dynamicBlockSize = Math.floor(dynamicBlockSize);
               
-              // Apply size constraints - EXACTLY match rendering scale
+                            // Apply size constraints - EXACTLY match rendering scale
               blockSize = Math.max(15, Math.min(dynamicBlockSize, 30)); // Between 15px and 30px
               console.log(`⚠️ FALLBACK: No global scale found, calculated ${blockSize}px locally`);
             }
@@ -7494,40 +7495,20 @@
          const svgWidth = screenWidth - (sideMargin * 2); // Make canvas narrower to show side margins (sideMargin defined earlier)
          const svgHeight = finalHeight; // Keep calculated height
          
-         // DYNAMIC SCALE FOR PATTERN PHASE: Calculate optimal block size to fit all squares without overlap
+         // DYNAMIC SCALE FOR PATTERN PHASE: Calculate scale to fit grid perfectly
          if (engineState.phase === 'pattern_filling' && engineState.pattern) {
-           // Pattern phase: Calculate dynamic block size to fit all squares in available space
+           // Pattern phase: Calculate scale to fit grid perfectly without gaps
            const totalColors = engineState.colors.length;
-                       const availableWidth = svgWidth; // Use full width - no padding
-            const availableHeight = svgHeight; // Use full height - no padding
+           const availableWidth = svgWidth; // Use full width - no padding
+           const availableHeight = svgHeight; // Use full height - no padding
            
-           // Calculate grid dimensions - OPTIMIZED FOR SCREEN SPACE
-           // After 10 columns, start expanding downward to use screen space more efficiently
-           let gridWidth, gridHeight;
-           
-           if (totalColors <= 100) {
-             // For smaller grids (up to 100 colors), use square-ish approach
-             gridWidth = Math.ceil(Math.sqrt(totalColors));
-             gridHeight = Math.ceil(totalColors / gridWidth);
-           } else {
-             // For larger grids, cap width at 15 columns and expand downward
-             gridWidth = Math.min(15, Math.ceil(Math.sqrt(totalColors)));
-             gridHeight = Math.ceil(totalColors / gridWidth);
-             
-             // Ensure the grid doesn't go too far down - cap height to fit within visible area
-             // Use a more reasonable height cap: max 20 rows to prevent overflow
-             const maxHeight = Math.min(20, Math.floor(availableHeight / 15)); // Cap at 20 rows max
-             if (gridHeight > maxHeight) {
-               gridHeight = maxHeight;
-               // Recalculate width if we hit the height cap
-               gridWidth = Math.ceil(totalColors / maxHeight);
-             }
-           }
+           // Calculate optimal grid dimensions first
+           const estimatedGridWidth = Math.ceil(Math.sqrt(totalColors));
+           const estimatedGridHeight = Math.ceil(totalColors / estimatedGridWidth);
            
            // Calculate block size to fit the grid PERFECTLY without gaps
-           // Use the smaller dimension to ensure blocks fit completely
-           const blockSizeForWidth = availableWidth / gridWidth;
-           const blockSizeForHeight = availableHeight / gridHeight;
+           const blockSizeForWidth = availableWidth / estimatedGridWidth;
+           const blockSizeForHeight = availableHeight / estimatedGridHeight;
            
            // Choose the smaller size to ensure no overflow, then round down for precision
            let dynamicBlockSize = Math.min(blockSizeForWidth, blockSizeForHeight);
@@ -7535,21 +7516,38 @@
            // Round down to nearest pixel to prevent gaps from floating point precision
            dynamicBlockSize = Math.floor(dynamicBlockSize);
            
-           // Apply size constraints - CRITICAL: This must match getNextPosition exactly
+           // Apply size constraints - ensure blocks are reasonable size
            scale = Math.max(15, Math.min(dynamicBlockSize, 30)); // Between 15px and 30px
            
-           // Store the scale globally so getNextPosition can access it
+           // Store the scale globally for other functions to use
            window.currentPatternScale = scale;
            
-           // Log scaling precision details
+           // NOW calculate optimal grid dimensions with the calculated scale
+           const { gridWidth, gridHeight, overlapBlocks } = this.calculateOptimalGridDimensions(totalColors, availableWidth, availableHeight, scale);
+           
+           // BOUNDS CHECK: Log grid dimensions for debugging
            const actualGridWidth = scale * gridWidth;
            const actualGridHeight = scale * gridHeight;
-           const widthFit = Math.round((actualGridWidth / availableWidth) * 100);
-           const heightFit = Math.round((actualGridHeight / availableHeight) * 100);
            
-           console.log(`🎨 PATTERN SCALE: ${totalColors} colors → ${gridWidth}x${gridHeight} grid → ${scale}px blocks (OPTIMIZED: ${totalColors > 100 ? '15-col cap, 20-row max' : 'square-ish'})`);
+           // Log if grid exceeds bounds (but don't override the scale - it's calculated for tight fit)
+           if (actualGridWidth > availableWidth || actualGridHeight > availableHeight) {
+             console.log(`⚠️ GRID EXCEEDS BOUNDS: ${actualGridWidth}x${actualGridHeight}px vs ${availableWidth}x${availableHeight}px (keeping tight scale: ${scale}px)`);
+           }
+           
+           // Store overlap information for rendering
+           window.currentPatternOverlap = { gridWidth, gridHeight, overlapBlocks };
+           
+           // Log scaling precision details
+           const finalGridWidth = scale * gridWidth;
+           const finalGridHeight = scale * gridHeight;
+           const widthFit = Math.round((finalGridWidth / availableWidth) * 100);
+           const heightFit = Math.round((finalGridHeight / availableHeight) * 100);
+           
+           console.log(`🎨 PATTERN SCALE: ${totalColors} colors → ${gridWidth}x${gridHeight} grid → ${scale}px blocks (SMART FILLING: ${overlapBlocks.length} overlap blocks)`);
            console.log(`📐 GRID FIT: Width ${actualGridWidth}px/${availableWidth}px (${widthFit}%), Height ${actualGridHeight}px/${availableHeight}px (${heightFit}%)`);
-           console.log(`🔧 SCALE STORED: window.currentPatternScale = ${scale}px for getNextPosition sync`);
+           console.log(`🔧 SCALE CALCULATED: ${scale}px for tight grid fit`);
+           console.log(`🔧 OVERLAP INFO: ${overlapBlocks.length} blocks will overlap to complete the ${gridWidth}x${gridHeight} rectangle`);
+           console.log(`🔧 OVERLAP STORED: window.currentPatternOverlap =`, window.currentPatternOverlap);
          }
          
          // FIX COORDINATE MISMATCH: Make content coordinates match container size
@@ -8046,12 +8044,91 @@
              // Apply organic positioning and rotation
              const centerX = finalX + scale/2; // Center of the block for rotation
              const centerY = finalY + scale/2;
-             group.setAttribute('transform', `translate(${finalX}, ${finalY}) rotate(${rotation.toFixed(1)}, ${scale/2}, ${scale/2})`);
+             
+             // Check if this block should have intentional overlap for grid completion
+             let overlapOffset = { x: 0, y: 0 };
+             
+             // DEBUG: Log the current state
+             console.log(`🔍 DEBUG Block ${stackIndex}: phase=${engineState.phase}, hasPattern=${!!engineState.pattern}, hasOverlap=${!!window.currentPatternOverlap}`);
+             
+             if (engineState.phase === 'pattern_filling' && engineState.pattern && window.currentPatternOverlap && window.currentPatternOverlap.overlapBlocks) {
+               console.log(`🔍 DEBUG: Found overlap data:`, window.currentPatternOverlap);
+               
+               const overlapInfo = window.currentPatternOverlap.overlapBlocks.find(overlap =>
+                 overlap.blockIndex === stackIndex
+               );
+               
+               // DOMINO EFFECT: Calculate offset based on overlap and domino shifting
+               if (overlapInfo) {
+                 // This block is directly overlapping - shift LEFT to overlap neighbor to the left
+                 const overlapDistance = scale * overlapInfo.overlapRatio;
+                 overlapOffset.x = -overlapDistance; // Shift LEFT (negative) to overlap column to the left
+                 console.log(`🎨 OVERLAP POSITIONING: Block ${stackIndex} shifts LEFT by ${overlapDistance}px (${(overlapInfo.overlapRatio * 100).toFixed(0)}% overlap)`);
+               } else {
+                 // Check if this block should be shifted by domino effect
+                 const blockRow = Math.floor(stackIndex / window.currentPatternOverlap.gridWidth);
+                 const blockCol = stackIndex % window.currentPatternOverlap.gridWidth;
+                 
+                 // Check if this row has ANY overlapping blocks
+                 const rowHasOverlaps = window.currentPatternOverlap.overlapBlocks.some(overlap => {
+                   const overlapRow = Math.floor(overlap.blockIndex / window.currentPatternOverlap.gridWidth);
+                   return overlapRow === blockRow;
+                 });
+                 
+                                     if (rowHasOverlaps) {
+                      // SIMPLE ROW SHIFTING: All blocks in a row with overlaps shift left
+                      // Find overlapping blocks in this row
+                      const rowOverlaps = window.currentPatternOverlap.overlapBlocks.filter(overlap => {
+                        const overlapRow = Math.floor(overlap.blockIndex / window.currentPatternOverlap.gridWidth);
+                        return overlapRow === blockRow;
+                      });
+                      
+                      if (rowOverlaps.length > 0) {
+                        // Calculate how many blocks are overlapping in this row
+                        const overlappingBlocksInRow = rowOverlaps.length;
+                        
+                        // The total shift needed = (50% of block size) × (number of overlapping blocks)
+                        const totalShiftNeeded = scale * 0.5 * overlappingBlocksInRow;
+                        
+                        // ALL blocks in this row shift left by the total amount to fill all gaps
+                        overlapOffset.x = -totalShiftNeeded; // Shift LEFT by total amount
+                        console.log(`🎨 GAP FILLING: Block ${stackIndex} (col ${blockCol}) shifts LEFT by ${totalShiftNeeded.toFixed(1)}px to fill gaps from ${overlappingBlocksInRow} overlapping blocks`);
+                      }
+                    }
+               }
+             } else {
+               console.log(`🔍 DEBUG: No overlap conditions met for block ${stackIndex}`);
+             }
+             
+             // DEBUG: Log final offset
+             if (overlapOffset.x !== 0) {
+               console.log(`🔍 DEBUG: Block ${stackIndex} final offset: x=${overlapOffset.x}, y=${overlapOffset.y}`);
+             }
+             
+             // Apply positioning with overlap offset
+             const adjustedX = finalX + overlapOffset.x;
+             const adjustedY = finalY + overlapOffset.y;
+             
+             // BOUNDS CHECKING: Ensure blocks stay within visible SVG bounds
+             const minX = 0;
+             const maxX = svgWidth - scale;
+             const minY = 0;
+             const maxY = svgHeight - scale;
+             
+             const clampedX = Math.max(minX, Math.min(maxX, adjustedX));
+             const clampedY = Math.max(minY, Math.min(maxY, adjustedY));
+             
+             // Log if we had to clamp the position
+             if (clampedX !== adjustedX || clampedY !== adjustedY) {
+               console.log(`🔒 BOUNDS CLAMPED: Block ${stackIndex} from (${adjustedX.toFixed(1)}, ${adjustedY.toFixed(1)}) to (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
+             }
+             
+             group.setAttribute('transform', `translate(${clampedX}, ${clampedY}) rotate(${rotation.toFixed(1)}, ${scale/2}, ${scale/2})`);
              
                         // Collection phase: quilter's workspace stacking
            if (engineState.phase === 'pattern_filling' && engineState.pattern) {
              // Pattern filling phase: use pattern-based positioning
-             console.log(`🎨 RENDERING PATTERN BLOCK: ${colorObj.color} at (${finalX}, ${finalY})`);
+             console.log(`🎨 RENDERING PATTERN BLOCK: ${colorObj.color} at (${adjustedX}, ${adjustedY}) with offset (${overlapOffset.x}, ${overlapOffset.y})`);
              this.renderPatternBlock(group, colorObj, 0, 0, scale, stackIndex); // Group transform handles positioning
            } else if (engineState.phase === 'collection' && colorObj.position.isStacked) {
              this.renderStackedBlock(group, colorObj, 0, 0, scale, stackIndex); // Group handles positioning
@@ -8128,6 +8205,95 @@
            this.logger.log(`🔍 DEBUG: Current phase: ${engineState.phase}, Pattern: ${engineState.pattern}, Pattern filling: ${engineState.phase === 'pattern_filling' && engineState.pattern}`);
          }
 
+         // Helper method: Calculate optimal grid dimensions with smart overlap filling
+         calculateOptimalGridDimensions(totalColors, availableWidth, availableHeight, scale) {
+           // Always create complete rectangles by calculating optimal grid dimensions
+           // and identifying which blocks should overlap to fill gaps
+           
+           let gridWidth, gridHeight;
+           
+           if (totalColors <= 100) {
+             // For smaller grids (up to 100 colors), use square-ish approach
+             // FORCE MORE OVERLAPS: Make grid significantly larger than needed to ensure overlaps
+             gridWidth = Math.ceil(Math.sqrt(totalColors)) + 2;
+             gridHeight = Math.ceil(totalColors / gridWidth) + 2;
+           } else {
+             // For larger grids, cap width at 15 columns and expand downward
+             // FORCE MORE OVERLAPS: Make grid significantly larger than needed to ensure overlaps
+             gridWidth = Math.min(15, Math.ceil(Math.sqrt(totalColors)) + 2);
+             gridHeight = Math.ceil(totalColors / gridWidth) + 2;
+             
+             // Ensure the grid doesn't go too far down - cap height to fit within visible area
+             // Use a more reasonable height cap: max 20 rows to prevent overflow
+             const maxHeight = Math.min(20, Math.floor(availableHeight / 15)); // Cap height at 20 rows max
+             if (gridHeight > maxHeight) {
+               gridHeight = maxHeight;
+               // Recalculate width if we hit the height cap
+               gridWidth = Math.ceil(totalColors / maxHeight) + 1;
+             }
+           }
+           
+           // Calculate how many blocks we need to fill the complete grid
+           const totalGridPositions = gridWidth * gridHeight;
+           const missingPositions = totalGridPositions - totalColors;
+           
+           // If we have exactly the right number or too many, no overlap needed
+           if (missingPositions <= 0) {
+             console.log(`🧮 NO OVERLAP NEEDED: ${totalColors} colors fit perfectly in ${gridWidth}x${gridHeight} grid`);
+             return { gridWidth, gridHeight, overlapBlocks: [] };
+           }
+           
+           // We need to create overlaps to fill the missing positions
+           // Strategy: Select blocks that can overlap by 50% to fill gaps
+           const overlapBlocks = [];
+           
+           // Calculate overlap ratio needed (how much each overlap block should shift
+           // We want blocks to shift by exactly 50% to overlap their neighbors
+           // ELIMINATE VARIANCE: Use exactly 50% shift for consistency
+           const overlapRatio = 0.5; // Exactly 50% shift - no variance
+           
+           // Select blocks for overlap (prefer blocks that create interesting visual patterns)
+           // Start with blocks that are near the edges or corners of the grid
+           // FORCE MORE OVERLAPS: Select more blocks and spread them out less
+           // ONLY HORIZONTAL OVERLAPS: No vertical shifts to prevent gaps
+           // ENSURE TWO OVERLAPS PER ROW: Maintain visual balance and row length
+           const rowsWithOverlaps = new Set();
+           
+           for (let i = 0; i < missingPositions && i < Math.floor(totalColors * 0.5); i++) {
+             // Select blocks strategically - prefer those that will create organic formations
+             const blockIndex = Math.floor(i * 1.5); // Less spread for more concentrated overlaps
+             const blockRow = Math.floor(blockIndex / gridWidth);
+             
+             // Ensure we have two overlaps per row for balance
+             if (!rowsWithOverlaps.has(blockRow) || rowsWithOverlaps.size < 2) {
+                                overlapBlocks.push({
+                   blockIndex,
+                   overlapRatio,
+                   direction: 'horizontal', // Only horizontal shifts to prevent gaps
+                   targetPosition: {
+                     x: (blockIndex % gridWidth - 1 + gridWidth) % gridWidth, // Wrap around to previous position (LEFT)
+                     y: blockRow
+                   }
+                 });
+               
+               // Track rows that have overlaps
+               if (!rowsWithOverlaps.has(blockRow)) {
+                 rowsWithOverlaps.add(blockRow);
+               }
+             }
+           }
+           
+           console.log(`🧮 OVERLAP DETAILS: ${overlapBlocks.length} blocks selected for overlap`);
+           overlapBlocks.forEach((overlap, i) => {
+             console.log(`🧮 OVERLAP ${i}: Block ${overlap.blockIndex} extends ${overlap.direction} by ${(overlap.overlapRatio * 100).toFixed(0)}%`);
+           });
+           
+           console.log(`🧮 SMART GRID: ${totalColors} colors → ${gridWidth}x${gridHeight} grid (${totalGridPositions} positions)`);
+           console.log(`🧮 OVERLAP NEEDED: ${missingPositions} missing positions → ${overlapBlocks.length} overlap blocks`);
+           
+           return { gridWidth, gridHeight, overlapBlocks };
+         }
+
          // Helper method: Render stacked blocks for collection phase (quilter's workspace)
          renderStackedBlock(group, colorObj, x, y, scale, index) {
            const stackLevel = colorObj.position.stackLevel || 0;
@@ -8148,7 +8314,7 @@
            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
            
            // Generate irregular path with subtle wobble
-           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount, false);
+           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount, false, false);
            path.setAttribute('d', pathData);
            path.setAttribute('fill', colorObj.color);
            
@@ -8190,11 +8356,16 @@
          }
 
          // Helper method: Create irregular block path with visible wobble
-         createIrregularBlockPath(x, y, width, height, wobbleAmount, isPatternBlock = false) {
+         createIrregularBlockPath(x, y, width, height, wobbleAmount, isPatternBlock = false, isOverlapBlock = false) {
            // For pattern blocks with overlap (scale + 1), we can use more wobble since blocks will still touch
            if (isPatternBlock) {
-             // With scale + 1 overlap, we can allow more wobble while maintaining coverage
+             // With scale + 1 overlap, we can allow more wobble since overlap guarantees coverage
              wobbleAmount = Math.min(wobbleAmount, 0.8); // More generous wobble since overlap guarantees coverage
+           }
+           
+           // For overlap blocks, allow even more wobble since they're extending beyond normal grid bounds
+           if (isOverlapBlock) {
+             wobbleAmount = Math.min(wobbleAmount, 1.2); // More generous wobble for organic overlap feel
            }
            
            // Create more pronounced irregularity with multiple variation points per side
@@ -8277,7 +8448,7 @@
            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
            
            // Generate irregular path with subtle wobble
-           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount, false);
+           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount, false, false);
            path.setAttribute('d', pathData);
            path.setAttribute('fill', colorObj.color);
            path.setAttribute('opacity', '0.9');
@@ -8307,10 +8478,17 @@
            // UNIFIED BLOCK STYLING: Use same visual styling as collection phase for consistency
            const colorFamily = colorObj.position.colorFamily || 'pattern';
            
-                              // Calculate block dimensions - use exact scale for pattern phase
-                   // This ensures blocks use precise sizing without overlap
-                   const blockWidth = scale;
-                   const blockHeight = scale;
+           // SMART OVERLAP: Overlap positioning is now handled at the group level
+           // This method only handles the visual appearance of the block
+           const blockWidth = scale;
+           const blockHeight = scale;
+           const isOverlapBlock = false; // No longer needed since positioning is handled above
+           
+           // Debug: Log block details
+           if (index < 5) { // Only log first few blocks to avoid spam
+             console.log(`🔍 BLOCK ${index}: size=${blockWidth}x${blockHeight}, scale=${scale}`);
+           }
+           
            const wobbleAmount = Math.max(0.5, scale * 0.015); // Smaller wobble for pattern phase but still organic
            
            // Create irregular block shape with subtle wobble (same as collection phase)
@@ -8318,7 +8496,7 @@
            
            // Generate irregular path with subtle wobble (use 0,0 since group handles positioning)
            // For pattern blocks, ensure minimal wobble to prevent gaps
-           const pathData = this.createIrregularBlockPath(0, 0, blockWidth, blockHeight, wobbleAmount, true);
+           const pathData = this.createIrregularBlockPath(0, 0, blockWidth, blockHeight, wobbleAmount, true, false);
            path.setAttribute('d', pathData);
            path.setAttribute('fill', colorObj.color);
            
