@@ -2746,51 +2746,51 @@
            
            this.logger.log(`Four-block section dimensions: ${combinedWidth}x${combinedHeight}`);
            
-           // Position the blocks within the four-block section
-           let currentX = 0;
-           let currentY = 0;
-           
-           // Position blocks from pair1 first
-           for (const block of pair1.blocks) {
-             // Add the pair1 offset to the block's existing relative position
-             block.x = currentX + block.x;
-             block.y = currentY + block.y;
-             
-             if (pair1.joinType === 'horizontal') {
-               currentX += block.width;
-             } else {
-               currentY += block.height;
-             }
-             
-             this.logger.log(`Positioned pair1 block ${block.id} at (${block.x}, ${block.y})`);
-           }
-           
-           // Reset position for pair2
-           if (joinType === 'horizontal') {
-             // Attach pair2 to the right of pair1 - ensure they touch
-             currentX = pair1.width;
-             currentY = 0;
-           } else {
-             // Attach pair2 below pair1 - ensure they touch
-             currentX = 0;
-             currentY = pair1.height;
-           }
-           
-           // Position blocks from pair2
-           for (const block of pair2.blocks) {
-             // Add the pair2 offset to the block's existing relative position
-             block.x = currentX + block.x;
-             block.y = currentY + block.y;
-             
-             // Update current position based on the four-block section's join type, not the pair's join type
-             if (joinType === 'horizontal') {
-               currentX += block.width;
-             } else {
-               currentY += block.height;
-             }
-             
-             this.logger.log(`Positioned pair2 block ${block.id} at (${block.x}, ${block.y})`);
-           }
+                       // Position the blocks within the four-block section
+            let currentX = 0;
+            let currentY = 0;
+            
+            // Position blocks from pair1 first
+            for (const block of pair1.blocks) {
+              // Add the pair1 offset to the block's existing relative position
+              block.x = currentX + block.x;
+              block.y = currentY + block.y;
+              
+              if (pair1.joinType === 'horizontal') {
+                currentX += block.width;
+              } else {
+                currentY += block.height;
+              }
+              
+              this.logger.log(`Positioned pair1 block ${block.id} at (${block.x}, ${block.y})`);
+            }
+            
+            // Reset position for pair2
+            if (joinType === 'horizontal') {
+              // Attach pair2 to the right of pair1 - ensure they touch
+              currentX = pair1.width;
+              currentY = 0;
+            } else {
+              // Attach pair2 below pair1 - ensure they touch
+              currentX = 0;
+              currentY = pair1.height;
+            }
+            
+            // Position blocks from pair2
+            for (const block of pair2.blocks) {
+              // Add the pair2 offset to the block's existing relative position
+              block.x = currentX + block.x;
+              block.y = currentY + block.y;
+              
+              // Update current position based on the four-block section's join type, not the pair's join type
+              if (joinType === 'horizontal') {
+                currentX += block.width;
+              } else {
+                currentY += block.height;
+              }
+              
+              this.logger.log(`Positioned pair2 block ${block.id} at (${block.x}, ${block.y})`);
+            }
            
            this.logger.log('Final four-block section positions:', [...pair1.blocks, ...pair2.blocks].map(b => ({ id: b.id, x: b.x, y: b.y, width: b.width, height: b.height })));
            
@@ -4828,9 +4828,27 @@
           // HORIZONTAL RAINBOW GRADIENT: Arrange colors in horizontal bands from top to bottom
           const colorCount = this.placedColors.length;
           
-          // Calculate grid dimensions based on total expected colors (maintain grid structure)
-          const gridWidth = Math.ceil(Math.sqrt(this.totalExpectedColors));
-          const gridHeight = Math.ceil(this.totalExpectedColors / gridWidth);
+          // Calculate grid dimensions - OPTIMIZED FOR SCREEN SPACE (same as rendering phase)
+          let gridWidth, gridHeight;
+          
+          if (this.totalExpectedColors <= 100) {
+            // For smaller grids (up to 100 colors), use square-ish approach
+            gridWidth = Math.ceil(Math.sqrt(this.totalExpectedColors));
+            gridHeight = Math.ceil(this.totalExpectedColors / gridWidth);
+          } else {
+            // For larger grids, cap width at 15 columns and expand downward
+            gridWidth = Math.min(15, Math.ceil(Math.sqrt(this.totalExpectedColors)));
+            gridHeight = Math.ceil(this.totalExpectedColors / gridWidth);
+            
+            // Ensure the grid doesn't go too far down - cap height to fit within visible area
+            // Use a more reasonable height cap: max 20 rows to prevent overflow
+            const maxHeight = Math.min(20, Math.floor(600 / 15)); // Cap at 20 rows max
+            if (gridHeight > maxHeight) {
+              gridHeight = maxHeight;
+              // Recalculate width if we hit the height cap
+              gridWidth = Math.ceil(this.totalExpectedColors / maxHeight);
+            }
+          }
           
           // Handle duplicate colors properly
           // Count how many times this color has been used so far
@@ -4855,32 +4873,58 @@
             index = colorCount - 1;
           }
           
-          // DYNAMIC SCALE CALCULATION: Use the exact same calculation as the rendering phase
+          // Calculate dynamic block size to match the rendering scale EXACTLY
           const engine = window.app.timeBasedEngine;
           let blockSize = 25; // Default fallback
           
           if (engine && engine.getCurrentPhase() === 'pattern_filling') {
-            // Use the EXACT same calculation as the rendering phase
+            // For pattern phase, calculate dynamic block size to match rendering scale EXACTLY
             const totalColors = this.totalExpectedColors;
+            const availableWidth = 800; // Approximate SVG width
+            const availableHeight = 600; // Approximate SVG height
             
-            // Get the actual SVG dimensions (same as rendering phase)
-            const screenWidth = window.innerWidth || 800;
-            const sideMargin = 20; // Same as rendering phase
-            const svgWidth = screenWidth - (sideMargin * 2); // Same as rendering phase
-            const svgHeight = 600; // Approximate SVG height (same as rendering phase)
-            const availableWidth = svgWidth; // Use full width - no padding
-            const availableHeight = svgHeight; // Use full height - no padding
+            // Calculate grid dimensions - OPTIMIZED FOR SCREEN SPACE (same as rendering phase)
+            let gridWidthForScale, gridHeightForScale;
             
-            // Calculate grid dimensions (same as rendering phase)
-            const gridWidthForScale = Math.ceil(Math.sqrt(totalColors));
-            const gridHeightForScale = Math.ceil(totalColors / gridWidthForScale);
+            if (totalColors <= 100) {
+              // For smaller grids (up to 100 colors), use square-ish approach
+              gridWidthForScale = Math.ceil(Math.sqrt(totalColors));
+              gridHeightForScale = Math.ceil(totalColors / gridWidthForScale);
+            } else {
+              // For larger grids, cap width at 15 columns and expand downward
+              gridWidthForScale = Math.min(15, Math.ceil(Math.sqrt(totalColors)));
+              gridHeightForScale = Math.ceil(totalColors / gridWidthForScale);
+              
+              // Ensure the grid doesn't go too far down - cap height to fit within visible area
+              // Use a more reasonable height cap: max 20 rows to prevent overflow
+              const maxHeight = Math.min(20, Math.floor(availableHeight / 15)); // Cap at 20 rows max
+              if (gridHeightForScale > maxHeight) {
+                gridHeightForScale = maxHeight;
+                // Recalculate width if we hit the height cap
+                gridWidthForScale = Math.ceil(totalColors / maxHeight);
+              }
+            }
             
-            // Calculate block size to fit the grid without overlap (same as rendering phase)
-            const maxBlockWidth = availableWidth / gridWidthForScale;
-            const maxBlockHeight = availableHeight / gridHeightForScale;
-            const dynamicBlockSize = Math.min(maxBlockWidth, maxBlockHeight, 30); // Cap at 30px max
-            
-            blockSize = Math.max(15, dynamicBlockSize); // Minimum 15px - EXACTLY match rendering scale
+            // CRITICAL: Use the EXACT same scale as the main rendering function - no local calculation!
+            if (window.currentPatternScale) {
+              blockSize = window.currentPatternScale;
+              console.log(`🔧 SCALE SYNC: Using main render scale ${blockSize}px (no local calculation)`);
+            } else {
+              // Fallback: Calculate block size to fit the grid PERFECTLY without gaps (same as rendering phase)
+              // Use the smaller dimension to ensure blocks fit completely
+              const blockSizeForWidth = availableWidth / gridWidthForScale;
+              const blockSizeForHeight = availableHeight / gridHeightForScale;
+              
+              // Choose the smaller size to ensure no overflow, then round down for precision
+              let dynamicBlockSize = Math.min(blockSizeForWidth, blockSizeForHeight);
+              
+              // Round down to nearest pixel to prevent gaps from floating point precision
+              dynamicBlockSize = Math.floor(dynamicBlockSize);
+              
+              // Apply size constraints - EXACTLY match rendering scale
+              blockSize = Math.max(15, Math.min(dynamicBlockSize, 30)); // Between 15px and 30px
+              console.log(`⚠️ FALLBACK: No global scale found, calculated ${blockSize}px locally`);
+            }
           }
           
           // HORIZONTAL BAND POSITIONING: Fill from top to bottom, left to right
@@ -4888,37 +4932,14 @@
           const row = Math.floor(index / gridWidth); // Which horizontal band
           const col = index % gridWidth; // Position within that band
           
-          // CENTER THE GRID: Calculate total grid dimensions and center them
-          // Use the actual grid dimensions being used for positioning
-          const actualGridWidth = gridWidth;
-          const actualGridHeight = gridHeight;
-          const totalGridWidth = actualGridWidth * blockSize;
-          const totalGridHeight = actualGridHeight * blockSize;
-          
-          // Calculate centering offsets to ensure equal spacing on both sides
-          let centerOffsetX = 0;
-          let centerOffsetY = 0;
-          
-          if (engine && engine.getCurrentPhase() === 'pattern_filling') {
-            // Get the actual SVG dimensions (same as rendering phase)
-            const screenWidth = window.innerWidth || 800;
-            const sideMargin = 20; // Same as rendering phase
-            const svgWidth = screenWidth - (sideMargin * 2); // Same as rendering phase
-            const svgHeight = 600; // Approximate SVG height (same as rendering phase)
-            const availableWidth = svgWidth; // Use full width - no padding
-            const availableHeight = svgHeight; // Use full height - no padding
-            
-            // Center the grid horizontally only (no vertical centering - position at top)
-            centerOffsetX = Math.max(0, (availableWidth - totalGridWidth) / 2);
-            centerOffsetY = 0; // Position at top with no vertical centering
-          }
-          
           // Use exact blockSize to ensure blocks touch (no gaps) - multiply by exact scale
-          // Add centering offsets to position the grid in the center horizontally, at the top vertically
-          const x = (col * blockSize) + centerOffsetX;
-          const y = (row * blockSize) + centerOffsetY;
+          const x = col * blockSize;
+          const y = row * blockSize;
           
-          console.log(`🎨 GradientPattern: ${color} → position (${x}, ${y}) in row ${row}, col ${col} (index: ${index}, colorCount: ${colorCount}, blockSize: ${blockSize}, grid: ${actualGridWidth}x${actualGridHeight}, centered: +${centerOffsetX.toFixed(1)}, +${centerOffsetY.toFixed(1)})`);
+          // CRITICAL DEBUG: Log exact positioning math
+          console.log(`🎨 GradientPattern: ${color} → position (${x}, ${y}) in row ${row}, col ${col} (index: ${index}, colorCount: ${colorCount}, blockSize: ${blockSize}, grid: ${gridWidth}x${gridHeight})`);
+          console.log(`📐 POSITION MATH: col ${col} × ${blockSize}px = ${x}px, row ${row} × ${blockSize}px = ${y}px`);
+          console.log(`🔧 GLOBAL SCALE: window.currentPatternScale = ${window.currentPatternScale}px`);
           
           return { x, y };
         }
@@ -6642,7 +6663,7 @@
           }
         }
 
-        autoTransitionFromPortal() {
+        async autoTransitionFromPortal() {
           // Check if user is a first-time visitor OR if it's a new day
           const hasVisitedBefore = localStorage.getItem('ourDailyHasVisited');
           const lastVisitDate = localStorage.getItem('ourDailyLastVisitDate');
@@ -6663,7 +6684,7 @@
             // Reset the quilt for the new day
             if (isNewDay) {
               this.logger.log(`🔄 New day detected: ${currentDate} (was: ${lastVisitDate})`);
-              this.resetQuiltForNewDay();
+              await this.resetQuiltForNewDay();
             }
             
             this.uiService.showScreen('screen-welcome');
@@ -6678,7 +6699,7 @@
           }
         }
         
-        resetQuiltForNewDay() {
+        async resetQuiltForNewDay() {
           this.logger.log('🔄 Resetting quilt for new day...');
           
           // Clear all colors from the engine
@@ -6693,6 +6714,14 @@
           
           // Clear any queued colors
           this.timeBasedEngine.gridState.clearQueue();
+          
+          // Clear Firebase data
+          try {
+            await this.dataService.saveQuilt([]);
+            this.logger.log('🗑️ Firebase data cleared for new day');
+          } catch (error) {
+            this.logger.warn('⚠️ Failed to clear Firebase data for new day:', error);
+          }
           
           // Update the display
           this.renderTimeBasedQuilt();
@@ -7390,6 +7419,7 @@
          }
          
          // Use fixed block size initially - will be updated for pattern phase after SVG dimensions are set
+         // NOTE: Pattern blocks use exact scale for precise sizing
          let scale = finalBlockSize;
          
          // console.log(`🎨 RENDER PREP: finalBlockSize=${finalBlockSize}px, scale=${scale}px (should be identical)`);
@@ -7468,20 +7498,58 @@
          if (engineState.phase === 'pattern_filling' && engineState.pattern) {
            // Pattern phase: Calculate dynamic block size to fit all squares in available space
            const totalColors = engineState.colors.length;
-           const availableWidth = svgWidth; // Use full width - no padding
-           const availableHeight = svgHeight; // Use full height - no padding
+                       const availableWidth = svgWidth; // Use full width - no padding
+            const availableHeight = svgHeight; // Use full height - no padding
            
-           // Calculate grid dimensions
-           const gridWidth = Math.ceil(Math.sqrt(totalColors));
-           const gridHeight = Math.ceil(totalColors / gridWidth);
+           // Calculate grid dimensions - OPTIMIZED FOR SCREEN SPACE
+           // After 10 columns, start expanding downward to use screen space more efficiently
+           let gridWidth, gridHeight;
            
-           // Calculate block size to fit the grid without overlap
-           const maxBlockWidth = availableWidth / gridWidth;
-           const maxBlockHeight = availableHeight / gridHeight;
-           const dynamicBlockSize = Math.min(maxBlockWidth, maxBlockHeight, 30); // Cap at 30px max
+           if (totalColors <= 100) {
+             // For smaller grids (up to 100 colors), use square-ish approach
+             gridWidth = Math.ceil(Math.sqrt(totalColors));
+             gridHeight = Math.ceil(totalColors / gridWidth);
+           } else {
+             // For larger grids, cap width at 15 columns and expand downward
+             gridWidth = Math.min(15, Math.ceil(Math.sqrt(totalColors)));
+             gridHeight = Math.ceil(totalColors / gridWidth);
+             
+             // Ensure the grid doesn't go too far down - cap height to fit within visible area
+             // Use a more reasonable height cap: max 20 rows to prevent overflow
+             const maxHeight = Math.min(20, Math.floor(availableHeight / 15)); // Cap at 20 rows max
+             if (gridHeight > maxHeight) {
+               gridHeight = maxHeight;
+               // Recalculate width if we hit the height cap
+               gridWidth = Math.ceil(totalColors / maxHeight);
+             }
+           }
            
-           scale = Math.max(15, dynamicBlockSize); // Minimum 15px
-           console.log(`🎨 PATTERN SCALE: ${totalColors} colors → ${gridWidth}x${gridHeight} grid → ${scale.toFixed(1)}px blocks`);
+           // Calculate block size to fit the grid PERFECTLY without gaps
+           // Use the smaller dimension to ensure blocks fit completely
+           const blockSizeForWidth = availableWidth / gridWidth;
+           const blockSizeForHeight = availableHeight / gridHeight;
+           
+           // Choose the smaller size to ensure no overflow, then round down for precision
+           let dynamicBlockSize = Math.min(blockSizeForWidth, blockSizeForHeight);
+           
+           // Round down to nearest pixel to prevent gaps from floating point precision
+           dynamicBlockSize = Math.floor(dynamicBlockSize);
+           
+           // Apply size constraints - CRITICAL: This must match getNextPosition exactly
+           scale = Math.max(15, Math.min(dynamicBlockSize, 30)); // Between 15px and 30px
+           
+           // Store the scale globally so getNextPosition can access it
+           window.currentPatternScale = scale;
+           
+           // Log scaling precision details
+           const actualGridWidth = scale * gridWidth;
+           const actualGridHeight = scale * gridHeight;
+           const widthFit = Math.round((actualGridWidth / availableWidth) * 100);
+           const heightFit = Math.round((actualGridHeight / availableHeight) * 100);
+           
+           console.log(`🎨 PATTERN SCALE: ${totalColors} colors → ${gridWidth}x${gridHeight} grid → ${scale}px blocks (OPTIMIZED: ${totalColors > 100 ? '15-col cap, 20-row max' : 'square-ish'})`);
+           console.log(`📐 GRID FIT: Width ${actualGridWidth}px/${availableWidth}px (${widthFit}%), Height ${actualGridHeight}px/${availableHeight}px (${heightFit}%)`);
+           console.log(`🔧 SCALE STORED: window.currentPatternScale = ${scale}px for getNextPosition sync`);
          }
          
          // FIX COORDINATE MISMATCH: Make content coordinates match container size
@@ -8080,7 +8148,7 @@
            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
            
            // Generate irregular path with subtle wobble
-           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount);
+           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount, false);
            path.setAttribute('d', pathData);
            path.setAttribute('fill', colorObj.color);
            
@@ -8122,7 +8190,13 @@
          }
 
          // Helper method: Create irregular block path with visible wobble
-         createIrregularBlockPath(x, y, width, height, wobbleAmount) {
+         createIrregularBlockPath(x, y, width, height, wobbleAmount, isPatternBlock = false) {
+           // For pattern blocks with overlap (scale + 1), we can use more wobble since blocks will still touch
+           if (isPatternBlock) {
+             // With scale + 1 overlap, we can allow more wobble while maintaining coverage
+             wobbleAmount = Math.min(wobbleAmount, 0.8); // More generous wobble since overlap guarantees coverage
+           }
+           
            // Create more pronounced irregularity with multiple variation points per side
            // BUT ensure the path always fills the exact dimensions to prevent gaps
            const topVariations = [
@@ -8148,22 +8222,43 @@
            
            // Generate path with irregular edges - each side has multiple variation points
            // BUT ensure the path extends to the full dimensions to prevent gaps
-           // Use Math.max to ensure the path always extends to the full dimensions
-           const path = [
-             `M ${x + topVariations[0]} ${y + topVariations[0]}`, // Top-left with variation
-             `L ${x + width/3 + topVariations[1]} ${y + topVariations[1]}`, // Top middle-left
-             `L ${x + width*2/3 + topVariations[2]} ${y + topVariations[2]}`, // Top middle-right
-             `L ${x + width + rightVariations[0]} ${y + rightVariations[0]}`, // Top-right
-             `L ${x + width + rightVariations[1]} ${y + height/3 + rightVariations[1]}`, // Right middle-top
-             `L ${x + width + rightVariations[2]} ${y + height*2/3 + rightVariations[2]}`, // Right middle-bottom
-             `L ${x + width + bottomVariations[0]} ${y + height + bottomVariations[0]}`, // Bottom-right
-             `L ${x + width*2/3 + bottomVariations[1]} ${y + height + bottomVariations[1]}`, // Bottom middle-right
-             `L ${x + width/3 + bottomVariations[2]} ${y + height + bottomVariations[2]}`, // Bottom middle-left
-             `L ${x + leftVariations[0]} ${y + height + leftVariations[0]}`, // Bottom-left
-             `L ${x + leftVariations[1]} ${y + height*2/3 + leftVariations[1]}`, // Left middle-bottom
-             `L ${x + leftVariations[2]} ${y + height/3 + leftVariations[2]}`, // Left middle-top
-             'Z' // Close path
-           ].join(' ');
+           // For pattern blocks, ensure corners always reach full dimensions
+           let path;
+           if (isPatternBlock) {
+             // Pattern blocks: ensure corners always reach full dimensions to prevent gaps
+             path = [
+               `M ${x} ${y}`, // Top-left: always start at exact position
+               `L ${x + width/3 + topVariations[1]} ${y + topVariations[1]}`, // Top middle-left with variation
+               `L ${x + width*2/3 + topVariations[2]} ${y + topVariations[2]}`, // Top middle-right with variation
+               `L ${x + width} ${y}`, // Top-right: always end at exact position
+               `L ${x + width} ${y + height/3 + rightVariations[1]}`, // Right middle-top with variation
+               `L ${x + width} ${y + height*2/3 + rightVariations[2]}`, // Right middle-bottom with variation
+               `L ${x + width} ${y + height}`, // Bottom-right: always end at exact position
+               `L ${x + width*2/3 + bottomVariations[1]} ${y + height + bottomVariations[1]}`, // Bottom middle-right with variation
+               `L ${x + width/3 + bottomVariations[2]} ${y + height + bottomVariations[2]}`, // Bottom middle-left with variation
+               `L ${x} ${y + height}`, // Bottom-left: always end at exact position
+               `L ${x} ${y + height*2/3 + leftVariations[1]}`, // Left middle-bottom with variation
+               `L ${x} ${y + height/3 + leftVariations[2]}`, // Left middle-top with variation
+               'Z' // Close path
+             ].join(' ');
+           } else {
+             // Collection blocks: allow more irregularity for organic stacking effect
+             path = [
+               `M ${x + topVariations[0]} ${y + topVariations[0]}`, // Top-left with variation
+               `L ${x + width/3 + topVariations[1]} ${y + topVariations[1]}`, // Top middle-left
+               `L ${x + width*2/3 + topVariations[2]} ${y + topVariations[2]}`, // Top middle-right
+               `L ${x + width + rightVariations[0]} ${y + rightVariations[0]}`, // Top-right
+               `L ${x + width + rightVariations[1]} ${y + height/3 + rightVariations[1]}`, // Right middle-top
+               `L ${x + width + rightVariations[2]} ${y + height*2/3 + rightVariations[2]}`, // Right middle-bottom
+               `L ${x + width + bottomVariations[0]} ${y + height + bottomVariations[0]}`, // Bottom-right
+               `L ${x + width*2/3 + bottomVariations[1]} ${y + height + bottomVariations[1]}`, // Bottom middle-right
+               `L ${x + width/3 + bottomVariations[2]} ${y + height + bottomVariations[2]}`, // Bottom middle-left
+               `L ${x + leftVariations[0]} ${y + height + leftVariations[0]}`, // Bottom-left
+               `L ${x + leftVariations[1]} ${y + height*2/3 + leftVariations[1]}`, // Left middle-bottom
+               `L ${x + leftVariations[2]} ${y + height/3 + leftVariations[2]}`, // Left middle-top
+               'Z' // Close path
+             ].join(' ');
+           }
            
            return path;
          }
@@ -8182,7 +8277,7 @@
            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
            
            // Generate irregular path with subtle wobble
-           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount);
+           const pathData = this.createIrregularBlockPath(x, y, blockWidth, blockHeight, wobbleAmount, false);
            path.setAttribute('d', pathData);
            path.setAttribute('fill', colorObj.color);
            path.setAttribute('opacity', '0.9');
@@ -8212,16 +8307,18 @@
            // UNIFIED BLOCK STYLING: Use same visual styling as collection phase for consistency
            const colorFamily = colorObj.position.colorFamily || 'pattern';
            
-           // Calculate block dimensions first - use full scale for touching blocks in pattern phase
-           const blockWidth = scale;
-           const blockHeight = scale;
+                              // Calculate block dimensions - use exact scale for pattern phase
+                   // This ensures blocks use precise sizing without overlap
+                   const blockWidth = scale;
+                   const blockHeight = scale;
            const wobbleAmount = Math.max(0.5, scale * 0.015); // Smaller wobble for pattern phase but still organic
            
            // Create irregular block shape with subtle wobble (same as collection phase)
            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
            
            // Generate irregular path with subtle wobble (use 0,0 since group handles positioning)
-           const pathData = this.createIrregularBlockPath(0, 0, blockWidth, blockHeight, wobbleAmount);
+           // For pattern blocks, ensure minimal wobble to prevent gaps
+           const pathData = this.createIrregularBlockPath(0, 0, blockWidth, blockHeight, wobbleAmount, true);
            path.setAttribute('d', pathData);
            path.setAttribute('fill', colorObj.color);
            
@@ -8455,7 +8552,7 @@
              } else {
                // Generate colorful color
                randomSaturation = CONFIG.COLOR_PICKER.saturation;
-             randomLightness = 35 + Math.floor(Math.random() * 56);
+               randomLightness = 35 + Math.floor(Math.random() * 56);
              }
              
              const warmHue = (randomHue + 25) % 360;
@@ -8939,8 +9036,8 @@
             this.forceReorganize();
           });
 
-          document.getElementById('resetQuiltAdmin').addEventListener('click', () => {
-            this.resetQuilt();
+          document.getElementById('resetQuiltAdmin').addEventListener('click', async () => {
+            await this.resetQuilt();
           });
 
           document.getElementById('updateThreshold').addEventListener('click', () => {
@@ -8948,8 +9045,8 @@
             this.updateReorganizeThreshold(threshold);
           });
 
-          document.getElementById('emergencyResetBtn').addEventListener('click', () => {
-            this.emergencyReset();
+          document.getElementById('emergencyResetBtn').addEventListener('click', async () => {
+            await this.emergencyReset();
           });
 
           // Diagnostics
@@ -9253,23 +9350,45 @@
           this.app.uiService.showToast('🔄 Quilt reorganized');
         }
 
-        resetQuilt() {
+        async resetQuilt() {
           if (confirm('⚠️ This will delete all colors and reset the quilt. Are you sure?')) {
             console.log('🗑️ Admin: Resetting quilt...');
+            
+            // Clear local state
             this.app.timeBasedEngine.gridState.clearAll();
             this.app.timeBasedEngine.colorsSinceReorganization = 0;
+            
+            // Clear Firebase data
+            try {
+              await this.app.dataService.saveQuilt([]);
+              console.log('🗑️ Firebase data cleared');
+            } catch (error) {
+              console.warn('⚠️ Failed to clear Firebase data:', error);
+            }
+            
             this.app.syncEngineStateToLegacyState();
             this.app.renderTimeBasedQuilt();
             this.app.uiService.showToast('🗑️ Quilt reset');
           }
         }
 
-        emergencyReset() {
+        async emergencyReset() {
           if (confirm('🚨 EMERGENCY RESET: This will clear ALL data and reset system state. Continue?')) {
             console.log('🚨 Admin: Emergency reset...');
+            
+            // Clear local state
             this.app.timeBasedEngine.gridState.clearAll();
             this.app.timeBasedEngine.colorsSinceReorganization = 0;
             this.app.timeBasedEngine.isReorganizing = false; // Force release lock
+            
+            // Clear Firebase data
+            try {
+              await this.app.dataService.saveQuilt([]);
+              console.log('🚨 Firebase data cleared');
+            } catch (error) {
+              console.warn('⚠️ Failed to clear Firebase data:', error);
+            }
+            
             this.app.syncEngineStateToLegacyState();
             this.app.renderTimeBasedQuilt();
             this.app.uiService.showToast('🚨 Emergency reset complete');
@@ -10215,23 +10334,46 @@
             console.log(`Unique Colors: ${uniqueColors}`);
             console.log(`Duplicate Colors: ${duplicates.length > 0 ? duplicates.map(([color, count]) => `${color}(${count}x)`).join(', ') : 'None'}`);
             
-            // Show column positions for tight spacing analysis
-            const columnPositions = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
-              .map(([family, column]) => `${family}@x${column.x.toFixed(1)}`);
-            console.log(`🧵 Column positions: ${columnPositions.join(' | ')}`);
+            // Show coordinate bounds
+            const positions = state.colors.map(c => c.position);
+            const minX = Math.min(...positions.map(p => p.x));
+            const maxX = Math.max(...positions.map(p => p.x));
+            const minY = Math.min(...positions.map(p => p.y));
+            const maxY = Math.max(...positions.map(p => p.y));
+            console.log(`Grid Bounds: X(${minX} to ${maxX}), Y(${minY} to ${maxY})`);
+            console.log(`Grid Size: ${maxX - minX + 1} x ${maxY - minY + 1}`);
             
-            // Mobile optimization analysis
-            const columnHeights = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
-              .map(([family, column]) => {
-                const height = column.colors.length;
-                let overlap;
-                if (height <= 3) overlap = '0.8';
-                else if (height <= 6) overlap = '0.6';
-                else if (height <= 10) overlap = '0.45';
-                else overlap = '0.35';
-                return `${family}(${height}@${overlap})`;
-              });
-            console.log(`📱 Mobile columns: ${columnHeights.join(' | ')}`);
+            // Collection phase: show color family columns
+            if (state.phase === 'collection') {
+              const columnInfo = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
+                .map(([family, column]) => `${family}(${column.colors.length})`);
+              console.log(`🧵 Color Family Columns: ${columnInfo.join(', ')}`);
+              console.log(`🧵 Tight column spacing (1.2) - no reorganization in collection phase!`);
+              
+              // Show column positions for tight spacing analysis
+              const columnPositions = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
+                .map(([family, column]) => `${family}@x${column.x.toFixed(1)}`);
+              console.log(`🧵 Column positions: ${columnPositions.join(' | ')}`);
+              
+              // Mobile optimization analysis
+              const columnHeights = Array.from(app.timeBasedEngine.gridState.colorColumns.entries())
+                .map(([family, column]) => {
+                  const height = column.colors.length;
+                  let overlap;
+                  if (height <= 3) overlap = '0.8';
+                  else if (height <= 6) overlap = '0.6';
+                  else if (height <= 10) overlap = '0.45';
+                  else overlap = '0.35';
+                  return `${family}(${height}@${overlap})`;
+                });
+              console.log(`📱 Mobile columns: ${columnHeights.join(' | ')}`);
+            }
+            
+            // Check for negative coordinates
+            const negativeCoords = positions.filter(p => p.x < 0 || p.y < 0);
+            if (negativeCoords.length > 0) {
+              console.warn(`⚠️ ${negativeCoords.length} blocks have negative coordinates:`, negativeCoords);
+            }
           }
           
           const svg = document.getElementById('quilt');
@@ -10298,7 +10440,9 @@
           const scale = Math.min(scaleX, scaleY, maxScale);
           
           console.log(`   Render scale: ${scale.toFixed(1)}px per block (${state.phase} phase)`);
-          console.log(`   Block size: ${Math.max(scale - 2, 5)}px`);
+                                // For pattern phase, use exact scale; for collection phase, use scale-2 for gaps
+            const blockSize = state.phase === 'pattern_filling' ? scale : Math.max(scale - 2, 5);
+            console.log(`   Block size: ${blockSize}px (${state.phase === 'pattern_filling' ? 'exact scale' : 'scale-2 for gaps'})`);
           
           if (state.phase === 'collection') {
             console.log(`   🧵 Large blocks for quilter's workspace!`);
