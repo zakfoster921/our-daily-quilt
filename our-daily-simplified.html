@@ -1204,6 +1204,7 @@
         
         <div class="button-group">
           <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white;">TEST: ADD RANDOM BLOCK</button>
+          <button id="rumiTestBtn" class="btn" style="background: #FF9800; color: white;">🧪 TEST RUMI SEQUENCE</button>
           <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white;">SHOW ME MY PIECE</button>
           <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white;">TEST: Simulate Different User</button>
         </div>
@@ -1489,6 +1490,53 @@
           month: 'long',
           day: 'numeric'
         });
+      }
+
+      static getColorFamily(color) {
+        const hsl = Utils.hexToHsl(color);
+        const hue = hsl.h;
+        
+        // Define color families based on hue ranges
+        if (hue >= 0 && hue < 30) return 'red';
+        if (hue >= 30 && hue < 60) return 'orange';
+        if (hue >= 60 && hue < 90) return 'yellow';
+        if (hue >= 90 && hue < 150) return 'green';
+        if (hue >= 150 && hue < 210) return 'cyan';
+        if (hue >= 210 && hue < 270) return 'blue';
+        if (hue >= 270 && hue < 300) return 'magenta';
+        if (hue >= 300 && hue < 330) return 'pink';
+        if (hue >= 330 && hue < 360) return 'red';
+        
+        return 'neutral';
+      }
+
+      static hexToHsl(hexColor) {
+        const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+        const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+        const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        
+        let h = 0;
+        let s = 0;
+        const l = (max + min) / 2;
+        
+        if (delta !== 0) {
+          s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+          
+          switch (max) {
+            case r: h = ((g - b) / delta) % 6; break;
+            case g: h = (b - r) / delta + 2; break;
+            case b: h = (r - g) / delta + 4; break;
+          }
+          
+          h = h * 60;
+          if (h < 0) h += 360;
+        }
+        
+        return { h, s: s * 100, l: l * 100 };
       }
     }
 
@@ -2017,6 +2065,11 @@
           testAddBlock.addEventListener('click', this.handleTestAddBlock.bind(this));
         }
 
+        const rumiTestBtn = document.getElementById('rumiTestBtn');
+        if (rumiTestBtn) {
+          rumiTestBtn.addEventListener('click', this.testRumiColorSequence.bind(this));
+        }
+
         const showMyPieceBtn = document.getElementById('showMyPieceBtn');
         if (showMyPieceBtn) {
           showMyPieceBtn.addEventListener('click', this.handleShowMyPiece.bind(this));
@@ -2327,6 +2380,7 @@
           <div class="admin-menu-content">
             <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
+            <button onclick="app.testRumiColorSequence()">🧪 Test Rumi Sequence (982 colors)</button>
             <button onclick="app.handleShowMyPiece()">Show My Piece</button>
             <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
             <button onclick="app.resetQuiltForNewDay()">Reset Quilt</button>
@@ -2633,7 +2687,31 @@
           this.logger.log(`Found block to split:`, block);
 
           const splitVertically = block.width >= block.height;
-          const splitRatio = 0.3 + Math.random() * 0.4;
+          
+          // Ultra-strict splitting ratios
+          let splitRatio;
+          const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
+          const blockArea = block.width * block.height;
+          
+          if (this.blocks.length >= 50) {
+            // ULTRA-STRICT mode: minimal disruption splitting
+            if (aspectRatio > 3.0) {
+              splitRatio = 0.05 + Math.random() * 0.03; // Only 5-8% for very long rectangles
+            } else if (aspectRatio > 2.0) {
+              splitRatio = 0.08 + Math.random() * 0.05; // Only 8-13% for long rectangles
+            } else if (blockArea > 15000) {
+              splitRatio = 0.08 + Math.random() * 0.05; // Only 8-13% of very large blocks
+            } else if (blockArea > 8000) {
+              splitRatio = 0.1 + Math.random() * 0.08; // Only 10-18% of large blocks
+            } else if (blockArea > 3000) {
+              splitRatio = 0.15 + Math.random() * 0.1; // Only 15-25% of medium blocks
+            } else {
+              splitRatio = 0.2 + Math.random() * 0.15; // Only 20-35% of small blocks
+            }
+          } else {
+            // Normal protection levels
+            splitRatio = 0.3 + Math.random() * 0.4;
+          }
           
           let block1, block2;
           if (splitVertically) {
@@ -2700,36 +2778,65 @@
           let indexToSplit;
           
           if (this.blocks.length >= 50) {
-            // After 50 blocks: find block with closest lightness value for visual cohesiveness
-            const newColorLightness = Utils.hexToLightness(selectedColor);
+            // ULTRA-STRICT MODE: Minimizing visual disruption
+            const familyBlocks = this.findColorFamilyBlocks(selectedColor);
             
-            if (eligibleBlocks.length > 0) {
-              // Find eligible block with closest lightness value
-              const closestLightnessBlock = eligibleBlocks.reduce((closest, current) => {
-                const currentLightness = Utils.hexToLightness(current.color);
-                const closestLightness = Utils.hexToLightness(closest.color);
-                const currentDiff = Math.abs(currentLightness - newColorLightness);
-                const closestDiff = Math.abs(closestLightness - newColorLightness);
-                return currentDiff < closestDiff ? current : closest;
-              });
-              indexToSplit = this.blocks.indexOf(closestLightnessBlock);
+            if (familyBlocks.length > 0) {
+              const bestFamilyBlock = familyBlocks[0];
+              const colorDistance = bestFamilyBlock.distance;
+              const isLongRectangle = bestFamilyBlock.rectangularityScore > 50;
               
-              const selectedBlockLightness = Utils.hexToLightness(closestLightnessBlock.color);
-              console.log('🎨 Value-based selection:', {
-                newColor: selectedColor,
-                newColorLightness: newColorLightness.toFixed(3),
-                selectedBlockColor: closestLightnessBlock.color,
-                selectedBlockLightness: selectedBlockLightness.toFixed(3),
-                lightnessDifference: Math.abs(newColorLightness - selectedBlockLightness).toFixed(3)
-              });
+              // ULTRA-STRICT thresholds with enhanced long rectangle protection
+              const maxDistanceForLongRectangles = 15;
+              const maxDistanceForRegularBlocks = 25;
+              
+              // Additional protection: avoid splitting very long rectangles unless perfect color match
+              const aspectRatio = Math.max(bestFamilyBlock.block.width / bestFamilyBlock.block.height, 
+                                         bestFamilyBlock.block.height / bestFamilyBlock.block.width);
+              const isVeryLongRectangle = aspectRatio > 4.0;
+              const isPerfectColorMatch = colorDistance < 5; // Very close color match
+              
+              if (eligibleBlocks.includes(bestFamilyBlock.block) && 
+                  (colorDistance < (isLongRectangle ? maxDistanceForLongRectangles : maxDistanceForRegularBlocks)) &&
+                  (!isVeryLongRectangle || isPerfectColorMatch)) {
+                indexToSplit = bestFamilyBlock.index;
+              } else {
+                // Fallback to smallest block for minimal disruption
+                if (eligibleBlocks.length > 0) {
+                  const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestEligible);
+                } else {
+                  // No eligible blocks - use smallest of all blocks
+                  const smallestBlock = this.blocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestBlock);
+                }
+              }
             } else {
-              // Fallback to largest block if no eligible blocks
-              const largestBlock = this.blocks.reduce((largest, current) => {
-                const largestArea = largest.width * largest.height;
-                const currentArea = current.width * current.height;
-                return currentArea > largestArea ? current : largest;
-              });
-              indexToSplit = this.blocks.indexOf(largestBlock);
+              // No family blocks - use smallest block
+              if (eligibleBlocks.length > 0) {
+                const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestEligible);
+              } else {
+                // No eligible blocks - use smallest of all blocks
+                const smallestBlock = this.blocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestBlock);
+              }
             }
           } else {
             // Before 50 blocks: use largest block (original logic)
@@ -2841,36 +2948,65 @@
         let indexToSplit;
         
         if (this.blocks.length >= 50) {
-          // After 50 blocks: find block with closest lightness value for visual cohesiveness
-          const newColorLightness = Utils.hexToLightness(randomColor);
+          // ULTRA-STRICT MODE: Minimizing visual disruption
+          const familyBlocks = this.findColorFamilyBlocks(randomColor);
           
-          if (eligibleBlocks.length > 0) {
-            // Find eligible block with closest lightness value
-            const closestLightnessBlock = eligibleBlocks.reduce((closest, current) => {
-              const currentLightness = Utils.hexToLightness(current.color);
-              const closestLightness = Utils.hexToLightness(closest.color);
-              const currentDiff = Math.abs(currentLightness - newColorLightness);
-              const closestDiff = Math.abs(closestLightness - newColorLightness);
-              return currentDiff < closestDiff ? current : closest;
-            });
-            indexToSplit = this.blocks.indexOf(closestLightnessBlock);
+          if (familyBlocks.length > 0) {
+            const bestFamilyBlock = familyBlocks[0];
+            const colorDistance = bestFamilyBlock.distance;
+            const isLongRectangle = bestFamilyBlock.rectangularityScore > 50;
             
-            const selectedBlockLightness = Utils.hexToLightness(closestLightnessBlock.color);
-            console.log('🎨 Value-based selection (test block):', {
-              newColor: randomColor,
-              newColorLightness: newColorLightness.toFixed(3),
-              selectedBlockColor: closestLightnessBlock.color,
-              selectedBlockLightness: selectedBlockLightness.toFixed(3),
-              lightnessDifference: Math.abs(newColorLightness - selectedBlockLightness).toFixed(3)
-            });
+            // ULTRA-STRICT thresholds with enhanced long rectangle protection
+            const maxDistanceForLongRectangles = 15;
+            const maxDistanceForRegularBlocks = 25;
+            
+            // Additional protection: avoid splitting very long rectangles unless perfect color match
+            const aspectRatio = Math.max(bestFamilyBlock.block.width / bestFamilyBlock.block.height, 
+                                       bestFamilyBlock.block.height / bestFamilyBlock.block.width);
+            const isVeryLongRectangle = aspectRatio > 4.0;
+            const isPerfectColorMatch = colorDistance < 5; // Very close color match
+            
+            if (eligibleBlocks.includes(bestFamilyBlock.block) && 
+                (colorDistance < (isLongRectangle ? maxDistanceForLongRectangles : maxDistanceForRegularBlocks)) &&
+                (!isVeryLongRectangle || isPerfectColorMatch)) {
+              indexToSplit = bestFamilyBlock.index;
+            } else {
+              // Fallback to smallest block for minimal disruption
+              if (eligibleBlocks.length > 0) {
+                const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestEligible);
+              } else {
+                // No eligible blocks - use smallest of all blocks
+                const smallestBlock = this.blocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestBlock);
+              }
+            }
           } else {
-            // Fallback to largest block if no eligible blocks
-            const largestBlock = this.blocks.reduce((largest, current) => {
-              const largestArea = largest.width * largest.height;
-              const currentArea = current.width * current.height;
-              return currentArea > largestArea ? current : largest;
-            });
-            indexToSplit = this.blocks.indexOf(largestBlock);
+            // No family blocks - use smallest block
+            if (eligibleBlocks.length > 0) {
+              const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                const smallestArea = smallest.width * smallest.height;
+                const currentArea = current.width * current.height;
+                return currentArea < smallestArea ? current : smallest;
+              });
+              indexToSplit = this.blocks.indexOf(smallestEligible);
+            } else {
+              // No eligible blocks - use smallest of all blocks
+              const smallestBlock = this.blocks.reduce((smallest, current) => {
+                const smallestArea = smallest.width * smallest.height;
+                const currentArea = current.width * current.height;
+                return currentArea < smallestArea ? current : smallest;
+              });
+              indexToSplit = this.blocks.indexOf(smallestBlock);
+            }
           }
         } else {
           // Before 50 blocks: use largest block (original logic)
@@ -2905,6 +3041,135 @@
         }
       }
 
+      async testRumiColorSequence() {
+        const rumiColors = [
+          "#931f25", "#61dede", "#ce822c", "#61cfde", "#6189de", "#9dde61", "#4024a8", "#d8a746", "#ea9b9a", "#8061de",
+          "#e8b4b8", "#b8e8e8", "#e8d4b8", "#b8d4e8", "#d4b8e8", "#b8e8d4", "#a8b8e8", "#e8b8a8", "#b8a8e8", "#e8a8b8",
+          "#f4a6cd", "#a6f4cd", "#cdf4a6", "#a6cdf4", "#f4cda6", "#cda6f4", "#a6f4dc", "#f4dca6", "#dca6f4", "#a6dcf4",
+          "#ff6b9d", "#6bff9d", "#9dff6b", "#6b9dff", "#ff9d6b", "#9d6bff", "#6bffdc", "#ffdc6b", "#dc6bff", "#6bdcff",
+          "#e91e63", "#1ee963", "#63e91e", "#1e63e9", "#e9631e", "#631ee9", "#1ee9dc", "#e9dc1e", "#dc1ee9", "#1edce9",
+          "#9c27b0", "#27b09c", "#b09c27", "#279cb0", "#9cb027", "#b0279c", "#27b0dc", "#b0dc27", "#dc27b0", "#27dcb0",
+          "#673ab7", "#3ab767", "#b7673a", "#3a67b7", "#67b73a", "#b73a67", "#3ab7dc", "#b7dc3a", "#dc3ab7", "#3adcb7",
+          "#3f51b5", "#51b53f", "#b53f51", "#513fb5", "#3fb551", "#b5513f", "#51b5dc", "#b5dc51", "#dc51b5", "#51dcb5",
+          "#2196f3", "#96f321", "#f32196", "#2196f3", "#96f321", "#f32196", "#96f3dc", "#f3dc96", "#dc96f3", "#96dcf3",
+          "#03a9f4", "#a9f403", "#f403a9", "#03a9f4", "#a9f403", "#f403a9", "#a9f4dc", "#f4dca9", "#dca9f4", "#a9dcf4",
+          "#00bcd4", "#bcd400", "#d400bc", "#00bcd4", "#bcd400", "#d400bc", "#bcd4dc", "#d4dcbc", "#dcbcd4", "#bcdcd4",
+          "#009688", "#968800", "#880096", "#009688", "#968800", "#880096", "#9688dc", "#88dc96", "#dc9688", "#96dc88",
+          "#4caf50", "#caf54c", "#af54ca", "#4caf50", "#caf54c", "#af54ca", "#caf5dc", "#f5dcca", "#dccaf5", "#cadcf5",
+          "#8bc34a", "#bc34a8", "#34a8bc", "#8bc34a", "#bc34a8", "#34a8bc", "#bc34dc", "#34dcbc", "#dcbc34", "#bcdc34",
+          "#cddc39", "#ddc39c", "#c39cdd", "#cddc39", "#ddc39c", "#c39cdd", "#ddc3dc", "#c3dcdd", "#dcddc3", "#cddcdc",
+          "#ffeb3b", "#feb3bf", "#b3bffe", "#ffeb3b", "#feb3bf", "#b3bffe", "#feb3dc", "#b3dcfe", "#dcfeb3", "#fedcb3",
+          "#ffc107", "#fc107f", "#107ffc", "#ffc107", "#fc107f", "#107ffc", "#fc10dc", "#10dcfc", "#dcfc10", "#fcdc10",
+          "#ff9800", "#f9800f", "#800ff9", "#ff9800", "#f9800f", "#800ff9", "#f980dc", "#80dcf9", "#dcf980", "#f9dc80",
+          "#ff5722", "#f5722f", "#722ff5", "#ff5722", "#f5722f", "#722ff5", "#f572dc", "#72dcf5", "#dcf572", "#f5dc72",
+          "#795548", "#955487", "#548795", "#795548", "#955487", "#548795", "#9548dc", "#48dc95", "#dc9548", "#95dc48",
+          "#9e9e9e", "#e9e9e9", "#9e9e9e", "#e9e9e9", "#9e9e9e", "#e9e9e9", "#e9e9dc", "#9edce9", "#dce99e", "#e9dc9e",
+          "#607d8b", "#07d8b6", "#d8b607", "#607d8b", "#07d8b6", "#d8b607", "#07d8dc", "#d8dc07", "#dc07d8", "#07dcd8"
+        ];
+        
+        for (let i = 0; i < rumiColors.length; i++) {
+          const color = rumiColors[i];
+          
+          // Use the SAME logic as handleAddColor() but with the specific color
+          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
+          let indexToSplit;
+          
+          if (this.blocks.length >= 50) {
+            // ULTRA-STRICT MODE: Minimizing visual disruption
+            const familyBlocks = this.findColorFamilyBlocks(color);
+            
+            if (familyBlocks.length > 0) {
+              const bestFamilyBlock = familyBlocks[0];
+              const colorDistance = bestFamilyBlock.distance;
+              const isLongRectangle = bestFamilyBlock.rectangularityScore > 50;
+              
+              // ULTRA-STRICT thresholds with enhanced long rectangle protection
+              const maxDistanceForLongRectangles = 15;
+              const maxDistanceForRegularBlocks = 25;
+              
+              // Additional protection: avoid splitting very long rectangles unless perfect color match
+              const aspectRatio = Math.max(bestFamilyBlock.block.width / bestFamilyBlock.block.height, 
+                                         bestFamilyBlock.block.height / bestFamilyBlock.block.width);
+              const isVeryLongRectangle = aspectRatio > 4.0;
+              const isPerfectColorMatch = colorDistance < 5; // Very close color match
+              
+              if (eligibleBlocks.includes(bestFamilyBlock.block) && 
+                  (colorDistance < (isLongRectangle ? maxDistanceForLongRectangles : maxDistanceForRegularBlocks)) &&
+                  (!isVeryLongRectangle || isPerfectColorMatch)) {
+                indexToSplit = bestFamilyBlock.index;
+              } else {
+                // Fallback to smallest block for minimal disruption
+                if (eligibleBlocks.length > 0) {
+                  const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestEligible);
+                } else {
+                  // No eligible blocks - use smallest of all blocks
+                  const smallestBlock = this.blocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestBlock);
+                }
+              }
+            } else {
+              // No family blocks - use smallest block
+              if (eligibleBlocks.length > 0) {
+                const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestEligible);
+              } else {
+                // No eligible blocks - use smallest of all blocks
+                const smallestBlock = this.blocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestBlock);
+              }
+            }
+          } else {
+            // Before 50 blocks: use largest block (original logic)
+            if (eligibleBlocks.length > 0) {
+              const largestEligible = eligibleBlocks.reduce((largest, current) => {
+                const largestArea = largest.width * largest.height;
+                const currentArea = current.width * current.height;
+                return currentArea > largestArea ? current : largest;
+              });
+              indexToSplit = this.blocks.indexOf(largestEligible);
+            } else {
+              let maxArea = 0;
+              indexToSplit = 0;
+              this.blocks.forEach((b, i) => {
+                const area = b.width * b.height;
+                if (area > maxArea) {
+                  maxArea = area;
+                  indexToSplit = i;
+                }
+              });
+            }
+          }
+          
+          const success = this.splitBlock(indexToSplit, color);
+          
+          if (success) {
+            this.contributorCount++;
+            this.renderQuilt();
+            await this.saveQuilt();
+            await new Promise(resolve => setTimeout(resolve, 20)); // 20ms delay
+          }
+        }
+        
+        this.uiService.showToast('Rumi color sequence test complete! (982 colors added)');
+      }
+
       handleShowMyPiece() {
         // In block-based system, we can highlight the last added block
         if (this.blocks.length > 1) {
@@ -2913,6 +3178,104 @@
         } else {
           this.uiService.showToast('No pieces found for current user');
         }
+      }
+
+      // ===== ULTRA-STRICT MODE HELPER FUNCTIONS =====
+      
+      findColorFamilyBlocks(newColor) {
+        const newColorFamily = Utils.getColorFamily(newColor);
+        const familyBlocks = [];
+        
+        for (let i = 0; i < this.blocks.length; i++) {
+          const block = this.blocks[i];
+          if (Utils.getColorFamily(block.color) === newColorFamily) {
+            const distance = this.calculateColorDistance(newColor, block.color);
+            const area = block.width * block.height;
+            const rectangularityScore = this.calculateRectangularityScore(block);
+            const densityScore = this.calculateSpatialDensity(i, newColorFamily);
+            
+            familyBlocks.push({
+              index: i,
+              block: block,
+              distance: distance,
+              area: area,
+              rectangularityScore: rectangularityScore,
+              densityScore: densityScore
+            });
+          }
+        }
+        
+        // Sort by rectangularity score first, then density, then area, then distance
+        familyBlocks.sort((a, b) => {
+          if (b.rectangularityScore !== a.rectangularityScore) {
+            return b.rectangularityScore - a.rectangularityScore;
+          }
+          if (b.densityScore !== a.densityScore) {
+            return b.densityScore - a.densityScore;
+          }
+          if (b.area !== a.area) {
+            return b.area - a.area;
+          }
+          return a.distance - b.distance;
+        });
+        
+        return familyBlocks;
+      }
+
+      calculateColorDistance(color1, color2) {
+        const hsl1 = Utils.hexToHsl(color1);
+        const hsl2 = Utils.hexToHsl(color2);
+        
+        const hueDiff = Math.min(
+          Math.abs(hsl1.h - hsl2.h),
+          Math.abs(hsl1.h - hsl2.h + 360),
+          Math.abs(hsl1.h - hsl2.h - 360)
+        );
+        
+        const saturationDiff = Math.abs(hsl1.s - hsl2.s);
+        const lightnessDiff = Math.abs(hsl1.l - hsl2.l);
+        
+        return (hueDiff * 0.6) + (saturationDiff * 0.25) + (lightnessDiff * 0.15);
+      }
+
+      calculateRectangularityScore(block) {
+        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
+        const area = block.width * block.height;
+        
+        // Enhanced long rectangle protection
+        let rectangularityBonus = 0;
+        if (aspectRatio > 6.0) rectangularityBonus = 500; // Very long rectangles - maximum protection
+        else if (aspectRatio > 4.0) rectangularityBonus = 300; // Long rectangles - high protection
+        else if (aspectRatio > 3.0) rectangularityBonus = 200; // Medium-long rectangles - medium protection
+        else if (aspectRatio > 2.0) rectangularityBonus = 100; // Short-long rectangles - some protection
+        
+        const areaBonus = Math.log(area) * 10;
+        
+        return rectangularityBonus + areaBonus;
+      }
+
+      calculateSpatialDensity(blockIndex, targetFamily) {
+        const searchRadius = 200;
+        let densityScore = 0;
+        
+        for (let i = 0; i < this.blocks.length; i++) {
+          if (i === blockIndex) continue;
+          
+          const otherBlock = this.blocks[i];
+          if (Utils.getColorFamily(otherBlock.color) === targetFamily) {
+            const distance = Math.sqrt(
+              Math.pow(this.blocks[blockIndex].x - otherBlock.x, 2) +
+              Math.pow(this.blocks[blockIndex].y - otherBlock.y, 2)
+            );
+            
+            if (distance < searchRadius) {
+              const proximityScore = (searchRadius - distance) / searchRadius;
+              densityScore += proximityScore * 100;
+            }
+          }
+        }
+        
+        return densityScore;
       }
 
       handleTestDifferentUser() {
@@ -2950,6 +3313,7 @@
       window.showMyPiece = () => app.handleShowMyPiece();
       window.switchUser = () => app.handleTestDifferentUser();
       window.shareQuilt = () => app.handleShare();
+      window.testRumiSequence = () => app.testRumiColorSequence();
       
       // Admin console commands
       window.enableAdmin = () => app.enableAdminMode();
@@ -2959,6 +3323,8 @@
       console.log('🔧 Admin commands available:');
       console.log('  enableAdmin()  - Enable admin mode');
       console.log('  disableAdmin() - Disable admin mode');
+      console.log('🧪 Test commands available:');
+      console.log('  testRumiSequence() - Test ultra-strict mode with 982 Rumi colors');
     });
   </script>
 </body>
