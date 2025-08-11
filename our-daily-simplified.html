@@ -1944,7 +1944,7 @@
         // Render each block
         blocks.forEach((block, i) => {
           // Graduated jitter and organic edges based on block count
-          const useReducedStyle = blocks.length >= 50;
+          const useReducedStyle = blocks.length >= 25;
           
           // Calculate jitter intensity based on block count
           const jitterIntensity = useReducedStyle ? 0.3 : 1.0; // Reduced jitter after 50 blocks
@@ -2008,7 +2008,7 @@
         });
 
         this.lastAddedIndex = null;
-        const style = blocks.length >= 50 ? 'refined' : 'organic';
+                  const style = blocks.length >= 25 ? 'refined' : 'organic';
         this.logger.log(`✅ Rendered ${blocks.length} ${style} blocks`);
       }
 
@@ -2768,7 +2768,7 @@
           const densityScore = this.calculateCompositionDensity(block);
           const densityMultiplier = this.getDensityMultiplier(densityScore);
           
-          if (this.blocks.length >= 50) {
+          if (this.blocks.length >= 25) {
             // ULTRA-STRICT mode: COMPOSITION-AWARE splitting with square encouragement
             let baseRatio;
             
@@ -2805,14 +2805,14 @@
           }
           
           // RANDOM PATTERN CREATION
-          // Graduated pattern chance - more patterns before 50 blocks
+          // Graduated pattern chance - more patterns before 25 blocks
           let patternChance;
           if (this.blocks.length < 20) {
             patternChance = 0.65; // 65% chance for first 20 blocks - establish patterns early
-          } else if (this.blocks.length < 50) {
-            patternChance = 0.45; // 45% chance for blocks 20-50
+          } else if (this.blocks.length < 25) {
+            patternChance = 0.45; // 45% chance for blocks 20-25
           } else {
-            patternChance = 0.25; // 25% chance after 50 blocks
+            patternChance = 0.25; // 25% chance after 25 blocks
           }
           if (Math.random() < patternChance && block.width > 60 && block.height > 60) {
             // Calculate squareishness for pattern selection
@@ -3384,10 +3384,20 @@
           }
 
           this.logger.log(`Current blocks: ${this.blocks.length}`, this.blocks);
+          
+          // COLOR BALANCE ASSESSMENT (PLACEHOLDER)
+          // TODO: Implement color balance assessment
+          // - When to assess: TBD (maybe every 50 blocks after core formation?)
+          // - How to measure: TBD (compare visual color distribution vs submitted color data)
+          // - What actions: TBD (adjust border formation, suggest color submissions, etc.)
+          if (this.blocks.length >= 25 && this.blocks.length % 50 === 0) {
+            this.logger.log(`🎨 COLOR BALANCE ASSESSMENT: Placeholder for block ${this.blocks.length}`);
+            // this.assessColorBalance(); // TODO: Implement this function
+          }
 
           // Graduated minimum size based on block count
           let currentMinSize;
-          if (this.blocks.length >= 50 && this.blocks.length <= 275) {
+          if (this.blocks.length >= 25 && this.blocks.length <= 275) {
             currentMinSize = 100; // Preserve large fields and patterns during critical growth
           } else {
             currentMinSize = CONFIG.APP.minBlockSize; // 40px after 275 blocks
@@ -3399,18 +3409,18 @@
             // Size requirement
             const meetsSizeRequirement = b.width > currentMinSize || b.height > currentMinSize;
             
-            // Pattern piece protection: exclude pattern pieces for dissimilar colors
-            const isPatternPiece = this.isPatternPiece(b);
-            if (isPatternPiece) {
-              const colorDistance = this.calculateColorDistance(selectedColor, b.color);
-              let patternThreshold;
-              if (this.blocks.length >= 50) {
-                patternThreshold = 0.3; // EXTREMELY strict after 50 blocks
-              } else if (this.blocks.length >= 20) {
-                patternThreshold = 0.8; // Very strict for blocks 20-50
-              } else {
-                patternThreshold = 1.2; // Strict for first 20 blocks
-              }
+                         // Pattern piece protection: exclude pattern pieces for dissimilar colors
+             const isPatternPiece = this.isPatternPiece(b);
+             if (isPatternPiece) {
+               const colorDistance = this.calculateColorDistance(selectedColor, b.color);
+               let patternThreshold;
+               if (this.blocks.length >= 25) {
+                 patternThreshold = 0.3; // EXTREMELY strict after 25 blocks
+               } else if (this.blocks.length >= 20) {
+                 patternThreshold = 0.8; // Very strict for blocks 20-25
+               } else {
+                 patternThreshold = 1.2; // Strict for first 20 blocks
+               }
               
               // Only include pattern pieces if color is similar enough
               return meetsSizeRequirement && colorDistance <= patternThreshold;
@@ -3423,11 +3433,13 @@
           this.logger.log(`🎯 Graduated minimum size: ${currentMinSize}px (blocks: ${this.blocks.length})`);
           this.logger.log(`📊 Eligible blocks: ${eligibleBlocks.length}/${this.blocks.length}`);
           
-          // Identify key large shapes at block 50
-          if (this.blocks.length === 50) {
+          // CORE QUILT FORMATION: At block 25, establish the core quilt boundaries
+          if (this.blocks.length === 25) {
             const keyLargeShapes = this.blocks.filter(block => this.isKeyLargeShape(block));
             const sacrificialShapes = this.blocks.filter(block => !this.isKeyLargeShape(block));
-            this.logger.log(`🎨 PROTECTION SYSTEM: ${keyLargeShapes.length} key shapes, ${sacrificialShapes.length} sacrificial shapes`);
+            this.logger.log(`🎨 CORE QUILT ESTABLISHED: ${keyLargeShapes.length} key shapes, ${sacrificialShapes.length} sacrificial shapes`);
+            this.logger.log(`🛡️ CORE PROTECTION: Only similar colors can split core blocks from now on`);
+            this.logger.log(`🎯 BORDER SYSTEM: New dissimilar colors will form inward borders`);
           }
           
           // Apply protection filters with graduated color similarity
@@ -3436,12 +3448,12 @@
             
             // ULTRA-STRICT color controls with graduated pattern protection
             let patternThreshold, largeBlockThreshold;
-            if (this.blocks.length >= 50) {
-              patternThreshold = 0.3; // EXTREMELY strict after 50 blocks - nearly identical colors only
-              largeBlockThreshold = 5; // Very strict after 50 blocks
+            if (this.blocks.length >= 25) {
+              patternThreshold = 0.3; // EXTREMELY strict after 25 blocks - nearly identical colors only
+              largeBlockThreshold = 5; // Very strict after 25 blocks
             } else if (this.blocks.length >= 20) {
-              patternThreshold = 0.8; // Very strict for blocks 20-50
-              largeBlockThreshold = 6; // Strict for blocks 20-50
+              patternThreshold = 0.8; // Very strict for blocks 20-25
+              largeBlockThreshold = 6; // Strict for blocks 20-25
             } else {
               patternThreshold = 1.2; // Strict for first 20 blocks
               largeBlockThreshold = 7; // Standard strictness for first 20 blocks
@@ -3450,11 +3462,11 @@
             // Pattern pieces are already filtered out of eligibleBlocks for dissimilar colors
             // No need to check again here
             
-            // 2. Key Large Shape Protection (identified at block 50)
+            // 2. Key Large Shape Protection (identified at block 25)
             const isLargeBlock = block.width > 100 && block.height > 100;
             if (isLargeBlock) {
-              if (this.blocks.length >= 50) {
-                // After 50 blocks: Protect key large shapes only for similar tones
+              if (this.blocks.length >= 25) {
+                // After 25 blocks: Protect key large shapes only for similar tones
                 const isKeyLargeShape = this.isKeyLargeShape(block);
                 if (isKeyLargeShape) {
                   // Key large shapes: Only allow splitting with NEARLY IDENTICAL colors
@@ -3492,11 +3504,11 @@
           
           let indexToSplit;
           
-          if (this.blocks.length >= 50) {
-            // ULTRA-STRICT MODE: Use protected blocks with family matching and key large shape prioritization
+          if (this.blocks.length >= 25) {
+            // CORE QUILT + BORDER SYSTEM: After block 25, core is protected, new colors form borders
             const familyBlocks = this.findColorFamilyBlocks(selectedColor);
             
-            // PRIORITIZE KEY LARGE SHAPES for NEARLY IDENTICAL colors
+            // CORE PROTECTION: Only similar colors can split core blocks
             const keyLargeShapes = protectedBlocks.filter(block => this.isKeyLargeShape(block));
             const similarKeyShapes = keyLargeShapes.filter(block => {
               const blockColorDistance = this.calculateColorDistance(selectedColor, block.color);
@@ -3511,7 +3523,7 @@
             });
             
             if (similarKeyShapes.length > 0) {
-              // PRIORITY: Split key large shapes with similar colors
+              // CORE SPLITTING: Split core blocks with similar colors
               const bestKeyShape = similarKeyShapes.reduce((best, current) => {
                 const bestDistance = this.calculateColorDistance(selectedColor, best.color);
                 const currentDistance = this.calculateColorDistance(selectedColor, current.color);
@@ -3519,12 +3531,13 @@
               });
               
               indexToSplit = this.blocks.indexOf(bestKeyShape);
+              this.logger.log(`🛡️ CORE SPLITTING: Similar color splits core block ${bestKeyShape.width}x${bestKeyShape.height}`);
             } else if (familyBlocks.length > 0) {
               const bestFamilyBlock = familyBlocks[0];
               const colorDistance = bestFamilyBlock.distance;
               
               // Check if the best family block is in our protected list
-              const familyThreshold = this.blocks.length >= 50 ? 8 : 12; // Tighter after 50 blocks
+              const familyThreshold = this.blocks.length >= 25 ? 8 : 12; // Tighter after 25 blocks
               if (protectedBlocks.includes(bestFamilyBlock.block) && colorDistance < familyThreshold) {
                 indexToSplit = bestFamilyBlock.index;
               } else {
@@ -3578,15 +3591,32 @@
                   });
                   indexToSplit = this.blocks.indexOf(smallestProtected);
                 } else {
-                  // Only pattern pieces available - use sacrificial shapes instead
-                  const sacrificialShapes = eligibleBlocks.filter(block => !this.isKeyLargeShape(block));
-                  if (sacrificialShapes.length > 0) {
-                    const smallestSacrificial = sacrificialShapes.reduce((smallest, current) => {
+                  // BORDER FORMATION: No similar colors found - create inward border
+                  this.logger.log(`🎯 BORDER FORMATION: Dissimilar color will form inward border`);
+                  
+                  // Find edge blocks for border formation (small blocks near quilt edges)
+                  const edgeBlocks = this.findEdgeBlocksForBorder();
+                  if (edgeBlocks.length > 0) {
+                    // Select smallest edge block for border formation
+                    const smallestEdgeBlock = edgeBlocks.reduce((smallest, current) => {
                       const smallestArea = smallest.width * smallest.height;
                       const currentArea = current.width * current.height;
                       return currentArea < smallestArea ? current : smallest;
                     });
-                    indexToSplit = this.blocks.indexOf(smallestSacrificial);
+                    indexToSplit = this.blocks.indexOf(smallestEdgeBlock);
+                    this.logger.log(`🎯 BORDER TARGET: Selected edge block ${smallestEdgeBlock.width}x${smallestEdgeBlock.height} for border formation`);
+                  } else {
+                    // Fallback: use smallest sacrificial shape
+                    const sacrificialShapes = eligibleBlocks.filter(block => !this.isKeyLargeShape(block));
+                    if (sacrificialShapes.length > 0) {
+                      const smallestSacrificial = sacrificialShapes.reduce((smallest, current) => {
+                        const smallestArea = smallest.width * smallest.height;
+                        const currentArea = current.width * current.height;
+                        return currentArea < smallestArea ? current : smallest;
+                      });
+                      indexToSplit = this.blocks.indexOf(smallestSacrificial);
+                      this.logger.log(`🎯 BORDER FALLBACK: Using sacrificial shape ${smallestSacrificial.width}x${smallestSacrificial.height}`);
+                    }
                   }
                 }
               } else {
@@ -3602,7 +3632,7 @@
               }
             }
           } else {
-            // Before 50 blocks: use smallest protected block
+            // Before 25 blocks: use smallest protected block
             if (protectedBlocks.length > 0) {
               const smallestProtected = protectedBlocks.reduce((smallest, current) => {
                 const smallestArea = smallest.width * smallest.height;
@@ -3987,7 +4017,7 @@
           // Use the SAME logic as handleAddColor() but with the specific color
           // Graduated minimum size based on block count
           let currentMinSize;
-          if (this.blocks.length >= 50 && this.blocks.length <= 275) {
+          if (this.blocks.length >= 25 && this.blocks.length <= 275) {
             currentMinSize = 100; // Preserve large fields and patterns during critical growth
           } else {
             currentMinSize = CONFIG.APP.minBlockSize; // 40px after 275 blocks
@@ -3999,14 +4029,14 @@
           const protectedBlocks = eligibleBlocks.filter(block => {
             const colorDistance = this.calculateColorDistance(color, block.color);
             
-            // Tighter color controls after 50 blocks
+            // Tighter color controls after 25 blocks
             let patternThreshold, largeBlockThreshold;
-            if (this.blocks.length >= 50) {
-              patternThreshold = 3; // Extremely strict after 50 blocks
-              largeBlockThreshold = 5; // Very strict after 50 blocks
+            if (this.blocks.length >= 25) {
+              patternThreshold = 3; // Extremely strict after 25 blocks
+              largeBlockThreshold = 5; // Very strict after 25 blocks
             } else {
-              patternThreshold = 5; // Standard strictness before 50 blocks
-              largeBlockThreshold = 8; // Standard strictness before 50 blocks
+              patternThreshold = 5; // Standard strictness before 25 blocks
+              largeBlockThreshold = 8; // Standard strictness before 25 blocks
             }
             
             // 1. Pattern Preservation Protection
@@ -4025,7 +4055,7 @@
           });
           let indexToSplit;
           
-          if (this.blocks.length >= 50) {
+          if (this.blocks.length >= 25) {
             // ULTRA-STRICT MODE: Minimizing visual disruption
             const familyBlocks = this.findColorFamilyBlocks(color);
             
@@ -4135,12 +4165,12 @@
         const area = block.width * block.height;
         const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
         
-        // Graduated pattern detection - more aggressive after 50 blocks
-        if (this.blocks.length >= 50) {
-          // After 50 blocks: More aggressive pattern detection
+        // Graduated pattern detection - more aggressive after 25 blocks
+        if (this.blocks.length >= 25) {
+          // After 25 blocks: More aggressive pattern detection
           return area < 8000 && aspectRatio < 4.0; // Larger area threshold, more permissive aspect ratio
         } else if (this.blocks.length >= 20) {
-          // Blocks 20-50: Medium pattern detection
+          // Blocks 20-25: Medium pattern detection
           return area < 6000 && aspectRatio < 3.5; // Medium area threshold
         } else {
           // First 20 blocks: Standard pattern detection
@@ -4165,6 +4195,49 @@
         
         // Regular key shapes: area > 3000 and not too skinny
         return area > 3000 && aspectRatio < 4.0;
+      }
+
+      findEdgeBlocksForBorder() {
+        // Find small blocks near the edges of the quilt for border formation
+        // These should be small, non-key shapes that can form inward borders
+        const edgeBlocks = [];
+        
+        for (let i = 0; i < this.blocks.length; i++) {
+          const block = this.blocks[i];
+          
+          // Only consider non-key shapes (small blocks that aren't protected)
+          if (!this.isKeyLargeShape(block)) {
+            const area = block.width * block.height;
+            
+            // Prefer small blocks for border formation (accessories, not main focus)
+            if (area < 5000) {
+              // Check if block is near an edge (simple heuristic)
+              const isNearEdge = this.isBlockNearEdge(block);
+              if (isNearEdge) {
+                edgeBlocks.push(block);
+              }
+            }
+          }
+        }
+        
+        return edgeBlocks;
+      }
+
+      isBlockNearEdge(block) {
+        // Simple heuristic to determine if a block is near the quilt edge
+        // For now, consider blocks with x or y near 0 or near max dimensions as edge blocks
+        
+        const maxX = Math.max(...this.blocks.map(b => b.x + b.width));
+        const maxY = Math.max(...this.blocks.map(b => b.y + b.height));
+        
+        const edgeThreshold = 50; // pixels from edge
+        
+        return (
+          block.x < edgeThreshold || 
+          block.y < edgeThreshold ||
+          (block.x + block.width) > (maxX - edgeThreshold) ||
+          (block.y + block.height) > (maxY - edgeThreshold)
+        );
       }
 
       handleShowMyPiece() {
