@@ -2792,6 +2792,9 @@
           // RANDOM PATTERN CREATION
           // 25% chance to create a pattern for large blocks
           if (Math.random() < 0.25 && block.width > 60 && block.height > 60) {
+            // Calculate squareishness for pattern selection
+            const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
+            const isSquareish = aspectRatio < 1.5; // Blocks with aspect ratio < 1.5 are considered squareish
             const patternType = Math.random();
             
             if (patternType < 0.4) {
@@ -3052,20 +3055,18 @@
               });
               
               return true;
-            } else {
-              // 15% chance: Log Cabin pattern
-              this.logger.log('🎯 Creating random log cabin pattern!');
+                          } else if (isSquareish) {
+                // 15% chance: Log Cabin pattern (only for squareish blocks)
+                this.logger.log('🎯 Creating random log cabin pattern!');
               
               const originalColor = block.color;
               const newBlocks = [];
               
               // Calculate dimensions for traditional log cabin
-              // Determine how many layers we can fit (center + 3 layers = 7 strips total)
-              const totalStrips = 7; // center + 6 strips (3 layers)
-              const stripWidth = Math.min(block.width, block.height) / totalStrips;
+              const stripWidth = Math.min(block.width, block.height) * 0.12; // Use fixed strip width
               const centerSize = stripWidth; // Center square same size as strips
               
-              // Calculate center position to fill the entire block
+              // Calculate center position
               const centerX = block.x + (block.width - centerSize) / 2;
               const centerY = block.y + (block.height - centerSize) / 2;
               
@@ -3214,6 +3215,67 @@
               currentY -= stripWidth;
               currentHeight += stripWidth;
               
+              // Gap detection and filling
+              const logCabinBounds = {
+                left: currentX,
+                right: currentX + currentWidth,
+                top: currentY,
+                bottom: currentY + currentHeight
+              };
+              
+              // Check for gaps and add fill strips
+              const gaps = [];
+              
+              // Top gap
+              if (logCabinBounds.top > block.y) {
+                gaps.push({
+                  x: block.x,
+                  y: block.y,
+                  width: block.width,
+                  height: logCabinBounds.top - block.y,
+                  color: newColor
+                });
+              }
+              
+              // Bottom gap
+              if (logCabinBounds.bottom < block.y + block.height) {
+                gaps.push({
+                  x: block.x,
+                  y: logCabinBounds.bottom,
+                  width: block.width,
+                  height: (block.y + block.height) - logCabinBounds.bottom,
+                  color: newColor
+                });
+              }
+              
+              // Left gap
+              if (logCabinBounds.left > block.x) {
+                gaps.push({
+                  x: block.x,
+                  y: logCabinBounds.top,
+                  width: logCabinBounds.left - block.x,
+                  height: logCabinBounds.bottom - logCabinBounds.top,
+                  color: originalColor
+                });
+              }
+              
+              // Right gap
+              if (logCabinBounds.right < block.x + block.width) {
+                gaps.push({
+                  x: logCabinBounds.right,
+                  y: logCabinBounds.top,
+                  width: (block.x + block.width) - logCabinBounds.right,
+                  height: logCabinBounds.bottom - logCabinBounds.top,
+                  color: originalColor
+                });
+              }
+              
+              // Add gap fillers
+              if (gaps.length > 0) {
+                this.logger.log('🔧 Adding gap fillers:', gaps.length, 'pieces');
+                newBlocks.push(...gaps);
+              }
+              
               this.logger.log('✅ Created log cabin pattern:', {
                 originalBlock: block,
                 newPieces: newBlocks.length,
@@ -3234,6 +3296,9 @@
               });
               
               return true;
+            } else {
+              // Block is not squareish, fall back to standard splitting
+              this.logger.log('📐 Block not squareish enough for Log Cabin, using standard split');
             }
           }
           
