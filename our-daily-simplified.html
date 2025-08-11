@@ -3471,10 +3471,28 @@
           let indexToSplit;
           
           if (this.blocks.length >= 50) {
-            // ULTRA-STRICT MODE: Use protected blocks with family matching
+            // ULTRA-STRICT MODE: Use protected blocks with family matching and key large shape prioritization
             const familyBlocks = this.findColorFamilyBlocks(selectedColor);
             
-            if (familyBlocks.length > 0) {
+            // PRIORITIZE KEY LARGE SHAPES for similar colors
+            const keyLargeShapes = protectedBlocks.filter(block => this.isKeyLargeShape(block));
+            const similarKeyShapes = keyLargeShapes.filter(block => {
+              const blockColorDistance = this.calculateColorDistance(selectedColor, block.color);
+              return blockColorDistance < 3; // Very similar colors only
+            });
+            
+            if (similarKeyShapes.length > 0) {
+              // PRIORITY: Split key large shapes with similar colors
+              const bestKeyShape = similarKeyShapes.reduce((best, current) => {
+                const bestDistance = this.calculateColorDistance(selectedColor, best.color);
+                const currentDistance = this.calculateColorDistance(selectedColor, current.color);
+                return currentDistance < bestDistance ? current : best;
+              });
+              
+              indexToSplit = this.blocks.indexOf(bestKeyShape);
+              const keyShapeDistance = this.calculateColorDistance(selectedColor, bestKeyShape.color);
+              this.logger.log(`🎨 KEY LARGE SHAPE PRIORITY: Selected key shape ${bestKeyShape.width}x${bestKeyShape.height} for similar color (distance: ${keyShapeDistance.toFixed(2)})`);
+            } else if (familyBlocks.length > 0) {
               const bestFamilyBlock = familyBlocks[0];
               const colorDistance = bestFamilyBlock.distance;
               
