@@ -1293,6 +1293,7 @@
         defaultColor: '#f7b733',
         quiltSize: 1000, // Base size for calculations
         minBlockSize: 40,
+        minBlockArea: 1600, // 40px × 40px = 1600px² minimum area
         animationDuration: 2000,
         toastDuration: 3000,
         debugMode: true
@@ -2443,6 +2444,7 @@
             <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.testRumiColorSequence()">🧪 Test Rumi Sequence (982 colors)</button>
+        <button onclick="app.stopRumiTest()" style="background: #e74c3c; color: white;">⏹️ Stop Rumi Test</button>
             <button onclick="app.handleShowMyPiece()">Show My Piece</button>
             <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
             <button onclick="app.resetQuiltForNewDay()">Reset Quilt</button>
@@ -3362,35 +3364,96 @@
 
           this.logger.log(`Current blocks: ${this.blocks.length}`, this.blocks);
 
-          // Strategic block selection based on quilt density
-          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
+          // Graduated minimum size based on block count
+          let currentMinSize;
+          if (this.blocks.length >= 50 && this.blocks.length <= 275) {
+            currentMinSize = 100; // Preserve large fields and patterns during critical growth
+          } else {
+            currentMinSize = CONFIG.APP.minBlockSize; // 40px after 275 blocks
+          }
+          
+          // Strategic block selection based on graduated minimum size
+          const eligibleBlocks = this.blocks.filter(b => b.width > currentMinSize || b.height > currentMinSize);
+          
+          this.logger.log(`🎯 Graduated minimum size: ${currentMinSize}px (blocks: ${this.blocks.length})`);
+          this.logger.log(`📊 Eligible blocks: ${eligibleBlocks.length}/${this.blocks.length}`);
+          
+          // Apply protection filters with graduated color similarity
+          const protectedBlocks = eligibleBlocks.filter(block => {
+            const colorDistance = this.calculateColorDistance(selectedColor, block.color);
+            
+            // Tighter color controls after 50 blocks
+            let patternThreshold, largeBlockThreshold;
+            if (this.blocks.length >= 50) {
+              patternThreshold = 3; // Extremely strict after 50 blocks
+              largeBlockThreshold = 5; // Very strict after 50 blocks
+            } else {
+              patternThreshold = 5; // Standard strictness before 50 blocks
+              largeBlockThreshold = 8; // Standard strictness before 50 blocks
+            }
+            
+            // 1. Pattern Preservation Protection
+            // Check if this block is part of a pattern (small, regular pieces)
+            const isPatternPiece = this.isPatternPiece(block);
+            if (isPatternPiece && colorDistance > patternThreshold) {
+              return false; // Protect pattern pieces unless color is extremely similar
+            }
+            
+            // 2. Large Block Protection
+            const isLargeBlock = block.width > 100 && block.height > 100;
+            if (isLargeBlock && colorDistance > largeBlockThreshold) {
+              return false; // Protect large blocks unless color is extremely similar
+            }
+            
+            return true; // Allow splitting
+          });
+          
           let indexToSplit;
           
           if (this.blocks.length >= 50) {
-            // ULTRA-STRICT MODE: Minimizing visual disruption
+            // ULTRA-STRICT MODE: Use protected blocks with family matching
             const familyBlocks = this.findColorFamilyBlocks(selectedColor);
             
             if (familyBlocks.length > 0) {
               const bestFamilyBlock = familyBlocks[0];
               const colorDistance = bestFamilyBlock.distance;
-              const isLongRectangle = bestFamilyBlock.rectangularityScore > 50;
               
-              // ULTRA-STRICT thresholds with enhanced long rectangle protection
-              const maxDistanceForLongRectangles = 15;
-              const maxDistanceForRegularBlocks = 25;
-              
-              // Additional protection: avoid splitting very long rectangles unless perfect color match
-              const aspectRatio = Math.max(bestFamilyBlock.block.width / bestFamilyBlock.block.height, 
-                                         bestFamilyBlock.block.height / bestFamilyBlock.block.width);
-              const isVeryLongRectangle = aspectRatio > 4.0;
-              const isPerfectColorMatch = colorDistance < 5; // Very close color match
-              
-              if (eligibleBlocks.includes(bestFamilyBlock.block) && 
-                  (colorDistance < (isLongRectangle ? maxDistanceForLongRectangles : maxDistanceForRegularBlocks)) &&
-                  (!isVeryLongRectangle || isPerfectColorMatch)) {
+              // Check if the best family block is in our protected list
+              const familyThreshold = this.blocks.length >= 50 ? 8 : 12; // Tighter after 50 blocks
+              if (protectedBlocks.includes(bestFamilyBlock.block) && colorDistance < familyThreshold) {
                 indexToSplit = bestFamilyBlock.index;
               } else {
-                // Fallback to smallest block for minimal disruption
+                // Fallback to smallest protected block
+                if (protectedBlocks.length > 0) {
+                  const smallestProtected = protectedBlocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestProtected);
+                } else {
+                  // No protected blocks - use smallest eligible
+                  if (eligibleBlocks.length > 0) {
+                    const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                      const smallestArea = smallest.width * smallest.height;
+                      const currentArea = current.width * current.height;
+                      return currentArea < smallestArea ? current : smallest;
+                    });
+                    indexToSplit = this.blocks.indexOf(smallestEligible);
+                  }
+                }
+              }
+            } else {
+              // No family blocks - use smallest protected block
+              if (protectedBlocks.length > 0) {
+                const smallestProtected = protectedBlocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestProtected);
+              } else {
+                // No protected blocks - use smallest eligible
                 if (eligibleBlocks.length > 0) {
                   const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
                     const smallestArea = smallest.width * smallest.height;
@@ -3398,18 +3461,20 @@
                     return currentArea < smallestArea ? current : smallest;
                   });
                   indexToSplit = this.blocks.indexOf(smallestEligible);
-                } else {
-                  // No eligible blocks - use smallest of all blocks
-                  const smallestBlock = this.blocks.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestBlock);
                 }
               }
+            }
+          } else {
+            // Before 50 blocks: use smallest protected block
+            if (protectedBlocks.length > 0) {
+              const smallestProtected = protectedBlocks.reduce((smallest, current) => {
+                const smallestArea = smallest.width * smallest.height;
+                const currentArea = current.width * current.height;
+                return currentArea < smallestArea ? current : smallest;
+              });
+              indexToSplit = this.blocks.indexOf(smallestProtected);
             } else {
-              // No family blocks - use smallest block
+              // No protected blocks - use smallest eligible
               if (eligibleBlocks.length > 0) {
                 const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
                   const smallestArea = smallest.width * smallest.height;
@@ -3417,33 +3482,7 @@
                   return currentArea < smallestArea ? current : smallest;
                 });
                 indexToSplit = this.blocks.indexOf(smallestEligible);
-              } else {
-                // No eligible blocks - use smallest of all blocks
-                const smallestBlock = this.blocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestBlock);
               }
-            }
-          } else {
-            // Before 50 blocks: use SMALLEST block for controlled growth
-            if (eligibleBlocks.length > 0) {
-              const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestEligible);
-            } else {
-              // No eligible blocks - use smallest of all blocks
-              const smallestBlock = this.blocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestBlock);
             }
           }
 
@@ -3664,6 +3703,10 @@
       }
 
       async testRumiColorSequence() {
+        // Set flag to allow stopping
+        this.isRumiTestRunning = true;
+        this.logger.log('🚀 Starting Rumi color sequence test...');
+        
         const rumiColors = [
           "#931f25",  "#61dede",  "#ce822c",  "#61cfde",  "#6189de",  "#9dde61",  "#4024a8",  "#d8a746",  "#ea9b9a",  "#8061de",
           "#618bde",  "#ad92e8",  "#1f2193",  "#61c9de",  "#70cae1",  "#dcc95b",  "#1f931f",  "#1f5393",  "#d84654",  "#e37d89",
@@ -3763,10 +3806,54 @@
         ];
         
         for (let i = 0; i < rumiColors.length; i++) {
+          // Check if test should be stopped
+          if (!this.isRumiTestRunning) {
+            this.logger.log('⏹️ Rumi test stopped by user');
+            this.uiService.showToast(`Rumi test stopped at ${i}/${rumiColors.length} colors`);
+            return;
+          }
+          
           const color = rumiColors[i];
           
           // Use the SAME logic as handleAddColor() but with the specific color
-          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
+          // Graduated minimum size based on block count
+          let currentMinSize;
+          if (this.blocks.length >= 50 && this.blocks.length <= 275) {
+            currentMinSize = 100; // Preserve large fields and patterns during critical growth
+          } else {
+            currentMinSize = CONFIG.APP.minBlockSize; // 40px after 275 blocks
+          }
+          
+          const eligibleBlocks = this.blocks.filter(b => b.width > currentMinSize || b.height > currentMinSize);
+          
+          // Apply protection filters with graduated color similarity (same as handleAddColor)
+          const protectedBlocks = eligibleBlocks.filter(block => {
+            const colorDistance = this.calculateColorDistance(color, block.color);
+            
+            // Tighter color controls after 50 blocks
+            let patternThreshold, largeBlockThreshold;
+            if (this.blocks.length >= 50) {
+              patternThreshold = 3; // Extremely strict after 50 blocks
+              largeBlockThreshold = 5; // Very strict after 50 blocks
+            } else {
+              patternThreshold = 5; // Standard strictness before 50 blocks
+              largeBlockThreshold = 8; // Standard strictness before 50 blocks
+            }
+            
+            // 1. Pattern Preservation Protection
+            const isPatternPiece = this.isPatternPiece(block);
+            if (isPatternPiece && colorDistance > patternThreshold) {
+              return false; // Protect pattern pieces unless color is extremely similar
+            }
+            
+            // 2. Large Block Protection
+            const isLargeBlock = block.width > 100 && block.height > 100;
+            if (isLargeBlock && colorDistance > largeBlockThreshold) {
+              return false; // Protect large blocks unless color is extremely similar
+            }
+            
+            return true; // Allow splitting
+          });
           let indexToSplit;
           
           if (this.blocks.length >= 50) {
@@ -3860,7 +3947,31 @@
           }
         }
         
+        this.isRumiTestRunning = false;
         this.uiService.showToast('Rumi color sequence test complete! (982 colors added)');
+      }
+
+      stopRumiTest() {
+        if (this.isRumiTestRunning) {
+          this.isRumiTestRunning = false;
+          this.logger.log('⏹️ Rumi test stop requested');
+          this.uiService.showToast('Stopping Rumi test...');
+        } else {
+          this.uiService.showToast('No Rumi test is currently running');
+        }
+      }
+
+      isPatternPiece(block) {
+        // Detect if a block is likely part of a pattern
+        // Pattern pieces are typically small and regular in size
+        const area = block.width * block.height;
+        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
+        
+        // Pattern pieces are usually:
+        // 1. Small (area < 4000px²)
+        // 2. Regular aspect ratio (not too long/skinny)
+        // 3. Similar to other small blocks in the quilt
+        return area < 4000 && aspectRatio < 3.0;
       }
 
       handleShowMyPiece() {
