@@ -1689,6 +1689,13 @@
         try {
           this.logger.log('🔄 Starting Firebase initialization...');
           
+          // TEMPORARILY DISABLE FIREBASE DUE TO QUOTA EXCEEDED
+          this.logger.warn('🚫 Firebase temporarily disabled due to quota exceeded');
+          this.db = null;
+          this.quiltDoc = null;
+          this.logger.log('✅ Firebase disabled, using localStorage only');
+          
+          /* FIREBASE CODE DISABLED
           const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js');
           const { getFirestore, doc } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js');
           
@@ -1697,6 +1704,7 @@
           this.quiltDoc = doc(this.db, 'quilts', 'daily');
           
           this.logger.log('✅ Firebase initialization complete');
+          */
         } catch (error) {
           this.logger.error('❌ Firebase initialization failed:', error);
           this.errorHandler.handleError(error, 'Firebase initialization');
@@ -1707,8 +1715,34 @@
 
       async loadQuilt() {
         try {
-          this.logger.log('🔄 Loading quilt data from Firebase...');
+          this.logger.log('🔄 Loading quilt data...');
           
+          // TEMPORARILY USE LOCALSTORAGE DUE TO FIREBASE QUOTA EXCEEDED
+          this.logger.warn('🚫 Firebase disabled, trying localStorage backup');
+          
+          // Try to load from localStorage backup
+          try {
+            const backupData = localStorage.getItem('ourDailyQuiltBackup');
+            if (backupData) {
+              const data = JSON.parse(backupData);
+              const blocks = data.blocks || [];
+              const contributorCount = data.contributorCount || 1;
+              this.logger.log(`✅ Successfully loaded ${blocks.length} blocks from localStorage backup`);
+              return { blocks, contributorCount };
+            }
+          } catch (localError) {
+            this.logger.warn('⚠️ localStorage backup load failed:', localError);
+          }
+          
+          // Fallback to default if no backup
+          this.logger.log('📝 No backup found, starting fresh');
+          const dimensions = Utils.getQuiltDimensions();
+          return { 
+            blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
+            contributorCount: 1 
+          };
+          
+          /* FIREBASE CODE DISABLED
           if (!this.db || !this.quiltDoc) {
             this.logger.log('❌ Firebase not initialized');
             const dimensions = Utils.getQuiltDimensions();
@@ -1732,8 +1766,9 @@
               contributorCount: 1 
             };
           }
+          */
         } catch (error) {
-          this.logger.error('❌ Firebase load error:', error);
+          this.logger.error('❌ Load error:', error);
           this.errorHandler.handleError(error, 'loadQuilt');
           const dimensions = Utils.getQuiltDimensions();
           return { 
@@ -1747,6 +1782,26 @@
         try {
           this.logger.log('Saving quilt data');
           
+          // TEMPORARILY DISABLE FIREBASE DUE TO QUOTA EXCEEDED
+          this.logger.warn('🚫 Firebase temporarily disabled due to quota exceeded');
+          this.logger.log(`📊 Would save ${blocks?.length || 0} blocks to Firebase`);
+          
+          // Store in localStorage as backup
+          try {
+            localStorage.setItem('ourDailyQuiltBackup', JSON.stringify({
+              blocks: blocks,
+              contributorCount: contributorCount,
+              lastUpdated: new Date().toISOString(),
+              date: new Date().toISOString().split('T')[0]
+            }));
+            this.logger.log('💾 Saved to localStorage backup');
+          } catch (localError) {
+            this.logger.warn('⚠️ localStorage backup failed:', localError);
+          }
+          
+          return true; // Always return true to continue app flow
+          
+          /* FIREBASE CODE DISABLED
           if (!this.db || !this.quiltDoc) {
             this.logger.log('Firebase not available, skipping save');
             return true;
@@ -1762,6 +1817,7 @@
           
           this.logger.log(`🔥 Saved ${blocks?.length || 0} blocks to Firebase`);
           return true;
+          */
         } catch (error) {
           this.errorHandler.handleError(error, 'saveQuilt');
           this.logger.log('⚠️ Firebase save failed');
@@ -2733,56 +2789,141 @@
             splitRatio = Math.max(0.2, Math.min(0.8, splitRatio));
           }
           
-          // RANDOM CHECKERBOARD PATTERN CREATION
-          // 12% chance to create a checkerboard pattern for large blocks
-          if (Math.random() < 0.12 && block.width > 60 && block.height > 60) {
-            this.logger.log('🎯 Creating random checkerboard pattern!');
+          // RANDOM PATTERN CREATION
+          // 15% chance to create a pattern for large blocks
+          if (Math.random() < 0.15 && block.width > 60 && block.height > 60) {
+            const patternType = Math.random();
             
-            const originalColor = block.color;
-            const newBlocks = [];
-            
-            // Create 2x2 checkerboard pattern
-            const halfWidth = block.width / 2;
-            const halfHeight = block.height / 2;
-            
-            // Create 4 pieces in alternating pattern
-            for (let row = 0; row < 2; row++) {
-              for (let col = 0; col < 2; col++) {
-                const isAlternating = (row + col) % 2 === 1; // Alternating pattern
-                const pieceColor = isAlternating ? newColor : originalColor;
-                
-                const piece = {
-                  x: block.x + (col * halfWidth),
-                  y: block.y + (row * halfHeight),
-                  width: col === 1 ? block.width - halfWidth : halfWidth, // Ensure complete width coverage
-                  height: row === 1 ? block.height - halfHeight : halfHeight, // Ensure complete height coverage
-                  color: pieceColor
-                };
-                
-                newBlocks.push(piece);
+            if (patternType < 0.6) {
+              // 60% chance: Checkerboard pattern
+              this.logger.log('🎯 Creating random checkerboard pattern!');
+              
+              const originalColor = block.color;
+              const newBlocks = [];
+              
+              // Create 2x2 checkerboard pattern
+              const halfWidth = block.width / 2;
+              const halfHeight = block.height / 2;
+              
+              // Create 4 pieces in alternating pattern
+              for (let row = 0; row < 2; row++) {
+                for (let col = 0; col < 2; col++) {
+                  const isAlternating = (row + col) % 2 === 1; // Alternating pattern
+                  const pieceColor = isAlternating ? newColor : originalColor;
+                  
+                  const piece = {
+                    x: block.x + (col * halfWidth),
+                    y: block.y + (row * halfHeight),
+                    width: col === 1 ? block.width - halfWidth : halfWidth, // Ensure complete width coverage
+                    height: row === 1 ? block.height - halfHeight : halfHeight, // Ensure complete height coverage
+                    color: pieceColor
+                  };
+                  
+                  newBlocks.push(piece);
+                }
               }
+              
+              this.logger.log('✅ Created checkerboard pattern:', {
+                originalBlock: block,
+                newPieces: newBlocks.length,
+                pattern: '2x2 alternating'
+              });
+              
+              this.blocks.splice(blockIndex, 1, ...newBlocks);
+              const newBlockIndex = blockIndex + 1; // Point to the first new piece
+              
+              // Set the last added index in the renderer for animation
+              this.renderer.setLastAddedIndex(newBlockIndex);
+              
+              this.logger.log('Split block into checkerboard pattern successfully:', {
+                originalIndex: blockIndex,
+                newIndex: newBlockIndex,
+                pattern: 'checkerboard',
+                newBlocksCount: this.blocks.length
+              });
+              
+              return true;
+            } else {
+              // 40% chance: Alternating bars pattern
+              this.logger.log('🎯 Creating random alternating bars pattern!');
+              
+              const originalColor = block.color;
+              const newBlocks = [];
+              
+              // Determine if we should create horizontal or vertical bars based on block shape
+              const isHorizontal = block.width > block.height * 1.2; // Prefer horizontal bars for wide blocks
+              const isVertical = block.height > block.width * 1.2; // Prefer vertical bars for tall blocks
+              
+              let barDirection;
+              if (isHorizontal) {
+                barDirection = 'horizontal';
+              } else if (isVertical) {
+                barDirection = 'vertical';
+              } else {
+                // For square-ish blocks, randomly choose direction
+                barDirection = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+              }
+              
+              // Create alternating bars pattern
+              if (barDirection === 'horizontal') {
+                // Horizontal bars (stripes)
+                const barHeight = block.height / 5; // 5 horizontal bars
+                
+                for (let i = 0; i < 5; i++) {
+                  const pieceColor = i % 2 === 0 ? originalColor : newColor; // Alternating colors
+                  
+                  const piece = {
+                    x: block.x,
+                    y: block.y + (i * barHeight),
+                    width: block.width,
+                    height: i === 4 ? block.height - (4 * barHeight) : barHeight, // Ensure complete coverage
+                    color: pieceColor
+                  };
+                  
+                  newBlocks.push(piece);
+                }
+              } else {
+                // Vertical bars
+                const barWidth = block.width / 5; // 5 vertical bars
+                
+                for (let i = 0; i < 5; i++) {
+                  const pieceColor = i % 2 === 0 ? originalColor : newColor; // Alternating colors
+                  
+                  const piece = {
+                    x: block.x + (i * barWidth),
+                    y: block.y,
+                    width: i === 4 ? block.width - (4 * barWidth) : barWidth, // Ensure complete coverage
+                    height: block.height,
+                    color: pieceColor
+                  };
+                  
+                  newBlocks.push(piece);
+                }
+              }
+              
+              this.logger.log('✅ Created alternating bars pattern:', {
+                originalBlock: block,
+                newPieces: newBlocks.length,
+                pattern: `${barDirection} bars`,
+                direction: barDirection
+              });
+              
+              this.blocks.splice(blockIndex, 1, ...newBlocks);
+              const newBlockIndex = blockIndex + 1; // Point to the first new piece
+              
+              // Set the last added index in the renderer for animation
+              this.renderer.setLastAddedIndex(newBlockIndex);
+              
+              this.logger.log('Split block into alternating bars pattern successfully:', {
+                originalIndex: blockIndex,
+                newIndex: newBlockIndex,
+                pattern: 'alternating bars',
+                direction: barDirection,
+                newBlocksCount: this.blocks.length
+              });
+              
+              return true;
             }
-            
-            this.logger.log('✅ Created checkerboard pattern:', {
-              originalBlock: block,
-              newPieces: newBlocks.length,
-              pattern: '2x2 alternating'
-            });
-            
-            this.blocks.splice(blockIndex, 1, ...newBlocks);
-            const newBlockIndex = blockIndex + 1; // Point to the first new piece
-            
-            // Set the last added index in the renderer for animation
-            this.renderer.setLastAddedIndex(newBlockIndex);
-            
-            this.logger.log('Split block into checkerboard pattern successfully:', {
-              originalIndex: blockIndex,
-              newIndex: newBlockIndex,
-              pattern: 'checkerboard',
-              newBlocksCount: this.blocks.length
-            });
-            
-            return true;
           }
           
           let block1, block2;
