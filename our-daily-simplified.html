@@ -2727,6 +2727,58 @@
             splitRatio = Math.max(0.2, Math.min(0.8, splitRatio));
           }
           
+          // RANDOM CHECKERBOARD PATTERN CREATION
+          // 12% chance to create a checkerboard pattern for large blocks
+          if (Math.random() < 0.12 && block.width > 60 && block.height > 60) {
+            this.logger.log('🎯 Creating random checkerboard pattern!');
+            
+            const originalColor = block.color;
+            const newBlocks = [];
+            
+            // Create 2x2 checkerboard pattern
+            const halfWidth = block.width / 2;
+            const halfHeight = block.height / 2;
+            
+            // Create 4 pieces in alternating pattern
+            for (let row = 0; row < 2; row++) {
+              for (let col = 0; col < 2; col++) {
+                const isAlternating = (row + col) % 2 === 1; // Alternating pattern
+                const pieceColor = isAlternating ? newColor : originalColor;
+                
+                const piece = {
+                  x: block.x + (col * halfWidth),
+                  y: block.y + (row * halfHeight),
+                  width: col === 1 ? block.width - halfWidth : halfWidth, // Ensure complete width coverage
+                  height: row === 1 ? block.height - halfHeight : halfHeight, // Ensure complete height coverage
+                  color: pieceColor
+                };
+                
+                newBlocks.push(piece);
+              }
+            }
+            
+            this.logger.log('✅ Created checkerboard pattern:', {
+              originalBlock: block,
+              newPieces: newBlocks.length,
+              pattern: '2x2 alternating'
+            });
+            
+            this.blocks.splice(blockIndex, 1, ...newBlocks);
+            const newBlockIndex = blockIndex + 1; // Point to the first new piece
+            
+            // Set the last added index in the renderer for animation
+            this.renderer.setLastAddedIndex(newBlockIndex);
+            
+            this.logger.log('Split block into checkerboard pattern successfully:', {
+              originalIndex: blockIndex,
+              newIndex: newBlockIndex,
+              pattern: 'checkerboard',
+              newBlocksCount: this.blocks.length
+            });
+            
+            return true;
+          }
+          
           let block1, block2;
           if (splitVertically) {
             const splitX = block.width * splitRatio;
