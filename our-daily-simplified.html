@@ -3490,14 +3490,30 @@
               if (protectedBlocks.includes(bestFamilyBlock.block) && colorDistance < familyThreshold) {
                 indexToSplit = bestFamilyBlock.index;
               } else {
-                // Fallback to smallest protected block
+                // Fallback to smallest protected block (EXCLUDE pattern pieces for dissimilar colors)
                 if (protectedBlocks.length > 0) {
-                  const smallestProtected = protectedBlocks.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestProtected);
+                  const nonPatternProtected = protectedBlocks.filter(block => !this.isPatternPiece(block));
+                  
+                  if (nonPatternProtected.length > 0) {
+                    // Use smallest non-pattern protected block
+                    const smallestProtected = nonPatternProtected.reduce((smallest, current) => {
+                      const smallestArea = smallest.width * smallest.height;
+                      const currentArea = current.width * current.height;
+                      return currentArea < smallestArea ? current : smallest;
+                    });
+                    indexToSplit = this.blocks.indexOf(smallestProtected);
+                  } else {
+                    // Only pattern pieces available - use sacrificial shapes instead
+                    const sacrificialShapes = eligibleBlocks.filter(block => !this.isKeyLargeShape(block));
+                    if (sacrificialShapes.length > 0) {
+                      const smallestSacrificial = sacrificialShapes.reduce((smallest, current) => {
+                        const smallestArea = smallest.width * smallest.height;
+                        const currentArea = current.width * current.height;
+                        return currentArea < smallestArea ? current : smallest;
+                      });
+                      indexToSplit = this.blocks.indexOf(smallestSacrificial);
+                    }
+                  }
                 } else {
                   // No protected blocks - use smallest eligible
                   if (eligibleBlocks.length > 0) {
@@ -3511,14 +3527,30 @@
                 }
               }
             } else {
-              // No family blocks - use smallest protected block
+              // No family blocks - use smallest protected block (EXCLUDE pattern pieces for dissimilar colors)
               if (protectedBlocks.length > 0) {
-                const smallestProtected = protectedBlocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestProtected);
+                const nonPatternProtected = protectedBlocks.filter(block => !this.isPatternPiece(block));
+                
+                if (nonPatternProtected.length > 0) {
+                  // Use smallest non-pattern protected block
+                  const smallestProtected = nonPatternProtected.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestProtected);
+                } else {
+                  // Only pattern pieces available - use sacrificial shapes instead
+                  const sacrificialShapes = eligibleBlocks.filter(block => !this.isKeyLargeShape(block));
+                  if (sacrificialShapes.length > 0) {
+                    const smallestSacrificial = sacrificialShapes.reduce((smallest, current) => {
+                      const smallestArea = smallest.width * smallest.height;
+                      const currentArea = current.width * current.height;
+                      return currentArea < smallestArea ? current : smallest;
+                    });
+                    indexToSplit = this.blocks.indexOf(smallestSacrificial);
+                  }
+                }
               } else {
                 // No protected blocks - use smallest eligible
                 if (eligibleBlocks.length > 0) {
