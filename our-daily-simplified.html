@@ -1204,6 +1204,7 @@
         
         <div class="button-group">
           <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white;">TEST: ADD RANDOM BLOCK</button>
+          <button id="testCheckerboard" class="btn" style="background: #9b59b6; color: white;">🧪 TEST CHECKERBOARDS</button>
           <button id="rumiTestBtn" class="btn" style="background: #FF9800; color: white;">🧪 TEST RUMI SEQUENCE</button>
           <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white;">SHOW ME MY PIECE</button>
           <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white;">TEST: Simulate Different User</button>
@@ -2063,6 +2064,11 @@
         const testAddBlock = document.getElementById('testAddBlock');
         if (testAddBlock) {
           testAddBlock.addEventListener('click', this.handleTestAddBlock.bind(this));
+        }
+
+        const testCheckerboard = document.getElementById('testCheckerboard');
+        if (testCheckerboard) {
+          testCheckerboard.addEventListener('click', this.handleTestCheckerboard.bind(this));
         }
 
         const rumiTestBtn = document.getElementById('rumiTestBtn');
@@ -3001,6 +3007,41 @@
         } catch (error) {
           this.errorHandler.handleError(error, 'shareFlow');
         }
+      }
+
+      async handleTestCheckerboard() {
+        this.uiService.showToast('Testing checkerboard patterns...');
+        
+        // Add 10 random colors to trigger checkerboard patterns
+        const testColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e'];
+        
+        for (let i = 0; i < 10; i++) {
+          const randomColor = testColors[Math.floor(Math.random() * testColors.length)];
+          
+          // Find the largest block to split
+          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
+          let indexToSplit = 0;
+          
+          if (eligibleBlocks.length > 0) {
+            const largestEligible = eligibleBlocks.reduce((largest, current) => {
+              const largestArea = largest.width * largest.height;
+              const currentArea = current.width * current.height;
+              return currentArea > largestArea ? current : largest;
+            });
+            indexToSplit = this.blocks.indexOf(largestEligible);
+          }
+          
+          const success = this.splitBlock(indexToSplit, randomColor);
+          
+          if (success) {
+            this.contributorCount++;
+            this.renderQuilt();
+            await this.saveQuilt();
+            await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
+          }
+        }
+        
+        this.uiService.showToast('Checkerboard test complete! Check for scattered patterns.');
       }
 
       async handleTestAddBlock() {
