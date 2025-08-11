@@ -3402,10 +3402,8 @@
           // Identify key large shapes at block 50
           if (this.blocks.length === 50) {
             const keyLargeShapes = this.blocks.filter(block => this.isKeyLargeShape(block));
-            this.logger.log(`🎨 KEY LARGE SHAPES IDENTIFIED at block 50: ${keyLargeShapes.length} shapes`);
-            keyLargeShapes.forEach((shape, index) => {
-              this.logger.log(`  ${index + 1}. ${shape.width}x${shape.height} (${(shape.width * shape.height).toFixed(0)}px²) - Color: ${shape.color}`);
-            });
+            const sacrificialShapes = this.blocks.filter(block => !this.isKeyLargeShape(block));
+            this.logger.log(`🎨 PROTECTION SYSTEM: ${keyLargeShapes.length} key shapes, ${sacrificialShapes.length} sacrificial shapes`);
           }
           
           // Apply protection filters with graduated color similarity
@@ -3429,13 +3427,7 @@
             // Check if this block is part of a pattern (small, regular pieces)
             const isPatternPiece = this.isPatternPiece(block);
             if (isPatternPiece && colorDistance > patternThreshold) {
-              this.logger.log(`🛡️ ULTRA-PROTECTING pattern piece: colorDistance=${colorDistance.toFixed(2)}, threshold=${patternThreshold}, area=${(block.width * block.height).toFixed(0)}px²`);
               return false; // Protect pattern pieces unless color is extremely similar
-            }
-            
-            // Additional pattern protection: avoid splitting pattern pieces if other options exist
-            if (isPatternPiece) {
-              this.logger.log(`🎯 Pattern piece detected: ${block.width}x${block.height}, colorDistance=${colorDistance.toFixed(2)}, threshold=${patternThreshold}`);
             }
             
             // 2. Key Large Shape Protection (identified at block 50)
@@ -3448,7 +3440,6 @@
                   // Key large shapes: Only allow splitting with very similar colors
                   const keyShapeThreshold = 3; // Very similar colors only
                   if (colorDistance > keyShapeThreshold) {
-                    this.logger.log(`🛡️ KEY LARGE SHAPE PROTECTION: Block ${block.width}x${block.height} protected (colorDistance=${colorDistance.toFixed(2)}, threshold=${keyShapeThreshold})`);
                     return false; // Protect key large shapes unless color is very similar
                   }
                 } else {
@@ -3490,8 +3481,6 @@
               });
               
               indexToSplit = this.blocks.indexOf(bestKeyShape);
-              const keyShapeDistance = this.calculateColorDistance(selectedColor, bestKeyShape.color);
-              this.logger.log(`🎨 KEY LARGE SHAPE PRIORITY: Selected key shape ${bestKeyShape.width}x${bestKeyShape.height} for similar color (distance: ${keyShapeDistance.toFixed(2)})`);
             } else if (familyBlocks.length > 0) {
               const bestFamilyBlock = familyBlocks[0];
               const colorDistance = bestFamilyBlock.distance;
