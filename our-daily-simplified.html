@@ -3474,14 +3474,45 @@
               });
               indexToSplit = this.blocks.indexOf(smallestProtected);
             } else {
-              // No protected blocks - use smallest eligible
+              // No protected blocks - ULTRA-PRIORITIZE skinny rectangles after 275 blocks
               if (eligibleBlocks.length > 0) {
-                const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestEligible);
+                if (this.blocks.length >= 275) {
+                  // After 275 blocks: ULTRA-PRIORITIZE SKINNY RECTANGLES
+                  const skinnyRectangles = eligibleBlocks.filter(block => {
+                    const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
+                    return aspectRatio > 2.0; // Increased threshold - target more rectangles
+                  });
+                  
+                  if (skinnyRectangles.length > 0) {
+                    // ULTRA-PRIORITY: Select the skinniest rectangle
+                    const skinniestRectangle = skinnyRectangles.reduce((skinniest, current) => {
+                      const skinniestRatio = Math.max(skinniest.width / skinniest.height, skinniest.height / skinniest.width);
+                      const currentRatio = Math.max(current.width / current.height, current.height / current.width);
+                      return currentRatio > skinniestRatio ? current : skinniest;
+                    });
+                    
+                    indexToSplit = this.blocks.indexOf(skinniestRectangle);
+                    const finalRatio = Math.max(skinniestRectangle.width / skinniestRectangle.height, skinniestRectangle.height / skinniestRectangle.width);
+                    this.logger.log(`🎯 ULTRA SKINNY RECTANGLE PRIORITY: Selected skinniest rectangle (aspectRatio: ${finalRatio.toFixed(1)}, size: ${skinniestRectangle.width}x${skinniestRectangle.height})`);
+                  } else {
+                    // No skinny rectangles - fall back to smallest eligible
+                    const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                      const smallestArea = smallest.width * smallest.height;
+                      const currentArea = current.width * current.height;
+                      return currentArea < smallestArea ? current : smallest;
+                    });
+                    indexToSplit = this.blocks.indexOf(smallestEligible);
+                    this.logger.log(`⚠️ No skinny rectangles found, falling back to smallest eligible block`);
+                  }
+                } else {
+                  // Before 275 blocks: use smallest eligible (normal behavior)
+                  const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestEligible);
+                }
               }
             }
           }
