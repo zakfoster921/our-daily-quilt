@@ -3394,7 +3394,31 @@
           }
           
           // Strategic block selection based on graduated minimum size
-          const eligibleBlocks = this.blocks.filter(b => b.width > currentMinSize || b.height > currentMinSize);
+          // EXCLUDE pattern pieces for dissimilar colors entirely
+          const eligibleBlocks = this.blocks.filter(b => {
+            // Size requirement
+            const meetsSizeRequirement = b.width > currentMinSize || b.height > currentMinSize;
+            
+            // Pattern piece protection: exclude pattern pieces for dissimilar colors
+            const isPatternPiece = this.isPatternPiece(b);
+            if (isPatternPiece) {
+              const colorDistance = this.calculateColorDistance(selectedColor, b.color);
+              let patternThreshold;
+              if (this.blocks.length >= 50) {
+                patternThreshold = 0.3; // EXTREMELY strict after 50 blocks
+              } else if (this.blocks.length >= 20) {
+                patternThreshold = 0.8; // Very strict for blocks 20-50
+              } else {
+                patternThreshold = 1.2; // Strict for first 20 blocks
+              }
+              
+              // Only include pattern pieces if color is similar enough
+              return meetsSizeRequirement && colorDistance <= patternThreshold;
+            }
+            
+            // Non-pattern pieces: just check size
+            return meetsSizeRequirement;
+          });
           
           this.logger.log(`🎯 Graduated minimum size: ${currentMinSize}px (blocks: ${this.blocks.length})`);
           this.logger.log(`📊 Eligible blocks: ${eligibleBlocks.length}/${this.blocks.length}`);
@@ -3423,12 +3447,8 @@
               largeBlockThreshold = 7; // Standard strictness for first 20 blocks
             }
             
-            // 1. ULTRA-STRICT Pattern Preservation Protection
-            // Check if this block is part of a pattern (small, regular pieces)
-            const isPatternPiece = this.isPatternPiece(block);
-            if (isPatternPiece && colorDistance > patternThreshold) {
-              return false; // Protect pattern pieces unless color is extremely similar
-            }
+            // Pattern pieces are already filtered out of eligibleBlocks for dissimilar colors
+            // No need to check again here
             
             // 2. Key Large Shape Protection (identified at block 50)
             const isLargeBlock = block.width > 100 && block.height > 100;
