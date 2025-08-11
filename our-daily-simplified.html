@@ -1943,10 +1943,16 @@
 
         // Render each block
         blocks.forEach((block, i) => {
-          // Add jittered positioning for organic feel - scaled by block size
+          // Graduated jitter and organic edges based on block count
+          const useReducedStyle = blocks.length >= 50;
+          
+          // Calculate jitter intensity based on block count
+          const jitterIntensity = useReducedStyle ? 0.3 : 1.0; // Reduced jitter after 50 blocks
+          
+          // Add jittered positioning - scaled by block size and intensity
           const blockArea = block.width * block.height;
           const maxArea = 10000; // Reference area for scaling
-          const jitterScale = Math.min(1, Math.max(0.3, blockArea / maxArea)); // Scale between 0.3 and 1
+          const jitterScale = Math.min(1, Math.max(0.3, blockArea / maxArea)) * jitterIntensity; // Scale between 0.3 and 1, then apply intensity
           
           const jitterX = (Math.random() - 0.5) * 6 * jitterScale;
           const jitterY = (Math.random() - 0.5) * 6 * jitterScale;
@@ -1961,8 +1967,8 @@
             rotation: jitterRotation
           };
           
-          // Create organic edges
-          const edgeVariation = 2;
+          // Create organic edges with graduated intensity
+          const edgeVariation = useReducedStyle ? 0.6 : 2; // Reduced edge variation after 50 blocks
           const topEdge = this.createWatercolorEdge(jitteredBlock.x, jitteredBlock.y, jitteredBlock.x + jitteredBlock.width, jitteredBlock.y, false, edgeVariation);
           const rightEdge = this.createWatercolorEdge(jitteredBlock.x + jitteredBlock.width, jitteredBlock.y, jitteredBlock.x + jitteredBlock.width, jitteredBlock.y + jitteredBlock.height, true, edgeVariation);
           const bottomEdge = this.createWatercolorEdge(jitteredBlock.x + jitteredBlock.width, jitteredBlock.y + jitteredBlock.height, jitteredBlock.x, jitteredBlock.y + jitteredBlock.height, false, edgeVariation);
@@ -2002,7 +2008,8 @@
         });
 
         this.lastAddedIndex = null;
-        this.logger.log(`✅ Rendered ${blocks.length} organic blocks`);
+        const style = blocks.length >= 50 ? 'refined' : 'organic';
+        this.logger.log(`✅ Rendered ${blocks.length} ${style} blocks`);
       }
 
       createWatercolorEdge(startX, startY, endX, endY, isVertical = false, edgeVariation = 2) {
