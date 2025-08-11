@@ -3457,10 +3457,21 @@
                 // After 50 blocks: Protect key large shapes only for similar tones
                 const isKeyLargeShape = this.isKeyLargeShape(block);
                 if (isKeyLargeShape) {
-                  // Key large shapes: Only allow splitting with very similar colors
-                  const keyShapeThreshold = 3; // Very similar colors only
-                  if (colorDistance > keyShapeThreshold) {
-                    return false; // Protect key large shapes unless color is very similar
+                  // Key large shapes: Only allow splitting with NEARLY IDENTICAL colors
+                  const blockArea = block.width * block.height;
+                  
+                  // EXTREMELY LARGE BLOCKS get the strictest protection
+                  if (blockArea > 20000) {
+                    const ultraStrictThreshold = 0.2; // Nearly identical colors only
+                    if (colorDistance > ultraStrictThreshold) {
+                      return false; // Protect ultra-large blocks unless color is nearly identical
+                    }
+                  } else {
+                    // Regular key large shapes: still very strict
+                    const keyShapeThreshold = 0.5; // EXTREMELY strict - nearly identical colors only
+                    if (colorDistance > keyShapeThreshold) {
+                      return false; // Protect key large shapes unless color is nearly identical
+                    }
                   }
                 } else {
                   // Regular large blocks: Allow splitting with moderately similar colors
@@ -3485,11 +3496,18 @@
             // ULTRA-STRICT MODE: Use protected blocks with family matching and key large shape prioritization
             const familyBlocks = this.findColorFamilyBlocks(selectedColor);
             
-            // PRIORITIZE KEY LARGE SHAPES for similar colors
+            // PRIORITIZE KEY LARGE SHAPES for NEARLY IDENTICAL colors
             const keyLargeShapes = protectedBlocks.filter(block => this.isKeyLargeShape(block));
             const similarKeyShapes = keyLargeShapes.filter(block => {
               const blockColorDistance = this.calculateColorDistance(selectedColor, block.color);
-              return blockColorDistance < 3; // Very similar colors only
+              const blockArea = block.width * block.height;
+              
+              // Ultra-large blocks need nearly identical colors
+              if (blockArea > 20000) {
+                return blockColorDistance < 0.2; // Ultra-strict for very large blocks
+              } else {
+                return blockColorDistance < 0.5; // Very strict for regular key shapes
+              }
             });
             
             if (similarKeyShapes.length > 0) {
