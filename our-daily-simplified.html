@@ -2769,9 +2769,15 @@
           const densityMultiplier = this.getDensityMultiplier(densityScore);
           
           if (this.blocks.length >= 50) {
-            // ULTRA-STRICT mode: COMPOSITION-AWARE splitting
+            // ULTRA-STRICT mode: COMPOSITION-AWARE splitting with square encouragement
             let baseRatio;
-            if (aspectRatio > 3.0) {
+            
+            // After 275 blocks: Encourage square-like splitting for small skinny rectangles
+            if (this.blocks.length >= 275 && aspectRatio > 2.0 && blockArea < 5000) {
+              // Small skinny rectangles: Encourage 50-50 splits to create more square-like pieces
+              baseRatio = 0.5 + Math.random() * 0.1; // 50-60% for small skinny rectangles
+              this.logger.log(`🎯 SQUARE-ENCOURAGEMENT: Small skinny rectangle (${block.width}x${block.height}) - encouraging 50-50 split`);
+            } else if (aspectRatio > 3.0) {
               baseRatio = 0.25 + Math.random() * 0.15; // 25-40% for very long rectangles
             } else if (aspectRatio > 2.0) {
               baseRatio = 0.3 + Math.random() * 0.2; // 30-50% for long rectangles
@@ -2799,8 +2805,16 @@
           }
           
           // RANDOM PATTERN CREATION
-          // 25% chance to create a pattern for large blocks
-          if (Math.random() < 0.25 && block.width > 60 && block.height > 60) {
+          // Graduated pattern chance - more patterns before 50 blocks
+          let patternChance;
+          if (this.blocks.length < 20) {
+            patternChance = 0.65; // 65% chance for first 20 blocks - establish patterns early
+          } else if (this.blocks.length < 50) {
+            patternChance = 0.45; // 45% chance for blocks 20-50
+          } else {
+            patternChance = 0.25; // 25% chance after 50 blocks
+          }
+          if (Math.random() < patternChance && block.width > 60 && block.height > 60) {
             // Calculate squareishness for pattern selection
             const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
             const isSquareish = aspectRatio < 1.5; // Blocks with aspect ratio < 1.5 are considered squareish
@@ -3385,31 +3399,70 @@
           this.logger.log(`🎯 Graduated minimum size: ${currentMinSize}px (blocks: ${this.blocks.length})`);
           this.logger.log(`📊 Eligible blocks: ${eligibleBlocks.length}/${this.blocks.length}`);
           
+          // Identify key large shapes at block 50
+          if (this.blocks.length === 50) {
+            const keyLargeShapes = this.blocks.filter(block => this.isKeyLargeShape(block));
+            this.logger.log(`🎨 KEY LARGE SHAPES IDENTIFIED at block 50: ${keyLargeShapes.length} shapes`);
+            keyLargeShapes.forEach((shape, index) => {
+              this.logger.log(`  ${index + 1}. ${shape.width}x${shape.height} (${(shape.width * shape.height).toFixed(0)}px²) - Color: ${shape.color}`);
+            });
+          }
+          
           // Apply protection filters with graduated color similarity
           const protectedBlocks = eligibleBlocks.filter(block => {
             const colorDistance = this.calculateColorDistance(selectedColor, block.color);
             
-            // Tighter color controls after 50 blocks
+            // ULTRA-STRICT color controls with graduated pattern protection
             let patternThreshold, largeBlockThreshold;
             if (this.blocks.length >= 50) {
-              patternThreshold = 3; // Extremely strict after 50 blocks
+              patternThreshold = 0.3; // EXTREMELY strict after 50 blocks - nearly identical colors only
               largeBlockThreshold = 5; // Very strict after 50 blocks
+            } else if (this.blocks.length >= 20) {
+              patternThreshold = 0.8; // Very strict for blocks 20-50
+              largeBlockThreshold = 6; // Strict for blocks 20-50
             } else {
-              patternThreshold = 5; // Standard strictness before 50 blocks
-              largeBlockThreshold = 8; // Standard strictness before 50 blocks
+              patternThreshold = 1.2; // Strict for first 20 blocks
+              largeBlockThreshold = 7; // Standard strictness for first 20 blocks
             }
             
-            // 1. Pattern Preservation Protection
+            // 1. ULTRA-STRICT Pattern Preservation Protection
             // Check if this block is part of a pattern (small, regular pieces)
             const isPatternPiece = this.isPatternPiece(block);
             if (isPatternPiece && colorDistance > patternThreshold) {
+              this.logger.log(`🛡️ ULTRA-PROTECTING pattern piece: colorDistance=${colorDistance.toFixed(2)}, threshold=${patternThreshold}, area=${(block.width * block.height).toFixed(0)}px²`);
               return false; // Protect pattern pieces unless color is extremely similar
             }
             
-            // 2. Large Block Protection
+            // Additional pattern protection: avoid splitting pattern pieces if other options exist
+            if (isPatternPiece) {
+              this.logger.log(`🎯 Pattern piece detected: ${block.width}x${block.height}, colorDistance=${colorDistance.toFixed(2)}, threshold=${patternThreshold}`);
+            }
+            
+            // 2. Key Large Shape Protection (identified at block 50)
             const isLargeBlock = block.width > 100 && block.height > 100;
-            if (isLargeBlock && colorDistance > largeBlockThreshold) {
-              return false; // Protect large blocks unless color is extremely similar
+            if (isLargeBlock) {
+              if (this.blocks.length >= 50) {
+                // After 50 blocks: Protect key large shapes only for similar tones
+                const isKeyLargeShape = this.isKeyLargeShape(block);
+                if (isKeyLargeShape) {
+                  // Key large shapes: Only allow splitting with very similar colors
+                  const keyShapeThreshold = 3; // Very similar colors only
+                  if (colorDistance > keyShapeThreshold) {
+                    this.logger.log(`🛡️ KEY LARGE SHAPE PROTECTION: Block ${block.width}x${block.height} protected (colorDistance=${colorDistance.toFixed(2)}, threshold=${keyShapeThreshold})`);
+                    return false; // Protect key large shapes unless color is very similar
+                  }
+                } else {
+                  // Regular large blocks: Allow splitting with moderately similar colors
+                  if (colorDistance > largeBlockThreshold) {
+                    return false; // Protect regular large blocks unless color is moderately similar
+                  }
+                }
+              } else {
+                // Before 50 blocks: Normal large block protection
+                if (colorDistance > largeBlockThreshold) {
+                  return false; // Protect large blocks unless color is similar
+                }
+              }
             }
             
             return true; // Allow splitting
@@ -3484,23 +3537,24 @@
               // No protected blocks - ULTRA-PRIORITIZE skinny rectangles after 275 blocks
               if (eligibleBlocks.length > 0) {
                 if (this.blocks.length >= 275) {
-                  // After 275 blocks: ULTRA-PRIORITIZE SKINNY RECTANGLES
+                  // After 275 blocks: ULTRA-PRIORITIZE SMALLEST SKINNY RECTANGLES
                   const skinnyRectangles = eligibleBlocks.filter(block => {
                     const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
                     return aspectRatio > 2.0; // Increased threshold - target more rectangles
                   });
                   
                   if (skinnyRectangles.length > 0) {
-                    // ULTRA-PRIORITY: Select the skinniest rectangle
-                    const skinniestRectangle = skinnyRectangles.reduce((skinniest, current) => {
-                      const skinniestRatio = Math.max(skinniest.width / skinniest.height, skinniest.height / skinniest.width);
-                      const currentRatio = Math.max(current.width / current.height, current.height / current.width);
-                      return currentRatio > skinniestRatio ? current : skinniest;
+                    // ULTRA-PRIORITY: Select the SMALLEST skinny rectangle to encourage square-like splitting
+                    const smallestSkinnyRectangle = skinnyRectangles.reduce((smallest, current) => {
+                      const smallestArea = smallest.width * smallest.height;
+                      const currentArea = current.width * current.height;
+                      return currentArea < smallestArea ? current : smallest;
                     });
                     
-                    indexToSplit = this.blocks.indexOf(skinniestRectangle);
-                    const finalRatio = Math.max(skinniestRectangle.width / skinniestRectangle.height, skinniestRectangle.height / skinniestRectangle.width);
-                    this.logger.log(`🎯 ULTRA SKINNY RECTANGLE PRIORITY: Selected skinniest rectangle (aspectRatio: ${finalRatio.toFixed(1)}, size: ${skinniestRectangle.width}x${skinniestRectangle.height})`);
+                    indexToSplit = this.blocks.indexOf(smallestSkinnyRectangle);
+                    const finalRatio = Math.max(smallestSkinnyRectangle.width / smallestSkinnyRectangle.height, smallestSkinnyRectangle.height / smallestSkinnyRectangle.width);
+                    const area = smallestSkinnyRectangle.width * smallestSkinnyRectangle.height;
+                    this.logger.log(`🎯 SMALLEST SKINNY RECTANGLE PRIORITY: Selected smallest skinny rectangle (aspectRatio: ${finalRatio.toFixed(1)}, size: ${smallestSkinnyRectangle.width}x${smallestSkinnyRectangle.height}, area: ${area.toFixed(0)}px²)`);
                   } else {
                     // No skinny rectangles - fall back to smallest eligible
                     const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
@@ -4000,16 +4054,33 @@
       }
 
       isPatternPiece(block) {
-        // Detect if a block is likely part of a pattern
-        // Pattern pieces are typically small and regular in size
+        // Enhanced pattern detection with graduated thresholds
         const area = block.width * block.height;
         const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
         
-        // Pattern pieces are usually:
-        // 1. Small (area < 4000px²)
-        // 2. Regular aspect ratio (not too long/skinny)
-        // 3. Similar to other small blocks in the quilt
-        return area < 4000 && aspectRatio < 3.0;
+        // Graduated pattern detection - more aggressive after 50 blocks
+        if (this.blocks.length >= 50) {
+          // After 50 blocks: More aggressive pattern detection
+          return area < 8000 && aspectRatio < 4.0; // Larger area threshold, more permissive aspect ratio
+        } else if (this.blocks.length >= 20) {
+          // Blocks 20-50: Medium pattern detection
+          return area < 6000 && aspectRatio < 3.5; // Medium area threshold
+        } else {
+          // First 20 blocks: Standard pattern detection
+          return area < 4000 && aspectRatio < 3.0; // Standard thresholds
+        }
+      }
+
+      isKeyLargeShape(block) {
+        // Identify key large shapes that should be protected for similar tones only
+        const area = block.width * block.height;
+        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
+        
+        // Key large shapes are:
+        // 1. Very large (area > 20000px²)
+        // 2. Relatively square-ish (aspectRatio < 2.5)
+        // 3. Significant color fields that should be preserved
+        return area > 20000 && aspectRatio < 2.5;
       }
 
       handleShowMyPiece() {
