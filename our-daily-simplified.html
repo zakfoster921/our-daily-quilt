@@ -2790,12 +2790,12 @@
           }
           
           // RANDOM PATTERN CREATION
-          // 15% chance to create a pattern for large blocks
-          if (Math.random() < 0.15 && block.width > 60 && block.height > 60) {
+          // 25% chance to create a pattern for large blocks
+          if (Math.random() < 0.25 && block.width > 60 && block.height > 60) {
             const patternType = Math.random();
             
-            if (patternType < 0.6) {
-              // 60% chance: Checkerboard pattern
+            if (patternType < 0.4) {
+              // 40% chance: Checkerboard pattern
               this.logger.log('🎯 Creating random checkerboard pattern!');
               
               const originalColor = block.color;
@@ -2843,8 +2843,8 @@
               });
               
               return true;
-            } else {
-              // 40% chance: Alternating bars pattern
+            } else if (patternType < 0.65) {
+              // 25% chance: Alternating bars pattern
               this.logger.log('🎯 Creating random alternating bars pattern!');
               
               const originalColor = block.color;
@@ -2919,6 +2919,317 @@
                 newIndex: newBlockIndex,
                 pattern: 'alternating bars',
                 direction: barDirection,
+                newBlocksCount: this.blocks.length
+              });
+              
+              return true;
+            } else if (patternType < 0.85) {
+              // 20% chance: Cross Box pattern
+              this.logger.log('🎯 Creating random cross box pattern!');
+              
+              const originalColor = block.color;
+              const newBlocks = [];
+              
+              // Calculate dimensions for cross box pattern
+              const centerSize = Math.min(block.width, block.height) * 0.9; // Use 90% to fill most of the block
+              const separatorWidth = Math.min(block.width, block.height) * 0.08;
+              
+              // Calculate positions
+              const centerX = block.x + (block.width - centerSize) / 2;
+              const centerY = block.y + (block.height - centerSize) / 2;
+              const separatorX = centerX + centerSize / 2 - separatorWidth / 2;
+              const separatorY = centerY + centerSize / 2 - separatorWidth / 2;
+              
+              // Create 4 central squares in alternating pattern
+              const halfCenter = centerSize / 2;
+              for (let row = 0; row < 2; row++) {
+                for (let col = 0; col < 2; col++) {
+                  const isAlternating = (row + col) % 2 === 1;
+                  const pieceColor = isAlternating ? newColor : originalColor;
+                  
+                  const piece = {
+                    x: centerX + (col * halfCenter),
+                    y: centerY + (row * halfCenter),
+                    width: col === 1 ? centerSize - halfCenter : halfCenter,
+                    height: row === 1 ? centerSize - halfCenter : halfCenter,
+                    color: pieceColor
+                  };
+                  
+                  newBlocks.push(piece);
+                }
+              }
+              
+              // Create cross separators
+              const horizontalSeparator = {
+                x: centerX,
+                y: separatorY,
+                width: centerSize,
+                height: separatorWidth,
+                color: newColor
+              };
+              
+              const verticalSeparator = {
+                x: separatorX,
+                y: centerY,
+                width: separatorWidth,
+                height: centerSize,
+                color: newColor
+              };
+              
+              newBlocks.push(horizontalSeparator, verticalSeparator);
+              
+              // Create outer border frame to fill the remaining space
+              const borderWidth = Math.min(block.width, block.height) * 0.05;
+              
+              // Calculate border pieces to fill the gaps around the center pattern
+              const borderPieces = [];
+              
+              // Top border (above the center pattern)
+              if (centerY > block.y) {
+                borderPieces.push({
+                  x: block.x,
+                  y: block.y,
+                  width: block.width,
+                  height: centerY - block.y,
+                  color: originalColor
+                });
+              }
+              
+              // Bottom border (below the center pattern)
+              const bottomY = centerY + centerSize;
+              if (bottomY < block.y + block.height) {
+                borderPieces.push({
+                  x: block.x,
+                  y: bottomY,
+                  width: block.width,
+                  height: (block.y + block.height) - bottomY,
+                  color: originalColor
+                });
+              }
+              
+              // Left border (left of the center pattern)
+              if (centerX > block.x) {
+                borderPieces.push({
+                  x: block.x,
+                  y: centerY,
+                  width: centerX - block.x,
+                  height: centerSize,
+                  color: originalColor
+                });
+              }
+              
+              // Right border (right of the center pattern)
+              const rightX = centerX + centerSize;
+              if (rightX < block.x + block.width) {
+                borderPieces.push({
+                  x: rightX,
+                  y: centerY,
+                  width: (block.x + block.width) - rightX,
+                  height: centerSize,
+                  color: originalColor
+                });
+              }
+              
+              newBlocks.push(...borderPieces);
+              
+              this.logger.log('✅ Created cross box pattern:', {
+                originalBlock: block,
+                newPieces: newBlocks.length,
+                pattern: 'cross box with border frame'
+              });
+              
+              this.blocks.splice(blockIndex, 1, ...newBlocks);
+              const newBlockIndex = blockIndex + 1; // Point to the first new piece
+              
+              // Set the last added index in the renderer for animation
+              this.renderer.setLastAddedIndex(newBlockIndex);
+              
+              this.logger.log('Split block into cross box pattern successfully:', {
+                originalIndex: blockIndex,
+                newIndex: newBlockIndex,
+                pattern: 'cross box',
+                newBlocksCount: this.blocks.length
+              });
+              
+              return true;
+            } else {
+              // 15% chance: Log Cabin pattern
+              this.logger.log('🎯 Creating random log cabin pattern!');
+              
+              const originalColor = block.color;
+              const newBlocks = [];
+              
+              // Calculate dimensions for traditional log cabin
+              // Determine how many layers we can fit (center + 3 layers = 7 strips total)
+              const totalStrips = 7; // center + 6 strips (3 layers)
+              const stripWidth = Math.min(block.width, block.height) / totalStrips;
+              const centerSize = stripWidth; // Center square same size as strips
+              
+              // Calculate center position to fill the entire block
+              const centerX = block.x + (block.width - centerSize) / 2;
+              const centerY = block.y + (block.height - centerSize) / 2;
+              
+              // Create center square
+              const centerSquare = {
+                x: centerX,
+                y: centerY,
+                width: centerSize,
+                height: centerSize,
+                color: originalColor
+              };
+              newBlocks.push(centerSquare);
+              
+              // Build log cabin strips progressively
+              let currentWidth = centerSize;
+              let currentHeight = centerSize;
+              let currentX = centerX;
+              let currentY = centerY;
+              
+              // Layer 1: Right, Bottom, Left, Top
+              // Right strip
+              newBlocks.push({
+                x: currentX + currentWidth,
+                y: currentY,
+                width: stripWidth,
+                height: currentHeight,
+                color: newColor
+              });
+              currentWidth += stripWidth;
+              
+              // Bottom strip
+              newBlocks.push({
+                x: currentX,
+                y: currentY + currentHeight,
+                width: currentWidth,
+                height: stripWidth,
+                color: originalColor
+              });
+              currentHeight += stripWidth;
+              
+              // Left strip
+              newBlocks.push({
+                x: currentX - stripWidth,
+                y: currentY,
+                width: stripWidth,
+                height: currentHeight,
+                color: newColor
+              });
+              currentX -= stripWidth;
+              currentWidth += stripWidth;
+              
+              // Top strip
+              newBlocks.push({
+                x: currentX,
+                y: currentY - stripWidth,
+                width: currentWidth,
+                height: stripWidth,
+                color: originalColor
+              });
+              currentY -= stripWidth;
+              currentHeight += stripWidth;
+              
+              // Layer 2: Right, Bottom, Left, Top
+              // Right strip
+              newBlocks.push({
+                x: currentX + currentWidth,
+                y: currentY,
+                width: stripWidth,
+                height: currentHeight,
+                color: newColor
+              });
+              currentWidth += stripWidth;
+              
+              // Bottom strip
+              newBlocks.push({
+                x: currentX,
+                y: currentY + currentHeight,
+                width: currentWidth,
+                height: stripWidth,
+                color: originalColor
+              });
+              currentHeight += stripWidth;
+              
+              // Left strip
+              newBlocks.push({
+                x: currentX - stripWidth,
+                y: currentY,
+                width: stripWidth,
+                height: currentHeight,
+                color: newColor
+              });
+              currentX -= stripWidth;
+              currentWidth += stripWidth;
+              
+              // Top strip
+              newBlocks.push({
+                x: currentX,
+                y: currentY - stripWidth,
+                width: currentWidth,
+                height: stripWidth,
+                color: originalColor
+              });
+              currentY -= stripWidth;
+              currentHeight += stripWidth;
+              
+              // Layer 3: Right, Bottom, Left, Top (outermost)
+              // Right strip
+              newBlocks.push({
+                x: currentX + currentWidth,
+                y: currentY,
+                width: stripWidth,
+                height: currentHeight,
+                color: newColor
+              });
+              currentWidth += stripWidth;
+              
+              // Bottom strip
+              newBlocks.push({
+                x: currentX,
+                y: currentY + currentHeight,
+                width: currentWidth,
+                height: stripWidth,
+                color: originalColor
+              });
+              currentHeight += stripWidth;
+              
+              // Left strip
+              newBlocks.push({
+                x: currentX - stripWidth,
+                y: currentY,
+                width: stripWidth,
+                height: currentHeight,
+                color: newColor
+              });
+              currentX -= stripWidth;
+              currentWidth += stripWidth;
+              
+              // Top strip
+              newBlocks.push({
+                x: currentX,
+                y: currentY - stripWidth,
+                width: currentWidth,
+                height: stripWidth,
+                color: originalColor
+              });
+              currentY -= stripWidth;
+              currentHeight += stripWidth;
+              
+              this.logger.log('✅ Created log cabin pattern:', {
+                originalBlock: block,
+                newPieces: newBlocks.length,
+                pattern: 'log cabin spiral with border frame'
+              });
+              
+              this.blocks.splice(blockIndex, 1, ...newBlocks);
+              const newBlockIndex = blockIndex + 1; // Point to the first new piece
+              
+              // Set the last added index in the renderer for animation
+              this.renderer.setLastAddedIndex(newBlockIndex);
+              
+              this.logger.log('Split block into log cabin pattern successfully:', {
+                originalIndex: blockIndex,
+                newIndex: newBlockIndex,
+                pattern: 'log cabin',
                 newBlocksCount: this.blocks.length
               });
               
