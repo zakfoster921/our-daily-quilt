@@ -1205,6 +1205,7 @@
         <div class="button-group">
           <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white;">TEST: ADD RANDOM BLOCK</button>
           <button id="testCheckerboard" class="btn" style="background: #9b59b6; color: white;">🧪 TEST CHECKERBOARDS</button>
+        <button id="forceFreeze" class="btn" style="background: #e74c3c; color: white;">🛡️ FORCE FREEZE</button>
           <button id="rumiTestBtn" class="btn" style="background: #FF9800; color: white;">🧪 TEST RUMI SEQUENCE</button>
           <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white;">SHOW ME MY PIECE</button>
           <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white;">TEST: Simulate Different User</button>
@@ -1293,7 +1294,6 @@
         defaultColor: '#f7b733',
         quiltSize: 1000, // Base size for calculations
         minBlockSize: 40,
-        minBlockArea: 1600, // 40px × 40px = 1600px² minimum area
         animationDuration: 2000,
         toastDuration: 3000,
         debugMode: true
@@ -1943,16 +1943,10 @@
 
         // Render each block
         blocks.forEach((block, i) => {
-          // Graduated jitter and organic edges based on block count
-          const useReducedStyle = blocks.length >= 25;
-          
-          // Calculate jitter intensity based on block count
-          const jitterIntensity = useReducedStyle ? 0.3 : 1.0; // Reduced jitter after 50 blocks
-          
-          // Add jittered positioning - scaled by block size and intensity
+          // Add jittered positioning for organic feel - scaled by block size
           const blockArea = block.width * block.height;
           const maxArea = 10000; // Reference area for scaling
-          const jitterScale = Math.min(1, Math.max(0.3, blockArea / maxArea)) * jitterIntensity; // Scale between 0.3 and 1, then apply intensity
+          const jitterScale = Math.min(1, Math.max(0.3, blockArea / maxArea)); // Scale between 0.3 and 1
           
           const jitterX = (Math.random() - 0.5) * 6 * jitterScale;
           const jitterY = (Math.random() - 0.5) * 6 * jitterScale;
@@ -1967,8 +1961,8 @@
             rotation: jitterRotation
           };
           
-          // Create organic edges with graduated intensity
-          const edgeVariation = useReducedStyle ? 0.6 : 2; // Reduced edge variation after 50 blocks
+          // Create organic edges
+          const edgeVariation = 2;
           const topEdge = this.createWatercolorEdge(jitteredBlock.x, jitteredBlock.y, jitteredBlock.x + jitteredBlock.width, jitteredBlock.y, false, edgeVariation);
           const rightEdge = this.createWatercolorEdge(jitteredBlock.x + jitteredBlock.width, jitteredBlock.y, jitteredBlock.x + jitteredBlock.width, jitteredBlock.y + jitteredBlock.height, true, edgeVariation);
           const bottomEdge = this.createWatercolorEdge(jitteredBlock.x + jitteredBlock.width, jitteredBlock.y + jitteredBlock.height, jitteredBlock.x, jitteredBlock.y + jitteredBlock.height, false, edgeVariation);
@@ -2008,8 +2002,7 @@
         });
 
         this.lastAddedIndex = null;
-                  const style = blocks.length >= 25 ? 'refined' : 'organic';
-        this.logger.log(`✅ Rendered ${blocks.length} ${style} blocks`);
+        this.logger.log(`✅ Rendered ${blocks.length} organic blocks`);
       }
 
       createWatercolorEdge(startX, startY, endX, endY, isVertical = false, edgeVariation = 2) {
@@ -2066,6 +2059,10 @@
         this.selectedSaturation = CONFIG.COLOR_PICKER.saturation;
         this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
         this.colorHasBeenSelected = false;
+        
+        // Key shape freeze system
+        this.keyShapes = [];
+        this.keyShapesFrozen = false;
         
         this.logger.log('SimplifiedQuiltApp initialized with block-based system');
       }
@@ -2133,6 +2130,11 @@
         const testCheckerboard = document.getElementById('testCheckerboard');
         if (testCheckerboard) {
           testCheckerboard.addEventListener('click', this.handleTestCheckerboard.bind(this));
+        }
+
+        const forceFreeze = document.getElementById('forceFreeze');
+        if (forceFreeze) {
+          forceFreeze.addEventListener('click', this.forceFreezeKeyShapes.bind(this));
         }
 
         const rumiTestBtn = document.getElementById('rumiTestBtn');
@@ -2451,7 +2453,6 @@
             <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.testRumiColorSequence()">🧪 Test Rumi Sequence (982 colors)</button>
-        <button onclick="app.stopRumiTest()" style="background: #e74c3c; color: white;">⏹️ Stop Rumi Test</button>
             <button onclick="app.handleShowMyPiece()">Show My Piece</button>
             <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
             <button onclick="app.resetQuiltForNewDay()">Reset Quilt</button>
@@ -2742,6 +2743,79 @@
           this.logger.log(`Current blocks array:`, this.blocks);
           this.logger.log(`Blocks array length: ${this.blocks.length}`);
           
+          // ===== FREEZE CHECK =====
+          // Freeze key shapes when we reach or exceed 25 blocks (handles pattern jumps)
+          this.logger.log(`🔍 FREEZE CHECK: blocks=${this.blocks.length}, keyShapesFrozen=${this.keyShapesFrozen}`);
+          if (this.blocks.length >= 25 && !this.keyShapesFrozen) {
+            this.logger.log(`🛡️ FREEZING KEY SHAPES at block ${this.blocks.length}`);
+            this.freezeKeyShapes();
+          }
+          
+          // ===== POST-FREEZE COLOR DISTANCE CHECK =====
+          if (this.keyShapesFrozen) {
+            this.logger.log(`🛡️ POST-FREEZE MODE: Checking color distance for key shape protection`);
+            
+            // Get the block to split
+            const blockToSplit = this.blocks[blockIndex];
+            if (blockToSplit && this.isKeyShape(blockToSplit)) {
+              const colorDistance = this.calculateColorDistance(newColor, blockToSplit.color);
+              this.logger.log(`🔍 DEBUG: ${newColor} vs ${blockToSplit.color} = distance ${colorDistance.toFixed(4)}`);
+              
+              if (colorDistance >= 0.15) {
+                this.logger.log(`❌ DIFFERENT: Color too different (distance: ${colorDistance.toFixed(4)}) - preventing key shape split`);
+                this.logger.log(`🎨 BORDER FORMATION: Redirecting to border formation instead`);
+                
+                // Find edge blocks for border formation
+                const edgeBlocks = this.findEdgeBlocksForBorder();
+                
+                if (edgeBlocks.length > 0) {
+                  // Use smallest edge block for border
+                  const smallestEdgeBlock = edgeBlocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  const newBlockIndex = this.blocks.indexOf(smallestEdgeBlock);
+                  this.logger.log(`🎯 BORDER TARGET: Redirecting to edge block at index ${newBlockIndex}`);
+                  
+                  // Recursively call splitBlock with the edge block
+                  return this.splitBlock(newBlockIndex, newColor);
+                } else {
+                  // No edge blocks - use smallest non-key shape
+                  const nonKeyShapes = this.blocks.filter(block => !this.isKeyShape(block));
+                  if (nonKeyShapes.length > 0) {
+                    const smallestNonKey = nonKeyShapes.reduce((smallest, current) => {
+                      const smallestArea = smallest.width * smallest.height;
+                      const currentArea = current.width * current.height;
+                      return currentArea < smallestArea ? current : smallest;
+                    });
+                    const newBlockIndex = this.blocks.indexOf(smallestNonKey);
+                    this.logger.log(`🎯 BORDER FALLBACK: Redirecting to non-key shape at index ${newBlockIndex}`);
+                    
+                    // Recursively call splitBlock with the non-key shape
+                    return this.splitBlock(newBlockIndex, newColor);
+                  } else {
+                    // Fallback to smallest of all blocks
+                    const smallestBlock = this.blocks.reduce((smallest, current) => {
+                      const smallestArea = smallest.width * smallest.height;
+                      const currentArea = current.width * current.height;
+                      return currentArea < smallestArea ? current : smallest;
+                    });
+                    const newBlockIndex = this.blocks.indexOf(smallestBlock);
+                    this.logger.log(`🎯 BORDER ULTIMATE FALLBACK: Redirecting to smallest block at index ${newBlockIndex}`);
+                    
+                    // Recursively call splitBlock with the smallest block
+                    return this.splitBlock(newBlockIndex, newColor);
+                  }
+                }
+              } else {
+                this.logger.log(`✅ SIMILAR: Color similar enough (distance: ${colorDistance.toFixed(4)}) - key shape splitting allowed`);
+              }
+            } else if (blockToSplit) {
+              this.logger.log(`🎯 NON-KEY SHAPE: Block is not a key shape, normal splitting allowed`);
+            }
+          }
+          
           if (!Utils.validateHexColor(newColor)) {
             throw new Error(`Invalid color format: ${newColor}`);
           }
@@ -2768,16 +2842,10 @@
           const densityScore = this.calculateCompositionDensity(block);
           const densityMultiplier = this.getDensityMultiplier(densityScore);
           
-          if (this.blocks.length >= 25) {
-            // ULTRA-STRICT mode: COMPOSITION-AWARE splitting with square encouragement
+          if (this.blocks.length >= 50) {
+            // ULTRA-STRICT mode: COMPOSITION-AWARE splitting
             let baseRatio;
-            
-            // After 275 blocks: Encourage square-like splitting for small skinny rectangles
-            if (this.blocks.length >= 275 && aspectRatio > 2.0 && blockArea < 5000) {
-              // Small skinny rectangles: Encourage 50-50 splits to create more square-like pieces
-              baseRatio = 0.5 + Math.random() * 0.1; // 50-60% for small skinny rectangles
-              this.logger.log(`🎯 SQUARE-ENCOURAGEMENT: Small skinny rectangle (${block.width}x${block.height}) - encouraging 50-50 split`);
-            } else if (aspectRatio > 3.0) {
+            if (aspectRatio > 3.0) {
               baseRatio = 0.25 + Math.random() * 0.15; // 25-40% for very long rectangles
             } else if (aspectRatio > 2.0) {
               baseRatio = 0.3 + Math.random() * 0.2; // 30-50% for long rectangles
@@ -2805,16 +2873,8 @@
           }
           
           // RANDOM PATTERN CREATION
-          // Graduated pattern chance - more patterns before 25 blocks
-          let patternChance;
-          if (this.blocks.length < 20) {
-            patternChance = 0.65; // 65% chance for first 20 blocks - establish patterns early
-          } else if (this.blocks.length < 25) {
-            patternChance = 0.45; // 45% chance for blocks 20-25
-          } else {
-            patternChance = 0.25; // 25% chance after 25 blocks
-          }
-          if (Math.random() < patternChance && block.width > 60 && block.height > 60) {
+          // 30% chance to create a pattern for large blocks
+          if (Math.random() < 0.30 && block.width > 60 && block.height > 60) {
             // Calculate squareishness for pattern selection
             const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
             const isSquareish = aspectRatio < 1.5; // Blocks with aspect ratio < 1.5 are considered squareish
@@ -3384,304 +3444,118 @@
           }
 
           this.logger.log(`Current blocks: ${this.blocks.length}`, this.blocks);
+
+          // ===== SIMPLE 2-PHASE KEY SHAPE SYSTEM =====
           
-          // COLOR BALANCE ASSESSMENT (PLACEHOLDER)
-          // TODO: Implement color balance assessment
-          // - When to assess: TBD (maybe every 50 blocks after core formation?)
-          // - How to measure: TBD (compare visual color distribution vs submitted color data)
-          // - What actions: TBD (adjust border formation, suggest color submissions, etc.)
-          if (this.blocks.length >= 25 && this.blocks.length % 50 === 0) {
-            this.logger.log(`🎨 COLOR BALANCE ASSESSMENT: Placeholder for block ${this.blocks.length}`);
-            // this.assessColorBalance(); // TODO: Implement this function
+          // Phase 1: Pre-Freeze (Blocks 1-24) - Normal splitting
+          // Phase 2: Post-Freeze (Block 25+) - Key shape protection + border formation
+          
+          // Freeze key shapes when we reach or exceed 25 blocks (handles pattern jumps)
+          this.logger.log(`🔍 FREEZE CHECK: blocks=${this.blocks.length}, keyShapesFrozen=${this.keyShapesFrozen}`);
+          if (this.blocks.length >= 25 && !this.keyShapesFrozen) {
+            this.logger.log(`🛡️ FREEZING KEY SHAPES at block ${this.blocks.length}`);
+            this.freezeKeyShapes();
           }
 
-          // Graduated minimum size based on block count
-          let currentMinSize;
-          if (this.blocks.length >= 25 && this.blocks.length <= 275) {
-            currentMinSize = 100; // Preserve large fields and patterns during critical growth
-          } else {
-            currentMinSize = CONFIG.APP.minBlockSize; // 40px after 275 blocks
-          }
-          
-          // Strategic block selection based on graduated minimum size
-          // EXCLUDE pattern pieces for dissimilar colors entirely
-          const eligibleBlocks = this.blocks.filter(b => {
-            // Size requirement
-            const meetsSizeRequirement = b.width > currentMinSize || b.height > currentMinSize;
-            
-                         // Pattern piece protection: exclude pattern pieces for dissimilar colors
-             const isPatternPiece = this.isPatternPiece(b);
-             if (isPatternPiece) {
-               const colorDistance = this.calculateColorDistance(selectedColor, b.color);
-               let patternThreshold;
-               if (this.blocks.length >= 25) {
-                 patternThreshold = 0.3; // EXTREMELY strict after 25 blocks
-               } else if (this.blocks.length >= 20) {
-                 patternThreshold = 0.8; // Very strict for blocks 20-25
-               } else {
-                 patternThreshold = 1.2; // Strict for first 20 blocks
-               }
-              
-              // Only include pattern pieces if color is similar enough
-              return meetsSizeRequirement && colorDistance <= patternThreshold;
-            }
-            
-            // Non-pattern pieces: just check size
-            return meetsSizeRequirement;
-          });
-          
-          this.logger.log(`🎯 Graduated minimum size: ${currentMinSize}px (blocks: ${this.blocks.length})`);
-          this.logger.log(`📊 Eligible blocks: ${eligibleBlocks.length}/${this.blocks.length}`);
-          
-          // CORE QUILT FORMATION: At block 25, establish the core quilt boundaries
-          if (this.blocks.length === 25) {
-            const keyLargeShapes = this.blocks.filter(block => this.isKeyLargeShape(block));
-            const sacrificialShapes = this.blocks.filter(block => !this.isKeyLargeShape(block));
-            this.logger.log(`🎨 CORE QUILT ESTABLISHED: ${keyLargeShapes.length} key shapes, ${sacrificialShapes.length} sacrificial shapes`);
-            this.logger.log(`🛡️ CORE PROTECTION: Only similar colors can split core blocks from now on`);
-            this.logger.log(`🎯 BORDER SYSTEM: New dissimilar colors will form inward borders`);
-          }
-          
-          // Apply protection filters with graduated color similarity
-          const protectedBlocks = eligibleBlocks.filter(block => {
-            const colorDistance = this.calculateColorDistance(selectedColor, block.color);
-            
-            // ULTRA-STRICT color controls with graduated pattern protection
-            let patternThreshold, largeBlockThreshold;
-            if (this.blocks.length >= 25) {
-              patternThreshold = 0.3; // EXTREMELY strict after 25 blocks - nearly identical colors only
-              largeBlockThreshold = 5; // Very strict after 25 blocks
-            } else if (this.blocks.length >= 20) {
-              patternThreshold = 0.8; // Very strict for blocks 20-25
-              largeBlockThreshold = 6; // Strict for blocks 20-25
-            } else {
-              patternThreshold = 1.2; // Strict for first 20 blocks
-              largeBlockThreshold = 7; // Standard strictness for first 20 blocks
-            }
-            
-            // Pattern pieces are already filtered out of eligibleBlocks for dissimilar colors
-            // No need to check again here
-            
-            // 2. Key Large Shape Protection (identified at block 25)
-            const isLargeBlock = block.width > 100 && block.height > 100;
-            if (isLargeBlock) {
-              if (this.blocks.length >= 25) {
-                // After 25 blocks: Protect key large shapes only for similar tones
-                const isKeyLargeShape = this.isKeyLargeShape(block);
-                if (isKeyLargeShape) {
-                  // Key large shapes: Only allow splitting with NEARLY IDENTICAL colors
-                  const blockArea = block.width * block.height;
-                  
-                  // EXTREMELY LARGE BLOCKS get the strictest protection
-                  if (blockArea > 20000) {
-                    const ultraStrictThreshold = 0.2; // Nearly identical colors only
-                    if (colorDistance > ultraStrictThreshold) {
-                      return false; // Protect ultra-large blocks unless color is nearly identical
-                    }
-                  } else {
-                    // Regular key large shapes: still very strict
-                    const keyShapeThreshold = 0.5; // EXTREMELY strict - nearly identical colors only
-                    if (colorDistance > keyShapeThreshold) {
-                      return false; // Protect key large shapes unless color is nearly identical
-                    }
-                  }
-                } else {
-                  // Regular large blocks: Allow splitting with moderately similar colors
-                  if (colorDistance > largeBlockThreshold) {
-                    return false; // Protect regular large blocks unless color is moderately similar
-                  }
-                }
-              } else {
-                // Before 50 blocks: Normal large block protection
-                if (colorDistance > largeBlockThreshold) {
-                  return false; // Protect large blocks unless color is similar
-                }
-              }
-            }
-            
-            return true; // Allow splitting
-          });
-          
+          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
           let indexToSplit;
           
-          if (this.blocks.length >= 25) {
-            // CORE QUILT + BORDER SYSTEM: After block 25, core is protected, new colors form borders
-            const familyBlocks = this.findColorFamilyBlocks(selectedColor);
+          if (this.keyShapesFrozen) {
+            // ===== PHASE 2: POST-FREEZE (Block 25+) =====
+            this.logger.log(`🛡️ POST-FREEZE MODE: Key shape protection active`);
             
-            // CORE PROTECTION: Only similar colors can split core blocks
-            const keyLargeShapes = protectedBlocks.filter(block => this.isKeyLargeShape(block));
-            const similarKeyShapes = keyLargeShapes.filter(block => {
-              const blockColorDistance = this.calculateColorDistance(selectedColor, block.color);
-              const blockArea = block.width * block.height;
+            // Find key shapes with similar colors
+            const similarKeyShapes = [];
+            
+            for (let i = 0; i < this.blocks.length; i++) {
+              const block = this.blocks[i];
+              if (!this.isKeyShape(block)) continue; // Only consider key shapes
               
-              // Ultra-large blocks need nearly identical colors
-              if (blockArea > 20000) {
-                return blockColorDistance < 0.2; // Ultra-strict for very large blocks
+              const colorDistance = this.calculateColorDistance(selectedColor, block.color);
+              
+              // DEBUG: Log color distances for troubleshooting
+              this.logger.log(`🔍 DEBUG: ${selectedColor} vs ${block.color} = distance ${colorDistance.toFixed(4)}`);
+              
+              // Broader threshold: similar tones (distance < 0.15) can split key shapes
+              // This allows for visual variety while maintaining cohesion (includes 0.145!)
+              if (colorDistance < 0.15) {
+                similarKeyShapes.push({
+                  block: block,
+                  index: i,
+                  distance: colorDistance
+                });
+                this.logger.log(`✅ SIMILAR: Added to similarKeyShapes (distance: ${colorDistance.toFixed(4)})`);
               } else {
-                return blockColorDistance < 0.5; // Very strict for regular key shapes
+                this.logger.log(`❌ DIFFERENT: Color too different (distance: ${colorDistance.toFixed(4)})`);
               }
-            });
+            }
+            
+            // Sort by color similarity (closest first)
+            similarKeyShapes.sort((a, b) => a.distance - b.distance);
             
             if (similarKeyShapes.length > 0) {
-              // CORE SPLITTING: Split core blocks with similar colors
-              const bestKeyShape = similarKeyShapes.reduce((best, current) => {
-                const bestDistance = this.calculateColorDistance(selectedColor, best.color);
-                const currentDistance = this.calculateColorDistance(selectedColor, current.color);
-                return currentDistance < bestDistance ? current : best;
-              });
-              
-              indexToSplit = this.blocks.indexOf(bestKeyShape);
-              this.logger.log(`🛡️ CORE SPLITTING: Similar color splits core block ${bestKeyShape.width}x${bestKeyShape.height}`);
-            } else if (familyBlocks.length > 0) {
-              const bestFamilyBlock = familyBlocks[0];
-              const colorDistance = bestFamilyBlock.distance;
-              
-              // Check if the best family block is in our protected list
-              const familyThreshold = this.blocks.length >= 25 ? 8 : 12; // Tighter after 25 blocks
-              if (protectedBlocks.includes(bestFamilyBlock.block) && colorDistance < familyThreshold) {
-                indexToSplit = bestFamilyBlock.index;
-              } else {
-                // Fallback to smallest protected block (EXCLUDE pattern pieces for dissimilar colors)
-                if (protectedBlocks.length > 0) {
-                  const nonPatternProtected = protectedBlocks.filter(block => !this.isPatternPiece(block));
-                  
-                  if (nonPatternProtected.length > 0) {
-                    // Use smallest non-pattern protected block
-                    const smallestProtected = nonPatternProtected.reduce((smallest, current) => {
-                      const smallestArea = smallest.width * smallest.height;
-                      const currentArea = current.width * current.height;
-                      return currentArea < smallestArea ? current : smallest;
-                    });
-                    indexToSplit = this.blocks.indexOf(smallestProtected);
-                  } else {
-                    // Only pattern pieces available - use sacrificial shapes instead
-                    const sacrificialShapes = eligibleBlocks.filter(block => !this.isKeyLargeShape(block));
-                    if (sacrificialShapes.length > 0) {
-                      const smallestSacrificial = sacrificialShapes.reduce((smallest, current) => {
-                        const smallestArea = smallest.width * smallest.height;
-                        const currentArea = current.width * current.height;
-                        return currentArea < smallestArea ? current : smallest;
-                      });
-                      indexToSplit = this.blocks.indexOf(smallestSacrificial);
-                    }
-                  }
-                } else {
-                  // No protected blocks - use smallest eligible
-                  if (eligibleBlocks.length > 0) {
-                    const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                      const smallestArea = smallest.width * smallest.height;
-                      const currentArea = current.width * current.height;
-                      return currentArea < smallestArea ? current : smallest;
-                    });
-                    indexToSplit = this.blocks.indexOf(smallestEligible);
-                  }
-                }
-              }
+              // Similar color found - split key shape
+              const bestMatch = similarKeyShapes[0];
+              indexToSplit = bestMatch.index;
+              this.logger.log(`🛡️ CORE SPLITTING: Similar color splits key shape`);
             } else {
-              // No family blocks - use smallest protected block (EXCLUDE pattern pieces for dissimilar colors)
-              if (protectedBlocks.length > 0) {
-                const nonPatternProtected = protectedBlocks.filter(block => !this.isPatternPiece(block));
-                
-                if (nonPatternProtected.length > 0) {
-                  // Use smallest non-pattern protected block
-                  const smallestProtected = nonPatternProtected.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestProtected);
-                } else {
-                  // BORDER FORMATION: No similar colors found - create inward border
-                  this.logger.log(`🎯 BORDER FORMATION: Dissimilar color will form inward border`);
-                  
-                  // Find edge blocks for border formation (small blocks near quilt edges)
-                  const edgeBlocks = this.findEdgeBlocksForBorder();
-                  if (edgeBlocks.length > 0) {
-                    // Select smallest edge block for border formation
-                    const smallestEdgeBlock = edgeBlocks.reduce((smallest, current) => {
-                      const smallestArea = smallest.width * smallest.height;
-                      const currentArea = current.width * current.height;
-                      return currentArea < smallestArea ? current : smallest;
-                    });
-                    indexToSplit = this.blocks.indexOf(smallestEdgeBlock);
-                    this.logger.log(`🎯 BORDER TARGET: Selected edge block ${smallestEdgeBlock.width}x${smallestEdgeBlock.height} for border formation`);
-                  } else {
-                    // Fallback: use smallest sacrificial shape
-                    const sacrificialShapes = eligibleBlocks.filter(block => !this.isKeyLargeShape(block));
-                    if (sacrificialShapes.length > 0) {
-                      const smallestSacrificial = sacrificialShapes.reduce((smallest, current) => {
-                        const smallestArea = smallest.width * smallest.height;
-                        const currentArea = current.width * current.height;
-                        return currentArea < smallestArea ? current : smallest;
-                      });
-                      indexToSplit = this.blocks.indexOf(smallestSacrificial);
-                      this.logger.log(`🎯 BORDER FALLBACK: Using sacrificial shape ${smallestSacrificial.width}x${smallestSacrificial.height}`);
-                    }
-                  }
-                }
+              // Dissimilar color - form inward border
+              this.logger.log(`🎨 BORDER FORMATION: Dissimilar color forms inward border`);
+              
+              // Find edge blocks for border formation
+              const edgeBlocks = this.findEdgeBlocksForBorder();
+              
+              if (edgeBlocks.length > 0) {
+                // Use smallest edge block for border
+                const smallestEdgeBlock = edgeBlocks.reduce((smallest, current) => {
+                  const smallestArea = smallest.width * smallest.height;
+                  const currentArea = current.width * current.height;
+                  return currentArea < smallestArea ? current : smallest;
+                });
+                indexToSplit = this.blocks.indexOf(smallestEdgeBlock);
+                this.logger.log(`🎯 BORDER TARGET: Selected edge block for border`);
               } else {
-                // No protected blocks - use smallest eligible
-                if (eligibleBlocks.length > 0) {
-                  const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
+                // No edge blocks - use smallest non-key shape
+                const nonKeyShapes = this.blocks.filter(block => !this.isKeyShape(block));
+                if (nonKeyShapes.length > 0) {
+                  const smallestNonKey = nonKeyShapes.reduce((smallest, current) => {
                     const smallestArea = smallest.width * smallest.height;
                     const currentArea = current.width * current.height;
                     return currentArea < smallestArea ? current : smallest;
                   });
-                  indexToSplit = this.blocks.indexOf(smallestEligible);
+                  indexToSplit = this.blocks.indexOf(smallestNonKey);
+                  this.logger.log(`🎯 BORDER FALLBACK: Using non-key shape for border`);
+                } else {
+                  // Fallback to smallest of all blocks
+                  const smallestBlock = this.blocks.reduce((smallest, current) => {
+                    const smallestArea = smallest.width * smallest.height;
+                    const currentArea = current.width * current.height;
+                    return currentArea < smallestArea ? current : smallest;
+                  });
+                  indexToSplit = this.blocks.indexOf(smallestBlock);
+                  this.logger.log(`🎯 FINAL FALLBACK: Using smallest block`);
                 }
               }
             }
           } else {
-            // Before 25 blocks: use smallest protected block
-            if (protectedBlocks.length > 0) {
-              const smallestProtected = protectedBlocks.reduce((smallest, current) => {
+            // ===== PHASE 1: PRE-FREEZE (Blocks 1-24) =====
+            this.logger.log(`🔨 PRE-FREEZE MODE: Normal block selection`);
+            
+            if (eligibleBlocks.length > 0) {
+              const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
                 const smallestArea = smallest.width * smallest.height;
                 const currentArea = current.width * current.height;
                 return currentArea < smallestArea ? current : smallest;
               });
-              indexToSplit = this.blocks.indexOf(smallestProtected);
+              indexToSplit = this.blocks.indexOf(smallestEligible);
             } else {
-              // No protected blocks - ULTRA-PRIORITIZE skinny rectangles after 275 blocks
-              if (eligibleBlocks.length > 0) {
-                if (this.blocks.length >= 275) {
-                  // After 275 blocks: ULTRA-PRIORITIZE SMALLEST SKINNY RECTANGLES
-                  const skinnyRectangles = eligibleBlocks.filter(block => {
-                    const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
-                    return aspectRatio > 2.0; // Increased threshold - target more rectangles
-                  });
-                  
-                  if (skinnyRectangles.length > 0) {
-                    // ULTRA-PRIORITY: Select the SMALLEST skinny rectangle to encourage square-like splitting
-                    const smallestSkinnyRectangle = skinnyRectangles.reduce((smallest, current) => {
-                      const smallestArea = smallest.width * smallest.height;
-                      const currentArea = current.width * current.height;
-                      return currentArea < smallestArea ? current : smallest;
-                    });
-                    
-                    indexToSplit = this.blocks.indexOf(smallestSkinnyRectangle);
-                    const finalRatio = Math.max(smallestSkinnyRectangle.width / smallestSkinnyRectangle.height, smallestSkinnyRectangle.height / smallestSkinnyRectangle.width);
-                    const area = smallestSkinnyRectangle.width * smallestSkinnyRectangle.height;
-                    this.logger.log(`🎯 SMALLEST SKINNY RECTANGLE PRIORITY: Selected smallest skinny rectangle (aspectRatio: ${finalRatio.toFixed(1)}, size: ${smallestSkinnyRectangle.width}x${smallestSkinnyRectangle.height}, area: ${area.toFixed(0)}px²)`);
-                  } else {
-                    // No skinny rectangles - fall back to smallest eligible
-                    const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                      const smallestArea = smallest.width * smallest.height;
-                      const currentArea = current.width * current.height;
-                      return currentArea < smallestArea ? current : smallest;
-                    });
-                    indexToSplit = this.blocks.indexOf(smallestEligible);
-                    this.logger.log(`⚠️ No skinny rectangles found, falling back to smallest eligible block`);
-                  }
-                } else {
-                  // Before 275 blocks: use smallest eligible (normal behavior)
-                  const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestEligible);
-                }
-              }
+              // No eligible blocks - use smallest of all blocks
+              const smallestBlock = this.blocks.reduce((smallest, current) => {
+                const smallestArea = smallest.width * smallest.height;
+                const currentArea = current.width * current.height;
+                return currentArea < smallestArea ? current : smallest;
+              });
+              indexToSplit = this.blocks.indexOf(smallestBlock);
             }
           }
 
@@ -3800,8 +3674,113 @@
       }
 
       async handleTestAddBlock() {
-        const testColors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff', '#5f27cd'];
-        const randomColor = testColors[Math.floor(Math.random() * testColors.length)];
+        // Use Rumi colors in order
+        const rumiColors = [
+          "#931f25",  "#61dede",  "#ce822c",  "#61cfde",  "#6189de",  "#9dde61",  "#4024a8",  "#d8a746",  "#ea9b9a",  "#8061de",
+          "#618bde",  "#ad92e8",  "#1f2193",  "#61c9de",  "#70cae1",  "#dcc95b",  "#1f931f",  "#1f5393",  "#d84654",  "#e37d89",
+          "#eac49a",  "#7e7de3",  "#61acde",  "#dab852",  "#dab74e",  "#de61c3",  "#37a022",  "#b261de",  "#abe3ed",  "#d5f6f3",
+          "#61de76",  "#1f4293",  "#deba61",  "#61b8de",  "#1f4293",  "#6167de",  "#209750",  "#deae61",  "#afeec2",  "#eba2ce",
+          "#ded561",  "#df9368",  "#61b4de",  "#de6c61",  "#1f938a",  "#5f23a4",  "#f6eed5",  "#e78dd8",  "#e2a074",  "#61c1de",
+          "#61d5de",  "#de6176",  "#ded961",  "#de61aa",  "#3985d5",  "#61cdde",  "#7061de",  "#252cb1",  "#ded561",  "#cd61de",
+          "#24a89d",  "#de61c7",  "#1f933a",  "#d5eef6",  "#de6170",  "#ae61de",  "#617cde",  "#de6174",  "#de618f",  "#d54939",
+          "#f6eed5",  "#8b61de",  "#7d93e3",  "#d7de61",  "#f0b7cc",  "#de619b",  "#de619d",  "#d9b54a",  "#2bcaca",  "#d5ae39",
+          "#61c7de",  "#b3efed",  "#7c61de",  "#61dedb",  "#ccb7f0",  "#d67a3d",  "#2dd2b4",  "#6197de",  "#6182de",  "#61b2de",
+          "#61bade",  "#61c5de",  "#251f93",  "#9761de",  "#bd283c",  "#61de82",  "#de7a61",  "#61c9de",  "#de61c1",  "#1f2593",
+          "#dec761",  "#4aa9d9",  "#6187de",  "#91de61",  "#b061de",  "#de61a8",  "#61d9de",  "#9eeae4",  "#d94aab",  "#6163de",
+          "#de6165",  "#c961de",  "#de6174",  "#61d9de",  "#1f9331",  "#6c61de",  "#d33131",  "#5fc4dd",  "#b061de",  "#61de61",
+          "#afd8ee",  "#f6dcd5",  "#de8061",  "#931f2b",  "#67de61",  "#619fde",  "#63de61",  "#63decc",  "#c58de7",  "#aade61",
+          "#db61de",  "#a861de",  "#61c3de",  "#6170de",  "#ce2cb0",  "#3dc7d6",  "#de61ba",  "#616cde",  "#b1afee",  "#1f3593",
+          "#e5b085",  "#52da57",  "#de6167",  "#9361de",  "#61dea8",  "#b061de",  "#8f61de",  "#d5f3c8",  "#de6193",  "#dbcc57",
+          "#de9561",  "#afeed2",  "#de61ba",  "#61de67",  "#e2c874",  "#9561de",  "#931f42",  "#6ade61",  "#d45235",  "#dc665b",
+          "#f6d5eb",  "#61cbde",  "#de616c",  "#edabbd",  "#f6e8d5",  "#236aa4",  "#f1bce3",  "#de61ba",  "#70bbe1",  "#2564b1",
+          "#2996c2",  "#a02241",  "#2bcac7",  "#9ab125",  "#6197de",  "#8461de",  "#e5e78d",  "#d57d39",  "#6761de",  "#93e278",
+          "#61dec1",  "#61b2de",  "#4a7ad9",  "#2e26b5",  "#decd61",  "#61acde",  "#caa22b",  "#61dec5",  "#9bdb57",  "#3177d3",
+          "#f6eed5",  "#de8761",  "#dec961",  "#cb61de",  "#618fde",  "#b661de",  "#61b4de",  "#6189de",  "#ededab",  "#ddafee",
+          "#a8de61",  "#61deb8",  "#61c5de",  "#61decf",  "#931f82",  "#dcbc5b",  "#9bbd28",  "#de61c5",  "#2359a4",  "#61ded5",
+          "#617cde",  "#617cde",  "#61bade",  "#1f7a93",  "#61d1de",  "#92cae8",  "#8dd6e7",  "#61ded5",  "#de61cd",  "#6e61de",
+          "#61c9de",  "#de6161",  "#ba61de",  "#61ded3",  "#a461de",  "#259eb1",  "#de7661",  "#61b8de",  "#61b8de",  "#de61d1",
+          "#61decf",  "#24a4a8",  "#dec161",  "#61de7a",  "#de61a6",  "#33b927",  "#6172de",  "#5fb7dd",  "#ded561",  "#daa252",
+          "#f0e2b7",  "#abedea",  "#abedea",  "#61d5de",  "#de617c",  "#ca8a2b",  "#61a1de",  "#a2ebe2",  "#72de61",  "#caa72b",
+          "#bede61",  "#ae8de7",  "#de617e",  "#931f42",  "#beeeaf",  "#de8d61",  "#6161de",  "#da4ed3",  "#dc5b5b",  "#e7938d",
+          "#c25729",  "#619dde",  "#61de97",  "#61dbde",  "#de7063",  "#61bade",  "#29931f",  "#61c9de",  "#dec361",  "#e5e285",
+          "#d5de61",  "#28bdb8",  "#4a9bd9",  "#de61cb",  "#1f3c93",  "#de6165",  "#61deba",  "#61de95",  "#e8d292",  "#ac61de",
+          "#61d7de",  "#6e61de",  "#61bede",  "#61aade",  "#61de6c",  "#21739c",  "#61de61",  "#de616c",  "#de61a8",  "#61d5de",
+          "#6dad25",  "#c62a44",  "#a861de",  "#e17077",  "#d4358d",  "#25b166",  "#dec4f3",  "#cdde61",  "#dedb61",  "#8961de",
+          "#61cdde",  "#618bde",  "#de9761",  "#de9d61",  "#61dec7",  "#6883df",  "#61de9b",  "#debe61",  "#e38a7d",  "#61deb2",
+          "#616ede",  "#b261de",  "#b261de",  "#6195de",  "#4a29c2",  "#61c3de",  "#5b61dc",  "#c0ebf2",  "#61de9b",  "#1f9321",
+          "#de6163",  "#61bade",  "#6191de",  "#de6187",  "#2969c2",  "#61bcde",  "#63a7de",  "#de6178",  "#ad7825",  "#6170de",
+          "#de61bc",  "#46d8cc",  "#6172de",  "#4e99da",  "#d7a2eb",  "#6191de",  "#de6e61",  "#61c1de",  "#edbeab",  "#61bede",
+          "#6174de",  "#259cb1",  "#6187de",  "#c23329",  "#9b61de",  "#57d0db",  "#db5771",  "#92bee8",  "#61c3de",  "#de8261",
+          "#6170de",  "#d7b742",  "#61d7de",  "#61dbde",  "#1f2193",  "#ba61de",  "#7061de",  "#ba2dd2",  "#9161de",  "#61c1de",
+          "#21259c",  "#788ce2",  "#a861de",  "#daad4e",  "#845bdc",  "#93741f",  "#93741f",  "#b92753",  "#2a85c6",  "#e996a2",
+          "#898fe6",  "#73b927",  "#68df6f",  "#5fd0dd",  "#63dece",  "#b0de61",  "#dade63",  "#de6187",  "#31add3",  "#6ce0d4",
+          "#f6d5ee",  "#61deba",  "#316ad3",  "#ba61de",  "#b14d25",  "#b55826",  "#a2da4e",  "#de63b1",  "#8461de",  "#de6e61",
+          "#9561de",  "#6165de",  "#b1252c",  "#61dbde",  "#6187de",  "#42c229",  "#61b4de",  "#1f9382",  "#e9e996",  "#231f93",
+          "#f6d5e6",  "#d1de61",  "#b49eea",  "#be61de",  "#de61cf",  "#57d5db",  "#61b2de",  "#782ac6",  "#b661de",  "#61deac",
+          "#92c1e8",  "#de618d",  "#94b526",  "#61dbde",  "#78b8e2",  "#4c931f",  "#85bbe5",  "#61bede",  "#dc5b7d",  "#eedeaf",
+          "#6199de",  "#e2e274",  "#de61c5",  "#61dbde",  "#c4eef3",  "#de61b8",  "#de616e",  "#afe6ee",  "#de61c7",  "#84de61",
+          "#b1e06c",  "#61de6c",  "#ebd7a2",  "#8bde61",  "#25ad49",  "#618dde",  "#61d9de",  "#a531d3",  "#dd815f",  "#a824a6",
+          "#61ded1",  "#2e29c2",  "#2747b9",  "#6174de",  "#de6c61",  "#8fde61",  "#61de63",  "#6161de",  "#61b0de",  "#d43542",
+          "#f2ddc0",  "#9c4021",  "#b54126",  "#df7768",  "#7ede61",  "#3cd539",  "#61de74",  "#29c299",  "#6199de",  "#617cde",
+          "#61aade",  "#61cfde",  "#de61ae",  "#deb061",  "#de619d",  "#e37db2",  "#dec361",  "#78de61",  "#96b8e9",  "#6ade61",
+          "#5223a4",  "#24a824",  "#61a4de",  "#8f4ad9",  "#8d98e7",  "#ad2527",  "#d35fdd",  "#cf78e2",  "#61ded3",  "#61a4de",
+          "#61dec9",  "#debe61",  "#61d3de",  "#de7c61",  "#31c8d3",  "#6178de",  "#61a1de",  "#9761de",  "#eba2dc",  "#63de72",
+          "#de6172",  "#618fde",  "#e06ca0",  "#61deaa",  "#4e53da",  "#de61b0",  "#85d5e5",  "#61aade",  "#619fde",  "#acde61",
+          "#78e2d6",  "#61b8de",  "#72de61",  "#61deae",  "#426cd7",  "#6187de",  "#61cfde",  "#61dec5",  "#251f93",  "#61d3de",
+          "#61decf",  "#f0b7db",  "#ded161",  "#61dea8",  "#61b2de",  "#4a88d9",  "#d94ab0",  "#5ba0dc",  "#6ce0aa",  "#de6167",
+          "#6172de",  "#b99527",  "#6c6ce0",  "#97e892",  "#1f5393",  "#b061de",  "#f2c4f3",  "#29a3c2",  "#61b4de",  "#61d3de",
+          "#9ecbea",  "#9c2721",  "#a661de",  "#745fdd",  "#6165de",  "#f4f3cd",  "#e1d770",  "#f6d5da",  "#de7861",  "#9f61de",
+          "#93311f",  "#33931f",  "#d9de61",  "#42d7c3",  "#dcc45b",  "#428fd7",  "#3223a4",  "#b59126",  "#e892c4",  "#61a1de",
+          "#25b128",  "#619fde",  "#61de76",  "#61de89",  "#1f5293",  "#617cde",  "#d7de61",  "#61deba",  "#de8d61",  "#617cde",
+          "#687ddf",  "#d45835",  "#de7661",  "#de6e61",  "#1f4093",  "#6182de",  "#d561de",  "#ded961",  "#8761de",  "#6167de",
+          "#61dea4",  "#6195de",  "#61c5de",  "#de7c61",  "#de617e",  "#de9f61",  "#6187de",  "#de617c",  "#271f93",  "#5023a4",
+          "#61ded1",  "#61dec5",  "#a04122",  "#de9161",  "#617cde",  "#6184de",  "#6170de",  "#61c9de",  "#d5e1f6",  "#2731b9",
+          "#d0abed",  "#a861de",  "#b6e689",  "#61de6a",  "#61dea6",  "#931f33",  "#a8e170",  "#da964e",  "#3025ad",  "#3025ad",
+          "#3025ad",  "#e2de74",  "#d6d33d",  "#8061de",  "#efb3b5",  "#caa22b",  "#e27495",  "#a461de",  "#931f57",  "#931f57",
+          "#d3de61",  "#61dea4",  "#f0ebb7",  "#de8061",  "#6193de",  "#2a85c6",  "#e6aa89",  "#61c7de",  "#e7e28d",  "#ded361",
+          "#db61de",  "#debb63",  "#de61b2",  "#256dad",  "#de7c61",  "#de6761",  "#1f9344",  "#de6195",  "#61c7de",  "#617cde",
+          "#de61d3",  "#dbde61",  "#de6199",  "#a1de61",  "#25a423",  "#61bede",  "#5f70dd",  "#dea161",  "#d561de",  "#3956d5",
+          "#618dde",  "#93761f",  "#cca2eb",  "#d7de61",  "#8461de",  "#9abbea",  "#94d63d",  "#f0bbb7",  "#2c47ce",  "#d5f6f2",
+          "#619fde",  "#dcc05b",  "#7661de",  "#6e61de",  "#1f934e",  "#de61b4",  "#35d485",  "#a4e06c",  "#2d6fd2",  "#59b125",
+          "#de61b0",  "#e58597",  "#26b591",  "#d9de61",  "#6172de",  "#57d7db",  "#b3efcd",  "#61dec5",  "#9161de",  "#de61b8",
+          "#1f4093",  "#de617c",  "#35d43a",  "#6184de",  "#de61a6",  "#deaa61",  "#6a61de",  "#f1e4bc",  "#342ac6",  "#d4b235",
+          "#2544b1",  "#2544b1",  "#de9761",  "#d539b6",  "#618dde",  "#61de78",  "#6170de",  "#61cfde",  "#d2cd2d",  "#61dedb",
+          "#78e2bd",  "#f0b7e5",  "#ca2b3d",  "#de61c9",  "#1f9346",  "#5f87dd",  "#dd5fdb",  "#f6d5ec",  "#61c9de",  "#7db3e3",
+          "#96d4e9",  "#cbabed",  "#61cdde",  "#e481ac",  "#61b0de",  "#6187de",  "#bd3028",  "#7731d3",  "#616ade",  "#61d9de",
+          "#e9f6d5",  "#e9f6d5",  "#616ade",  "#de61cd",  "#271f93",  "#2c4fce",  "#b7dbf0",  "#b59126",  "#de61bc",  "#618fde",
+          "#251f93",  "#e4c0f2",  "#6361de",  "#afd1ee",  "#617ede",  "#de7061",  "#5ba2dc",  "#c66b2a",  "#61deb2",  "#61debc",
+          "#dda95f",  "#9b61de",  "#92bee8",  "#9d61de",  "#e996ac",  "#deb061",  "#6761de",  "#a4de61",  "#2d1f93",  "#649720",
+          "#6172de",  "#b7afee",  "#618fde",  "#9492e8",  "#de7a61",  "#de6a61",  "#931f40",  "#de61c7",  "#61de61",  "#616ede",
+          "#c0f2f2",  "#dc5bb1",  "#8261de",  "#e06ca4",  "#de6c61",  "#f5d1db",  "#deb661",  "#de7863",  "#1f1f93",  "#61cfde",
+          "#429720",  "#231f93",  "#9f61de",  "#93761f",  "#61dedb",  "#35d4ca",  "#61de61",  "#61cdde",  "#b061de",  "#c62a6d",
+          "#61dbde",  "#61bcde",  "#a4a423",  "#7a61de",  "#6172de",  "#ad2529",  "#61bede",  "#617ede",  "#61deb4",  "#d22d51",
+          "#db57a8",  "#a47de3",  "#8b61de",  "#61de7a",  "#61ded7",  "#61b6de",  "#d1f5dd",  "#9aeaea",  "#9aeaea",  "#9aeaea",
+          "#9aeaea",  "#d24e2d",  "#61a4de",  "#1f6193",  "#ac61de",  "#de61ae",  "#6174de",  "#7861de",  "#b861de",  "#222097",
+          "#6182de",  "#7d25ad",  "#1f9336",  "#8a85e5",  "#db7657",  "#61debc",  "#61aede",  "#debe61",  "#61bede",  "#619bde",
+          "#529bda",  "#2bcaaa",  "#5bbedc",  "#61a6de",  "#d9de61",  "#d361de",  "#709fe1",  "#bc61de",  "#c0f2ef",  "#61dede",
+          "#89dbe6",  "#61cfde",  "#2dd232",  "#5f1f93",  "#6361de",  "#85e5b7",  "#7e61de",  "#1f7893",  "#de61c1",  "#de6193",
+          "#969ae9",  "#de7061",  "#9b57db",  "#2595b1",  "#5b97dc",  "#de7a61",  "#c5de61",  "#8761de",  "#211f93",  "#debc61",
+          "#de6167",  "#4249d7",  "#d761de",  "#d63d57",  "#6167de",  "#de8461",  "#9aeae2",  "#52da8b",  "#d74253",  "#d74253",
+          "#d74253",  "#d74253",  "#d74253",  "#de61cb",  "#95de61",  "#61aede",  "#deb861",  "#e585b7",  "#de9f61",  "#6189de",
+          "#618bde",  "#de61b2",  "#61d9de",  "#ba92e8",  "#6cbfe0",  "#8461de",  "#61debe",  "#6176de",  "#deb261",  "#de616c",
+          "#de6178",  "#74de61",  "#89cae6",  "#de7e61",  "#6b931f",  "#de61aa",  "#de61aa",  "#de61aa",  "#b3d8ef",  "#618fde",
+          "#6cb3e0",  "#de61de",  "#de6172",  "#de617e",  "#61d3de",  "#61dec7",  "#61de91",  "#eba2ad",  "#ea9ed7",  "#de6761",
+          "#2566b1",  "#5bdcd8",  "#61acde",  "#6561de",  "#70de61",  "#f1e3bc",  "#ddc45f",  "#deb061",  "#61cfde",  "#d43575",
+          "#f6d5e1",  "#61a4de",  "#cf61de",  "#8d61de",  "#e06ca6",  "#c761de",  "#617cde",  "#decd61",  "#6ade61",  "#de61c9",
+          "#295cc2",  "#de61aa",  "#61b2de",  "#7a61de",  "#61cfde",  "#f0edb7",  "#6195de",  "#93361f",  "#61dec9",  "#de6172",
+          "#e8c4f3",  "#61a1de",  "#6163de",  "#616ede",  "#74a9e2",  "#6193de",  "#57a4db",  "#de61b4",  "#c23d29",  "#6184de",
+          "#de9f61",  "#de61a1",  "#61dea8",  "#1f2b93",  "#de6761",  "#61debc",  "#61ded7",  "#77d331",  "#bede61",  "#61decd",
+          "#6187de",  "#65931f",  "#65931f",  "#6a61de",  "#89abe6",  "#615fdd",  "#617cde",  "#de7e61",  "#a1df68",  "#1f3393"
+        ];
+        
+        // Initialize or get the current Rumi color index
+        if (!this.rumiColorIndex) {
+          this.rumiColorIndex = 0;
+        }
+        
+        // Get the next color in sequence, cycle back to start if we reach the end
+        const selectedColor = rumiColors[this.rumiColorIndex % rumiColors.length];
+        this.rumiColorIndex++;
         
         // Strategic block selection based on quilt density (same logic as handleAddColor)
         const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
@@ -3809,7 +3788,7 @@
         
         if (this.blocks.length >= 50) {
           // ULTRA-STRICT MODE: Minimizing visual disruption
-          const familyBlocks = this.findColorFamilyBlocks(randomColor);
+          const familyBlocks = this.findColorFamilyBlocks(selectedColor);
           
           if (familyBlocks.length > 0) {
             const bestFamilyBlock = familyBlocks[0];
@@ -3890,22 +3869,18 @@
           }
         }
 
-        const success = this.splitBlock(indexToSplit, randomColor);
+        const success = this.splitBlock(indexToSplit, selectedColor);
         
         if (success) {
           this.contributorCount++;
           this.renderQuilt();
           await this.saveQuilt();
           
-          this.uiService.showToast(`Added test block: ${randomColor}`);
+          this.uiService.showToast(`Added Rumi color ${this.rumiColorIndex}: ${selectedColor}`);
         }
       }
 
       async testRumiColorSequence() {
-        // Set flag to allow stopping
-        this.isRumiTestRunning = true;
-        this.logger.log('🚀 Starting Rumi color sequence test...');
-        
         const rumiColors = [
           "#931f25",  "#61dede",  "#ce822c",  "#61cfde",  "#6189de",  "#9dde61",  "#4024a8",  "#d8a746",  "#ea9b9a",  "#8061de",
           "#618bde",  "#ad92e8",  "#1f2193",  "#61c9de",  "#70cae1",  "#dcc95b",  "#1f931f",  "#1f5393",  "#d84654",  "#e37d89",
@@ -4005,57 +3980,13 @@
         ];
         
         for (let i = 0; i < rumiColors.length; i++) {
-          // Check if test should be stopped
-          if (!this.isRumiTestRunning) {
-            this.logger.log('⏹️ Rumi test stopped by user');
-            this.uiService.showToast(`Rumi test stopped at ${i}/${rumiColors.length} colors`);
-            return;
-          }
-          
           const color = rumiColors[i];
           
           // Use the SAME logic as handleAddColor() but with the specific color
-          // Graduated minimum size based on block count
-          let currentMinSize;
-          if (this.blocks.length >= 25 && this.blocks.length <= 275) {
-            currentMinSize = 100; // Preserve large fields and patterns during critical growth
-          } else {
-            currentMinSize = CONFIG.APP.minBlockSize; // 40px after 275 blocks
-          }
-          
-          const eligibleBlocks = this.blocks.filter(b => b.width > currentMinSize || b.height > currentMinSize);
-          
-          // Apply protection filters with graduated color similarity (same as handleAddColor)
-          const protectedBlocks = eligibleBlocks.filter(block => {
-            const colorDistance = this.calculateColorDistance(color, block.color);
-            
-            // Tighter color controls after 25 blocks
-            let patternThreshold, largeBlockThreshold;
-            if (this.blocks.length >= 25) {
-              patternThreshold = 3; // Extremely strict after 25 blocks
-              largeBlockThreshold = 5; // Very strict after 25 blocks
-            } else {
-              patternThreshold = 5; // Standard strictness before 25 blocks
-              largeBlockThreshold = 8; // Standard strictness before 25 blocks
-            }
-            
-            // 1. Pattern Preservation Protection
-            const isPatternPiece = this.isPatternPiece(block);
-            if (isPatternPiece && colorDistance > patternThreshold) {
-              return false; // Protect pattern pieces unless color is extremely similar
-            }
-            
-            // 2. Large Block Protection
-            const isLargeBlock = block.width > 100 && block.height > 100;
-            if (isLargeBlock && colorDistance > largeBlockThreshold) {
-              return false; // Protect large blocks unless color is extremely similar
-            }
-            
-            return true; // Allow splitting
-          });
+          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
           let indexToSplit;
           
-          if (this.blocks.length >= 25) {
+          if (this.blocks.length >= 50) {
             // ULTRA-STRICT MODE: Minimizing visual disruption
             const familyBlocks = this.findColorFamilyBlocks(color);
             
@@ -4146,98 +4077,7 @@
           }
         }
         
-        this.isRumiTestRunning = false;
         this.uiService.showToast('Rumi color sequence test complete! (982 colors added)');
-      }
-
-      stopRumiTest() {
-        if (this.isRumiTestRunning) {
-          this.isRumiTestRunning = false;
-          this.logger.log('⏹️ Rumi test stop requested');
-          this.uiService.showToast('Stopping Rumi test...');
-        } else {
-          this.uiService.showToast('No Rumi test is currently running');
-        }
-      }
-
-      isPatternPiece(block) {
-        // Enhanced pattern detection with graduated thresholds
-        const area = block.width * block.height;
-        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
-        
-        // Graduated pattern detection - more aggressive after 25 blocks
-        if (this.blocks.length >= 25) {
-          // After 25 blocks: More aggressive pattern detection
-          return area < 8000 && aspectRatio < 4.0; // Larger area threshold, more permissive aspect ratio
-        } else if (this.blocks.length >= 20) {
-          // Blocks 20-25: Medium pattern detection
-          return area < 6000 && aspectRatio < 3.5; // Medium area threshold
-        } else {
-          // First 20 blocks: Standard pattern detection
-          return area < 4000 && aspectRatio < 3.0; // Standard thresholds
-        }
-      }
-
-      isKeyLargeShape(block) {
-        // Identify key large shapes that should be protected for similar tones only
-        const area = block.width * block.height;
-        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
-        
-        // AGGRESSIVE PROTECTION: Almost everything becomes a key shape
-        // Include pattern pieces AND large shapes for maximum protection
-        // Only exclude very small blocks and very skinny rectangles
-        // This leaves 3-5 "sacrificial" shapes for other colors
-        
-        // Pattern pieces are ALWAYS key shapes (strongest protection)
-        if (this.isPatternPiece(block)) {
-          return true;
-        }
-        
-        // Regular key shapes: area > 3000 and not too skinny
-        return area > 3000 && aspectRatio < 4.0;
-      }
-
-      findEdgeBlocksForBorder() {
-        // Find small blocks near the edges of the quilt for border formation
-        // These should be small, non-key shapes that can form inward borders
-        const edgeBlocks = [];
-        
-        for (let i = 0; i < this.blocks.length; i++) {
-          const block = this.blocks[i];
-          
-          // Only consider non-key shapes (small blocks that aren't protected)
-          if (!this.isKeyLargeShape(block)) {
-            const area = block.width * block.height;
-            
-            // Prefer small blocks for border formation (accessories, not main focus)
-            if (area < 5000) {
-              // Check if block is near an edge (simple heuristic)
-              const isNearEdge = this.isBlockNearEdge(block);
-              if (isNearEdge) {
-                edgeBlocks.push(block);
-              }
-            }
-          }
-        }
-        
-        return edgeBlocks;
-      }
-
-      isBlockNearEdge(block) {
-        // Simple heuristic to determine if a block is near the quilt edge
-        // For now, consider blocks with x or y near 0 or near max dimensions as edge blocks
-        
-        const maxX = Math.max(...this.blocks.map(b => b.x + b.width));
-        const maxY = Math.max(...this.blocks.map(b => b.y + b.height));
-        
-        const edgeThreshold = 50; // pixels from edge
-        
-        return (
-          block.x < edgeThreshold || 
-          block.y < edgeThreshold ||
-          (block.x + block.width) > (maxX - edgeThreshold) ||
-          (block.y + block.height) > (maxY - edgeThreshold)
-        );
       }
 
       handleShowMyPiece() {
@@ -4405,6 +4245,130 @@
         }
       }
 
+      freezeKeyShapes() {
+        // Freeze all existing blocks as key shapes
+        this.keyShapes = [...this.blocks];
+        this.keyShapesFrozen = true;
+        
+        this.logger.log(`🛡️ KEY SHAPES FROZEN: ${this.keyShapes.length} shapes protected as key shapes`);
+        this.logger.log(`🎯 CORE QUILT ESTABLISHED: Only similar colors can split key shapes from now on`);
+        this.logger.log(`🎨 BORDER SYSTEM: Dissimilar colors will form inward borders`);
+        
+        // Log key shape details
+        this.keyShapes.forEach((shape, index) => {
+          const area = shape.width * shape.height;
+          const aspectRatio = Math.max(shape.width / shape.height, shape.height / shape.width);
+          this.logger.log(`🛡️ Key Shape ${index}: ${shape.width}x${shape.height} (area: ${area.toFixed(0)}px², ratio: ${aspectRatio.toFixed(1)})`);
+        });
+      }
+
+      isKeyShape(block) {
+        // Simple check: if key shapes are frozen, all existing blocks are key shapes
+        if (!this.keyShapesFrozen) return false;
+        
+        // Check if this block existed when key shapes were frozen
+        return this.keyShapes.some(keyShape => 
+          keyShape.x === block.x && 
+          keyShape.y === block.y && 
+          keyShape.width === block.width && 
+          keyShape.height === block.height
+        );
+      }
+
+      findEdgeBlocksForBorder() {
+        // Find small blocks near the edges of the quilt for border formation
+        const edgeBlocks = [];
+        const edgeThreshold = 50; // pixels from edge
+        
+        for (let i = 0; i < this.blocks.length; i++) {
+          const block = this.blocks[i];
+          
+          // Only consider non-key shapes (small blocks that aren't protected)
+          if (!this.isKeyShape(block)) {
+            const area = block.width * block.height;
+            
+            // Prefer small blocks for border formation
+            if (area < 5000 && this.isBlockNearEdge(block, edgeThreshold)) {
+              edgeBlocks.push(block);
+            }
+          }
+        }
+        
+        return edgeBlocks;
+      }
+
+      isBlockNearEdge(block, threshold) {
+        // Check if block is near the quilt's outer boundary
+        const quiltBounds = this.getQuiltBounds();
+        
+        const distanceFromLeft = block.x;
+        const distanceFromRight = quiltBounds.maxX - (block.x + block.width);
+        const distanceFromTop = block.y;
+        const distanceFromBottom = quiltBounds.maxY - (block.y + block.height);
+        
+        return distanceFromLeft < threshold || 
+               distanceFromRight < threshold || 
+               distanceFromTop < threshold || 
+               distanceFromBottom < threshold;
+      }
+
+      getQuiltBounds() {
+        if (!this.blocks || this.blocks.length === 0) {
+          return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        }
+        
+        const minX = Math.min(...this.blocks.map(b => b.x));
+        const minY = Math.min(...this.blocks.map(b => b.y));
+        const maxX = Math.max(...this.blocks.map(b => b.x + b.width));
+        const maxY = Math.max(...this.blocks.map(b => b.y + b.height));
+        
+        return { minX, minY, maxX, maxY };
+      }
+
+      calculateColorDistance(color1, color2) {
+        // Convert hex colors to RGB
+        const rgb1 = this.hexToRgb(color1);
+        const rgb2 = this.hexToRgb(color2);
+        
+        if (!rgb1 || !rgb2) return 1.0; // Maximum distance if conversion fails
+        
+        // Calculate Euclidean distance in RGB space
+        const deltaR = rgb1.r - rgb2.r;
+        const deltaG = rgb1.g - rgb2.g;
+        const deltaB = rgb1.b - rgb2.b;
+        
+        const distance = Math.sqrt(deltaR * deltaR + deltaG * deltaG + deltaB * deltaB);
+        
+        // Normalize to 0-1 range (max RGB distance is sqrt(255² + 255² + 255²) ≈ 441.67)
+        return Math.min(1.0, distance / 441.67);
+      }
+
+      hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16)
+        } : null;
+      }
+
+      isPatternPiece(block) {
+        // Check if this block is part of a pattern
+        // Look for blocks that are smaller than their original size (indicating they were split)
+        const area = block.width * block.height;
+        
+        // Pattern pieces are typically smaller than the original blocks
+        // and have specific size ratios
+        if (area < 10000) return false; // Too small to be a pattern piece
+        
+        // Check if this looks like a pattern piece based on size and position
+        // This is a simplified check - in a full implementation, we'd track pattern creation
+        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
+        
+        // Pattern pieces often have specific aspect ratios
+        return aspectRatio < 2.0 && area > 10000;
+      }
+
       handleTestDifferentUser() {
         // Generate a new user ID
         this.currentUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -4412,6 +4376,197 @@
         
         this.uiService.showToast('Switched to different user');
         this.logger.log(`New user ID: ${this.currentUserId}`);
+      }
+
+      forceFreezeKeyShapes() {
+        if (!this.keyShapesFrozen) {
+          this.logger.log(`🛡️ FORCING KEY SHAPE FREEZE at block ${this.blocks.length}`);
+          this.freezeKeyShapes();
+          this.uiService.showToast('Key shapes frozen!');
+        } else {
+          this.logger.log(`🛡️ Key shapes already frozen`);
+          this.uiService.showToast('Key shapes already frozen');
+        }
+      }
+
+      // isKeyLargeShape function removed - using simple isKeyShape function instead
+      
+      // Test function to demonstrate color distances
+      testColorDistances() {
+        console.log('🎨 COLOR DISTANCE EXAMPLES:');
+        console.log('Distance 0.15 means colors are SIMILAR TONES (allows visual variety)');
+        console.log('');
+        
+        // Example 1: Very similar colors (distance < 0.15)
+        const color1 = '#FF0000'; // Pure red
+        const color2 = '#FF0808'; // Slightly different red
+        const distance1 = this.calculateColorDistance(color1, color2);
+        console.log(`🔴 ${color1} vs ${color2}: distance = ${distance1.toFixed(4)} (${distance1 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
+        
+        // Example 2: Similar tones (distance < 0.15)
+        const color3 = '#FF0000'; // Pure red
+        const color4 = '#FF2020'; // More different red
+        const distance2 = this.calculateColorDistance(color3, color4);
+        console.log(`🔴 ${color3} vs ${color4}: distance = ${distance2.toFixed(4)} (${distance2 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
+        
+        // Example 3: Similar tones (distance < 0.15)
+        const color5 = '#FF0000'; // Pure red
+        const color6 = '#FF4040'; // Pinkish red
+        const distance3 = this.calculateColorDistance(color5, color6);
+        console.log(`🔴 ${color5} vs ${color6}: distance = ${distance3.toFixed(4)} (${distance3 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
+        
+        // Example 4: Similar tone (distance < 0.15)
+        const color7 = '#FF0000'; // Pure red
+        const color8 = '#FF8080'; // Light pink
+        const distance4 = this.calculateColorDistance(color7, color8);
+        console.log(`🔴 ${color7} vs ${color8}: distance = ${distance4.toFixed(4)} (${distance4 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
+        
+        // Example 5: Border threshold (distance > 0.15)
+        const color9 = '#FF0000'; // Pure red
+        const color10 = '#FFA0A0'; // Very light pink
+        const distance5 = this.calculateColorDistance(color9, color10);
+        console.log(`🔴 ${color9} vs ${color10}: distance = ${distance5.toFixed(4)} (${distance5 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
+        
+        // Example 6: Very different colors
+        const color11 = '#FF0000'; // Pure red
+        const color12 = '#00FF00'; // Pure green
+        const distance6 = this.calculateColorDistance(color11, color12);
+        console.log(`🔴 ${color11} vs ${color12}: distance = ${distance6.toFixed(4)} (${distance6 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
+        
+        // Example 7: Same color
+        const color13 = '#FF0000'; // Pure red
+        const color14 = '#FF0000'; // Same red
+        const distance7 = this.calculateColorDistance(color13, color14);
+        console.log(`🔴 ${color13} vs ${color14}: distance = ${distance7.toFixed(4)} (${distance7 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
+        
+
+        
+
+        
+        console.log('');
+        console.log('📊 SUMMARY:');
+        console.log('- Distance 0.0000 = Identical colors');
+        console.log('- Distance 0.0100 = Very similar (barely noticeable difference)');
+        console.log('- Distance 0.0450 = Similar tones (noticeable but cohesive)');
+        console.log('- Distance 0.0720 = Similar tones (more variety)');
+        console.log('- Distance 0.1500 = Similar (NEW THRESHOLD - allows visual variety)');
+        console.log('- Distance 0.1450 = Similar tone (included in core quilt!)');
+        console.log('- Distance 0.5000 = Very different');
+        console.log('- Distance 1.0000 = Maximum difference (opposite colors)');
+      }
+      
+      // Visual test function that shows actual color swatches
+      testColorDistancesVisual() {
+        // Create a visual test panel
+        const testPanel = document.createElement('div');
+        testPanel.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: white;
+          border: 2px solid #333;
+          border-radius: 10px;
+          padding: 20px;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          max-width: 400px;
+          z-index: 10000;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
+        
+        testPanel.innerHTML = `
+          <h3 style="margin: 0 0 15px 0; color: #333;">🎨 Color Distance Test</h3>
+          <p style="margin: 0 0 15px 0; font-size: 12px;">Distance 0.15 = Similar tones (NEW THRESHOLD)</p>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <div style="width: 40px; height: 40px; background: #FF0808; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.018)</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">Pure red vs slightly tinted red</div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <div style="width: 40px; height: 40px; background: #FF2020; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.045)</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">Pure red vs more tinted red (NOW SIMILAR!)</div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <div style="width: 40px; height: 40px; background: #FF4040; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.072)</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">Pure red vs pinkish red</div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <div style="width: 40px; height: 40px; background: #FF8080; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.145)</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">Pure red vs light pink (GREAT for core quilt!)</div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <div style="width: 40px; height: 40px; background: #00FF00; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <span style="font-weight: bold; color: red;">❌ VERY DIFFERENT (0.816)</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">Red vs green (opposite colors)</div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <div style="width: 40px; height: 40px; background: #00FF00; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <span style="font-weight: bold; color: red;">❌ VERY DIFFERENT (0.816)</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">Red vs green (opposite colors)</div>
+          </div>
+          
+          <div style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
+              <span style="font-weight: bold; color: green;">✅ IDENTICAL (0.000)</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">Same color</div>
+          </div>
+          
+          <div style="background: #f0f0f0; padding: 10px; border-radius: 5px; margin-top: 15px;">
+            <strong>Key Shape System (NEW THRESHOLD):</strong><br>
+            • <span style="color: green;">✅ SIMILAR</span> tones (distance < 0.15) can split key shapes<br>
+            • <span style="color: red;">❌ DIFFERENT</span> colors (distance > 0.15) form borders<br>
+            <em>Allows for visual variety while maintaining cohesion!</em>
+          </div>
+          
+          <button onclick="this.parentElement.remove()" style="
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+            font-size: 16px;
+          ">×</button>
+        `;
+        
+        document.body.appendChild(testPanel);
+        
+        // Also log to console
+        this.testColorDistances();
       }
     }
 
@@ -4435,12 +4590,11 @@
       // Expose app globally for testing
       window.app = app;
       
-      // Global test functions
-      window.addTestBlock = () => app.handleTestAddBlock();
+      // Global functions
       window.showMyPiece = () => app.handleShowMyPiece();
-      window.switchUser = () => app.handleTestDifferentUser();
       window.shareQuilt = () => app.handleShare();
-      window.testRumiSequence = () => app.testRumiColorSequence();
+      window.testColors = () => app.testColorDistances();
+      window.testColorsVisual = () => app.testColorDistancesVisual();
       
       // Admin console commands
       window.enableAdmin = () => app.enableAdminMode();
@@ -4450,9 +4604,7 @@
       console.log('🔧 Admin commands available:');
       console.log('  enableAdmin()  - Enable admin mode');
       console.log('  disableAdmin() - Disable admin mode');
-      console.log('🧪 Test commands available:');
-      console.log('  testRumiSequence() - Test ultra-strict mode with 982 Rumi colors');
     });
   </script>
 </body>
-</html> 
+</html>
