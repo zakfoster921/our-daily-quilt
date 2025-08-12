@@ -41,7 +41,7 @@
       background-color: #f6f4f1;
       box-sizing: border-box;
       overflow: hidden;
-      border: 3px solid purple !important;
+
     }
 
     /* ===== SCREENS ===== */
@@ -688,7 +688,8 @@
         display: flex !important;
         align-items: stretch !important;
         justify-content: stretch !important;
-        overflow: hidden !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
         margin: 0 !important;
         padding: 0 !important;
         border: 3px solid red !important;
@@ -763,7 +764,8 @@
         align-items: stretch !important;
         min-height: 100vh !important;
         height: 100vh !important;
-        overflow: hidden !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
@@ -922,7 +924,8 @@
         display: flex !important;
         align-items: stretch !important;
         justify-content: stretch !important;
-        overflow: hidden !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
         margin: 0 !important;
         padding: 0 !important;
         border: 3px solid red !important;
@@ -1204,9 +1207,6 @@
         
         <div class="button-group">
           <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white;">TEST: ADD RANDOM BLOCK</button>
-          <button id="testCheckerboard" class="btn" style="background: #9b59b6; color: white;">🧪 TEST CHECKERBOARDS</button>
-        <button id="forceFreeze" class="btn" style="background: #e74c3c; color: white;">🛡️ FORCE FREEZE</button>
-          <button id="rumiTestBtn" class="btn" style="background: #FF9800; color: white;">🧪 TEST RUMI SEQUENCE</button>
           <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white;">SHOW ME MY PIECE</button>
           <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white;">TEST: Simulate Different User</button>
         </div>
@@ -1293,7 +1293,7 @@
         version: '2.0.0-simplified',
         defaultColor: '#f7b733',
         quiltSize: 1000, // Base size for calculations
-        minBlockSize: 40,
+
         animationDuration: 2000,
         toastDuration: 3000,
         debugMode: true
@@ -1364,17 +1364,6 @@
         return hexRegex.test(color);
       }
 
-      static hexToLightness(hexColor) {
-        // Convert hex to RGB
-        const r = parseInt(hexColor.slice(1, 3), 16) / 255;
-        const g = parseInt(hexColor.slice(3, 5), 16) / 255;
-        const b = parseInt(hexColor.slice(5, 7), 16) / 255;
-        
-        // Calculate relative luminance (lightness)
-        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-        return luminance;
-      }
-
       static getOrCreateUserId() {
         let userId = localStorage.getItem('ourDailyUserId');
         if (!userId) {
@@ -1405,9 +1394,8 @@
           screenWidth = window.visualViewport.width;
           screenHeight = window.visualViewport.height;
           
-          // Apply small safety margin for visual viewport (5% or 40px max)
-          const safetyMargin = Math.min(screenHeight * 0.05, 40);
-          screenHeight = screenHeight - safetyMargin;
+          // Use visual viewport directly - better to scroll than clip
+          // No safety margin - let the quilt use full available space
           
           detectionMethod = 'visualViewport';
         } else {
@@ -1441,25 +1429,7 @@
         
         const isMobile = screenWidth <= 768;
         
-        console.log('🔍 DEBUG: Screen dimensions:', { 
-          screenWidth, 
-          screenHeight, 
-          isMobile,
-          detectionMethod,
-          hasVisualViewport,
-          hasDynamicViewport,
-          visualViewport: window.visualViewport ? {
-            width: window.visualViewport.width,
-            height: window.visualViewport.height,
-            scale: window.visualViewport.scale,
-            offsetTop: window.visualViewport.offsetTop,
-            offsetLeft: window.visualViewport.offsetLeft
-          } : 'not available',
-          innerWidth: window.innerWidth,
-          innerHeight: window.innerHeight,
-          bodyRect: document.body ? document.body.getBoundingClientRect() : 'not available',
-          htmlRect: document.documentElement ? document.documentElement.getBoundingClientRect() : 'not available'
-        });
+
         
         if (isMobile) {
           // On mobile, use the most accurate viewport available
@@ -1469,7 +1439,7 @@
             viewBoxWidth: screenWidth,
             viewBoxHeight: screenHeight
           };
-          console.log(`📱 Mobile dimensions (${detectionMethod}):`, dimensions);
+
           return dimensions;
         } else {
           // On desktop, use a square that fits the screen
@@ -1480,7 +1450,7 @@
             viewBoxWidth: maxSize,
             viewBoxHeight: maxSize
           };
-          console.log('🖥️ Desktop dimensions:', dimensions);
+
           return dimensions;
         }
       }
@@ -1492,53 +1462,6 @@
           month: 'long',
           day: 'numeric'
         });
-      }
-
-      static getColorFamily(color) {
-        const hsl = Utils.hexToHsl(color);
-        const hue = hsl.h;
-        
-        // Define color families based on hue ranges
-        if (hue >= 0 && hue < 30) return 'red';
-        if (hue >= 30 && hue < 60) return 'orange';
-        if (hue >= 60 && hue < 90) return 'yellow';
-        if (hue >= 90 && hue < 150) return 'green';
-        if (hue >= 150 && hue < 210) return 'cyan';
-        if (hue >= 210 && hue < 270) return 'blue';
-        if (hue >= 270 && hue < 300) return 'magenta';
-        if (hue >= 300 && hue < 330) return 'pink';
-        if (hue >= 330 && hue < 360) return 'red';
-        
-        return 'neutral';
-      }
-
-      static hexToHsl(hexColor) {
-        const r = parseInt(hexColor.slice(1, 3), 16) / 255;
-        const g = parseInt(hexColor.slice(3, 5), 16) / 255;
-        const b = parseInt(hexColor.slice(5, 7), 16) / 255;
-        
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        const delta = max - min;
-        
-        let h = 0;
-        let s = 0;
-        const l = (max + min) / 2;
-        
-        if (delta !== 0) {
-          s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-          
-          switch (max) {
-            case r: h = ((g - b) / delta) % 6; break;
-            case g: h = (b - r) / delta + 2; break;
-            case b: h = (r - g) / delta + 4; break;
-          }
-          
-          h = h * 60;
-          if (h < 0) h += 360;
-        }
-        
-        return { h, s: s * 100, l: l * 100 };
       }
     }
 
@@ -1592,8 +1515,6 @@
 
       showScreen(screenId) {
         try {
-          this.logger.log(`🔄 Switching to screen: ${screenId}`);
-          
           // Remove active class from all screens
           document.querySelectorAll(".screen").forEach(s => {
             s.classList.remove("active");
@@ -1608,8 +1529,6 @@
             
             // Force a reflow to ensure the screen is visible
             target.offsetHeight;
-            
-            this.logger.log(`✅ Successfully switched to ${screenId}`);
             
             if (screenId === 'screen-color') {
               const colorScreen = document.getElementById('screen-color');
@@ -1687,141 +1606,46 @@
       }
 
       async initialize() {
-        try {
-          this.logger.log('🔄 Starting Firebase initialization...');
-          
-          // TEMPORARILY DISABLE FIREBASE DUE TO QUOTA EXCEEDED
-          this.logger.warn('🚫 Firebase temporarily disabled due to quota exceeded');
-          this.db = null;
-          this.quiltDoc = null;
-          this.logger.log('✅ Firebase disabled, using localStorage only');
-          
-          /* FIREBASE CODE DISABLED
-          const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js');
-          const { getFirestore, doc } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js');
-          
-          const app = initializeApp(CONFIG.FIREBASE);
-          this.db = getFirestore(app);
-          this.quiltDoc = doc(this.db, 'quilts', 'daily');
-          
-          this.logger.log('✅ Firebase initialization complete');
-          */
-        } catch (error) {
-          this.logger.error('❌ Firebase initialization failed:', error);
-          this.errorHandler.handleError(error, 'Firebase initialization');
-          this.db = null;
-          this.quiltDoc = null;
-        }
+        // Firebase temporarily disabled
+        this.db = null;
+        this.quiltDoc = null;
       }
 
       async loadQuilt() {
+        // Firebase temporarily disabled - try localStorage first
         try {
-          this.logger.log('🔄 Loading quilt data...');
-          
-          // TEMPORARILY USE LOCALSTORAGE DUE TO FIREBASE QUOTA EXCEEDED
-          this.logger.warn('🚫 Firebase disabled, trying localStorage backup');
-          
-          // Try to load from localStorage backup
-          try {
-            const backupData = localStorage.getItem('ourDailyQuiltBackup');
-            if (backupData) {
-              const data = JSON.parse(backupData);
-              const blocks = data.blocks || [];
-              const contributorCount = data.contributorCount || 1;
-              this.logger.log(`✅ Successfully loaded ${blocks.length} blocks from localStorage backup`);
-              return { blocks, contributorCount };
-            }
-          } catch (localError) {
-            this.logger.warn('⚠️ localStorage backup load failed:', localError);
-          }
-          
-          // Fallback to default if no backup
-          this.logger.log('📝 No backup found, starting fresh');
-          const dimensions = Utils.getQuiltDimensions();
-          return { 
-            blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
-            contributorCount: 1 
-          };
-          
-          /* FIREBASE CODE DISABLED
-          if (!this.db || !this.quiltDoc) {
-            this.logger.log('❌ Firebase not initialized');
-            const dimensions = Utils.getQuiltDimensions();
-        return [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }];
-          }
-          
-          const { getDoc } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js');
-          const docSnap = await getDoc(this.quiltDoc);
-          
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            const blocks = data.blocks || [];
-            const contributorCount = data.contributorCount || 1;
-            this.logger.log(`✅ Successfully loaded ${blocks.length} blocks from Firebase`);
-            return { blocks, contributorCount };
-          } else {
-            this.logger.log('📝 No existing quilt document found, starting fresh');
-            const dimensions = Utils.getQuiltDimensions();
+          const savedData = localStorage.getItem('ourDailyQuilt');
+          if (savedData) {
+            const data = JSON.parse(savedData);
             return { 
-              blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
-              contributorCount: 1 
+              blocks: data.blocks || [], 
+              contributorCount: data.contributorCount || 1 
             };
           }
-          */
         } catch (error) {
-          this.logger.error('❌ Load error:', error);
-          this.errorHandler.handleError(error, 'loadQuilt');
-          const dimensions = Utils.getQuiltDimensions();
-          return { 
-            blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
-            contributorCount: 1 
-          };
+          // Fall through to default
         }
+        
+        // Return default quilt if no saved data
+        const dimensions = Utils.getQuiltDimensions();
+        return { 
+          blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
+          contributorCount: 1 
+        };
       }
 
       async saveQuilt(blocks, contributorCount) {
+        // Firebase temporarily disabled - save to localStorage only
         try {
-          this.logger.log('Saving quilt data');
-          
-          // TEMPORARILY DISABLE FIREBASE DUE TO QUOTA EXCEEDED
-          this.logger.warn('🚫 Firebase temporarily disabled due to quota exceeded');
-          this.logger.log(`📊 Would save ${blocks?.length || 0} blocks to Firebase`);
-          
-          // Store in localStorage as backup
-          try {
-            localStorage.setItem('ourDailyQuiltBackup', JSON.stringify({
-              blocks: blocks,
-              contributorCount: contributorCount,
-              lastUpdated: new Date().toISOString(),
-              date: new Date().toISOString().split('T')[0]
-            }));
-            this.logger.log('💾 Saved to localStorage backup');
-          } catch (localError) {
-            this.logger.warn('⚠️ localStorage backup failed:', localError);
-          }
-          
-          return true; // Always return true to continue app flow
-          
-          /* FIREBASE CODE DISABLED
-          if (!this.db || !this.quiltDoc) {
-            this.logger.log('Firebase not available, skipping save');
-            return true;
-          }
-          
-          const { setDoc } = await import('https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js');
-          await setDoc(this.quiltDoc, {
+          localStorage.setItem('ourDailyQuilt', JSON.stringify({
             blocks: blocks,
             contributorCount: contributorCount,
             lastUpdated: new Date().toISOString(),
             date: new Date().toISOString().split('T')[0]
-          });
-          
-          this.logger.log(`🔥 Saved ${blocks?.length || 0} blocks to Firebase`);
+          }));
           return true;
-          */
         } catch (error) {
           this.errorHandler.handleError(error, 'saveQuilt');
-          this.logger.log('⚠️ Firebase save failed');
           return false;
         }
       }
@@ -1879,7 +1703,7 @@
         if (!this.quiltSVG) {
           throw new Error('Quilt SVG element not found');
         }
-        this.logger.log('Block quilt renderer initialized');
+
       }
 
       renderBlocks(blocks) {
@@ -1888,42 +1712,44 @@
           return;
         }
 
-        this.logger.log(`🎨 Rendering ${blocks.length} blocks`);
+
 
         // Clear existing content
         this.quiltSVG.innerHTML = '';
 
         if (blocks.length === 0) {
-          this.logger.log('No blocks to render');
           return;
         }
 
-        // Set viewBox and dimensions to match the quilt dimensions
-        const dimensions = Utils.getQuiltDimensions();
-        console.log('🎨 RENDERER: Applying dimensions:', dimensions);
+        // Calculate quilt bounds and apply scaling
+        const minX = Math.min(...blocks.map(b => b.x));
+        const minY = Math.min(...blocks.map(b => b.y));
+        const maxX = Math.max(...blocks.map(b => b.x + b.width));
+        const maxY = Math.max(...blocks.map(b => b.y + b.height));
         
-        // Use full available width and calculated height
-        const fullWidth = window.innerWidth;
-        const calculatedHeight = dimensions.height;
+        const quiltWidth = maxX - minX;
+        const quiltHeight = maxY - minY;
         
-        this.quiltSVG.setAttribute('viewBox', `0 0 ${fullWidth} ${calculatedHeight}`);
-        this.quiltSVG.setAttribute('width', fullWidth);
-        this.quiltSVG.setAttribute('height', calculatedHeight);
-        this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        // Get scale factor from app (or default to 1)
+        const scale = window.app?.quiltScale || 1;
         
-        // Force CSS width to full viewport width
-        this.quiltSVG.style.width = `${fullWidth}px`;
-        this.quiltSVG.style.maxWidth = `${fullWidth}px`;
-        this.quiltSVG.style.minWidth = `${fullWidth}px`;
+        // Calculate scaled dimensions
+        const scaledWidth = quiltWidth * scale;
+        const scaledHeight = quiltHeight * scale;
         
-        console.log('🎨 RENDERER: SVG attributes set:', {
-          viewBox: this.quiltSVG.getAttribute('viewBox'),
-          width: this.quiltSVG.getAttribute('width'),
-          height: this.quiltSVG.getAttribute('height'),
-          preserveAspectRatio: this.quiltSVG.getAttribute('preserveAspectRatio')
-        });
+        // Set SVG dimensions to match the actual quilt size
+        this.quiltSVG.setAttribute('viewBox', `${minX} ${minY} ${quiltWidth} ${quiltHeight}`);
+        this.quiltSVG.setAttribute('width', scaledWidth);
+        this.quiltSVG.setAttribute('height', scaledHeight);
+        this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         
-        this.logger.log(`ViewBox set to: ${fullWidth} x ${calculatedHeight}, size: ${fullWidth} x ${calculatedHeight}`);
+        // Set CSS to match SVG dimensions
+        this.quiltSVG.style.width = `${scaledWidth}px`;
+        this.quiltSVG.style.height = `${scaledHeight}px`;
+        this.quiltSVG.style.maxWidth = '100%';
+        this.quiltSVG.style.maxHeight = '100%';
+        
+
 
         // Add SVG definitions for effects
         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -1943,15 +1769,13 @@
 
         // Render each block
         blocks.forEach((block, i) => {
-          // Add jittered positioning for organic feel - scaled by block size
-          const blockArea = block.width * block.height;
-          const maxArea = 10000; // Reference area for scaling
-          const jitterScale = Math.min(1, Math.max(0.3, blockArea / maxArea)); // Scale between 0.3 and 1
+          // Add jittered positioning for organic feel
+          const jitterX = (Math.random() - 0.5) * 6;
+          const jitterY = (Math.random() - 0.5) * 6;
+          const jitterRotation = (Math.random() - 0.5) * 3;
           
-          const jitterX = (Math.random() - 0.5) * 6 * jitterScale;
-          const jitterY = (Math.random() - 0.5) * 6 * jitterScale;
-          const jitterRotation = (Math.random() - 0.5) * 3 * jitterScale;
-          
+          // Apply scale factor to block dimensions
+          const scale = window.app?.quiltScale || 1;
           const jitteredBlock = {
             x: block.x + jitterX,
             y: block.y + jitterY,
@@ -1961,74 +1785,37 @@
             rotation: jitterRotation
           };
           
-          // Create organic edges
-          const edgeVariation = 2;
-          const topEdge = this.createWatercolorEdge(jitteredBlock.x, jitteredBlock.y, jitteredBlock.x + jitteredBlock.width, jitteredBlock.y, false, edgeVariation);
-          const rightEdge = this.createWatercolorEdge(jitteredBlock.x + jitteredBlock.width, jitteredBlock.y, jitteredBlock.x + jitteredBlock.width, jitteredBlock.y + jitteredBlock.height, true, edgeVariation);
-          const bottomEdge = this.createWatercolorEdge(jitteredBlock.x + jitteredBlock.width, jitteredBlock.y + jitteredBlock.height, jitteredBlock.x, jitteredBlock.y + jitteredBlock.height, false, edgeVariation);
-          const leftEdge = this.createWatercolorEdge(jitteredBlock.x, jitteredBlock.y + jitteredBlock.height, jitteredBlock.x, jitteredBlock.y, true, edgeVariation);
-          
-          // Create path with organic edges
-          const pathData = `M ${topEdge[0].x},${topEdge[0].y}
-                            ${topEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
-                            L ${topEdge[topEdge.length - 1].x},${topEdge[topEdge.length - 1].y}
-                            ${rightEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
-                            L ${rightEdge[rightEdge.length - 1].x},${rightEdge[rightEdge.length - 1].y}
-                            ${bottomEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
-                            L ${bottomEdge[bottomEdge.length - 1].x},${bottomEdge[bottomEdge.length - 1].y}
-                            ${leftEdge.slice(1, -1).map(p => `L ${p.x},${p.y}`).join(' ')}
-                            L ${leftEdge[leftEdge.length - 1].x},${leftEdge[leftEdge.length - 1].y} Z`;
-          
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          path.setAttribute('d', pathData);
-          path.setAttribute('fill', jitteredBlock.color);
+          // Create simple rectangle with jitter
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', jitteredBlock.x);
+          rect.setAttribute('y', jitteredBlock.y);
+          rect.setAttribute('width', jitteredBlock.width);
+          rect.setAttribute('height', jitteredBlock.height);
+          rect.setAttribute('fill', jitteredBlock.color);
           
           // Apply rotation transform
           const centerX = jitteredBlock.x + jitteredBlock.width / 2;
           const centerY = jitteredBlock.y + jitteredBlock.height / 2;
-          path.setAttribute('transform', `rotate(${jitteredBlock.rotation} ${centerX} ${centerY})`);
+          rect.setAttribute('transform', `rotate(${jitteredBlock.rotation} ${centerX} ${centerY})`);
           
           // Add animation for new blocks
           if (i === this.lastAddedIndex) {
-            path.setAttribute('opacity', '0');
-            path.classList.add('new-block');
-            path.addEventListener('animationend', () => {
-              path.classList.remove('new-block');
-              path.removeAttribute('opacity');
+            rect.setAttribute('opacity', '0');
+            rect.classList.add('new-block');
+            rect.addEventListener('animationend', () => {
+              rect.classList.remove('new-block');
+              rect.removeAttribute('opacity');
             }, { once: true });
           }
           
-          this.quiltSVG.appendChild(path);
+          this.quiltSVG.appendChild(rect);
         });
 
         this.lastAddedIndex = null;
-        this.logger.log(`✅ Rendered ${blocks.length} organic blocks`);
+
       }
 
-      createWatercolorEdge(startX, startY, endX, endY, isVertical = false, edgeVariation = 2) {
-        const numPoints = 5;
-        const points = [];
-        
-        for (let i = 0; i <= numPoints; i++) {
-          const t = i / numPoints;
-          const x = startX + (endX - startX) * t;
-          const y = startY + (endY - startY) * t;
-          
-          // Create organic curves
-          const smoothCurve = Math.sin(t * Math.PI) * Math.sin(t * Math.PI);
-          const curveIntensity = smoothCurve * edgeVariation * 0.7;
-          const variation = curveIntensity + (Math.random() - 0.5) * edgeVariation * 0.2;
-          
-          const diagonalVariation = (Math.random() - 0.5) * edgeVariation * 0.1;
-          
-          const organicX = x + (isVertical ? variation : diagonalVariation);
-          const organicY = y + (isVertical ? diagonalVariation : variation);
-          
-          points.push({ x: organicX, y: organicY });
-        }
-        
-        return points;
-      }
+
 
 
 
@@ -2060,17 +1847,14 @@
         this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
         this.colorHasBeenSelected = false;
         
-        // Key shape freeze system
-        this.keyShapes = [];
-        this.keyShapesFrozen = false;
+        // Scaling state
+        this.quiltScale = 1;
         
-        this.logger.log('SimplifiedQuiltApp initialized with block-based system');
+
       }
 
       async initialize() {
         try {
-          this.logger.log('🚀 Starting app initialization...');
-          this.logger.log(`Initial blocks state:`, this.blocks);
           
           // Ensure portal screen is visible during initialization
           this.uiService.showScreen('screen-portal');
@@ -2080,14 +1864,9 @@
           this.initializeUI();
           await this.loadQuilt();
           
-          this.logger.log(`After loadQuilt, blocks:`, this.blocks);
-          
           this.renderer.initialize();
           this.renderQuilt();
           this.updateSquareCounter();
-          
-          this.logger.log('App initialization complete');
-          this.logger.log(`Final blocks state:`, this.blocks);
           
           // Auto-transition from portal screen after delay
           this.setupAutoTransition();
@@ -2125,21 +1904,6 @@
         const testAddBlock = document.getElementById('testAddBlock');
         if (testAddBlock) {
           testAddBlock.addEventListener('click', this.handleTestAddBlock.bind(this));
-        }
-
-        const testCheckerboard = document.getElementById('testCheckerboard');
-        if (testCheckerboard) {
-          testCheckerboard.addEventListener('click', this.handleTestCheckerboard.bind(this));
-        }
-
-        const forceFreeze = document.getElementById('forceFreeze');
-        if (forceFreeze) {
-          forceFreeze.addEventListener('click', this.forceFreezeKeyShapes.bind(this));
-        }
-
-        const rumiTestBtn = document.getElementById('rumiTestBtn');
-        if (rumiTestBtn) {
-          rumiTestBtn.addEventListener('click', this.testRumiColorSequence.bind(this));
         }
 
         const showMyPieceBtn = document.getElementById('showMyPieceBtn');
@@ -2361,16 +2125,8 @@
       }
 
       handleWindowResize() {
-        this.logger.log('🔄 Window resized, updating quilt dimensions...');
-        
         // Update quilt dimensions when window is resized
         if (this.blocks && this.blocks.length > 0) {
-          const dimensions = Utils.getQuiltDimensions();
-          this.logger.log(`New dimensions: ${dimensions.width} x ${dimensions.height}`);
-          
-          // Re-render the quilt with new dimensions
-          
-          // Re-render the quilt with new dimensions
           this.renderQuilt();
         }
       }
@@ -2422,7 +2178,6 @@
       // Admin helper methods
       enableAdminMode() {
         localStorage.setItem('ourDailyIsAdmin', 'true');
-        this.logger.log('🔓 Admin mode enabled');
         this.uiService.showToast('Admin mode enabled');
         // Refresh the admin button
         this.setupFloatingAdminButton();
@@ -2435,7 +2190,6 @@
         }
         
         localStorage.removeItem('ourDailyIsAdmin');
-        this.logger.log('🔒 Admin mode disabled');
         this.uiService.showToast('Admin mode disabled');
         // Hide the admin button
         const adminBtn = document.getElementById('floatingAdminBtn');
@@ -2452,7 +2206,6 @@
           <div class="admin-menu-content">
             <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
-            <button onclick="app.testRumiColorSequence()">🧪 Test Rumi Sequence (982 colors)</button>
             <button onclick="app.handleShowMyPiece()">Show My Piece</button>
             <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
             <button onclick="app.resetQuiltForNewDay()">Reset Quilt</button>
@@ -2520,15 +2273,12 @@
         if (currentScreen && currentScreen.id === 'screen-portal') {
           // Increase delay for mobile devices and add better error handling
           const delay = window.innerWidth <= 768 ? 3000 : 2000;
-          this.logger.log(`⏰ Setting up auto transition in ${delay}ms`);
           
           setTimeout(() => {
             // Check if we're still on the portal screen before transitioning
             const currentScreen = document.querySelector('.screen.active');
             if (currentScreen && currentScreen.id === 'screen-portal') {
               this.autoTransitionFromPortal();
-            } else {
-              this.logger.log('⏰ Auto transition cancelled - user has navigated away');
             }
           }, delay);
         }
@@ -2536,8 +2286,6 @@
 
       async autoTransitionFromPortal() {
         try {
-          this.logger.log('🔄 Starting auto transition from portal...');
-          
           const hasVisitedBefore = localStorage.getItem('ourDailyHasVisited');
           const lastVisitDate = localStorage.getItem('ourDailyLastVisitDate');
           
@@ -2545,28 +2293,22 @@
           const currentDate = now.toDateString();
           const isNewDay = lastVisitDate !== currentDate;
           
-          this.logger.log(`Visit status: hasVisitedBefore=${hasVisitedBefore}, isNewDay=${isNewDay}`);
-          
           if (!hasVisitedBefore || isNewDay) {
             localStorage.setItem('ourDailyHasVisited', 'true');
             localStorage.setItem('ourDailyLastVisitDate', currentDate);
             
             if (isNewDay) {
-              this.logger.log(`🔄 New day detected: ${currentDate}`);
               await this.resetQuiltForNewDay();
             }
             
-            this.logger.log('📱 Showing welcome screen...');
             this.uiService.showScreen('screen-welcome');
             
             // Longer delay for mobile before showing quote
             const quoteDelay = window.innerWidth <= 768 ? 2500 : 1500;
             setTimeout(() => {
-              this.logger.log('📝 Showing quote screen...');
               this.uiService.showScreen('screen-quote');
             }, quoteDelay);
           } else {
-            this.logger.log('📝 Showing quote screen directly...');
             this.uiService.showScreen('screen-quote');
           }
         } catch (error) {
@@ -2577,36 +2319,28 @@
       }
       
       async resetQuiltForNewDay() {
-        this.logger.log('🔄 Resetting quilt for new day...');
-        
         const dimensions = Utils.getQuiltDimensions();
         this.blocks = [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }];
         this.contributorCount = 1;
         
         try {
           await this.dataService.saveQuilt(this.blocks, this.contributorCount);
-          this.logger.log('🗑️ Firebase data cleared for new day');
         } catch (error) {
           this.logger.warn('⚠️ Failed to clear Firebase data for new day:', error);
         }
         
         this.renderQuilt();
         this.updateSquareCounter();
-        
-        this.logger.log('✅ Quilt reset complete for new day');
       }
 
       async loadQuilt() {
         try {
-          this.logger.log('🔄 Loading quilt data...');
           const data = await this.dataService.loadQuilt();
           this.blocks = data.blocks;
           this.contributorCount = data.contributorCount;
-          this.logger.log(`📦 Loaded ${this.blocks.length} blocks:`, this.blocks);
           
           // Ensure we always have at least one block
           if (!this.blocks || this.blocks.length === 0) {
-            this.logger.log('No blocks found, initializing default block');
             const dimensions = Utils.getQuiltDimensions();
             this.blocks = [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }];
             this.contributorCount = 1;
@@ -2632,17 +2366,11 @@
       }
 
       renderQuilt() {
-        this.logger.log('🔄 Rendering quilt...');
-        this.logger.log(`Screen dimensions: ${window.innerWidth} x ${window.innerHeight}`);
-        this.logger.log(`Quilt blocks: ${this.blocks.length}`);
-        
         // Ensure quilt fits within available space
         this.ensureQuiltFits();
         
         this.renderer.renderBlocks(this.blocks);
         this.updateSquareCounter();
-        
-        this.logger.log('✅ Quilt rendering complete');
       }
 
       ensureQuiltFits() {
@@ -2662,70 +2390,15 @@
         const currentWidth = maxX - minX;
         const currentHeight = maxY - minY;
         
-        console.log('🔍 Quilt bounds:', { minX, minY, maxX, maxY, currentWidth, currentHeight });
-        console.log('🔍 Available space:', { availableWidth, availableHeight });
-        
-        // Calculate optimal scale to fit both width and height
+        // Calculate optimal scale to fit the quilt within available space
         const scaleX = availableWidth / currentWidth;
         const scaleY = availableHeight / currentHeight;
-        const optimalScale = Math.min(scaleX, scaleY); // Scale to fit both dimensions
+        const optimalScale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 1x
         
-        console.log('🔄 Optimal scaling factor:', optimalScale, 'to fit both width and height');
+        // Store the scale factor for use in rendering (don't modify original blocks)
+        this.quiltScale = optimalScale;
         
-        // Scale all blocks proportionally
-        this.blocks = this.blocks.map(block => ({
-          ...block,
-          x: block.x * optimalScale,
-          y: block.y * optimalScale,
-          width: block.width * optimalScale,
-          height: block.height * optimalScale
-        }));
-        
-        // Ensure the quilt spans the full width
-        const newMaxX = Math.max(...this.blocks.map(b => b.x + b.width));
-        if (newMaxX < availableWidth) {
-          console.log('🔧 Extending blocks to fill full width');
-          // Find the rightmost block and extend it
-          const rightmostBlock = this.blocks.reduce((rightmost, current) => 
-            (current.x + current.width) > (rightmost.x + rightmost.width) ? current : rightmost
-          );
-          rightmostBlock.width = availableWidth - rightmostBlock.x;
-        }
-        
-        // Final check: ensure quilt fits within available height
-        const finalMaxY = Math.max(...this.blocks.map(b => b.y + b.height));
-        if (finalMaxY > availableHeight) {
-          console.log('🔧 Final height adjustment to fit available space');
-          const finalHeightScale = availableHeight / finalMaxY;
-          this.blocks = this.blocks.map(block => ({
-            ...block,
-            y: block.y * finalHeightScale,
-            height: block.height * finalHeightScale
-          }));
-        }
-        
-        // Log final dimensions and fit analysis
-        const finalMaxX = Math.max(...this.blocks.map(b => b.x + b.width));
-        const finalMaxYFinal = Math.max(...this.blocks.map(b => b.y + b.height));
-        const widthFit = finalMaxX <= availableWidth;
-        const heightFit = finalMaxYFinal <= availableHeight;
-        
-        console.log('✅ Final quilt dimensions:', { 
-          width: finalMaxX, 
-          height: finalMaxYFinal,
-          availableWidth,
-          availableHeight,
-          widthFit,
-          heightFit,
-          widthGap: availableWidth - finalMaxX,
-          heightGap: availableHeight - finalMaxYFinal
-        });
-        
-        if (widthFit && heightFit) {
-          console.log('✅ Quilt perfectly fits available space');
-        } else {
-          console.log('⚠️ Quilt does not fit perfectly - may need scrolling');
-        }
+
       }
 
       updateSquareCounter() {
@@ -2739,82 +2412,6 @@
 
       splitBlock(blockIndex, newColor) {
         try {
-          this.logger.log(`Splitting block at index ${blockIndex} with color ${newColor}`);
-          this.logger.log(`Current blocks array:`, this.blocks);
-          this.logger.log(`Blocks array length: ${this.blocks.length}`);
-          
-          // ===== FREEZE CHECK =====
-          // Freeze key shapes when we reach or exceed 25 blocks (handles pattern jumps)
-          this.logger.log(`🔍 FREEZE CHECK: blocks=${this.blocks.length}, keyShapesFrozen=${this.keyShapesFrozen}`);
-          if (this.blocks.length >= 25 && !this.keyShapesFrozen) {
-            this.logger.log(`🛡️ FREEZING KEY SHAPES at block ${this.blocks.length}`);
-            this.freezeKeyShapes();
-          }
-          
-          // ===== POST-FREEZE COLOR DISTANCE CHECK =====
-          if (this.keyShapesFrozen) {
-            this.logger.log(`🛡️ POST-FREEZE MODE: Checking color distance for key shape protection`);
-            
-            // Get the block to split
-            const blockToSplit = this.blocks[blockIndex];
-            if (blockToSplit && this.isKeyShape(blockToSplit)) {
-              const colorDistance = this.calculateColorDistance(newColor, blockToSplit.color);
-              this.logger.log(`🔍 DEBUG: ${newColor} vs ${blockToSplit.color} = distance ${colorDistance.toFixed(4)}`);
-              
-              if (colorDistance >= 0.15) {
-                this.logger.log(`❌ DIFFERENT: Color too different (distance: ${colorDistance.toFixed(4)}) - preventing key shape split`);
-                this.logger.log(`🎨 BORDER FORMATION: Redirecting to border formation instead`);
-                
-                // Find edge blocks for border formation
-                const edgeBlocks = this.findEdgeBlocksForBorder();
-                
-                if (edgeBlocks.length > 0) {
-                  // Use smallest edge block for border
-                  const smallestEdgeBlock = edgeBlocks.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  const newBlockIndex = this.blocks.indexOf(smallestEdgeBlock);
-                  this.logger.log(`🎯 BORDER TARGET: Redirecting to edge block at index ${newBlockIndex}`);
-                  
-                  // Recursively call splitBlock with the edge block
-                  return this.splitBlock(newBlockIndex, newColor);
-                } else {
-                  // No edge blocks - use smallest non-key shape
-                  const nonKeyShapes = this.blocks.filter(block => !this.isKeyShape(block));
-                  if (nonKeyShapes.length > 0) {
-                    const smallestNonKey = nonKeyShapes.reduce((smallest, current) => {
-                      const smallestArea = smallest.width * smallest.height;
-                      const currentArea = current.width * current.height;
-                      return currentArea < smallestArea ? current : smallest;
-                    });
-                    const newBlockIndex = this.blocks.indexOf(smallestNonKey);
-                    this.logger.log(`🎯 BORDER FALLBACK: Redirecting to non-key shape at index ${newBlockIndex}`);
-                    
-                    // Recursively call splitBlock with the non-key shape
-                    return this.splitBlock(newBlockIndex, newColor);
-                  } else {
-                    // Fallback to smallest of all blocks
-                    const smallestBlock = this.blocks.reduce((smallest, current) => {
-                      const smallestArea = smallest.width * smallest.height;
-                      const currentArea = current.width * current.height;
-                      return currentArea < smallestArea ? current : smallest;
-                    });
-                    const newBlockIndex = this.blocks.indexOf(smallestBlock);
-                    this.logger.log(`🎯 BORDER ULTIMATE FALLBACK: Redirecting to smallest block at index ${newBlockIndex}`);
-                    
-                    // Recursively call splitBlock with the smallest block
-                    return this.splitBlock(newBlockIndex, newColor);
-                  }
-                }
-              } else {
-                this.logger.log(`✅ SIMILAR: Color similar enough (distance: ${colorDistance.toFixed(4)}) - key shape splitting allowed`);
-              }
-            } else if (blockToSplit) {
-              this.logger.log(`🎯 NON-KEY SHAPE: Block is not a key shape, normal splitting allowed`);
-            }
-          }
           
           if (!Utils.validateHexColor(newColor)) {
             throw new Error(`Invalid color format: ${newColor}`);
@@ -2829,586 +2426,18 @@
             throw new Error(`Block at index ${blockIndex} not found`);
           }
 
-          this.logger.log(`Found block to split:`, block);
-
-          const splitVertically = block.width >= block.height;
+          const splitRatio = 0.3 + Math.random() * 0.4;
           
-          // Composition-aware splitting ratios (REVERSE LOGIC)
-          let splitRatio;
-          const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
-          const blockArea = block.width * block.height;
-          
-          // Calculate composition density around this block
-          const densityScore = this.calculateCompositionDensity(block);
-          const densityMultiplier = this.getDensityMultiplier(densityScore);
-          
-          if (this.blocks.length >= 50) {
-            // ULTRA-STRICT mode: COMPOSITION-AWARE splitting
-            let baseRatio;
-            if (aspectRatio > 3.0) {
-              baseRatio = 0.25 + Math.random() * 0.15; // 25-40% for very long rectangles
-            } else if (aspectRatio > 2.0) {
-              baseRatio = 0.3 + Math.random() * 0.2; // 30-50% for long rectangles
-            } else if (blockArea > 15000) {
-              baseRatio = 0.3 + Math.random() * 0.2; // 30-50% of very large blocks
-            } else if (blockArea > 8000) {
-              baseRatio = 0.35 + Math.random() * 0.25; // 35-60% of large blocks
-            } else if (blockArea > 3000) {
-              baseRatio = 0.4 + Math.random() * 0.3; // 40-70% of medium blocks
-            } else {
-              baseRatio = 0.45 + Math.random() * 0.35; // 45-80% of small blocks
-            }
-            
-            // Apply composition density multiplier
-            splitRatio = baseRatio * densityMultiplier;
-            
-            // Ensure ratio stays within reasonable bounds (15% - 85%)
-            splitRatio = Math.max(0.15, Math.min(0.85, splitRatio));
-            
-          } else {
-            // Normal protection levels with composition awareness
-            const baseRatio = 0.3 + Math.random() * 0.4;
-            splitRatio = baseRatio * densityMultiplier;
-            splitRatio = Math.max(0.2, Math.min(0.8, splitRatio));
-          }
-          
-          // RANDOM PATTERN CREATION
-          // 30% chance to create a pattern for large blocks
-          if (Math.random() < 0.30 && block.width > 60 && block.height > 60) {
-            // Calculate squareishness for pattern selection
-            const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
-            const isSquareish = aspectRatio < 1.5; // Blocks with aspect ratio < 1.5 are considered squareish
-            const patternType = Math.random();
-            
-            if (patternType < 0.4) {
-              // 40% chance: Checkerboard pattern
-              this.logger.log('🎯 Creating random checkerboard pattern!');
-              
-              const originalColor = block.color;
-              const newBlocks = [];
-              
-              // Create 2x2 checkerboard pattern
-              const halfWidth = block.width / 2;
-              const halfHeight = block.height / 2;
-              
-              // Create 4 pieces in alternating pattern
-              for (let row = 0; row < 2; row++) {
-                for (let col = 0; col < 2; col++) {
-                  const isAlternating = (row + col) % 2 === 1; // Alternating pattern
-                  const pieceColor = isAlternating ? newColor : originalColor;
-                  
-                  const piece = {
-                    x: block.x + (col * halfWidth),
-                    y: block.y + (row * halfHeight),
-                    width: col === 1 ? block.width - halfWidth : halfWidth, // Ensure complete width coverage
-                    height: row === 1 ? block.height - halfHeight : halfHeight, // Ensure complete height coverage
-                    color: pieceColor
-                  };
-                  
-                  newBlocks.push(piece);
-                }
-              }
-              
-              this.logger.log('✅ Created checkerboard pattern:', {
-                originalBlock: block,
-                newPieces: newBlocks.length,
-                pattern: '2x2 alternating'
-              });
-              
-              this.blocks.splice(blockIndex, 1, ...newBlocks);
-              const newBlockIndex = blockIndex + 1; // Point to the first new piece
-              
-              // Set the last added index in the renderer for animation
-              this.renderer.setLastAddedIndex(newBlockIndex);
-              
-              this.logger.log('Split block into checkerboard pattern successfully:', {
-                originalIndex: blockIndex,
-                newIndex: newBlockIndex,
-                pattern: 'checkerboard',
-                newBlocksCount: this.blocks.length
-              });
-              
-              return true;
-            } else if (patternType < 0.65) {
-              // 25% chance: Alternating bars pattern
-              this.logger.log('🎯 Creating random alternating bars pattern!');
-              
-              const originalColor = block.color;
-              const newBlocks = [];
-              
-              // Determine if we should create horizontal or vertical bars based on block shape
-              const isHorizontal = block.width > block.height * 1.2; // Prefer horizontal bars for wide blocks
-              const isVertical = block.height > block.width * 1.2; // Prefer vertical bars for tall blocks
-              
-              let barDirection;
-              if (isHorizontal) {
-                barDirection = 'horizontal';
-              } else if (isVertical) {
-                barDirection = 'vertical';
-              } else {
-                // For square-ish blocks, randomly choose direction
-                barDirection = Math.random() < 0.5 ? 'horizontal' : 'vertical';
-              }
-              
-              // Create alternating bars pattern
-              if (barDirection === 'horizontal') {
-                // Horizontal bars (stripes)
-                const barHeight = block.height / 5; // 5 horizontal bars
-                
-                for (let i = 0; i < 5; i++) {
-                  const pieceColor = i % 2 === 0 ? originalColor : newColor; // Alternating colors
-                  
-                  const piece = {
-                    x: block.x,
-                    y: block.y + (i * barHeight),
-                    width: block.width,
-                    height: i === 4 ? block.height - (4 * barHeight) : barHeight, // Ensure complete coverage
-                    color: pieceColor
-                  };
-                  
-                  newBlocks.push(piece);
-                }
-              } else {
-                // Vertical bars
-                const barWidth = block.width / 5; // 5 vertical bars
-                
-                for (let i = 0; i < 5; i++) {
-                  const pieceColor = i % 2 === 0 ? originalColor : newColor; // Alternating colors
-                  
-                  const piece = {
-                    x: block.x + (i * barWidth),
-                    y: block.y,
-                    width: i === 4 ? block.width - (4 * barWidth) : barWidth, // Ensure complete coverage
-                    height: block.height,
-                    color: pieceColor
-                  };
-                  
-                  newBlocks.push(piece);
-                }
-              }
-              
-              this.logger.log('✅ Created alternating bars pattern:', {
-                originalBlock: block,
-                newPieces: newBlocks.length,
-                pattern: `${barDirection} bars`,
-                direction: barDirection
-              });
-              
-              this.blocks.splice(blockIndex, 1, ...newBlocks);
-              const newBlockIndex = blockIndex + 1; // Point to the first new piece
-              
-              // Set the last added index in the renderer for animation
-              this.renderer.setLastAddedIndex(newBlockIndex);
-              
-              this.logger.log('Split block into alternating bars pattern successfully:', {
-                originalIndex: blockIndex,
-                newIndex: newBlockIndex,
-                pattern: 'alternating bars',
-                direction: barDirection,
-                newBlocksCount: this.blocks.length
-              });
-              
-              return true;
-            } else if (patternType < 0.85) {
-              // 20% chance: Cross Box pattern
-              this.logger.log('🎯 Creating random cross box pattern!');
-              
-              const originalColor = block.color;
-              const newBlocks = [];
-              
-              // Calculate dimensions for cross box pattern
-              const centerSize = Math.min(block.width, block.height) * 0.9; // Use 90% to fill most of the block
-              const separatorWidth = Math.min(block.width, block.height) * 0.08;
-              
-              // Calculate positions
-              const centerX = block.x + (block.width - centerSize) / 2;
-              const centerY = block.y + (block.height - centerSize) / 2;
-              const separatorX = centerX + centerSize / 2 - separatorWidth / 2;
-              const separatorY = centerY + centerSize / 2 - separatorWidth / 2;
-              
-              // Create 4 central squares in alternating pattern
-              const halfCenter = centerSize / 2;
-              for (let row = 0; row < 2; row++) {
-                for (let col = 0; col < 2; col++) {
-                  const isAlternating = (row + col) % 2 === 1;
-                  const pieceColor = isAlternating ? newColor : originalColor;
-                  
-                  const piece = {
-                    x: centerX + (col * halfCenter),
-                    y: centerY + (row * halfCenter),
-                    width: col === 1 ? centerSize - halfCenter : halfCenter,
-                    height: row === 1 ? centerSize - halfCenter : halfCenter,
-                    color: pieceColor
-                  };
-                  
-                  newBlocks.push(piece);
-                }
-              }
-              
-              // Create cross separators
-              const horizontalSeparator = {
-                x: centerX,
-                y: separatorY,
-                width: centerSize,
-                height: separatorWidth,
-                color: newColor
-              };
-              
-              const verticalSeparator = {
-                x: separatorX,
-                y: centerY,
-                width: separatorWidth,
-                height: centerSize,
-                color: newColor
-              };
-              
-              newBlocks.push(horizontalSeparator, verticalSeparator);
-              
-              // Create outer border frame to fill the remaining space
-              const borderWidth = Math.min(block.width, block.height) * 0.05;
-              
-              // Calculate border pieces to fill the gaps around the center pattern
-              const borderPieces = [];
-              
-              // Top border (above the center pattern)
-              if (centerY > block.y) {
-                borderPieces.push({
-                  x: block.x,
-                  y: block.y,
-                  width: block.width,
-                  height: centerY - block.y,
-                  color: originalColor
-                });
-              }
-              
-              // Bottom border (below the center pattern)
-              const bottomY = centerY + centerSize;
-              if (bottomY < block.y + block.height) {
-                borderPieces.push({
-                  x: block.x,
-                  y: bottomY,
-                  width: block.width,
-                  height: (block.y + block.height) - bottomY,
-                  color: originalColor
-                });
-              }
-              
-              // Left border (left of the center pattern)
-              if (centerX > block.x) {
-                borderPieces.push({
-                  x: block.x,
-                  y: centerY,
-                  width: centerX - block.x,
-                  height: centerSize,
-                  color: originalColor
-                });
-              }
-              
-              // Right border (right of the center pattern)
-              const rightX = centerX + centerSize;
-              if (rightX < block.x + block.width) {
-                borderPieces.push({
-                  x: rightX,
-                  y: centerY,
-                  width: (block.x + block.width) - rightX,
-                  height: centerSize,
-                  color: originalColor
-                });
-              }
-              
-              newBlocks.push(...borderPieces);
-              
-              this.logger.log('✅ Created cross box pattern:', {
-                originalBlock: block,
-                newPieces: newBlocks.length,
-                pattern: 'cross box with border frame'
-              });
-              
-              this.blocks.splice(blockIndex, 1, ...newBlocks);
-              const newBlockIndex = blockIndex + 1; // Point to the first new piece
-              
-              // Set the last added index in the renderer for animation
-              this.renderer.setLastAddedIndex(newBlockIndex);
-              
-              this.logger.log('Split block into cross box pattern successfully:', {
-                originalIndex: blockIndex,
-                newIndex: newBlockIndex,
-                pattern: 'cross box',
-                newBlocksCount: this.blocks.length
-              });
-              
-              return true;
-                          } else if (isSquareish) {
-                // 15% chance: Log Cabin pattern (only for squareish blocks)
-                this.logger.log('🎯 Creating random log cabin pattern!');
-              
-              const originalColor = block.color;
-              const newBlocks = [];
-              
-              // Calculate dimensions for traditional log cabin
-              const stripWidth = Math.min(block.width, block.height) * 0.12; // Use fixed strip width
-              const centerSize = stripWidth; // Center square same size as strips
-              
-              // Calculate center position
-              const centerX = block.x + (block.width - centerSize) / 2;
-              const centerY = block.y + (block.height - centerSize) / 2;
-              
-              // Create center square
-              const centerSquare = {
-                x: centerX,
-                y: centerY,
-                width: centerSize,
-                height: centerSize,
-                color: originalColor
-              };
-              newBlocks.push(centerSquare);
-              
-              // Build log cabin strips progressively
-              let currentWidth = centerSize;
-              let currentHeight = centerSize;
-              let currentX = centerX;
-              let currentY = centerY;
-              
-              // Layer 1: Right, Bottom, Left, Top
-              // Right strip
-              newBlocks.push({
-                x: currentX + currentWidth,
-                y: currentY,
-                width: stripWidth,
-                height: currentHeight,
-                color: newColor
-              });
-              currentWidth += stripWidth;
-              
-              // Bottom strip
-              newBlocks.push({
-                x: currentX,
-                y: currentY + currentHeight,
-                width: currentWidth,
-                height: stripWidth,
-                color: originalColor
-              });
-              currentHeight += stripWidth;
-              
-              // Left strip
-              newBlocks.push({
-                x: currentX - stripWidth,
-                y: currentY,
-                width: stripWidth,
-                height: currentHeight,
-                color: newColor
-              });
-              currentX -= stripWidth;
-              currentWidth += stripWidth;
-              
-              // Top strip
-              newBlocks.push({
-                x: currentX,
-                y: currentY - stripWidth,
-                width: currentWidth,
-                height: stripWidth,
-                color: originalColor
-              });
-              currentY -= stripWidth;
-              currentHeight += stripWidth;
-              
-              // Layer 2: Right, Bottom, Left, Top
-              // Right strip
-              newBlocks.push({
-                x: currentX + currentWidth,
-                y: currentY,
-                width: stripWidth,
-                height: currentHeight,
-                color: newColor
-              });
-              currentWidth += stripWidth;
-              
-              // Bottom strip
-              newBlocks.push({
-                x: currentX,
-                y: currentY + currentHeight,
-                width: currentWidth,
-                height: stripWidth,
-                color: originalColor
-              });
-              currentHeight += stripWidth;
-              
-              // Left strip
-              newBlocks.push({
-                x: currentX - stripWidth,
-                y: currentY,
-                width: stripWidth,
-                height: currentHeight,
-                color: newColor
-              });
-              currentX -= stripWidth;
-              currentWidth += stripWidth;
-              
-              // Top strip
-              newBlocks.push({
-                x: currentX,
-                y: currentY - stripWidth,
-                width: currentWidth,
-                height: stripWidth,
-                color: originalColor
-              });
-              currentY -= stripWidth;
-              currentHeight += stripWidth;
-              
-              // Layer 3: Right, Bottom, Left, Top (outermost)
-              // Right strip
-              newBlocks.push({
-                x: currentX + currentWidth,
-                y: currentY,
-                width: stripWidth,
-                height: currentHeight,
-                color: newColor
-              });
-              currentWidth += stripWidth;
-              
-              // Bottom strip
-              newBlocks.push({
-                x: currentX,
-                y: currentY + currentHeight,
-                width: currentWidth,
-                height: stripWidth,
-                color: originalColor
-              });
-              currentHeight += stripWidth;
-              
-              // Left strip
-              newBlocks.push({
-                x: currentX - stripWidth,
-                y: currentY,
-                width: stripWidth,
-                height: currentHeight,
-                color: newColor
-              });
-              currentX -= stripWidth;
-              currentWidth += stripWidth;
-              
-              // Top strip
-              newBlocks.push({
-                x: currentX,
-                y: currentY - stripWidth,
-                width: currentWidth,
-                height: stripWidth,
-                color: originalColor
-              });
-              currentY -= stripWidth;
-              currentHeight += stripWidth;
-              
-              // Gap detection and filling
-              const logCabinBounds = {
-                left: currentX,
-                right: currentX + currentWidth,
-                top: currentY,
-                bottom: currentY + currentHeight
-              };
-              
-              // Check for gaps and add fill strips
-              const gaps = [];
-              
-              // Top gap
-              if (logCabinBounds.top > block.y) {
-                gaps.push({
-                  x: block.x,
-                  y: block.y,
-                  width: block.width,
-                  height: logCabinBounds.top - block.y,
-                  color: newColor
-                });
-              }
-              
-              // Bottom gap
-              if (logCabinBounds.bottom < block.y + block.height) {
-                gaps.push({
-                  x: block.x,
-                  y: logCabinBounds.bottom,
-                  width: block.width,
-                  height: (block.y + block.height) - logCabinBounds.bottom,
-                  color: newColor
-                });
-              }
-              
-              // Left gap
-              if (logCabinBounds.left > block.x) {
-                gaps.push({
-                  x: block.x,
-                  y: logCabinBounds.top,
-                  width: logCabinBounds.left - block.x,
-                  height: logCabinBounds.bottom - logCabinBounds.top,
-                  color: originalColor
-                });
-              }
-              
-              // Right gap
-              if (logCabinBounds.right < block.x + block.width) {
-                gaps.push({
-                  x: logCabinBounds.right,
-                  y: logCabinBounds.top,
-                  width: (block.x + block.width) - logCabinBounds.right,
-                  height: logCabinBounds.bottom - logCabinBounds.top,
-                  color: originalColor
-                });
-              }
-              
-              // Add gap fillers
-              if (gaps.length > 0) {
-                this.logger.log('🔧 Adding gap fillers:', gaps.length, 'pieces');
-                newBlocks.push(...gaps);
-              }
-              
-              this.logger.log('✅ Created log cabin pattern:', {
-                originalBlock: block,
-                newPieces: newBlocks.length,
-                pattern: 'log cabin spiral with border frame'
-              });
-              
-              this.blocks.splice(blockIndex, 1, ...newBlocks);
-              const newBlockIndex = blockIndex + 1; // Point to the first new piece
-              
-              // Set the last added index in the renderer for animation
-              this.renderer.setLastAddedIndex(newBlockIndex);
-              
-              this.logger.log('Split block into log cabin pattern successfully:', {
-                originalIndex: blockIndex,
-                newIndex: newBlockIndex,
-                pattern: 'log cabin',
-                newBlocksCount: this.blocks.length
-              });
-              
-              return true;
-            } else {
-              // Block is not squareish, fall back to standard splitting
-              this.logger.log('📐 Block not squareish enough for Log Cabin, using standard split');
-            }
-          }
-          
-          let block1, block2;
-          if (splitVertically) {
-            const splitX = block.width * splitRatio;
-            block1 = { ...block, width: splitX };
-            block2 = { ...block, x: block.x + splitX, width: block.width - splitX, color: newColor };
-          } else {
-            const splitY = block.height * splitRatio;
-            block1 = { ...block, height: splitY };
-            block2 = { ...block, y: block.y + splitY, height: block.height - splitY, color: newColor };
-          }
+          // Always split vertically
+          const splitX = block.width * splitRatio;
+          const block1 = { ...block, width: splitX };
+          const block2 = { ...block, x: block.x + splitX, width: block.width - splitX, color: newColor };
           
           this.blocks.splice(blockIndex, 1, block1, block2);
           const newBlockIndex = blockIndex + 1; // Point to the second piece (block2)
           
           // Set the last added index in the renderer for animation
           this.renderer.setLastAddedIndex(newBlockIndex);
-          
-          this.logger.log('Split block successfully:', {
-            originalIndex: blockIndex,
-            newIndex: newBlockIndex,
-            splitDirection: splitVertically ? 'vertical' : 'horizontal',
-            splitRatio: splitRatio,
-            newBlocksCount: this.blocks.length
-          });
           
           return true;
         } catch (error) {
@@ -3419,11 +2448,7 @@
 
       async handleAddColor() {
         try {
-          this.logger.log('🎨 Starting color addition process');
-          
           const selectedColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
-          
-          this.logger.log(`Converted color: ${selectedColor}`);
           
           if (!selectedColor) {
             this.logger.warn('No color selected');
@@ -3437,136 +2462,18 @@
 
           // Ensure blocks are initialized
           if (!this.blocks || this.blocks.length === 0) {
-            this.logger.log('Initializing blocks array');
             const dimensions = Utils.getQuiltDimensions();
             this.blocks = [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }];
             this.contributorCount = 1;
           }
 
-          this.logger.log(`Current blocks: ${this.blocks.length}`, this.blocks);
-
-          // ===== SIMPLE 2-PHASE KEY SHAPE SYSTEM =====
-          
-          // Phase 1: Pre-Freeze (Blocks 1-24) - Normal splitting
-          // Phase 2: Post-Freeze (Block 25+) - Key shape protection + border formation
-          
-          // Freeze key shapes when we reach or exceed 25 blocks (handles pattern jumps)
-          this.logger.log(`🔍 FREEZE CHECK: blocks=${this.blocks.length}, keyShapesFrozen=${this.keyShapesFrozen}`);
-          if (this.blocks.length >= 25 && !this.keyShapesFrozen) {
-            this.logger.log(`🛡️ FREEZING KEY SHAPES at block ${this.blocks.length}`);
-            this.freezeKeyShapes();
-          }
-
-          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
-          let indexToSplit;
-          
-          if (this.keyShapesFrozen) {
-            // ===== PHASE 2: POST-FREEZE (Block 25+) =====
-            this.logger.log(`🛡️ POST-FREEZE MODE: Key shape protection active`);
-            
-            // Find key shapes with similar colors
-            const similarKeyShapes = [];
-            
-            for (let i = 0; i < this.blocks.length; i++) {
-              const block = this.blocks[i];
-              if (!this.isKeyShape(block)) continue; // Only consider key shapes
-              
-              const colorDistance = this.calculateColorDistance(selectedColor, block.color);
-              
-              // DEBUG: Log color distances for troubleshooting
-              this.logger.log(`🔍 DEBUG: ${selectedColor} vs ${block.color} = distance ${colorDistance.toFixed(4)}`);
-              
-              // Broader threshold: similar tones (distance < 0.15) can split key shapes
-              // This allows for visual variety while maintaining cohesion (includes 0.145!)
-              if (colorDistance < 0.15) {
-                similarKeyShapes.push({
-                  block: block,
-                  index: i,
-                  distance: colorDistance
-                });
-                this.logger.log(`✅ SIMILAR: Added to similarKeyShapes (distance: ${colorDistance.toFixed(4)})`);
-              } else {
-                this.logger.log(`❌ DIFFERENT: Color too different (distance: ${colorDistance.toFixed(4)})`);
-              }
-            }
-            
-            // Sort by color similarity (closest first)
-            similarKeyShapes.sort((a, b) => a.distance - b.distance);
-            
-            if (similarKeyShapes.length > 0) {
-              // Similar color found - split key shape
-              const bestMatch = similarKeyShapes[0];
-              indexToSplit = bestMatch.index;
-              this.logger.log(`🛡️ CORE SPLITTING: Similar color splits key shape`);
-            } else {
-              // Dissimilar color - form inward border
-              this.logger.log(`🎨 BORDER FORMATION: Dissimilar color forms inward border`);
-              
-              // Find edge blocks for border formation
-              const edgeBlocks = this.findEdgeBlocksForBorder();
-              
-              if (edgeBlocks.length > 0) {
-                // Use smallest edge block for border
-                const smallestEdgeBlock = edgeBlocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestEdgeBlock);
-                this.logger.log(`🎯 BORDER TARGET: Selected edge block for border`);
-              } else {
-                // No edge blocks - use smallest non-key shape
-                const nonKeyShapes = this.blocks.filter(block => !this.isKeyShape(block));
-                if (nonKeyShapes.length > 0) {
-                  const smallestNonKey = nonKeyShapes.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestNonKey);
-                  this.logger.log(`🎯 BORDER FALLBACK: Using non-key shape for border`);
-                } else {
-                  // Fallback to smallest of all blocks
-                  const smallestBlock = this.blocks.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestBlock);
-                  this.logger.log(`🎯 FINAL FALLBACK: Using smallest block`);
-                }
-              }
-            }
-          } else {
-            // ===== PHASE 1: PRE-FREEZE (Blocks 1-24) =====
-            this.logger.log(`🔨 PRE-FREEZE MODE: Normal block selection`);
-            
-            if (eligibleBlocks.length > 0) {
-              const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestEligible);
-            } else {
-              // No eligible blocks - use smallest of all blocks
-              const smallestBlock = this.blocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestBlock);
-            }
-          }
-
-          this.logger.log(`Splitting block at index: ${indexToSplit}`, this.blocks[indexToSplit]);
+          // Pick a random block to split
+          const indexToSplit = Math.floor(Math.random() * this.blocks.length);
 
           const success = this.splitBlock(indexToSplit, selectedColor);
           
           if (success) {
             this.contributorCount++;
-            
-            this.logger.log('Block split successfully');
             
             // Save to Firebase
             await this.saveQuilt();
@@ -3585,7 +2492,6 @@
 
       async handleShare() {
         try {
-          this.logger.log('📤 Starting share process...');
           
           const quiltSVG = document.getElementById('quilt');
           if (!quiltSVG) {
@@ -3638,446 +2544,22 @@
         }
       }
 
-      async handleTestCheckerboard() {
-        this.uiService.showToast('Testing checkerboard patterns...');
-        
-        // Add 10 random colors to trigger checkerboard patterns
-        const testColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e'];
-        
-        for (let i = 0; i < 10; i++) {
-          const randomColor = testColors[Math.floor(Math.random() * testColors.length)];
-          
-          // Find the largest block to split
-          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
-          let indexToSplit = 0;
-          
-          if (eligibleBlocks.length > 0) {
-            const largestEligible = eligibleBlocks.reduce((largest, current) => {
-              const largestArea = largest.width * largest.height;
-              const currentArea = current.width * current.height;
-              return currentArea > largestArea ? current : largest;
-            });
-            indexToSplit = this.blocks.indexOf(largestEligible);
-          }
-          
-          const success = this.splitBlock(indexToSplit, randomColor);
-          
-          if (success) {
-            this.contributorCount++;
-            this.renderQuilt();
-            await this.saveQuilt();
-            await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
-          }
-        }
-        
-        this.uiService.showToast('Checkerboard test complete! Check for scattered patterns.');
-      }
-
       async handleTestAddBlock() {
-        // Use Rumi colors in order
-        const rumiColors = [
-          "#931f25",  "#61dede",  "#ce822c",  "#61cfde",  "#6189de",  "#9dde61",  "#4024a8",  "#d8a746",  "#ea9b9a",  "#8061de",
-          "#618bde",  "#ad92e8",  "#1f2193",  "#61c9de",  "#70cae1",  "#dcc95b",  "#1f931f",  "#1f5393",  "#d84654",  "#e37d89",
-          "#eac49a",  "#7e7de3",  "#61acde",  "#dab852",  "#dab74e",  "#de61c3",  "#37a022",  "#b261de",  "#abe3ed",  "#d5f6f3",
-          "#61de76",  "#1f4293",  "#deba61",  "#61b8de",  "#1f4293",  "#6167de",  "#209750",  "#deae61",  "#afeec2",  "#eba2ce",
-          "#ded561",  "#df9368",  "#61b4de",  "#de6c61",  "#1f938a",  "#5f23a4",  "#f6eed5",  "#e78dd8",  "#e2a074",  "#61c1de",
-          "#61d5de",  "#de6176",  "#ded961",  "#de61aa",  "#3985d5",  "#61cdde",  "#7061de",  "#252cb1",  "#ded561",  "#cd61de",
-          "#24a89d",  "#de61c7",  "#1f933a",  "#d5eef6",  "#de6170",  "#ae61de",  "#617cde",  "#de6174",  "#de618f",  "#d54939",
-          "#f6eed5",  "#8b61de",  "#7d93e3",  "#d7de61",  "#f0b7cc",  "#de619b",  "#de619d",  "#d9b54a",  "#2bcaca",  "#d5ae39",
-          "#61c7de",  "#b3efed",  "#7c61de",  "#61dedb",  "#ccb7f0",  "#d67a3d",  "#2dd2b4",  "#6197de",  "#6182de",  "#61b2de",
-          "#61bade",  "#61c5de",  "#251f93",  "#9761de",  "#bd283c",  "#61de82",  "#de7a61",  "#61c9de",  "#de61c1",  "#1f2593",
-          "#dec761",  "#4aa9d9",  "#6187de",  "#91de61",  "#b061de",  "#de61a8",  "#61d9de",  "#9eeae4",  "#d94aab",  "#6163de",
-          "#de6165",  "#c961de",  "#de6174",  "#61d9de",  "#1f9331",  "#6c61de",  "#d33131",  "#5fc4dd",  "#b061de",  "#61de61",
-          "#afd8ee",  "#f6dcd5",  "#de8061",  "#931f2b",  "#67de61",  "#619fde",  "#63de61",  "#63decc",  "#c58de7",  "#aade61",
-          "#db61de",  "#a861de",  "#61c3de",  "#6170de",  "#ce2cb0",  "#3dc7d6",  "#de61ba",  "#616cde",  "#b1afee",  "#1f3593",
-          "#e5b085",  "#52da57",  "#de6167",  "#9361de",  "#61dea8",  "#b061de",  "#8f61de",  "#d5f3c8",  "#de6193",  "#dbcc57",
-          "#de9561",  "#afeed2",  "#de61ba",  "#61de67",  "#e2c874",  "#9561de",  "#931f42",  "#6ade61",  "#d45235",  "#dc665b",
-          "#f6d5eb",  "#61cbde",  "#de616c",  "#edabbd",  "#f6e8d5",  "#236aa4",  "#f1bce3",  "#de61ba",  "#70bbe1",  "#2564b1",
-          "#2996c2",  "#a02241",  "#2bcac7",  "#9ab125",  "#6197de",  "#8461de",  "#e5e78d",  "#d57d39",  "#6761de",  "#93e278",
-          "#61dec1",  "#61b2de",  "#4a7ad9",  "#2e26b5",  "#decd61",  "#61acde",  "#caa22b",  "#61dec5",  "#9bdb57",  "#3177d3",
-          "#f6eed5",  "#de8761",  "#dec961",  "#cb61de",  "#618fde",  "#b661de",  "#61b4de",  "#6189de",  "#ededab",  "#ddafee",
-          "#a8de61",  "#61deb8",  "#61c5de",  "#61decf",  "#931f82",  "#dcbc5b",  "#9bbd28",  "#de61c5",  "#2359a4",  "#61ded5",
-          "#617cde",  "#617cde",  "#61bade",  "#1f7a93",  "#61d1de",  "#92cae8",  "#8dd6e7",  "#61ded5",  "#de61cd",  "#6e61de",
-          "#61c9de",  "#de6161",  "#ba61de",  "#61ded3",  "#a461de",  "#259eb1",  "#de7661",  "#61b8de",  "#61b8de",  "#de61d1",
-          "#61decf",  "#24a4a8",  "#dec161",  "#61de7a",  "#de61a6",  "#33b927",  "#6172de",  "#5fb7dd",  "#ded561",  "#daa252",
-          "#f0e2b7",  "#abedea",  "#abedea",  "#61d5de",  "#de617c",  "#ca8a2b",  "#61a1de",  "#a2ebe2",  "#72de61",  "#caa72b",
-          "#bede61",  "#ae8de7",  "#de617e",  "#931f42",  "#beeeaf",  "#de8d61",  "#6161de",  "#da4ed3",  "#dc5b5b",  "#e7938d",
-          "#c25729",  "#619dde",  "#61de97",  "#61dbde",  "#de7063",  "#61bade",  "#29931f",  "#61c9de",  "#dec361",  "#e5e285",
-          "#d5de61",  "#28bdb8",  "#4a9bd9",  "#de61cb",  "#1f3c93",  "#de6165",  "#61deba",  "#61de95",  "#e8d292",  "#ac61de",
-          "#61d7de",  "#6e61de",  "#61bede",  "#61aade",  "#61de6c",  "#21739c",  "#61de61",  "#de616c",  "#de61a8",  "#61d5de",
-          "#6dad25",  "#c62a44",  "#a861de",  "#e17077",  "#d4358d",  "#25b166",  "#dec4f3",  "#cdde61",  "#dedb61",  "#8961de",
-          "#61cdde",  "#618bde",  "#de9761",  "#de9d61",  "#61dec7",  "#6883df",  "#61de9b",  "#debe61",  "#e38a7d",  "#61deb2",
-          "#616ede",  "#b261de",  "#b261de",  "#6195de",  "#4a29c2",  "#61c3de",  "#5b61dc",  "#c0ebf2",  "#61de9b",  "#1f9321",
-          "#de6163",  "#61bade",  "#6191de",  "#de6187",  "#2969c2",  "#61bcde",  "#63a7de",  "#de6178",  "#ad7825",  "#6170de",
-          "#de61bc",  "#46d8cc",  "#6172de",  "#4e99da",  "#d7a2eb",  "#6191de",  "#de6e61",  "#61c1de",  "#edbeab",  "#61bede",
-          "#6174de",  "#259cb1",  "#6187de",  "#c23329",  "#9b61de",  "#57d0db",  "#db5771",  "#92bee8",  "#61c3de",  "#de8261",
-          "#6170de",  "#d7b742",  "#61d7de",  "#61dbde",  "#1f2193",  "#ba61de",  "#7061de",  "#ba2dd2",  "#9161de",  "#61c1de",
-          "#21259c",  "#788ce2",  "#a861de",  "#daad4e",  "#845bdc",  "#93741f",  "#93741f",  "#b92753",  "#2a85c6",  "#e996a2",
-          "#898fe6",  "#73b927",  "#68df6f",  "#5fd0dd",  "#63dece",  "#b0de61",  "#dade63",  "#de6187",  "#31add3",  "#6ce0d4",
-          "#f6d5ee",  "#61deba",  "#316ad3",  "#ba61de",  "#b14d25",  "#b55826",  "#a2da4e",  "#de63b1",  "#8461de",  "#de6e61",
-          "#9561de",  "#6165de",  "#b1252c",  "#61dbde",  "#6187de",  "#42c229",  "#61b4de",  "#1f9382",  "#e9e996",  "#231f93",
-          "#f6d5e6",  "#d1de61",  "#b49eea",  "#be61de",  "#de61cf",  "#57d5db",  "#61b2de",  "#782ac6",  "#b661de",  "#61deac",
-          "#92c1e8",  "#de618d",  "#94b526",  "#61dbde",  "#78b8e2",  "#4c931f",  "#85bbe5",  "#61bede",  "#dc5b7d",  "#eedeaf",
-          "#6199de",  "#e2e274",  "#de61c5",  "#61dbde",  "#c4eef3",  "#de61b8",  "#de616e",  "#afe6ee",  "#de61c7",  "#84de61",
-          "#b1e06c",  "#61de6c",  "#ebd7a2",  "#8bde61",  "#25ad49",  "#618dde",  "#61d9de",  "#a531d3",  "#dd815f",  "#a824a6",
-          "#61ded1",  "#2e29c2",  "#2747b9",  "#6174de",  "#de6c61",  "#8fde61",  "#61de63",  "#6161de",  "#61b0de",  "#d43542",
-          "#f2ddc0",  "#9c4021",  "#b54126",  "#df7768",  "#7ede61",  "#3cd539",  "#61de74",  "#29c299",  "#6199de",  "#617cde",
-          "#61aade",  "#61cfde",  "#de61ae",  "#deb061",  "#de619d",  "#e37db2",  "#dec361",  "#78de61",  "#96b8e9",  "#6ade61",
-          "#5223a4",  "#24a824",  "#61a4de",  "#8f4ad9",  "#8d98e7",  "#ad2527",  "#d35fdd",  "#cf78e2",  "#61ded3",  "#61a4de",
-          "#61dec9",  "#debe61",  "#61d3de",  "#de7c61",  "#31c8d3",  "#6178de",  "#61a1de",  "#9761de",  "#eba2dc",  "#63de72",
-          "#de6172",  "#618fde",  "#e06ca0",  "#61deaa",  "#4e53da",  "#de61b0",  "#85d5e5",  "#61aade",  "#619fde",  "#acde61",
-          "#78e2d6",  "#61b8de",  "#72de61",  "#61deae",  "#426cd7",  "#6187de",  "#61cfde",  "#61dec5",  "#251f93",  "#61d3de",
-          "#61decf",  "#f0b7db",  "#ded161",  "#61dea8",  "#61b2de",  "#4a88d9",  "#d94ab0",  "#5ba0dc",  "#6ce0aa",  "#de6167",
-          "#6172de",  "#b99527",  "#6c6ce0",  "#97e892",  "#1f5393",  "#b061de",  "#f2c4f3",  "#29a3c2",  "#61b4de",  "#61d3de",
-          "#9ecbea",  "#9c2721",  "#a661de",  "#745fdd",  "#6165de",  "#f4f3cd",  "#e1d770",  "#f6d5da",  "#de7861",  "#9f61de",
-          "#93311f",  "#33931f",  "#d9de61",  "#42d7c3",  "#dcc45b",  "#428fd7",  "#3223a4",  "#b59126",  "#e892c4",  "#61a1de",
-          "#25b128",  "#619fde",  "#61de76",  "#61de89",  "#1f5293",  "#617cde",  "#d7de61",  "#61deba",  "#de8d61",  "#617cde",
-          "#687ddf",  "#d45835",  "#de7661",  "#de6e61",  "#1f4093",  "#6182de",  "#d561de",  "#ded961",  "#8761de",  "#6167de",
-          "#61dea4",  "#6195de",  "#61c5de",  "#de7c61",  "#de617e",  "#de9f61",  "#6187de",  "#de617c",  "#271f93",  "#5023a4",
-          "#61ded1",  "#61dec5",  "#a04122",  "#de9161",  "#617cde",  "#6184de",  "#6170de",  "#61c9de",  "#d5e1f6",  "#2731b9",
-          "#d0abed",  "#a861de",  "#b6e689",  "#61de6a",  "#61dea6",  "#931f33",  "#a8e170",  "#da964e",  "#3025ad",  "#3025ad",
-          "#3025ad",  "#e2de74",  "#d6d33d",  "#8061de",  "#efb3b5",  "#caa22b",  "#e27495",  "#a461de",  "#931f57",  "#931f57",
-          "#d3de61",  "#61dea4",  "#f0ebb7",  "#de8061",  "#6193de",  "#2a85c6",  "#e6aa89",  "#61c7de",  "#e7e28d",  "#ded361",
-          "#db61de",  "#debb63",  "#de61b2",  "#256dad",  "#de7c61",  "#de6761",  "#1f9344",  "#de6195",  "#61c7de",  "#617cde",
-          "#de61d3",  "#dbde61",  "#de6199",  "#a1de61",  "#25a423",  "#61bede",  "#5f70dd",  "#dea161",  "#d561de",  "#3956d5",
-          "#618dde",  "#93761f",  "#cca2eb",  "#d7de61",  "#8461de",  "#9abbea",  "#94d63d",  "#f0bbb7",  "#2c47ce",  "#d5f6f2",
-          "#619fde",  "#dcc05b",  "#7661de",  "#6e61de",  "#1f934e",  "#de61b4",  "#35d485",  "#a4e06c",  "#2d6fd2",  "#59b125",
-          "#de61b0",  "#e58597",  "#26b591",  "#d9de61",  "#6172de",  "#57d7db",  "#b3efcd",  "#61dec5",  "#9161de",  "#de61b8",
-          "#1f4093",  "#de617c",  "#35d43a",  "#6184de",  "#de61a6",  "#deaa61",  "#6a61de",  "#f1e4bc",  "#342ac6",  "#d4b235",
-          "#2544b1",  "#2544b1",  "#de9761",  "#d539b6",  "#618dde",  "#61de78",  "#6170de",  "#61cfde",  "#d2cd2d",  "#61dedb",
-          "#78e2bd",  "#f0b7e5",  "#ca2b3d",  "#de61c9",  "#1f9346",  "#5f87dd",  "#dd5fdb",  "#f6d5ec",  "#61c9de",  "#7db3e3",
-          "#96d4e9",  "#cbabed",  "#61cdde",  "#e481ac",  "#61b0de",  "#6187de",  "#bd3028",  "#7731d3",  "#616ade",  "#61d9de",
-          "#e9f6d5",  "#e9f6d5",  "#616ade",  "#de61cd",  "#271f93",  "#2c4fce",  "#b7dbf0",  "#b59126",  "#de61bc",  "#618fde",
-          "#251f93",  "#e4c0f2",  "#6361de",  "#afd1ee",  "#617ede",  "#de7061",  "#5ba2dc",  "#c66b2a",  "#61deb2",  "#61debc",
-          "#dda95f",  "#9b61de",  "#92bee8",  "#9d61de",  "#e996ac",  "#deb061",  "#6761de",  "#a4de61",  "#2d1f93",  "#649720",
-          "#6172de",  "#b7afee",  "#618fde",  "#9492e8",  "#de7a61",  "#de6a61",  "#931f40",  "#de61c7",  "#61de61",  "#616ede",
-          "#c0f2f2",  "#dc5bb1",  "#8261de",  "#e06ca4",  "#de6c61",  "#f5d1db",  "#deb661",  "#de7863",  "#1f1f93",  "#61cfde",
-          "#429720",  "#231f93",  "#9f61de",  "#93761f",  "#61dedb",  "#35d4ca",  "#61de61",  "#61cdde",  "#b061de",  "#c62a6d",
-          "#61dbde",  "#61bcde",  "#a4a423",  "#7a61de",  "#6172de",  "#ad2529",  "#61bede",  "#617ede",  "#61deb4",  "#d22d51",
-          "#db57a8",  "#a47de3",  "#8b61de",  "#61de7a",  "#61ded7",  "#61b6de",  "#d1f5dd",  "#9aeaea",  "#9aeaea",  "#9aeaea",
-          "#9aeaea",  "#d24e2d",  "#61a4de",  "#1f6193",  "#ac61de",  "#de61ae",  "#6174de",  "#7861de",  "#b861de",  "#222097",
-          "#6182de",  "#7d25ad",  "#1f9336",  "#8a85e5",  "#db7657",  "#61debc",  "#61aede",  "#debe61",  "#61bede",  "#619bde",
-          "#529bda",  "#2bcaaa",  "#5bbedc",  "#61a6de",  "#d9de61",  "#d361de",  "#709fe1",  "#bc61de",  "#c0f2ef",  "#61dede",
-          "#89dbe6",  "#61cfde",  "#2dd232",  "#5f1f93",  "#6361de",  "#85e5b7",  "#7e61de",  "#1f7893",  "#de61c1",  "#de6193",
-          "#969ae9",  "#de7061",  "#9b57db",  "#2595b1",  "#5b97dc",  "#de7a61",  "#c5de61",  "#8761de",  "#211f93",  "#debc61",
-          "#de6167",  "#4249d7",  "#d761de",  "#d63d57",  "#6167de",  "#de8461",  "#9aeae2",  "#52da8b",  "#d74253",  "#d74253",
-          "#d74253",  "#d74253",  "#d74253",  "#de61cb",  "#95de61",  "#61aede",  "#deb861",  "#e585b7",  "#de9f61",  "#6189de",
-          "#618bde",  "#de61b2",  "#61d9de",  "#ba92e8",  "#6cbfe0",  "#8461de",  "#61debe",  "#6176de",  "#deb261",  "#de616c",
-          "#de6178",  "#74de61",  "#89cae6",  "#de7e61",  "#6b931f",  "#de61aa",  "#de61aa",  "#de61aa",  "#b3d8ef",  "#618fde",
-          "#6cb3e0",  "#de61de",  "#de6172",  "#de617e",  "#61d3de",  "#61dec7",  "#61de91",  "#eba2ad",  "#ea9ed7",  "#de6761",
-          "#2566b1",  "#5bdcd8",  "#61acde",  "#6561de",  "#70de61",  "#f1e3bc",  "#ddc45f",  "#deb061",  "#61cfde",  "#d43575",
-          "#f6d5e1",  "#61a4de",  "#cf61de",  "#8d61de",  "#e06ca6",  "#c761de",  "#617cde",  "#decd61",  "#6ade61",  "#de61c9",
-          "#295cc2",  "#de61aa",  "#61b2de",  "#7a61de",  "#61cfde",  "#f0edb7",  "#6195de",  "#93361f",  "#61dec9",  "#de6172",
-          "#e8c4f3",  "#61a1de",  "#6163de",  "#616ede",  "#74a9e2",  "#6193de",  "#57a4db",  "#de61b4",  "#c23d29",  "#6184de",
-          "#de9f61",  "#de61a1",  "#61dea8",  "#1f2b93",  "#de6761",  "#61debc",  "#61ded7",  "#77d331",  "#bede61",  "#61decd",
-          "#6187de",  "#65931f",  "#65931f",  "#6a61de",  "#89abe6",  "#615fdd",  "#617cde",  "#de7e61",  "#a1df68",  "#1f3393"
-        ];
+        const testColors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff', '#5f27cd'];
+        const randomColor = testColors[Math.floor(Math.random() * testColors.length)];
         
-        // Initialize or get the current Rumi color index
-        if (!this.rumiColorIndex) {
-          this.rumiColorIndex = 0;
-        }
-        
-        // Get the next color in sequence, cycle back to start if we reach the end
-        const selectedColor = rumiColors[this.rumiColorIndex % rumiColors.length];
-        this.rumiColorIndex++;
-        
-        // Strategic block selection based on quilt density (same logic as handleAddColor)
-        const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
-        let indexToSplit;
-        
-        if (this.blocks.length >= 50) {
-          // ULTRA-STRICT MODE: Minimizing visual disruption
-          const familyBlocks = this.findColorFamilyBlocks(selectedColor);
-          
-          if (familyBlocks.length > 0) {
-            const bestFamilyBlock = familyBlocks[0];
-            const colorDistance = bestFamilyBlock.distance;
-            const isLongRectangle = bestFamilyBlock.rectangularityScore > 50;
-            
-            // ULTRA-STRICT thresholds with enhanced long rectangle protection
-            const maxDistanceForLongRectangles = 15;
-            const maxDistanceForRegularBlocks = 25;
-            
-            // Additional protection: avoid splitting very long rectangles unless perfect color match
-            const aspectRatio = Math.max(bestFamilyBlock.block.width / bestFamilyBlock.block.height, 
-                                       bestFamilyBlock.block.height / bestFamilyBlock.block.width);
-            const isVeryLongRectangle = aspectRatio > 4.0;
-            const isPerfectColorMatch = colorDistance < 5; // Very close color match
-            
-            if (eligibleBlocks.includes(bestFamilyBlock.block) && 
-                (colorDistance < (isLongRectangle ? maxDistanceForLongRectangles : maxDistanceForRegularBlocks)) &&
-                (!isVeryLongRectangle || isPerfectColorMatch)) {
-              indexToSplit = bestFamilyBlock.index;
-            } else {
-              // Fallback to smallest block for minimal disruption
-              if (eligibleBlocks.length > 0) {
-                const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestEligible);
-              } else {
-                // No eligible blocks - use smallest of all blocks
-                const smallestBlock = this.blocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestBlock);
-              }
-            }
-          } else {
-            // No family blocks - use smallest block
-            if (eligibleBlocks.length > 0) {
-              const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestEligible);
-            } else {
-              // No eligible blocks - use smallest of all blocks
-              const smallestBlock = this.blocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestBlock);
-            }
-          }
-        } else {
-          // Before 50 blocks: use largest block (original logic)
-          if (eligibleBlocks.length > 0) {
-            const largestEligible = eligibleBlocks.reduce((largest, current) => {
-              const largestArea = largest.width * largest.height;
-              const currentArea = current.width * current.height;
-              return currentArea > largestArea ? current : largest;
-            });
-            indexToSplit = this.blocks.indexOf(largestEligible);
-          } else {
-            let maxArea = 0;
-            indexToSplit = 0;
-            this.blocks.forEach((b, i) => {
-              const area = b.width * b.height;
-              if (area > maxArea) {
-                maxArea = area;
-                indexToSplit = i;
-              }
-            });
-          }
-        }
+        // Pick a random block to split
+        const indexToSplit = Math.floor(Math.random() * this.blocks.length);
 
-        const success = this.splitBlock(indexToSplit, selectedColor);
+        const success = this.splitBlock(indexToSplit, randomColor);
         
         if (success) {
           this.contributorCount++;
           this.renderQuilt();
           await this.saveQuilt();
           
-          this.uiService.showToast(`Added Rumi color ${this.rumiColorIndex}: ${selectedColor}`);
+          this.uiService.showToast(`Added test block: ${randomColor}`);
         }
-      }
-
-      async testRumiColorSequence() {
-        const rumiColors = [
-          "#931f25",  "#61dede",  "#ce822c",  "#61cfde",  "#6189de",  "#9dde61",  "#4024a8",  "#d8a746",  "#ea9b9a",  "#8061de",
-          "#618bde",  "#ad92e8",  "#1f2193",  "#61c9de",  "#70cae1",  "#dcc95b",  "#1f931f",  "#1f5393",  "#d84654",  "#e37d89",
-          "#eac49a",  "#7e7de3",  "#61acde",  "#dab852",  "#dab74e",  "#de61c3",  "#37a022",  "#b261de",  "#abe3ed",  "#d5f6f3",
-          "#61de76",  "#1f4293",  "#deba61",  "#61b8de",  "#1f4293",  "#6167de",  "#209750",  "#deae61",  "#afeec2",  "#eba2ce",
-          "#ded561",  "#df9368",  "#61b4de",  "#de6c61",  "#1f938a",  "#5f23a4",  "#f6eed5",  "#e78dd8",  "#e2a074",  "#61c1de",
-          "#61d5de",  "#de6176",  "#ded961",  "#de61aa",  "#3985d5",  "#61cdde",  "#7061de",  "#252cb1",  "#ded561",  "#cd61de",
-          "#24a89d",  "#de61c7",  "#1f933a",  "#d5eef6",  "#de6170",  "#ae61de",  "#617cde",  "#de6174",  "#de618f",  "#d54939",
-          "#f6eed5",  "#8b61de",  "#7d93e3",  "#d7de61",  "#f0b7cc",  "#de619b",  "#de619d",  "#d9b54a",  "#2bcaca",  "#d5ae39",
-          "#61c7de",  "#b3efed",  "#7c61de",  "#61dedb",  "#ccb7f0",  "#d67a3d",  "#2dd2b4",  "#6197de",  "#6182de",  "#61b2de",
-          "#61bade",  "#61c5de",  "#251f93",  "#9761de",  "#bd283c",  "#61de82",  "#de7a61",  "#61c9de",  "#de61c1",  "#1f2593",
-          "#dec761",  "#4aa9d9",  "#6187de",  "#91de61",  "#b061de",  "#de61a8",  "#61d9de",  "#9eeae4",  "#d94aab",  "#6163de",
-          "#de6165",  "#c961de",  "#de6174",  "#61d9de",  "#1f9331",  "#6c61de",  "#d33131",  "#5fc4dd",  "#b061de",  "#61de61",
-          "#afd8ee",  "#f6dcd5",  "#de8061",  "#931f2b",  "#67de61",  "#619fde",  "#63de61",  "#63decc",  "#c58de7",  "#aade61",
-          "#db61de",  "#a861de",  "#61c3de",  "#6170de",  "#ce2cb0",  "#3dc7d6",  "#de61ba",  "#616cde",  "#b1afee",  "#1f3593",
-          "#e5b085",  "#52da57",  "#de6167",  "#9361de",  "#61dea8",  "#b061de",  "#8f61de",  "#d5f3c8",  "#de6193",  "#dbcc57",
-          "#de9561",  "#afeed2",  "#de61ba",  "#61de67",  "#e2c874",  "#9561de",  "#931f42",  "#6ade61",  "#d45235",  "#dc665b",
-          "#f6d5eb",  "#61cbde",  "#de616c",  "#edabbd",  "#f6e8d5",  "#236aa4",  "#f1bce3",  "#de61ba",  "#70bbe1",  "#2564b1",
-          "#2996c2",  "#a02241",  "#2bcac7",  "#9ab125",  "#6197de",  "#8461de",  "#e5e78d",  "#d57d39",  "#6761de",  "#93e278",
-          "#61dec1",  "#61b2de",  "#4a7ad9",  "#2e26b5",  "#decd61",  "#61acde",  "#caa22b",  "#61dec5",  "#9bdb57",  "#3177d3",
-          "#f6eed5",  "#de8761",  "#dec961",  "#cb61de",  "#618fde",  "#b661de",  "#61b4de",  "#6189de",  "#ededab",  "#ddafee",
-          "#a8de61",  "#61deb8",  "#61c5de",  "#61decf",  "#931f82",  "#dcbc5b",  "#9bbd28",  "#de61c5",  "#2359a4",  "#61ded5",
-          "#617cde",  "#617cde",  "#61bade",  "#1f7a93",  "#61d1de",  "#92cae8",  "#8dd6e7",  "#61ded5",  "#de61cd",  "#6e61de",
-          "#61c9de",  "#de6161",  "#ba61de",  "#61ded3",  "#a461de",  "#259eb1",  "#de7661",  "#61b8de",  "#61b8de",  "#de61d1",
-          "#61decf",  "#24a4a8",  "#dec161",  "#61de7a",  "#de61a6",  "#33b927",  "#6172de",  "#5fb7dd",  "#ded561",  "#daa252",
-          "#f0e2b7",  "#abedea",  "#abedea",  "#61d5de",  "#de617c",  "#ca8a2b",  "#61a1de",  "#a2ebe2",  "#72de61",  "#caa72b",
-          "#bede61",  "#ae8de7",  "#de617e",  "#931f42",  "#beeeaf",  "#de8d61",  "#6161de",  "#da4ed3",  "#dc5b5b",  "#e7938d",
-          "#c25729",  "#619dde",  "#61de97",  "#61dbde",  "#de7063",  "#61bade",  "#29931f",  "#61c9de",  "#dec361",  "#e5e285",
-          "#d5de61",  "#28bdb8",  "#4a9bd9",  "#de61cb",  "#1f3c93",  "#de6165",  "#61deba",  "#61de95",  "#e8d292",  "#ac61de",
-          "#61d7de",  "#6e61de",  "#61bede",  "#61aade",  "#61de6c",  "#21739c",  "#61de61",  "#de616c",  "#de61a8",  "#61d5de",
-          "#6dad25",  "#c62a44",  "#a861de",  "#e17077",  "#d4358d",  "#25b166",  "#dec4f3",  "#cdde61",  "#dedb61",  "#8961de",
-          "#61cdde",  "#618bde",  "#de9761",  "#de9d61",  "#61dec7",  "#6883df",  "#61de9b",  "#debe61",  "#e38a7d",  "#61deb2",
-          "#616ede",  "#b261de",  "#b261de",  "#6195de",  "#4a29c2",  "#61c3de",  "#5b61dc",  "#c0ebf2",  "#61de9b",  "#1f9321",
-          "#de6163",  "#61bade",  "#6191de",  "#de6187",  "#2969c2",  "#61bcde",  "#63a7de",  "#de6178",  "#ad7825",  "#6170de",
-          "#de61bc",  "#46d8cc",  "#6172de",  "#4e99da",  "#d7a2eb",  "#6191de",  "#de6e61",  "#61c1de",  "#edbeab",  "#61bede",
-          "#6174de",  "#259cb1",  "#6187de",  "#c23329",  "#9b61de",  "#57d0db",  "#db5771",  "#92bee8",  "#61c3de",  "#de8261",
-          "#6170de",  "#d7b742",  "#61d7de",  "#61dbde",  "#1f2193",  "#ba61de",  "#7061de",  "#ba2dd2",  "#9161de",  "#61c1de",
-          "#21259c",  "#788ce2",  "#a861de",  "#daad4e",  "#845bdc",  "#93741f",  "#93741f",  "#b92753",  "#2a85c6",  "#e996a2",
-          "#898fe6",  "#73b927",  "#68df6f",  "#5fd0dd",  "#63dece",  "#b0de61",  "#dade63",  "#de6187",  "#31add3",  "#6ce0d4",
-          "#f6d5ee",  "#61deba",  "#316ad3",  "#ba61de",  "#b14d25",  "#b55826",  "#a2da4e",  "#de63b1",  "#8461de",  "#de6e61",
-          "#9561de",  "#6165de",  "#b1252c",  "#61dbde",  "#6187de",  "#42c229",  "#61b4de",  "#1f9382",  "#e9e996",  "#231f93",
-          "#f6d5e6",  "#d1de61",  "#b49eea",  "#be61de",  "#de61cf",  "#57d5db",  "#61b2de",  "#782ac6",  "#b661de",  "#61deac",
-          "#92c1e8",  "#de618d",  "#94b526",  "#61dbde",  "#78b8e2",  "#4c931f",  "#85bbe5",  "#61bede",  "#dc5b7d",  "#eedeaf",
-          "#6199de",  "#e2e274",  "#de61c5",  "#61dbde",  "#c4eef3",  "#de61b8",  "#de616e",  "#afe6ee",  "#de61c7",  "#84de61",
-          "#b1e06c",  "#61de6c",  "#ebd7a2",  "#8bde61",  "#25ad49",  "#618dde",  "#61d9de",  "#a531d3",  "#dd815f",  "#a824a6",
-          "#61ded1",  "#2e29c2",  "#2747b9",  "#6174de",  "#de6c61",  "#8fde61",  "#61de63",  "#6161de",  "#61b0de",  "#d43542",
-          "#f2ddc0",  "#9c4021",  "#b54126",  "#df7768",  "#7ede61",  "#3cd539",  "#61de74",  "#29c299",  "#6199de",  "#617cde",
-          "#61aade",  "#61cfde",  "#de61ae",  "#deb061",  "#de619d",  "#e37db2",  "#dec361",  "#78de61",  "#96b8e9",  "#6ade61",
-          "#5223a4",  "#24a824",  "#61a4de",  "#8f4ad9",  "#8d98e7",  "#ad2527",  "#d35fdd",  "#cf78e2",  "#61ded3",  "#61a4de",
-          "#61dec9",  "#debe61",  "#61d3de",  "#de7c61",  "#31c8d3",  "#6178de",  "#61a1de",  "#9761de",  "#eba2dc",  "#63de72",
-          "#de6172",  "#618fde",  "#e06ca0",  "#61deaa",  "#4e53da",  "#de61b0",  "#85d5e5",  "#61aade",  "#619fde",  "#acde61",
-          "#78e2d6",  "#61b8de",  "#72de61",  "#61deae",  "#426cd7",  "#6187de",  "#61cfde",  "#61dec5",  "#251f93",  "#61d3de",
-          "#61decf",  "#f0b7db",  "#ded161",  "#61dea8",  "#61b2de",  "#4a88d9",  "#d94ab0",  "#5ba0dc",  "#6ce0aa",  "#de6167",
-          "#6172de",  "#b99527",  "#6c6ce0",  "#97e892",  "#1f5393",  "#b061de",  "#f2c4f3",  "#29a3c2",  "#61b4de",  "#61d3de",
-          "#9ecbea",  "#9c2721",  "#a661de",  "#745fdd",  "#6165de",  "#f4f3cd",  "#e1d770",  "#f6d5da",  "#de7861",  "#9f61de",
-          "#93311f",  "#33931f",  "#d9de61",  "#42d7c3",  "#dcc45b",  "#428fd7",  "#3223a4",  "#b59126",  "#e892c4",  "#61a1de",
-          "#25b128",  "#619fde",  "#61de76",  "#61de89",  "#1f5293",  "#617cde",  "#d7de61",  "#61deba",  "#de8d61",  "#617cde",
-          "#687ddf",  "#d45835",  "#de7661",  "#de6e61",  "#1f4093",  "#6182de",  "#d561de",  "#ded961",  "#8761de",  "#6167de",
-          "#61dea4",  "#6195de",  "#61c5de",  "#de7c61",  "#de617e",  "#de9f61",  "#6187de",  "#de617c",  "#271f93",  "#5023a4",
-          "#61ded1",  "#61dec5",  "#a04122",  "#de9161",  "#617cde",  "#6184de",  "#6170de",  "#61c9de",  "#d5e1f6",  "#2731b9",
-          "#d0abed",  "#a861de",  "#b6e689",  "#61de6a",  "#61dea6",  "#931f33",  "#a8e170",  "#da964e",  "#3025ad",  "#3025ad",
-          "#3025ad",  "#e2de74",  "#d6d33d",  "#8061de",  "#efb3b5",  "#caa22b",  "#e27495",  "#a461de",  "#931f57",  "#931f57",
-          "#d3de61",  "#61dea4",  "#f0ebb7",  "#de8061",  "#6193de",  "#2a85c6",  "#e6aa89",  "#61c7de",  "#e7e28d",  "#ded361",
-          "#db61de",  "#debb63",  "#de61b2",  "#256dad",  "#de7c61",  "#de6761",  "#1f9344",  "#de6195",  "#61c7de",  "#617cde",
-          "#de61d3",  "#dbde61",  "#de6199",  "#a1de61",  "#25a423",  "#61bede",  "#5f70dd",  "#dea161",  "#d561de",  "#3956d5",
-          "#618dde",  "#93761f",  "#cca2eb",  "#d7de61",  "#8461de",  "#9abbea",  "#94d63d",  "#f0bbb7",  "#2c47ce",  "#d5f6f2",
-          "#619fde",  "#dcc05b",  "#7661de",  "#6e61de",  "#1f934e",  "#de61b4",  "#35d485",  "#a4e06c",  "#2d6fd2",  "#59b125",
-          "#de61b0",  "#e58597",  "#26b591",  "#d9de61",  "#6172de",  "#57d7db",  "#b3efcd",  "#61dec5",  "#9161de",  "#de61b8",
-          "#1f4093",  "#de617c",  "#35d43a",  "#6184de",  "#de61a6",  "#deaa61",  "#6a61de",  "#f1e4bc",  "#342ac6",  "#d4b235",
-          "#2544b1",  "#2544b1",  "#de9761",  "#d539b6",  "#618dde",  "#61de78",  "#6170de",  "#61cfde",  "#d2cd2d",  "#61dedb",
-          "#78e2bd",  "#f0b7e5",  "#ca2b3d",  "#de61c9",  "#1f9346",  "#5f87dd",  "#dd5fdb",  "#f6d5ec",  "#61c9de",  "#7db3e3",
-          "#96d4e9",  "#cbabed",  "#61cdde",  "#e481ac",  "#61b0de",  "#6187de",  "#bd3028",  "#7731d3",  "#616ade",  "#61d9de",
-          "#e9f6d5",  "#e9f6d5",  "#616ade",  "#de61cd",  "#271f93",  "#2c4fce",  "#b7dbf0",  "#b59126",  "#de61bc",  "#618fde",
-          "#251f93",  "#e4c0f2",  "#6361de",  "#afd1ee",  "#617ede",  "#de7061",  "#5ba2dc",  "#c66b2a",  "#61deb2",  "#61debc",
-          "#dda95f",  "#9b61de",  "#92bee8",  "#9d61de",  "#e996ac",  "#deb061",  "#6761de",  "#a4de61",  "#2d1f93",  "#649720",
-          "#6172de",  "#b7afee",  "#618fde",  "#9492e8",  "#de7a61",  "#de6a61",  "#931f40",  "#de61c7",  "#61de61",  "#616ede",
-          "#c0f2f2",  "#dc5bb1",  "#8261de",  "#e06ca4",  "#de6c61",  "#f5d1db",  "#deb661",  "#de7863",  "#1f1f93",  "#61cfde",
-          "#429720",  "#231f93",  "#9f61de",  "#93761f",  "#61dedb",  "#35d4ca",  "#61de61",  "#61cdde",  "#b061de",  "#c62a6d",
-          "#61dbde",  "#61bcde",  "#a4a423",  "#7a61de",  "#6172de",  "#ad2529",  "#61bede",  "#617ede",  "#61deb4",  "#d22d51",
-          "#db57a8",  "#a47de3",  "#8b61de",  "#61de7a",  "#61ded7",  "#61b6de",  "#d1f5dd",  "#9aeaea",  "#9aeaea",  "#9aeaea",
-          "#9aeaea",  "#d24e2d",  "#61a4de",  "#1f6193",  "#ac61de",  "#de61ae",  "#6174de",  "#7861de",  "#b861de",  "#222097",
-          "#6182de",  "#7d25ad",  "#1f9336",  "#8a85e5",  "#db7657",  "#61debc",  "#61aede",  "#debe61",  "#61bede",  "#619bde",
-          "#529bda",  "#2bcaaa",  "#5bbedc",  "#61a6de",  "#d9de61",  "#d361de",  "#709fe1",  "#bc61de",  "#c0f2ef",  "#61dede",
-          "#89dbe6",  "#61cfde",  "#2dd232",  "#5f1f93",  "#6361de",  "#85e5b7",  "#7e61de",  "#1f7893",  "#de61c1",  "#de6193",
-          "#969ae9",  "#de7061",  "#9b57db",  "#2595b1",  "#5b97dc",  "#de7a61",  "#c5de61",  "#8761de",  "#211f93",  "#debc61",
-          "#de6167",  "#4249d7",  "#d761de",  "#d63d57",  "#6167de",  "#de8461",  "#9aeae2",  "#52da8b",  "#d74253",  "#d74253",
-          "#d74253",  "#d74253",  "#d74253",  "#de61cb",  "#95de61",  "#61aede",  "#deb861",  "#e585b7",  "#de9f61",  "#6189de",
-          "#618bde",  "#de61b2",  "#61d9de",  "#ba92e8",  "#6cbfe0",  "#8461de",  "#61debe",  "#6176de",  "#deb261",  "#de616c",
-          "#de6178",  "#74de61",  "#89cae6",  "#de7e61",  "#6b931f",  "#de61aa",  "#de61aa",  "#de61aa",  "#b3d8ef",  "#618fde",
-          "#6cb3e0",  "#de61de",  "#de6172",  "#de617e",  "#61d3de",  "#61dec7",  "#61de91",  "#eba2ad",  "#ea9ed7",  "#de6761",
-          "#2566b1",  "#5bdcd8",  "#61acde",  "#6561de",  "#70de61",  "#f1e3bc",  "#ddc45f",  "#deb061",  "#61cfde",  "#d43575",
-          "#f6d5e1",  "#61a4de",  "#cf61de",  "#8d61de",  "#e06ca6",  "#c761de",  "#617cde",  "#decd61",  "#6ade61",  "#de61c9",
-          "#295cc2",  "#de61aa",  "#61b2de",  "#7a61de",  "#61cfde",  "#f0edb7",  "#6195de",  "#93361f",  "#61dec9",  "#de6172",
-          "#e8c4f3",  "#61a1de",  "#6163de",  "#616ede",  "#74a9e2",  "#6193de",  "#57a4db",  "#de61b4",  "#c23d29",  "#6184de",
-          "#de9f61",  "#de61a1",  "#61dea8",  "#1f2b93",  "#de6761",  "#61debc",  "#61ded7",  "#77d331",  "#bede61",  "#61decd",
-          "#6187de",  "#65931f",  "#65931f",  "#6a61de",  "#89abe6",  "#615fdd",  "#617cde",  "#de7e61",  "#a1df68",  "#1f3393"
-        ];
-        
-        for (let i = 0; i < rumiColors.length; i++) {
-          const color = rumiColors[i];
-          
-          // Use the SAME logic as handleAddColor() but with the specific color
-          const eligibleBlocks = this.blocks.filter(b => b.width > CONFIG.APP.minBlockSize && b.height > CONFIG.APP.minBlockSize);
-          let indexToSplit;
-          
-          if (this.blocks.length >= 50) {
-            // ULTRA-STRICT MODE: Minimizing visual disruption
-            const familyBlocks = this.findColorFamilyBlocks(color);
-            
-            if (familyBlocks.length > 0) {
-              const bestFamilyBlock = familyBlocks[0];
-              const colorDistance = bestFamilyBlock.distance;
-              const isLongRectangle = bestFamilyBlock.rectangularityScore > 50;
-              
-              // ULTRA-STRICT thresholds with enhanced long rectangle protection
-              const maxDistanceForLongRectangles = 15;
-              const maxDistanceForRegularBlocks = 25;
-              
-              // Additional protection: avoid splitting very long rectangles unless perfect color match
-              const aspectRatio = Math.max(bestFamilyBlock.block.width / bestFamilyBlock.block.height, 
-                                         bestFamilyBlock.block.height / bestFamilyBlock.block.width);
-              const isVeryLongRectangle = aspectRatio > 4.0;
-              const isPerfectColorMatch = colorDistance < 5; // Very close color match
-              
-              if (eligibleBlocks.includes(bestFamilyBlock.block) && 
-                  (colorDistance < (isLongRectangle ? maxDistanceForLongRectangles : maxDistanceForRegularBlocks)) &&
-                  (!isVeryLongRectangle || isPerfectColorMatch)) {
-                indexToSplit = bestFamilyBlock.index;
-              } else {
-                // Fallback to smallest block for minimal disruption
-                if (eligibleBlocks.length > 0) {
-                  const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestEligible);
-                } else {
-                  // No eligible blocks - use smallest of all blocks
-                  const smallestBlock = this.blocks.reduce((smallest, current) => {
-                    const smallestArea = smallest.width * smallest.height;
-                    const currentArea = current.width * current.height;
-                    return currentArea < smallestArea ? current : smallest;
-                  });
-                  indexToSplit = this.blocks.indexOf(smallestBlock);
-                }
-              }
-            } else {
-              // No family blocks - use smallest block
-              if (eligibleBlocks.length > 0) {
-                const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestEligible);
-              } else {
-                // No eligible blocks - use smallest of all blocks
-                const smallestBlock = this.blocks.reduce((smallest, current) => {
-                  const smallestArea = smallest.width * smallest.height;
-                  const currentArea = current.width * current.height;
-                  return currentArea < smallestArea ? current : smallest;
-                });
-                indexToSplit = this.blocks.indexOf(smallestBlock);
-              }
-            }
-          } else {
-            // Before 50 blocks: use SMALLEST block for controlled growth
-            if (eligibleBlocks.length > 0) {
-              const smallestEligible = eligibleBlocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestEligible);
-            } else {
-              // No eligible blocks - use smallest of all blocks
-              const smallestBlock = this.blocks.reduce((smallest, current) => {
-                const smallestArea = smallest.width * smallest.height;
-                const currentArea = current.width * current.height;
-                return currentArea < smallestArea ? current : smallest;
-              });
-              indexToSplit = this.blocks.indexOf(smallestBlock);
-            }
-          }
-          
-          const success = this.splitBlock(indexToSplit, color);
-          
-          if (success) {
-            this.contributorCount++;
-            this.renderQuilt();
-            await this.saveQuilt();
-            await new Promise(resolve => setTimeout(resolve, 20)); // 20ms delay
-          }
-        }
-        
-        this.uiService.showToast('Rumi color sequence test complete! (982 colors added)');
       }
 
       handleShowMyPiece() {
@@ -4090,483 +2572,13 @@
         }
       }
 
-      // ===== ULTRA-STRICT MODE HELPER FUNCTIONS =====
-      
-      findColorFamilyBlocks(newColor) {
-        const newColorFamily = Utils.getColorFamily(newColor);
-        const familyBlocks = [];
-        
-        for (let i = 0; i < this.blocks.length; i++) {
-          const block = this.blocks[i];
-          if (Utils.getColorFamily(block.color) === newColorFamily) {
-            const distance = this.calculateColorDistance(newColor, block.color);
-            const area = block.width * block.height;
-            const rectangularityScore = this.calculateRectangularityScore(block);
-            const densityScore = this.calculateSpatialDensity(i, newColorFamily);
-            
-            familyBlocks.push({
-              index: i,
-              block: block,
-              distance: distance,
-              area: area,
-              rectangularityScore: rectangularityScore,
-              densityScore: densityScore
-            });
-          }
-        }
-        
-        // Sort by rectangularity score first, then density, then area, then distance
-        familyBlocks.sort((a, b) => {
-          if (b.rectangularityScore !== a.rectangularityScore) {
-            return b.rectangularityScore - a.rectangularityScore;
-          }
-          if (b.densityScore !== a.densityScore) {
-            return b.densityScore - a.densityScore;
-          }
-          if (b.area !== a.area) {
-            return b.area - a.area;
-          }
-          return a.distance - b.distance;
-        });
-        
-        return familyBlocks;
-      }
-
-      calculateColorDistance(color1, color2) {
-        const hsl1 = Utils.hexToHsl(color1);
-        const hsl2 = Utils.hexToHsl(color2);
-        
-        const hueDiff = Math.min(
-          Math.abs(hsl1.h - hsl2.h),
-          Math.abs(hsl1.h - hsl2.h + 360),
-          Math.abs(hsl1.h - hsl2.h - 360)
-        );
-        
-        const saturationDiff = Math.abs(hsl1.s - hsl2.s);
-        const lightnessDiff = Math.abs(hsl1.l - hsl2.l);
-        
-        return (hueDiff * 0.6) + (saturationDiff * 0.25) + (lightnessDiff * 0.15);
-      }
-
-      calculateRectangularityScore(block) {
-        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
-        const area = block.width * block.height;
-        
-        // Enhanced long rectangle protection
-        let rectangularityBonus = 0;
-        if (aspectRatio > 6.0) rectangularityBonus = 500; // Very long rectangles - maximum protection
-        else if (aspectRatio > 4.0) rectangularityBonus = 300; // Long rectangles - high protection
-        else if (aspectRatio > 3.0) rectangularityBonus = 200; // Medium-long rectangles - medium protection
-        else if (aspectRatio > 2.0) rectangularityBonus = 100; // Short-long rectangles - some protection
-        
-        const areaBonus = Math.log(area) * 10;
-        
-        return rectangularityBonus + areaBonus;
-      }
-
-            calculateSpatialDensity(blockIndex, targetFamily) {
-        const searchRadius = 200;
-        let densityScore = 0;
-        
-        for (let i = 0; i < this.blocks.length; i++) {
-          if (i === blockIndex) continue;
-          
-          const otherBlock = this.blocks[i];
-          if (Utils.getColorFamily(otherBlock.color) === targetFamily) {
-            const distance = Math.sqrt(
-              Math.pow(this.blocks[blockIndex].x - otherBlock.x, 2) + 
-              Math.pow(this.blocks[blockIndex].y - otherBlock.y, 2)
-            );
-            
-            if (distance < searchRadius) {
-              const proximityScore = (searchRadius - distance) / searchRadius;
-              densityScore += proximityScore * 100;
-            }
-          }
-        }
-        
-        return densityScore;
-      }
-
-      calculateCompositionDensity(block) {
-        // Calculate how dense the composition is around this block
-        const searchRadius = 150; // Smaller radius for composition density
-        let nearbyBlocks = 0;
-        let totalArea = 0;
-        
-        for (let i = 0; i < this.blocks.length; i++) {
-          const otherBlock = this.blocks[i];
-          if (otherBlock === block) continue;
-          
-          // Calculate distance between block centers
-          const blockCenterX = block.x + block.width / 2;
-          const blockCenterY = block.y + block.height / 2;
-          const otherCenterX = otherBlock.x + otherBlock.width / 2;
-          const otherCenterY = otherBlock.y + otherBlock.height / 2;
-          
-          const distance = Math.sqrt(
-            Math.pow(blockCenterX - otherCenterX, 2) + 
-            Math.pow(blockCenterY - otherCenterY, 2)
-          );
-          
-          if (distance < searchRadius) {
-            nearbyBlocks++;
-            totalArea += otherBlock.width * otherBlock.height;
-          }
-        }
-        
-        // Calculate density score (0 = sparse, 1 = dense)
-        const areaDensity = totalArea / (Math.PI * searchRadius * searchRadius);
-        const blockDensity = nearbyBlocks / 10; // Normalize to 0-1 range
-        
-        return Math.min(1, (areaDensity + blockDensity) / 2);
-      }
-
-      getDensityMultiplier(densityScore) {
-        // REVERSE LOGIC: Sparse areas get smaller splits, dense areas get larger splits
-        // Sparse areas need careful, gradual filling
-        // Dense areas can handle larger, more dramatic splits
-        
-        if (densityScore < 0.2) {
-          // Very sparse area - very small splits for careful filling
-          return 0.5 + Math.random() * 0.2; // 0.5-0.7x multiplier
-        } else if (densityScore < 0.4) {
-          // Sparse area - small splits for gradual filling
-          return 0.7 + Math.random() * 0.2; // 0.7-0.9x multiplier
-        } else if (densityScore < 0.6) {
-          // Medium density - neutral splits
-          return 1.0 + Math.random() * 0.2; // 1.0-1.2x multiplier
-        } else if (densityScore < 0.8) {
-          // Dense area - larger splits for dramatic effect
-          return 1.3 + Math.random() * 0.2; // 1.3-1.5x multiplier
-        } else {
-          // Very dense area - very large splits for maximum drama
-          return 1.5 + Math.random() * 0.3; // 1.5-1.8x multiplier
-        }
-      }
-
-      freezeKeyShapes() {
-        // Freeze all existing blocks as key shapes
-        this.keyShapes = [...this.blocks];
-        this.keyShapesFrozen = true;
-        
-        this.logger.log(`🛡️ KEY SHAPES FROZEN: ${this.keyShapes.length} shapes protected as key shapes`);
-        this.logger.log(`🎯 CORE QUILT ESTABLISHED: Only similar colors can split key shapes from now on`);
-        this.logger.log(`🎨 BORDER SYSTEM: Dissimilar colors will form inward borders`);
-        
-        // Log key shape details
-        this.keyShapes.forEach((shape, index) => {
-          const area = shape.width * shape.height;
-          const aspectRatio = Math.max(shape.width / shape.height, shape.height / shape.width);
-          this.logger.log(`🛡️ Key Shape ${index}: ${shape.width}x${shape.height} (area: ${area.toFixed(0)}px², ratio: ${aspectRatio.toFixed(1)})`);
-        });
-      }
-
-      isKeyShape(block) {
-        // Simple check: if key shapes are frozen, all existing blocks are key shapes
-        if (!this.keyShapesFrozen) return false;
-        
-        // Check if this block existed when key shapes were frozen
-        return this.keyShapes.some(keyShape => 
-          keyShape.x === block.x && 
-          keyShape.y === block.y && 
-          keyShape.width === block.width && 
-          keyShape.height === block.height
-        );
-      }
-
-      findEdgeBlocksForBorder() {
-        // Find small blocks near the edges of the quilt for border formation
-        const edgeBlocks = [];
-        const edgeThreshold = 50; // pixels from edge
-        
-        for (let i = 0; i < this.blocks.length; i++) {
-          const block = this.blocks[i];
-          
-          // Only consider non-key shapes (small blocks that aren't protected)
-          if (!this.isKeyShape(block)) {
-            const area = block.width * block.height;
-            
-            // Prefer small blocks for border formation
-            if (area < 5000 && this.isBlockNearEdge(block, edgeThreshold)) {
-              edgeBlocks.push(block);
-            }
-          }
-        }
-        
-        return edgeBlocks;
-      }
-
-      isBlockNearEdge(block, threshold) {
-        // Check if block is near the quilt's outer boundary
-        const quiltBounds = this.getQuiltBounds();
-        
-        const distanceFromLeft = block.x;
-        const distanceFromRight = quiltBounds.maxX - (block.x + block.width);
-        const distanceFromTop = block.y;
-        const distanceFromBottom = quiltBounds.maxY - (block.y + block.height);
-        
-        return distanceFromLeft < threshold || 
-               distanceFromRight < threshold || 
-               distanceFromTop < threshold || 
-               distanceFromBottom < threshold;
-      }
-
-      getQuiltBounds() {
-        if (!this.blocks || this.blocks.length === 0) {
-          return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-        }
-        
-        const minX = Math.min(...this.blocks.map(b => b.x));
-        const minY = Math.min(...this.blocks.map(b => b.y));
-        const maxX = Math.max(...this.blocks.map(b => b.x + b.width));
-        const maxY = Math.max(...this.blocks.map(b => b.y + b.height));
-        
-        return { minX, minY, maxX, maxY };
-      }
-
-      calculateColorDistance(color1, color2) {
-        // Convert hex colors to RGB
-        const rgb1 = this.hexToRgb(color1);
-        const rgb2 = this.hexToRgb(color2);
-        
-        if (!rgb1 || !rgb2) return 1.0; // Maximum distance if conversion fails
-        
-        // Calculate Euclidean distance in RGB space
-        const deltaR = rgb1.r - rgb2.r;
-        const deltaG = rgb1.g - rgb2.g;
-        const deltaB = rgb1.b - rgb2.b;
-        
-        const distance = Math.sqrt(deltaR * deltaR + deltaG * deltaG + deltaB * deltaB);
-        
-        // Normalize to 0-1 range (max RGB distance is sqrt(255² + 255² + 255²) ≈ 441.67)
-        return Math.min(1.0, distance / 441.67);
-      }
-
-      hexToRgb(hex) {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ? {
-          r: parseInt(result[1], 16),
-          g: parseInt(result[2], 16),
-          b: parseInt(result[3], 16)
-        } : null;
-      }
-
-      isPatternPiece(block) {
-        // Check if this block is part of a pattern
-        // Look for blocks that are smaller than their original size (indicating they were split)
-        const area = block.width * block.height;
-        
-        // Pattern pieces are typically smaller than the original blocks
-        // and have specific size ratios
-        if (area < 10000) return false; // Too small to be a pattern piece
-        
-        // Check if this looks like a pattern piece based on size and position
-        // This is a simplified check - in a full implementation, we'd track pattern creation
-        const aspectRatio = Math.max(block.width / block.height, block.height / block.width);
-        
-        // Pattern pieces often have specific aspect ratios
-        return aspectRatio < 2.0 && area > 10000;
-      }
-
       handleTestDifferentUser() {
         // Generate a new user ID
         this.currentUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         localStorage.setItem('ourDailyUserId', this.currentUserId);
         
         this.uiService.showToast('Switched to different user');
-        this.logger.log(`New user ID: ${this.currentUserId}`);
-      }
 
-      forceFreezeKeyShapes() {
-        if (!this.keyShapesFrozen) {
-          this.logger.log(`🛡️ FORCING KEY SHAPE FREEZE at block ${this.blocks.length}`);
-          this.freezeKeyShapes();
-          this.uiService.showToast('Key shapes frozen!');
-        } else {
-          this.logger.log(`🛡️ Key shapes already frozen`);
-          this.uiService.showToast('Key shapes already frozen');
-        }
-      }
-
-      // isKeyLargeShape function removed - using simple isKeyShape function instead
-      
-      // Test function to demonstrate color distances
-      testColorDistances() {
-        console.log('🎨 COLOR DISTANCE EXAMPLES:');
-        console.log('Distance 0.15 means colors are SIMILAR TONES (allows visual variety)');
-        console.log('');
-        
-        // Example 1: Very similar colors (distance < 0.15)
-        const color1 = '#FF0000'; // Pure red
-        const color2 = '#FF0808'; // Slightly different red
-        const distance1 = this.calculateColorDistance(color1, color2);
-        console.log(`🔴 ${color1} vs ${color2}: distance = ${distance1.toFixed(4)} (${distance1 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
-        
-        // Example 2: Similar tones (distance < 0.15)
-        const color3 = '#FF0000'; // Pure red
-        const color4 = '#FF2020'; // More different red
-        const distance2 = this.calculateColorDistance(color3, color4);
-        console.log(`🔴 ${color3} vs ${color4}: distance = ${distance2.toFixed(4)} (${distance2 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
-        
-        // Example 3: Similar tones (distance < 0.15)
-        const color5 = '#FF0000'; // Pure red
-        const color6 = '#FF4040'; // Pinkish red
-        const distance3 = this.calculateColorDistance(color5, color6);
-        console.log(`🔴 ${color5} vs ${color6}: distance = ${distance3.toFixed(4)} (${distance3 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
-        
-        // Example 4: Similar tone (distance < 0.15)
-        const color7 = '#FF0000'; // Pure red
-        const color8 = '#FF8080'; // Light pink
-        const distance4 = this.calculateColorDistance(color7, color8);
-        console.log(`🔴 ${color7} vs ${color8}: distance = ${distance4.toFixed(4)} (${distance4 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
-        
-        // Example 5: Border threshold (distance > 0.15)
-        const color9 = '#FF0000'; // Pure red
-        const color10 = '#FFA0A0'; // Very light pink
-        const distance5 = this.calculateColorDistance(color9, color10);
-        console.log(`🔴 ${color9} vs ${color10}: distance = ${distance5.toFixed(4)} (${distance5 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
-        
-        // Example 6: Very different colors
-        const color11 = '#FF0000'; // Pure red
-        const color12 = '#00FF00'; // Pure green
-        const distance6 = this.calculateColorDistance(color11, color12);
-        console.log(`🔴 ${color11} vs ${color12}: distance = ${distance6.toFixed(4)} (${distance6 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
-        
-        // Example 7: Same color
-        const color13 = '#FF0000'; // Pure red
-        const color14 = '#FF0000'; // Same red
-        const distance7 = this.calculateColorDistance(color13, color14);
-        console.log(`🔴 ${color13} vs ${color14}: distance = ${distance7.toFixed(4)} (${distance7 < 0.15 ? '✅ SIMILAR' : '❌ DIFFERENT'})`);
-        
-
-        
-
-        
-        console.log('');
-        console.log('📊 SUMMARY:');
-        console.log('- Distance 0.0000 = Identical colors');
-        console.log('- Distance 0.0100 = Very similar (barely noticeable difference)');
-        console.log('- Distance 0.0450 = Similar tones (noticeable but cohesive)');
-        console.log('- Distance 0.0720 = Similar tones (more variety)');
-        console.log('- Distance 0.1500 = Similar (NEW THRESHOLD - allows visual variety)');
-        console.log('- Distance 0.1450 = Similar tone (included in core quilt!)');
-        console.log('- Distance 0.5000 = Very different');
-        console.log('- Distance 1.0000 = Maximum difference (opposite colors)');
-      }
-      
-      // Visual test function that shows actual color swatches
-      testColorDistancesVisual() {
-        // Create a visual test panel
-        const testPanel = document.createElement('div');
-        testPanel.style.cssText = `
-          position: fixed;
-          top: 20px;
-          right: 20px;
-          background: white;
-          border: 2px solid #333;
-          border-radius: 10px;
-          padding: 20px;
-          font-family: Arial, sans-serif;
-          font-size: 14px;
-          max-width: 400px;
-          z-index: 10000;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        `;
-        
-        testPanel.innerHTML = `
-          <h3 style="margin: 0 0 15px 0; color: #333;">🎨 Color Distance Test</h3>
-          <p style="margin: 0 0 15px 0; font-size: 12px;">Distance 0.15 = Similar tones (NEW THRESHOLD)</p>
-          
-          <div style="margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <div style="width: 40px; height: 40px; background: #FF0808; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.018)</span>
-            </div>
-            <div style="font-size: 12px; color: #666;">Pure red vs slightly tinted red</div>
-          </div>
-          
-          <div style="margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <div style="width: 40px; height: 40px; background: #FF2020; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.045)</span>
-            </div>
-            <div style="font-size: 12px; color: #666;">Pure red vs more tinted red (NOW SIMILAR!)</div>
-          </div>
-          
-          <div style="margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <div style="width: 40px; height: 40px; background: #FF4040; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.072)</span>
-            </div>
-            <div style="font-size: 12px; color: #666;">Pure red vs pinkish red</div>
-          </div>
-          
-          <div style="margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <div style="width: 40px; height: 40px; background: #FF8080; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <span style="font-weight: bold; color: green;">✅ SIMILAR (0.145)</span>
-            </div>
-            <div style="font-size: 12px; color: #666;">Pure red vs light pink (GREAT for core quilt!)</div>
-          </div>
-          
-          <div style="margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <div style="width: 40px; height: 40px; background: #00FF00; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <span style="font-weight: bold; color: red;">❌ VERY DIFFERENT (0.816)</span>
-            </div>
-            <div style="font-size: 12px; color: #666;">Red vs green (opposite colors)</div>
-          </div>
-          
-          <div style="margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <div style="width: 40px; height: 40px; background: #00FF00; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <span style="font-weight: bold; color: red;">❌ VERY DIFFERENT (0.816)</span>
-            </div>
-            <div style="font-size: 12px; color: #666;">Red vs green (opposite colors)</div>
-          </div>
-          
-          <div style="margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <div style="width: 40px; height: 40px; background: #FF0000; border: 1px solid #ccc; margin-right: 10px;"></div>
-              <span style="font-weight: bold; color: green;">✅ IDENTICAL (0.000)</span>
-            </div>
-            <div style="font-size: 12px; color: #666;">Same color</div>
-          </div>
-          
-          <div style="background: #f0f0f0; padding: 10px; border-radius: 5px; margin-top: 15px;">
-            <strong>Key Shape System (NEW THRESHOLD):</strong><br>
-            • <span style="color: green;">✅ SIMILAR</span> tones (distance < 0.15) can split key shapes<br>
-            • <span style="color: red;">❌ DIFFERENT</span> colors (distance > 0.15) form borders<br>
-            <em>Allows for visual variety while maintaining cohesion!</em>
-          </div>
-          
-          <button onclick="this.parentElement.remove()" style="
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: #ff4444;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 25px;
-            height: 25px;
-            cursor: pointer;
-            font-size: 16px;
-          ">×</button>
-        `;
-        
-        document.body.appendChild(testPanel);
-        
-        // Also log to console
-        this.testColorDistances();
       }
     }
 
@@ -4590,21 +2602,18 @@
       // Expose app globally for testing
       window.app = app;
       
-      // Global functions
+      // Global test functions
+      window.addTestBlock = () => app.handleTestAddBlock();
       window.showMyPiece = () => app.handleShowMyPiece();
+      window.switchUser = () => app.handleTestDifferentUser();
       window.shareQuilt = () => app.handleShare();
-      window.testColors = () => app.testColorDistances();
-      window.testColorsVisual = () => app.testColorDistancesVisual();
       
       // Admin console commands
       window.enableAdmin = () => app.enableAdminMode();
       window.disableAdmin = () => app.disableAdminMode();
       
-      console.log('✅ Simplified Quilt App initialized');
-      console.log('🔧 Admin commands available:');
-      console.log('  enableAdmin()  - Enable admin mode');
-      console.log('  disableAdmin() - Disable admin mode');
+
     });
   </script>
 </body>
-</html>
+</html> 
