@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HSL Color Wheel Interface</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .color-wheel-section {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 40px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .wheel-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+        }
+        
+        .color-wheel {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: conic-gradient(
+                hsl(0, 100%, 50%),
+                hsl(30, 100%, 50%),
+                hsl(60, 100%, 50%),
+                hsl(90, 100%, 50%),
+                hsl(120, 100%, 50%),
+                hsl(150, 100%, 50%),
+                hsl(180, 100%, 50%),
+                hsl(210, 100%, 50%),
+                hsl(240, 100%, 50%),
+                hsl(270, 100%, 50%),
+                hsl(300, 100%, 50%),
+                hsl(330, 100%, 50%),
+                hsl(360, 100%, 50%)
+            );
+            position: relative;
+            cursor: crosshair;
+            border: 3px solid #333;
+        }
+        
+        .wheel-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: white;
+            border: 3px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            text-align: center;
+            color: #333;
+        }
+        
+        .hue-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border: 3px solid #333;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            min-width: 250px;
+        }
+        
+        .control-group {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .control-group h3 {
+            margin-top: 0;
+            color: #555;
+            font-size: 16px;
+        }
+        
+        .slider-container {
+            margin: 10px 0;
+        }
+        
+        .slider-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .value-display {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .color-preview {
+            width: 100%;
+            height: 60px;
+            border-radius: 8px;
+            border: 2px solid #333;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        
+        .color-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .color-info div {
+            margin: 5px 0;
+        }
+        
+        .add-button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+        }
+        
+        .add-button:hover {
+            background: #218838;
+        }
+        
+        .add-button:active {
+            transform: translateY(1px);
+        }
+        
+        .family-indicator {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            text-transform: uppercase;
+        }
+        
+        .family-red { background: #dc3545; }
+        .family-orange { background: #fd7e14; }
+        .family-yellow { background: #ffc107; color: #333; }
+        .family-green { background: #28a745; }
+        .family-blue { background: #007bff; }
+        .family-purple { background: #6f42c1; }
+        .family-pink { background: #e83e8c; }
+        .family-gray { background: #6c757d; }
+        
+        .output-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .output-section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+        
+        .color-history {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .history-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #333;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .history-color:hover {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 HSL Color Wheel Interface</h1>
+        
+        <div class="color-wheel-section">
+            <!-- Color Wheel -->
+            <div class="wheel-container">
+                <div class="color-wheel" id="colorWheel">
+                    <div class="hue-indicator" id="hueIndicator"></div>
+                    <div class="wheel-center">
+                        <div>Click to<br>select hue</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Controls -->
+            <div class="controls">
+                <div class="control-group">
+                    <h3>🎛️ Color Controls</h3>
+                    
+                    <div class="slider-container">
+                        <label>Saturation</label>
+                        <input type="range" id="saturation" class="slider" min="0" max="100" value="65">
+                        <div class="value-display">
+                            <span>0%</span>
+                            <span id="satValue">65%</span>
+                            <span>100%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="slider-container">
+                        <label>Lightness</label>
+                        <input type="range" id="lightness" class="slider" min="0" max="100" value="50">
+                        <div class="value-display">
+                            <span>0%</span>
+                            <span id="lightValue">50%</span>
+                            <span>100%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>🎨 Color Preview</h3>
+                    <div class="color-preview" id="colorPreview">Selected Color</div>
+                    <div class="color-info">
+                        <div>HSL: <span id="hslValue">hsl(240, 65%, 50%)</span></div>
+                        <div>Hex: <span id="hexValue">#4040ff</span></div>
+                        <div>Family: <span id="familyValue" class="family-indicator family-blue">Blue</span></div>
+                    </div>
+                    <button class="add-button" onclick="addColor()">Add to Quilt</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="output-section">
+            <h3>🧵 Quilt Color History</h3>
+            <div>Colors added: <span id="colorCount">0</span></div>
+            <div class="color-history" id="colorHistory"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentHue = 240;
+        let currentSaturation = 65;
+        let currentLightness = 50;
+        let colorHistory = [];
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateColor();
+            setupEventListeners();
+        });
+        
+        function setupEventListeners() {
+            // Color wheel click
+            document.getElementById('colorWheel').addEventListener('click', function(e) {
+                const rect = e.target.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                
+                const deltaX = e.clientX - centerX;
+                const deltaY = e.clientY - centerY;
+                
+                // Calculate angle
+                let angle = Math.atan2(deltaY, deltaX) * 180 / Math.PI;
+                angle = (angle + 360) % 360;
+                
+                currentHue = Math.round(angle);
+                updateColor();
+            });
+            
+            // Sliders
+            document.getElementById('saturation').addEventListener('input', function(e) {
+                currentSaturation = parseInt(e.target.value);
+                document.getElementById('satValue').textContent = currentSaturation + '%';
+                updateColor();
+            });
+            
+            document.getElementById('lightness').addEventListener('input', function(e) {
+                currentLightness = parseInt(e.target.value);
+                document.getElementById('lightValue').textContent = currentLightness + '%';
+                updateColor();
+            });
+        }
+        
+        function updateColor() {
+            const hslColor = `hsl(${currentHue}, ${currentSaturation}%, ${currentLightness}%)`;
+            const hexColor = hslToHex(currentHue, currentSaturation, currentLightness);
+            const family = getColorFamily(currentHue);
+            
+            // Update preview
+            document.getElementById('colorPreview').style.backgroundColor = hslColor;
+            document.getElementById('colorPreview').textContent = hexColor;
+            
+            // Update values
+            document.getElementById('hslValue').textContent = hslColor;
+            document.getElementById('hexValue').textContent = hexColor;
+            
+            // Update family indicator
+            const familyElement = document.getElementById('familyValue');
+            familyElement.textContent = family.charAt(0).toUpperCase() + family.slice(1);
+            familyElement.className = `family-indicator family-${family}`;
+            
+            // Update hue indicator position
+            const indicator = document.getElementById('hueIndicator');
+            const angle = currentHue * Math.PI / 180;
+            const radius = 110; // Distance from center
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            
+            indicator.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+        }
+        
+        function hslToHex(h, s, l) {
+            s /= 100;
+            l /= 100;
+            const c = (1 - Math.abs(2 * l - 1)) * s;
+            const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+            const m = l - c/2;
+            let r = 0, g = 0, b = 0;
+            
+            if (0 <= h && h < 60) {
+                r = c; g = x; b = 0;
+            } else if (60 <= h && h < 120) {
+                r = x; g = c; b = 0;
+            } else if (120 <= h && h < 180) {
+                r = 0; g = c; b = x;
+            } else if (180 <= h && h < 240) {
+                r = 0; g = x; b = c;
+            } else if (240 <= h && h < 300) {
+                r = x; g = 0; b = c;
+            } else if (300 <= h && h < 360) {
+                r = c; g = 0; b = x;
+            }
+            
+            const rHex = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+            const gHex = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+            const bHex = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+            
+            return `#${rHex}${gHex}${bHex}`;
+        }
+        
+        function getColorFamily(hue) {
+            if (hue < 30 || hue >= 330) return 'red';
+            if (hue < 60) return 'orange';
+            if (hue < 90) return 'yellow';
+            if (hue < 150) return 'green';
+            if (hue < 210) return 'blue';
+            if (hue < 270) return 'purple';
+            if (hue < 330) return 'pink';
+            return 'gray';
+        }
+        
+        function addColor() {
+            const hexColor = document.getElementById('hexValue').textContent;
+            const family = getColorFamily(currentHue);
+            
+            // Add to history
+            colorHistory.push({
+                hex: hexColor,
+                hsl: `hsl(${currentHue}, ${currentSaturation}%, ${currentLightness}%)`,
+                family: family
+            });
+            
+            // Update display
+            updateColorHistory();
+            
+            // Show feedback
+            const preview = document.getElementById('colorPreview');
+            preview.style.transform = 'scale(1.1)';
+            setTimeout(() => {
+                preview.style.transform = 'scale(1)';
+            }, 200);
+            
+            console.log(`Added color: ${hexColor} (${family})`);
+        }
+        
+        function updateColorHistory() {
+            const historyContainer = document.getElementById('colorHistory');
+            const countElement = document.getElementById('colorCount');
+            
+            countElement.textContent = colorHistory.length;
+            
+            historyContainer.innerHTML = '';
+            colorHistory.forEach((color, index) => {
+                const colorElement = document.createElement('div');
+                colorElement.className = 'history-color';
+                colorElement.style.backgroundColor = color.hex;
+                colorElement.title = `${color.hex} (${color.family})`;
+                
+                colorElement.addEventListener('click', () => {
+                    // Restore this color
+                    const hsl = color.hsl.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+                    if (hsl) {
+                        currentHue = parseInt(hsl[1]);
+                        currentSaturation = parseInt(hsl[2]);
+                        currentLightness = parseInt(hsl[3]);
+                        
+                        // Update sliders
+                        document.getElementById('saturation').value = currentSaturation;
+                        document.getElementById('lightness').value = currentLightness;
+                        document.getElementById('satValue').textContent = currentSaturation + '%';
+                        document.getElementById('lightValue').textContent = currentLightness + '%';
+                        
+                        updateColor();
+                    }
+                });
+                
+                historyContainer.appendChild(colorElement);
+            });
+        }
+    </script>
+</body>
+</html>
+
+

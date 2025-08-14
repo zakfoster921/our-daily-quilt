@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScript Test Playground</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        
+        .test-section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .color-preview {
+            width: 50px;
+            height: 50px;
+            border: 2px solid #333;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 JavaScript Test Playground</h1>
+        
+        <!-- HSL Color Testing -->
+        <div class="test-section">
+            <h3>🎨 HSL Color Testing</h3>
+            <div>
+                <label>Hue: <input type="range" id="hue" min="0" max="360" value="240"></label>
+                <span id="hueValue">240</span>°
+            </div>
+            <div>
+                <label>Saturation: <input type="range" id="sat" min="0" max="100" value="65"></label>
+                <span id="satValue">65</span>%
+            </div>
+            <div>
+                <label>Lightness: <input type="range" id="light" min="0" max="100" value="50"></label>
+                <span id="lightValue">50</span>%
+            </div>
+            <div class="color-preview" id="colorPreview"></div>
+            <div>HSL: <span id="hslValue">hsl(240, 65%, 50%)</span></div>
+            <div>Hex: <span id="hexValue">#4040ff</span></div>
+            <button onclick="testHSL()">Test HSL Color</button>
+            <button onclick="getColorFamily()">Get Color Family</button>
+            <div class="output" id="hslOutput"></div>
+        </div>
+        
+        <!-- General JavaScript Testing -->
+        <div class="test-section">
+            <h3>⚡ General JavaScript Testing</h3>
+            <textarea id="jsCode" rows="5" cols="50" placeholder="Enter JavaScript code here...">console.log("Hello World!");</textarea>
+            <br>
+            <button onclick="runCode()">Run Code</button>
+            <button onclick="clearOutput()">Clear Output</button>
+            <div class="output" id="jsOutput"></div>
+        </div>
+        
+        <!-- Quilt Color Testing -->
+        <div class="test-section">
+            <h3>🧵 Quilt Color Testing</h3>
+            <button onclick="testRumiColors()">Test Rumi Colors</button>
+            <button onclick="testGridColors()">Test Grid Colors</button>
+            <button onclick="generateRandomColor()">Generate Random Color</button>
+            <div class="output" id="quiltOutput"></div>
+        </div>
+    </div>
+
+    <script>
+        // HSL Color Functions
+        function updateColorPreview() {
+            const hue = document.getElementById('hue').value;
+            const sat = document.getElementById('sat').value;
+            const light = document.getElementById('light').value;
+            
+            document.getElementById('hueValue').textContent = hue;
+            document.getElementById('satValue').textContent = sat;
+            document.getElementById('lightValue').textContent = light;
+            
+            const hslColor = `hsl(${hue}, ${sat}%, ${light}%)`;
+            document.getElementById('hslValue').textContent = hslColor;
+            document.getElementById('colorPreview').style.backgroundColor = hslColor;
+            
+            // Convert to hex
+            const hexColor = hslToHex(parseInt(hue), parseInt(sat), parseInt(light));
+            document.getElementById('hexValue').textContent = hexColor;
+        }
+        
+        function hslToHex(h, s, l) {
+            s /= 100;
+            l /= 100;
+            const c = (1 - Math.abs(2 * l - 1)) * s;
+            const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+            const m = l - c/2;
+            let r = 0, g = 0, b = 0;
+            
+            if (0 <= h && h < 60) {
+                r = c; g = x; b = 0;
+            } else if (60 <= h && h < 120) {
+                r = x; g = c; b = 0;
+            } else if (120 <= h && h < 180) {
+                r = 0; g = c; b = x;
+            } else if (180 <= h && h < 240) {
+                r = 0; g = x; b = c;
+            } else if (240 <= h && h < 300) {
+                r = x; g = 0; b = c;
+            } else if (300 <= h && h < 360) {
+                r = c; g = 0; b = x;
+            }
+            
+            const rHex = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+            const gHex = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+            const bHex = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+            
+            return `#${rHex}${gHex}${bHex}`;
+        }
+        
+        function getColorFamily(hue) {
+            if (hue < 30 || hue >= 330) return 'red';
+            if (hue < 60) return 'orange';
+            if (hue < 90) return 'yellow';
+            if (hue < 150) return 'green';
+            if (hue < 210) return 'blue';
+            if (hue < 270) return 'purple';
+            if (hue < 330) return 'pink';
+            return 'gray';
+        }
+        
+        function testHSL() {
+            const hue = parseInt(document.getElementById('hue').value);
+            const sat = parseInt(document.getElementById('sat').value);
+            const light = parseInt(document.getElementById('light').value);
+            
+            const hslColor = `hsl(${hue}, ${sat}%, ${light}%)`;
+            const hexColor = hslToHex(hue, sat, light);
+            const family = getColorFamily(hue);
+            
+            const output = `HSL Color Test:
+Hue: ${hue}°
+Saturation: ${sat}%
+Lightness: ${light}%
+HSL: ${hslColor}
+Hex: ${hexColor}
+Color Family: ${family}`;
+            
+            document.getElementById('hslOutput').textContent = output;
+        }
+        
+        function getColorFamily() {
+            const hue = parseInt(document.getElementById('hue').value);
+            const family = getColorFamily(hue);
+            document.getElementById('hslOutput').textContent = `Color Family: ${family}`;
+        }
+        
+        // General JavaScript Testing
+        function runCode() {
+            const code = document.getElementById('jsCode').value;
+            const output = document.getElementById('jsOutput');
+            
+            try {
+                // Capture console.log output
+                const originalLog = console.log;
+                let logOutput = '';
+                console.log = function(...args) {
+                    logOutput += args.join(' ') + '\n';
+                    originalLog.apply(console, args);
+                };
+                
+                // Run the code
+                eval(code);
+                
+                // Restore console.log
+                console.log = originalLog;
+                
+                output.textContent = logOutput || 'Code executed successfully (no output)';
+            } catch (error) {
+                output.textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        function clearOutput() {
+            document.getElementById('jsOutput').textContent = '';
+            document.getElementById('hslOutput').textContent = '';
+            document.getElementById('quiltOutput').textContent = '';
+        }
+        
+        // Quilt Color Testing
+        function testRumiColors() {
+            const rumiColors = [
+                // Red Family (15 colors)
+                "#8b1a1a", "#931f25", "#9a2329", "#a83232", "#b03636", "#c44545", "#d84654", "#e37d89", "#ea9b9a", "#f4b3b3",
+                "#bd283c", "#c52d41", "#d15a5a", "#e78dd8", "#f0a5d0",
+                
+                // Blue Family (25 colors)
+                "#1a1a4a", "#1f2193", "#2a2a6a", "#2a4a9a", "#3a3a8a", "#3a6aa1", "#4a8aa8", "#61acde", "#61c9de", "#61cfde",
+                "#61dede", "#70cae1", "#8ad4e8", "#a4deef", "#b8e6f4", "#c8edf8", "#d8f4fc", "#e8f9fe", "#f0fbff", "#f8fdff",
+                "#4a6aa1", "#5a8aa8", "#6aaab0", "#7acab8", "#8aeac0"
+            ];
+            
+            const randomColor = rumiColors[Math.floor(Math.random() * rumiColors.length)];
+            document.getElementById('quiltOutput').textContent = `Random Rumi Color: ${randomColor}`;
+        }
+        
+        function testGridColors() {
+            const colors = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];
+            const shades = [25, 30, 40, 50, 60, 70, 80];
+            
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            const randomShade = shades[Math.floor(Math.random() * shades.length)];
+            
+            let hue = 0;
+            switch(randomColor) {
+                case 'red': hue = 0; break;
+                case 'orange': hue = 30; break;
+                case 'yellow': hue = 60; break;
+                case 'green': hue = 120; break;
+                case 'blue': hue = 240; break;
+                case 'purple': hue = 270; break;
+                case 'gray': hue = 0; break;
+            }
+            
+            const hexColor = hslToHex(hue, 65, randomShade);
+            document.getElementById('quiltOutput').textContent = `Grid Color: ${randomColor} (shade ${randomShade}) = ${hexColor}`;
+        }
+        
+        function generateRandomColor() {
+            const hue = Math.floor(Math.random() * 360);
+            const sat = Math.floor(Math.random() * 100);
+            const light = Math.floor(Math.random() * 100);
+            
+            const hslColor = `hsl(${hue}, ${sat}%, ${light}%)`;
+            const hexColor = hslToHex(hue, sat, light);
+            const family = getColorFamily(hue);
+            
+            document.getElementById('quiltOutput').textContent = `Random Color:
+HSL: ${hslColor}
+Hex: ${hexColor}
+Family: ${family}`;
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateColorPreview();
+            
+            // Add event listeners for sliders
+            document.getElementById('hue').addEventListener('input', updateColorPreview);
+            document.getElementById('sat').addEventListener('input', updateColorPreview);
+            document.getElementById('light').addEventListener('input', updateColorPreview);
+        });
+    </script>
+</body>
+</html>
+
+

@@ -1329,8 +1329,8 @@
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Community quilt with colorful blocks"></svg>
       </div>
       
-      <!-- Button container - overlay on top -->
-      <div class="button-container" style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(246, 244, 241, 0.9); padding: 10px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);">
+                     <!-- Button container - overlay on top -->
+               <div class="button-container" style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(246, 244, 241, 0.9); padding: 10px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);">
         <!-- Quote display at top of button container -->
         <div class="quilt-quote-display">
           <p class="quilt-quote-text"></p>
@@ -1425,7 +1425,7 @@
     </div>
 
     <!-- Floating Admin Button -->
-    <button id="floatingAdminBtn" class="floating-admin-btn" aria-label="Admin controls" style="display: none;">
+    <button id="floatingAdminBtn" class="floating-admin-btn" aria-label="Admin controls" style="display: flex;">
       ⚙️
     </button>
 
@@ -1990,11 +1990,9 @@
 
       static getOrCreateUserId() {
         let userId = localStorage.getItem('ourDailyUserId');
-        if (!userId) {
-          // Set you as admin by default
-          userId = 'admin_zak';
-          localStorage.setItem('ourDailyUserId', userId);
-        }
+        // Force admin ID for testing - remove this line later
+        userId = 'admin_zak';
+        localStorage.setItem('ourDailyUserId', userId);
         return userId;
       }
 
@@ -2638,16 +2636,38 @@
           if (this.db) {
             // Try Firestore first
             const today = Utils.getTodayKey();
+            this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
+            
+            // Also check what other dates exist in Firestore
+            try {
+              const quiltsRef = window.firestore.collection(this.db, 'quilts');
+              const querySnapshot = await window.firestore.getDocs(quiltsRef);
+              const availableDates = [];
+              querySnapshot.forEach(doc => {
+                const data = doc.data();
+                availableDates.push({
+                  date: doc.id,
+                  blocks: data.blocks?.length || 0,
+                  contributorCount: data.contributorCount || 1
+                });
+              });
+              this.logger.log('📊 Available Firestore dates:', JSON.stringify(availableDates, null, 2));
+            } catch (listError) {
+              this.logger.warn('⚠️ Could not list Firestore documents:', listError);
+            }
+            
             const quiltRef = window.firestore.doc(this.db, 'quilts', today);
             const quiltSnap = await window.firestore.getDoc(quiltRef);
             
             if (quiltSnap.exists()) {
               const data = quiltSnap.data();
-              this.logger.log('📖 Loaded quilt from Firestore');
+              this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
               return { 
                 blocks: data.blocks || [], 
                 contributorCount: data.contributorCount || 1 
               };
+            } else {
+              this.logger.warn('⚠️ No Firestore document found for date:', today);
             }
           }
           
@@ -2655,11 +2675,13 @@
           const savedData = localStorage.getItem('ourDailyQuilt');
           if (savedData) {
             const data = JSON.parse(savedData);
-            this.logger.log('📖 Loaded quilt from localStorage');
+            this.logger.log('📖 Loaded quilt from localStorage with', data.blocks?.length || 0, 'blocks, date:', data.date);
             return { 
               blocks: data.blocks || [], 
               contributorCount: data.contributorCount || 1 
             };
+          } else {
+            this.logger.warn('⚠️ No localStorage data found');
           }
         } catch (error) {
           this.logger.warn('⚠️ Error loading quilt, using default:', error);
@@ -3271,18 +3293,24 @@
         const adminBtn = document.getElementById('floatingAdminBtn');
         if (adminBtn) {
           const isAdmin = this.isCurrentUserAdmin();
+          console.log('🔧 Admin check:', { userId: this.currentUserId, isAdmin });
           
           if (isAdmin) {
             adminBtn.style.display = 'flex';
+            console.log('🔧 Admin button shown');
             if (!adminBtn.hasAttribute('data-admin-initialized')) {
               adminBtn.addEventListener('click', () => {
+                console.log('🔧 Admin button clicked');
                 this.showAdminMenu();
               });
               adminBtn.setAttribute('data-admin-initialized', 'true');
             }
           } else {
             adminBtn.style.display = 'none';
+            console.log('🔧 Admin button hidden');
           }
+        } else {
+          console.log('🔧 Admin button element not found');
         }
       }
 
@@ -3497,6 +3525,7 @@
           <div class="admin-menu-content">
             <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
+            <button onclick="app.handleLoadMainQuilt()">Load Main Quilt (100 squares)</button>
             <button onclick="app.handleShowMyPiece()">Show My Piece</button>
             <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>

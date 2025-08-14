@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HSL vs LAB Color Similarity Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        
+        .test-section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+        
+        .color-pair {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin: 15px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .color-swatch {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        
+        .color-info {
+            flex: 1;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .similarity-result {
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+            min-width: 100px;
+        }
+        
+        .similar { background: #d4edda; color: #155724; }
+        .different { background: #f8d7da; color: #721c24; }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 HSL vs LAB Color Similarity Test</h1>
+        
+        <div class="test-section">
+            <h3>🎨 Color Similarity Comparison</h3>
+            <div class="controls">
+                <button onclick="testPredefinedPairs()">Test Predefined Pairs</button>
+                <button onclick="testRandomColors()">Test Random Colors</button>
+                <button onclick="clearResults()">Clear Results</button>
+            </div>
+            <div id="results"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📊 Test Results</h3>
+            <div class="output" id="output"></div>
+        </div>
+    </div>
+
+    <script>
+        // HSL Color Functions (from our test)
+        function hexToHsl(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            if (!result) return null;
+            
+            const r = parseInt(result[1], 16);
+            const g = parseInt(result[2], 16);
+            const b = parseInt(result[3], 16);
+            
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const delta = max - min;
+            
+            let h, s, l;
+            
+            // Calculate lightness
+            l = (max + min) / 2 / 255;
+            
+            // Calculate saturation
+            if (delta === 0) {
+                s = 0;
+            } else {
+                s = delta / (255 - Math.abs(2 * l * 255 - 255));
+            }
+            
+            // Calculate hue
+            if (delta === 0) {
+                h = 0;
+            } else {
+                switch (max) {
+                    case r:
+                        h = ((g - b) / delta) % 6;
+                        break;
+                    case g:
+                        h = (b - r) / delta + 2;
+                        break;
+                    case b:
+                        h = (r - g) / delta + 4;
+                        break;
+                }
+                h = h * 60;
+                if (h < 0) h += 360;
+            }
+            
+            return {
+                h: Math.round(h),
+                s: Math.round(s * 100),
+                l: Math.round(l * 100)
+            };
+        }
+        
+        function getHslDistance(color1, color2) {
+            const hsl1 = hexToHsl(color1);
+            const hsl2 = hexToHsl(color2);
+            
+            if (!hsl1 || !hsl2) return Infinity;
+            
+            // Calculate HSL distance (weighted for perceptual importance)
+            const hueDiff = Math.min(Math.abs(hsl1.h - hsl2.h), 360 - Math.abs(hsl1.h - hsl2.h));
+            const satDiff = Math.abs(hsl1.s - hsl2.s);
+            const lightDiff = Math.abs(hsl1.l - hsl2.l);
+            
+            // Weight hue more heavily (3x), saturation moderately (2x), lightness less (1x)
+            return Math.sqrt((hueDiff * 3) ** 2 + (satDiff * 2) ** 2 + lightDiff ** 2);
+        }
+        
+        function isHslSimilar(color1, color2) {
+            const distance = getHslDistance(color1, color2);
+            return distance <= 50; // HSL threshold
+        }
+        
+        // LAB Color Functions (from original)
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+        
+        function rgbToXyz(r, g, b) {
+            let r1 = r / 255, g1 = g / 255, b1 = b / 255;
+            
+            r1 = r1 > 0.04045 ? Math.pow((r1 + 0.055) / 1.055, 2.4) : r1 / 12.92;
+            g1 = g1 > 0.04045 ? Math.pow((g1 + 0.055) / 1.055, 2.4) : g1 / 12.92;
+            b1 = b1 > 0.04045 ? Math.pow((b1 + 0.055) / 1.055, 2.4) : b1 / 12.92;
+            
+            const x = r1 * 0.4124 + g1 * 0.3576 + b1 * 0.1805;
+            const y = r1 * 0.2126 + g1 * 0.7152 + b1 * 0.0722;
+            const z = r1 * 0.0193 + g1 * 0.1192 + b1 * 0.9505;
+            
+            return { x, y, z };
+        }
+        
+        function xyzToLab(x, y, z) {
+            const xn = 0.95047, yn = 1.00000, zn = 1.08883;
+            
+            const x1 = x / xn, y1 = y / yn, z1 = z / zn;
+            
+            const fx = x1 > 0.008856 ? Math.pow(x1, 1/3) : (7.787 * x1) + (16 / 116);
+            const fy = y1 > 0.008856 ? Math.pow(y1, 1/3) : (7.787 * y1) + (16 / 116);
+            const fz = z1 > 0.008856 ? Math.pow(z1, 1/3) : (7.787 * z1) + (16 / 116);
+            
+            const L = (116 * fy) - 16;
+            const a = 500 * (fx - fy);
+            const b = 200 * (fy - fz);
+            
+            return { L, a, b };
+        }
+        
+        function hexToLab(hex) {
+            const rgb = hexToRgb(hex);
+            if (!rgb) return null;
+            
+            const xyz = rgbToXyz(rgb.r, rgb.g, rgb.b);
+            return xyzToLab(xyz.x, xyz.y, xyz.z);
+        }
+        
+        function getLabDistance(color1, color2) {
+            const lab1 = hexToLab(color1);
+            const lab2 = hexToLab(color2);
+            
+            if (!lab1 || !lab2) return Infinity;
+            
+            const dL = lab1.L - lab2.L;
+            const da = lab1.a - lab2.a;
+            const db = lab1.b - lab2.b;
+            
+            return Math.sqrt(dL * dL + da * da + db * db);
+        }
+        
+        function isLabSimilar(color1, color2) {
+            const distance = getLabDistance(color1, color2);
+            return distance <= 35; // LAB threshold
+        }
+        
+        // Test Functions
+        function testColorPair(color1, color2) {
+            const hslDistance = getHslDistance(color1, color2);
+            const labDistance = getLabDistance(color1, color2);
+            const hslSimilar = isHslSimilar(color1, color2);
+            const labSimilar = isLabSimilar(color1, color2);
+            
+            const hsl1 = hexToHsl(color1);
+            const hsl2 = hexToHsl(color2);
+            const lab1 = hexToLab(color1);
+            const lab2 = hexToLab(color2);
+            
+            return {
+                color1, color2,
+                hslDistance, labDistance,
+                hslSimilar, labSimilar,
+                hsl1, hsl2, lab1, lab2
+            };
+        }
+        
+        function createColorPairElement(result) {
+            const div = document.createElement('div');
+            div.className = 'color-pair';
+            
+            const hslClass = result.hslSimilar ? 'similar' : 'different';
+            const labClass = result.labSimilar ? 'similar' : 'different';
+            
+            div.innerHTML = `
+                <div class="color-swatch" style="background-color: ${result.color1}"></div>
+                <div class="color-info">
+                    <div>Color 1: ${result.color1}</div>
+                    <div>HSL: (${result.hsl1.h}, ${result.hsl1.s}%, ${result.hsl1.l}%)</div>
+                    <div>LAB: (${result.lab1.L.toFixed(1)}, ${result.lab1.a.toFixed(1)}, ${result.lab1.b.toFixed(1)})</div>
+                </div>
+                <div class="color-swatch" style="background-color: ${result.color2}"></div>
+                <div class="color-info">
+                    <div>Color 2: ${result.color2}</div>
+                    <div>HSL: (${result.hsl2.h}, ${result.hsl2.s}%, ${result.hsl2.l}%)</div>
+                    <div>LAB: (${result.lab2.L.toFixed(1)}, ${result.lab2.a.toFixed(1)}, ${result.lab2.b.toFixed(1)})</div>
+                </div>
+                <div>
+                    <div class="similarity-result ${hslClass}">
+                        HSL: ${result.hslSimilar ? 'Similar' : 'Different'}
+                        <br>(${result.hslDistance.toFixed(1)})
+                    </div>
+                    <div class="similarity-result ${labClass}">
+                        LAB: ${result.labSimilar ? 'Similar' : 'Different'}
+                        <br>(${result.labDistance.toFixed(1)})
+                    </div>
+                </div>
+            `;
+            
+            return div;
+        }
+        
+        function testPredefinedPairs() {
+            const testPairs = [
+                ['#ff0000', '#ff0000'], // Same red
+                ['#ff0000', '#ff0001'], // Almost same red
+                ['#ff0000', '#00ff00'], // Red vs green
+                ['#ff0000', '#ff8000'], // Red vs orange
+                ['#ff0000', '#8000ff'], // Red vs purple
+                ['#ff0000', '#808080'], // Red vs gray
+                ['#ff0000', '#ff8080'], // Red vs light red
+                ['#ff0000', '#800000'], // Red vs dark red
+                ['#0000ff', '#0000ff'], // Same blue
+                ['#0000ff', '#8080ff'], // Blue vs light blue
+                ['#0000ff', '#000080'], // Blue vs dark blue
+                ['#ffff00', '#ff8000'], // Yellow vs orange
+                ['#00ff00', '#80ff80'], // Green vs light green
+                ['#ff00ff', '#800080'], // Magenta vs purple
+            ];
+            
+            const resultsContainer = document.getElementById('results');
+            const outputContainer = document.getElementById('output');
+            
+            resultsContainer.innerHTML = '';
+            let output = 'Predefined Color Pair Tests:\n\n';
+            
+            testPairs.forEach(([color1, color2]) => {
+                const result = testColorPair(color1, color2);
+                const element = createColorPairElement(result);
+                resultsContainer.appendChild(element);
+                
+                output += `${color1} vs ${color2}:\n`;
+                output += `  HSL Distance: ${result.hslDistance.toFixed(1)} (${result.hslSimilar ? 'Similar' : 'Different'})\n`;
+                output += `  LAB Distance: ${result.labDistance.toFixed(1)} (${result.labSimilar ? 'Similar' : 'Different'})\n`;
+                output += `  Agreement: ${result.hslSimilar === result.labSimilar ? 'YES' : 'NO'}\n\n`;
+            });
+            
+            outputContainer.textContent = output;
+        }
+        
+        function testRandomColors() {
+            const resultsContainer = document.getElementById('results');
+            const outputContainer = document.getElementById('output');
+            
+            resultsContainer.innerHTML = '';
+            let output = 'Random Color Tests:\n\n';
+            
+            for (let i = 0; i < 10; i++) {
+                const color1 = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+                const color2 = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+                
+                const result = testColorPair(color1, color2);
+                const element = createColorPairElement(result);
+                resultsContainer.appendChild(element);
+                
+                output += `${color1} vs ${color2}:\n`;
+                output += `  HSL Distance: ${result.hslDistance.toFixed(1)} (${result.hslSimilar ? 'Similar' : 'Different'})\n`;
+                output += `  LAB Distance: ${result.labDistance.toFixed(1)} (${result.labSimilar ? 'Similar' : 'Different'})\n`;
+                output += `  Agreement: ${result.hslSimilar === result.labSimilar ? 'YES' : 'NO'}\n\n`;
+            }
+            
+            outputContainer.textContent = output;
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('output').textContent = '';
+        }
+    </script>
+</body>
+</html>
+
+

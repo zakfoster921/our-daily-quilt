@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quilt Engine Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f6f4f1;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      color: #000;
+      margin-bottom: 20px;
+    }
+    
+    .test-panel {
+      background: white;
+      border: 2px solid #000;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .test-panel h2 {
+      margin-top: 0;
+      color: #000;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+    
+    .btn {
+      background: transparent;
+      border: 1px solid #000;
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    
+    .btn:hover {
+      background: #000;
+      color: white;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .status {
+      background: #f0f0f0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 15px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    
+    .color-picker {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .color-picker input[type="color"] {
+      width: 50px;
+      height: 40px;
+      border: 2px solid #000;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .color-picker input[type="text"] {
+      width: 100px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    
+    .visual-quilt {
+      background: white;
+      border: 2px solid #000;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    
+    .quilt-svg {
+      width: 100%;
+      max-width: 600px;
+      height: 400px;
+      border: 2px solid #000;
+      background: white;
+      display: block;
+    }
+    
+    .test-colors {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+    
+    .test-color {
+      width: 30px;
+      height: 30px;
+      border: 1px solid #000;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    
+    .test-color:hover {
+      transform: scale(1.1);
+    }
+    
+    .console-output {
+      background: #1e1e1e;
+      color: #fff;
+      border-radius: 4px;
+      padding: 15px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    
+    .phase-indicator {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    
+    .phase-pre-freeze {
+      background: #ffeb3b;
+      color: #000;
+    }
+    
+    .phase-post-freeze {
+      background: #2196f3;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧵 Quilt Engine Test</h1>
+    
+    <!-- Engine Controls -->
+    <div class="test-panel">
+      <h2>Engine Controls</h2>
+      <div class="button-group">
+        <button class="btn" onclick="initializeEngine()">Initialize Engine</button>
+        <button class="btn" onclick="resetEngine()">Reset Engine</button>
+        <button class="btn" onclick="showState()">Show State</button>
+        <button class="btn" onclick="findMyPieces()">Find My Pieces</button>
+        <button class="btn" onclick="clearConsole()">Clear Console</button>
+      </div>
+      
+      <div class="status" id="status">
+        Engine not initialized. Click "Initialize Engine" to start.
+      </div>
+    </div>
+    
+    <!-- Color Addition -->
+    <div class="test-panel">
+      <h2>Add Colors</h2>
+      
+      <div class="color-picker">
+        <input type="color" id="colorPicker" value="#ff6b6b">
+        <input type="text" id="colorInput" value="#ff6b6b" placeholder="#hexcode">
+        <button class="btn" onclick="addColor()">Add Color</button>
+      </div>
+      
+      <div class="test-colors">
+        <div class="test-color" style="background: #ff6b6b" onclick="setColor('#ff6b6b')"></div>
+        <div class="test-color" style="background: #4ecdc4" onclick="setColor('#4ecdc4')"></div>
+        <div class="test-color" style="background: #45b7d1" onclick="setColor('#45b7d1')"></div>
+        <div class="test-color" style="background: #96ceb4" onclick="setColor('#96ceb4')"></div>
+        <div class="test-color" style="background: #feca57" onclick="setColor('#feca57')"></div>
+        <div class="test-color" style="background: #ff9ff3" onclick="setColor('#ff9ff3')"></div>
+        <div class="test-color" style="background: #54a0ff" onclick="setColor('#54a0ff')"></div>
+        <div class="test-color" style="background: #5f27cd" onclick="setColor('#5f27cd')"></div>
+        <div class="test-color" style="background: #ff6348" onclick="setColor('#ff6348')"></div>
+        <div class="test-color" style="background: #2ed573" onclick="setColor('#2ed573')"></div>
+      </div>
+      
+      <div class="button-group">
+        <button class="btn" onclick="addRandomColors(5)">Add 5 Random Colors</button>
+        <button class="btn" onclick="addRandomColors(10)">Add 10 Random Colors</button>
+        <button class="btn" onclick="addRandomColors(20)">Add 20 Random Colors</button>
+      </div>
+    </div>
+    
+    <!-- Visual Quilt -->
+    <div class="visual-quilt">
+      <h2>Visual Quilt</h2>
+      <svg class="quilt-svg" id="quiltSvg" viewBox="0 0 1000 1000"></svg>
+    </div>
+    
+    <!-- Console Output -->
+    <div class="test-panel">
+      <h2>Console Output</h2>
+      <div class="console-output" id="consoleOutput">
+        Quilt Engine Test Console
+        ========================
+        
+        Available commands:
+        - engine.addColor('#hexcode')
+        - engine.getState()
+        - engine.findUserPieces()
+        - ColorUtils.getColorFamilyName('#hexcode')
+        - ColorUtils.isColorSimilar('#color1', '#color2')
+      </div>
+    </div>
+  </div>
+
+  <!-- Load the quilt engine -->
+  <script src="quilt-engine.js"></script>
+  
+  <script>
+    let engine = null;
+    
+    // Initialize the engine
+    function initializeEngine() {
+      try {
+        engine = new QuiltEngine();
+        engine.initialize();
+        updateStatus();
+        log('✅ Engine initialized successfully');
+        renderQuilt();
+      } catch (error) {
+        log('❌ Error initializing engine: ' + error.message);
+      }
+    }
+    
+    // Reset the engine
+    function resetEngine() {
+      if (confirm('Are you sure you want to reset the engine? This will clear all data.')) {
+        engine = new QuiltEngine();
+        engine.initialize();
+        updateStatus();
+        log('🔄 Engine reset');
+        renderQuilt();
+      }
+    }
+    
+    // Add a color
+    function addColor() {
+      if (!engine) {
+        log('❌ Engine not initialized');
+        return;
+      }
+      
+      const color = document.getElementById('colorInput').value;
+      if (!color.match(/^#[0-9A-F]{6}$/i)) {
+        log('❌ Invalid color format. Use #hexcode');
+        return;
+      }
+      
+      try {
+        const result = engine.addColor(color);
+        log(`✅ Added color ${color} (submission ${result.submissionIndex})`);
+        updateStatus();
+        renderQuilt();
+      } catch (error) {
+        log('❌ Error adding color: ' + error.message);
+      }
+    }
+    
+    // Set color from picker
+    function setColor(color) {
+      document.getElementById('colorPicker').value = color;
+      document.getElementById('colorInput').value = color;
+    }
+    
+    // Add random colors
+    function addRandomColors(count) {
+      if (!engine) {
+        log('❌ Engine not initialized');
+        return;
+      }
+      
+      const colors = [
+        '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57',
+        '#ff9ff3', '#54a0ff', '#5f27cd', '#ff6348', '#2ed573',
+        '#ff4757', '#3742fa', '#2f3542', '#ffa502', '#ff6348',
+        '#2ed573', '#1e90ff', '#ff69b4', '#32cd32', '#ff4500'
+      ];
+      
+      for (let i = 0; i < count; i++) {
+        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+        try {
+          const result = engine.addColor(randomColor);
+          log(`✅ Added random color ${randomColor} (submission ${result.submissionIndex})`);
+        } catch (error) {
+          log('❌ Error adding random color: ' + error.message);
+        }
+      }
+      
+      updateStatus();
+      renderQuilt();
+    }
+    
+    // Show current state
+    function showState() {
+      if (!engine) {
+        log('❌ Engine not initialized');
+        return;
+      }
+      
+      const state = engine.getState();
+      log('📊 Current State:');
+      log(JSON.stringify(state, null, 2));
+    }
+    
+    // Find user pieces
+    function findMyPieces() {
+      if (!engine) {
+        log('❌ Engine not initialized');
+        return;
+      }
+      
+      const userPieces = engine.findUserPieces();
+      log(`🔍 Found ${userPieces.length} user pieces:`);
+      userPieces.forEach(piece => {
+        log(`  - ${piece.id}: ${piece.color} (${piece.type})`);
+      });
+    }
+    
+    // Update status display
+    function updateStatus() {
+      if (!engine) {
+        document.getElementById('status').textContent = 'Engine not initialized';
+        return;
+      }
+      
+      const state = engine.getState();
+      const phaseClass = state.phase === 'PRE_FREEZE' ? 'phase-pre-freeze' : 'phase-post-freeze';
+      
+      document.getElementById('status').innerHTML = `
+Submission Count: ${state.submissionCount}
+Phase: <span class="phase-indicator ${phaseClass}">${state.phase}</span>
+Shapes: ${state.shapes.length}
+Color Families: ${state.colorFamilies.length}
+User Pieces: ${state.userPieces.length}
+      `;
+    }
+    
+    // Render the quilt visually
+    function renderQuilt() {
+      if (!engine) return;
+      
+      const svg = document.getElementById('quiltSvg');
+      svg.innerHTML = '';
+      
+      const state = engine.getState();
+      
+      // Debug: Log shape data
+      console.log('🔍 Rendering shapes:', state.shapes.length);
+      state.shapes.forEach((shape, index) => {
+        console.log(`Shape ${index}:`, {
+          id: shape.id,
+          color: shape.color,
+          position: shape.position,
+          type: shape.type
+        });
+      });
+      
+      // Calculate bounds
+      const minX = Math.min(...state.shapes.map(s => s.position.x));
+      const minY = Math.min(...state.shapes.map(s => s.position.y));
+      const maxX = Math.max(...state.shapes.map(s => s.position.x + s.position.width));
+      const maxY = Math.max(...state.shapes.map(s => s.position.y + s.position.height));
+      
+      const width = maxX - minX;
+      const height = maxY - minY;
+      
+      console.log('📐 Bounds:', { minX, minY, maxX, maxY, width, height });
+      
+      svg.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+      
+      // Add shapes
+      state.shapes.forEach((shape, index) => {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', shape.position.x);
+        rect.setAttribute('y', shape.position.y);
+        rect.setAttribute('width', shape.position.width);
+        rect.setAttribute('height', shape.position.height);
+        rect.setAttribute('fill', shape.color);
+        rect.setAttribute('stroke', '#000');
+        rect.setAttribute('stroke-width', '0.5');
+        
+        // Add tooltip
+        rect.setAttribute('title', `${shape.id}\n${shape.color}\n${shape.type}\nSubmission: ${shape.submissionIndex}`);
+        
+        console.log(`🎨 Adding rect ${index}:`, {
+          x: shape.position.x,
+          y: shape.position.y,
+          width: shape.position.width,
+          height: shape.position.height,
+          color: shape.color
+        });
+        
+        svg.appendChild(rect);
+      });
+      
+      // Add a background rectangle to ensure visibility
+      const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      background.setAttribute('x', minX);
+      background.setAttribute('y', minY);
+      background.setAttribute('width', width);
+      background.setAttribute('height', height);
+      background.setAttribute('fill', 'white');
+      background.setAttribute('stroke', 'none');
+      svg.insertBefore(background, svg.firstChild);
+      
+      // Debug: Log the final SVG content
+      console.log('🔍 Final SVG content:', svg.innerHTML);
+      console.log('📐 SVG viewBox:', svg.getAttribute('viewBox'));
+      console.log('📏 SVG dimensions:', svg.getBoundingClientRect());
+    }
+    
+    // Log to console output
+    function log(message) {
+      const consoleOutput = document.getElementById('consoleOutput');
+      const timestamp = new Date().toLocaleTimeString();
+      consoleOutput.textContent += `\n[${timestamp}] ${message}`;
+      consoleOutput.scrollTop = consoleOutput.scrollHeight;
+      
+      // Also log to browser console
+      console.log(message);
+    }
+    
+    // Clear console
+    function clearConsole() {
+      document.getElementById('consoleOutput').textContent = 'Console cleared';
+    }
+    
+    // Color picker sync
+    document.getElementById('colorPicker').addEventListener('input', function(e) {
+      document.getElementById('colorInput').value = e.target.value;
+    });
+    
+    document.getElementById('colorInput').addEventListener('input', function(e) {
+      document.getElementById('colorPicker').value = e.target.value;
+    });
+    
+    // Initialize on load
+    window.addEventListener('load', function() {
+      log('🚀 Quilt Engine Test Page Loaded');
+      log('Click "Initialize Engine" to start testing');
+    });
+    
+    // Make functions globally available
+    window.initializeEngine = initializeEngine;
+    window.resetEngine = resetEngine;
+    window.addColor = addColor;
+    window.setColor = setColor;
+    window.addRandomColors = addRandomColors;
+    window.showState = showState;
+    window.findMyPieces = findMyPieces;
+    window.clearConsole = clearConsole;
+  </script>
+</body>
+</html> 
