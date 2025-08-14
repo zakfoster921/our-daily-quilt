@@ -79,7 +79,15 @@
         box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15) !important;
       }
       
-      /* Add future desktop-only changes here */
+      /* Responsive Quilt Dimensions - Desktop Optimization */
+      .quilt-container svg {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        object-fit: contain !important;
+        transform-origin: center center !important;
+      }
     }
     
     /* Responsive adjustments for different screen sizes */
@@ -2023,6 +2031,83 @@
           userPieces: this.findUserPieces()
         };
       }
+      
+      // ===== RESPONSIVE QUILT DIMENSIONS =====
+      recalculateDimensionsForCurrentViewport() {
+        if (this.blocks.length === 0) return;
+        
+        // Get current viewport dimensions
+        const currentViewportWidth = window.innerWidth;
+        const currentViewportHeight = window.innerHeight;
+        
+        // Calculate current quilt bounds
+        const minX = Math.min(...this.blocks.map(b => b.x));
+        const minY = Math.min(...this.blocks.map(b => b.y));
+        const maxX = Math.max(...this.blocks.map(b => b.x + b.width));
+        const maxY = Math.max(...this.blocks.map(b => b.y + b.height));
+        
+        const currentQuiltWidth = maxX - minX;
+        const currentQuiltHeight = maxY - minY;
+        
+        // Determine target dimensions based on current viewport
+        let targetWidth, targetHeight;
+        
+        if (window.innerWidth >= 768) {
+          // Desktop: Use wider aspect ratio, account for button container
+          const availableWidth = currentViewportWidth * 0.7; // 70% for quilt container
+          const availableHeight = currentViewportHeight;
+          
+          // Target aspect ratio for desktop (wider)
+          const targetAspectRatio = 4/3; // 4:3 ratio for desktop
+          
+          if (availableWidth / availableHeight > targetAspectRatio) {
+            // Viewport is wider than target ratio
+            targetHeight = availableHeight;
+            targetWidth = availableHeight * targetAspectRatio;
+          } else {
+            // Viewport is taller than target ratio
+            targetWidth = availableWidth;
+            targetHeight = availableWidth / targetAspectRatio;
+          }
+        } else {
+          // Mobile: Use taller aspect ratio
+          const availableWidth = currentViewportWidth;
+          const availableHeight = currentViewportHeight;
+          
+          // Target aspect ratio for mobile (taller)
+          const targetAspectRatio = 3/4; // 3:4 ratio for mobile
+          
+          if (availableWidth / availableHeight > targetAspectRatio) {
+            // Viewport is wider than target ratio
+            targetHeight = availableHeight;
+            targetWidth = availableHeight * targetAspectRatio;
+          } else {
+            // Viewport is taller than target ratio
+            targetWidth = availableWidth;
+            targetHeight = availableWidth / targetAspectRatio;
+          }
+        }
+        
+        // Calculate scaling factors
+        const scaleX = targetWidth / currentQuiltWidth;
+        const scaleY = targetHeight / currentQuiltHeight;
+        const scale = Math.min(scaleX, scaleY); // Maintain aspect ratio
+        
+        // Scale all blocks
+        this.blocks.forEach(block => {
+          block.x = (block.x - minX) * scale;
+          block.y = (block.y - minY) * scale;
+          block.width = block.width * scale;
+          block.height = block.height * scale;
+        });
+        
+        console.log('🧵 Quilt dimensions recalculated for current viewport:', {
+          original: { width: currentQuiltWidth, height: currentQuiltHeight },
+          target: { width: targetWidth, height: targetHeight },
+          scale: scale,
+          viewport: { width: currentViewportWidth, height: currentViewportHeight }
+        });
+      }
     }
 
     // ===== UTILITY FUNCTIONS =====
@@ -3363,6 +3448,8 @@
 
       handleWindowResize() {
         if (this.quiltEngine.blocks && this.quiltEngine.blocks.length > 0) {
+          // Recalculate dimensions for new viewport size
+          this.quiltEngine.recalculateDimensionsForCurrentViewport();
           this.renderQuilt();
         }
       }
@@ -3869,6 +3956,9 @@
               submissionIndex: 0
             }));
             this.quiltEngine.submissionCount = data.contributorCount || 1;
+            
+            // Apply responsive dimensions for current viewport
+            this.quiltEngine.recalculateDimensionsForCurrentViewport();
           } else {
             this.quiltEngine.initialize();
           }
