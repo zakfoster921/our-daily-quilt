@@ -1,0 +1,3365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Our Daily Quilt - Enhanced</title>
+  <style>
+    /* ===== RESET & BASE STYLES ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    html, body {
+      height: 100%;
+      width: 100%;
+      max-width: 100vw;
+      margin: 0;
+      padding: 0;
+      background-color: #f6f4f1;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #000;
+      line-height: 1.5;
+      overflow: hidden;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+
+    /* ===== LAYOUT ===== */
+    #app {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      height: 100vh;
+      width: 100%;
+      max-width: 100vw;
+      padding: 0;
+      position: relative;
+      background-color: #f6f4f1;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* ===== FULL VIEWPORT QUILT ===== */
+    .quilt-container {
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #f6f4f1;
+      overflow: hidden;
+    }
+
+    .quilt-container svg {
+      width: 100%;
+      height: 100%;
+      max-width: 100vw;
+      max-height: 100vh;
+    }
+
+
+
+    /* ===== SCREENS ===== */
+    .screen {
+      display: none;
+      flex-direction: column;
+      width: 100%;
+      max-width: 100vw;
+      opacity: 0;
+      background-color: #f6f4f1;
+      pointer-events: none;
+      transition: opacity 0.8s ease-in-out;
+      position: absolute;
+      top: 0; left: 0;
+      min-height: 100vh;
+      padding: 0.5rem 0 0 0;
+      align-items: center;
+      justify-content: flex-start;
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+    
+    .screen.active {
+      display: flex !important;
+      opacity: 1;
+      pointer-events: auto;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+
+    /* ===== TYPOGRAPHY ===== */
+    .portal-header h1 {
+      font-weight: 500;
+      font-size: clamp(1.8rem, 4vw, 2.5rem);
+      margin-bottom: 0.0em;
+      letter-spacing:.02em;
+    }
+    
+    .portal-header .quilt-text {
+      font-weight: 900;
+      font-size: clamp(2.5rem, 6vw, 6rem);
+      margin-top: -.5rem;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.05em;
+    }
+    
+    .portal-header .date {
+      font-weight: 200;
+      font-size: clamp(1rem, 2.5vw, 1.4rem);
+      margin-top: 0.1rem;
+    }
+    
+    .portal-question {
+      font-size: clamp(1.5rem, 3.5vw, 2.2rem);
+      font-style: italic;
+      font-weight: 200;
+      margin: 0;
+      max-width: 600px;
+      width: 90%;
+      animation: fadeInBreath 1.2s ease forwards;
+      text-align: center;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    
+    @keyframes fadeInBreath {
+      0% {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      50% {
+        opacity: 0.8;
+        transform: translateY(-2px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    #screen-portal {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      gap: 2rem;
+      width: 100%;
+      max-width: 100vw;
+    }
+
+    /* ===== QUOTE CARD ===== */
+    .quote-card {
+      border: 2px solid #000;
+      border-radius: 16px;
+      padding: 1.2rem;
+      margin: 1.5rem auto 1.5rem;
+      background: #f6f4f1;
+      width: 90%;
+      max-width: 500px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 120px;
+      max-height: 40vh;
+    }
+    
+    .quote-line { 
+      font-size: clamp(1rem, 2.8vw, 1.4rem); 
+      font-style: italic; 
+      font-weight: 300; 
+      line-height: 1.4;
+    }
+    
+    .quote-author { 
+      font-size: clamp(0.9rem, 2.2vw, 1.1rem); 
+      font-weight: 200; 
+      margin-top: 0.5rem;
+    }
+    
+    .quote-prompt { 
+      font-size: clamp(1.2rem, 3vw, 1.5rem); 
+      margin: 2rem 0 1rem; 
+    }
+    
+    .arrow-down {
+      font-size: 2rem;
+      text-align: center;
+      margin: 1rem auto;
+    }
+
+    /* ===== COLOR PICKER ===== */
+    .color-picker-container { 
+      position: relative; 
+      margin: 2rem auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: fit-content;
+      gap: 1.5rem;
+    }
+    
+    .css-color-wheel {
+      width: 336px;
+      height: 336px;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s ease;
+      position: relative;
+      background: conic-gradient(
+        hsl(25, 100%, 50%),
+        hsl(40, 100%, 50%),
+        hsl(55, 100%, 50%),
+        hsl(70, 100%, 50%),
+        hsl(85, 100%, 50%),
+        hsl(100, 100%, 50%),
+        hsl(115, 100%, 50%),
+        hsl(130, 100%, 50%),
+        hsl(145, 100%, 50%),
+        hsl(160, 100%, 50%),
+        hsl(175, 100%, 50%),
+        hsl(190, 100%, 50%),
+        hsl(205, 100%, 50%),
+        hsl(220, 100%, 50%),
+        hsl(235, 100%, 50%),
+        hsl(250, 100%, 50%),
+        hsl(265, 100%, 50%),
+        hsl(280, 100%, 50%),
+        hsl(295, 100%, 50%),
+        hsl(310, 100%, 50%),
+        hsl(325, 100%, 50%),
+        hsl(340, 100%, 50%),
+        hsl(355, 100%, 50%),
+        hsl(10, 100%, 50%),
+        hsl(25, 100%, 50%)
+      );
+    }
+    
+    .css-color-wheel::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: radial-gradient(circle, white 0%, transparent 70%);
+      pointer-events: none;
+    }
+    
+    .css-color-wheel::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.25);
+      pointer-events: none;
+    }
+    
+    .css-color-wheel:hover {
+      transform: scale(1.02);
+    }
+    
+    .css-color-wheel:focus {
+      outline: 2px solid #000;
+      outline-offset: 4px;
+    }
+    
+    .color-picker-indicator {
+      position: absolute;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    #colorPickerControls {
+      display: flex; 
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      max-width: 300px;
+    }
+    
+    #valueSlider {
+      width: 100%; cursor: pointer; appearance: none;
+      height: 30px; border-radius: 15px;
+      background: linear-gradient(to right, hsl(0, 90%, 25%), hsl(0, 90%, 85%));
+      outline: none; border: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    
+    #valueSlider::-webkit-slider-thumb {
+      width: 24px; height: 24px;
+      background: #ffffff !important; border: 1px solid #333;
+      border-radius: 50%; cursor: pointer;
+      transition: transform 0.1s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    
+    #valueSlider::-moz-range-thumb {
+      width: 24px; height: 24px;
+      background: #ffffff !important; border: 1px solid #333;
+      border-radius: 50%; cursor: pointer;
+      transition: transform 0.1s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      -moz-appearance: none;
+      appearance: none;
+    }
+    
+    #valueSlider::-webkit-slider-thumb:hover,
+    #valueSlider::-moz-range-thumb:hover {
+      transform: scale(1.1);
+    }
+    
+    #valueSlider::-ms-thumb {
+      width: 24px; height: 24px;
+      background: #ffffff !important; border: 1px solid #333;
+      border-radius: 50%; cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    #selectedColorPreview {
+      display: none !important;
+    }
+    
+    #screen-color {
+      background-color: #f6f4f1;
+      transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+      justify-content: center;
+    }
+    
+    #screen-quote {
+      justify-content: center;
+    }
+    
+    @media (max-width: 768px) {
+      #screen-color {
+        padding: 0 !important;
+        min-height: 100vh !important;
+        justify-content: center;
+      }
+      
+      .css-color-wheel {
+        width: 224px !important;
+        height: 224px !important;
+      }
+    }
+    
+    /* ===== WELCOME SCREEN ===== */
+    .welcome-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    #screen-welcome {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+    
+    .welcome-header h1 {
+      font-size: 2.5rem;
+      font-weight: 900;
+      margin-bottom: 0.5rem;
+      color: #000;
+    }
+    
+    .welcome-subtitle {
+      font-size: 1.2rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    .welcome-content {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 1rem;
+      text-align: left;
+    }
+    
+    .welcome-info h3 {
+      font-size: 1.8rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.5rem 0;
+      color: #000;
+    }
+    
+    .welcome-info h3:first-child {
+      margin-top: 0;
+    }
+    
+    .welcome-info p {
+      font-size: 1.4rem;
+      line-height: 1.8;
+      color: #333;
+      margin-bottom: 1rem;
+    }
+
+    /* ===== QUILT ===== */
+    #quilt {
+      width: 100vw !important;
+      height: 100%;
+      max-width: 100vw !important;
+      max-height: 100%;
+      background: transparent;
+      position: relative;
+      display: block;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .quilt-container {
+      width: 100%;
+      height: 100vh;
+      position: relative;
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    /* ===== ENHANCED FEATURES ===== */
+    .color-family-indicator {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    
+    .phase-transition {
+      animation: phasePulse 2s ease-in-out;
+    }
+    
+    @keyframes phasePulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    .user-piece-highlight {
+      filter: drop-shadow(0 0 8px rgba(255,255,255,0.8));
+      animation: userPulse 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes userPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    /* ===== SQUARE COUNTER ===== */
+    .square-counter {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      padding: 0.75rem;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid #000;
+      border-radius: 8px;
+      font-family: inherit;
+    }
+    
+    .counter-number {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #000;
+    }
+    
+    .counter-label {
+      font-size: 1rem;
+      font-weight: 400;
+      color: #333;
+      text-transform: lowercase;
+    }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      background: transparent;
+      border: 1px solid #000;
+      color: #000 !important;
+      padding: 12px 30px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      width: auto;
+      align-self: center;
+      margin: 0.5rem;
+      font-family: inherit;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .thank-you-message {
+      font-size: clamp(1.3rem, 3.5vw, 1.8rem);
+      text-align: center;
+      margin: 1rem 0 2rem 0;
+      font-weight: 300;
+      line-height: 1.4;
+    }
+    
+    #shareBtnCompleted {
+      margin-bottom: 4rem;
+    }
+    
+    .btn:hover { 
+      background: #000; color: #000 !important; 
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .btn:focus {
+      outline: 2px solid #000;
+      outline-offset: 2px;
+    }
+    
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ===== ANIMATIONS ===== */
+    .new-block {
+      transform-origin: center;
+      animation: scaleUpSpring 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    
+    @keyframes scaleUpSpring {
+      0% { transform: scale(0); opacity: 0; }
+      40% { transform: scale(0.8); opacity: 0; }
+      60% { transform: scale(1.05); opacity: 1; }
+      80% { transform: scale(0.98); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    
+    .quilt-block {
+      background-image: 
+        radial-gradient(circle at 25% 25%, rgba(255,255,255,0.1) 1px, transparent 1px),
+        radial-gradient(circle at 75% 75%, rgba(0,0,0,0.05) 1px, transparent 1px);
+      background-size: 8px 8px, 12px 12px;
+      background-position: 0 0, 4px 4px;
+    }
+
+    /* ===== LOADING ===== */
+    .loading {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(246, 244, 241, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    
+    .loading.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #f6f4f1;
+      border-top: 3px solid #000;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      color: #fff; padding: 12px 24px;
+      border-radius: 24px;
+      opacity: 0; transition: opacity 0.3s ease;
+      pointer-events: none; font-size: 0.9rem;
+      font-weight: 500;
+      z-index: 1001;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .toast.show { opacity: 1; }
+
+    /* ===== ORGANIC GRID COLOR PICKER ===== */
+    .grid-picker {
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: hidden;
+      background-color: #f6f4f1;
+    }
+
+    .grid-cell {
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .grid-cell path {
+      transition: all 0.2s ease;
+    }
+
+    .grid-cell:hover {
+      transform: scale(1.05);
+      border-color: #000;
+      z-index: 10;
+    }
+
+    .grid-cell.selected {
+      border: 3px solid #000;
+      transform: scale(1.1);
+      z-index: 20;
+    }
+
+    .grid-cell::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .grid-cell.selected::after {
+      opacity: 1;
+    }
+
+
+
+    .floating-add-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      border: 2px solid white;
+      padding: 12px 24px;
+      font-size: 1rem;
+      font-weight: bold;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s ease;
+    }
+
+    .floating-add-btn:hover {
+      background: rgba(0, 0, 0, 1);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 768px) {
+      html, body {
+        overflow: hidden !important;
+        position: fixed !important;
+        width: 100% !important;
+        height: 100% !important;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      #app {
+        overflow: hidden !important;
+        height: 100% !important;
+        width: 100% !important;
+      }
+      
+      .screen { 
+        padding: 2rem 1rem 0 1rem; 
+        width: 100vw;
+        max-width: 100vw;
+        box-sizing: border-box;
+      }
+      
+      .portal-question {
+        width: 100%;
+        max-width: 100%;
+        padding: 0 1rem;
+        box-sizing: border-box;
+      }
+      .quote-card { width: 95%; padding: 1rem; }
+      .css-color-wheel { 
+        width: 288px; 
+        height: 288px; 
+      }
+      .quilt-container {
+        width: 100% !important;
+        max-width: 100vw !important;
+        height: 100vh !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 1;
+        display: flex !important;
+        align-items: stretch !important;
+        justify-content: stretch !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      
+      #quilt { 
+        width: 100% !important; 
+        height: 100% !important; 
+        max-width: 100% !important;
+        max-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+        position: relative !important;
+      }
+      
+      #screen-quilt .square-counter {
+        background: #fff !important;
+        border: 2px solid #000 !important;
+        margin: 1rem 0.5rem 0.5rem 0.5rem !important;
+        padding: 0.5rem !important;
+        border-radius: 6px !important;
+      }
+      
+      #screen-quilt .counter-number {
+        font-size: 1.3rem !important;
+        font-weight: 700 !important;
+      }
+      
+      #screen-quilt .counter-label {
+        font-size: 0.9rem !important;
+      }
+      
+      #screen-quilt .btn {
+        background: #fff !important;
+        border: 2px solid #000 !important;
+        color: #000 !important;
+        font-size: 0.9rem !important;
+        padding: 8px 16px !important;
+        margin: 0.5rem !important;
+        display: block !important;
+        width: 100% !important;
+        max-width: none !important;
+      }
+      
+      #screen-portal .btn,
+      #screen-welcome .btn,
+      #screen-quote .btn,
+      #screen-color .btn,
+      #screen-archive .btn,
+      #screen-about .btn {
+        background: transparent !important;
+        border: 1px solid #000 !important;
+        font-size: 1rem !important;
+        padding: 12px 30px !important;
+        margin: 0.5rem !important;
+        display: inline-block !important;
+        width: auto !important;
+        max-width: none !important;
+      }
+      
+      #screen-quilt {
+        padding: 0 !important;
+        margin: 0 !important;
+        justify-content: flex-start !important;
+        align-items: stretch !important;
+        min-height: 100vh !important;
+        height: 100vh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+        box-sizing: border-box !important;
+      }
+      
+      #screen-portal,
+      #screen-welcome,
+      #screen-quote,
+      #screen-color {
+        padding: 1rem !important;
+        justify-content: center !important;
+        align-items: center !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        box-sizing: border-box !important;
+      }
+      
+      #screen-quilt {
+        padding: 0 !important;
+        justify-content: flex-start !important;
+        align-items: stretch !important;
+        min-height: 100vh !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow-y: auto !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+      }
+      
+      #screen-archive {
+        padding: 3rem 0 10px 0 !important;
+        justify-content: flex-start !important;
+        align-items: center !important;
+        min-height: 100vh !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow-y: auto !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+      }
+      
+      #screen-about {
+        padding: 3rem 0 10px 0 !important;
+        justify-content: center !important;
+        align-items: center !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+      }
+      
+      #screen-quilt .button-container {
+        position: relative !important;
+        background: #f6f4f1 !important;
+        padding: 1rem !important;
+        border-top: 2px solid #000 !important;
+        margin-top: 100vh !important;
+      }
+      
+      #screen-portal .button-container,
+      #screen-welcome .button-container,
+      #screen-quote .button-container,
+      #screen-color .button-container,
+      #screen-archive .button-container,
+      #screen-about .button-container {
+        position: static !important;
+        background: transparent !important;
+        padding: 0 !important;
+        border-top: none !important;
+        margin-top: 0 !important;
+      }
+      
+      #screen-quilt .thank-you-message {
+        margin-bottom: 0.5rem;
+        z-index: 10;
+        position: relative;
+      }
+      
+      #screen-quilt .btn {
+        margin: 0.5rem;
+        z-index: 10;
+        position: relative;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      html, body {
+        overflow: hidden !important;
+        position: fixed !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      #app {
+        overflow: hidden !important;
+        height: 100vh !important;
+        width: 100vw !important;
+      }
+      
+      .portal-header h1 { font-size: 2rem; }
+      .portal-question { font-size: 1.8rem; margin: 1rem 0 3rem; }
+      .css-color-wheel { 
+        width: 240px; 
+        height: 240px; 
+      }
+      #colorPickerControls { flex-direction: column; gap: 10px; }
+      
+      .quilt-container {
+        width: 100% !important;
+        max-width: 100vw !important;
+        height: 100vh !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 1;
+        display: flex !important;
+        align-items: stretch !important;
+        justify-content: stretch !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      
+      #quilt { 
+        width: 100% !important; 
+        height: 100% !important; 
+        max-width: 100% !important;
+        max-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+        position: relative !important;
+      }
+      
+      #screen-quilt .thank-you-message {
+        font-size: 1rem;
+        margin-bottom: 0.3rem;
+      }
+      
+      #screen-portal,
+      #screen-welcome,
+      #screen-quote,
+      #screen-color {
+        padding: 0.5rem !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        box-sizing: border-box !important;
+      }
+    }
+
+    /* ===== FLOATING ADMIN BUTTON ===== */
+    .floating-admin-btn {
+      position: fixed !important;
+      bottom: 20px !important;
+      right: 20px !important;
+      width: 50px !important;
+      height: 50px !important;
+      border-radius: 50% !important;
+      background: #f6f4f1 !important;
+      color: #000 !important;
+      border: none !important;
+      font-size: 20px !important;
+      cursor: pointer !important;
+      z-index: 1000 !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+      transition: all 0.3s ease !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .floating-admin-btn:hover {
+      transform: scale(1.1) !important;
+      box-shadow: 0 6px 12px rgba(0,0,0,0.4) !important;
+    }
+
+    .floating-admin-btn:active {
+      transform: scale(0.95) !important;
+    }
+
+    /* ===== ACCESSIBILITY ===== */
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      .new-block { animation: none; }
+    }
+    
+    /* ===== MOBILE SCROLL PREVENTION ===== */
+    @media (max-width: 768px) {
+      * {
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      .screen {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: none;
+      }
+    }
+    
+    @media (prefers-contrast: high) {
+      .btn { border-width: 2px; }
+      .quote-card { border-width: 3px; }
+    }
+
+    /* ===== ARCHIVE SCREEN ===== */
+    .archive-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .archive-header h1 {
+      font-size: 2.5rem;
+      font-weight: 900;
+      margin-bottom: 0.5rem;
+      color: #000;
+    }
+    
+    .archive-subtitle {
+      font-size: 1.2rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    .archive-feed {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+    
+    .archive-load-more {
+      margin: 2rem auto;
+      display: block;
+      background: #666;
+      color: white;
+      border: none;
+      padding: 0.75rem 2rem;
+      border-radius: 24px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    
+    .archive-load-more:hover {
+      background: #333;
+    }
+    
+    .archive-load-more:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .archive-loading {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+      font-style: italic;
+    }
+
+    /* ===== ABOUT SCREEN ===== */
+    .about-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .about-header h1 {
+      font-size: 2.5rem;
+      font-weight: 900;
+      margin-bottom: 0.5rem;
+      color: #000;
+    }
+    
+    .about-subtitle {
+      font-size: 1.2rem;
+      color: #666;
+      margin: 0;
+    }
+    
+    .about-content {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+    
+    .about-description {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #333;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+    
+    .about-info h3 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.5rem 0;
+      color: #000;
+    }
+    
+    .about-info h3:first-child {
+      margin-top: 0;
+    }
+    
+    .about-info p {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #333;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <main id="app">
+    <!-- Portal Screen -->
+    <section class="screen active" id="screen-portal" role="main" aria-label="Welcome screen">
+      <div class="portal-header">
+        <h1>OUR DAILY</h1>
+        <h1 class="quilt-text">QUILT</h1>
+        <p class="date" id="date-text" aria-live="polite"></p>
+      </div>
+      <p class="portal-question">What if today started with just one good thought?</p>
+    </section>
+
+    <!-- Welcome Screen (First Time Only) -->
+    <section class="screen" id="screen-welcome" role="main" aria-label="Welcome to Our Daily">
+      <div class="welcome-header">
+        <h1>WELCOME TO OUR DAILY</h1>
+        <p class="welcome-subtitle">A collaborative community quilt</p>
+      </div>
+      
+      <div class="welcome-content">
+        <div class="welcome-info">
+          <h3>Here's how it works:</h3>
+          <p>1. Read a quote<br>
+          2. Choose a color<br>
+          3. Help build a growing community quilt</p>
+          
+          <p><strong>New quote and quilt everyday!</strong></p>
+        </div>
+      </div>
+      
+      <button class="btn" data-next="screen-quote" aria-label="Get started">Get Started</button>
+    </section>
+
+    <!-- Quote Screen -->
+    <section class="screen" id="screen-quote" role="main" aria-label="Daily quote screen">
+      <div class="quote-card">
+        <div class="quote-inner">
+          <p class="quote-line" aria-live="polite"></p>
+          <p class="quote-author" aria-live="polite"></p>
+        </div>
+      </div>
+      <p class="quote-prompt">What color comes to mind when you read this?</p>
+      <div class="arrow-down">↓</div>
+      <button class="btn" data-next="screen-color" aria-label="Add your color to the quilt">ADD YOUR COLOR</button>
+    </section>
+
+    <!-- Color Picker Screen -->
+    <section class="screen" id="screen-color" role="main" aria-label="Color picker screen">
+      <div class="color-picker-container">
+        <div class="grid-picker" id="gridPicker" role="grid" aria-label="Color grid - click to select color">
+          <!-- Grid cells will be generated by JavaScript -->
+        </div>
+
+      </div>
+      <button class="btn floating-add-btn" id="addColorBtn" aria-label="Add selected color to the community quilt">ADD COLOR TO QUILT</button>
+    </section>
+
+    <!-- Quilt Screen -->
+    <section class="screen" id="screen-quilt" role="main" aria-label="Community quilt display">
+      <!-- Quilt container - full viewport -->
+      <div class="quilt-container">
+        <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Community quilt with colorful blocks"></svg>
+      </div>
+      
+      <!-- Button container - overlay on top -->
+      <div class="button-container" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(246, 244, 241, 0.9); padding: 10px; border-radius: 8px; border: 2px solid #000;">
+        <!-- Square counter -->
+        <div class="square-counter">
+          <span class="counter-number" id="squareCounter">1</span>
+          <span class="counter-label">squares</span>
+        </div>
+        
+        <div class="button-group">
+          <button id="testAddBlock" class="btn" style="background: #ff6b6b; color: white;">TEST: ADD RANDOM BLOCK</button>
+          <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white;">SHOW ME MY PIECE</button>
+          <button id="testDifferentUserBtn" class="btn" style="background: #9C27B0; color: white;">TEST: Simulate Different User</button>
+          <button id="resetQuiltBtn" class="btn" style="background: #ff9800; color: white;">RESET QUILT</button>
+        </div>
+        
+        <div class="button-group">
+          <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
+          <button class="btn" data-next="screen-archive" aria-label="View quilt archive">View Archive</button>
+          <button class="btn" data-next="screen-about" aria-label="About this project">About</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Archive Screen -->
+    <section class="screen" id="screen-archive" role="main" aria-label="Quilt archive">
+      <div class="archive-header">
+        <h1>QUILT ARCHIVE</h1>
+        <p class="archive-subtitle">Past community quilts</p>
+      </div>
+      
+      <!-- Archive Feed -->
+      <div class="archive-feed" id="archiveFeed">
+        <!-- Archive posts will be dynamically inserted here -->
+      </div>
+      
+      <!-- Load More Button -->
+      <button class="btn archive-load-more" id="archiveLoadMore" style="display: none;">Load More</button>
+      
+      <!-- Loading Indicator -->
+      <div class="archive-loading" id="archiveLoading" style="display: none;">
+        <p>Loading quilts...</p>
+      </div>
+      
+      <!-- Back Button -->
+      <button class="btn" data-next="screen-quilt" aria-label="Back to current quilt">Back to Quilt</button>
+    </section>
+
+    <!-- About Screen -->
+    <section class="screen" id="screen-about" role="main" aria-label="About this project">
+      <div class="about-header">
+        <h1>ABOUT OUR DAILY</h1>
+        <p class="about-subtitle">A collaborative community quilt</p>
+      </div>
+      
+      <div class="about-content">
+        <p class="about-description">This is a daily collaborative art project where people from around the world contribute colors to create a community quilt.</p>
+        
+        <div class="about-info">
+          <h3>How it works</h3>
+          <p>Each day, participants read an inspiring quote and choose a color that speaks to them. These colors become blocks in our community quilt.</p>
+          
+          <h3>Community</h3>
+          <p>Every color represents a person, a moment, a feeling. Together we create something beautiful that grows with each contribution.</p>
+          
+          <h3>Share</h3>
+          <p>Download your quilt block or the entire community quilt to share with others and inspire them to join in.</p>
+        </div>
+      </div>
+      
+      <button class="btn" data-next="screen-quilt" aria-label="Back to current quilt">Back to Quilt</button>
+    </section>
+  </main>
+
+  <!-- Loading indicator -->
+  <div id="loading" class="loading" aria-hidden="true">
+    <div class="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+  <!-- Floating Admin Button -->
+  <button id="floatingAdminBtn" class="floating-admin-btn" aria-label="Admin controls" style="display: none;">
+    ⚙️
+  </button>
+
+  <!-- External dependencies -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script type="module">
+    // ===== CONFIGURATION =====
+    const CONFIG = {
+      APP: {
+        name: 'Our Daily',
+        version: '3.0.0-enhanced',
+        defaultColor: '#f7b733',
+        quiltSize: 1000,
+        animationDuration: 2000,
+        toastDuration: 3000,
+        debugMode: true
+      },
+      FIREBASE: {
+        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+        authDomain: "our-daily.firebaseapp.com",
+        projectId: "our-daily",
+        storageBucket: "our-daily.firebasestorage.app",
+        messagingSenderId: "337201931314",
+        appId: "1:337201931314:web:fb5677846d03eb285ac82b",
+        measurementId: "G-65XB7QC1F4"
+      },
+      COLOR_PICKER: {
+        wheelSize: 280,
+        defaultHue: 45,
+        defaultLightness: 62.5,
+        saturation: 65
+      },
+      GRID_PICKER: {
+        colors: ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'],
+        shades: [25, 30, 40, 50, 60, 70, 80], // redistributed lightness values
+        saturation: 65,
+        gridSize: 7
+      },
+      QUILT: {
+        viewBoxWidth: 800,
+        viewBoxHeight: 800,
+        gridCols: 8,
+        gridRows: 8,
+        blockSpacing: 4,
+        blockPadding: 2
+      },
+      QUILT_V2: {
+        FREEZE_THRESHOLD: 20,
+        MIN_SHAPE_SIZE: 40,
+        COLOR_SIMILARITY_THRESHOLD: 35,
+        LAB_COLOR_CACHE_SIZE: 1000
+      }
+    };
+
+    // ===== COLOR UTILITIES (LAB Color Space) =====
+    class ColorUtilsV2 {
+      static colorCache = new Map();
+      
+      static hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16)
+        } : null;
+      }
+      
+      static rgbToXyz(r, g, b) {
+        let r1 = r / 255, g1 = g / 255, b1 = b / 255;
+        
+        r1 = r1 > 0.04045 ? Math.pow((r1 + 0.055) / 1.055, 2.4) : r1 / 12.92;
+        g1 = g1 > 0.04045 ? Math.pow((g1 + 0.055) / 1.055, 2.4) : g1 / 12.92;
+        b1 = b1 > 0.04045 ? Math.pow((b1 + 0.055) / 1.055, 2.4) : b1 / 12.92;
+        
+        const x = r1 * 0.4124 + g1 * 0.3576 + b1 * 0.1805;
+        const y = r1 * 0.2126 + g1 * 0.7152 + b1 * 0.0722;
+        const z = r1 * 0.0193 + g1 * 0.1192 + b1 * 0.9505;
+        
+        return { x, y, z };
+      }
+      
+      static xyzToLab(x, y, z) {
+        const xn = 0.95047, yn = 1.00000, zn = 1.08883;
+        
+        const x1 = x / xn, y1 = y / yn, z1 = z / zn;
+        
+        const fx = x1 > 0.008856 ? Math.pow(x1, 1/3) : (7.787 * x1) + (16 / 116);
+        const fy = y1 > 0.008856 ? Math.pow(y1, 1/3) : (7.787 * y1) + (16 / 116);
+        const fz = z1 > 0.008856 ? Math.pow(z1, 1/3) : (7.787 * z1) + (16 / 116);
+        
+        const L = (116 * fy) - 16;
+        const a = 500 * (fx - fy);
+        const b = 200 * (fy - fz);
+        
+        return { L, a, b };
+      }
+      
+      static hexToLab(hex) {
+        if (this.colorCache.has(hex)) {
+          return this.colorCache.get(hex);
+        }
+        
+        const rgb = this.hexToRgb(hex);
+        if (!rgb) return null;
+        
+        const xyz = this.rgbToXyz(rgb.r, rgb.g, rgb.b);
+        const lab = this.xyzToLab(xyz.x, xyz.y, xyz.z);
+        
+        if (this.colorCache.size < CONFIG.QUILT_V2.LAB_COLOR_CACHE_SIZE) {
+          this.colorCache.set(hex, lab);
+        }
+        
+        return lab;
+      }
+      
+      static getColorDistance(color1, color2) {
+        const lab1 = this.hexToLab(color1);
+        const lab2 = this.hexToLab(color2);
+        
+        if (!lab1 || !lab2) return Infinity;
+        
+        const dL = lab1.L - lab2.L;
+        const da = lab1.a - lab2.a;
+        const db = lab1.b - lab2.b;
+        
+        return Math.sqrt(dL * dL + da * da + db * db);
+      }
+      
+      static isColorSimilar(color1, color2) {
+        const distance = this.getColorDistance(color1, color2);
+        return distance <= CONFIG.QUILT_V2.COLOR_SIMILARITY_THRESHOLD;
+      }
+      
+      static getColorFamilyName(hexColor) {
+        const rgb = this.hexToRgb(hexColor);
+        if (!rgb) return 'unknown';
+        
+        const { r, g, b } = rgb;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        
+        if (delta === 0) return 'gray';
+        
+        let hue;
+        if (max === r) {
+          hue = ((g - b) / delta) % 6;
+        } else if (max === g) {
+          hue = (b - r) / delta + 2;
+        } else {
+          hue = (r - g) / delta + 4;
+        }
+        
+        hue = Math.round(hue * 60);
+        if (hue < 0) hue += 360;
+        
+        if (hue >= 0 && hue < 30) return 'red';
+        if (hue >= 30 && hue < 60) return 'orange';
+        if (hue >= 60 && hue < 90) return 'yellow';
+        if (hue >= 90 && hue < 150) return 'green';
+        if (hue >= 150 && hue < 210) return 'cyan';
+        if (hue >= 210 && hue < 270) return 'blue';
+        if (hue >= 270 && hue < 330) return 'purple';
+        return 'pink';
+      }
+    }
+
+    // ===== ENHANCED SHAPE CLASS =====
+    class QuiltShapeV2 {
+      constructor(options = {}) {
+        this.id = options.id || this.generateId();
+        this.type = options.type || 'KEY_SHAPE';
+        this.color = options.color || CONFIG.APP.defaultColor;
+        this.position = options.position || { x: 0, y: 0, width: 1000, height: 1000 };
+        this.parentId = options.parentId || null;
+        this.contributorId = options.contributorId || null;
+        this.submissionIndex = options.submissionIndex || 0;
+        this.colorFamily = options.colorFamily || null;
+        this.descendants = [];
+      }
+      
+      generateId() {
+        return 'shape_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      }
+      
+      canSplit(direction) {
+        if (direction === 'horizontal') {
+          return this.position.height >= CONFIG.QUILT_V2.MIN_SHAPE_SIZE * 2;
+        } else {
+          return this.position.width >= CONFIG.QUILT_V2.MIN_SHAPE_SIZE * 2;
+        }
+      }
+      
+      getValidSplitDirections() {
+        const directions = [];
+        if (this.canSplit('horizontal')) directions.push('horizontal');
+        if (this.canSplit('vertical')) directions.push('vertical');
+        return directions;
+      }
+      
+      split(newColor, direction, contributorId, submissionIndex) {
+        if (!this.canSplit(direction)) {
+          throw new Error(`Cannot split shape ${this.id} in ${direction} direction`);
+        }
+
+        const splitRatio = 0.3 + Math.random() * 0.4;
+        let shape1, shape2;
+
+        if (direction === 'horizontal') {
+          const splitHeight = this.position.height * splitRatio;
+          
+          shape1 = new QuiltShapeV2({
+            type: this.type,
+            color: this.color,
+            position: {
+              x: this.position.x,
+              y: this.position.y,
+              width: this.position.width,
+              height: splitHeight
+            },
+            parentId: this.id,
+            contributorId: this.contributorId,
+            submissionIndex: this.submissionIndex,
+            colorFamily: this.colorFamily
+          });
+
+          shape2 = new QuiltShapeV2({
+            type: this.type,
+            color: newColor,
+            position: {
+              x: this.position.x,
+              y: this.position.y + splitHeight,
+              width: this.position.width,
+              height: this.position.height - splitHeight
+            },
+            parentId: this.id,
+            contributorId: contributorId,
+            submissionIndex: submissionIndex,
+            colorFamily: this.colorFamily
+          });
+        } else {
+          const splitWidth = this.position.width * splitRatio;
+          
+          shape1 = new QuiltShapeV2({
+            type: this.type,
+            color: this.color,
+            position: {
+              x: this.position.x,
+              y: this.position.y,
+              width: splitWidth,
+              height: this.position.height
+            },
+            parentId: this.id,
+            contributorId: this.contributorId,
+            submissionIndex: this.submissionIndex,
+            colorFamily: this.colorFamily
+          });
+
+          shape2 = new QuiltShapeV2({
+            type: this.type,
+            color: newColor,
+            position: {
+              x: this.position.x + splitWidth,
+              y: this.position.y,
+              width: this.position.width - splitWidth,
+              height: this.position.height
+            },
+            parentId: this.id,
+            contributorId: contributorId,
+            submissionIndex: submissionIndex,
+            colorFamily: this.colorFamily
+          });
+        }
+
+        this.descendants.push(shape2.id);
+        
+        return [shape1, shape2];
+      }
+      
+      getAllDescendants(allShapes) {
+        const descendants = [...this.descendants];
+        this.descendants.forEach(descId => {
+          const desc = allShapes.find(s => s.id === descId);
+          if (desc) {
+            descendants.push(...desc.getAllDescendants(allShapes));
+          }
+        });
+        return descendants;
+      }
+    }
+
+    // ===== ENHANCED QUILT ENGINE =====
+    class QuiltEngineV2 {
+      constructor() {
+        this.submissionCount = 0;
+        this.phase = 'PRE_FREEZE';
+        this.keyShapesColorArray = [];
+        this.shapes = [];
+        this.colorFamilies = new Map();
+        this.deviceId = this.getOrCreateDeviceId();
+      }
+      
+      getOrCreateDeviceId() {
+        let deviceId = localStorage.getItem('quiltDeviceId');
+        if (!deviceId) {
+          deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          localStorage.setItem('quiltDeviceId', deviceId);
+        }
+        return deviceId;
+      }
+      
+      initialize() {
+        // Get viewport dimensions
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        const initialShape = new QuiltShapeV2({
+          color: CONFIG.APP.defaultColor,
+          contributorId: this.deviceId,
+          submissionIndex: 0,
+          position: {
+            x: 0,
+            y: 0,
+            width: viewportWidth,
+            height: viewportHeight
+          }
+        });
+        
+        this.shapes = [initialShape];
+        this.submissionCount = 0;
+        this.phase = 'PRE_FREEZE';
+        
+        console.log('🧵 Quilt Engine V2 initialized with viewport dimensions:', viewportWidth, 'x', viewportHeight);
+        return this;
+      }
+      
+      addSubmission() {
+        this.submissionCount++;
+        
+        if (this.submissionCount === CONFIG.QUILT_V2.FREEZE_THRESHOLD) {
+          this.freezePhase();
+        }
+        
+        return this.submissionCount;
+      }
+      
+      freezePhase() {
+        this.phase = 'POST_FREEZE';
+        
+        this.shapes.forEach(shape => {
+          shape.type = 'KEY_SHAPE';
+        });
+        
+        this.keyShapesColorArray = this.shapes.map(shape => shape.color);
+        this.assignColorFamilies();
+        
+        console.log('🧵 Phase frozen! Key shapes:', this.shapes.length);
+        console.log('🎨 Color families:', Array.from(this.colorFamilies.keys()));
+      }
+      
+      assignColorFamilies() {
+        const colorGroups = this.groupSimilarColors(this.keyShapesColorArray);
+        
+        colorGroups.forEach((group, familyName) => {
+          const familyShapes = this.shapes.filter(shape => 
+            group.some(color => ColorUtilsV2.isColorSimilar(shape.color, color))
+          );
+          
+          this.colorFamilies.set(familyName, familyShapes.map(s => s.id));
+          
+          familyShapes.forEach(shape => {
+            shape.colorFamily = familyName;
+          });
+        });
+      }
+      
+      groupSimilarColors(colors) {
+        const groups = new Map();
+        const processed = new Set();
+        
+        colors.forEach(color => {
+          if (processed.has(color)) return;
+          
+          const familyName = ColorUtilsV2.getColorFamilyName(color);
+          const similarColors = [color];
+          
+          colors.forEach(otherColor => {
+            if (otherColor !== color && !processed.has(otherColor)) {
+              if (ColorUtilsV2.isColorSimilar(color, otherColor)) {
+                similarColors.push(otherColor);
+                processed.add(otherColor);
+              }
+            }
+          });
+          
+          groups.set(familyName, similarColors);
+          processed.add(color);
+        });
+        
+        return groups;
+      }
+      
+      addColor(newColor) {
+        try {
+          if (!ColorUtilsV2.hexToRgb(newColor)) {
+            throw new Error(`Invalid color: ${newColor}`);
+          }
+
+          const submissionIndex = this.addSubmission();
+          const selectedShape = this.selectShapeToSplit(newColor);
+          
+          if (!selectedShape) {
+            throw new Error('No suitable shape found for splitting');
+          }
+
+          const splitDirection = this.getSplitDirection(selectedShape);
+          const [shape1, shape2] = selectedShape.split(newColor, splitDirection, this.deviceId, submissionIndex);
+          
+          const shapeIndex = this.shapes.findIndex(s => s.id === selectedShape.id);
+          this.shapes.splice(shapeIndex, 1, shape1, shape2);
+          
+          this.recordUserContribution(shape2.id, newColor, submissionIndex);
+          
+          if (this.phase === 'POST_FREEZE') {
+            this.handlePostFreezeLogic(shape2, newColor);
+          }
+          
+          this.ensureNoGaps();
+          
+          console.log(`🧵 Added color ${newColor} (submission ${submissionIndex})`);
+          return { shape1, shape2, submissionIndex };
+          
+        } catch (error) {
+          console.error('❌ Error adding color:', error);
+          throw error;
+        }
+      }
+      
+      selectShapeToSplit(newColor) {
+        if (this.phase === 'PRE_FREEZE') {
+          return this.getRandomSplittableShape(this.shapes);
+        } else {
+          const isSimilar = this.keyShapesColorArray.some(keyColor => 
+            ColorUtilsV2.isColorSimilar(newColor, keyColor)
+          );
+          
+          if (isSimilar) {
+            const keyShape = this.findMostSimilarKeyShape(newColor);
+            if (keyShape) {
+              return keyShape;
+            }
+            return this.selectBorderShape(newColor);
+          } else {
+            return this.selectBorderShape(newColor);
+          }
+        }
+      }
+      
+      getRandomSplittableShape(shapes) {
+        const splittableShapes = shapes.filter(shape => 
+          shape.getValidSplitDirections().length > 0
+        );
+        
+        if (splittableShapes.length === 0) {
+          return null;
+        }
+        
+        return splittableShapes[Math.floor(Math.random() * splittableShapes.length)];
+      }
+      
+      findMostSimilarKeyShape(newColor) {
+        const newColorFamily = ColorUtilsV2.getColorFamilyName(newColor);
+        const keyShapes = this.shapes.filter(shape => 
+          shape.type === 'KEY_SHAPE' && 
+          shape.colorFamily === newColorFamily &&
+          shape.getValidSplitDirections().length > 0
+        );
+        
+        if (keyShapes.length === 0) {
+          return null;
+        }
+        
+        let mostSimilar = keyShapes[0];
+        let smallestDifference = ColorUtilsV2.getColorDistance(newColor, mostSimilar.color);
+        
+        keyShapes.forEach(shape => {
+          const difference = ColorUtilsV2.getColorDistance(newColor, shape.color);
+          if (difference < smallestDifference) {
+            smallestDifference = difference;
+            mostSimilar = shape;
+          }
+        });
+        
+        return mostSimilar;
+      }
+      
+      selectBorderShape(newColor) {
+        const borderShapes = this.shapes.filter(shape => 
+          shape.type === 'BORDER_SHAPE' &&
+          shape.getValidSplitDirections().length > 0
+        );
+        
+        if (borderShapes.length === 0) {
+          return this.createNewBorderShape(newColor);
+        }
+        
+        const similarBorderShapes = borderShapes.filter(shape => 
+          ColorUtilsV2.isColorSimilar(newColor, shape.color)
+        );
+        
+        if (similarBorderShapes.length > 0) {
+          return this.findMostSimilarBorderShape(similarBorderShapes, newColor);
+        } else {
+          return this.findLargestBorderShape(borderShapes);
+        }
+      }
+      
+      createNewBorderShape(newColor) {
+        const bounds = this.getQuiltBounds();
+        const sides = ['top', 'right', 'bottom', 'left'];
+        const selectedSide = sides[Math.floor(Math.random() * sides.length)];
+        const borderThickness = Math.min(40, Math.min(bounds.width, bounds.height) * 0.1);
+        
+        const borderShape = this.createBorderShapeForSide(selectedSide, bounds, newColor, borderThickness);
+        this.shapes.push(borderShape);
+        
+        return borderShape;
+      }
+      
+      getQuiltBounds() {
+        const shapes = this.shapes;
+        const minX = Math.min(...shapes.map(s => s.position.x));
+        const minY = Math.min(...shapes.map(s => s.position.y));
+        const maxX = Math.max(...shapes.map(s => s.position.x + s.position.width));
+        const maxY = Math.max(...shapes.map(s => s.position.y + s.position.height));
+        
+        return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+      }
+      
+      createBorderShapeForSide(side, bounds, newColor, borderThickness) {
+        let position;
+        switch (side) {
+          case 'top':
+            position = {
+              x: bounds.minX,
+              y: bounds.minY - borderThickness,
+              width: bounds.width,
+              height: borderThickness
+            };
+            break;
+          case 'right':
+            position = {
+              x: bounds.maxX,
+              y: bounds.minY,
+              width: borderThickness,
+              height: bounds.height
+            };
+            break;
+          case 'bottom':
+            position = {
+              x: bounds.minX,
+              y: bounds.maxY,
+              width: bounds.width,
+              height: borderThickness
+            };
+            break;
+          case 'left':
+            position = {
+              x: bounds.minX - borderThickness,
+              y: bounds.minY,
+              width: borderThickness,
+              height: bounds.height
+            };
+            break;
+        }
+        
+        return new QuiltShapeV2({
+          type: 'BORDER_SHAPE',
+          color: newColor,
+          position: position,
+          contributorId: this.deviceId,
+          submissionIndex: this.submissionCount
+        });
+      }
+      
+      findMostSimilarBorderShape(borderShapes, newColor) {
+        let mostSimilar = borderShapes[0];
+        let smallestDifference = ColorUtilsV2.getColorDistance(newColor, mostSimilar.color);
+        
+        borderShapes.forEach(shape => {
+          const difference = ColorUtilsV2.getColorDistance(newColor, shape.color);
+          if (difference < smallestDifference) {
+            smallestDifference = difference;
+            mostSimilar = shape;
+          }
+        });
+        
+        return mostSimilar;
+      }
+      
+      findLargestBorderShape(borderShapes) {
+        let largest = borderShapes[0];
+        let largestArea = largest.position.width * largest.position.height;
+        
+        borderShapes.forEach(shape => {
+          const area = shape.position.width * shape.position.height;
+          if (area > largestArea) {
+            largestArea = area;
+            largest = shape;
+          }
+        });
+        
+        return largest;
+      }
+      
+      getSplitDirection(shape) {
+        const validDirections = shape.getValidSplitDirections();
+        
+        if (validDirections.length === 0) {
+          throw new Error(`Shape ${shape.id} cannot be split in any direction`);
+        }
+        
+        if (validDirections.length === 1) {
+          return validDirections[0];
+        }
+        
+        const isWider = shape.position.width > shape.position.height;
+        const preferredDirection = isWider ? 'vertical' : 'horizontal';
+        
+        if (Math.random() < 0.8) {
+          return preferredDirection;
+        } else {
+          return validDirections.find(d => d !== preferredDirection);
+        }
+      }
+      
+      handlePostFreezeLogic(newShape, newColor) {
+        const isSimilar = this.keyShapesColorArray.some(keyColor => 
+          ColorUtilsV2.isColorSimilar(newColor, keyColor)
+        );
+        
+        if (isSimilar) {
+          newShape.type = 'KEY_SHAPE';
+          newShape.colorFamily = ColorUtilsV2.getColorFamilyName(newColor);
+        } else {
+          newShape.type = 'BORDER_SHAPE';
+        }
+      }
+      
+      recordUserContribution(shapeId, color, submissionIndex) {
+        const contribution = {
+          submissionIndex,
+          shapeId,
+          color,
+          timestamp: new Date().toISOString()
+        };
+        
+        const stored = JSON.parse(localStorage.getItem('quiltContributions') || '{"submissions": []}');
+        stored.submissions.push(contribution);
+        localStorage.setItem('quiltContributions', JSON.stringify(stored));
+      }
+      
+      findUserPieces() {
+        const contributions = this.getUserContributions();
+        const userShapeIds = new Set();
+        
+        contributions.submissions.forEach(contrib => {
+          userShapeIds.add(contrib.shapeId);
+        });
+        
+        const descendantShapes = [];
+        this.shapes.forEach(shape => {
+          if (this.isDescendantOf(shape, userShapeIds, this.shapes)) {
+            descendantShapes.push(shape);
+          }
+        });
+        
+        return descendantShapes;
+      }
+      
+      getUserContributions() {
+        const stored = localStorage.getItem('quiltContributions');
+        return stored ? JSON.parse(stored) : { submissions: [] };
+      }
+      
+      isDescendantOf(shape, ancestorIds, allShapes) {
+        if (ancestorIds.has(shape.id)) {
+          return true;
+        }
+        
+        if (shape.parentId) {
+          const parent = allShapes.find(s => s.id === shape.parentId);
+          if (parent) {
+            return this.isDescendantOf(parent, ancestorIds, allShapes);
+          }
+        }
+        
+        return false;
+      }
+      
+      ensureNoGaps() {
+        const bounds = this.getQuiltBounds();
+        const tolerance = 0.1;
+        
+        this.shapes.forEach((shape, index) => {
+          if (shape.position.x < bounds.minX) {
+            shape.position.x = bounds.minX;
+          }
+          if (shape.position.y < bounds.minY) {
+            shape.position.y = bounds.minY;
+          }
+          if (shape.position.x + shape.position.width > bounds.maxX + tolerance) {
+            shape.position.width = bounds.maxX - shape.position.x;
+          }
+          if (shape.position.y + shape.position.height > bounds.maxY + tolerance) {
+            shape.position.height = bounds.maxY - shape.position.y;
+          }
+          
+          if (shape.position.width < CONFIG.QUILT_V2.MIN_SHAPE_SIZE) {
+            shape.position.width = CONFIG.QUILT_V2.MIN_SHAPE_SIZE;
+          }
+          if (shape.position.height < CONFIG.QUILT_V2.MIN_SHAPE_SIZE) {
+            shape.position.height = CONFIG.QUILT_V2.MIN_SHAPE_SIZE;
+          }
+        });
+      }
+      
+      getState() {
+        return {
+          submissionCount: this.submissionCount,
+          phase: this.phase,
+          shapes: this.shapes,
+          colorFamilies: Array.from(this.colorFamilies.entries()),
+          userPieces: this.findUserPieces()
+        };
+      }
+    }
+
+    // ===== UTILITY FUNCTIONS =====
+    class Utils {
+      static hslToHex(h, s, l) {
+        h /= 360;
+        s /= 100;
+        l /= 100;
+        
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        
+        let r, g, b;
+        
+        if (s === 0) {
+          r = g = b = l;
+        } else {
+          const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          const p = 2 * l - q;
+          r = hue2rgb(p, q, h + 1/3);
+          g = hue2rgb(p, q, h);
+          b = hue2rgb(p, q, h - 1/3);
+        }
+        
+        const toHex = (c) => {
+          const hex = Math.round(c * 255).toString(16);
+          return hex.length === 1 ? '0' + hex : hex;
+        };
+        
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+      }
+
+      static validateHexColor(color) {
+        const hexRegex = /^#[0-9A-F]{6}$/i;
+        return hexRegex.test(color);
+      }
+
+      static getOrCreateUserId() {
+        let userId = localStorage.getItem('ourDailyUserId');
+        if (!userId) {
+          userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          localStorage.setItem('ourDailyUserId', userId);
+        }
+        return userId;
+      }
+
+      static getTodayKey() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+
+      static getQuiltDimensions() {
+        const hasVisualViewport = window.visualViewport && window.visualViewport.width > 0;
+        
+        let screenWidth, screenHeight;
+        
+        if (hasVisualViewport) {
+          screenWidth = window.visualViewport.width;
+          screenHeight = window.visualViewport.height;
+        } else {
+          const body = document.body;
+          const html = document.documentElement;
+          
+          const bodyRect = body.getBoundingClientRect();
+          const htmlRect = html.getBoundingClientRect();
+          
+          const measuredWidth = Math.min(bodyRect.width, htmlRect.width);
+          const measuredHeight = Math.min(bodyRect.height, htmlRect.height);
+          
+          if (measuredWidth > 0 && measuredHeight > 0) {
+            screenWidth = measuredWidth;
+            screenHeight = measuredHeight;
+          } else {
+            screenWidth = window.innerWidth;
+            screenHeight = window.innerHeight;
+            
+            const browserUIMargin = Math.min(screenHeight * 0.15, 120);
+            screenHeight = screenHeight - browserUIMargin;
+          }
+        }
+        
+        const isMobile = screenWidth <= 768;
+        
+        if (isMobile) {
+          return {
+            width: screenWidth,
+            height: screenHeight,
+            viewBoxWidth: screenWidth,
+            viewBoxHeight: screenHeight
+          };
+        } else {
+          const maxSize = Math.min(screenWidth * 0.8, screenHeight * 0.8);
+          return {
+            width: maxSize,
+            height: maxSize,
+            viewBoxWidth: maxSize,
+            viewBoxHeight: maxSize
+          };
+        }
+      }
+
+      static formatDate(date = new Date()) {
+        return date.toLocaleDateString(undefined, {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      }
+    }
+
+    // ===== LOGGING SERVICE =====
+    class Logger {
+      constructor(debugMode = CONFIG.APP.debugMode) {
+        this.debugMode = debugMode;
+        this.prefix = '🧵';
+      }
+
+      log(message, data = null) {
+        if (this.debugMode) {
+          console.log(`${this.prefix} ${message}`, data || '');
+        }
+      }
+
+      warn(message, data = null) {
+        if (this.debugMode) {
+          console.warn(`${this.prefix} ⚠️ ${message}`, data || '');
+        }
+      }
+
+      error(message, error = null) {
+        console.error(`${this.prefix} ❌ ${message}`, error || '');
+      }
+    }
+
+    // ===== UI SERVICE =====
+    class UIService {
+      constructor(logger) {
+        this.logger = logger;
+      }
+
+      showToast(message, duration = CONFIG.APP.toastDuration) {
+        const toast = document.getElementById('toast');
+        if (!toast) return;
+        toast.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), duration);
+      }
+
+      showLoading(show = true) {
+        const loading = document.getElementById('loading');
+        if (!loading) return;
+        if (show) {
+          loading.classList.add('show');
+        } else {
+          loading.classList.remove('show');
+        }
+      }
+
+      showScreen(screenId) {
+        try {
+          document.querySelectorAll(".screen").forEach(s => {
+            s.classList.remove("active");
+            s.style.display = 'none';
+          });
+          
+          const target = document.getElementById(screenId);
+          if (target) {
+            target.style.display = 'flex';
+            target.classList.add("active");
+            
+            target.offsetHeight;
+            
+            if (screenId === 'screen-color') {
+              const colorScreen = document.getElementById('screen-color');
+              if (colorScreen) {
+                colorScreen.style.backgroundColor = '#f6f4f1';
+              }
+            }
+            
+            window.scrollTo(0, 0);
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            
+            const app = document.getElementById('app');
+            if (app) {
+              app.scrollTop = 0;
+            }
+          } else {
+            this.logger.error(`❌ Screen not found: ${screenId}`);
+            this.showScreen('screen-portal');
+          }
+        } catch (error) {
+          this.logger.error(`❌ Error switching to screen ${screenId}:`, error);
+          const portalScreen = document.getElementById('screen-portal');
+          if (portalScreen) {
+            document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+            portalScreen.classList.add("active");
+            portalScreen.style.display = 'flex';
+          }
+        }
+      }
+    }
+
+    // ===== ERROR HANDLING SERVICE =====
+    class ErrorHandler {
+      constructor(uiService, logger) {
+        this.uiService = uiService;
+        this.logger = logger;
+      }
+
+      handleError(error, context = 'Unknown') {
+        this.logger.error(`Error in ${context}:`, error);
+        
+        const errorMessages = {
+          'loadQuilt': 'Failed to load quilt data. Starting fresh.',
+          'saveQuilt': 'Failed to save your color. Please try again.',
+          'shareFlow': 'Failed to create share image. Saving instead.',
+          'colorPicker': 'Color picker error. Please try again.',
+          'App initialization': 'Failed to initialize app. Please refresh.',
+          'renderQuilt': 'Failed to render quilt. Please try again.',
+          'addColorToQuilt': 'Failed to add color. Please try again.'
+        };
+        
+        const message = errorMessages[context] || 'Something went wrong. Please try again.';
+        this.uiService.showToast(message);
+      }
+
+      validateColor(color) {
+        if (!Utils.validateHexColor(color)) {
+          throw new Error(`Invalid color format: ${color}`);
+        }
+        return true;
+      }
+    }
+
+    // ===== DATA LAYER =====
+    class QuiltDataService {
+      constructor(logger, errorHandler) {
+        this.logger = logger;
+        this.errorHandler = errorHandler;
+        this.db = null;
+        this.quiltDoc = null;
+      }
+
+      async initialize() {
+        this.db = null;
+        this.quiltDoc = null;
+      }
+
+      async loadQuilt() {
+        try {
+          const savedData = localStorage.getItem('ourDailyQuilt');
+          if (savedData) {
+            const data = JSON.parse(savedData);
+            return { 
+              blocks: data.blocks || [], 
+              contributorCount: data.contributorCount || 1 
+            };
+          }
+        } catch (error) {
+          // Fall through to default
+        }
+        
+        const dimensions = Utils.getQuiltDimensions();
+        return { 
+          blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
+          contributorCount: 1 
+        };
+      }
+
+      async saveQuilt(blocks, contributorCount) {
+        try {
+          localStorage.setItem('ourDailyQuilt', JSON.stringify({
+            blocks: blocks,
+            contributorCount: contributorCount,
+            lastUpdated: new Date().toISOString(),
+            date: new Date().toISOString().split('T')[0]
+          }));
+          return true;
+        } catch (error) {
+          this.errorHandler.handleError(error, 'saveQuilt');
+          return false;
+        }
+      }
+    }
+
+    // ===== QUOTE SERVICE =====
+    class QuoteService {
+      constructor() {
+        this.quotes = [
+          { text: "Art washes away from the soul the dust of everyday life.", author: "— Pablo Picasso" },
+          { text: "Creativity takes courage.", author: "— Henri Matisse" },
+          { text: "Every artist was first an amateur.", author: "— Ralph Waldo Emerson" },
+          { text: "Color is the keyboard, the eyes are the harmonies, the soul is the piano with many strings.", author: "— Wassily Kandinsky" },
+          { text: "Great things are done by a series of small things brought together.", author: "— Vincent Van Gogh" },
+          { text: "You can't use up creativity. The more you use, the more you have.", author: "— Maya Angelou" }
+        ];
+        this.shuffledIndexes = [2, 4, 0, 5, 3, 1];
+      }
+
+      getTodayQuote() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const todayString = `${year}-${month}-${day}`;
+        const dayIndex = Math.floor(new Date(todayString).getTime() / (1000 * 60 * 60 * 24));
+        const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
+        return this.quotes[quoteIndex];
+      }
+
+      displayQuote() {
+        try {
+          const { text, author } = this.getTodayQuote();
+          const quoteLine = document.querySelector('.quote-line');
+          const quoteAuthor = document.querySelector('.quote-author');
+          
+          if (quoteLine) quoteLine.textContent = text;
+          if (quoteAuthor) quoteAuthor.textContent = author;
+        } catch (error) {
+          console.error('Error displaying quote:', error);
+        }
+      }
+    }
+
+    // ===== ENHANCED RENDERER =====
+    class QuiltRendererV2 {
+      constructor(logger) {
+        this.logger = logger;
+        this.quiltSVG = null;
+        this.lastAddedIndex = null;
+        this.userPieces = new Set();
+      }
+
+      initialize() {
+        this.quiltSVG = document.getElementById('quilt');
+        if (!this.quiltSVG) {
+          throw new Error('Quilt SVG element not found');
+        }
+        
+        // Set initial viewBox to viewport dimensions
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        this.quiltSVG.setAttribute('viewBox', `0 0 ${viewportWidth} ${viewportHeight}`);
+        this.quiltSVG.setAttribute('width', viewportWidth);
+        this.quiltSVG.setAttribute('height', viewportHeight);
+        this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      }
+
+      renderShapes(shapes, userPieces = []) {
+        if (!this.quiltSVG) {
+          this.logger.warn('Quilt SVG not found');
+          return;
+        }
+
+        this.quiltSVG.innerHTML = '';
+        this.userPieces = new Set(userPieces.map(s => s.id));
+
+        if (shapes.length === 0) {
+          return;
+        }
+
+        const minX = Math.min(...shapes.map(s => s.position.x));
+        const minY = Math.min(...shapes.map(s => s.position.y));
+        const maxX = Math.max(...shapes.map(s => s.position.x + s.position.width));
+        const maxY = Math.max(...shapes.map(s => s.position.y + s.position.height));
+        
+        const quiltWidth = maxX - minX;
+        const quiltHeight = maxY - minY;
+        
+        const scale = window.app?.quiltScale || 1;
+        const scaledWidth = quiltWidth * scale;
+        const scaledHeight = quiltHeight * scale;
+        
+        this.quiltSVG.setAttribute('viewBox', `${minX} ${minY} ${quiltWidth} ${quiltHeight}`);
+        this.quiltSVG.setAttribute('width', scaledWidth);
+        this.quiltSVG.setAttribute('height', scaledHeight);
+        this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        
+        this.quiltSVG.style.width = `${scaledWidth}px`;
+        this.quiltSVG.style.height = `${scaledHeight}px`;
+        this.quiltSVG.style.maxWidth = '100%';
+        this.quiltSVG.style.maxHeight = '100%';
+
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs.innerHTML = `
+          <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,0,0.15)"/>
+          </filter>
+          <filter id="userHighlight" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="rgba(255,255,255,0.8)"/>
+          </filter>
+        `;
+        this.quiltSVG.appendChild(defs);
+
+        shapes.forEach((shape, i) => {
+          const jitterX = (Math.random() - 0.5) * 6;
+          const jitterY = (Math.random() - 0.5) * 6;
+          const jitterRotation = (Math.random() - 0.5) * 3;
+          
+          const jitteredShape = {
+            x: shape.position.x + jitterX,
+            y: shape.position.y + jitterY,
+            width: shape.position.width,
+            height: shape.position.height,
+            color: shape.color,
+            rotation: jitterRotation,
+            type: shape.type,
+            colorFamily: shape.colorFamily
+          };
+          
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', jitteredShape.x);
+          rect.setAttribute('y', jitteredShape.y);
+          rect.setAttribute('width', jitteredShape.width);
+          rect.setAttribute('height', jitteredShape.height);
+          rect.setAttribute('fill', jitteredShape.color);
+          
+          const centerX = jitteredShape.x + jitteredShape.width / 2;
+          const centerY = jitteredShape.y + jitteredShape.height / 2;
+          rect.setAttribute('transform', `rotate(${jitteredShape.rotation} ${centerX} ${centerY})`);
+          
+          // Add user piece highlighting
+          if (this.userPieces.has(shape.id)) {
+            rect.classList.add('user-piece-highlight');
+            rect.setAttribute('filter', 'url(#userHighlight)');
+          }
+          
+          // Add phase transition animation
+          if (i === this.lastAddedIndex) {
+            rect.setAttribute('opacity', '0');
+            rect.classList.add('new-block');
+            rect.addEventListener('animationend', () => {
+              rect.classList.remove('new-block');
+              rect.removeAttribute('opacity');
+            }, { once: true });
+          }
+          
+          // Add color family indicator for KEY_SHAPES
+          if (shape.type === 'KEY_SHAPE' && shape.colorFamily) {
+            const indicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            indicator.setAttribute('cx', jitteredShape.x + jitteredShape.width - 8);
+            indicator.setAttribute('cy', jitteredShape.y + 8);
+            indicator.setAttribute('r', '4');
+            indicator.setAttribute('fill', shape.color);
+            indicator.setAttribute('stroke', 'white');
+            indicator.setAttribute('stroke-width', '1');
+            indicator.classList.add('color-family-indicator');
+            this.quiltSVG.appendChild(indicator);
+          }
+          
+          this.quiltSVG.appendChild(rect);
+        });
+
+        this.lastAddedIndex = null;
+      }
+
+      setLastAddedIndex(index) {
+        this.lastAddedIndex = index;
+      }
+    }
+
+    // ===== MAIN APPLICATION =====
+    class SimplifiedQuiltAppV2 {
+      constructor() {
+        // Initialize services
+        this.logger = new Logger(CONFIG.APP.debugMode);
+        this.uiService = new UIService(this.logger);
+        this.errorHandler = new ErrorHandler(this.uiService, this.logger);
+        this.dataService = new QuiltDataService(this.logger, this.errorHandler);
+        this.quoteService = new QuoteService();
+        this.renderer = new QuiltRendererV2(this.logger);
+        
+        // Initialize new engine
+        this.quiltEngine = new QuiltEngineV2();
+        
+        // App state
+        this.currentUserId = Utils.getOrCreateUserId();
+        this.quiltScale = 1;
+        
+        // Color picker state
+        this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
+        this.selectedSaturation = CONFIG.COLOR_PICKER.saturation;
+        this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
+        this.colorHasBeenSelected = false;
+      }
+
+      async initialize() {
+        try {
+          this.uiService.showScreen('screen-portal');
+          
+          await this.dataService.initialize();
+          this.setupEventListeners();
+          this.initializeUI();
+          
+          // Initialize new engine
+          this.quiltEngine.initialize();
+          await this.loadQuilt();
+          
+          this.renderer.initialize();
+          this.renderQuilt();
+          this.updateSquareCounter();
+          
+          this.setupAutoTransition();
+          
+        } catch (error) {
+          this.errorHandler.handleError(error, 'App initialization');
+          this.uiService.showScreen('screen-portal');
+        }
+      }
+
+      setupEventListeners() {
+        // Navigation
+        document.querySelectorAll(".btn[data-next]").forEach(btn => {
+          btn.addEventListener("click", e => {
+            e.preventDefault();
+            const targetId = btn.getAttribute("data-next");
+            if (targetId) this.uiService.showScreen(targetId);
+          });
+        });
+
+        // Add color button
+        const addColorBtn = document.getElementById('addColorBtn');
+        if (addColorBtn) {
+          addColorBtn.addEventListener('click', this.handleAddColor.bind(this));
+        }
+
+        // Share button
+        const shareBtnCompleted = document.getElementById('shareBtnCompleted');
+        if (shareBtnCompleted) {
+          shareBtnCompleted.addEventListener('click', this.handleShare.bind(this));
+        }
+
+        // Test buttons
+        const testAddBlock = document.getElementById('testAddBlock');
+        if (testAddBlock) {
+          testAddBlock.addEventListener('click', this.handleTestAddBlock.bind(this));
+        }
+
+        const showMyPieceBtn = document.getElementById('showMyPieceBtn');
+        if (showMyPieceBtn) {
+          showMyPieceBtn.addEventListener('click', this.handleShowMyPiece.bind(this));
+        }
+
+        const testDifferentUserBtn = document.getElementById('testDifferentUserBtn');
+        if (testDifferentUserBtn) {
+          testDifferentUserBtn.addEventListener('click', this.handleTestDifferentUser.bind(this));
+        }
+
+        const resetQuiltBtn = document.getElementById('resetQuiltBtn');
+        if (resetQuiltBtn) {
+          resetQuiltBtn.addEventListener('click', this.handleResetQuilt.bind(this));
+        }
+
+        // Color picker
+        this.setupColorPicker();
+
+        // Keyboard navigation
+        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+        
+        // Window resize handler
+        window.addEventListener('resize', this.handleWindowResize.bind(this));
+        
+        // Visual viewport resize handler
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', this.handleWindowResize.bind(this));
+        }
+        
+        // Floating admin button
+        this.setupFloatingAdminButton();
+      }
+
+      setupColorPicker() {
+        this.setupGridPicker();
+      }
+
+      setupGridPicker() {
+        const gridPicker = document.getElementById('gridPicker');
+        if (!gridPicker) return;
+
+        // Generate grid cells
+        this.generateGridCells(gridPicker);
+        
+        // Set initial selection (middle cell)
+        this.selectedGridRow = 0;
+        this.selectedGridCol = 3; // middle shade
+        this.updateGridSelection();
+        this.updateSelectedColor();
+      }
+
+      generateGridCells(gridPicker) {
+        const { shades, saturation } = CONFIG.GRID_PICKER;
+        const gridSize = 12; // 12 rows: 7 pure colors + 5 blended colors + 1 gray
+        
+        gridPicker.innerHTML = '';
+        
+        for (let row = 0; row < gridSize; row++) {
+          for (let col = 0; col < shades.length; col++) {
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell';
+            cell.setAttribute('data-row', row);
+            cell.setAttribute('data-col', col);
+            cell.setAttribute('role', 'gridcell');
+            cell.setAttribute('tabindex', '0');
+            
+            // Calculate color for 12 rows
+            const hue = this.getHueForRow(row);
+            const lightness = shades[col];
+            
+            // Handle saturation for gray row (last row)
+            let actualSaturation = saturation;
+            if (row === 11) { // gray row
+              actualSaturation = 0;
+            }
+            
+            const hexColor = Utils.hslToHex(hue, actualSaturation, lightness);
+            
+            cell.style.backgroundColor = hexColor;
+            cell.setAttribute('data-color', hexColor);
+            cell.setAttribute('data-hue', hue);
+            cell.setAttribute('data-saturation', actualSaturation);
+            cell.setAttribute('data-lightness', lightness);
+            
+            // Add event listeners
+            cell.addEventListener('click', (e) => this.handleGridCellClick(e, row, col));
+            cell.addEventListener('keydown', (e) => this.handleGridCellKeydown(e, row, col));
+            
+            gridPicker.appendChild(cell);
+          }
+        }
+      }
+
+      getHueForColor(colorName) {
+        const hueMap = {
+          'red': 0,
+          'orange': 30,
+          'yellow': 60,
+          'green': 120,
+          'blue': 240,
+          'purple': 270,
+          'gray': 0 // gray uses 0 hue but 0 saturation
+        };
+        return hueMap[colorName] || 0;
+      }
+
+      getHueForRow(row) {
+        // 12 rows total: 7 pure colors + 5 blended colors + 1 gray
+        const hues = [
+          0,    // 0: red
+          15,   // 1: red-orange
+          30,   // 2: orange
+          45,   // 3: orange-yellow
+          60,   // 4: yellow
+          90,   // 5: yellow-green
+          120,  // 6: green
+          180,  // 7: green-blue
+          240,  // 8: blue
+          255,  // 9: blue-purple
+          270,  // 10: purple
+          0     // 11: gray (0 saturation)
+        ];
+        return hues[row] || 0;
+      }
+
+      handleGridCellClick(e, row, col) {
+        e.preventDefault();
+        this.selectedGridRow = row;
+        this.selectedGridCol = col;
+        this.updateGridSelection();
+        this.updateSelectedColor();
+      }
+
+      handleGridCellKeydown(e, row, col) {
+        switch (e.key) {
+          case 'Enter':
+          case ' ':
+            e.preventDefault();
+            this.handleGridCellClick(e, row, col);
+            break;
+        }
+      }
+
+      updateGridSelection() {
+        // Remove previous selection
+        document.querySelectorAll('.grid-cell.selected').forEach(cell => {
+          cell.classList.remove('selected');
+        });
+        
+        // Add new selection
+        const selectedCell = document.querySelector(`[data-row="${this.selectedGridRow}"][data-col="${this.selectedGridCol}"]`);
+        if (selectedCell) {
+          selectedCell.classList.add('selected');
+        }
+      }
+
+      updateSelectedColor() {
+        const { shades, saturation } = CONFIG.GRID_PICKER;
+        const lightness = shades[this.selectedGridCol];
+        
+        // Get interpolated values from the selected cell
+        const selectedCell = document.querySelector(`[data-row="${this.selectedGridRow}"][data-col="${this.selectedGridCol}"]`);
+        if (selectedCell) {
+          const hue = parseFloat(selectedCell.getAttribute('data-hue'));
+          const actualSaturation = parseFloat(selectedCell.getAttribute('data-saturation'));
+          const hexColor = Utils.hslToHex(hue, actualSaturation, lightness);
+          
+          // Store for quilt
+          this.selectedColor = hexColor;
+          
+          // Show toast with selected color info
+          this.uiService.showToast(`Selected: ${hexColor.toUpperCase()}`);
+        }
+      }
+
+      handleColorWheelMouseDown(e) {
+        e.preventDefault();
+        this.isDragging = true;
+        this.setHueFromCoords(e.clientX, e.clientY);
+      }
+
+      handleColorWheelMouseMove(e) {
+        if (this.isDragging) {
+          e.preventDefault();
+          this.setHueFromCoords(e.clientX, e.clientY);
+        }
+      }
+
+      handleColorWheelMouseUp(e) {
+        this.isDragging = false;
+      }
+
+      handleColorWheelClick(e) {
+        e.preventDefault();
+        this.setHueFromCoords(e.clientX, e.clientY);
+        this.updateColorWheel();
+      }
+
+      handleColorWheelTouchStart(e) {
+        e.preventDefault();
+        this.isDragging = true;
+        const touch = e.touches[0];
+        this.setHueFromCoords(touch.clientX, touch.clientY);
+      }
+
+      handleColorWheelTouchMove(e) {
+        if (this.isDragging) {
+          e.preventDefault();
+          const touch = e.touches[0];
+          this.setHueFromCoords(touch.clientX, touch.clientY);
+        }
+      }
+
+      handleColorWheelTouchEnd(e) {
+        this.isDragging = false;
+      }
+
+      handleColorWheelKeyDown(e) {
+        const step = 15;
+        switch (e.key) {
+          case 'ArrowLeft':
+            e.preventDefault();
+            this.selectedHue = (this.selectedHue - step + 360) % 360;
+            this.updateColorWheel();
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            this.selectedHue = (this.selectedHue + step) % 360;
+            this.updateColorWheel();
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            this.selectedLightness = Math.min(90, this.selectedLightness + 5);
+            this.updateColorWheel();
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            this.selectedLightness = Math.max(25, this.selectedLightness - 5);
+            this.updateColorWheel();
+            break;
+        }
+      }
+
+      handleValueSliderChange(e) {
+        this.selectedLightness = parseInt(e.target.value);
+        this.updateColorWheel();
+      }
+
+      updateColorWheel() {
+        const valueSlider = document.getElementById('valueSlider');
+        
+        const hslColor = `hsl(${this.selectedHue}, ${this.selectedSaturation}%, ${this.selectedLightness}%)`;
+        const hexColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+        
+        const colorScreen = document.getElementById('screen-color');
+        if (colorScreen && this.colorHasBeenSelected) {
+          colorScreen.style.backgroundColor = hexColor;
+        }
+        
+        if (valueSlider) {
+          valueSlider.style.background = `linear-gradient(to right,
+            hsl(${this.selectedHue}, ${this.selectedSaturation}%, 20%), 
+            hsl(${this.selectedHue}, ${this.selectedSaturation}%, 90%))`;
+        }
+      }
+
+      setHueFromCoords(x, y) {
+        const colorWheel = document.getElementById('colorWheelCanvas');
+        const indicator = document.getElementById('colorIndicator');
+        const rect = colorWheel.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const radius = rect.width / 2;
+
+        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (angle < 0) angle += 360;
+        
+        const rawHue = Math.round((angle + 90) % 360);
+        this.selectedHue = (rawHue + 25) % 360;
+        
+        const baseSaturation = Math.min(100, (distance / radius) * 100);
+        this.selectedSaturation = Math.min(Math.round(baseSaturation + 5), 100);
+
+        if (distance > radius) {
+          const clampedDistance = radius;
+          const clampedX = centerX + (dx / distance) * clampedDistance;
+          const clampedY = centerY + (dy / distance) * clampedDistance;
+          this.selectedSaturation = 100;
+          
+          if (indicator) {
+            const container = colorWheel.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const relativeX = clampedX + rect.left - containerRect.left;
+            const relativeY = clampedY + rect.top - containerRect.top;
+            indicator.style.left = `${relativeX}px`;
+            indicator.style.top = `${relativeY}px`;
+          }
+        } else {
+          if (indicator) {
+            const container = colorWheel.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const relativeX = x + rect.left - containerRect.left;
+            const relativeY = y + rect.top - containerRect.top;
+            indicator.style.left = `${relativeX}px`;
+            indicator.style.top = `${relativeY}px`;
+          }
+        }
+        
+        this.colorHasBeenSelected = true;
+        this.updateColorWheel();
+      }
+
+      handleKeyDown(event) {
+        if (event.key === 'Escape') {
+          const currentScreen = document.querySelector('.screen.active');
+          if (currentScreen) {
+            const currentId = currentScreen.id;
+            if (currentId === 'screen-quote') {
+              this.uiService.showScreen('screen-portal');
+            } else if (currentId === 'screen-color') {
+              this.uiService.showScreen('screen-quote');
+            } else if (currentId === 'screen-quilt') {
+              this.uiService.showScreen('screen-color');
+            }
+          }
+        }
+      }
+
+      handleWindowResize() {
+        if (this.quiltEngine.shapes && this.quiltEngine.shapes.length > 0) {
+          this.renderQuilt();
+        }
+      }
+
+      setupFloatingAdminButton() {
+        const adminBtn = document.getElementById('floatingAdminBtn');
+        if (adminBtn) {
+          const isAdmin = this.isCurrentUserAdmin();
+          
+          if (isAdmin) {
+            adminBtn.style.display = 'flex';
+            if (!adminBtn.hasAttribute('data-admin-initialized')) {
+              adminBtn.addEventListener('click', () => {
+                this.showAdminMenu();
+              });
+              adminBtn.setAttribute('data-admin-initialized', 'true');
+            }
+          } else {
+            adminBtn.style.display = 'none';
+          }
+        }
+      }
+
+      isCurrentUserAdmin() {
+        const currentUserId = this.currentUserId;
+        const adminUserIds = [];
+        const isAdminFlag = localStorage.getItem('ourDailyIsAdmin') === 'true';
+        const adminEmails = [];
+        
+        return isAdminFlag || adminUserIds.includes(currentUserId);
+      }
+
+      enableAdminMode() {
+        localStorage.setItem('ourDailyIsAdmin', 'true');
+        this.uiService.showToast('Admin mode enabled');
+        this.setupFloatingAdminButton();
+      }
+
+      disableAdminMode() {
+        if (!confirm('Are you sure you want to disable admin mode? You can re-enable it with enableAdmin().')) {
+          return;
+        }
+        
+        localStorage.removeItem('ourDailyIsAdmin');
+        this.uiService.showToast('Admin mode disabled');
+        const adminBtn = document.getElementById('floatingAdminBtn');
+        if (adminBtn) {
+          adminBtn.style.display = 'none';
+        }
+      }
+
+      showAdminMenu() {
+        const menu = document.createElement('div');
+        menu.className = 'admin-menu';
+        menu.innerHTML = `
+          <div class="admin-menu-content">
+            <h3>Admin Controls</h3>
+            <button onclick="app.handleTestAddBlock()">Add Random Block</button>
+            <button onclick="app.handleShowMyPiece()">Show My Piece</button>
+            <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
+            <button onclick="app.handleResetQuilt()">Reset Quilt</button>
+            <button onclick="this.parentElement.parentElement.remove()">Close</button>
+          </div>
+        `;
+        
+        menu.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          border: 2px solid #000;
+          border-radius: 8px;
+          padding: 20px;
+          z-index: 1001;
+          box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+          min-width: 250px;
+        `;
+        
+        const content = menu.querySelector('.admin-menu-content');
+        content.style.cssText = `
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        `;
+        
+        const buttons = menu.querySelectorAll('button');
+        buttons.forEach(btn => {
+          btn.style.cssText = `
+            padding: 8px 16px;
+            border: 1px solid #000;
+            background: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+          `;
+        });
+        
+        menu.addEventListener('click', (e) => {
+          if (e.target === menu) {
+            menu.remove();
+          }
+        });
+        
+        document.body.appendChild(menu);
+      }
+
+      initializeUI() {
+        const dateText = document.getElementById("date-text");
+        if (dateText) {
+          dateText.textContent = Utils.formatDate();
+        }
+        this.quoteService.displayQuote();
+        this.uiService.showScreen('screen-portal');
+      }
+
+      setupAutoTransition() {
+        const currentScreen = document.querySelector('.screen.active');
+        if (currentScreen && currentScreen.id === 'screen-portal') {
+          const delay = window.innerWidth <= 768 ? 3000 : 2000;
+          
+          setTimeout(() => {
+            const currentScreen = document.querySelector('.screen.active');
+            if (currentScreen && currentScreen.id === 'screen-portal') {
+              this.autoTransitionFromPortal();
+            }
+          }, delay);
+        }
+      }
+
+      async autoTransitionFromPortal() {
+        try {
+          const hasVisitedBefore = localStorage.getItem('ourDailyHasVisited');
+          const lastVisitDate = localStorage.getItem('ourDailyLastVisitDate');
+          
+          const now = new Date();
+          const currentDate = now.toDateString();
+          const isNewDay = lastVisitDate !== currentDate;
+          
+          if (!hasVisitedBefore || isNewDay) {
+            localStorage.setItem('ourDailyHasVisited', 'true');
+            localStorage.setItem('ourDailyLastVisitDate', currentDate);
+            
+            if (isNewDay) {
+              await this.resetQuiltForNewDay();
+            }
+            
+            this.uiService.showScreen('screen-welcome');
+            
+            const quoteDelay = window.innerWidth <= 768 ? 2500 : 1500;
+            setTimeout(() => {
+              this.uiService.showScreen('screen-quote');
+            }, quoteDelay);
+          } else {
+            this.uiService.showScreen('screen-quote');
+          }
+        } catch (error) {
+          this.logger.error('❌ Auto transition failed:', error);
+          this.uiService.showScreen('screen-quote');
+        }
+      }
+      
+      async resetQuiltForNewDay() {
+        this.quiltEngine.initialize();
+        
+        try {
+          await this.dataService.saveQuilt([], 1);
+        } catch (error) {
+          this.logger.warn('⚠️ Failed to clear data for new day:', error);
+        }
+        
+        this.renderQuilt();
+        this.updateSquareCounter();
+      }
+
+      async loadQuilt() {
+        try {
+          const data = await this.dataService.loadQuilt();
+          
+          if (data.blocks && data.blocks.length > 0) {
+            this.quiltEngine.shapes = data.blocks.map(block => new QuiltShapeV2({
+              color: block.color,
+              position: { x: block.x, y: block.y, width: block.width, height: block.height },
+              contributorId: this.currentUserId,
+              submissionIndex: 0
+            }));
+            this.quiltEngine.submissionCount = data.contributorCount || 1;
+          } else {
+            this.quiltEngine.initialize();
+          }
+          
+          if (this.quiltEngine.submissionCount >= CONFIG.QUILT_V2.FREEZE_THRESHOLD) {
+            this.quiltEngine.phase = 'POST_FREEZE';
+            this.quiltEngine.keyShapesColorArray = this.quiltEngine.shapes.map(shape => shape.color);
+            this.quiltEngine.assignColorFamilies();
+          }
+          
+        } catch (error) {
+          this.logger.error('❌ Failed to load quilt:', error);
+          this.quiltEngine.initialize();
+        }
+      }
+
+      async saveQuilt() {
+        try {
+          const blocks = this.quiltEngine.shapes.map(shape => ({
+            x: shape.position.x,
+            y: shape.position.y,
+            width: shape.position.width,
+            height: shape.position.height,
+            color: shape.color
+          }));
+          
+          await this.dataService.saveQuilt(blocks, this.quiltEngine.submissionCount);
+        } catch (error) {
+          this.errorHandler.handleError(error, 'saveQuilt');
+          throw error;
+        }
+      }
+
+      renderQuilt() {
+        this.ensureQuiltFits();
+        
+        const state = this.quiltEngine.getState();
+        this.renderer.renderShapes(state.shapes, state.userPieces);
+        this.updateSquareCounter();
+        
+        if (this.quiltEngine.phase === 'POST_FREEZE' && this.quiltEngine.submissionCount === CONFIG.QUILT_V2.FREEZE_THRESHOLD) {
+          this.uiService.showToast('🎨 Quilt pattern established! Colors will now group by similarity.');
+        }
+      }
+
+      ensureQuiltFits() {
+        if (!this.quiltEngine.shapes || this.quiltEngine.shapes.length === 0) return;
+        
+        const hasVisualViewport = window.visualViewport && window.visualViewport.width > 0;
+        const availableWidth = hasVisualViewport ? window.visualViewport.width : window.innerWidth;
+        const availableHeight = hasVisualViewport ? window.visualViewport.height : window.innerHeight;
+        
+        const bounds = this.quiltEngine.getQuiltBounds();
+        const currentWidth = bounds.width;
+        const currentHeight = bounds.height;
+        
+        const scaleX = availableWidth / currentWidth;
+        const scaleY = availableHeight / currentHeight;
+        const optimalScale = Math.min(scaleX, scaleY, 1);
+        
+        this.quiltScale = optimalScale;
+      }
+
+      updateSquareCounter() {
+        const counterElement = document.getElementById('squareCounter');
+        if (counterElement) {
+          counterElement.textContent = this.quiltEngine.shapes.length;
+        }
+      }
+
+      async handleAddColor() {
+        try {
+          // Use the selected color from grid
+          const selectedColor = this.selectedColor;
+          
+          if (!selectedColor || !Utils.validateHexColor(selectedColor)) {
+            this.logger.warn('Invalid color selected');
+            return;
+          }
+
+          const result = this.quiltEngine.addColor(selectedColor);
+          
+          if (result) {
+            await this.saveQuilt();
+            this.renderQuilt();
+            
+            this.uiService.showToast('Color added to the quilt!');
+            this.uiService.showScreen('screen-quilt');
+          }
+          
+        } catch (error) {
+          this.errorHandler.handleError(error, 'handleAddColor');
+        }
+      }
+
+      async handleShare() {
+        try {
+          const quiltSVG = document.getElementById('quilt');
+          if (!quiltSVG) {
+            throw new Error('Quilt SVG not found');
+          }
+
+          const canvas = await html2canvas(quiltSVG, {
+            backgroundColor: '#f6f4f1',
+            scale: 2,
+            useCORS: true,
+            allowTaint: true
+          });
+
+          canvas.toBlob(async (blob) => {
+            try {
+              const shareData = {
+                title: 'Our Daily Quilt',
+                text: `Check out today's community quilt with ${this.quiltEngine.submissionCount} contributors!`,
+                files: [new File([blob], 'quilt.png', { type: 'image/png' })]
+              };
+
+              if (navigator.share && navigator.canShare(shareData)) {
+                await navigator.share(shareData);
+                this.uiService.showToast('Shared successfully!');
+              } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `quilt-${new Date().toISOString().split('T')[0]}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                this.uiService.showToast('Quilt downloaded!');
+              }
+            } catch (error) {
+              this.logger.error('Share failed:', error);
+              this.uiService.showToast('Share failed. Please try again.');
+            }
+          }, 'image/png', 0.9);
+
+        } catch (error) {
+          this.errorHandler.handleError(error, 'shareFlow');
+        }
+      }
+
+      async handleTestAddBlock() {
+        const testColors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff', '#5f27cd'];
+        const randomColor = testColors[Math.floor(Math.random() * testColors.length)];
+        
+        try {
+          const result = this.quiltEngine.addColor(randomColor);
+          
+          if (result) {
+            this.renderQuilt();
+            await this.saveQuilt();
+            
+            this.uiService.showToast(`Added test block: ${randomColor}`);
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'testAddBlock');
+        }
+      }
+
+      handleShowMyPiece() {
+        const userPieces = this.quiltEngine.findUserPieces();
+        if (userPieces.length > 0) {
+          this.uiService.showToast(`Found ${userPieces.length} of your pieces!`);
+          this.renderQuilt();
+        } else {
+          this.uiService.showToast('No pieces found for current user');
+        }
+      }
+
+      handleTestDifferentUser() {
+        this.currentUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        localStorage.setItem('ourDailyUserId', this.currentUserId);
+        
+        this.uiService.showToast('Switched to different user');
+      }
+
+      async handleResetQuilt() {
+        // Show confirmation dialog
+        const confirmed = confirm('Are you sure you want to reset the quilt? This will clear all blocks and start fresh. This action cannot be undone.');
+        
+        if (confirmed) {
+          try {
+            // Reset the quilt engine
+            this.quiltEngine.initialize();
+            
+            // Clear saved data
+            await this.dataService.saveQuilt([], 1);
+            
+            // Clear user contributions for this session
+            localStorage.removeItem('quiltContributions');
+            
+            // Re-render the quilt
+            this.renderQuilt();
+            this.updateSquareCounter();
+            
+            this.uiService.showToast('Quilt reset successfully! Starting fresh.');
+            
+            // Log the reset
+            this.logger.log('🧵 Quilt reset by user');
+            
+          } catch (error) {
+            this.errorHandler.handleError(error, 'resetQuilt');
+            this.uiService.showToast('Failed to reset quilt. Please try again.');
+          }
+        }
+      }
+    }
+
+    // ===== INITIALIZATION =====
+    document.addEventListener('DOMContentLoaded', async () => {
+      const app = new SimplifiedQuiltAppV2();
+      await app.initialize();
+      
+      window.app = app;
+      
+      // Global test functions
+      window.addTestBlock = () => app.handleTestAddBlock();
+      window.showMyPiece = () => app.handleShowMyPiece();
+      window.switchUser = () => app.handleTestDifferentUser();
+      window.shareQuilt = () => app.handleShare();
+      window.resetQuilt = () => app.handleResetQuilt();
+      
+      // Admin console commands
+      window.enableAdmin = () => app.enableAdminMode();
+      window.disableAdmin = () => app.disableAdminMode();
+    });
+
+    console.log('🧵 Our Daily Quilt Enhanced - Loading...');
+  </script>
+</body>
+</html>
