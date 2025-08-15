@@ -1195,9 +1195,17 @@
 
     .archive-post-image {
       width: 100%;
-      height: 200px;
-      object-fit: cover;
+      height: auto;
+      max-height: 500px;
+      object-fit: contain;
       display: block;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: transform 0.2s ease;
+    }
+
+    .archive-post-image:hover {
+      transform: scale(1.02);
     }
 
     .archive-post-caption {
@@ -1260,10 +1268,12 @@
       position: relative;
       background: #fff;
       border-radius: 12px;
-      max-width: 90vw;
+      width: 90vw;
       max-height: 90vh;
       overflow: hidden;
       z-index: 1001;
+      display: flex;
+      flex-direction: column;
     }
 
     .archive-modal-close {
@@ -1283,7 +1293,7 @@
 
     .archive-modal-image {
       width: 100%;
-      max-height: 70vh;
+      flex: 1;
       object-fit: contain;
     }
 
@@ -2590,6 +2600,96 @@
         }
       }
 
+      // Generate full quilt image from blocks data
+      async generateFullQuiltImage(blocks) {
+        try {
+          if (!blocks || blocks.length === 0) {
+            this.logger.warn('No blocks provided for full quilt image generation');
+            return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgdmlld0JveD0iMCAwIDgwMCA2MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI4MDAiIGhlaWdodD0iNjAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjQwMCIgeT0iMzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCI+Tm8gUXVpbHQ8L3RleHQ+Cjwvc3ZnPg==';
+          }
+
+          // Calculate quilt bounds
+          const minX = Math.min(...blocks.map(b => b.x));
+          const minY = Math.min(...blocks.map(b => b.y));
+          const maxX = Math.max(...blocks.map(b => b.x + b.width));
+          const maxY = Math.max(...blocks.map(b => b.y + b.height));
+          
+          const quiltWidth = maxX - minX;
+          const quiltHeight = maxY - minY;
+          
+          // Create canvas for full quilt image
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          // Set canvas size (larger for full quilt)
+          canvas.width = 800;
+          canvas.height = 600;
+          
+          // Fill background
+          ctx.fillStyle = '#f6f4f1';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // Calculate scale to fit quilt in canvas
+          const scaleX = canvas.width / quiltWidth;
+          const scaleY = canvas.height / quiltHeight;
+          const scale = Math.min(scaleX, scaleY, 1) * 0.9; // 90% to add some padding
+          
+          // Center the quilt
+          const offsetX = (canvas.width - quiltWidth * scale) / 2;
+          const offsetY = (canvas.height - quiltHeight * scale) / 2;
+          
+          // Draw each block
+          blocks.forEach(block => {
+            // Add jitter effects (same as current quilt)
+            const jitterX = (Math.random() - 0.5) * 6;
+            const jitterY = (Math.random() - 0.5) * 6;
+            const jitterRotation = (Math.random() - 0.5) * 3;
+            
+            const jitteredX = block.x + jitterX;
+            const jitteredY = block.y + jitterY;
+            
+            // Transform to canvas coordinates
+            const canvasX = offsetX + (jitteredX - minX) * scale;
+            const canvasY = offsetY + (jitteredY - minY) * scale;
+            const canvasWidth = block.width * scale;
+            const canvasHeight = block.height * scale;
+            
+            // Save context for rotation
+            ctx.save();
+            
+            // Move to center of block for rotation
+            const centerX = canvasX + canvasWidth / 2;
+            const centerY = canvasY + canvasHeight / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(jitterRotation * Math.PI / 180);
+            
+            // Draw block with shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+            ctx.shadowBlur = 3;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 4;
+            
+            ctx.fillStyle = block.color;
+            ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
+            
+            // Restore context
+            ctx.restore();
+          });
+          
+          // Convert to data URL
+          const dataURL = canvas.toDataURL('image/png', 0.9);
+          
+          this.logger.log(`✅ Generated full quilt image: 800x600`);
+          return dataURL;
+          
+        } catch (error) {
+          this.logger.error('Full quilt image generation failed:', error);
+          return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgdmlld0JveD0iMCAwIDgwMCA2MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI4MDAiIGhlaWdodD0iNjAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjQwMCIgeT0iMzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCI+RXJyb3I8L3RleHQ+Cjwvc3ZnPg==';
+        }
+      }
+
+
+
       // Load more archives (for "Load More" button)
       async loadMore() {
         if (this.isLoading) return null;
@@ -2619,7 +2719,7 @@
         return `
           <div class="archive-post" data-date="${archiveEntry.date}">
             <img class="archive-post-image" 
-                 src="${archiveEntry.thumbnail || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDQwMCA0MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iNDAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjIwMCIgeT0iMjAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiI+TG9hZGluZy4uLjwvdGV4dD4KPHN2Zz4='}" 
+                 src="${archiveEntry.fullQuiltImage || archiveEntry.thumbnail || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDQwMCA0MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iNDAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjIwMCIgeT0iMjAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiI+TG9hZGluZy4uLjwvdGV4dD4KPHN2Zz4='}" 
                  alt="Quilt from ${formattedDate}"
                  loading="lazy" />
             <div class="archive-post-caption">
@@ -2714,7 +2814,7 @@
         if (!modal) return;
 
         // Set modal content
-        modalImage.src = archiveEntry.thumbnail || '';
+        modalImage.src = archiveEntry.fullQuiltImage || archiveEntry.thumbnail || '';
         modalImage.alt = `Quilt from ${archiveEntry.date}`;
         modalQuote.textContent = `"${archiveEntry.quote.text}" ${archiveEntry.quote.author}`;
         
@@ -3612,8 +3712,9 @@
         
         this.logger.log(`🖼️ Generating thumbnail for ${blockCount} blocks...`);
         
-        // Generate thumbnail from current SVG
+        // Generate thumbnail and full quilt image
         const thumbnail = await this.archiveService.generateThumbnail();
+        const fullQuiltImage = await this.archiveService.generateFullQuiltImage(this.quiltEngine.blocks);
         
         // Create archive entry
         const archiveEntry = this.archiveService.createArchiveEntry(
@@ -3623,8 +3724,9 @@
           Math.max(blockCount, 12) // Use actual block count or minimum 12
         );
         
-        // Set the generated thumbnail
+        // Set the generated images
         archiveEntry.thumbnail = thumbnail;
+        archiveEntry.fullQuiltImage = fullQuiltImage;
         
         // Add to archive
         await this.archiveService.addArchive(archiveEntry);
@@ -3639,75 +3741,43 @@
         return archiveEntry;
       }
 
-      // Create test archive posts
+      // Archive current quilt (renamed from createTestArchivePosts)
       async createTestArchivePosts() {
-        const testQuotes = [
-          { text: "Art washes away from the soul the dust of everyday life.", author: "— Pablo Picasso" },
-          { text: "Creativity takes courage.", author: "— Henri Matisse" },
-          { text: "Every artist was first an amateur.", author: "— Ralph Waldo Emerson" },
-          { text: "Color is the keyboard, the eyes are the harmonies, the soul is the piano with many strings.", author: "— Wassily Kandinsky" },
-          { text: "Great things are done by a series of small things brought together.", author: "— Vincent Van Gogh" }
-        ];
-
-        const testDates = [
-          '2024-01-15',
-          '2024-01-14', 
-          '2024-01-13',
-          '2024-01-12',
-          '2024-01-11'
-        ];
-
-        for (let i = 0; i < 5; i++) {
-          const archiveEntry = this.archiveService.createArchiveEntry(
-            testDates[i],
-            { blocks: [] }, // Empty quilt state for test
-            testQuotes[i],
-            15 + Math.floor(Math.random() * 20) // Random contributor count
-          );
-
-          // Create a simple test thumbnail with a colored background
-          const canvas = document.createElement('canvas');
-          canvas.width = 400;
-          canvas.height = 400;
-          const ctx = canvas.getContext('2d');
-          
-          // Create a gradient background
-          const gradient = ctx.createLinearGradient(0, 0, 400, 400);
-          const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57'];
-          gradient.addColorStop(0, colors[i % colors.length]);
-          gradient.addColorStop(1, colors[(i + 1) % colors.length]);
-          
-          ctx.fillStyle = gradient;
-          ctx.fillRect(0, 0, 400, 400);
-          
-          // Add some random rectangles to simulate quilt blocks
-          for (let j = 0; j < 8; j++) {
-            ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
-            ctx.fillRect(
-              Math.random() * 350,
-              Math.random() * 350,
-              30 + Math.random() * 50,
-              30 + Math.random() * 50
-            );
+        this.logger.log('📦 Archiving current quilt as test...');
+        
+        try {
+          // Check if there's a current quilt to archive
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            this.logger.warn('📦 No quilt to archive (only initial block or no blocks)');
+            this.uiService.showToast('No quilt to archive - add some blocks first!');
+            return;
           }
           
-          // Add date text
-          ctx.fillStyle = '#000';
-          ctx.font = '24px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText(testDates[i], 200, 200);
+          // Create archive of current quilt
+          const archiveEntry = await this.createArchiveSnapshot();
           
-          archiveEntry.thumbnail = canvas.toDataURL('image/png', 0.8);
+          this.logger.log(`✅ Archived current quilt with ${this.quiltEngine.blocks.length} blocks`);
+          this.uiService.showToast(`Current quilt archived with ${this.quiltEngine.blocks.length} blocks!`);
           
-          await this.archiveService.addArchive(archiveEntry);
-        }
-
-        this.logger.log('✅ Created 5 test archive posts');
-        
-        // Re-render if on archive screen
-        const archiveScreen = document.getElementById('screen-archive');
-        if (archiveScreen && archiveScreen.classList.contains('active')) {
-          this.archiveService.renderArchiveFeed();
+          // Show the archived quilt immediately
+          this.uiService.showToast(`Current quilt archived with ${this.quiltEngine.blocks.length} blocks! Now showing archive...`);
+          
+          // Force refresh the archive cache to include the new archive
+          await this.archiveService.loadArchivesFromFirestore();
+          
+          // Switch to archive screen and refresh to show the new archive
+          await this.uiService.showScreen('screen-archive');
+          await this.archiveService.renderArchiveFeed();
+          
+          // Scroll to the top to show the newest archive
+          const archiveContainer = document.querySelector('.archive-feed');
+          if (archiveContainer) {
+            archiveContainer.scrollTop = 0;
+          }
+          
+        } catch (error) {
+          this.logger.error('❌ Failed to archive current quilt:', error);
+          this.uiService.showToast('Failed to archive current quilt');
         }
       }
 
@@ -3764,7 +3834,7 @@
             <button onclick="app.handleShowMyPiece()">Show My Piece</button>
             <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
-            <button onclick="app.handleCreateTestArchives()">Create Test Archives</button>
+            <button onclick="app.handleCreateTestArchives()">Archive Current Quilt</button>
             <button onclick="app.handleTestDailyReset()">Test Daily Reset</button>
             <button onclick="app.showNextWeekQuotes()">Show Next 7 Days Quotes</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
@@ -4387,7 +4457,7 @@
       async handleCreateTestArchives() {
         try {
           await this.createTestArchivePosts();
-          this.uiService.showToast('Created 5 test archive posts!');
+          // Toast message is now handled within createTestArchivePosts
         } catch (error) {
           this.errorHandler.handleError(error, 'createTestArchives');
         }
