@@ -886,8 +886,7 @@
         margin: 0 !important;
         justify-content: flex-start !important;
         align-items: stretch !important;
-        min-height: 150vh !important;
-        height: auto !important;
+        height: 100vh !important;
         overflow-y: auto !important;
         overflow-x: hidden !important;
         position: relative !important;
@@ -1831,23 +1830,37 @@
       }
       
       initialize() {
-        // Start with a single block covering the viewport
+        // Mobile-first: Start with a block using 3:4 aspect ratio
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
+        
+        // Use mobile aspect ratio (1:2) for initial block with breathing room
+        const targetAspectRatio = 1/2;
+        let initialWidth, initialHeight;
+        
+        if (viewportWidth / viewportHeight > targetAspectRatio) {
+          // Viewport is wider than target ratio
+          initialHeight = viewportHeight;
+          initialWidth = viewportHeight * targetAspectRatio;
+        } else {
+          // Viewport is taller than target ratio
+          initialWidth = viewportWidth;
+          initialHeight = viewportWidth / targetAspectRatio;
+        }
         
         this.blocks = [{
           id: 'initial',
           x: 0,
           y: 0,
-          width: viewportWidth,
-          height: viewportHeight,
+          width: initialWidth,
+          height: initialHeight,
           color: CONFIG.APP.defaultColor,
           contributorId: this.deviceId,
           submissionIndex: 0
         }];
         
         this.submissionCount = 0;
-        console.log('🧵 Simple Quilt Engine initialized');
+        console.log('🧵 Simple Quilt Engine initialized with mobile-first aspect ratio');
       }
       
       addSubmission() {
@@ -1939,17 +1952,19 @@
         const maxY = Math.max(...this.blocks.map(b => b.y + b.height));
         
         const edge = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
-        const blockSize = 80;
+        // Mobile-first: Use tall rectangles instead of squares
+        const blockWidth = 80;
+        const blockHeight = 160; // 1:2 ratio for mobile-friendly blocks with breathing room
         
         let newBlock;
         switch (edge) {
           case 0: // top
             newBlock = {
               id: 'edge_' + Date.now(),
-              x: minX + Math.random() * (maxX - minX - blockSize),
-              y: minY - blockSize,
-              width: blockSize,
-              height: blockSize,
+              x: minX + Math.random() * (maxX - minX - blockWidth),
+              y: minY - blockHeight,
+              width: blockWidth,
+              height: blockHeight,
               color: newColor,
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount
@@ -1959,9 +1974,9 @@
             newBlock = {
               id: 'edge_' + Date.now(),
               x: maxX,
-              y: minY + Math.random() * (maxY - minY - blockSize),
-              width: blockSize,
-              height: blockSize,
+              y: minY + Math.random() * (maxY - minY - blockHeight),
+              width: blockWidth,
+              height: blockHeight,
               color: newColor,
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount
@@ -1970,10 +1985,10 @@
           case 2: // bottom
             newBlock = {
               id: 'edge_' + Date.now(),
-              x: minX + Math.random() * (maxX - minX - blockSize),
+              x: minX + Math.random() * (maxX - minX - blockWidth),
               y: maxY,
-              width: blockSize,
-              height: blockSize,
+              width: blockWidth,
+              height: blockHeight,
               color: newColor,
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount
@@ -1982,10 +1997,10 @@
           case 3: // left
             newBlock = {
               id: 'edge_' + Date.now(),
-              x: minX - blockSize,
-              y: minY + Math.random() * (maxY - minY - blockSize),
-              width: blockSize,
-              height: blockSize,
+              x: minX - blockWidth,
+              y: minY + Math.random() * (maxY - minY - blockHeight),
+              width: blockWidth,
+              height: blockHeight,
               color: newColor,
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount
@@ -2054,7 +2069,7 @@
         const currentViewportWidth = window.innerWidth;
         const currentViewportHeight = window.innerHeight;
         
-        // Calculate current quilt bounds
+        // Calculate current quilt bounds (don't modify the blocks!)
         const minX = Math.min(...this.blocks.map(b => b.x));
         const minY = Math.min(...this.blocks.map(b => b.y));
         const maxX = Math.max(...this.blocks.map(b => b.x + b.width));
@@ -2063,16 +2078,24 @@
         const currentQuiltWidth = maxX - minX;
         const currentQuiltHeight = maxY - minY;
         
+        // Store the original quilt bounds for viewBox calculation
+        this.quiltBounds = {
+          minX: minX,
+          minY: minY,
+          width: currentQuiltWidth,
+          height: currentQuiltHeight
+        };
+        
         // Determine target dimensions based on current viewport
         let targetWidth, targetHeight;
         
+        // Mobile-first: Use 1:2 aspect ratio for better mobile fit with breathing room
+        const targetAspectRatio = 1/2; // 1:2 ratio for mobile-first design with breathing room
+        
         if (window.innerWidth >= 768) {
-          // Desktop: Use wider aspect ratio, account for button container
+          // Desktop: Use mobile aspect ratio, account for button container
           const availableWidth = currentViewportWidth * 0.7; // 70% for quilt container
           const availableHeight = currentViewportHeight;
-          
-          // Target aspect ratio for desktop (wider)
-          const targetAspectRatio = 4/3; // 4:3 ratio for desktop
           
           if (availableWidth / availableHeight > targetAspectRatio) {
             // Viewport is wider than target ratio
@@ -2084,12 +2107,9 @@
             targetHeight = availableWidth / targetAspectRatio;
           }
         } else {
-          // Mobile: Use taller aspect ratio
+          // Mobile: Use mobile aspect ratio
           const availableWidth = currentViewportWidth;
           const availableHeight = currentViewportHeight;
-          
-          // Target aspect ratio for mobile (taller)
-          const targetAspectRatio = 3/4; // 3:4 ratio for mobile
           
           if (availableWidth / availableHeight > targetAspectRatio) {
             // Viewport is wider than target ratio
@@ -2102,23 +2122,16 @@
           }
         }
         
-        // Calculate scaling factors
-        const scaleX = targetWidth / currentQuiltWidth;
-        const scaleY = targetHeight / currentQuiltHeight;
-        const scale = Math.min(scaleX, scaleY); // Maintain aspect ratio
+        // Store target dimensions for rendering
+        this.targetDimensions = {
+          width: targetWidth,
+          height: targetHeight,
+          viewport: { width: currentViewportWidth, height: currentViewportHeight }
+        };
         
-        // Scale all blocks
-        this.blocks.forEach(block => {
-          block.x = (block.x - minX) * scale;
-          block.y = (block.y - minY) * scale;
-          block.width = block.width * scale;
-          block.height = block.height * scale;
-        });
-        
-        console.log('🧵 Quilt dimensions recalculated for current viewport:', {
+        console.log('🧵 Quilt viewBox recalculated for current viewport:', {
           original: { width: currentQuiltWidth, height: currentQuiltHeight },
           target: { width: targetWidth, height: targetHeight },
-          scale: scale,
           viewport: { width: currentViewportWidth, height: currentViewportHeight }
         });
       }
@@ -3096,30 +3109,46 @@
           return;
         }
 
-
+        // Use stored bounds if available, otherwise calculate from blocks
+        let minX, minY, quiltWidth, quiltHeight;
         
-        const minX = Math.min(...blocks.map(b => b.x));
-        const minY = Math.min(...blocks.map(b => b.y));
-        const maxX = Math.max(...blocks.map(b => b.x + b.width));
-        const maxY = Math.max(...blocks.map(b => b.y + b.height));
+        if (this.quiltBounds) {
+          // Use stored bounds (original quilt dimensions)
+          minX = this.quiltBounds.minX;
+          minY = this.quiltBounds.minY;
+          quiltWidth = this.quiltBounds.width;
+          quiltHeight = this.quiltBounds.height;
+        } else {
+          // Fallback to calculating from current blocks
+          minX = Math.min(...blocks.map(b => b.x));
+          minY = Math.min(...blocks.map(b => b.y));
+          const maxX = Math.max(...blocks.map(b => b.x + b.width));
+          const maxY = Math.max(...blocks.map(b => b.y + b.height));
+          quiltWidth = maxX - minX;
+          quiltHeight = maxY - minY;
+        }
         
-        const quiltWidth = maxX - minX;
-        const quiltHeight = maxY - minY;
+        // Use target dimensions if available, otherwise use original
+        let targetWidth, targetHeight;
+        if (this.targetDimensions) {
+          targetWidth = this.targetDimensions.width;
+          targetHeight = this.targetDimensions.height;
+        } else {
+          targetWidth = quiltWidth;
+          targetHeight = quiltHeight;
+        }
         
-        const scale = window.app?.quiltScale || 1;
-        const scaledWidth = quiltWidth * scale;
-        const scaledHeight = quiltHeight * scale;
-        
-
-        
+        // Set viewBox to original quilt bounds (don't scale the content)
         this.quiltSVG.setAttribute('viewBox', `${minX} ${minY} ${quiltWidth} ${quiltHeight}`);
-        this.quiltSVG.setAttribute('width', scaledWidth);
-        this.quiltSVG.setAttribute('height', scaledHeight);
-        this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet'); // Changed to center alignment
         
-        // Remove explicit width/height styling to let CSS handle it
-        this.quiltSVG.style.width = 'auto';
-        this.quiltSVG.style.height = 'auto';
+        // Set SVG dimensions to target size (fits within viewport)
+        this.quiltSVG.setAttribute('width', targetWidth);
+        this.quiltSVG.setAttribute('height', targetHeight);
+        this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        
+        // Let CSS handle the responsive sizing
+        this.quiltSVG.style.width = '100%';
+        this.quiltSVG.style.height = '100%';
         this.quiltSVG.style.maxWidth = '100%';
         this.quiltSVG.style.maxHeight = '100%';
         
@@ -4422,6 +4451,95 @@
       // Admin console commands
       window.enableAdmin = () => app.enableAdminMode();
       window.disableAdmin = () => app.disableAdminMode();
+      
+      // Debug functions
+      window.debugContainers = () => {
+        const screenQuilt = document.getElementById('screen-quilt');
+        const quiltContainer = document.querySelector('.quilt-container');
+        const quilt = document.getElementById('quilt');
+        
+        if (screenQuilt && quiltContainer && quilt) {
+          console.log('🔍 Container Dimensions Debug:');
+          console.log('screen-quilt:', {
+            offsetTop: screenQuilt.offsetTop,
+            offsetHeight: screenQuilt.offsetHeight,
+            clientHeight: screenQuilt.clientHeight,
+            scrollTop: screenQuilt.scrollTop,
+            getBoundingClientRect: screenQuilt.getBoundingClientRect()
+          });
+          console.log('quilt-container:', {
+            offsetTop: quiltContainer.offsetTop,
+            offsetHeight: quiltContainer.offsetHeight,
+            clientHeight: quiltContainer.clientHeight,
+            scrollTop: quiltContainer.scrollTop,
+            getBoundingClientRect: quiltContainer.getBoundingClientRect()
+          });
+          console.log('quilt:', {
+            offsetTop: quilt.offsetTop,
+            offsetHeight: quilt.offsetHeight,
+            clientHeight: quilt.clientHeight,
+            getBoundingClientRect: quilt.getBoundingClientRect()
+          });
+        }
+      };
+      
+      window.debugQuiltEngine = () => {
+        if (window.app && window.app.quiltEngine) {
+          const engine = window.app.quiltEngine;
+          console.log('🧵 Quilt Engine Debug:');
+          console.log('Blocks count:', engine.blocks.length);
+          console.log('Quilt bounds:', engine.quiltBounds);
+          console.log('Target dimensions:', engine.targetDimensions);
+          console.log('Quilt scale:', window.app.quiltScale);
+          
+          if (engine.blocks.length > 0) {
+            const minX = Math.min(...engine.blocks.map(b => b.x));
+            const minY = Math.min(...engine.blocks.map(b => b.y));
+            const maxX = Math.max(...engine.blocks.map(b => b.x + b.width));
+            const maxY = Math.max(...engine.blocks.map(b => b.y + b.height));
+            console.log('Current block bounds:', {
+              minX, minY, maxX, maxY,
+              width: maxX - minX,
+              height: maxY - minY
+            });
+          }
+        }
+      };
+      
+      window.debugSVG = () => {
+        const quilt = document.getElementById('quilt');
+        if (quilt) {
+          console.log('🎨 SVG Debug:');
+          console.log('viewBox:', quilt.getAttribute('viewBox'));
+          console.log('width:', quilt.getAttribute('width'));
+          console.log('height:', quilt.getAttribute('height'));
+          console.log('preserveAspectRatio:', quilt.getAttribute('preserveAspectRatio'));
+          console.log('getBoundingClientRect:', quilt.getBoundingClientRect());
+          console.log('Computed styles:', {
+            width: getComputedStyle(quilt).width,
+            height: getComputedStyle(quilt).height,
+            position: getComputedStyle(quilt).position,
+            top: getComputedStyle(quilt).top,
+            left: getComputedStyle(quilt).left
+          });
+        }
+      };
+      
+      window.debugAll = () => {
+        console.log('🚀 === COMPREHENSIVE DEBUG ===');
+        debugContainers();
+        debugQuiltEngine();
+        debugSVG();
+        console.log('📱 Viewport:', {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          visualViewport: window.visualViewport ? {
+            width: window.visualViewport.width,
+            height: window.visualViewport.height
+          } : 'not available'
+        });
+        console.log('🎯 === END DEBUG ===');
+      };
     });
 
     console.log('🧵 Our Daily Quilt Beta - Loading...');
