@@ -666,7 +666,7 @@
     }
     
     .btn:hover { 
-      background: #000; color: #000 !important; 
+      background: #000; color: #fff !important; 
       transform: translateY(-1px);
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     }
@@ -2107,9 +2107,10 @@
             targetHeight = availableWidth / targetAspectRatio;
           }
         } else {
-          // Mobile: Use mobile aspect ratio
-          const availableWidth = currentViewportWidth;
-          const availableHeight = currentViewportHeight;
+          // Mobile: Use mobile aspect ratio with 2x breathing room
+          const breathingRoom = 0.5; // 50% of viewport for quilt, 50% for breathing room
+          const availableWidth = currentViewportWidth * breathingRoom;
+          const availableHeight = currentViewportHeight * breathingRoom;
           
           if (availableWidth / availableHeight > targetAspectRatio) {
             // Viewport is wider than target ratio
@@ -2524,6 +2525,12 @@
           if (!svgElement) {
             this.logger.warn('No SVG element found for thumbnail generation');
             return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDQwMCA0MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iNDAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjIwMCIgeT0iMjAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiI+Tm8gUXVpbHQ8L3RleHQ+Cjwvc3ZnPg==';
+          }
+
+          // SAFEGUARD: Check if SVG has content
+          if (!svgElement.children || svgElement.children.length === 0) {
+            this.logger.warn('SVG element has no children - using fallback thumbnail');
+            return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDQwMCA0MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iNDAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjIwMCIgeT0iMjAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiI+RW1wdHkgUXVpbHQ8L3RleHQ+Cjwvc3ZnPg==';
           }
 
           // Clone SVG to avoid modifying original
@@ -2958,7 +2965,7 @@
           { text: "The only thing that makes life possible is permanent, intolerable uncertainty; not knowing what comes next.", author: "Ursula K. Le Guin" },
           { text: "Curiosity is the engine of achievement.", author: "Sir Ken Robinson" },
           { text: "Let the beauty of what you love be what you do. There are a thousand ways to kneel and kiss the earth.", author: "Rumi" },
-          { text: "The journey of a thousand miles begins with one step.", author: "Lao Tzu" },
+
           { text: "I'm very interested in, 'What does it mean for us to cultivate together?' Community that allows for risk, the risk of knowing someone outside your own boundaries, the risk that is love.", author: "bell hooks" },
           { text: "A nation's culture resides in the hearts and in the soul of its people.", author: "Mahatma Gandhi" },
           { text: "Perfection is achieved, not when there is nothing more to add, but when there is nothing left to take away.", author: "Antoine de Saint-Exupéry" },
@@ -3704,6 +3711,19 @@
         }
       }
 
+      // Manual archive trigger for testing
+      async triggerManualArchive() {
+        this.logger.log('🔧 Manual archive triggered for testing...');
+        try {
+          const result = await this.performDailyArchive();
+          this.logger.log(`🔧 Manual archive result: ${result ? 'SUCCESS' : 'FAILED'}`);
+          return result;
+        } catch (error) {
+          this.logger.error('🔧 Manual archive error:', error);
+          return false;
+        }
+      }
+
       isCurrentUserAdmin() {
         const currentUserId = this.currentUserId;
         const adminUserIds = ['admin_zak']; // Add your specific admin user ID here
@@ -3937,9 +3957,82 @@
           
           // Create archive of current quilt
           if (this.quiltEngine.blocks.length > 1) { // Only archive if there are blocks beyond the initial one
-            await this.createArchiveSnapshot();
-            this.logger.log('📦 Archived current quilt successfully');
-            return true;
+            this.logger.log(`📦 Archiving quilt with ${this.quiltEngine.blocks.length} blocks...`);
+            
+            // SAFEGUARD 1: Backup current quilt data before archiving
+            const quiltBackup = {
+              blocks: JSON.parse(JSON.stringify(this.quiltEngine.blocks)),
+              submissionCount: this.quiltEngine.submissionCount,
+              timestamp: new Date().toISOString()
+            };
+            localStorage.setItem('quiltBackup_' + new Date().toDateString(), JSON.stringify(quiltBackup));
+            this.logger.log('📦 Created quilt backup before archiving');
+            
+            // SAFEGUARD 2: Try archive with retry logic
+            let archiveSuccess = false;
+            let retryCount = 0;
+            const maxRetries = 3;
+            
+            while (!archiveSuccess && retryCount < maxRetries) {
+              try {
+                await this.createArchiveSnapshot();
+                archiveSuccess = true;
+                this.logger.log(`📦 Archived current quilt successfully (attempt ${retryCount + 1})`);
+              } catch (archiveError) {
+                retryCount++;
+                this.logger.error(`❌ Archive attempt ${retryCount} failed:`, archiveError);
+                
+                if (retryCount < maxRetries) {
+                  this.logger.log(`🔄 Retrying archive in 2 seconds... (${retryCount}/${maxRetries})`);
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+              }
+            }
+            
+            if (!archiveSuccess) {
+              // SAFEGUARD 3: If all retries fail, create a minimal archive entry
+              this.logger.error('❌ All archive attempts failed - creating emergency backup');
+              try {
+                const today = new Date().toISOString().split('T')[0];
+                const emergencyEntry = {
+                  date: today,
+                  blocks: this.quiltEngine.blocks,
+                  quote: this.quoteService.getTodayQuote(),
+                  contributorCount: this.quiltEngine.submissionCount,
+                  thumbnail: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDQwMCA0MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iNDAwIiBmaWxsPSIjZmY2YjZiIi8+Cjx0ZXh0IHg9IjIwMCIgeT0iMjAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDAwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiI+RW1lcmdlbmN5IEJhY2t1cDwvdGV4dD4KPC9zdmc+',
+                  isEmergencyBackup: true
+                };
+                
+                // Store emergency backup in localStorage as fallback
+                const emergencyKey = `emergencyArchive_${today}`;
+                localStorage.setItem(emergencyKey, JSON.stringify(emergencyEntry));
+                this.logger.log('📦 Created emergency backup in localStorage');
+                
+                return false; // Archive failed but we have backup
+              } catch (emergencyError) {
+                this.logger.error('❌ Emergency backup also failed:', emergencyError);
+                return false;
+              }
+            }
+            
+            // SAFEGUARD 4: Verify archive was actually created
+            try {
+              const today = new Date().toISOString().split('T')[0];
+              const archives = await this.archiveService.getArchives(1);
+              const todayArchive = archives.find(archive => archive.date === today);
+              
+              if (todayArchive) {
+                this.logger.log('✅ Archive verification successful - archive found in database');
+                return true;
+              } else {
+                this.logger.error('❌ Archive verification failed - archive not found in database');
+                return false;
+              }
+            } catch (verifyError) {
+              this.logger.error('❌ Archive verification error:', verifyError);
+              return false;
+            }
+            
           } else {
             this.logger.log('📦 No quilt to archive (only initial block)');
             return true; // Consider this a success since there's nothing to archive
@@ -4539,6 +4632,17 @@
           } : 'not available'
         });
         console.log('🎯 === END DEBUG ===');
+      };
+
+      // Manual archive trigger for testing
+      window.triggerManualArchive = () => {
+        console.log('🔧 Manual archive trigger available');
+        if (window.app && window.app.triggerManualArchive) {
+          return window.app.triggerManualArchive();
+        } else {
+          console.error('❌ App not available for manual archive');
+          return false;
+        }
       };
     });
 
