@@ -477,6 +477,20 @@
     }
     
     @media (max-width: 768px) {
+      /* Lock orientation to portrait */
+      @media screen and (orientation: landscape) {
+        body {
+          transform: rotate(-90deg);
+          transform-origin: left top;
+          width: 100vh;
+          height: 100vw;
+          overflow-x: hidden;
+          position: absolute;
+          top: 100%;
+          left: 0;
+        }
+      }
+      
       #screen-color {
         padding: 0 !important;
         min-height: 100vh !important;
@@ -1201,6 +1215,25 @@
       transform: scale(0.95) !important;
     }
 
+    /* Mobile-specific admin button improvements */
+    @media (max-width: 768px) {
+      .floating-admin-btn {
+        width: 60px !important;
+        height: 60px !important;
+        font-size: 24px !important;
+        bottom: 30px !important;
+        right: 30px !important;
+        -webkit-tap-highlight-color: transparent !important;
+        touch-action: manipulation !important;
+        user-select: none !important;
+      }
+      
+      .floating-admin-btn:active {
+        transform: scale(0.9) !important;
+        background: #e8e4e0 !important;
+      }
+    }
+
     /* ===== ACCESSIBILITY ===== */
     @media (prefers-reduced-motion: reduce) {
       * {
@@ -1565,7 +1598,7 @@
           <h1 class="title-line">OUR DAILY</h1>
           <h1 class="title-line">QUILT</h1>
         </div>
-        <p class="date" id="date-text" aria-live="polite"></p>
+        <p class="date" id="date-text" aria-live="polite">Tuesday, August 19, 2025</p>
       </div>
       
       <div style="margin-top: 2rem;"></div>
@@ -2398,9 +2431,10 @@
 
       static getOrCreateUserId() {
         let userId = localStorage.getItem('ourDailyUserId');
-        // Force admin ID for testing - remove this line later
-        userId = 'admin_zak';
-        localStorage.setItem('ourDailyUserId', userId);
+        if (!userId) {
+          userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          localStorage.setItem('ourDailyUserId', userId);
+        }
         return userId;
       }
 
@@ -3322,7 +3356,9 @@
 
     // ===== QUOTE SERVICE =====
     class QuoteService {
-      constructor() {
+      constructor(firebaseInstance = null) {
+        this.firebase = firebaseInstance;
+        // Initialize with default quotes (will be replaced if Firestore load succeeds)
         this.quotes = [
           { text: "Art washes away from the soul the dust of everyday life.", author: "— Pablo Picasso" },
           { text: "Creativity takes courage.", author: "— Henri Matisse" },
@@ -3425,24 +3461,22 @@
 
       getTodayQuote() {
         const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        const todayString = `${year}-${month}-${day}`;
-        const dayIndex = Math.floor(new Date(todayString).getTime() / (1000 * 60 * 60 * 24));
+        const dayIndex = Math.floor(today.getTime() / (1000 * 60 * 60 * 24));
         const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
+        
+        console.log(`🔍 getTodayQuote: ${today.toDateString()} → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
+        
         return this.quotes[quoteIndex];
       }
 
       getQuoteForDate(dateString) {
         // dateString format: "2025-08-18"
         const date = new Date(dateString);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const dateStringFormatted = `${year}-${month}-${day}`;
-        const dayIndex = Math.floor(new Date(dateStringFormatted).getTime() / (1000 * 60 * 60 * 24));
+        const dayIndex = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
         const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
+        
+        console.log(`🔍 getQuoteForDate: ${dateString} → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
+        
         return this.quotes[quoteIndex];
       }
 
@@ -3515,6 +3549,53 @@
             console.log('Applied long-quote class');
           }
         }, 100);
+      }
+
+      // Load quotes from Firestore
+      async loadQuotesFromFirestore() {
+        try {
+          console.log('📚 Loading quotes from Firestore...');
+          
+          // Check if Firebase is available
+          if (!this.firebase) {
+            console.log('📚 Firebase not available, using default quotes');
+            return false;
+          }
+          
+          const doc = await this.firebase.firestore().collection('quotes').doc('daily').get();
+          
+          if (doc.exists && doc.data().quotes) {
+            this.quotes = doc.data().quotes;
+            console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
+            
+            // Update the display if we're on the quote screen
+            if (document.querySelector('.quote-line')) {
+              this.displayQuote();
+            }
+            
+            return true;
+          } else {
+            console.log('📚 No quotes found in Firestore, using defaults');
+            return false;
+          }
+          
+        } catch (error) {
+          console.error('❌ Error loading quotes from Firestore:', error);
+          
+          // Fallback to localStorage if available
+          try {
+            const savedQuotes = localStorage.getItem('ourDailyQuotes');
+            if (savedQuotes) {
+              this.quotes = JSON.parse(savedQuotes);
+              console.log('📚 Loaded quotes from localStorage fallback:', this.quotes.length, 'quotes');
+              return true;
+            }
+          } catch (localError) {
+            console.error('Error loading from localStorage:', localError);
+          }
+          
+          return false;
+        }
       }
     }
 
@@ -3690,7 +3771,7 @@
         this.uiService = new UIService(this.logger);
         this.errorHandler = new ErrorHandler(this.uiService, this.logger);
         this.dataService = new QuiltDataService(this.logger, this.errorHandler);
-        this.quoteService = new QuoteService();
+        this.quoteService = new QuoteService(window.firebaseApp);
         this.renderer = new QuiltRendererV2(this.logger);
         this.archiveService = new ArchiveService(this.logger, this.dataService);
         
@@ -3700,6 +3781,9 @@
         // App state
         this.currentUserId = Utils.getOrCreateUserId();
         this.quiltScale = 1;
+        
+        // Check for secret admin URL parameter
+        this.checkSecretAdminAccess();
         
         // Color picker state
         this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
@@ -3871,6 +3955,9 @@
           
           // Initialize UI after portal is shown
           this.initializeUI();
+          
+          // Load quotes from Firestore
+          await this.quoteService.loadQuotesFromFirestore();
           
           this.setupAutoTransition();
           this.setupDailyReset();
@@ -4129,13 +4216,24 @@
           if (isAdmin) {
             adminBtn.style.display = 'flex';
             console.log('🔧 Admin button shown');
-            if (!adminBtn.hasAttribute('data-admin-initialized')) {
-              adminBtn.addEventListener('click', () => {
-                console.log('🔧 Admin button clicked');
-                this.showAdminMenu();
-              });
-              adminBtn.setAttribute('data-admin-initialized', 'true');
-            }
+            
+            // Remove any existing listeners to prevent duplicates
+            adminBtn.removeEventListener('click', this.handleAdminButtonClick);
+            adminBtn.removeEventListener('touchstart', this.handleAdminButtonClick);
+            
+            // Add both click and touchstart for better mobile support
+            this.handleAdminButtonClick = () => {
+              console.log('🔧 Admin button clicked/touched');
+              this.showAdminMenu();
+            };
+            
+            adminBtn.addEventListener('click', this.handleAdminButtonClick);
+            adminBtn.addEventListener('touchstart', this.handleAdminButtonClick);
+            
+            // Ensure the button is clickable
+            adminBtn.style.pointerEvents = 'auto';
+            adminBtn.style.cursor = 'pointer';
+            
           } else {
             adminBtn.style.display = 'none';
             console.log('🔧 Admin button hidden');
@@ -4300,12 +4398,17 @@
 
       isCurrentUserAdmin() {
         const currentUserId = this.currentUserId;
-        const adminUserIds = ['admin_zak']; // Add your specific admin user ID here
         const isAdminFlag = localStorage.getItem('ourDailyIsAdmin') === 'true';
-        const adminEmails = ['zak@example.com']; // Add your email if needed
         
-        // Check if current user is in admin list or has admin flag
-        return isAdminFlag || adminUserIds.includes(currentUserId);
+        // Check if admin flag is set (you can enable this via console)
+        if (isAdminFlag) {
+          return true;
+        }
+        
+        // For development/testing, you can enable admin mode by running in console:
+        // localStorage.setItem('ourDailyIsAdmin', 'true'); location.reload();
+        
+        return false;
       }
 
       enableAdminMode() {
@@ -4327,6 +4430,560 @@
         }
       }
 
+      // Secret function to enable admin mode - call from console: app.enableAdminSecret()
+      enableAdminSecret() {
+        localStorage.setItem('ourDailyIsAdmin', 'true');
+        this.uiService.showToast('🔧 Admin mode enabled!');
+        this.setupFloatingAdminButton();
+        console.log('🔧 Admin mode enabled. You can now access admin controls.');
+      }
+
+      // Debug function to test admin button - call from console: app.debugAdminButton()
+      debugAdminButton() {
+        const adminBtn = document.getElementById('floatingAdminBtn');
+        console.log('🔧 Admin button debug:', {
+          element: adminBtn,
+          display: adminBtn ? adminBtn.style.display : 'not found',
+          isAdmin: this.isCurrentUserAdmin(),
+          hasClickListeners: adminBtn ? adminBtn.onclick : 'no element',
+          pointerEvents: adminBtn ? adminBtn.style.pointerEvents : 'no element'
+        });
+        
+        if (adminBtn) {
+          // Force re-setup
+          this.setupFloatingAdminButton();
+          console.log('🔧 Admin button re-setup complete');
+        }
+      }
+
+      // Check for secret admin access via URL parameter
+      checkSecretAdminAccess() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const secretAdmin = urlParams.get('admin');
+        
+        if (secretAdmin === 'zak2024') {
+          localStorage.setItem('ourDailyIsAdmin', 'true');
+          this.uiService.showToast('🔧 Admin mode enabled via URL!');
+          console.log('🔧 Admin mode enabled via secret URL parameter');
+          
+          // Remove the parameter from URL without reloading
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        }
+      }
+
+      // Quote Management Functions
+      showQuoteManager() {
+        // Get next 7 days of quotes
+        const next7Days = this.getNext7DaysQuotes();
+        let quotesHTML = '';
+        
+        next7Days.forEach((dayData, index) => {
+          const { date, quote, dayName } = dayData;
+          quotesHTML += `
+            <div class="quote-day-item" data-index="${dayData.originalIndex}">
+              <div class="day-header">
+                <span class="day-name">${dayName}</span>
+                <span class="day-date">${date}</span>
+              </div>
+              <div class="quote-content">
+                <div class="quote-text">"${quote.text}"</div>
+                <div class="quote-author">— ${quote.author}</div>
+              </div>
+              <div class="quote-actions">
+                <button onclick="app.editQuoteForDay(${index})" class="edit-btn">Edit</button>
+                <button onclick="app.deleteQuoteForDay(${index})" class="delete-btn">Delete</button>
+                <button onclick="app.swapWithPrevious(${index})" class="swap-btn" ${index === 0 ? 'disabled' : ''}>↑</button>
+                <button onclick="app.swapWithNext(${index})" class="swap-btn" ${index === 6 ? 'disabled' : ''}>↓</button>
+              </div>
+            </div>
+          `;
+        });
+        
+        const modal = document.createElement('div');
+        modal.className = 'quote-manager-modal';
+        modal.innerHTML = `
+          <div class="quote-manager-content">
+            <h3>Next 7 Days Quotes</h3>
+            <div class="quote-list">
+              ${quotesHTML}
+            </div>
+            <div class="quote-manager-actions">
+              <button onclick="app.saveQuotesToFirestore()" class="save-btn">Save Changes</button>
+              <button onclick="this.parentElement.parentElement.parentElement.remove()" class="close-btn">Close</button>
+            </div>
+          </div>
+        `;
+        
+        modal.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.8);
+          z-index: 1002;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        `;
+        
+        const content = modal.querySelector('.quote-manager-content');
+        content.style.cssText = `
+          background: white;
+          border-radius: 8px;
+          padding: 20px;
+          max-width: 600px;
+          max-height: 80vh;
+          overflow-y: auto;
+          width: 100%;
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Add CSS for quote items
+        const style = document.createElement('style');
+        style.textContent = `
+          .quote-day-item {
+            border: 1px solid #ddd;
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: #f9f9f9;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          }
+          .day-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+          }
+          .day-name {
+            font-weight: bold;
+            color: #333;
+            font-size: 16px;
+          }
+          .day-date {
+            color: #666;
+            font-size: 14px;
+            background: #e0e0e0;
+            padding: 2px 8px;
+            border-radius: 12px;
+          }
+          .quote-content {
+            margin-bottom: 10px;
+          }
+          .quote-text {
+            font-style: italic;
+            margin-bottom: 5px;
+            font-size: 14px;
+            line-height: 1.4;
+          }
+          .quote-author {
+            font-weight: bold;
+            color: #666;
+            font-size: 12px;
+          }
+          .quote-actions {
+            display: flex;
+            gap: 5px;
+            justify-content: flex-end;
+          }
+          .quote-actions button {
+            padding: 4px 8px;
+            font-size: 11px;
+            border: 1px solid #ccc;
+            background: white;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s;
+          }
+          .quote-actions button:hover {
+            background: #f0f0f0;
+            transform: translateY(-1px);
+          }
+          .quote-actions button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+          }
+          .edit-btn { color: #0066cc; }
+          .delete-btn { color: #cc0000; }
+          .swap-btn { color: #666; }
+          .save-btn { background: #2196F3; color: white; padding: 8px 16px; }
+          .close-btn { background: #666; color: white; padding: 8px 16px; }
+          .quote-manager-actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+          }
+          .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-align: center;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      editQuote(index) {
+        const quote = this.quoteService.quotes[index];
+        const newText = prompt('Edit quote text:', quote.text);
+        if (newText !== null) {
+          const newAuthor = prompt('Edit author:', quote.author.replace('— ', ''));
+          if (newAuthor !== null) {
+            this.quoteService.quotes[index] = {
+              text: newText,
+              author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
+            };
+            this.uiService.showToast(`Quote updated`);
+            this.showQuoteManager(); // Refresh the manager
+          }
+        }
+      }
+
+      // Edit quote for a specific day (used by the 7-day manager)
+      editQuoteForDay(dayIndex) {
+        const next7Days = this.getNext7DaysQuotes();
+        const dayData = next7Days[dayIndex];
+        const quote = dayData.quote;
+        
+        const newText = prompt('Edit quote text:', quote.text);
+        if (newText !== null) {
+          const newAuthor = prompt('Edit author:', quote.author.replace('— ', ''));
+          if (newAuthor !== null) {
+            // Update the quote in the quotes array using the original index
+            this.quoteService.quotes[dayData.originalIndex] = {
+              text: newText,
+              author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
+            };
+            this.uiService.showToast(`Quote for ${dayData.dayName} updated`);
+            this.showQuoteManager(); // Refresh the manager
+          }
+        }
+      }
+
+      removeQuote(index) {
+        if (confirm(`Are you sure you want to remove this quote?\n\n"${this.quoteService.quotes[index].text}"\n— ${this.quoteService.quotes[index].author}`)) {
+          this.quoteService.quotes.splice(index, 1);
+          this.uiService.showToast(`Quote ${index + 1} removed`);
+          this.showQuoteManager(); // Refresh the manager
+        }
+      }
+
+      moveQuoteUp(index) {
+        if (index > 0) {
+          const temp = this.quoteService.quotes[index];
+          this.quoteService.quotes[index] = this.quoteService.quotes[index - 1];
+          this.quoteService.quotes[index - 1] = temp;
+          this.uiService.showToast(`Quote moved up`);
+          this.showQuoteManager(); // Refresh the manager
+        }
+      }
+
+      moveQuoteDown(index) {
+        if (index < this.quoteService.quotes.length - 1) {
+          const temp = this.quoteService.quotes[index];
+          this.quoteService.quotes[index] = this.quoteService.quotes[index + 1];
+          this.quoteService.quotes[index + 1] = temp;
+          this.uiService.showToast(`Quote moved down`);
+          this.showQuoteManager(); // Refresh the manager
+        }
+      }
+
+      replaceQuote(index) {
+        const currentQuote = this.quoteService.quotes[index];
+        const newText = prompt('Enter new quote text:', currentQuote.text);
+        if (newText !== null) {
+          const newAuthor = prompt('Enter new author:', currentQuote.author.replace('— ', ''));
+          if (newAuthor !== null) {
+            this.quoteService.quotes[index] = {
+              text: newText,
+              author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
+            };
+            this.uiService.showToast(`Quote replaced`);
+            this.showQuoteManager(); // Refresh the manager
+          }
+        }
+      }
+
+      // Delete quote for a specific day (used by the 7-day manager)
+      deleteQuoteForDay(dayIndex) {
+        const next7Days = this.getNext7DaysQuotes();
+        const dayData = next7Days[dayIndex];
+        const quote = dayData.quote;
+        
+        if (confirm(`Are you sure you want to delete this quote?\n\n"${quote.text}"\n${quote.author}\n\nThis will remove it from the rotation and another quote will automatically appear for ${dayData.dayName}.`)) {
+          // Remove the quote from the quotes array
+          this.quoteService.quotes.splice(dayData.originalIndex, 1);
+          
+          // Update the shuffled indexes to account for the removed quote
+          this.quoteService.shuffledIndexes = this.quoteService.shuffledIndexes.map(index => {
+            if (index > dayData.originalIndex) {
+              return index - 1; // Shift down indexes after the deleted quote
+            }
+            return index;
+          });
+          
+          this.uiService.showToast(`Quote deleted. New quote will appear for ${dayData.dayName}.`);
+          this.showQuoteManager(); // Refresh the manager
+        }
+      }
+
+      swapWithPrevious(dayIndex) {
+        if (dayIndex <= 0) return; // Can't swap the first day
+        
+        const next7Days = this.getNext7DaysQuotes();
+        const currentDay = next7Days[dayIndex];
+        const previousDay = next7Days[dayIndex - 1];
+        
+        // Calculate the actual day indices for the shuffled array
+        const today = new Date();
+        const currentDate = new Date(today);
+        currentDate.setDate(today.getDate() + currentDay.dayIndex);
+        const previousDate = new Date(today);
+        previousDate.setDate(today.getDate() + previousDay.dayIndex);
+        
+        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
+        const previousDayIndex = Math.floor(previousDate.getTime() / (1000 * 60 * 60 * 24));
+        
+        // Swap the quotes in the shuffled indexes
+        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
+          this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
+        
+        this.uiService.showToast(`Swapped quotes for ${previousDay.dayName} and ${currentDay.dayName}`);
+        this.showQuoteManager(); // Refresh the manager
+      }
+
+      swapWithNext(dayIndex) {
+        if (dayIndex >= 6) return; // Can't swap the last day
+        
+        const next7Days = this.getNext7DaysQuotes();
+        const currentDay = next7Days[dayIndex];
+        const nextDay = next7Days[dayIndex + 1];
+        
+        // Calculate the actual day indices for the shuffled array
+        const today = new Date();
+        const currentDate = new Date(today);
+        currentDate.setDate(today.getDate() + currentDay.dayIndex);
+        const nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + nextDay.dayIndex);
+        
+        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
+        const nextDayIndex = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24));
+        
+        // Swap the quotes in the shuffled indexes
+        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
+          this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
+        
+        this.uiService.showToast(`Swapped quotes for ${currentDay.dayName} and ${nextDay.dayName}`);
+        this.showQuoteManager(); // Refresh the manager
+      }
+
+      addNewQuote() {
+        const text = prompt('Enter new quote text:');
+        if (text) {
+          const author = prompt('Enter author:');
+          if (author) {
+            this.quoteService.quotes.push({
+              text: text,
+              author: author.startsWith('— ') ? author : `— ${author}`
+            });
+            this.uiService.showToast('New quote added');
+            this.showQuoteManager(); // Refresh the manager
+          }
+        }
+      }
+
+      async saveQuotesToFirestore() {
+        try {
+          // Show loading state
+          this.uiService.showToast('Saving quotes to database...');
+          
+          // Save to Firestore
+          await this.quoteService.firebase.firestore().collection('quotes').doc('daily').set({
+            quotes: this.quoteService.quotes,
+            updatedAt: new Date(),
+            updatedBy: this.currentUserId
+          });
+          
+          this.uiService.showToast('✅ Quotes saved to database! All users will see changes.');
+          console.log('💾 Quotes saved to Firestore:', this.quoteService.quotes.length, 'quotes');
+          
+        } catch (error) {
+          this.uiService.showToast('❌ Error saving quotes to database');
+          console.error('Error saving quotes to Firestore:', error);
+          
+          // Fallback to localStorage
+          try {
+            localStorage.setItem('ourDailyQuotes', JSON.stringify(this.quoteService.quotes));
+            this.uiService.showToast('⚠️ Saved to localStorage as fallback');
+          } catch (localError) {
+            console.error('Error saving to localStorage:', localError);
+          }
+        }
+      }
+
+      showTodayQuote() {
+        const todayQuote = this.quoteService.getTodayQuote();
+        alert(`Today's Quote:\n\n"${todayQuote.text}"\n${todayQuote.author}`);
+      }
+
+      // Get next 7 days of quotes with dates
+      getNext7DaysQuotes() {
+        const next7Days = [];
+        const today = new Date();
+        
+        console.log(`🔍 getNext7DaysQuotes - Today: ${today.toDateString()}`);
+        
+        for (let i = 1; i <= 7; i++) { // Start from tomorrow (i=1) instead of today (i=0)
+          const futureDate = new Date(today);
+          futureDate.setDate(today.getDate() + i);
+          
+          const year = futureDate.getFullYear();
+          const month = String(futureDate.getMonth() + 1).padStart(2, '0');
+          const day = String(futureDate.getDate()).padStart(2, '0');
+          const dateString = `${year}-${month}-${day}`;
+          
+          console.log(`🔍 Day ${i}: ${futureDate.toDateString()} → ${dateString}`);
+          
+          const quote = this.quoteService.getQuoteForDate(dateString);
+          const dayIndex = Math.floor(futureDate.getTime() / (1000 * 60 * 60 * 24));
+          const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
+          
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const dayName = dayNames[futureDate.getDay()];
+          
+          next7Days.push({
+            date: `${month}/${day}`,
+            dayName: dayName,
+            quote: quote,
+            originalIndex: quoteIndex,
+            dayIndex: i // Use the loop index (1-7) instead of the absolute day index
+          });
+        }
+        
+        return next7Days;
+      }
+
+      // Reset quotes to defaults
+      async resetQuotesToDefaults() {
+        if (confirm('Are you sure you want to reset all quotes to the original defaults? This will remove all custom quotes.')) {
+          // Reset to original quotes array
+          this.quoteService.quotes = [
+            { text: "Art washes away from the soul the dust of everyday life.", author: "— Pablo Picasso" },
+            { text: "Creativity takes courage.", author: "— Henri Matisse" },
+            { text: "Every artist was first an amateur.", author: "— Ralph Waldo Emerson" },
+            { text: "Color is the keyboard, the eyes are the harmonies, the soul is the piano with many strings.", author: "— Wassily Kandinsky" },
+            { text: "Great things are done by a series of small things brought together.", author: "— Vincent Van Gogh" },
+            { text: "You can't use up creativity. The more you use, the more you have.", author: "Maya Angelou" },
+            { text: "Every time I have had a problem, I have confronted it with the ax of art.", author: "Yayoi Kusama" },
+            { text: "I found I could say things with color and shapes that I couldn't say any other way – things I had no words for.", author: "Georgia O'Keeffe" },
+            { text: "I love creation more than life, and I must express myself before disappearing.", author: "Sonia Delaunay" },
+            { text: "The job of the artist is always to deepen the mystery.", author: "Francis Bacon" },
+            { text: "The most important relationship in your life is the relationship you have with yourself.", author: "Diane von Furstenberg" },
+            { text: "There is a vitality, a life force, an energy, a quickening that is translated through you into action, and because there is only one of you in all time, this expression is unique.", author: "Martha Graham" },
+            { text: "If there is a book that you want to read, but it hasn't been written yet, you must be the one to write it.", author: "Toni Morrison" },
+            { text: "Creativity doesn't wait for that perfect moment. It fashions its own perfect moments out of ordinary ones.", author: "Elizabeth Gilbert" },
+            { text: "I think, at a child's birth, if a mother could ask a fairy godmother to endow it with the most useful gift, that gift would be curiosity.", author: "Eleanor Roosevelt" },
+            { text: "Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world.", author: "Albert Einstein" },
+            { text: "The beauty of a living thing is not the atoms that go into it, but the way those atoms are put together.", author: "Carl Sagan" },
+            { text: "Let your curiosity be greater than your fear.", author: "Pema Chödrön" },
+            { text: "Study hard what interests you the most in the most undisciplined, irreverent and original manner possible.", author: "Richard Feynman" },
+            { text: "Research is formalized curiosity. It is poking and prying with a purpose.", author: "Zora Neale Hurston" },
+            { text: "It is always with excitement that I wake up in the morning wondering what my intuition will toss up to me, like gifts from the sea.", author: "Jonas Salk" },
+            { text: "The only thing that makes life possible is permanent, intolerable uncertainty; not knowing what comes next.", author: "Ursula K. Le Guin" },
+            { text: "Curiosity is the engine of achievement.", author: "Sir Ken Robinson" },
+            { text: "Let the beauty of what you love be what you do. There are a thousand ways to kneel and kiss the earth.", author: "Rumi" },
+            { text: "I'm very interested in, 'What does it mean for us to cultivate together?' Community that allows for risk, the risk of knowing someone outside your own boundaries, the risk that is love.", author: "bell hooks" },
+            { text: "A nation's culture resides in the hearts and in the soul of its people.", author: "Mahatma Gandhi" },
+            { text: "Perfection is achieved, not when there is nothing more to add, but when there is nothing left to take away.", author: "Antoine de Saint-Exupéry" },
+            { text: "The butterfly counts not months but moments, and has time enough.", author: "Rabindranath Tagore" },
+            { text: "To fly, we have to have resistance.", author: "Maya Lin" },
+            { text: "Not everything that is faced can be changed, but nothing can be changed until it is faced.", author: "James Baldwin" },
+            { text: "There's nothing new under the sun, but there are new suns.", author: "Octavia Butler" },
+            { text: "Never doubt that a small group of thoughtful, committed citizens can change the world; indeed, it's the only thing that ever has.", author: "Margaret Mead" },
+            { text: "There is no such thing as a single-issue struggle because we do not live single-issue lives.", author: "Audre Lorde" },
+            { text: "Every moment is an organizing opportunity, every person a potential activist, every minute a chance to change the world.", author: "Dolores Huerta" },
+            { text: "We don't have to engage in grand, heroic actions to participate in the process of change. Small acts, when multiplied by millions of people, can transform the world.", author: "Howard Zinn" },
+            { text: "When the whole world is silent, even one voice becomes powerful.", author: "Malala Yousafzai" },
+            { text: "Activism is my rent for living on the planet.", author: "Alice Walker" },
+            { text: "We are the leaders we've been waiting for.", author: "Grace Lee Boggs" },
+            { text: "Do your little bit of good where you are; it's those little bits of good put together that overwhelm the world.", author: "Desmond Tutu" },
+            { text: "What you do makes a difference, and you have to decide what kind of difference you want to make.", author: "Jane Goodall" },
+            { text: "You never change things by fighting the existing reality. To change something, build a new model that makes the existing model obsolete.", author: "Buckminster Fuller" },
+            { text: "Like what you do, and then you will do your best.", author: "Katherine Johnson" },
+            { text: "The present is theirs; the future, for which I really worked, is mine.", author: "Nikola Tesla" },
+            { text: "Cities have the capability of providing something for everybody, only because, and only when, they are created by everybody.", author: "Jane Jacobs" },
+            { text: "In every outthrust headland, in every curving beach, in every grain of sand there is the story of the earth.", author: "Rachel Carson" },
+            { text: "What the people want is very simple - they want an America as good as its promise.", author: "Barbara Jordan" },
+            { text: "In nature's economy the currency is not money, it is life.", author: "Vandana Shiva" },
+            { text: "When we plant trees, we plant the seeds of peace and seeds of hope.", author: "Wangari Maathai" },
+            { text: "No one is born fully-formed: it is through self-experience in the world that we become what we are.", author: "Paulo Freire" },
+            { text: "Turn your wounds into wisdom.", author: "Oprah Winfrey" },
+            { text: "Courage doesn't always roar. Sometimes courage is the quiet voice at the end of the day saying 'I will try again tomorrow.'", author: "Mary Anne Radmacher" },
+            { text: "I fight pain, anxiety, and fear every day, and the only method I have found that relieves my illness is to keep creating art.", author: "Yayoi Kusama" },
+            { text: "To heal is to touch with love that which we previously touched with fear.", author: "Stephen Levine" },
+            { text: "I am better off healed than I ever was unbroken.", author: "Beth Moore" },
+            { text: "Everything can be taken from a man but one thing: the last of the human freedoms—to choose one's attitude in any given set of circumstances.", author: "Viktor Frankl" },
+            { text: "The purpose of life is not to be happy. It is to be useful, to be honorable, to be compassionate, to have it make some difference that you have lived and lived well.", author: "Ralph Waldo Emerson" },
+            { text: "Let yourself be silently drawn by the strange pull of what you really love. It will not lead you astray.", author: "Rumi" },
+            { text: "Follow your bliss and the universe will open doors where there were only walls.", author: "Joseph Campbell" },
+            { text: "A musician must make music, an artist must paint, a poet must write, if he is to be ultimately happy. What a man can be, he must be.", author: "Abraham Maslow" },
+            { text: "At every moment you choose yourself. But do you choose your self? Body and soul contain a thousand possibilities out of which you can build many I's.", author: "Dag Hammarskjöld" },
+            { text: "We are the myths we tell ourselves about ourselves.", author: "Jean Houston" },
+            { text: "A vocation is not a career that you choose for yourself. A vocation is a calling that you discover by listening to the voice of vocation within you.", author: "Parker Palmer" },
+            { text: "Attention is the rarest and purest form of generosity.", author: "Simone Weil" },
+            { text: "Waking up this morning, I smile. Twenty-four brand new hours are before me. I vow to live fully in each moment.", author: "Thích Nhất Hạnh" },
+            { text: "The privilege of a lifetime is to become who you truly are.", author: "Carl Jung" },
+            { text: "I define connection as the energy that exists between people when they feel seen, heard, and valued; when they can give and receive without judgment.", author: "Brené Brown" },
+            { text: "Perhaps the secret of living well is not in having all the answers but in pursuing unanswerable questions in good company.", author: "Rachel Naomi Remen" },
+            { text: "All real living is meeting.", author: "Martin Buber" },
+            { text: "We humans are social beings. We come into the world as the result of others' actions. We survive here in dependence on others.", author: "The Dalai Lama" },
+            { text: "Sometimes people try to destroy you, precisely because they recognize your power.", author: "bell hooks" },
+            { text: "When you understand that being connected to others is one of life's greatest joys, you realize that life's best comes when you initiate and invest in solid relationships.", author: "John C. Maxwell" },
+            { text: "Healing yourself is connected with healing others.", author: "Yoko Ono" },
+            { text: "Relationships are all there is. Everything in the universe only exists because it is in relationship to everything else.", author: "Margaret J. Wheatley" },
+            { text: "When you take one step to reach out to people, when you meet with others and share their thoughts and sufferings, infinite compassion and wisdom well up within your heart.", author: "Daisaku Ikeda" },
+            { text: "We now accept the fact that learning is a lifelong process of keeping abreast of change. And the most pressing task is to teach people how to learn.", author: "Peter Drucker" },
+            { text: "The illiterate of the 21st century will not be those who cannot read and write, but those who cannot learn, unlearn, and relearn.", author: "Alvin Toffler" },
+            { text: "Those people who develop the ability to continuously acquire new and better forms of knowledge that they can apply to their work and to their lives will be the movers and shakers in our society for the indefinite future.", author: "Brian Tracy" },
+            { text: "The purpose of learning is growth, and our minds, unlike our bodies, can continue growing as we continue to live.", author: "Mortimer Adler" },
+            { text: "The good thing about science is that it's true whether or not you believe in it. But the great thing about learning is that it makes you more capable of reducing the suffering of others.", author: "Neil deGrasse Tyson" },
+            { text: "I have learned that each and every piece of cloth embodies the spirit, skill, and personal history of an individual weaver… It ties together with an endless thread the emotional life of my people.", author: "Nilda Callañaupa Alvarez" },
+            { text: "I wanted to tell my story through fabric because it was a medium that was accessible to me as a woman and as an African American.", author: "Faith Ringgold" },
+            { text: "Come stitch next to me, and I'll tell you a story.", author: "Sonya Clark" },
+            { text: "Fabric is a material that forgives. You can always mend, patch, darn, and transform it into something new.", author: "Louise Bourgeois" },
+            { text: "We must learn inner solitude wherever or with whomsoever we may be. We must learn to penetrate things and find God in them.", author: "Anni Albers" },
+            { text: "Thread has the potential to unite, to heal, to provide a soft structure in a hard world.", author: "Sheila Hicks" },
+            { text: "The loom is the universe in miniature—warp and weft, the essential crossing that creates all structure, all meaning.", author: "Lenore Tawney" },
+            { text: "Western art tradition values fine art practices such as painting, mostly done by men and on canvas. Bringing these techniques into the gallery space allows me to question the hierarchy in the Western art world.", author: "Hale Ekinci" },
+            { text: "The true measure of our commitment to justice, the character of our society, our commitment to the rule of law, fairness, and equality cannot be measured by how we treat the rich, the powerful, the privileged, and the respected among us.", author: "Bryan Stevenson" },
+            { text: "We cannot seek achievement for ourselves and forget about the progress and prosperity for our community.", author: "Dolores Huerta" },
+            { text: "If you see something that is not right, not fair, not just, you have a moral obligation to do something about it.", author: "John Lewis" },
+            { text: "Trauma happens in relationship, so does healing.", author: "Tarana Burke" },
+            { text: "Real change requires real relationships. And real relationships require that we tell the truth about our experiences.", author: "Alicia Garza" },
+            { text: "Care is the strategy. Care is what we need more of in this world. Care is revolutionary.", author: "Ai-jen Poo" },
+            { text: "We accomplish nothing if we say nothing. We accomplish nothing if we do nothing. And we accomplish nothing if we know nothing.", author: "Stacey Abrams" }
+          ];
+          
+          // Save to Firestore
+          await this.saveQuotesToFirestore();
+          this.uiService.showToast('✅ Quotes reset to defaults and saved to database');
+        }
+      }
+
+
+
       showAdminMenu() {
         const menu = document.createElement('div');
         menu.className = 'admin-menu';
@@ -4334,13 +4991,14 @@
           <div class="admin-menu-content">
             <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
-            <button onclick="app.handleLoadMainQuilt()">Load Main Quilt (100 squares)</button>
-            <button onclick="app.handleShowMyPiece()">Show My Piece</button>
-            <button onclick="app.handleTestDifferentUser()">Simulate Different User</button>
+            <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <button onclick="app.handleCreateTestArchives()">Archive Current Quilt</button>
-            <button onclick="app.handleTestDailyReset()">Test Daily Reset</button>
             <button onclick="app.showNextWeekQuotes()">Show Next 7 Days Quotes</button>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
+            <h4>Quote Management</h4>
+            <button onclick="app.showQuoteManager()">Manage Quotes</button>
+            <button onclick="app.showTodayQuote()">Show Today's Quote</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
         `;
@@ -4431,9 +5089,8 @@
             localStorage.setItem('ourDailyLastVisitDate', currentDate);
             this.uiService.showScreen('screen-welcome');
           } else if (isNewDay) {
-            console.log('🔄 Returning user on new day - resetting quilt and showing quote screen');
+            console.log('🔄 Returning user on new day - showing quote screen');
             localStorage.setItem('ourDailyLastVisitDate', currentDate);
-            await this.resetQuiltForNewDay();
             this.uiService.showScreen('screen-quote');
           } else {
             console.log('🔄 Returning user on same day - showing quote screen directly');
@@ -4885,6 +5542,200 @@
         }
       }
 
+      async handleAddColorFamilyBlocks() {
+        try {
+          // Analyze current quilt to find most common color family
+          const colorFamilies = this.analyzeColorFamilies();
+          
+          if (colorFamilies.length === 0) {
+            this.uiService.showToast('No color families found in current quilt');
+            return;
+          }
+          
+          const dominantFamily = colorFamilies[0]; // Most common family
+          const shades = this.generateColorFamilyShades(dominantFamily.baseColor, 10);
+          
+          console.log('🎨 Adding 10 blocks in color family:', dominantFamily.name, 'shades:', shades);
+          
+          // Add 10 blocks with different shades
+          for (let i = 0; i < 10; i++) {
+            const result = this.quiltEngine.addColor(shades[i]);
+            
+            if (result) {
+              // Find the new block for animation
+              let newBlockIndex = -1;
+              if (result.newBlocks && result.newBlocks.length > 0) {
+                const newBlock = result.newBlocks.find(block => block.color === shades[i]);
+                if (newBlock) {
+                  newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === newBlock.id);
+                }
+              } else if (result.id) {
+                newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === result.id);
+              }
+              
+              // Set the last added index for animation
+              if (newBlockIndex !== -1) {
+                this.renderer.setLastAddedIndex(newBlockIndex);
+              }
+            }
+          }
+          
+          this.renderQuilt();
+          await this.saveQuilt();
+          
+          this.uiService.showToast(`Added 10 blocks in ${dominantFamily.name} family`);
+          
+        } catch (error) {
+          this.errorHandler.handleError(error, 'addColorFamilyBlocks');
+        }
+      }
+
+      analyzeColorFamilies() {
+        const colorCounts = {};
+        const familyCounts = {};
+        
+        // Count each color and determine its family
+        this.quiltEngine.blocks.forEach(block => {
+          const color = block.color;
+          colorCounts[color] = (colorCounts[color] || 0) + 1;
+          
+          const family = this.getColorFamily(color);
+          if (!familyCounts[family.name]) {
+            familyCounts[family.name] = {
+              name: family.name,
+              baseColor: family.baseColor,
+              count: 0,
+              colors: []
+            };
+          }
+          familyCounts[family.name].count += 1;
+          if (!familyCounts[family.name].colors.includes(color)) {
+            familyCounts[family.name].colors.push(color);
+          }
+        });
+        
+        // Convert to array and sort by count
+        const families = Object.values(familyCounts).sort((a, b) => b.count - a.count);
+        
+        console.log('🎨 Color family analysis:', families);
+        return families;
+      }
+
+      getColorFamily(color) {
+        // Convert hex to HSL for better color family detection
+        const hsl = this.hexToHsl(color);
+        const hue = hsl.h;
+        const saturation = hsl.s;
+        const lightness = hsl.l;
+        
+        // Define color families based on hue ranges
+        if (hue >= 0 && hue < 30) return { name: 'Red', baseColor: '#ff6b6b' };
+        if (hue >= 30 && hue < 60) return { name: 'Orange', baseColor: '#ffa726' };
+        if (hue >= 60 && hue < 90) return { name: 'Yellow', baseColor: '#ffeb3b' };
+        if (hue >= 90 && hue < 150) return { name: 'Green', baseColor: '#4caf50' };
+        if (hue >= 150 && hue < 210) return { name: 'Cyan', baseColor: '#00bcd4' };
+        if (hue >= 210 && hue < 270) return { name: 'Blue', baseColor: '#2196f3' };
+        if (hue >= 270 && hue < 330) return { name: 'Magenta', baseColor: '#e91e63' };
+        if (hue >= 330 && hue < 360) return { name: 'Pink', baseColor: '#ff9ff3' };
+        
+        // Fallback for grays/whites/blacks
+        if (saturation < 0.1) {
+          if (lightness > 0.8) return { name: 'White', baseColor: '#ffffff' };
+          if (lightness < 0.2) return { name: 'Black', baseColor: '#000000' };
+          return { name: 'Gray', baseColor: '#9e9e9e' };
+        }
+        
+        return { name: 'Other', baseColor: color };
+      }
+
+      hexToHsl(hex) {
+        // Remove # if present
+        hex = hex.replace('#', '');
+        
+        // Convert hex to RGB
+        const r = parseInt(hex.substr(0, 2), 16) / 255;
+        const g = parseInt(hex.substr(2, 2), 16) / 255;
+        const b = parseInt(hex.substr(4, 2), 16) / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h, s, l = (max + min) / 2;
+        
+        if (max === min) {
+          h = s = 0; // achromatic
+        } else {
+          const d = max - min;
+          s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+          
+          switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+          }
+          h /= 6;
+        }
+        
+        return {
+          h: h * 360,
+          s: s,
+          l: l
+        };
+      }
+
+      generateColorFamilyShades(baseColor, count) {
+        const hsl = this.hexToHsl(baseColor);
+        const shades = [];
+        
+        for (let i = 0; i < count; i++) {
+          // Generate variations by adjusting lightness and saturation
+          const variation = i / (count - 1); // 0 to 1
+          
+          let newLightness = hsl.l + (variation - 0.5) * 0.4; // Vary lightness by ±20%
+          newLightness = Math.max(0.1, Math.min(0.9, newLightness)); // Clamp between 10% and 90%
+          
+          let newSaturation = hsl.s + (Math.random() - 0.5) * 0.3; // Vary saturation by ±15%
+          newSaturation = Math.max(0.1, Math.min(1.0, newSaturation)); // Clamp between 10% and 100%
+          
+          // Convert back to hex
+          const newColor = this.hslToHex(hsl.h, newSaturation * 100, newLightness * 100);
+          shades.push(newColor);
+        }
+        
+        // Shuffle the shades for variety
+        return shades.sort(() => Math.random() - 0.5);
+      }
+
+      hslToHex(h, s, l) {
+        h /= 360;
+        s /= 100;
+        l /= 100;
+        
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+        const m = l - c / 2;
+        let r = 0, g = 0, b = 0;
+        
+        if (0 <= h && h < 1/6) {
+          r = c; g = x; b = 0;
+        } else if (1/6 <= h && h < 2/6) {
+          r = x; g = c; b = 0;
+        } else if (2/6 <= h && h < 3/6) {
+          r = 0; g = c; b = x;
+        } else if (3/6 <= h && h < 4/6) {
+          r = 0; g = x; b = c;
+        } else if (4/6 <= h && h < 5/6) {
+          r = x; g = 0; b = c;
+        } else if (5/6 <= h && h < 1) {
+          r = c; g = 0; b = x;
+        }
+        
+        const rHex = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+        const gHex = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+        const bHex = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+        
+        return `#${rHex}${gHex}${bHex}`;
+      }
+
       handleShowMyPiece() {
         const userPieces = this.quiltEngine.findUserPieces();
         if (userPieces.length > 0) {
@@ -5137,6 +5988,13 @@
         const formattedDate = Utils.formatDate();
         dateText.textContent = formattedDate;
         console.log('📅 Date set immediately on page load:', formattedDate);
+      }
+      
+      // Lock screen orientation to portrait
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('portrait').catch(err => {
+          console.log('📱 Could not lock orientation:', err);
+        });
       }
       
       // Resize title text to match widths
