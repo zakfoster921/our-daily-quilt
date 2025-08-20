@@ -3358,6 +3358,7 @@
     class QuoteService {
       constructor(firebaseInstance = null) {
         this.firebase = firebaseInstance;
+        console.log('📚 QuoteService constructor - Firebase instance:', !!firebaseInstance);
         // Initialize with default quotes (will be replaced if Firestore load succeeds)
         this.quotes = [
           { text: "Art washes away from the soul the dust of everyday life.", author: "— Pablo Picasso" },
@@ -3556,16 +3557,22 @@
         try {
           console.log('📚 Loading quotes from Firestore...');
           
-          // Check if Firebase is available
-          if (!this.firebase) {
-            console.log('📚 Firebase not available, using default quotes');
+          // Check if global Firestore is available
+          if (!window.db || !window.firestore) {
+            console.log('📚 Global Firestore not available, using default quotes');
             return false;
           }
           
-          const doc = await this.firebase.firestore().collection('quotes').doc('daily').get();
+          // Use the global Firestore functions
+          const docRef = window.firestore.doc(window.db, 'quotes', 'daily');
+          const docSnap = await window.firestore.getDoc(docRef);
           
-          if (doc.exists && doc.data().quotes) {
-            this.quotes = doc.data().quotes;
+          if (docSnap.exists() && docSnap.data().quotes) {
+            this.quotes = docSnap.data().quotes;
+            if (docSnap.data().shuffledIndexes) {
+              this.shuffledIndexes = docSnap.data().shuffledIndexes;
+              console.log('✅ Loaded shuffled indexes from Firestore:', this.shuffledIndexes.length, 'indexes');
+            }
             console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
             
             // Update the display if we're on the quote screen
@@ -3771,6 +3778,7 @@
         this.uiService = new UIService(this.logger);
         this.errorHandler = new ErrorHandler(this.uiService, this.logger);
         this.dataService = new QuiltDataService(this.logger, this.errorHandler);
+        console.log('🧵 App constructor - window.firebaseApp available:', !!window.firebaseApp);
         this.quoteService = new QuoteService(window.firebaseApp);
         this.renderer = new QuiltRendererV2(this.logger);
         this.archiveService = new ArchiveService(this.logger, this.dataService);
@@ -3957,6 +3965,17 @@
           this.initializeUI();
           
           // Load quotes from Firestore
+          console.log('🔄 About to load quotes from Firestore...');
+          console.log('🔄 Firebase available:', !!window.firebaseApp);
+          console.log('🔄 Firestore available:', !!window.firestore);
+          console.log('🔄 DB available:', !!window.db);
+          
+          // Wait a bit for Firebase to be fully initialized
+          if (!window.db || !window.firestore) {
+            console.log('🔄 Waiting for Firebase to initialize...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          
           await this.quoteService.loadQuotesFromFirestore();
           
           this.setupAutoTransition();
@@ -4474,6 +4493,13 @@
 
       // Quote Management Functions
       showQuoteManager() {
+        // Check if a quote manager modal is already open
+        const existingModal = document.querySelector('.quote-manager-modal');
+        if (existingModal) {
+          console.log('⚠️ Quote manager modal already open, removing existing one');
+          existingModal.remove();
+        }
+        
         // Get next 7 days of quotes
         const next7Days = this.getNext7DaysQuotes();
         let quotesHTML = '';
@@ -4662,8 +4688,9 @@
               text: newText,
               author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
             };
+            
             this.uiService.showToast(`Quote for ${dayData.dayName} updated`);
-            this.showQuoteManager(); // Refresh the manager
+            // Don't refresh immediately - let user save first
           }
         }
       }
@@ -4806,12 +4833,29 @@
 
       async saveQuotesToFirestore() {
         try {
+          console.log('💾 Starting save to Firestore...');
+          console.log('💾 QuoteService Firebase available:', !!this.quoteService.firebase);
+          console.log('💾 Global Firebase available:', !!window.firebaseApp);
+          console.log('💾 Quotes to save:', this.quoteService.quotes.length);
+          
           // Show loading state
           this.uiService.showToast('Saving quotes to database...');
           
-          // Save to Firestore
-          await this.quoteService.firebase.firestore().collection('quotes').doc('daily').set({
+          // Use QuoteService Firebase or fallback to global Firebase
+          const firebaseInstance = this.quoteService.firebase || window.firebaseApp;
+          if (!firebaseInstance) {
+            throw new Error('No Firebase instance available');
+          }
+          
+          // Use the global Firestore functions
+          if (!window.db) {
+            throw new Error('Firestore database not available');
+          }
+          
+          // Save to Firestore using the global functions
+          await window.firestore.setDoc(window.firestore.doc(window.db, 'quotes', 'daily'), {
             quotes: this.quoteService.quotes,
+            shuffledIndexes: this.quoteService.shuffledIndexes,
             updatedAt: new Date(),
             updatedBy: this.currentUserId
           });
@@ -4819,14 +4863,20 @@
           this.uiService.showToast('✅ Quotes saved to database! All users will see changes.');
           console.log('💾 Quotes saved to Firestore:', this.quoteService.quotes.length, 'quotes');
           
+          // Close the quote admin panel by removing all modals
+          const modals = document.querySelectorAll('.quote-manager-modal');
+          modals.forEach(modal => modal.remove());
+          console.log(`🗑️ Removed ${modals.length} quote manager modals`);
+          
         } catch (error) {
+          console.error('❌ Error saving quotes to Firestore:', error);
           this.uiService.showToast('❌ Error saving quotes to database');
-          console.error('Error saving quotes to Firestore:', error);
           
           // Fallback to localStorage
           try {
             localStorage.setItem('ourDailyQuotes', JSON.stringify(this.quoteService.quotes));
             this.uiService.showToast('⚠️ Saved to localStorage as fallback');
+            console.log('💾 Saved to localStorage as fallback');
           } catch (localError) {
             console.error('Error saving to localStorage:', localError);
           }
@@ -4844,6 +4894,7 @@
         const today = new Date();
         
         console.log(`🔍 getNext7DaysQuotes - Today: ${today.toDateString()}`);
+        console.log(`🔍 Current quotes array length: ${this.quoteService.quotes.length}`);
         
         for (let i = 1; i <= 7; i++) { // Start from tomorrow (i=1) instead of today (i=0)
           const futureDate = new Date(today);
@@ -4856,9 +4907,12 @@
           
           console.log(`🔍 Day ${i}: ${futureDate.toDateString()} → ${dateString}`);
           
-          const quote = this.quoteService.getQuoteForDate(dateString);
+          // Get the quote directly from the quotes array using shuffled indexes
           const dayIndex = Math.floor(futureDate.getTime() / (1000 * 60 * 60 * 24));
           const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
+          const quote = this.quoteService.quotes[quoteIndex];
+          
+          console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quote=`, quote);
           
           const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
           const dayName = dayNames[futureDate.getDay()];
@@ -4993,12 +5047,9 @@
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
-            <button onclick="app.handleCreateTestArchives()">Archive Current Quilt</button>
-            <button onclick="app.showNextWeekQuotes()">Show Next 7 Days Quotes</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
             <h4>Quote Management</h4>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
-            <button onclick="app.showTodayQuote()">Show Today's Quote</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
         `;
