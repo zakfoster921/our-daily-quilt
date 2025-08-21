@@ -2497,7 +2497,9 @@
       }
 
       static formatDate(date = new Date()) {
-        return date.toLocaleDateString(undefined, {
+        // Use Chicago timezone to match the rest of the application
+        const chicagoTime = new Date(date.toLocaleString("en-US", {timeZone: "America/Chicago"}));
+        return chicagoTime.toLocaleDateString(undefined, {
           weekday: 'long',
           year: 'numeric',
           month: 'long',
@@ -3461,11 +3463,13 @@
       }
 
       getTodayQuote() {
-        const today = new Date();
-        const dayIndex = Math.floor(today.getTime() / (1000 * 60 * 60 * 24));
+        // Use Chicago timezone to match the rest of the application
+        const now = new Date();
+        const chicagoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Chicago"}));
+        const dayIndex = Math.floor(chicagoTime.getTime() / (1000 * 60 * 60 * 24));
         const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
         
-        console.log(`🔍 getTodayQuote: ${today.toDateString()} → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
+        console.log(`🔍 getTodayQuote: ${chicagoTime.toDateString()} (Chicago) → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
         
         return this.quotes[quoteIndex];
       }
@@ -4536,6 +4540,8 @@
             </div>
             <div class="quote-manager-actions">
               <button onclick="app.saveQuotesToFirestore()" class="save-btn">Save Changes</button>
+              <button onclick="app.fixQuoteAssignment()" class="fix-btn">Fix Quote Assignment</button>
+              <button onclick="app.showTodayQuote()" class="debug-btn">Show Today's Quote</button>
               <button onclick="this.parentElement.parentElement.parentElement.remove()" class="close-btn">Close</button>
             </div>
           </div>
@@ -4640,6 +4646,8 @@
           .delete-btn { color: #cc0000; }
           .swap-btn { color: #666; }
           .save-btn { background: #2196F3; color: white; padding: 8px 16px; }
+          .fix-btn { background: #FF9800; color: white; padding: 8px 16px; }
+          .debug-btn { background: #9C27B0; color: white; padding: 8px 16px; }
           .close-btn { background: #666; color: white; padding: 8px 16px; }
           .quote-manager-actions {
             margin-top: 20px;
@@ -4679,18 +4687,57 @@
         const dayData = next7Days[dayIndex];
         const quote = dayData.quote;
         
-        const newText = prompt('Edit quote text:', quote.text);
-        if (newText !== null) {
-          const newAuthor = prompt('Edit author:', quote.author.replace('— ', ''));
-          if (newAuthor !== null) {
-            // Update the quote in the quotes array using the original index
-            this.quoteService.quotes[dayData.originalIndex] = {
-              text: newText,
-              author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
-            };
+        // Give user options: edit content or swap with another quote
+        const action = prompt(`What would you like to do for ${dayData.dayName}?\n\n1. Edit quote content\n2. Swap with another quote\n3. Assign different quote to this day\n\nEnter 1, 2, or 3:`, '1');
+        
+        if (action === '1') {
+          // Edit the quote content
+          const newText = prompt('Edit quote text:', quote.text);
+          if (newText !== null) {
+            const newAuthor = prompt('Edit author:', quote.author.replace('— ', ''));
+            if (newAuthor !== null) {
+              // Update the quote in the quotes array using the original index
+              this.quoteService.quotes[dayData.originalIndex] = {
+                text: newText,
+                author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
+              };
+              
+              this.uiService.showToast(`Quote content for ${dayData.dayName} updated`);
+            }
+          }
+        } else if (action === '2') {
+          // Swap quotes between days by modifying the shuffled indexes
+          const swapDayIndex = prompt(`Enter the day number (1-7) to swap with ${dayData.dayName}:\n\n1. ${next7Days[0].dayName} (${next7Days[0].date})\n2. ${next7Days[1].dayName} (${next7Days[1].date})\n3. ${next7Days[2].dayName} (${next7Days[2].date})\n4. ${next7Days[3].dayName} (${next7Days[3].date})\n5. ${next7Days[4].dayName} (${next7Days[4].date})\n6. ${next7Days[5].dayName} (${next7Days[5].date})\n7. ${next7Days[6].dayName} (${next7Days[6].date})`, '');
+          
+          const swapIndex = parseInt(swapDayIndex) - 1;
+          if (swapIndex >= 0 && swapIndex < 7 && swapIndex !== dayIndex) {
+            const swapDayData = next7Days[swapIndex];
             
-            this.uiService.showToast(`Quote for ${dayData.dayName} updated`);
-            // Don't refresh immediately - let user save first
+            // Swap the shuffled indexes for these two days
+            const currentDayIndexForShuffle = dayData.dayIndexForShuffle;
+            const swapDayIndexForShuffle = swapDayData.dayIndexForShuffle;
+            
+            const tempIndex = this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
+            this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = 
+              this.quoteService.shuffledIndexes[swapDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
+            this.quoteService.shuffledIndexes[swapDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = tempIndex;
+            
+            this.uiService.showToast(`Swapped quotes between ${dayData.dayName} and ${swapDayData.dayName}`);
+          } else {
+            this.uiService.showToast('Invalid day selection');
+          }
+        } else if (action === '3') {
+          // Assign a different quote to this specific day
+          const newQuoteIndex = prompt(`Enter the quote number (1-${this.quoteService.quotes.length}) that should be assigned to ${dayData.dayName}:\n\nAvailable quotes:\n${this.quoteService.quotes.map((q, i) => `${i + 1}. "${q.text.substring(0, 50)}..."`).join('\n')}`, '');
+          const quoteIndex = parseInt(newQuoteIndex) - 1;
+          
+          if (quoteIndex >= 0 && quoteIndex < this.quoteService.quotes.length) {
+            // Update the shuffled index for this specific day
+            this.quoteService.shuffledIndexes[dayData.dayIndexForShuffle % this.quoteService.shuffledIndexes.length] = quoteIndex;
+            
+            this.uiService.showToast(`Assigned quote ${quoteIndex + 1} to ${dayData.dayName}`);
+          } else {
+            this.uiService.showToast('Invalid quote number');
           }
         }
       }
@@ -4769,21 +4816,17 @@
         const currentDay = next7Days[dayIndex];
         const previousDay = next7Days[dayIndex - 1];
         
-        // Calculate the actual day indices for the shuffled array
-        const today = new Date();
-        const currentDate = new Date(today);
-        currentDate.setDate(today.getDate() + currentDay.dayIndex);
-        const previousDate = new Date(today);
-        previousDate.setDate(today.getDate() + previousDay.dayIndex);
-        
-        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
-        const previousDayIndex = Math.floor(previousDate.getTime() / (1000 * 60 * 60 * 24));
+        // Use the dayIndexForShuffle that was already calculated in getNext7DaysQuotes
+        const currentDayIndexForShuffle = currentDay.dayIndexForShuffle;
+        const previousDayIndexForShuffle = previousDay.dayIndexForShuffle;
         
         // Swap the quotes in the shuffled indexes
-        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
-          this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
+        console.log(`🔄 Swapping: ${previousDay.dayName} (index ${previousDayIndexForShuffle}) ↔ ${currentDay.dayName} (index ${currentDayIndexForShuffle})`);
+        
+        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = 
+          this.quoteService.shuffledIndexes[previousDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[previousDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = tempIndex;
         
         this.uiService.showToast(`Swapped quotes for ${previousDay.dayName} and ${currentDay.dayName}`);
         this.showQuoteManager(); // Refresh the manager
@@ -4796,21 +4839,17 @@
         const currentDay = next7Days[dayIndex];
         const nextDay = next7Days[dayIndex + 1];
         
-        // Calculate the actual day indices for the shuffled array
-        const today = new Date();
-        const currentDate = new Date(today);
-        currentDate.setDate(today.getDate() + currentDay.dayIndex);
-        const nextDate = new Date(today);
-        nextDate.setDate(today.getDate() + nextDay.dayIndex);
-        
-        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
-        const nextDayIndex = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24));
+        // Use the dayIndexForShuffle that was already calculated in getNext7DaysQuotes
+        const currentDayIndexForShuffle = currentDay.dayIndexForShuffle;
+        const nextDayIndexForShuffle = nextDay.dayIndexForShuffle;
         
         // Swap the quotes in the shuffled indexes
-        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
-          this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
+        console.log(`🔄 Swapping: ${currentDay.dayName} (index ${currentDayIndexForShuffle}) ↔ ${nextDay.dayName} (index ${nextDayIndexForShuffle})`);
+        
+        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = 
+          this.quoteService.shuffledIndexes[nextDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[nextDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = tempIndex;
         
         this.uiService.showToast(`Swapped quotes for ${currentDay.dayName} and ${nextDay.dayName}`);
         this.showQuoteManager(); // Refresh the manager
@@ -4828,6 +4867,44 @@
             this.uiService.showToast('New quote added');
             this.showQuoteManager(); // Refresh the manager
           }
+        }
+      }
+
+      // Fix quote assignment for specific days (for correcting issues like Wednesday/Thursday mixup)
+      fixQuoteAssignment() {
+        const next7Days = this.getNext7DaysQuotes();
+        
+        let dayList = '';
+        next7Days.forEach((day, index) => {
+          dayList += `${index + 1}. ${day.dayName} (${day.date}) - "${day.quote.text.substring(0, 50)}..."\n`;
+        });
+        
+        const dayToFix = prompt(`Which day's quote assignment needs to be fixed?\n\n${dayList}\n\nEnter day number (1-7):`, '');
+        const dayIndex = parseInt(dayToFix) - 1;
+        
+        if (dayIndex >= 0 && dayIndex < 7) {
+          const targetDay = next7Days[dayIndex];
+          
+          const newQuoteIndex = prompt(`Enter the quote number (1-${this.quoteService.quotes.length}) that should be assigned to ${targetDay.dayName}:\n\nAvailable quotes:\n${this.quoteService.quotes.map((q, i) => `${i + 1}. "${q.text.substring(0, 50)}..."`).join('\n')}`, '');
+          const quoteIndex = parseInt(newQuoteIndex) - 1;
+          
+          if (quoteIndex >= 0 && quoteIndex < this.quoteService.quotes.length) {
+            // Calculate the actual day index for the shuffled array
+            const today = new Date();
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + targetDay.dayIndex);
+            const dayIndexForShuffle = Math.floor(targetDate.getTime() / (1000 * 60 * 60 * 24));
+            
+            // Update the shuffled index for this specific day
+            this.quoteService.shuffledIndexes[dayIndexForShuffle % this.quoteService.shuffledIndexes.length] = quoteIndex;
+            
+            this.uiService.showToast(`Fixed ${targetDay.dayName} to use quote ${quoteIndex + 1}`);
+            this.showQuoteManager(); // Refresh the manager
+          } else {
+            this.uiService.showToast('Invalid quote number');
+          }
+        } else {
+          this.uiService.showToast('Invalid day number');
         }
       }
 
@@ -4885,20 +4962,26 @@
 
       showTodayQuote() {
         const todayQuote = this.quoteService.getTodayQuote();
-        alert(`Today's Quote:\n\n"${todayQuote.text}"\n${todayQuote.author}`);
+        const today = new Date();
+        const dayIndex = Math.floor(today.getTime() / (1000 * 60 * 60 * 24));
+        const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
+        
+        alert(`Today's Quote (${today.toDateString()}):\n\n"${todayQuote.text}"\n${todayQuote.author}\n\nDay Index: ${dayIndex}\nQuote Index: ${quoteIndex}`);
       }
 
       // Get next 7 days of quotes with dates
       getNext7DaysQuotes() {
         const next7Days = [];
-        const today = new Date();
+        // Use Chicago timezone to match the rest of the application
+        const now = new Date();
+        const chicagoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Chicago"}));
         
-        console.log(`🔍 getNext7DaysQuotes - Today: ${today.toDateString()}`);
+        console.log(`🔍 getNext7DaysQuotes - Today (Chicago): ${chicagoTime.toDateString()}`);
         console.log(`🔍 Current quotes array length: ${this.quoteService.quotes.length}`);
         
         for (let i = 1; i <= 7; i++) { // Start from tomorrow (i=1) instead of today (i=0)
-          const futureDate = new Date(today);
-          futureDate.setDate(today.getDate() + i);
+          const futureDate = new Date(chicagoTime);
+          futureDate.setDate(chicagoTime.getDate() + i);
           
           const year = futureDate.getFullYear();
           const month = String(futureDate.getMonth() + 1).padStart(2, '0');
@@ -4922,7 +5005,9 @@
             dayName: dayName,
             quote: quote,
             originalIndex: quoteIndex,
-            dayIndex: i // Use the loop index (1-7) instead of the absolute day index
+            dayIndex: i, // Use the loop index (1-7) instead of the absolute day index
+            actualDate: futureDate, // Store the actual date object for debugging
+            dayIndexForShuffle: dayIndex // Store the actual day index used for shuffling
           });
         }
         
@@ -5039,11 +5124,15 @@
 
 
       showAdminMenu() {
+        const blockCount = this.quiltEngine.blocks.length;
         const menu = document.createElement('div');
         menu.className = 'admin-menu';
         menu.innerHTML = `
           <div class="admin-menu-content">
             <h3>Admin Controls</h3>
+            <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center;">
+              <strong>Current Blocks: ${blockCount}</strong>
+            </div>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
