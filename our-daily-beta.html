@@ -5976,12 +5976,10 @@
           const currentScreen = document.querySelector('.screen.active');
           if (!currentScreen || currentScreen.id !== 'screen-quilt') {
             console.log('🔄 Swipe ignored - not on quilt screen');
-            this.updateDebugPanel(`MAIN: Ignored - not on quilt screen`);
             return;
           }
 
           console.log('🔄 Swipe start:', event.type, event.target.tagName, 'touches:', event.touches?.length);
-          this.updateDebugPanel(`Swipe start: ${event.type} on ${event.target.tagName} (touches: ${event.touches?.length || 0})`);
 
           // Always activate swipe mode when starting on the quilt (rect or SVG)
           this.isSwipingToFlip = true;
@@ -5992,50 +5990,8 @@
           this.swipeStartX = event.touches ? event.touches[0].clientX : event.clientX;
           this.swipeStartY = event.touches ? event.touches[0].clientY : event.clientY;
           
-          // Check if there's a rect element at the touch position (tap behavior)
-          let elementAtPosition = document.elementFromPoint(this.swipeStartX, this.swipeStartY);
-          
-          // Debug what we found
-          this.updateDebugPanel(`TAP: Found element: ${elementAtPosition?.tagName} (${elementAtPosition?.id || 'no id'})`);
-          
-          // If we didn't get a rect, try to find all rect elements and see which one is closest
-          if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
-            const allRects = document.querySelectorAll('#quilt rect');
-            this.updateDebugPanel(`TAP: Found ${allRects.length} rect elements total`);
-            
-            // Try to find the closest rect to our touch point
-            let closestRect = null;
-            let closestDistance = Infinity;
-            
-            allRects.forEach(rect => {
-              const rectBox = rect.getBoundingClientRect();
-              const rectCenterX = rectBox.left + rectBox.width / 2;
-              const rectCenterY = rectBox.top + rectBox.height / 2;
-              const distance = Math.sqrt(Math.pow(this.swipeStartX - rectCenterX, 2) + Math.pow(this.swipeStartY - rectCenterY, 2));
-              
-              if (distance < closestDistance) {
-                closestDistance = distance;
-                closestRect = rect;
-              }
-            });
-            
-            if (closestRect && closestDistance < 50) { // Within 50px
-              elementAtPosition = closestRect;
-              this.updateDebugPanel(`TAP: Using closest rect at distance ${Math.round(closestDistance)}px`);
-            }
-          }
-          
-          if (elementAtPosition && elementAtPosition.tagName === 'rect') {
-            const blockId = elementAtPosition.getAttribute('data-block-id');
-            if (blockId) {
-              this.renderer.toggleBlockFlip(blockId);
-              this.renderQuilt();
-              this.updateDebugPanel(`TAP: Flipped block ${blockId}`);
-              console.log('🔄 TAP: Flipped block', blockId);
-            }
-          } else {
-            this.updateDebugPanel(`TAP: No suitable rect found near ${this.swipeStartX}, ${this.swipeStartY}`);
-          }
+          // REMOVED: Tap detection from handleSwipeStart to prevent double-flipping
+          // Tap detection will be handled in handleSwipeEnd based on movement distance
           
           console.log('🔄 Swipe mode activated');
         };
@@ -6043,8 +5999,12 @@
         this.handleSwipeMove = (event) => {
           if (!this.isSwipingToFlip) return;
           
-          console.log('🔄 Swipe move:', event.type, 'touches:', event.touches?.length);
-          this.updateDebugPanel(`Swipe move: ${event.type} (touches: ${event.touches?.length || 0})`);
+          // Get current coordinates
+          const currentX = event.touches ? event.touches[0].clientX : event.clientX;
+          const currentY = event.touches ? event.touches[0].clientY : event.clientY;
+          
+          console.log('🔄 Swipe move:', event.type, 'touches:', event.touches?.length, 'at', currentX, currentY);
+          this.updateDebugPanel(`SWIPE MOVE: ${event.type} at ${currentX}, ${currentY}`);
           
           // Now prevent default since we're actually swiping
           event.preventDefault();
@@ -6052,6 +6012,56 @@
         };
 
         this.handleSwipeEnd = (event) => {
+          // Check if this was a tap (minimal movement)
+          const swipeDuration = Date.now() - this.swipeStartTime;
+          const swipeDistance = Math.sqrt(
+            Math.pow((event.changedTouches ? event.changedTouches[0].clientX : event.clientX) - this.swipeStartX, 2) +
+            Math.pow((event.changedTouches ? event.changedTouches[0].clientY : event.clientY) - this.swipeStartY, 2)
+          );
+          
+          this.updateDebugPanel(`Swipe end: duration=${swipeDuration}ms, distance=${Math.round(swipeDistance)}px`);
+          
+          // If it was a tap (short duration and minimal movement), handle as tap
+          if (swipeDuration < 300 && swipeDistance < 20) {
+            this.updateDebugPanel(`TAP detected: duration=${swipeDuration}ms, distance=${Math.round(swipeDistance)}px`);
+            
+            // Find the block at the tap position
+            let elementAtPosition = document.elementFromPoint(this.swipeStartX, this.swipeStartY);
+            
+            // If we didn't get a rect, try to find the closest one
+            if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
+              const allRects = document.querySelectorAll('#quilt rect');
+              let closestRect = null;
+              let closestDistance = Infinity;
+              
+              allRects.forEach(rect => {
+                const rectBox = rect.getBoundingClientRect();
+                const rectCenterX = rectBox.left + rectBox.width / 2;
+                const rectCenterY = rectBox.top + rectBox.height / 2;
+                const distance = Math.sqrt(Math.pow(this.swipeStartX - rectCenterX, 2) + Math.pow(this.swipeStartY - rectCenterY, 2));
+                
+                if (distance < closestDistance) {
+                  closestDistance = distance;
+                  closestRect = rect;
+                }
+              });
+              
+              if (closestRect && closestDistance < 50) {
+                elementAtPosition = closestRect;
+              }
+            }
+            
+            if (elementAtPosition && elementAtPosition.tagName === 'rect') {
+              const blockId = elementAtPosition.getAttribute('data-block-id');
+              if (blockId) {
+                this.renderer.toggleBlockFlip(blockId);
+                this.renderQuilt();
+                this.updateDebugPanel(`TAP: Flipped block ${blockId}`);
+                console.log('🔄 TAP: Flipped block', blockId);
+              }
+            }
+          }
+          
           this.isSwipingToFlip = false;
           this.flippedInCurrentSwipe.clear();
           console.log('🔄 Swipe ended');
@@ -6213,31 +6223,31 @@
           this.updateDebugPanel(`WINDOW: touchend`);
         }, { passive: false });
         
-        // Test with a simple div overlay
-        const testDiv = document.createElement('div');
-        testDiv.style.cssText = `
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: transparent;
-          z-index: 9999;
-          pointer-events: none;
-        `;
-        testDiv.addEventListener('touchstart', (e) => {
-          this.updateDebugPanel(`OVERLAY: touchstart at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
-        }, { passive: false });
-        testDiv.addEventListener('touchmove', (e) => {
-          this.updateDebugPanel(`OVERLAY: touchmove at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
-        }, { passive: false });
-        testDiv.addEventListener('touchend', (e) => {
-          this.updateDebugPanel(`OVERLAY: touchend`);
-        }, { passive: false });
-        
-        // Make it clickable for testing
-        testDiv.style.pointerEvents = 'auto';
-        document.body.appendChild(testDiv);
+        // Test with a simple div overlay - REMOVED FOR TESTING
+        // const testDiv = document.createElement('div');
+        // testDiv.style.cssText = `
+        //   position: fixed;
+        //   top: 0;
+        //   left: 0;
+        //   width: 100%;
+        //   height: 100%;
+        //   background: transparent;
+        //   z-index: 9999;
+        //   pointer-events: none;
+        // `;
+        // testDiv.addEventListener('touchstart', (e) => {
+        //   this.updateDebugPanel(`OVERLAY: touchstart at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        // }, { passive: false });
+        // testDiv.addEventListener('touchmove', (e) => {
+        //   this.updateDebugPanel(`OVERLAY: touchmove at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        // }, { passive: false });
+        // testDiv.addEventListener('touchend', (e) => {
+        //   this.updateDebugPanel(`OVERLAY: touchend`);
+        // }, { passive: false });
+        // 
+        // // Make it clickable for testing
+        // testDiv.style.pointerEvents = 'auto';
+        // document.body.appendChild(testDiv);
         
         this.updateDebugPanel('Touch event test listeners added (document + window)');
       }
@@ -6270,9 +6280,11 @@
         // If we didn't get a rect, try looking at all elements at this point
         if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
           const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
+          this.updateDebugPanel(`Elements at point: ${elementsAtPoint.map(el => el.tagName).join(', ')}`);
           const rectElement = elementsAtPoint.find(el => el.tagName === 'rect');
           if (rectElement) {
             elementAtPosition = rectElement;
+            this.updateDebugPanel(`Found rect in elements list`);
           }
         }
         
@@ -6281,6 +6293,7 @@
         
         if (elementAtPosition && elementAtPosition.tagName === 'rect') {
           const blockId = elementAtPosition.getAttribute('data-block-id');
+          this.updateDebugPanel(`Found rect with blockId: ${blockId}`);
           
           if (blockId && !this.flippedInCurrentSwipe.has(blockId)) {
             // Flip this block and remember we flipped it in this swipe
@@ -6290,18 +6303,23 @@
             
             // Throttle rendering during swipes to prevent data corruption
             if (!this.renderThrottleTimer) {
-              this.renderQuilt();
+              this.renderQuilt(); // NEEDED - to apply CSS class to DOM elements
               this.renderThrottleTimer = setTimeout(() => {
                 this.renderThrottleTimer = null;
               }, 100);
             }
             
             console.log(`🔄 Swiped block ${blockId} flip toggled: ${newFlipState}`);
+            this.updateDebugPanel(`SWIPE: Flipped block ${blockId}`);
           } else if (blockId) {
             console.log(`🔄 Block ${blockId} already flipped in this swipe`);
+            this.updateDebugPanel(`SWIPE: Block ${blockId} already flipped in this swipe`);
+          } else {
+            this.updateDebugPanel(`SWIPE: No blockId found on rect`);
           }
         } else {
           console.log('🔄 No rect found at position');
+          this.updateDebugPanel('SWIPE: No rect found at position');
         }
       }
 
