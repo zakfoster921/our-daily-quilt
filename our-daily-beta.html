@@ -842,6 +842,40 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    
+    /* ===== FLIP ANIMATIONS ===== */
+    @keyframes quiltFlip {
+      0% { transform: scale(1, 1); }
+      50% { transform: scale(0.95, 0.95); }
+      100% { transform: scale(1, 1); }
+    }
+    
+    .quilt-flipping {
+      animation: quiltFlip 0.6s ease-in-out;
+    }
+    
+    /* Smooth transitions for flip transformations */
+    #quilt rect {
+      transition: transform 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+      transform-origin: center;
+    }
+    
+    /* Simple block flip effect using CSS */
+    #quilt rect.block-flipped {
+      fill: #8B4513 !important; /* Brown placeholder color for flip side */
+      opacity: 0.9;
+    }
+    
+    /* Playing card flip animation */
+    @keyframes cardFlip {
+      0% { transform: rotateY(0deg); }
+      50% { transform: rotateY(90deg); }
+      100% { transform: rotateY(180deg); }
+    }
+    
+    .block-flipping {
+      animation: cardFlip 0.6s ease-in-out;
+    }
 
     /* ===== TOAST ===== */
     .toast {
@@ -1772,6 +1806,7 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   
   <!-- Firebase SDK will be initialized after CONFIG is defined -->
+  <!-- FIREBASE DISABLED FOR LOCAL TESTING -->
   <script type="module">
     // ===== CONFIGURATION =====
     const CONFIG = {
@@ -1785,13 +1820,14 @@
         debugMode: true
       },
       FIREBASE: {
-        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
-        authDomain: "our-daily.firebaseapp.com",
-        projectId: "our-daily",
-        storageBucket: "our-daily.firebasestorage.app",
-        messagingSenderId: "337201931314",
-        appId: "1:337201931314:web:fb5677846d03eb285ac82b",
-        measurementId: "G-65XB7QC1F4"
+        // DISABLED FOR LOCAL TESTING
+        // apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+        // authDomain: "our-daily.firebaseapp.com",
+        // projectId: "our-daily",
+        // storageBucket: "our-daily.firebasestorage.app",
+        // messagingSenderId: "337201931314",
+        // appId: "1:337201931314:web:fb5677846d03eb285ac82b",
+        // measurementId: "G-65XB7QC1F4"
       },
       COLOR_PICKER: {
         wheelSize: 280,
@@ -2315,6 +2351,8 @@
         };
       }
       
+      // Individual block flip state is now handled by the renderer
+      
       // ===== RESPONSIVE QUILT DIMENSIONS =====
       recalculateDimensionsForCurrentViewport() {
         if (this.blocks.length === 0) return;
@@ -2597,6 +2635,18 @@
                   quiltQuoteDisplay.classList.add('has-content');
                 }
               }
+              
+              // Set up flip handlers when showing quilt screen
+              setTimeout(() => {
+                if (window.app && window.app.setupQuiltFlipHandlers) {
+                  window.app.setupQuiltFlipHandlers();
+                }
+              }, 100);
+            } else {
+              // Remove flip handlers when leaving quilt screen
+              if (window.app && window.app.removeQuiltFlipHandlers) {
+                window.app.removeQuiltFlipHandlers();
+              }
             }
             
             // Handle quote screen fade-in elements
@@ -2715,10 +2765,10 @@
       // Get archives for feed (with pagination)
       async getArchives(page = 0, limit = this.postsPerPage) {
         try {
-          // Try to load from Firestore if we don't have archives cached
-          if (this.archives.size === 0 && window.db && window.firestore) {
-            await this.loadArchivesFromFirestore();
-          }
+                  // Try to load from Firestore if we don't have archives cached
+        // if (this.archives.size === 0 && window.db && window.firestore) {
+        //   await this.loadArchivesFromFirestore();
+        // }
           
           const allArchives = Array.from(this.archives.values())
             .sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
@@ -2769,14 +2819,14 @@
       async addArchive(archiveEntry) {
         try {
           // Add to Firestore if available
-          if (window.db && window.firestore) {
-            const archiveRef = window.firestore.doc(window.db, 'archives', archiveEntry.date);
-            await window.firestore.setDoc(archiveRef, {
-              ...archiveEntry,
-              createdAt: new Date().toISOString()
-            });
-            this.logger.log(`📝 Archive saved to Firestore: ${archiveEntry.date}`);
-          }
+          // if (window.db && window.firestore) {
+          //   const archiveRef = window.firestore.doc(window.db, 'archives', archiveEntry.date);
+          //   await window.firestore.setDoc(archiveRef, {
+          //     ...archiveEntry,
+          //     createdAt: new Date().toISOString()
+          //   });
+          //   this.logger.log(`📝 Archive saved to Firestore: ${archiveEntry.date}`);
+          // }
           
           // Add to local cache
           this.archives.set(archiveEntry.date, archiveEntry);
@@ -2792,11 +2842,11 @@
       async deleteArchive(date) {
         try {
           // Delete from Firestore if available
-          if (window.db && window.firestore) {
-            const archiveRef = window.firestore.doc(window.db, 'archives', date);
-            await window.firestore.deleteDoc(archiveRef);
-            this.logger.log(`🗑️ Archive deleted from Firestore: ${date}`);
-          }
+          // if (window.db && window.firestore) {
+          //   const archiveRef = window.firestore.doc(window.db, 'archives', date);
+          //   await window.firestore.deleteDoc(archiveRef);
+          //   this.logger.log(`🗑️ Archive deleted from Firestore: ${date}`);
+          // }
           
           // Remove from local cache
           this.archives.delete(date);
@@ -3226,19 +3276,21 @@
       async initialize() {
         try {
           // Wait for Firebase to be available
-          let attempts = 0;
-          while (!window.db && attempts < 50) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            attempts++;
-          }
+          // let attempts = 0;
+          // while (!window.db && attempts < 50) {
+          //   await new Promise(resolve => setTimeout(resolve, 100));
+          //   attempts++;
+          // }
           
-          if (window.db) {
-            this.db = window.db;
-            this.logger.log('✅ Firestore initialized successfully');
-          } else {
-            this.logger.warn('⚠️ Firestore not available, falling back to localStorage');
-            this.db = null;
-          }
+          // if (window.db) {
+          //   this.db = window.db;
+          //   this.logger.log('✅ Firestore initialized successfully');
+          // } else {
+          //   this.logger.warn('⚠️ Firestore not available, falling back to localStorage');
+          //   this.db = null;
+          // }
+          this.logger.log('✅ Using local storage only - Firebase disabled');
+          this.db = null;
         } catch (error) {
           this.logger.warn('⚠️ Firestore initialization failed, falling back to localStorage:', error);
           this.db = null;
@@ -3247,43 +3299,43 @@
 
       async loadQuilt() {
         try {
-          if (this.db) {
-            // Try Firestore first
-            const today = Utils.getTodayKey();
-            this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
-            
-            // Also check what other dates exist in Firestore
-            try {
-              const quiltsRef = window.firestore.collection(this.db, 'quilts');
-              const querySnapshot = await window.firestore.getDocs(quiltsRef);
-              const availableDates = [];
-              querySnapshot.forEach(doc => {
-                const data = doc.data();
-                availableDates.push({
-                  date: doc.id,
-                  blocks: data.blocks?.length || 0,
-                  contributorCount: data.contributorCount || 1
-                });
-              });
-              this.logger.log('📊 Available Firestore dates:', JSON.stringify(availableDates, null, 2));
-            } catch (listError) {
-              this.logger.warn('⚠️ Could not list Firestore documents:', listError);
-            }
-            
-            const quiltRef = window.firestore.doc(this.db, 'quilts', today);
-            const quiltSnap = await window.firestore.getDoc(quiltRef);
-            
-            if (quiltSnap.exists()) {
-              const data = quiltSnap.data();
-              this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
-              return { 
-                blocks: data.blocks || [], 
-                contributorCount: data.contributorCount || 1 
-              };
-            } else {
-              this.logger.warn('⚠️ No Firestore document found for date:', today);
-            }
-          }
+          // if (this.db) {
+          //   // Try Firestore first
+          //   const today = Utils.getTodayKey();
+          //   this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
+          //   
+          //   // Also check what other dates exist in Firestore
+          //   try {
+          //     const quiltsRef = window.firestore.collection(this.db, 'quilts');
+          //     const querySnapshot = await window.firestore.getDocs(quiltsRef);
+          //     const availableDates = [];
+          //     querySnapshot.forEach(doc => {
+          //       constData = doc.data();
+          //     availableDates.push({
+          //       date: doc.id,
+          //       blocks: data.blocks?.length || 0,
+          //       contributorCount: data.contributorCount || 1
+          //     });
+          //   });
+          //   this.logger.log('📊 Available Firestore dates:', JSON.stringify(availableDates, null, 2));
+          // } catch (listError) {
+          //   this.logger.warn('⚠️ Could not list Firestore documents:', listError);
+          // }
+          //   
+          //   const quiltRef = window.firestore.doc(this.db, 'quilts', today);
+          //   const quiltSnap = await window.firestore.getDoc(quiltRef);
+          //   
+          //   if (quiltSnap.exists()) {
+          //     const data = quiltSnap.data();
+          //     this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
+          //     return { 
+          //       blocks: data.blocks || [], 
+          //       contributorCount: data.contributorCount || 1 
+          //     };
+          //   } else {
+          //     this.logger.warn('⚠️ No Firestore document found for date:', today);
+          //   }
+          // }
           
           // Fallback to localStorage
           const savedData = localStorage.getItem('ourDailyQuilt');
@@ -3319,16 +3371,21 @@
             date: Utils.getTodayKey()
           };
           
-          if (this.db) {
-            // Save to Firestore
-            const today = Utils.getTodayKey();
-            const quiltRef = window.firestore.doc(this.db, 'quilts', today);
-            await window.firestore.setDoc(quiltRef, quiltData);
-            this.logger.log('💾 Saved quilt to Firestore');
-          }
+          // if (this.db) {
+          //   // Save to Firestore
+          //   const today = Utils.getTodayKey();
+          //   const quiltRef = window.firestore.doc(this.db, 'quilts', today);
+          //   await window.firestore.setDoc(quiltRef, quiltData);
+          //   this.logger.log('💾 Saved quilt to Firestore');
+          // }
           
-          // Also save to localStorage as backup
-          localStorage.setItem('ourDailyQuilt', JSON.stringify(quiltData));
+          // Also save to localStorage as backup with safety check
+          if (quiltData.blocks && quiltData.blocks.length > 0) {
+            localStorage.setItem('ourDailyQuilt', JSON.stringify(quiltData));
+            console.log('💾 Safely saved quilt with', quiltData.blocks.length, 'blocks');
+          } else {
+            console.warn('⚠️ Attempted to save empty quilt data - skipping to prevent data loss');
+          }
           
           return true;
         } catch (error) {
@@ -3558,33 +3615,36 @@
           console.log('📚 Loading quotes from Firestore...');
           
           // Check if global Firestore is available
-          if (!window.db || !window.firestore) {
-            console.log('📚 Global Firestore not available, using default quotes');
-            return false;
-          }
+          // if (!window.db || !window.firestore) {
+          //   console.log('📚 Global Firestore not available, using default quotes');
+          //   return false;
+          // }
           
           // Use the global Firestore functions
-          const docRef = window.firestore.doc(window.db, 'quotes', 'daily');
-          const docSnap = await window.firestore.getDoc(docRef);
+          // const docRef = window.firestore.doc(window.db, 'quotes', 'daily');
+          // const docSnap = await window.firestore.getDoc(docRef);
           
-          if (docSnap.exists() && docSnap.data().quotes) {
-            this.quotes = docSnap.data().quotes;
-            if (docSnap.data().shuffledIndexes) {
-              this.shuffledIndexes = docSnap.data().shuffledIndexes;
-              console.log('✅ Loaded shuffled indexes from Firestore:', this.shuffledIndexes.length, 'indexes');
-            }
-            console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
-            
-            // Update the display if we're on the quote screen
-            if (document.querySelector('.quote-line')) {
-              this.displayQuote();
-            }
-            
-            return true;
-          } else {
-            console.log('📚 No quotes found in Firestore, using defaults');
-            return false;
-          }
+          // if (docSnap.exists() && docSnap.data().quotes) {
+          //   this.quotes = docSnap.data().quotes;
+          //   if (docSnap.data().shuffledIndexes) {
+          //     this.shuffledIndexes = docSnap.data().shuffledIndexes;
+          //     console.log('✅ Loaded shuffled indexes from Firestore:', this.shuffledIndexes.length, 'indexes');
+          //   }
+          //   console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
+          //   
+          //   Update the display if we're on the quote screen
+          //   if (document.querySelector('.quote-line')) {
+          //     this.displayQuote();
+          //   }
+          //   
+          //   return true;
+          // } else {
+          //   console.log('📚 No quotes found in Firestore, using defaults');
+          //   return false;
+          // }
+          
+          console.log('📚 Using default quotes - Firestore disabled');
+          return false;
           
         } catch (error) {
           console.error('❌ Error loading quotes from Firestore:', error);
@@ -3700,7 +3760,7 @@
         this.quiltSVG.style.maxWidth = '100%';
         this.quiltSVG.style.maxHeight = '100%';
         
-
+        // No global flip - individual blocks will be flipped when touched
 
         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         defs.innerHTML = `
@@ -3733,7 +3793,16 @@
           
           const centerX = jitteredBlock.x + jitteredBlock.width / 2;
           const centerY = jitteredBlock.y + jitteredBlock.height / 2;
+          
+          // Apply basic rotation transformation
           rect.setAttribute('transform', `rotate(${jitterRotation} ${centerX} ${centerY})`);
+          
+          // Add flip state as CSS class for simpler handling
+          const blockFlipState = this.getBlockFlipState(block.id);
+          if (blockFlipState) {
+            rect.classList.add('block-flipped');
+          }
+          rect.setAttribute('data-block-id', block.id);
           
           // Add user piece highlighting
           if (this.userPieces.has(block.id)) {
@@ -3759,6 +3828,36 @@
       setLastAddedIndex(index) {
         this.lastAddedIndex = index;
       }
+      
+      // Individual block flip state management
+      clearAllFlipStates() {
+        const todayKey = Utils.getTodayKey();
+        localStorage.removeItem(`blockFlips_${todayKey}`);
+        console.log('🔄 Cleared all flip states - quilt loads right side up');
+      }
+      
+      getBlockFlipState(blockId) {
+        const todayKey = Utils.getTodayKey();
+        const flippedBlocks = JSON.parse(localStorage.getItem(`blockFlips_${todayKey}`) || '[]');
+        return flippedBlocks.includes(blockId);
+      }
+      
+      toggleBlockFlip(blockId) {
+        const todayKey = Utils.getTodayKey();
+        const flippedBlocks = JSON.parse(localStorage.getItem(`blockFlips_${todayKey}`) || '[]');
+        
+        if (flippedBlocks.includes(blockId)) {
+          // Remove from flipped blocks
+          const index = flippedBlocks.indexOf(blockId);
+          flippedBlocks.splice(index, 1);
+        } else {
+          // Add to flipped blocks
+          flippedBlocks.push(blockId);
+        }
+        
+        localStorage.setItem(`blockFlips_${todayKey}`, JSON.stringify(flippedBlocks));
+        return flippedBlocks.includes(blockId);
+      }
     }
 
     // ===== MAIN APPLICATION =====
@@ -3778,8 +3877,9 @@
         this.uiService = new UIService(this.logger);
         this.errorHandler = new ErrorHandler(this.uiService, this.logger);
         this.dataService = new QuiltDataService(this.logger, this.errorHandler);
-        console.log('🧵 App constructor - window.firebaseApp available:', !!window.firebaseApp);
-        this.quoteService = new QuoteService(window.firebaseApp);
+        // console.log('🧵 App constructor - window.firebaseApp available:', !!window.firebaseApp);
+        // this.quoteService = new QuoteService(window.firebaseApp);
+        this.quoteService = new QuoteService(null); // Use null for local storage only
         this.renderer = new QuiltRendererV2(this.logger);
         this.archiveService = new ArchiveService(this.logger, this.dataService);
         
@@ -3955,7 +4055,13 @@
           
           // Initialize new engine
           this.quiltEngine.initialize();
+          
+          // Clear all flip states to ensure quilt loads right side up
+          this.renderer.clearAllFlipStates();
+          
+          console.log('🔍 DEBUGGING: About to load quilt...');
           await this.loadQuilt();
+          console.log('🔍 DEBUGGING: Quilt loaded, blocks count:', this.quiltEngine.blocks.length);
           
           this.renderer.initialize();
           this.renderQuilt();
@@ -3965,23 +4071,24 @@
           this.initializeUI();
           
           // Load quotes from Firestore
-          console.log('🔄 About to load quotes from Firestore...');
-          console.log('🔄 Firebase available:', !!window.firebaseApp);
-          console.log('🔄 Firestore available:', !!window.firestore);
-          console.log('🔄 DB available:', !!window.db);
+          // console.log('🔄 About to load quotes from Firestore...');
+          // console.log('🔄 Firebase available:', !!window.firebaseApp);
+          // console.log('🔄 Firestore available:', !!window.firestore);
+          // console.log('🔄 DB available:', !!window.db);
           
           // Wait a bit for Firebase to be fully initialized
-          if (!window.db || !window.firestore) {
-            console.log('🔄 Waiting for Firebase to initialize...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
+          // if (!window.db || !window.firestore) {
+          //   console.log('🔄 Waiting for Firebase to initialize...');
+          //   await new Promise(resolve => setTimeout(resolve, 1000));
+          // }
           
-          await this.quoteService.loadQuotesFromFirestore();
+          // await this.quoteService.loadQuotesFromFirestore();
+          console.log('🔄 Using local storage only - Firebase disabled');
           
           this.setupAutoTransition();
-          this.setupDailyReset();
+          // this.setupDailyReset(); // DISABLED FOR LOCAL TESTING - prevents automatic resets
           
-
+          // Don't set up flip handlers here - they'll be set up when quilt screen is shown
           
         } catch (error) {
           this.errorHandler.handleError(error, 'App initialization');
@@ -5466,17 +5573,24 @@
 
       async handleAddColor() {
         try {
+          console.log('🎨 handleAddColor called');
+          console.log('🎨 Color values:', { hue: this.selectedHue, sat: this.selectedSaturation, light: this.selectedLightness });
+          
           const selectedColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+          console.log('🎨 Converted color:', selectedColor);
           
           // Debug logging
           // console.log('Color selection debug');
           
           if (!selectedColor || !Utils.validateHexColor(selectedColor)) {
             this.logger.warn('Invalid color selected');
+            console.log('❌ Color validation failed:', { selectedColor, isValid: Utils.validateHexColor(selectedColor) });
             return;
           }
 
+          console.log('🎨 Calling quiltEngine.addColor with:', selectedColor);
           const result = this.quiltEngine.addColor(selectedColor);
+          console.log('🎨 addColor result:', result);
           
           if (result) {
             // Find the new block for animation
@@ -5500,7 +5614,6 @@
             await this.saveQuilt();
             this.renderQuilt();
             
-    
             this.uiService.showScreen('screen-quilt');
           }
           
@@ -5835,6 +5948,387 @@
             this.errorHandler.handleError(error, 'resetQuilt');
             this.uiService.showToast('Failed to reset quilt. Please try again.');
           }
+        }
+      }
+
+      // ===== FLIP FUNCTIONALITY =====
+      setupQuiltFlipHandlers() {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) {
+          this.logger.warn('Quilt SVG not found for flip handlers');
+          return;
+        }
+
+        // Remove existing handlers to prevent duplicates
+        quiltSVG.removeEventListener('click', this.handleQuiltFlip);
+        quiltSVG.removeEventListener('touchstart', this.handleQuiltFlip);
+        quiltSVG.removeEventListener('mousedown', this.handleSwipeStart);
+        quiltSVG.removeEventListener('touchstart', this.handleSwipeStart);
+
+        // Add swipe handlers for continuous flipping
+        this.isSwipingToFlip = false;
+        this.flippedInCurrentSwipe = new Set();
+
+        this.handleSwipeStart = (event) => {
+          console.log('🔄 MAIN HANDLER: Swipe start called');
+          this.updateDebugPanel(`MAIN: Swipe start called`);
+          
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen || currentScreen.id !== 'screen-quilt') {
+            console.log('🔄 Swipe ignored - not on quilt screen');
+            this.updateDebugPanel(`MAIN: Ignored - not on quilt screen`);
+            return;
+          }
+
+          console.log('🔄 Swipe start:', event.type, event.target.tagName, 'touches:', event.touches?.length);
+          this.updateDebugPanel(`Swipe start: ${event.type} on ${event.target.tagName} (touches: ${event.touches?.length || 0})`);
+
+          // Always activate swipe mode when starting on the quilt (rect or SVG)
+          this.isSwipingToFlip = true;
+          this.flippedInCurrentSwipe.clear();
+          
+          // Store start position for tap detection
+          this.swipeStartTime = Date.now();
+          this.swipeStartX = event.touches ? event.touches[0].clientX : event.clientX;
+          this.swipeStartY = event.touches ? event.touches[0].clientY : event.clientY;
+          
+          // Check if there's a rect element at the touch position (tap behavior)
+          let elementAtPosition = document.elementFromPoint(this.swipeStartX, this.swipeStartY);
+          
+          // Debug what we found
+          this.updateDebugPanel(`TAP: Found element: ${elementAtPosition?.tagName} (${elementAtPosition?.id || 'no id'})`);
+          
+          // If we didn't get a rect, try to find all rect elements and see which one is closest
+          if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
+            const allRects = document.querySelectorAll('#quilt rect');
+            this.updateDebugPanel(`TAP: Found ${allRects.length} rect elements total`);
+            
+            // Try to find the closest rect to our touch point
+            let closestRect = null;
+            let closestDistance = Infinity;
+            
+            allRects.forEach(rect => {
+              const rectBox = rect.getBoundingClientRect();
+              const rectCenterX = rectBox.left + rectBox.width / 2;
+              const rectCenterY = rectBox.top + rectBox.height / 2;
+              const distance = Math.sqrt(Math.pow(this.swipeStartX - rectCenterX, 2) + Math.pow(this.swipeStartY - rectCenterY, 2));
+              
+              if (distance < closestDistance) {
+                closestDistance = distance;
+                closestRect = rect;
+              }
+            });
+            
+            if (closestRect && closestDistance < 50) { // Within 50px
+              elementAtPosition = closestRect;
+              this.updateDebugPanel(`TAP: Using closest rect at distance ${Math.round(closestDistance)}px`);
+            }
+          }
+          
+          if (elementAtPosition && elementAtPosition.tagName === 'rect') {
+            const blockId = elementAtPosition.getAttribute('data-block-id');
+            if (blockId) {
+              this.renderer.toggleBlockFlip(blockId);
+              this.renderQuilt();
+              this.updateDebugPanel(`TAP: Flipped block ${blockId}`);
+              console.log('🔄 TAP: Flipped block', blockId);
+            }
+          } else {
+            this.updateDebugPanel(`TAP: No suitable rect found near ${this.swipeStartX}, ${this.swipeStartY}`);
+          }
+          
+          console.log('🔄 Swipe mode activated');
+        };
+
+        this.handleSwipeMove = (event) => {
+          if (!this.isSwipingToFlip) return;
+          
+          console.log('🔄 Swipe move:', event.type, 'touches:', event.touches?.length);
+          this.updateDebugPanel(`Swipe move: ${event.type} (touches: ${event.touches?.length || 0})`);
+          
+          // Now prevent default since we're actually swiping
+          event.preventDefault();
+          this.flipBlockAtPosition(event);
+        };
+
+        this.handleSwipeEnd = (event) => {
+          this.isSwipingToFlip = false;
+          this.flippedInCurrentSwipe.clear();
+          console.log('🔄 Swipe ended');
+        };
+
+        // Add new handlers
+        this.handleQuiltFlip = (event) => {
+          // Only allow flip on quilt screen and only if clicking on actual quilt blocks
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen || currentScreen.id !== 'screen-quilt') {
+            console.log('🔄 Flip ignored - not on quilt screen');
+            return;
+          }
+          
+          // Check if the click target is a rect (quilt block)
+          if (event.target.tagName !== 'rect') {
+            console.log('🔄 Flip ignored - not clicking on a quilt block');
+            return;
+          }
+          
+          event.preventDefault();
+          event.stopPropagation();
+          
+          // Get the block ID from the clicked rect
+          const blockId = event.target.getAttribute('data-block-id');
+          if (!blockId) {
+            console.log('🔄 No block ID found');
+            return;
+          }
+          
+          console.log('🔄 Flipping individual block:', blockId);
+          
+          // Toggle the individual block's flip state
+          const newFlipState = this.renderer.toggleBlockFlip(blockId);
+          
+          // Add flip animation to the specific block
+          event.target.style.transition = 'transform 0.3s ease-in-out';
+          
+          // Re-render the quilt to show the updated flip state
+          this.renderQuilt();
+          
+          this.logger.log(`🔄 Block ${blockId} flip toggled: ${newFlipState}`);
+        };
+
+        // Add swipe event listeners
+        quiltSVG.addEventListener('mousedown', this.handleSwipeStart);
+        quiltSVG.addEventListener('mousemove', this.handleSwipeMove);
+        quiltSVG.addEventListener('mouseup', this.handleSwipeEnd);
+        quiltSVG.addEventListener('mouseleave', this.handleSwipeEnd);
+        
+        // Use the same approach that's working for test listeners
+        document.addEventListener('touchstart', this.handleSwipeStart, { passive: false });
+        document.addEventListener('touchmove', this.handleSwipeMove, { passive: false });
+        document.addEventListener('touchend', this.handleSwipeEnd, { passive: false });
+        
+        // Keep the SVG listeners for immediate response
+        quiltSVG.addEventListener('touchstart', this.handleSwipeStart, { passive: false });
+        quiltSVG.addEventListener('touchmove', this.handleSwipeMove, { passive: false });
+        quiltSVG.addEventListener('touchend', this.handleSwipeEnd, { passive: false });
+        
+        // Tap handling is now done in handleSwipeEnd based on movement distance
+        
+        // Create debug panel
+        this.createDebugPanel();
+        
+        // Test if touch events work at all
+        this.testTouchEvents();
+        
+        // Make sure the SVG is interactive
+        quiltSVG.style.cursor = 'pointer';
+        quiltSVG.style.pointerEvents = 'auto';
+        quiltSVG.style.userSelect = 'none';
+        
+        // Prevent scrolling on the quilt area
+        quiltSVG.style.touchAction = 'none';
+        quiltSVG.style.overscrollBehavior = 'none';
+        
+        // Also prevent scrolling on the body when touching the quilt
+        document.body.style.overscrollBehavior = 'none';
+        
+        this.logger.log('🔄 Quilt swipe-to-flip handlers set up');
+      }
+
+      createDebugPanel() {
+        // Remove existing debug panel if it exists
+        const existingPanel = document.getElementById('debug-panel');
+        if (existingPanel) {
+          existingPanel.remove();
+        }
+
+        // Create debug panel
+        const debugPanel = document.createElement('div');
+        debugPanel.id = 'debug-panel';
+        debugPanel.style.cssText = `
+          position: fixed;
+          bottom: 10px;
+          left: 10px;
+          width: 350px;
+          height: 400px;
+          background: rgba(0, 0, 0, 0.9);
+          color: white;
+          padding: 15px;
+          border-radius: 8px;
+          border: 2px solid #666;
+          font-family: monospace;
+          font-size: 11px;
+          z-index: 10000;
+          overflow-y: auto;
+          word-wrap: break-word;
+          pointer-events: none;
+        `;
+        debugPanel.innerHTML = '<strong>DEBUG PANEL</strong><br>Touch events will appear here...';
+        
+        document.body.appendChild(debugPanel);
+        console.log('🔍 Debug panel created');
+      }
+
+      updateDebugPanel(message) {
+        const debugPanel = document.getElementById('debug-panel');
+        if (debugPanel) {
+          const timestamp = new Date().toLocaleTimeString();
+          debugPanel.innerHTML += `<br>[${timestamp}] ${message}`;
+          
+          // Keep only last 20 messages
+          const lines = debugPanel.innerHTML.split('<br>');
+          if (lines.length > 21) {
+            debugPanel.innerHTML = lines.slice(-21).join('<br>');
+          }
+          
+          // Auto-scroll to bottom
+          debugPanel.scrollTop = debugPanel.scrollHeight;
+        }
+      }
+
+      testTouchEvents() {
+        // Test if touch events work at all on the page
+        document.addEventListener('touchstart', (e) => {
+          this.updateDebugPanel(`TEST: touchstart detected at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        }, { passive: false });
+        
+        document.addEventListener('touchmove', (e) => {
+          this.updateDebugPanel(`TEST: touchmove detected at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        }, { passive: false });
+        
+        document.addEventListener('touchend', (e) => {
+          this.updateDebugPanel(`TEST: touchend detected`);
+        }, { passive: false });
+        
+        // Also test on window
+        window.addEventListener('touchstart', (e) => {
+          this.updateDebugPanel(`WINDOW: touchstart at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        }, { passive: false });
+        
+        window.addEventListener('touchmove', (e) => {
+          this.updateDebugPanel(`WINDOW: touchmove at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        }, { passive: false });
+        
+        window.addEventListener('touchend', (e) => {
+          this.updateDebugPanel(`WINDOW: touchend`);
+        }, { passive: false });
+        
+        // Test with a simple div overlay
+        const testDiv = document.createElement('div');
+        testDiv.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          z-index: 9999;
+          pointer-events: none;
+        `;
+        testDiv.addEventListener('touchstart', (e) => {
+          this.updateDebugPanel(`OVERLAY: touchstart at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        }, { passive: false });
+        testDiv.addEventListener('touchmove', (e) => {
+          this.updateDebugPanel(`OVERLAY: touchmove at ${e.touches[0].clientX}, ${e.touches[0].clientY}`);
+        }, { passive: false });
+        testDiv.addEventListener('touchend', (e) => {
+          this.updateDebugPanel(`OVERLAY: touchend`);
+        }, { passive: false });
+        
+        // Make it clickable for testing
+        testDiv.style.pointerEvents = 'auto';
+        document.body.appendChild(testDiv);
+        
+        this.updateDebugPanel('Touch event test listeners added (document + window)');
+      }
+
+      flipBlockAtPosition(event) {
+        let clientX, clientY;
+        
+        // Get coordinates from mouse or touch event
+        if (event.touches && event.touches.length > 0) {
+          clientX = event.touches[0].clientX;
+          clientY = event.touches[0].clientY;
+          console.log('🔄 Touch coordinates:', clientX, clientY);
+        } else if (event.changedTouches && event.changedTouches.length > 0) {
+          // For touchend events
+          clientX = event.changedTouches[0].clientX;
+          clientY = event.changedTouches[0].clientY;
+          console.log('🔄 Changed touch coordinates:', clientX, clientY);
+        } else {
+          clientX = event.clientX;
+          clientY = event.clientY;
+          console.log('🔄 Mouse coordinates:', clientX, clientY);
+        }
+        
+        console.log('🔄 Looking for block at:', clientX, clientY);
+        this.updateDebugPanel(`Looking for block at: ${clientX}, ${clientY}`);
+        
+        // Find the element at this position - look for rect specifically
+        let elementAtPosition = document.elementFromPoint(clientX, clientY);
+        
+        // If we didn't get a rect, try looking at all elements at this point
+        if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
+          const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
+          const rectElement = elementsAtPoint.find(el => el.tagName === 'rect');
+          if (rectElement) {
+            elementAtPosition = rectElement;
+          }
+        }
+        
+        console.log('🔄 Element found:', elementAtPosition?.tagName, elementAtPosition?.getAttribute('data-block-id'));
+        this.updateDebugPanel(`Element found: ${elementAtPosition?.tagName} (${elementAtPosition?.getAttribute('data-block-id') || 'no id'})`);
+        
+        if (elementAtPosition && elementAtPosition.tagName === 'rect') {
+          const blockId = elementAtPosition.getAttribute('data-block-id');
+          
+          if (blockId && !this.flippedInCurrentSwipe.has(blockId)) {
+            // Flip this block and remember we flipped it in this swipe
+            this.flippedInCurrentSwipe.add(blockId);
+            
+            const newFlipState = this.renderer.toggleBlockFlip(blockId);
+            
+            // Throttle rendering during swipes to prevent data corruption
+            if (!this.renderThrottleTimer) {
+              this.renderQuilt();
+              this.renderThrottleTimer = setTimeout(() => {
+                this.renderThrottleTimer = null;
+              }, 100);
+            }
+            
+            console.log(`🔄 Swiped block ${blockId} flip toggled: ${newFlipState}`);
+          } else if (blockId) {
+            console.log(`🔄 Block ${blockId} already flipped in this swipe`);
+          }
+        } else {
+          console.log('🔄 No rect found at position');
+        }
+      }
+
+      removeQuiltFlipHandlers() {
+        const quiltSVG = document.getElementById('quilt');
+        if (quiltSVG) {
+          // Remove swipe handlers
+          quiltSVG.removeEventListener('mousedown', this.handleSwipeStart);
+          quiltSVG.removeEventListener('mousemove', this.handleSwipeMove);
+          quiltSVG.removeEventListener('mouseup', this.handleSwipeEnd);
+          quiltSVG.removeEventListener('mouseleave', this.handleSwipeEnd);
+          quiltSVG.removeEventListener('touchstart', this.handleSwipeStart);
+          quiltSVG.removeEventListener('touchmove', this.handleSwipeMove);
+          quiltSVG.removeEventListener('touchend', this.handleSwipeEnd);
+          
+          // Remove document listeners
+          document.removeEventListener('touchstart', this.handleSwipeStart);
+          document.removeEventListener('touchmove', this.handleSwipeMove);
+          document.removeEventListener('touchend', this.handleSwipeEnd);
+          
+          // Remove old click handler if it exists
+          if (this.handleQuiltFlip) {
+            quiltSVG.removeEventListener('click', this.handleQuiltFlip);
+            quiltSVG.removeEventListener('touchstart', this.handleQuiltFlip);
+          }
+          
+          this.logger.log('🔄 Quilt swipe-to-flip handlers removed');
         }
       }
 
