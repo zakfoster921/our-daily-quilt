@@ -1234,6 +1234,27 @@
       }
     }
 
+    /* ===== USER PIECE HIGHLIGHTING ===== */
+    .user-piece-highlight {
+      /* Animation only applied when class is added via JavaScript */
+    }
+    
+    .user-piece-highlight.wiggle {
+      animation: userWobble 1.2s ease-in-out infinite;
+    }
+    
+    @keyframes userWobble {
+      0%, 100% { 
+        transform: rotate(0deg); 
+      }
+      25% { 
+        transform: rotate(-0.5deg); 
+      }
+      75% { 
+        transform: rotate(0.5deg); 
+      }
+    }
+
     /* ===== ACCESSIBILITY ===== */
     @media (prefers-reduced-motion: reduce) {
       * {
@@ -1763,7 +1784,7 @@
     </div>
 
     <!-- Floating Admin Button -->
-    <button id="floatingAdminBtn" class="floating-admin-btn" aria-label="Admin controls" style="display: flex;">
+    <button id="floatingAdminBtn" class="floating-admin-btn" aria-label="Admin controls" style="display: none;">
       ⚙️
     </button>
 
@@ -2497,9 +2518,7 @@
       }
 
       static formatDate(date = new Date()) {
-        // Use Chicago timezone to match the rest of the application
-        const chicagoTime = new Date(date.toLocaleString("en-US", {timeZone: "America/Chicago"}));
-        return chicagoTime.toLocaleDateString(undefined, {
+        return date.toLocaleDateString(undefined, {
           weekday: 'long',
           year: 'numeric',
           month: 'long',
@@ -3463,24 +3482,34 @@
       }
 
       getTodayQuote() {
-        // Use Chicago timezone to match the rest of the application
+        // Use UTC time for day calculation - quote changes at 5:00 AM UTC (midnight Chicago)
         const now = new Date();
-        const chicagoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Chicago"}));
-        const dayIndex = Math.floor(chicagoTime.getTime() / (1000 * 60 * 60 * 24));
+        
+        // Adjust for 5 AM UTC day boundary instead of midnight UTC
+        // If it's before 5 AM UTC, use yesterday's quote
+        const utcHours = now.getUTCHours();
+        const adjustedDate = new Date(now);
+        
+        if (utcHours < 5) {
+          // Before 5 AM UTC, use yesterday's date
+          adjustedDate.setUTCDate(adjustedDate.getUTCDate() - 1);
+        }
+        
+        const dayIndex = Math.floor(adjustedDate.getTime() / (1000 * 60 * 60 * 24));
         const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
         
-        console.log(`🔍 getTodayQuote: ${chicagoTime.toDateString()} (Chicago) → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
+        console.log(`🔍 getTodayQuote: ${now.toDateString()} (UTC) → adjusted: ${adjustedDate.toDateString()} → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
         
         return this.quotes[quoteIndex];
       }
 
       getQuoteForDate(dateString) {
-        // dateString format: "2025-08-18"
+        // dateString format: "2025-08-18" - assumes UTC date
         const date = new Date(dateString);
         const dayIndex = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
         const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
         
-        console.log(`🔍 getQuoteForDate: ${dateString} → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
+        console.log(`🔍 getQuoteForDate: ${dateString} (UTC) → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
         
         return this.quotes[quoteIndex];
       }
@@ -3497,13 +3526,14 @@
           
           if (quoteLine) {
             quoteLine.textContent = text;
-            // Check if quote is longer than 2 lines and apply long-quote class
-            this.checkQuoteLength(quoteLine);
             
-            // Also check text length as a fallback (if text is longer than ~120 characters, it's likely long)
-            if (text.length > 120) {
+            // IMMEDIATE check: If text is longer than ~100 characters, apply long-quote class immediately
+            if (text.length > 100) {
               quoteLine.classList.add('long-quote');
-              console.log('Applied long-quote class based on text length:', text.length);
+              console.log('Applied long-quote class immediately based on text length:', text.length);
+            } else {
+              // For shorter text, check height-based measurement
+              this.checkQuoteLength(quoteLine);
             }
           }
           if (quoteAuthor) {
@@ -3536,11 +3566,25 @@
 
       // Check if quote is longer than 2 lines and apply appropriate styling
       checkQuoteLength(quoteElement) {
-        // Reset class first
-        quoteElement.classList.remove('long-quote');
+        // Prevent multiple calls on the same element
+        if (quoteElement.dataset.lengthChecked === 'true') {
+          return;
+        }
+        
+        // Mark as checked to prevent re-runs
+        quoteElement.dataset.lengthChecked = 'true';
         
         // Use setTimeout to ensure the text is fully rendered before measuring
         setTimeout(() => {
+          // Check if element is visible
+          if (quoteElement.offsetHeight === 0) {
+            console.log('Quote element not visible yet, retrying...');
+            // Reset the flag and retry after a longer delay
+            delete quoteElement.dataset.lengthChecked;
+            setTimeout(() => this.checkQuoteLength(quoteElement), 500);
+            return;
+          }
+          
           // Get the computed line height
           const computedStyle = window.getComputedStyle(quoteElement);
           const lineHeight = parseFloat(computedStyle.lineHeight);
@@ -3548,12 +3592,12 @@
           
           console.log('Quote height:', elementHeight, 'Line height:', lineHeight, 'Ratio:', elementHeight / lineHeight);
           
-          // If the element height is more than 2.5 times the line height, consider it long
-          if (elementHeight > lineHeight * 2.5) {
+          // If the element height is more than 2.2 times the line height, consider it long (lowered threshold)
+          if (elementHeight > lineHeight * 2.2) {
             quoteElement.classList.add('long-quote');
             console.log('Applied long-quote class');
           }
-        }, 100);
+        }, 200);
       }
 
       // Load quotes from Firestore
@@ -4336,8 +4380,10 @@
 
       // Create archive snapshot from current quilt
       async createArchiveSnapshot() {
-        const today = new Date().toISOString().split('T')[0];
-        const currentQuote = this.quoteService.getQuoteForDate(today);
+        // Use UTC to determine the date for this quilt
+        const utcNow = new Date();
+        const quiltDate = utcNow.toISOString().split('T')[0];
+        const currentQuote = this.quoteService.getQuoteForDate(quiltDate);
         const blockCount = this.quiltEngine.blocks.length;
         
         this.logger.log(`🖼️ Generating thumbnail for ${blockCount} blocks...`);
@@ -4348,7 +4394,7 @@
         
         // Create archive entry
         const archiveEntry = this.archiveService.createArchiveEntry(
-          today,
+          quiltDate,
           { blocks: this.quiltEngine.blocks }, // Current quilt state
           currentQuote,
           Math.max(blockCount, 12) // Use actual block count or minimum 12
@@ -4363,7 +4409,7 @@
         
         // Note: Archive feed will be re-rendered when switching to archive screen
         
-        this.logger.log(`✅ Created archive snapshot for ${today} with ${blockCount} blocks and thumbnail`);
+        this.logger.log(`✅ Created archive snapshot for ${quiltDate} with ${blockCount} blocks and thumbnail`);
         return archiveEntry;
       }
 
@@ -4540,8 +4586,6 @@
             </div>
             <div class="quote-manager-actions">
               <button onclick="app.saveQuotesToFirestore()" class="save-btn">Save Changes</button>
-              <button onclick="app.fixQuoteAssignment()" class="fix-btn">Fix Quote Assignment</button>
-              <button onclick="app.showTodayQuote()" class="debug-btn">Show Today's Quote</button>
               <button onclick="this.parentElement.parentElement.parentElement.remove()" class="close-btn">Close</button>
             </div>
           </div>
@@ -4646,8 +4690,6 @@
           .delete-btn { color: #cc0000; }
           .swap-btn { color: #666; }
           .save-btn { background: #2196F3; color: white; padding: 8px 16px; }
-          .fix-btn { background: #FF9800; color: white; padding: 8px 16px; }
-          .debug-btn { background: #9C27B0; color: white; padding: 8px 16px; }
           .close-btn { background: #666; color: white; padding: 8px 16px; }
           .quote-manager-actions {
             margin-top: 20px;
@@ -4687,57 +4729,18 @@
         const dayData = next7Days[dayIndex];
         const quote = dayData.quote;
         
-        // Give user options: edit content or swap with another quote
-        const action = prompt(`What would you like to do for ${dayData.dayName}?\n\n1. Edit quote content\n2. Swap with another quote\n3. Assign different quote to this day\n\nEnter 1, 2, or 3:`, '1');
-        
-        if (action === '1') {
-          // Edit the quote content
-          const newText = prompt('Edit quote text:', quote.text);
-          if (newText !== null) {
-            const newAuthor = prompt('Edit author:', quote.author.replace('— ', ''));
-            if (newAuthor !== null) {
-              // Update the quote in the quotes array using the original index
-              this.quoteService.quotes[dayData.originalIndex] = {
-                text: newText,
-                author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
-              };
-              
-              this.uiService.showToast(`Quote content for ${dayData.dayName} updated`);
-            }
-          }
-        } else if (action === '2') {
-          // Swap quotes between days by modifying the shuffled indexes
-          const swapDayIndex = prompt(`Enter the day number (1-7) to swap with ${dayData.dayName}:\n\n1. ${next7Days[0].dayName} (${next7Days[0].date})\n2. ${next7Days[1].dayName} (${next7Days[1].date})\n3. ${next7Days[2].dayName} (${next7Days[2].date})\n4. ${next7Days[3].dayName} (${next7Days[3].date})\n5. ${next7Days[4].dayName} (${next7Days[4].date})\n6. ${next7Days[5].dayName} (${next7Days[5].date})\n7. ${next7Days[6].dayName} (${next7Days[6].date})`, '');
-          
-          const swapIndex = parseInt(swapDayIndex) - 1;
-          if (swapIndex >= 0 && swapIndex < 7 && swapIndex !== dayIndex) {
-            const swapDayData = next7Days[swapIndex];
+        const newText = prompt('Edit quote text:', quote.text);
+        if (newText !== null) {
+          const newAuthor = prompt('Edit author:', quote.author.replace('— ', ''));
+          if (newAuthor !== null) {
+            // Update the quote in the quotes array using the original index
+            this.quoteService.quotes[dayData.originalIndex] = {
+              text: newText,
+              author: newAuthor.startsWith('— ') ? newAuthor : `— ${newAuthor}`
+            };
             
-            // Swap the shuffled indexes for these two days
-            const currentDayIndexForShuffle = dayData.dayIndexForShuffle;
-            const swapDayIndexForShuffle = swapDayData.dayIndexForShuffle;
-            
-            const tempIndex = this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
-            this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = 
-              this.quoteService.shuffledIndexes[swapDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
-            this.quoteService.shuffledIndexes[swapDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = tempIndex;
-            
-            this.uiService.showToast(`Swapped quotes between ${dayData.dayName} and ${swapDayData.dayName}`);
-          } else {
-            this.uiService.showToast('Invalid day selection');
-          }
-        } else if (action === '3') {
-          // Assign a different quote to this specific day
-          const newQuoteIndex = prompt(`Enter the quote number (1-${this.quoteService.quotes.length}) that should be assigned to ${dayData.dayName}:\n\nAvailable quotes:\n${this.quoteService.quotes.map((q, i) => `${i + 1}. "${q.text.substring(0, 50)}..."`).join('\n')}`, '');
-          const quoteIndex = parseInt(newQuoteIndex) - 1;
-          
-          if (quoteIndex >= 0 && quoteIndex < this.quoteService.quotes.length) {
-            // Update the shuffled index for this specific day
-            this.quoteService.shuffledIndexes[dayData.dayIndexForShuffle % this.quoteService.shuffledIndexes.length] = quoteIndex;
-            
-            this.uiService.showToast(`Assigned quote ${quoteIndex + 1} to ${dayData.dayName}`);
-          } else {
-            this.uiService.showToast('Invalid quote number');
+            this.uiService.showToast(`Quote for ${dayData.dayName} updated`);
+            // Don't refresh immediately - let user save first
           }
         }
       }
@@ -4816,17 +4819,21 @@
         const currentDay = next7Days[dayIndex];
         const previousDay = next7Days[dayIndex - 1];
         
-        // Use the dayIndexForShuffle that was already calculated in getNext7DaysQuotes
-        const currentDayIndexForShuffle = currentDay.dayIndexForShuffle;
-        const previousDayIndexForShuffle = previousDay.dayIndexForShuffle;
+        // Calculate the actual day indices for the shuffled array
+        const today = new Date();
+        const currentDate = new Date(today);
+        currentDate.setDate(today.getDate() + currentDay.dayIndex);
+        const previousDate = new Date(today);
+        previousDate.setDate(today.getDate() + previousDay.dayIndex);
+        
+        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
+        const previousDayIndex = Math.floor(previousDate.getTime() / (1000 * 60 * 60 * 24));
         
         // Swap the quotes in the shuffled indexes
-        console.log(`🔄 Swapping: ${previousDay.dayName} (index ${previousDayIndexForShuffle}) ↔ ${currentDay.dayName} (index ${currentDayIndexForShuffle})`);
-        
-        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = 
-          this.quoteService.shuffledIndexes[previousDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[previousDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = tempIndex;
+        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
+          this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
         
         this.uiService.showToast(`Swapped quotes for ${previousDay.dayName} and ${currentDay.dayName}`);
         this.showQuoteManager(); // Refresh the manager
@@ -4839,17 +4846,21 @@
         const currentDay = next7Days[dayIndex];
         const nextDay = next7Days[dayIndex + 1];
         
-        // Use the dayIndexForShuffle that was already calculated in getNext7DaysQuotes
-        const currentDayIndexForShuffle = currentDay.dayIndexForShuffle;
-        const nextDayIndexForShuffle = nextDay.dayIndexForShuffle;
+        // Calculate the actual day indices for the shuffled array
+        const today = new Date();
+        const currentDate = new Date(today);
+        currentDate.setDate(today.getDate() + currentDay.dayIndex);
+        const nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + nextDay.dayIndex);
+        
+        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
+        const nextDayIndex = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24));
         
         // Swap the quotes in the shuffled indexes
-        console.log(`🔄 Swapping: ${currentDay.dayName} (index ${currentDayIndexForShuffle}) ↔ ${nextDay.dayName} (index ${nextDayIndexForShuffle})`);
-        
-        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[currentDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = 
-          this.quoteService.shuffledIndexes[nextDayIndexForShuffle % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[nextDayIndexForShuffle % this.quoteService.shuffledIndexes.length] = tempIndex;
+        const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
+          this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length];
+        this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
         
         this.uiService.showToast(`Swapped quotes for ${currentDay.dayName} and ${nextDay.dayName}`);
         this.showQuoteManager(); // Refresh the manager
@@ -4867,44 +4878,6 @@
             this.uiService.showToast('New quote added');
             this.showQuoteManager(); // Refresh the manager
           }
-        }
-      }
-
-      // Fix quote assignment for specific days (for correcting issues like Wednesday/Thursday mixup)
-      fixQuoteAssignment() {
-        const next7Days = this.getNext7DaysQuotes();
-        
-        let dayList = '';
-        next7Days.forEach((day, index) => {
-          dayList += `${index + 1}. ${day.dayName} (${day.date}) - "${day.quote.text.substring(0, 50)}..."\n`;
-        });
-        
-        const dayToFix = prompt(`Which day's quote assignment needs to be fixed?\n\n${dayList}\n\nEnter day number (1-7):`, '');
-        const dayIndex = parseInt(dayToFix) - 1;
-        
-        if (dayIndex >= 0 && dayIndex < 7) {
-          const targetDay = next7Days[dayIndex];
-          
-          const newQuoteIndex = prompt(`Enter the quote number (1-${this.quoteService.quotes.length}) that should be assigned to ${targetDay.dayName}:\n\nAvailable quotes:\n${this.quoteService.quotes.map((q, i) => `${i + 1}. "${q.text.substring(0, 50)}..."`).join('\n')}`, '');
-          const quoteIndex = parseInt(newQuoteIndex) - 1;
-          
-          if (quoteIndex >= 0 && quoteIndex < this.quoteService.quotes.length) {
-            // Calculate the actual day index for the shuffled array
-            const today = new Date();
-            const targetDate = new Date(today);
-            targetDate.setDate(today.getDate() + targetDay.dayIndex);
-            const dayIndexForShuffle = Math.floor(targetDate.getTime() / (1000 * 60 * 60 * 24));
-            
-            // Update the shuffled index for this specific day
-            this.quoteService.shuffledIndexes[dayIndexForShuffle % this.quoteService.shuffledIndexes.length] = quoteIndex;
-            
-            this.uiService.showToast(`Fixed ${targetDay.dayName} to use quote ${quoteIndex + 1}`);
-            this.showQuoteManager(); // Refresh the manager
-          } else {
-            this.uiService.showToast('Invalid quote number');
-          }
-        } else {
-          this.uiService.showToast('Invalid day number');
         }
       }
 
@@ -4962,26 +4935,20 @@
 
       showTodayQuote() {
         const todayQuote = this.quoteService.getTodayQuote();
-        const today = new Date();
-        const dayIndex = Math.floor(today.getTime() / (1000 * 60 * 60 * 24));
-        const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
-        
-        alert(`Today's Quote (${today.toDateString()}):\n\n"${todayQuote.text}"\n${todayQuote.author}\n\nDay Index: ${dayIndex}\nQuote Index: ${quoteIndex}`);
+        alert(`Today's Quote:\n\n"${todayQuote.text}"\n${todayQuote.author}`);
       }
 
       // Get next 7 days of quotes with dates
       getNext7DaysQuotes() {
         const next7Days = [];
-        // Use Chicago timezone to match the rest of the application
-        const now = new Date();
-        const chicagoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Chicago"}));
+        const today = new Date();
         
-        console.log(`🔍 getNext7DaysQuotes - Today (Chicago): ${chicagoTime.toDateString()}`);
+        console.log(`🔍 getNext7DaysQuotes - Today: ${today.toDateString()}`);
         console.log(`🔍 Current quotes array length: ${this.quoteService.quotes.length}`);
         
         for (let i = 1; i <= 7; i++) { // Start from tomorrow (i=1) instead of today (i=0)
-          const futureDate = new Date(chicagoTime);
-          futureDate.setDate(chicagoTime.getDate() + i);
+          const futureDate = new Date(today);
+          futureDate.setDate(today.getDate() + i);
           
           const year = futureDate.getFullYear();
           const month = String(futureDate.getMonth() + 1).padStart(2, '0');
@@ -5005,9 +4972,7 @@
             dayName: dayName,
             quote: quote,
             originalIndex: quoteIndex,
-            dayIndex: i, // Use the loop index (1-7) instead of the absolute day index
-            actualDate: futureDate, // Store the actual date object for debugging
-            dayIndexForShuffle: dayIndex // Store the actual day index used for shuffling
+            dayIndex: i // Use the loop index (1-7) instead of the absolute day index
           });
         }
         
@@ -5124,15 +5089,11 @@
 
 
       showAdminMenu() {
-        const blockCount = this.quiltEngine.blocks.length;
         const menu = document.createElement('div');
         menu.className = 'admin-menu';
         menu.innerHTML = `
           <div class="admin-menu-content">
             <h3>Admin Controls</h3>
-            <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center;">
-              <strong>Current Blocks: ${blockCount}</strong>
-            </div>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
@@ -5261,50 +5222,47 @@
         const scheduleDailyCycle = () => {
           const now = new Date();
           
-          // Convert to Chicago time (Central Time)
-          const chicagoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Chicago"}));
+          // Calculate next 4:30 AM UTC (archive)
+          const nextArchive = new Date(now);
+          nextArchive.setUTCHours(4, 30, 0, 0); // 4:30:00 AM UTC
           
-          // Calculate next 11:59 PM Chicago time
-          const nextArchive = new Date(chicagoTime);
-          nextArchive.setHours(23, 59, 0, 0); // 11:59:00 PM
-          
-          // If it's already past 11:59 PM today, schedule for tomorrow
-          if (chicagoTime >= nextArchive) {
-            nextArchive.setDate(nextArchive.getDate() + 1);
+          // If it's already past 4:30 AM UTC today, schedule for tomorrow
+          if (now >= nextArchive) {
+            nextArchive.setUTCDate(nextArchive.getUTCDate() + 1);
           }
           
-          // Calculate next 12:00 AM Chicago time (next day)
-          const nextReset = new Date(chicagoTime);
-          nextReset.setDate(nextReset.getDate() + 1);
-          nextReset.setHours(0, 0, 0, 0); // 12:00:00 AM
+          // Calculate next 5:00 AM UTC (reset)
+          const nextReset = new Date(now);
+          nextReset.setUTCHours(5, 0, 0, 0); // 5:00:00 AM UTC
           
-          // Convert back to local time for setTimeout
-          const localNextArchive = new Date(nextArchive.toLocaleString("en-US", {timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone}));
-          const localNextReset = new Date(nextReset.toLocaleString("en-US", {timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone}));
+          // If it's already past 5:00 AM UTC today, schedule for tomorrow
+          if (now >= nextReset) {
+            nextReset.setUTCDate(nextReset.getUTCDate() + 1);
+          }
           
-          const timeUntilArchive = localNextArchive.getTime() - now.getTime();
-          const timeUntilReset = localNextReset.getTime() - now.getTime();
+          const timeUntilArchive = nextArchive.getTime() - now.getTime();
+          const timeUntilReset = nextReset.getTime() - now.getTime();
           
-          this.logger.log(`📦 Next archive scheduled for: ${nextArchive.toLocaleString("en-US", {timeZone: "America/Chicago"})} Chicago time`);
-          this.logger.log(`🔄 Next reset scheduled for: ${nextReset.toLocaleString("en-US", {timeZone: "America/Chicago"})} Chicago time`);
+          this.logger.log(`📦 Next archive scheduled for: ${nextArchive.toISOString()} (4:30 AM UTC)`);
+          this.logger.log(`🔄 Next reset scheduled for: ${nextReset.toISOString()} (5:00 AM UTC)`);
           
-          // Schedule archive at 11:59 PM
+          // Schedule archive at 4:30 AM UTC
           if (timeUntilArchive > 0) {
             setTimeout(async () => {
-              this.logger.log('📦 11:59 PM reached - archiving current quilt');
+              this.logger.log('📦 4:30 AM UTC reached - archiving current quilt');
               const archiveSuccess = await this.performDailyArchive();
               
-              // Store archive status for reset check (using Chicago timezone)
-              const chicagoNow = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Chicago"}));
-              const todayKey = chicagoNow.toDateString();
+              // Store archive status for reset check (using UTC date)
+              const utcNow = new Date();
+              const todayKey = utcNow.toISOString().split('T')[0];
               localStorage.setItem(`archiveStatus_${todayKey}`, archiveSuccess ? 'success' : 'failed');
             }, timeUntilArchive);
           }
           
-          // Schedule reset at 12:00 AM
+          // Schedule reset at 5:00 AM UTC
           if (timeUntilReset > 0) {
             setTimeout(async () => {
-              this.logger.log('🔄 Midnight reached - checking archive status before reset');
+              this.logger.log('🔄 5:00 AM UTC reached - checking archive status before reset');
               await this.performDailyReset();
               scheduleDailyCycle(); // Schedule next day's cycle
             }, timeUntilReset);
@@ -5324,12 +5282,14 @@
             this.logger.log(`📦 Archiving quilt with ${this.quiltEngine.blocks.length} blocks...`);
             
             // SAFEGUARD 1: Backup current quilt data before archiving
+            const utcNow = new Date();
+            const backupDate = utcNow.toISOString().split('T')[0];
             const quiltBackup = {
               blocks: JSON.parse(JSON.stringify(this.quiltEngine.blocks)),
               submissionCount: this.quiltEngine.submissionCount,
               timestamp: new Date().toISOString()
             };
-            localStorage.setItem('quiltBackup_' + new Date().toDateString(), JSON.stringify(quiltBackup));
+            localStorage.setItem('quiltBackup_' + backupDate, JSON.stringify(quiltBackup));
             this.logger.log('📦 Created quilt backup before archiving');
             
             // SAFEGUARD 2: Try archive with retry logic
@@ -5357,18 +5317,20 @@
               // SAFEGUARD 3: If all retries fail, create a minimal archive entry
               this.logger.error('❌ All archive attempts failed - creating emergency backup');
               try {
-                const today = new Date().toISOString().split('T')[0];
+                // Use UTC for emergency backup date
+                const utcNow = new Date();
+                const emergencyDate = utcNow.toISOString().split('T')[0];
                 const emergencyEntry = {
-                  date: today,
+                  date: emergencyDate,
                   blocks: this.quiltEngine.blocks,
-                  quote: this.quoteService.getTodayQuote(),
+                  quote: this.quoteService.getQuoteForDate(emergencyDate),
                   contributorCount: this.quiltEngine.submissionCount,
                   thumbnail: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDQwMCA0MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iNDAwIiBmaWxsPSIjZmY2YjZiIi8+Cjx0ZXh0IHg9IjIwMCIgeT0iMjAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDAwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiI+RW1lcmdlbmN5IEJhY2t1cDwvdGV4dD4KPC9zdmc+',
                   isEmergencyBackup: true
                 };
                 
                 // Store emergency backup in localStorage as fallback
-                const emergencyKey = `emergencyArchive_${today}`;
+                const emergencyKey = `emergencyArchive_${emergencyDate}`;
                 localStorage.setItem(emergencyKey, JSON.stringify(emergencyEntry));
                 this.logger.log('📦 Created emergency backup in localStorage');
                 
@@ -5381,9 +5343,11 @@
             
             // SAFEGUARD 4: Verify archive was actually created
             try {
-              const today = new Date().toISOString().split('T')[0];
+              // Use UTC for verification
+              const utcNow = new Date();
+              const verifyDate = utcNow.toISOString().split('T')[0];
               const archives = await this.archiveService.getArchives(1);
-              const todayArchive = archives.find(archive => archive.date === today);
+              const todayArchive = archives.find(archive => archive.date === verifyDate);
               
               if (todayArchive) {
                 this.logger.log('✅ Archive verification successful - archive found in database');
@@ -5412,11 +5376,11 @@
         try {
           this.logger.log('🔄 Performing daily reset...');
           
-          // Check if archive was successful before resetting (using Chicago timezone)
-          const chicagoNow = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Chicago"}));
-          const yesterday = new Date(chicagoNow);
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayKey = yesterday.toDateString();
+          // Check if archive was successful before resetting (using UTC)
+          const utcNow = new Date();
+          const yesterday = new Date(utcNow);
+          yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+          const yesterdayKey = yesterday.toISOString().split('T')[0];
           const archiveStatus = localStorage.getItem(`archiveStatus_${yesterdayKey}`);
           
           if (archiveStatus === 'failed') {
@@ -5432,9 +5396,8 @@
             // Reset the quilt
             await this.resetQuiltForNewDay();
             
-            // Update visit tracking (using Chicago timezone)
-            const chicagoNow = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Chicago"}));
-            const currentDate = chicagoNow.toDateString();
+            // Update visit tracking (using UTC date)
+            const currentDate = utcNow.toISOString().split('T')[0];
             localStorage.setItem('ourDailyLastVisitDate', currentDate);
             
             this.logger.log('✅ Daily reset completed successfully');
@@ -5881,6 +5844,15 @@
         if (userPieces.length > 0) {
           this.uiService.showToast(`Found ${userPieces.length} of your pieces!`);
           this.renderQuilt();
+          
+          // Add wiggle animation to user pieces
+          setTimeout(() => {
+            const userPieceElements = document.querySelectorAll('.user-piece-highlight');
+            userPieceElements.forEach(element => {
+              element.classList.add('wiggle');
+            });
+          }, 100); // Small delay to ensure rendering is complete
+          
         } else {
           this.uiService.showToast('No pieces found for current user');
         }
