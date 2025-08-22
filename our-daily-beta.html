@@ -2655,10 +2655,8 @@
               const fadeElements = document.querySelectorAll('.quote-screen-fade-in');
               fadeElements.forEach(el => el.classList.remove('visible'));
               
-              // Trigger fade-in after 3 seconds
-              setTimeout(() => {
-                fadeElements.forEach(el => el.classList.add('visible'));
-              }, 3000);
+              // Trigger fade-in immediately (removed 3-second delay for testing)
+              fadeElements.forEach(el => el.classList.add('visible'));
             }
             
             // Handle welcome screen fade-in elements
@@ -3801,6 +3799,7 @@
           const blockFlipState = this.getBlockFlipState(block.id);
           if (blockFlipState) {
             rect.classList.add('block-flipped');
+            console.log(`🔄 Applied block-flipped class to block ${block.id}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
           }
           rect.setAttribute('data-block-id', block.id);
           
@@ -5513,6 +5512,9 @@
       }
 
       renderQuilt() {
+        console.log('🔄 renderQuilt() called'); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+        this.updateDebugPanel(`renderQuilt() called`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+        
         this.ensureQuiltFits();
         
         const state = this.quiltEngine.getState();
@@ -5968,10 +5970,12 @@
         // Add swipe handlers for continuous flipping
         this.isSwipingToFlip = false;
         this.flippedInCurrentSwipe = new Set();
+        this.lastSwipeX = null;
+        this.lastSwipeY = null;
 
         this.handleSwipeStart = (event) => {
           console.log('🔄 MAIN HANDLER: Swipe start called');
-          // this.updateDebugPanel(`MAIN: Swipe start called`); // DISABLED FOR PRODUCTION
+          this.updateDebugPanel(`MAIN: Swipe start called`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
           
           const currentScreen = document.querySelector('.screen.active');
           if (!currentScreen || currentScreen.id !== 'screen-quilt') {
@@ -5984,6 +5988,7 @@
           // Always activate swipe mode when starting on the quilt (rect or SVG)
           this.isSwipingToFlip = true;
           this.flippedInCurrentSwipe.clear();
+          this.updateDebugPanel(`Swipe mode activated: isSwipingToFlip=${this.isSwipingToFlip}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
           
           // Store start position for tap detection
           this.swipeStartTime = Date.now();
@@ -5997,18 +6002,56 @@
         };
 
         this.handleSwipeMove = (event) => {
-          if (!this.isSwipingToFlip) return;
+          try {
+            this.updateDebugPanel(`HANDLE SWIPE MOVE CALLED`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            
+            if (!this.isSwipingToFlip) {
+              this.updateDebugPanel(`SWIPE MOVE IGNORED: isSwipingToFlip=${this.isSwipingToFlip}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+              return;
+            }
+            
+                       // Get current coordinates - TRYING DIFFERENT APPROACH for mobile touch
+           let currentX, currentY;
+           this.updateDebugPanel(`DEBUG: event.touches.length=${event.touches?.length}, event.changedTouches.length=${event.changedTouches?.length}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+           
+           // Try multiple sources for coordinates
+           if (event.changedTouches && event.changedTouches.length > 0) {
+             currentX = event.changedTouches[0].clientX;
+             currentY = event.changedTouches[0].clientY;
+             this.updateDebugPanel(`DEBUG: Using changedTouches[0]: ${currentX}, ${currentY}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+           } else if (event.touches && event.touches.length > 0) {
+             currentX = event.touches[0].clientX;
+             currentY = event.touches[0].clientY;
+             this.updateDebugPanel(`DEBUG: Using touches[0]: ${currentX}, ${currentY}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+           } else if (event.targetTouches && event.targetTouches.length > 0) {
+             currentX = event.targetTouches[0].clientX;
+             currentY = event.targetTouches[0].clientY;
+             this.updateDebugPanel(`DEBUG: Using targetTouches[0]: ${currentX}, ${currentY}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+           } else {
+             currentX = event.clientX;
+             currentY = event.clientY;
+             this.updateDebugPanel(`DEBUG: Using clientX/Y: ${currentX}, ${currentY}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+           }
+           
+           // Check if coordinates are actually changing
+           if (this.lastSwipeX === currentX && this.lastSwipeY === currentY) {
+             this.updateDebugPanel(`SWIPE MOVE: SAME COORDS ${currentX}, ${currentY} - SKIPPING`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+             return; // Skip if coordinates haven't changed
+           }
+           
+           this.lastSwipeX = currentX;
+           this.lastSwipeY = currentY;
           
-          // Get current coordinates
-          const currentX = event.touches ? event.touches[0].clientX : event.clientX;
-          const currentY = event.touches ? event.touches[0].clientY : event.clientY;
-          
-          console.log('🔄 Swipe move:', event.type, 'touches:', event.touches?.length, 'at', currentX, currentY);
-          // this.updateDebugPanel(`SWIPE MOVE: ${event.type} at ${currentX}, ${currentY}`); // DISABLED FOR PRODUCTION
-          
-          // Now prevent default since we're actually swiping
-          event.preventDefault();
-          this.flipBlockAtPosition(event);
+                      console.log('🔄 Swipe move:', event.type, 'touches:', event.touches?.length, 'at', currentX, currentY);
+            this.updateDebugPanel(`SWIPE MOVE: ${event.type} at ${currentX}, ${currentY}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            
+            // Now prevent default since we're actually swiping
+            event.preventDefault();
+            this.flipBlockAtPosition(event);
+          } catch (error) {
+            this.updateDebugPanel(`ERROR in handleSwipeMove: ${error.message}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            console.error('Error in handleSwipeMove:', error);
+          }
         };
 
         this.handleSwipeEnd = (event) => {
@@ -6062,9 +6105,13 @@
             }
           }
           
-          this.isSwipingToFlip = false;
-          this.flippedInCurrentSwipe.clear();
-          console.log('🔄 Swipe ended');
+          // Add a small delay before clearing swipe state to prevent race conditions
+          setTimeout(() => {
+            this.isSwipingToFlip = false;
+            this.flippedInCurrentSwipe.clear();
+            this.updateDebugPanel(`Swipe ended - cleared flip state`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            console.log('🔄 Swipe ended');
+          }, 50); // 50ms delay to allow handleSwipeMove to process
         };
 
         // Add new handlers
@@ -6112,23 +6159,23 @@
         quiltSVG.addEventListener('mouseup', this.handleSwipeEnd);
         quiltSVG.addEventListener('mouseleave', this.handleSwipeEnd);
         
-        // Use the same approach that's working for test listeners
+        // Use document-level listeners for touch events (more reliable)
         document.addEventListener('touchstart', this.handleSwipeStart, { passive: false });
         document.addEventListener('touchmove', this.handleSwipeMove, { passive: false });
         document.addEventListener('touchend', this.handleSwipeEnd, { passive: false });
         
-        // Keep the SVG listeners for immediate response
-        quiltSVG.addEventListener('touchstart', this.handleSwipeStart, { passive: false });
-        quiltSVG.addEventListener('touchmove', this.handleSwipeMove, { passive: false });
-        quiltSVG.addEventListener('touchend', this.handleSwipeEnd, { passive: false });
+        // Debug: Log that event listeners are set up
+        this.updateDebugPanel(`Event listeners set up: touchmove bound to handleSwipeMove`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+        
+        // REMOVED: Duplicate SVG touch listeners that were causing conflicts
         
         // Tap handling is now done in handleSwipeEnd based on movement distance
         
-        // Create debug panel - DISABLED FOR PRODUCTION
-        // this.createDebugPanel();
+        // Create debug panel - TEMPORARILY RE-ENABLED FOR DEBUGGING
+        this.createDebugPanel();
         
-        // Test if touch events work at all - DISABLED FOR PRODUCTION
-        // this.testTouchEvents();
+        // Test if touch events work at all - TEMPORARILY RE-ENABLED FOR DEBUGGING
+        this.testTouchEvents();
         
         // Make sure the SVG is interactive
         quiltSVG.style.cursor = 'pointer';
@@ -6253,6 +6300,8 @@
       }
 
       flipBlockAtPosition(event) {
+        this.updateDebugPanel(`FLIP BLOCK AT POSITION CALLED`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+        
         let clientX, clientY;
         
         // Get coordinates from mouse or touch event
@@ -6272,7 +6321,7 @@
         }
         
         console.log('🔄 Looking for block at:', clientX, clientY);
-        // this.updateDebugPanel(`Looking for block at: ${clientX}, ${clientY}`); // DISABLED FOR PRODUCTION
+        this.updateDebugPanel(`Looking for block at: ${clientX}, ${clientY}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
         
         // Find the element at this position - look for rect specifically
         let elementAtPosition = document.elementFromPoint(clientX, clientY);
@@ -6289,31 +6338,28 @@
           }
         
         console.log('🔄 Element found:', elementAtPosition?.tagName, elementAtPosition?.getAttribute('data-block-id'));
-        // this.updateDebugPanel(`Element found: ${elementAtPosition?.tagName} (${elementAtPosition?.getAttribute('data-block-id') || 'no id'})`); // DISABLED FOR PRODUCTION
+        this.updateDebugPanel(`Element found: ${elementAtPosition?.tagName} (${elementAtPosition?.getAttribute('data-block-id') || 'no id'})`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
         
         if (elementAtPosition && elementAtPosition.tagName === 'rect') {
           const blockId = elementAtPosition.getAttribute('data-block-id');
-          // this.updateDebugPanel(`Found rect with blockId: ${blockId}`); // DISABLED FOR PRODUCTION
+          this.updateDebugPanel(`Found rect with blockId: ${blockId}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
           
           if (blockId && !this.flippedInCurrentSwipe.has(blockId)) {
             // Flip this block and remember we flipped it in this swipe
             this.flippedInCurrentSwipe.add(blockId);
             
             const newFlipState = this.renderer.toggleBlockFlip(blockId);
+            this.updateDebugPanel(`toggleBlockFlip returned: ${newFlipState}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
             
-            // Throttle rendering during swipes to prevent data corruption
-            if (!this.renderThrottleTimer) {
-              this.renderQuilt(); // NEEDED - to apply CSS class to DOM elements
-              this.renderThrottleTimer = setTimeout(() => {
-                this.renderThrottleTimer = null;
-              }, 100);
-            }
+            // Render immediately for each block flip (removed throttling for testing)
+            this.updateDebugPanel(`Calling renderQuilt()`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            this.renderQuilt(); // NEEDED - to apply CSS class to DOM elements
             
             console.log(`🔄 Swiped block ${blockId} flip toggled: ${newFlipState}`);
-            // this.updateDebugPanel(`SWIPE: Flipped block ${blockId}`); // DISABLED FOR PRODUCTION
+            this.updateDebugPanel(`SWIPE: Flipped block ${blockId}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
           } else if (blockId) {
             console.log(`🔄 Block ${blockId} already flipped in this swipe`);
-            // this.updateDebugPanel(`SWIPE: Block ${blockId} already flipped in this swipe`); // DISABLED FOR PRODUCTION
+            this.updateDebugPanel(`SWIPE: Block ${blockId} already flipped in this swipe`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
           } else {
             // this.updateDebugPanel(`SWIPE: No blockId found on rect`); // DISABLED FOR PRODUCTION
           }
