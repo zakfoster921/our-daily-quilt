@@ -862,8 +862,10 @@
     
     /* Simple block flip effect using CSS */
     #quilt rect.block-flipped {
-      fill: #8B4513 !important; /* Brown placeholder color for flip side */
-      opacity: 0.9;
+      fill: #000000 !important; /* Black for obvious flip side */
+      opacity: 0.8;
+      stroke: #ffffff !important;
+      stroke-width: 2 !important;
     }
     
     /* Playing card flip animation */
@@ -1802,7 +1804,7 @@
     </button>
 
   <!-- External dependencies -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <scrip st src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   
   <!-- Firebase SDK will be initialized after CONFIG is defined -->
@@ -6033,10 +6035,14 @@
              this.updateDebugPanel(`DEBUG: Using clientX/Y: ${currentX}, ${currentY}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
            }
            
-           // Check if coordinates are actually changing
-           if (this.lastSwipeX === currentX && this.lastSwipeY === currentY) {
-             this.updateDebugPanel(`SWIPE MOVE: SAME COORDS ${currentX}, ${currentY} - SKIPPING`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
-             return; // Skip if coordinates haven't changed
+           // Check if coordinates are actually changing (with some tolerance)
+           const coordChangeThreshold = 5; // pixels
+           const xDiff = Math.abs(currentX - (this.lastSwipeX || 0));
+           const yDiff = Math.abs(currentY - (this.lastSwipeY || 0));
+           
+           if (xDiff < coordChangeThreshold && yDiff < coordChangeThreshold) {
+             this.updateDebugPanel(`SWIPE MOVE: MINIMAL CHANGE ${xDiff},${yDiff} - SKIPPING`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+             return; // Skip if coordinates haven't changed enough
            }
            
            this.lastSwipeX = currentX;
@@ -6351,9 +6357,18 @@
             const newFlipState = this.renderer.toggleBlockFlip(blockId);
             this.updateDebugPanel(`toggleBlockFlip returned: ${newFlipState}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
             
-            // Render immediately for each block flip (removed throttling for testing)
-            this.updateDebugPanel(`Calling renderQuilt()`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
-            this.renderQuilt(); // NEEDED - to apply CSS class to DOM elements
+            // Apply CSS class directly to the element
+            if (newFlipState) {
+              elementAtPosition.classList.add('block-flipped');
+              this.updateDebugPanel(`DIRECT CSS: Added block-flipped to ${blockId}`);
+            } else {
+              elementAtPosition.classList.remove('block-flipped');
+              this.updateDebugPanel(`DIRECT CSS: Removed block-flipped from ${blockId}`);
+            }
+            
+            // DON'T call renderQuilt() - it recreates DOM elements and wipes out CSS classes
+            // this.updateDebugPanel(`Calling renderQuilt()`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            // this.renderQuilt(); // NEEDED - to apply CSS class to DOM elements
             
             console.log(`🔄 Swiped block ${blockId} flip toggled: ${newFlipState}`);
             this.updateDebugPanel(`SWIPE: Flipped block ${blockId}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
