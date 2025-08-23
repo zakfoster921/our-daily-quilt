@@ -862,10 +862,10 @@
     
     /* Simple block flip effect using CSS */
     #quilt rect.block-flipped {
-      fill: #000000 !important; /* Black for obvious flip side */
+      fill: #000000; /* Black for obvious flip side - removed !important */
       opacity: 0.8;
-      stroke: #ffffff !important;
-      stroke-width: 2 !important;
+      stroke: #ffffff;
+      stroke-width: 2;
     }
     
     /* Playing card flip animation */
@@ -3802,6 +3802,13 @@
           if (blockFlipState) {
             rect.classList.add('block-flipped');
             console.log(`🔄 Applied block-flipped class to block ${block.id}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            
+            // Apply reveal image if one is selected (access through global app instance)
+            if (window.app && window.app.currentRevealImage) {
+              const color = window.app.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+              rect.setAttribute('fill', color);
+              rect.style.setProperty('fill', color, 'important');
+            }
           }
           rect.setAttribute('data-block-id', block.id);
           
@@ -3858,6 +3865,11 @@
         
         localStorage.setItem(`blockFlips_${todayKey}`, JSON.stringify(flippedBlocks));
         return flippedBlocks.includes(blockId);
+      }
+
+      getFlippedBlocks() {
+        const todayKey = Utils.getTodayKey();
+        return JSON.parse(localStorage.getItem(`blockFlips_${todayKey}`) || '[]');
       }
     }
 
@@ -4565,6 +4577,274 @@
         console.log('🔧 Admin mode enabled. You can now access admin controls.');
       }
 
+      // Reveal image management functions
+      async loadRevealImageOptions() {
+        try {
+          // Enable Firebase for image storage
+          await this.initializeFirebaseForImages();
+          
+          const optionsContainer = document.getElementById('revealImageOptions');
+          if (!optionsContainer) return;
+          
+          // For now, show the existing 2 images
+          optionsContainer.innerHTML = `
+            <div class="image-option">
+              <input type="radio" name="revealImage" value="image1" id="revealImage1">
+              <label for="revealImage1">Reveal Image 1</label>
+            </div>
+            <div class="image-option">
+              <input type="radio" name="revealImage" value="image2" id="revealImage2">
+              <label for="revealImage2">Reveal Image 2</label>
+            </div>
+            <button onclick="app.handleSelectRevealImage()">Apply Selected Image</button>
+          `;
+        } catch (error) {
+          console.error('Error loading reveal image options:', error);
+          const optionsContainer = document.getElementById('revealImageOptions');
+          if (optionsContainer) {
+            optionsContainer.innerHTML = '<p>Error loading images. Please try again.</p>';
+          }
+        }
+      }
+
+      async initializeFirebaseForImages() {
+        // Only initialize Firebase if not already done
+        if (window.firebaseApp) {
+          return window.firebaseApp;
+        }
+        
+        try {
+          const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
+          const { getStorage } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          
+          const firebaseApp = initializeApp(CONFIG.FIREBASE);
+          const storage = getStorage(firebaseApp);
+          
+          window.firebaseApp = firebaseApp;
+          window.firebaseStorage = storage;
+          
+          console.log('🔥 Firebase initialized for image storage');
+          return firebaseApp;
+        } catch (error) {
+          console.error('Failed to initialize Firebase for images:', error);
+          throw error;
+        }
+      }
+
+      async handleUploadRevealImage() {
+        const fileInput = document.getElementById('revealImageUpload');
+        const file = fileInput?.files[0];
+        
+        if (!file) {
+          alert('Please select an image file first.');
+          return;
+        }
+        
+        try {
+          await this.initializeFirebaseForImages();
+          
+          // Upload logic will go here
+          console.log('Uploading reveal image:', file.name);
+          alert('Image upload functionality coming soon!');
+          
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          alert('Error uploading image. Please try again.');
+        }
+      }
+
+      async handleSelectRevealImage() {
+        const selectedImage = document.querySelector('input[name="revealImage"]:checked')?.value;
+        
+        if (!selectedImage) {
+          alert('Please select an image first.');
+          return;
+        }
+        
+        try {
+          // Store the selected image preference
+          localStorage.setItem('selectedRevealImage', selectedImage);
+          
+          // Apply the image to the quilt
+          await this.applyRevealImageToQuilt(selectedImage);
+          
+          alert('Reveal image applied successfully!');
+          
+        } catch (error) {
+          console.error('Error applying reveal image:', error);
+          alert('Error applying image. Please try again.');
+        }
+      }
+
+      async applyRevealImageToQuilt(imageName) {
+        console.log('Applying reveal image:', imageName);
+        
+        // Store the selection
+        this.currentRevealImage = imageName;
+        
+        // Apply color directly to flipped blocks (working approach)
+        this.applyColorToFlippedBlocks(imageName);
+      }
+
+      applyColorToFlippedBlocks(imageName) {
+        // Get all blocks that are currently flipped
+        const flippedBlocks = this.renderer.getFlippedBlocks();
+        
+        if (flippedBlocks.length === 0) {
+          console.log('No flipped blocks to apply color to');
+          return;
+        }
+        
+        const color = imageName === 'image1' ? '#ff6b6b' : '#4ecdc4'; // Red or teal
+        console.log(`Applying color ${color} to ${flippedBlocks.length} flipped blocks`);
+        
+        // Apply the color directly to all flipped blocks
+        flippedBlocks.forEach(blockId => {
+          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+          if (blockElement) {
+            blockElement.setAttribute('fill', color);
+            blockElement.style.setProperty('fill', color, 'important');
+            console.log(`Applied color ${color} to block ${blockId}`);
+          }
+        });
+      }
+
+      applyPatternToFlippedBlocks(patternId) {
+        // Get all blocks that are currently flipped
+        const flippedBlocks = this.renderer.getFlippedBlocks();
+        
+        if (flippedBlocks.length === 0) {
+          console.log('No flipped blocks to apply pattern to');
+          return;
+        }
+        
+        console.log(`Applying pattern to ${flippedBlocks.length} flipped blocks`);
+        
+        // Apply the SVG pattern to all flipped blocks
+        flippedBlocks.forEach(blockId => {
+          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+          if (blockElement) {
+            const patternUrl = `url(#pattern-${patternId})`;
+            blockElement.setAttribute('fill', patternUrl);
+            blockElement.style.setProperty('fill', patternUrl, 'important');
+            console.log(`Applied pattern to block ${blockId}`);
+          }
+        });
+      }
+
+      createColorPattern(patternId) {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) {
+          console.error('Quilt SVG not found');
+          return;
+        }
+        
+        console.log('Creating color pattern for:', patternId);
+        
+        // Remove existing pattern if it exists
+        const existingPattern = quiltSVG.querySelector(`#pattern-${patternId}`);
+        if (existingPattern) {
+          existingPattern.remove();
+          console.log('Removed existing pattern');
+        }
+        
+        // Create defs if it doesn't exist
+        let defs = quiltSVG.querySelector('defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          quiltSVG.insertBefore(defs, quiltSVG.firstChild);
+          console.log('Created defs element');
+        }
+        
+        // Create pattern with a solid color
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', `pattern-${patternId}`);
+        pattern.setAttribute('patternUnits', 'objectBoundingBox');
+        pattern.setAttribute('width', '1');
+        pattern.setAttribute('height', '1');
+        
+        // Create a rect with the color
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('width', '100%');
+        rect.setAttribute('height', '100%');
+        rect.setAttribute('fill', patternId === 'image1' ? '#ff6b6b' : '#4ecdc4'); // Red or teal
+        
+        pattern.appendChild(rect);
+        defs.appendChild(pattern);
+        
+        console.log(`Created color pattern: pattern-${patternId}`);
+        console.log('Pattern element:', pattern);
+      }
+
+      createImagePattern(imageUrl, patternId) {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) {
+          console.error('Quilt SVG not found');
+          return;
+        }
+        
+        console.log('Creating pattern for:', imageUrl, patternId);
+        
+        // Remove existing pattern if it exists
+        const existingPattern = quiltSVG.querySelector(`#pattern-${patternId}`);
+        if (existingPattern) {
+          existingPattern.remove();
+          console.log('Removed existing pattern');
+        }
+        
+        // Create defs if it doesn't exist
+        let defs = quiltSVG.querySelector('defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          quiltSVG.insertBefore(defs, quiltSVG.firstChild);
+          console.log('Created defs element');
+        }
+        
+        // Create pattern
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', `pattern-${patternId}`);
+        pattern.setAttribute('patternUnits', 'objectBoundingBox');
+        pattern.setAttribute('width', '1');
+        pattern.setAttribute('height', '1');
+        
+        // Create image element
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        image.setAttribute('href', imageUrl);
+        image.setAttribute('width', '100%');
+        image.setAttribute('height', '100%');
+        image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        
+        pattern.appendChild(image);
+        defs.appendChild(pattern);
+        
+        console.log(`Created SVG pattern: pattern-${patternId}`);
+        console.log('Pattern element:', pattern);
+        console.log('Defs element:', defs);
+      }
+
+      applyImageToFlippedBlocks(patternId) {
+        // Get all blocks that are currently flipped
+        const flippedBlocks = this.renderer.getFlippedBlocks();
+        
+        if (flippedBlocks.length === 0) {
+          console.log('No flipped blocks to apply image to');
+          return;
+        }
+        
+        console.log(`Applying pattern to ${flippedBlocks.length} flipped blocks`);
+        
+        // Apply the SVG pattern to all flipped blocks
+        flippedBlocks.forEach(blockId => {
+          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+          if (blockElement) {
+            // Apply the SVG pattern as fill
+            blockElement.setAttribute('fill', `url(#pattern-${patternId})`);
+            
+            console.log(`Applied pattern to block ${blockId}`);
+          }
+        });
+      }
+
       // Debug function to test admin button - call from console: app.debugAdminButton()
       debugAdminButton() {
         const adminBtn = document.getElementById('floatingAdminBtn');
@@ -5146,18 +5426,87 @@
 
 
 
+      showRevealImageManager() {
+        const menu = document.createElement('div');
+        menu.className = 'reveal-image-manager';
+        menu.innerHTML = `
+          <div class="reveal-image-manager-content">
+            <h3>Quilt Reveal Image Manager</h3>
+            <div class="image-upload-section">
+              <h4>Upload New Reveal Image</h4>
+              <input type="file" id="revealImageUpload" accept="image/*" style="margin: 10px 0;">
+              <button onclick="app.handleUploadRevealImage()">Upload Image</button>
+            </div>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
+            <div class="image-selection-section">
+              <h4>Select Active Reveal Image</h4>
+              <div id="revealImageOptions">
+                <p>Loading available images...</p>
+              </div>
+            </div>
+            <button onclick="this.parentElement.parentElement.remove()">Close</button>
+          </div>
+        `;
+        
+        menu.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          border: 2px solid #000;
+          border-radius: 8px;
+          padding: 20px;
+          z-index: 1001;
+          box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+          min-width: 300px;
+          max-height: 80vh;
+          overflow-y: auto;
+        `;
+        
+        const content = menu.querySelector('.reveal-image-manager-content');
+        content.style.cssText = `
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        `;
+        
+        const buttons = menu.querySelectorAll('button');
+        buttons.forEach(btn => {
+          btn.style.cssText = `
+            padding: 8px 16px;
+            border: 1px solid #000;
+            background: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+          `;
+        });
+        
+        menu.addEventListener('click', (e) => {
+          if (e.target === menu) {
+            menu.remove();
+          }
+        });
+        
+        document.body.appendChild(menu);
+        
+        // Load available images
+        this.loadRevealImageOptions();
+      }
+
       showAdminMenu() {
         const menu = document.createElement('div');
         menu.className = 'admin-menu';
         menu.innerHTML = `
           <div class="admin-menu-content">
-            <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
-            <h4>Quote Management</h4>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
+            <button onclick="app.showRevealImageManager()">Manage Reveal Images</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
         `;
@@ -6066,46 +6415,8 @@
           
           // this.updateDebugPanel(`Swipe end: duration=${swipeDuration}ms, distance=${Math.round(swipeDistance)}px`); // DISABLED FOR PRODUCTION
           
-          // If it was a tap (short duration and minimal movement), handle as tap
-          if (swipeDuration < 300 && swipeDistance < 20) {
-            // this.updateDebugPanel(`TAP detected: duration=${swipeDuration}ms, distance=${Math.round(swipeDistance)}px`); // DISABLED FOR PRODUCTION
-            
-            // Find the block at the tap position
-            let elementAtPosition = document.elementFromPoint(this.swipeStartX, this.swipeStartY);
-            
-            // If we didn't get a rect, try to find the closest one
-            if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
-              const allRects = document.querySelectorAll('#quilt rect');
-              let closestRect = null;
-              let closestDistance = Infinity;
-              
-              allRects.forEach(rect => {
-                const rectBox = rect.getBoundingClientRect();
-                const rectCenterX = rectBox.left + rectBox.width / 2;
-                const rectCenterY = rectBox.top + rectBox.height / 2;
-                const distance = Math.sqrt(Math.pow(this.swipeStartX - rectCenterX, 2) + Math.pow(this.swipeStartY - rectCenterY, 2));
-                
-                if (distance < closestDistance) {
-                  closestDistance = distance;
-                  closestRect = rect;
-                }
-              });
-              
-              if (closestRect && closestDistance < 50) {
-                elementAtPosition = closestRect;
-              }
-            }
-            
-            if (elementAtPosition && elementAtPosition.tagName === 'rect') {
-              const blockId = elementAtPosition.getAttribute('data-block-id');
-              if (blockId) {
-                this.renderer.toggleBlockFlip(blockId);
-                this.renderQuilt();
-                // this.updateDebugPanel(`TAP: Flipped block ${blockId}`); // DISABLED FOR PRODUCTION
-                console.log('🔄 TAP: Flipped block', blockId);
-              }
-            }
-          }
+          // Tap handling is now done by the separate handleQuiltFlip function
+          // This prevents conflicts between swipe and tap handlers
           
           // Add a small delay before clearing swipe state to prevent race conditions
           setTimeout(() => {
@@ -6146,11 +6457,30 @@
           // Toggle the individual block's flip state
           const newFlipState = this.renderer.toggleBlockFlip(blockId);
           
+          // Apply CSS class and image directly to the element
+          if (newFlipState) {
+            event.target.classList.add('block-flipped');
+            
+            // Apply reveal image if one is selected
+            if (this.currentRevealImage) {
+              const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+              event.target.setAttribute('fill', color);
+              event.target.style.setProperty('fill', color, 'important');
+              console.log(`TAP: Applied color ${color} to block ${blockId}`);
+            } else {
+              console.log('TAP: No reveal image selected');
+            }
+                      } else {
+              event.target.classList.remove('block-flipped');
+              // Remove background image when unflipped
+              event.target.removeAttribute('fill'); // Let CSS handle the fill
+            }
+          
           // Add flip animation to the specific block
           event.target.style.transition = 'transform 0.3s ease-in-out';
           
-          // Re-render the quilt to show the updated flip state
-          this.renderQuilt();
+          // DON'T call renderQuilt() - it recreates DOM elements and wipes out CSS classes
+          // this.renderQuilt();
           
           this.logger.log(`🔄 Block ${blockId} flip toggled: ${newFlipState}`);
         };
@@ -6165,6 +6495,10 @@
         document.addEventListener('touchstart', this.handleSwipeStart, { passive: false });
         document.addEventListener('touchmove', this.handleSwipeMove, { passive: false });
         document.addEventListener('touchend', this.handleSwipeEnd, { passive: false });
+        
+        // Add click handler for tap events
+        quiltSVG.addEventListener('click', this.handleQuiltFlip);
+        quiltSVG.addEventListener('touchstart', this.handleQuiltFlip);
         
         // Debug: Log that event listeners are set up
         // Debug panel removed for production
@@ -6258,8 +6592,20 @@
             // Apply CSS class directly to the element
             if (newFlipState) {
               elementAtPosition.classList.add('block-flipped');
+              
+              // Apply reveal image if one is selected
+              if (this.currentRevealImage) {
+                const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+                elementAtPosition.setAttribute('fill', color);
+                elementAtPosition.style.setProperty('fill', color, 'important');
+                console.log(`Applied color ${color} to block ${blockId}`);
+              } else {
+                console.log('No reveal image selected');
+              }
             } else {
               elementAtPosition.classList.remove('block-flipped');
+                          // Remove background image when unflipped
+            elementAtPosition.removeAttribute('fill'); // Let CSS handle the fill
             }
             
             // DON'T call renderQuilt() - it recreates DOM elements and wipes out CSS classes
