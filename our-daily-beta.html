@@ -4841,7 +4841,7 @@
       }
 
       async applyImageToQuilt(imageInfo) {
-        console.log('🖼️ applyImageToQuilt called with:', imageInfo);
+        // console.log('🖼️ applyImageToQuilt called with:', imageInfo);
         
         if (!imageInfo) {
           console.log('❌ No imageInfo provided');
@@ -4853,8 +4853,8 @@
           return;
         }
         
-        console.log('🖼️ Image URL type:', typeof imageInfo.url);
-        console.log('🖼️ Image URL value:', imageInfo.url);
+        // console.log('🖼️ Image URL type:', typeof imageInfo.url);
+        // console.log('🖼️ Image URL value:', imageInfo.url);
         
         console.log('Applying image to quilt:', imageInfo.name);
         
@@ -4866,7 +4866,7 @@
       }
 
       async createImagePattern(imageInfo) {
-        console.log('🖼️ Creating image pattern for:', imageInfo.name);
+        // console.log('🖼️ Creating image pattern for:', imageInfo.name);
         
         // Create a canvas to load and process the image
         const canvas = document.createElement('canvas');
@@ -4892,15 +4892,33 @@
             const quiltHeight = maxY - minY;
             
             console.log('🖼️ Quilt dimensions:', quiltWidth, 'x', quiltHeight);
-            console.log('🖼️ Quilt bounds:', minX, minY, 'to', maxX, maxY);
-            console.log('🖼️ Block coordinates:', blocks.map(b => ({id: b.id, x: b.x, y: b.y, width: b.width, height: b.height})));
             
-            // Set canvas size to match original image dimensions
-            canvas.width = img.width;
-            canvas.height = img.height;
+            // Scale the image to fit the quilt while maintaining aspect ratio
+            const imageAspect = img.width / img.height;
+            const quiltAspect = quiltWidth / quiltHeight;
             
-            // Draw the image at original size
-            ctx.drawImage(img, 0, 0, img.width, img.height);
+            let scaledWidth, scaledHeight, offsetX, offsetY;
+            
+            if (imageAspect > quiltAspect) {
+              // Image is wider than quilt - fit to width
+              scaledWidth = quiltWidth;
+              scaledHeight = quiltWidth / imageAspect;
+              offsetX = 0;
+              offsetY = (quiltHeight - scaledHeight) / 2;
+            } else {
+              // Image is taller than quilt - fit to height
+              scaledWidth = quiltHeight * imageAspect;
+              scaledHeight = quiltHeight;
+              offsetX = (quiltWidth - scaledWidth) / 2;
+              offsetY = 0;
+            }
+            
+            // Set canvas size to match quilt dimensions
+            canvas.width = quiltWidth;
+            canvas.height = quiltHeight;
+            
+            // Draw the scaled image centered in the quilt area
+            ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
             
             // Convert to data URL for SVG pattern
             const imageDataUrl = canvas.toDataURL('image/png');
@@ -4912,8 +4930,8 @@
               quiltHeight: quiltHeight,
               minX: minX,
               minY: minY,
-              imageWidth: img.width,
-              imageHeight: img.height
+              imageWidth: quiltWidth,  // Use scaled dimensions
+              imageHeight: quiltHeight // Use scaled dimensions
             };
             
             console.log('✅ Image pattern created for quilt, data URL length:', imageDataUrl.length);
@@ -4934,7 +4952,7 @@
           
           // Handle CORS for Firebase images
           if (imageInfo.url.includes('firebasestorage.googleapis.com')) {
-            console.log('🖼️ Loading Firebase image with CORS handling');
+            // console.log('🖼️ Loading Firebase image with CORS handling');
             img.crossOrigin = 'anonymous';
             
             // Try to load with credentials
@@ -4942,23 +4960,23 @@
             
             // Add error handler for CORS issues
             img.onerror = (error) => {
-              console.log('🖼️ CORS error loading Firebase image, trying alternative method');
-              console.log('🖼️ Error details:', error);
+                      // console.log('🖼️ CORS error loading Firebase image, trying alternative method');
+        // console.log('🖼️ Error details:', error);
               
               // Try without crossOrigin as fallback
               img.crossOrigin = null;
               img.src = imageInfo.url;
             };
           } else {
-            console.log('🖼️ Loading local/SVG image');
+            // console.log('🖼️ Loading local/SVG image');
           }
           
-          console.log('🖼️ Loading image from URL:', imageInfo.url);
+          // console.log('🖼️ Loading image from URL:', imageInfo.url);
           
           // Add timeout for Firebase images to handle CORS issues
           if (imageInfo.url.includes('firebasestorage.googleapis.com')) {
             const timeout = setTimeout(() => {
-              console.log('🖼️ Timeout loading Firebase image, likely CORS issue');
+              // console.log('🖼️ Timeout loading Firebase image, likely CORS issue');
               img.onerror = null; // Remove error handler to prevent double handling
               reject(new Error('Timeout loading Firebase image (CORS issue)'));
             }, 5000); // 5 second timeout
@@ -4982,28 +5000,29 @@
 
       applyImageToFlippedBlocks(imageInfo) {
         if (!this.processedImageData) {
-          console.log('No processed image data available');
+          // console.log('No processed image data available');
           return;
         }
         
         const flippedBlocks = this.renderer.getFlippedBlocks();
         
         if (flippedBlocks.length === 0) {
-          console.log('No flipped blocks to apply image to');
+          // console.log('No flipped blocks to apply image to');
           return;
         }
         
-        console.log(`Applying image pieces to ${flippedBlocks.length} flipped blocks`);
+        // console.log(`Applying image pieces to ${flippedBlocks.length} flipped blocks`);
         
         // Apply individual image pieces to each flipped block
         flippedBlocks.forEach(blockId => {
           const block = this.quiltEngine.blocks.find(b => b.id === blockId);
           if (block && this.processedImageData) {
             // Calculate the portion of the image that should be shown for this block
-            const imageX = (block.x / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
-            const imageY = (block.y / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
-            const imageWidth = (block.width / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
-            const imageHeight = (block.height / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
+            // Use the scaled image dimensions that match the quilt size
+            const imageX = (block.x / this.processedImageData.quiltWidth) * this.processedImageData.quiltWidth;
+            const imageY = (block.y / this.processedImageData.quiltHeight) * this.processedImageData.quiltHeight;
+            const imageWidth = block.width;
+            const imageHeight = block.height;
             
             const patternId = `pattern-${blockId}`;
             this.createBlockImagePattern(patternId, this.processedImageData.dataUrl, imageX, imageY, imageWidth, imageHeight);
@@ -5012,7 +5031,7 @@
             if (blockElement) {
               blockElement.setAttribute('fill', `url(#${patternId})`);
               blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
-              console.log(`Applied image piece to block ${blockId} at ${imageX},${imageY} size ${imageWidth}x${imageHeight}`);
+              // console.log(`Applied image piece to block ${blockId} at ${imageX},${imageY} size ${imageWidth}x${imageHeight}`);
             }
           }
         });
@@ -5058,7 +5077,7 @@
       }
 
       createBlockImagePattern(patternId, imageDataUrl, x, y, width, height) {
-        console.log('🖼️ Creating pattern:', patternId, 'for block at', x, y, 'size', width, height);
+                    // console.log('🖼️ Creating pattern:', patternId, 'for block at', x, y, 'size', width, height);
         
         // Remove existing pattern if it exists
         const existingPattern = document.getElementById(patternId);
@@ -5095,7 +5114,7 @@
         }
         defs.appendChild(pattern);
         
-        console.log('✅ Pattern created and added to defs:', patternId);
+        // console.log('✅ Pattern created and added to defs:', patternId);
       }
 
       applyColorToFlippedBlocks(imageName) {
