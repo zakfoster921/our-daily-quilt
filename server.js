@@ -10,11 +10,19 @@ app.use(express.static('.'));
 let globalBrowser = null;
 let globalPage = null;
 let isPageReady = false;
+let initializationAttempts = 0;
 
 // Initialize browser and pre-load page
 async function initializeBrowser() {
   try {
     console.log('🚀 Initializing browser...');
+    initializationAttempts++;
+    
+    // Close existing browser if any
+    if (globalBrowser) {
+      await globalBrowser.close();
+    }
+    
     globalBrowser = await chromium.launch({
       args: [
         '--no-sandbox',
@@ -50,22 +58,31 @@ async function initializeBrowser() {
     }, { timeout: 15000 });
     
     isPageReady = true;
+    initializationAttempts = 0; // Reset counter on success
     console.log('✅ Browser initialized and ready!');
     
   } catch (error) {
     console.error('❌ Failed to initialize browser:', error);
     isPageReady = false;
+    throw error;
   }
 }
 
 // Initialize browser on startup
-initializeBrowser();
+initializeBrowser().catch(error => {
+  console.error('❌ Initial browser initialization failed:', error);
+});
 
 // Re-initialize browser if needed
 async function ensureBrowserReady() {
   if (!isPageReady || !globalPage) {
     console.log('🔄 Re-initializing browser...');
-    await initializeBrowser();
+    try {
+      await initializeBrowser();
+    } catch (error) {
+      console.error('❌ Re-initialization failed:', error);
+      return false;
+    }
   }
   return isPageReady;
 }
@@ -74,10 +91,17 @@ app.post('/api/generate-instagram', async (req, res) => {
   try {
     console.log('🚀 Starting Instagram image generation...');
     
-    // Ensure browser is ready
+    // Try to ensure browser is ready
     const browserReady = await ensureBrowserReady();
     if (!browserReady) {
-      throw new Error('Browser not ready');
+      // Return a helpful error instead of throwing
+      return res.status(503).json({
+        success: false,
+        error: 'Browser initialization failed',
+        timestamp: new Date().toISOString(),
+        suggestion: 'Try again in 30 seconds',
+        attempts: initializationAttempts
+      });
     }
     
     // Generate the Instagram image using pre-loaded page
@@ -141,13 +165,34 @@ app.post('/api/test-instagram', (req, res) => {
   });
 });
 
+// Manual browser reset endpoint
+app.post('/api/reset-browser', async (req, res) => {
+  try {
+    console.log('🔄 Manual browser reset requested...');
+    isPageReady = false;
+    await initializeBrowser();
+    res.json({
+      success: true,
+      message: 'Browser reset successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     service: 'Instagram Quilt Generator',
     version: '1.0.0',
-    browserReady: isPageReady
+    browserReady: isPageReady,
+    attempts: initializationAttempts
   });
 });
 
@@ -165,7 +210,12 @@ app.get('/api/test', async (req, res) => {
   try {
     const browserReady = await ensureBrowserReady();
     if (!browserReady) {
-      throw new Error('Browser not ready');
+      return res.status(503).json({
+        success: false,
+        error: 'Browser not ready',
+        timestamp: new Date().toISOString(),
+        attempts: initializationAttempts
+      });
     }
     
     const title = await globalPage.title();
@@ -199,6 +249,7 @@ app.listen(PORT, () => {
   console.log(`🚂 Instagram Quilt Generator server running on port ${PORT}`);
   console.log(`📸 Instagram endpoint: http://localhost:${PORT}/api/generate-instagram`);
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test-instagram`);
+  console.log(`🔄 Reset browser: http://localhost:${PORT}/api/reset-browser`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
 });
