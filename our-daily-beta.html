@@ -4930,8 +4930,10 @@
               quiltHeight: quiltHeight,
               minX: minX,
               minY: minY,
-              imageWidth: quiltWidth,  // Scale image to quilt size
-              imageHeight: quiltHeight // Scale image to quilt size
+              imageWidth: scaledWidth,  // Use actual scaled image dimensions
+              imageHeight: scaledHeight, // Use actual scaled image dimensions
+              offsetX: offsetX,         // Store offset for positioning
+              offsetY: offsetY          // Store offset for positioning
             };
             
             console.log('✅ Image pattern created for quilt, data URL length:', imageDataUrl.length);
@@ -5018,11 +5020,17 @@
           const block = this.quiltEngine.blocks.find(b => b.id === blockId);
           if (block && this.processedImageData) {
             // Calculate the portion of the image that should be shown for this block
-            // Normalize block coordinates from quilt space to image space
+            // Normalize block coordinates from quilt space to image space, accounting for image offset
             const minX = this.quiltBounds ? this.quiltBounds.minX : 0;
             const minY = this.quiltBounds ? this.quiltBounds.minY : 0;
-            const imageX = ((block.x - minX) / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
-            const imageY = ((block.y - minY) / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
+            
+            // Calculate block position relative to the scaled image (accounting for centering offset)
+            const blockRelativeX = block.x - minX - (this.processedImageData.offsetX || 0);
+            const blockRelativeY = block.y - minY - (this.processedImageData.offsetY || 0);
+            
+            // Convert to image coordinates
+            const imageX = (blockRelativeX / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
+            const imageY = (blockRelativeY / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
             const imageWidth = (block.width / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
             const imageHeight = (block.height / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
             
