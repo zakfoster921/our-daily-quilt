@@ -4995,62 +4995,25 @@
         
         console.log(`Applying image pieces to ${flippedBlocks.length} flipped blocks`);
         
-        // Create a single image element that covers the entire quilt
-        const quiltContainer = document.querySelector('#quilt');
-        if (!quiltContainer) {
-          console.error('Quilt container not found');
-          return;
-        }
-        
-        // Remove any existing reveal image
-        const existingRevealImage = document.querySelector('#quilt-reveal-image');
-        if (existingRevealImage) {
-          existingRevealImage.remove();
-        }
-        
-        // Create the reveal image
-        const revealImage = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        revealImage.setAttribute('id', 'quilt-reveal-image');
-        revealImage.setAttribute('href', this.processedImageData.dataUrl);
-        
-        // Scale the image to fit the quilt while maintaining aspect ratio
-        const imageAspect = this.processedImageData.imageWidth / this.processedImageData.imageHeight;
-        const quiltAspect = this.processedImageData.quiltWidth / this.processedImageData.quiltHeight;
-        
-        let scaledWidth, scaledHeight, offsetX, offsetY;
-        
-        if (imageAspect > quiltAspect) {
-          // Image is wider than quilt - fit to width
-          scaledWidth = this.processedImageData.quiltWidth;
-          scaledHeight = this.processedImageData.quiltWidth / imageAspect;
-          offsetX = 0;
-          offsetY = (this.processedImageData.quiltHeight - scaledHeight) / 2;
-        } else {
-          // Image is taller than quilt - fit to height
-          scaledWidth = this.processedImageData.quiltHeight * imageAspect;
-          scaledHeight = this.processedImageData.quiltHeight;
-          offsetX = (this.processedImageData.quiltWidth - scaledWidth) / 2;
-          offsetY = 0;
-        }
-        
-        revealImage.setAttribute('x', offsetX);
-        revealImage.setAttribute('y', offsetY);
-        revealImage.setAttribute('width', scaledWidth);
-        revealImage.setAttribute('height', scaledHeight);
-        revealImage.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-        revealImage.style.pointerEvents = 'none';
-        
-        console.log('🖼️ Created reveal image with proper scaling:', scaledWidth, 'x', scaledHeight, 'at offset:', offsetX, offsetY);
-        
-        // Add the image to the quilt
-        quiltContainer.appendChild(revealImage);
-        
-        // Hide all flipped blocks so the image shows through
+        // Apply individual image pieces to each flipped block
         flippedBlocks.forEach(blockId => {
-          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
-          if (blockElement) {
-            blockElement.style.setProperty('opacity', '0', 'important');
-            console.log(`Hidden block ${blockId} to reveal image`);
+          const block = this.quiltEngine.blocks.find(b => b.id === blockId);
+          if (block && this.processedImageData) {
+            // Calculate the portion of the image that should be shown for this block
+            const imageX = (block.x / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
+            const imageY = (block.y / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
+            const imageWidth = (block.width / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
+            const imageHeight = (block.height / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
+            
+            const patternId = `pattern-${blockId}`;
+            this.createBlockImagePattern(patternId, this.processedImageData.dataUrl, imageX, imageY, imageWidth, imageHeight);
+            
+            const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+            if (blockElement) {
+              blockElement.setAttribute('fill', `url(#${patternId})`);
+              blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
+              console.log(`Applied image piece to block ${blockId} at ${imageX},${imageY} size ${imageWidth}x${imageHeight}`);
+            }
           }
         });
       }
@@ -5107,17 +5070,19 @@
         const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
         pattern.setAttribute('id', patternId);
         pattern.setAttribute('patternUnits', 'userSpaceOnUse');
-        pattern.setAttribute('x', -x);
-        pattern.setAttribute('y', -y);
-        pattern.setAttribute('width', this.processedImageData.quiltWidth);
-        pattern.setAttribute('height', this.processedImageData.quiltHeight);
+        pattern.setAttribute('x', 0);
+        pattern.setAttribute('y', 0);
+        pattern.setAttribute('width', width);
+        pattern.setAttribute('height', height);
         
-        // Add image to pattern
+        // Add image to pattern - positioned to show only the relevant portion
         const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
         image.setAttribute('href', imageDataUrl);
-        image.setAttribute('width', this.processedImageData.quiltWidth);
-        image.setAttribute('height', this.processedImageData.quiltHeight);
-        image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        image.setAttribute('width', this.processedImageData.imageWidth);
+        image.setAttribute('height', this.processedImageData.imageHeight);
+        image.setAttribute('x', -x);
+        image.setAttribute('y', -y);
+        image.setAttribute('preserveAspectRatio', 'none');
         
         pattern.appendChild(image);
         
