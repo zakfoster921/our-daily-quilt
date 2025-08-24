@@ -3026,6 +3026,157 @@
         }
       }
 
+      // Generate Instagram-ready image (4:5 portrait ratio)
+      async generateInstagramImage(blocks, quote = null) {
+        try {
+          if (!blocks || blocks.length === 0) {
+            this.logger.warn('No blocks provided for Instagram image generation');
+            return null;
+          }
+
+          // Instagram optimal size: 1080x1350 (4:5 ratio)
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          canvas.width = 1080;
+          canvas.height = 1350;
+          
+          // Fill background with your app's color
+          ctx.fillStyle = '#f6f4f1';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // Calculate quilt bounds
+          const minX = Math.min(...blocks.map(b => b.x));
+          const minY = Math.min(...blocks.map(b => b.y));
+          const maxX = Math.max(...blocks.map(b => b.x + b.width));
+          const maxY = Math.max(...blocks.map(b => b.y + b.height));
+          
+          const quiltWidth = maxX - minX;
+          const quiltHeight = maxY - minY;
+          
+          // Calculate scale to fit quilt in the top 70% of the image
+          // Leave bottom 30% for quote text
+          const quiltAreaHeight = canvas.height * 0.7;
+          const quiltAreaWidth = canvas.width * 0.9; // 90% width with margins
+          
+          const scaleX = quiltAreaWidth / quiltWidth;
+          const scaleY = quiltAreaHeight / quiltHeight;
+          const scale = Math.min(scaleX, scaleY, 1) * 0.9; // 90% to add breathing room
+          
+          // Center the quilt horizontally, position in top 70%
+          const offsetX = (canvas.width - quiltWidth * scale) / 2;
+          const offsetY = canvas.height * 0.05; // 5% from top
+          
+          // Draw each block
+          blocks.forEach(block => {
+            // Add jitter effects (same as current quilt)
+            const jitterX = (Math.random() - 0.5) * 8;
+            const jitterY = (Math.random() - 0.5) * 8;
+            const jitterRotation = (Math.random() - 0.5) * 4;
+            
+            const jitteredX = block.x + jitterX;
+            const jitteredY = block.y + jitterY;
+            
+            // Transform to canvas coordinates
+            const canvasX = offsetX + (jitteredX - minX) * scale;
+            const canvasY = offsetY + (jitteredY - minY) * scale;
+            const canvasWidth = block.width * scale;
+            const canvasHeight = block.height * scale;
+            
+            // Save context for rotation
+            ctx.save();
+            
+            // Move to center of block for rotation
+            const centerX = canvasX + canvasWidth / 2;
+            const centerY = canvasY + canvasHeight / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(jitterRotation * Math.PI / 180);
+            
+            // Draw block with enhanced shadow for Instagram
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 6;
+            
+            ctx.fillStyle = block.color;
+            ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
+            
+            // Restore context
+            ctx.restore();
+          });
+          
+          // Add quote text if provided
+          if (quote && quote.text && quote.author) {
+            const quoteY = canvas.height * 0.8; // 80% from top
+            const maxWidth = canvas.width * 0.85; // 85% width for text
+            
+            // Quote text
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 48px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            
+            // Wrap text to fit width
+            const words = quote.text.split(' ');
+            const lines = [];
+            let currentLine = '';
+            
+            words.forEach(word => {
+              const testLine = currentLine ? currentLine + ' ' + word : word;
+              const metrics = ctx.measureText(testLine);
+              
+              if (metrics.width > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+              } else {
+                currentLine = testLine;
+              }
+            });
+            lines.push(currentLine);
+            
+            // Draw quote lines
+            lines.forEach((line, index) => {
+              const lineY = quoteY + (index * 60);
+              ctx.fillText(line, canvas.width / 2, lineY);
+            });
+            
+            // Author attribution
+            ctx.font = 'italic 36px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+            ctx.fillStyle = '#666666';
+            const authorY = quoteY + (lines.length * 60) + 40;
+            ctx.fillText(`— ${quote.author}`, canvas.width / 2, authorY);
+            
+            // Add subtle decorative elements
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.3;
+            
+            // Top decorative line
+            ctx.beginPath();
+            ctx.moveTo(canvas.width * 0.1, quoteY - 20);
+            ctx.lineTo(canvas.width * 0.9, quoteY - 20);
+            ctx.stroke();
+            
+            // Bottom decorative line
+            ctx.beginPath();
+            ctx.moveTo(canvas.width * 0.1, authorY + 30);
+            ctx.lineTo(canvas.width * 0.9, authorY + 30);
+            ctx.stroke();
+            
+            ctx.globalAlpha = 1.0;
+          }
+          
+          // Convert to data URL
+          const dataURL = canvas.toDataURL('image/png', 0.95);
+          
+          this.logger.log(`✅ Generated Instagram image: 1080x1350 (4:5 ratio)`);
+          return dataURL;
+          
+        } catch (error) {
+          this.logger.error('Instagram image generation failed:', error);
+          return null;
+        }
+      }
+
 
 
       // Load more archives (for "Load More" button)
@@ -6098,6 +6249,8 @@
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
+            <button onclick="app.handleTestInstagramImage()">📸 Generate Instagram Image</button>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
             <button onclick="app.showRevealImageManager()">Manage Reveal Images</button>
@@ -6660,6 +6813,42 @@
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testAddBlock');
+        }
+      }
+
+      // Test Instagram image generation
+      async handleTestInstagramImage() {
+        try {
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            this.uiService.showToast('Add some blocks to the quilt first!');
+            return;
+          }
+
+          // Get today's quote
+          const quote = this.quoteService.getTodayQuote();
+          
+          // Generate Instagram image
+          const instagramImage = await this.archiveService.generateInstagramImage(
+            this.quiltEngine.blocks, 
+            quote
+          );
+          
+          if (instagramImage) {
+            // Create download link
+            const link = document.createElement('a');
+            link.href = instagramImage;
+            link.download = `instagram-quilt-${new Date().toISOString().split('T')[0]}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            this.uiService.showToast('Instagram image downloaded! 📸');
+            this.logger.log('✅ Instagram test image generated and downloaded');
+          } else {
+            this.uiService.showToast('Failed to generate Instagram image');
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'testInstagramImage');
         }
       }
 
@@ -7546,6 +7735,7 @@
       window.resetQuilt = () => app.handleResetQuilt();
       window.createArchive = () => app.handleCreateArchive();
       window.createTestArchives = () => app.handleCreateTestArchives();
+      window.generateInstagramImage = () => app.handleTestInstagramImage();
       
       // Admin console commands
       window.enableAdmin = () => app.enableAdminMode();
