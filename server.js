@@ -185,6 +185,26 @@ app.post('/api/reset-browser', async (req, res) => {
   }
 });
 
+// GET version of reset browser endpoint for easier testing
+app.get('/api/reset-browser', async (req, res) => {
+  try {
+    console.log('🔄 Manual browser reset requested (GET)...');
+    isPageReady = false;
+    await initializeBrowser();
+    res.json({
+      success: true,
+      message: 'Browser reset successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
