@@ -2385,8 +2385,8 @@
         // Determine target dimensions based on current viewport
         let targetWidth, targetHeight;
         
-        // Mobile-first: Use 1:2 aspect ratio for better mobile fit with breathing room
-        const targetAspectRatio = 1/2; // 1:2 ratio for mobile-first design with breathing room
+        // Instagram-friendly: Use 4:5 aspect ratio for consistent experience
+        const targetAspectRatio = 4/5; // 4:5 ratio for Instagram portrait format
         
         if (window.innerWidth >= 768) {
           // Desktop: Use mobile aspect ratio, account for button container
@@ -2403,7 +2403,7 @@
             targetHeight = availableWidth / targetAspectRatio;
           }
         } else {
-          // Mobile: Use mobile aspect ratio with breathing room
+          // Mobile: Use 4:5 aspect ratio with breathing room
           const breathingRoom = 0.95; // 95% of viewport for quilt, 5% for breathing room
           const availableWidth = currentViewportWidth * breathingRoom;
           const availableHeight = currentViewportHeight * breathingRoom;
@@ -2521,20 +2521,59 @@
         const isMobile = screenWidth <= 768;
         
         if (isMobile) {
-          return {
-            width: screenWidth,
-            height: screenHeight,
-            viewBoxWidth: screenWidth,
-            viewBoxHeight: screenHeight
-          };
+          // Mobile: Use 4:5 aspect ratio for Instagram-friendly experience
+          const targetAspectRatio = 4/5;
+          const availableWidth = screenWidth * 0.95; // 95% of screen width
+          const availableHeight = screenHeight * 0.95; // 95% of screen height
+          
+          if (availableWidth / availableHeight > targetAspectRatio) {
+            // Screen is wider than 4:5 ratio - fit to height
+            const height = availableHeight;
+            const width = availableHeight * targetAspectRatio;
+            return {
+              width: width,
+              height: height,
+              viewBoxWidth: width,
+              viewBoxHeight: height
+            };
+          } else {
+            // Screen is taller than 4:5 ratio - fit to width
+            const width = availableWidth;
+            const height = availableWidth / targetAspectRatio;
+            return {
+              width: width,
+              height: height,
+              viewBoxWidth: width,
+              viewBoxHeight: height
+            };
+          }
         } else {
-          const maxSize = Math.min(screenWidth * 0.8, screenHeight * 0.8);
-          return {
-            width: maxSize,
-            height: maxSize,
-            viewBoxWidth: maxSize,
-            viewBoxHeight: maxSize
-          };
+          // Desktop: Use 4:5 aspect ratio, account for button container
+          const targetAspectRatio = 4/5;
+          const availableWidth = screenWidth * 0.7; // 70% for quilt container
+          const availableHeight = screenHeight * 0.9; // 90% of screen height
+          
+          if (availableWidth / availableHeight > targetAspectRatio) {
+            // Available area is wider than 4:5 ratio - fit to height
+            const height = availableHeight;
+            const width = availableHeight * targetAspectRatio;
+            return {
+              width: width,
+              height: height,
+              viewBoxWidth: width,
+              viewBoxHeight: height
+            };
+          } else {
+            // Available area is taller than 4:5 ratio - fit to width
+            const width = availableWidth;
+            const height = availableWidth / targetAspectRatio;
+            return {
+              width: width,
+              height: height,
+              viewBoxWidth: width,
+              viewBoxHeight: height
+            };
+          }
         }
       }
 
@@ -3054,18 +3093,22 @@
           const quiltWidth = maxX - minX;
           const quiltHeight = maxY - minY;
           
-          // Calculate scale to fit quilt in the top 70% of the image
-          // Leave bottom 30% for quote text
-          const quiltAreaHeight = canvas.height * 0.7;
-          const quiltAreaWidth = canvas.width * 0.9; // 90% width with margins
+          // Calculate scale to fit quilt in the entire image with breathing room
+          const horizontalPadding = 30; // Left and right padding
+          const verticalPadding = 60; // Top and bottom padding (more for portrait format)
+          const availableWidth = canvas.width - (horizontalPadding * 2);
+          const availableHeight = canvas.height - (verticalPadding * 2);
           
-          const scaleX = quiltAreaWidth / quiltWidth;
-          const scaleY = quiltAreaHeight / quiltHeight;
-          const scale = Math.min(scaleX, scaleY, 1) * 0.9; // 90% to add breathing room
+          const scaleX = availableWidth / quiltWidth;
+          const scaleY = availableHeight / quiltHeight;
+          // For Instagram: prioritize filling the height to match 4:5 portrait format
+          const scale = Math.max(scaleX, scaleY, 1); // Fill height, crop width if needed
           
-          // Center the quilt horizontally, position in top 70%
-          const offsetX = (canvas.width - quiltWidth * scale) / 2;
-          const offsetY = canvas.height * 0.05; // 5% from top
+          // Center the quilt in the image
+          const scaledQuiltWidth = quiltWidth * scale;
+          const scaledQuiltHeight = quiltHeight * scale;
+          const offsetX = (canvas.width - scaledQuiltWidth) / 2;
+          const offsetY = (canvas.height - scaledQuiltHeight) / 2;
           
           // Draw each block
           blocks.forEach(block => {
@@ -3092,12 +3135,7 @@
             ctx.translate(centerX, centerY);
             ctx.rotate(jitterRotation * Math.PI / 180);
             
-            // Draw block with enhanced shadow for Instagram
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            ctx.shadowBlur = 4;
-            ctx.shadowOffsetX = 3;
-            ctx.shadowOffsetY = 6;
-            
+            // Draw block (no shadow for clean Instagram look)
             ctx.fillStyle = block.color;
             ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
             
@@ -3105,70 +3143,10 @@
             ctx.restore();
           });
           
-          // Add quote text if provided
-          if (quote && quote.text && quote.author) {
-            const quoteY = canvas.height * 0.8; // 80% from top
-            const maxWidth = canvas.width * 0.85; // 85% width for text
-            
-            // Quote text
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 48px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-            ctx.textAlign = 'center';
-            
-            // Wrap text to fit width
-            const words = quote.text.split(' ');
-            const lines = [];
-            let currentLine = '';
-            
-            words.forEach(word => {
-              const testLine = currentLine ? currentLine + ' ' + word : word;
-              const metrics = ctx.measureText(testLine);
-              
-              if (metrics.width > maxWidth && currentLine) {
-                lines.push(currentLine);
-                currentLine = word;
-              } else {
-                currentLine = testLine;
-              }
-            });
-            lines.push(currentLine);
-            
-            // Draw quote lines
-            lines.forEach((line, index) => {
-              const lineY = quoteY + (index * 60);
-              ctx.fillText(line, canvas.width / 2, lineY);
-            });
-            
-            // Author attribution
-            ctx.font = 'italic 36px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-            ctx.fillStyle = '#666666';
-            const authorY = quoteY + (lines.length * 60) + 40;
-            ctx.fillText(`— ${quote.author}`, canvas.width / 2, authorY);
-            
-            // Add subtle decorative elements
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
-            ctx.globalAlpha = 0.3;
-            
-            // Top decorative line
-            ctx.beginPath();
-            ctx.moveTo(canvas.width * 0.1, quoteY - 20);
-            ctx.lineTo(canvas.width * 0.9, quoteY - 20);
-            ctx.stroke();
-            
-            // Bottom decorative line
-            ctx.beginPath();
-            ctx.moveTo(canvas.width * 0.1, authorY + 30);
-            ctx.lineTo(canvas.width * 0.9, authorY + 30);
-            ctx.stroke();
-            
-            ctx.globalAlpha = 1.0;
-          }
-          
           // Convert to data URL
           const dataURL = canvas.toDataURL('image/png', 0.95);
           
-          this.logger.log(`✅ Generated Instagram image: 1080x1350 (4:5 ratio)`);
+          this.logger.log(`✅ Generated Instagram image: 1080x1350 (4:5 ratio) - Quilt only`);
           return dataURL;
           
         } catch (error) {
@@ -6250,6 +6228,7 @@
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
             <button onclick="app.handleTestInstagramImage()">📸 Generate Instagram Image</button>
+            <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
@@ -6824,13 +6803,9 @@
             return;
           }
 
-          // Get today's quote
-          const quote = this.quoteService.getTodayQuote();
-          
-          // Generate Instagram image
+          // Generate Instagram image (quilt only, no quote)
           const instagramImage = await this.archiveService.generateInstagramImage(
-            this.quiltEngine.blocks, 
-            quote
+            this.quiltEngine.blocks
           );
           
           if (instagramImage) {
@@ -6849,6 +6824,40 @@
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testInstagramImage');
+        }
+      }
+
+      // Test Zapier webhook
+      async handleTestZapierWebhook() {
+        try {
+          if (!window.zapierWebhookAPI) {
+            this.uiService.showToast('Zapier webhook API not available');
+            return;
+          }
+
+          this.uiService.showToast('Testing Zapier webhook...');
+          
+          // Test the webhook
+          const result = await window.zapierWebhookAPI.generateInstagramImage();
+          
+          if (result.success) {
+            console.log('✅ Zapier webhook test successful:', result);
+            this.uiService.showToast(`✅ Webhook test successful! Generated image for ${result.blockCount} blocks`);
+            
+            // Show the response in console for debugging
+            console.log('📸 Zapier webhook response:', {
+              success: result.success,
+              date: result.date,
+              blockCount: result.blockCount,
+              captionLength: result.caption.length,
+              imageSize: result.image.length
+            });
+          } else {
+            console.error('❌ Zapier webhook test failed:', result);
+            this.uiService.showToast(`❌ Webhook test failed: ${result.error}`);
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'testZapierWebhook');
         }
       }
 
@@ -7843,6 +7852,95 @@
     });
 
     console.log('🧵 Our Daily Quilt Beta - Loading...');
+    
+    // ===== ZAPIER WEBHOOK API =====
+    // Simple API endpoint for Zapier to generate Instagram images
+    window.zapierWebhookAPI = {
+      // Generate Instagram image for Zapier
+      async generateInstagramImage(date = null) {
+        try {
+          console.log('📸 Zapier webhook called for Instagram image generation');
+          
+          // Wait for app to be ready
+          let attempts = 0;
+          while (!window.app && attempts < 50) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+          }
+          
+          if (!window.app) {
+            throw new Error('App not initialized');
+          }
+          
+          // Load quilt data for the specified date (or today)
+          let quiltData;
+          if (date) {
+            // Load specific date from archive
+            const archiveEntry = window.app.archiveService.archives.get(date);
+            if (archiveEntry && archiveEntry.quilt) {
+              quiltData = archiveEntry.quilt;
+            } else {
+              throw new Error(`No archive found for date: ${date}`);
+            }
+          } else {
+            // Use current quilt
+            if (!window.app.quiltEngine.blocks || window.app.quiltEngine.blocks.length <= 1) {
+              throw new Error('No quilt data available');
+            }
+            quiltData = window.app.quiltEngine.blocks;
+          }
+          
+          // Generate Instagram image
+          const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData);
+          
+          if (!instagramImage) {
+            throw new Error('Failed to generate Instagram image');
+          }
+          
+          // Get quote for caption
+          let quote = null;
+          if (date) {
+            quote = window.app.quoteService.getQuoteForDate(date);
+          } else {
+            quote = window.app.quoteService.getTodayQuote();
+          }
+          
+          // Return data for Zapier
+          const response = {
+            success: true,
+            image: instagramImage,
+            caption: `${quote.text} — ${quote.author}`,
+            date: date || new Date().toISOString().split('T')[0],
+            blockCount: quiltData.length,
+            timestamp: new Date().toISOString()
+          };
+          
+          console.log('✅ Instagram image generated for Zapier:', response.date);
+          return response;
+          
+        } catch (error) {
+          console.error('❌ Zapier webhook error:', error);
+          return {
+            success: false,
+            error: error.message,
+            timestamp: new Date().toISOString()
+          };
+        }
+      },
+      
+      // Health check endpoint
+      async healthCheck() {
+        return {
+          status: 'healthy',
+          appReady: !!window.app,
+          timestamp: new Date().toISOString()
+        };
+      }
+    };
+    
+    // Make webhook available globally
+    window.generateInstagramForZapier = window.zapierWebhookAPI.generateInstagramImage;
+    window.zapierHealthCheck = window.zapierWebhookAPI.healthCheck;
     
     // Initialize Firebase after CONFIG is defined
     (async () => {
