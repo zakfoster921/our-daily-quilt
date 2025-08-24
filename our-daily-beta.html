@@ -4993,19 +4993,32 @@
         
         console.log(`Applying image pieces to ${flippedBlocks.length} flipped blocks`);
         
-        // Create a single pattern for the entire image
-        const patternId = 'quilt-reveal-pattern';
-        this.createQuiltImagePattern(patternId, imageInfo.dataUrl);
-        
-        // Apply the same pattern to all flipped blocks
+        // Apply image to each flipped block with correct positioning
         flippedBlocks.forEach(blockId => {
           const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
           if (blockElement) {
-            // Apply the pattern to the block
-            blockElement.setAttribute('fill', `url(#${patternId})`);
-            blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
-            
-            console.log(`Applied image pattern to block ${blockId}`);
+            // Find the block data
+            const block = this.quiltEngine.blocks.find(b => b.id === blockId);
+            if (block) {
+              // Calculate the background position for this block
+              const quiltWidth = this.processedImageData.quiltWidth;
+              const quiltHeight = this.processedImageData.quiltHeight;
+              
+              // Calculate percentage positions
+              const xPercent = ((block.x - this.processedImageData.minX) / quiltWidth) * 100;
+              const yPercent = ((block.y - this.processedImageData.minY) / quiltHeight) * 100;
+              
+              // Apply background image with correct positioning
+              blockElement.style.setProperty('background-image', `url(${imageInfo.dataUrl})`, 'important');
+              blockElement.style.setProperty('background-size', `${quiltWidth}px ${quiltHeight}px`, 'important');
+              blockElement.style.setProperty('background-position', `${-xPercent}% ${-yPercent}%`, 'important');
+              blockElement.style.setProperty('background-repeat', 'no-repeat', 'important');
+              
+              // Remove any existing fill
+              blockElement.removeAttribute('fill');
+              
+              console.log(`Applied image to block ${blockId} at position:`, xPercent, yPercent);
+            }
           }
         });
       }
