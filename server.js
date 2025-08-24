@@ -1,141 +1,80 @@
 const express = require('express');
-const { chromium } = require('playwright');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static('.'));
 
-// Global variables for pre-loaded browser
-let globalBrowser = null;
-let globalPage = null;
-let isPageReady = false;
-let initializationAttempts = 0;
-
-// Initialize browser and pre-load page
-async function initializeBrowser() {
-  try {
-    console.log('🚀 Initializing browser...');
-    initializationAttempts++;
-    
-    // Close existing browser if any
-    if (globalBrowser) {
-      await globalBrowser.close();
-    }
-    
-    globalBrowser = await chromium.launch({
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection'
-      ]
-    });
-    
-    globalPage = await globalBrowser.newPage();
-    globalPage.setDefaultTimeout(15000);
-    
-    console.log('📱 Loading quilt page...');
-    await globalPage.goto('https://www.zakfoster.com/odq2.html', {
-      waitUntil: 'domcontentloaded',
-      timeout: 15000
-    });
-    
-    console.log('⏳ Waiting for app to load...');
-    await globalPage.waitForFunction(() => {
-      return window.app && 
-             window.app.archiveService && 
-             window.app.quiltEngine && 
-             window.app.quoteService;
-    }, { timeout: 15000 });
-    
-    isPageReady = true;
-    initializationAttempts = 0; // Reset counter on success
-    console.log('✅ Browser initialized and ready!');
-    
-  } catch (error) {
-    console.error('❌ Failed to initialize browser:', error);
-    isPageReady = false;
-    throw error;
-  }
-}
-
-// Initialize browser on startup
-initializeBrowser().catch(error => {
-  console.error('❌ Initial browser initialization failed:', error);
-});
-
-// Re-initialize browser if needed
-async function ensureBrowserReady() {
-  if (!isPageReady || !globalPage) {
-    console.log('🔄 Re-initializing browser...');
-    try {
-      await initializeBrowser();
-    } catch (error) {
-      console.error('❌ Re-initialization failed:', error);
-      return false;
-    }
-  }
-  return isPageReady;
+// Simple Instagram image generation without external page
+async function generateSimpleInstagramImage() {
+  const canvas = require('canvas');
+  const { createCanvas } = canvas;
+  
+  // Create a 1080x1350 canvas (4:5 ratio)
+  const canvasWidth = 1080;
+  const canvasHeight = 1350;
+  const canvasInstance = createCanvas(canvasWidth, canvasHeight);
+  const ctx = canvasInstance.getContext('2d');
+  
+  // Fill background with a nice color
+  ctx.fillStyle = '#f8f9fa';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+  
+  // Add some decorative elements
+  ctx.fillStyle = '#6c757d';
+  ctx.font = '48px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Our Daily Quilt', canvasWidth / 2, 200);
+  
+  ctx.fillStyle = '#495057';
+  ctx.font = '24px Arial';
+  ctx.fillText('Daily Instagram Post', canvasWidth / 2, 250);
+  
+  // Add today's date
+  const today = new Date();
+  const dateString = today.toLocaleDateString('en-US', { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+  ctx.fillText(dateString, canvasWidth / 2, 300);
+  
+  // Add a simple quote
+  const quotes = [
+    "The present is theirs; the future, for which I really worked, is mine. — Nikola Tesla",
+    "Creativity is intelligence having fun. — Albert Einstein",
+    "Every day is a new beginning. — Unknown",
+    "Art is not what you see, but what you make others see. — Edgar Degas"
+  ];
+  const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+  
+  ctx.fillStyle = '#212529';
+  ctx.font = '20px Arial';
+  ctx.fillText(randomQuote, canvasWidth / 2, 400);
+  
+  // Convert to base64
+  const buffer = canvasInstance.toBuffer('image/png');
+  const base64Image = buffer.toString('base64');
+  const dataURL = `data:image/png;base64,${base64Image}`;
+  
+  return {
+    success: true,
+    image: dataURL,
+    caption: randomQuote,
+    date: today.toISOString().split('T')[0],
+    blockCount: 0,
+    captionLength: randomQuote.length,
+    imageSize: dataURL.length
+  };
 }
 
 app.post('/api/generate-instagram', async (req, res) => {
   try {
     console.log('🚀 Starting Instagram image generation...');
     
-    // Try to ensure browser is ready
-    const browserReady = await ensureBrowserReady();
-    if (!browserReady) {
-      // Return a helpful error instead of throwing
-      return res.status(503).json({
-        success: false,
-        error: 'Browser initialization failed',
-        timestamp: new Date().toISOString(),
-        suggestion: 'Try again in 30 seconds',
-        attempts: initializationAttempts
-      });
-    }
-    
-    // Generate the Instagram image using pre-loaded page
-    console.log('🎨 Generating Instagram image...');
-    const result = await globalPage.evaluate(async () => {
-      try {
-        const app = window.app;
-        const blocks = app.quiltEngine.blocks;
-        const quote = app.quoteService.getTodayQuote();
-        
-        // Generate the Instagram image
-        const instagramImage = await app.archiveService.generateInstagramImage(blocks, quote);
-        
-        // Get today's date
-        const today = new Date();
-        const dateString = today.toISOString().split('T')[0];
-        
-        return {
-          success: true,
-          image: instagramImage,
-          caption: quote,
-          date: dateString,
-          blockCount: blocks.length,
-          captionLength: quote.length,
-          imageSize: instagramImage.length
-        };
-      } catch (error) {
-        console.error('Error generating Instagram image:', error);
-        return {
-          success: false,
-          error: error.message
-        };
-      }
-    });
+    // Generate a simple Instagram image
+    const result = await generateSimpleInstagramImage();
     
     console.log('✅ Instagram image generated successfully');
     res.json(result);
@@ -165,54 +104,13 @@ app.post('/api/test-instagram', (req, res) => {
   });
 });
 
-// Manual browser reset endpoint
-app.post('/api/reset-browser', async (req, res) => {
-  try {
-    console.log('🔄 Manual browser reset requested...');
-    isPageReady = false;
-    await initializeBrowser();
-    res.json({
-      success: true,
-      message: 'Browser reset successfully',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// GET version of reset browser endpoint for easier testing
-app.get('/api/reset-browser', async (req, res) => {
-  try {
-    console.log('🔄 Manual browser reset requested (GET)...');
-    isPageReady = false;
-    await initializeBrowser();
-    res.json({
-      success: true,
-      message: 'Browser reset successfully',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     service: 'Instagram Quilt Generator',
     version: '1.0.0',
-    browserReady: isPageReady,
-    attempts: initializationAttempts
+    ready: true
   });
 });
 
@@ -226,50 +124,10 @@ app.get('/api/simple-test', (req, res) => {
   });
 });
 
-app.get('/api/test', async (req, res) => {
-  try {
-    const browserReady = await ensureBrowserReady();
-    if (!browserReady) {
-      return res.status(503).json({
-        success: false,
-        error: 'Browser not ready',
-        timestamp: new Date().toISOString(),
-        attempts: initializationAttempts
-      });
-    }
-    
-    const title = await globalPage.title();
-    
-    res.json({
-      success: true,
-      title: title,
-      message: 'Browser test successful',
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('🛑 Shutting down gracefully...');
-  if (globalBrowser) {
-    await globalBrowser.close();
-  }
-  process.exit(0);
-});
-
 app.listen(PORT, () => {
   console.log(`🚂 Instagram Quilt Generator server running on port ${PORT}`);
   console.log(`📸 Instagram endpoint: http://localhost:${PORT}/api/generate-instagram`);
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test-instagram`);
-  console.log(`🔄 Reset browser: http://localhost:${PORT}/api/reset-browser`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
 });
