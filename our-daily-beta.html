@@ -4586,18 +4586,48 @@
           const optionsContainer = document.getElementById('revealImageOptions');
           if (!optionsContainer) return;
           
-          // For now, show the existing 2 images
-          optionsContainer.innerHTML = `
-            <div class="image-option">
-              <input type="radio" name="revealImage" value="image1" id="revealImage1">
-              <label for="revealImage1">Reveal Image 1</label>
-            </div>
-            <div class="image-option">
-              <input type="radio" name="revealImage" value="image2" id="revealImage2">
-              <label for="revealImage2">Reveal Image 2</label>
-            </div>
-            <button onclick="app.handleSelectRevealImage()">Apply Selected Image</button>
-          `;
+          // Check if Firebase is available
+          if (!window.firebaseApp || !window.firebaseStorage) {
+            optionsContainer.innerHTML = '<p>Firebase not available. Please try again.</p>';
+            return;
+          }
+          
+          // Load images from Firebase Storage
+          const { ref, listAll, getDownloadURL } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          const storage = window.firebaseStorage;
+          
+          // Try to get images from quilt-reveals folder
+          const revealsRef = ref(storage, 'quilt-reveals');
+          const result = await listAll(revealsRef);
+          
+          if (result.items.length === 0) {
+            optionsContainer.innerHTML = '<p>No reveal images found. Upload one to get started!</p>';
+            return;
+          }
+          
+          // Build HTML for image options
+          let optionsHTML = '';
+          
+          for (let i = 0; i < result.items.length; i++) {
+            const item = result.items[i];
+            const downloadURL = await getDownloadURL(item);
+            const imageId = `revealImage${i}`;
+            
+            optionsHTML += `
+              <div class="image-option" style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                <input type="radio" name="revealImage" value="${downloadURL}" id="${imageId}">
+                <label for="${imageId}" style="display: flex; align-items: center; gap: 10px;">
+                  <img src="${downloadURL}" alt="Reveal Image ${i + 1}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px;">
+                  <span>${item.name}</span>
+                </label>
+              </div>
+            `;
+          }
+          
+          optionsHTML += '<button onclick="app.handleSelectRevealImage()" style="margin-top: 10px;">Apply Selected Image</button>';
+          
+          optionsContainer.innerHTML = optionsHTML;
+          
         } catch (error) {
           console.error('Error loading reveal image options:', error);
           const optionsContainer = document.getElementById('revealImageOptions');
@@ -4652,36 +4682,166 @@
         try {
           await this.initializeFirebaseForImages();
           
-          // Upload logic will go here
-          console.log('Uploading reveal image:', file.name);
-          alert('Image upload functionality coming soon!');
+          // Show loading message
+          const uploadButton = document.querySelector('button[onclick="app.handleUploadRevealImage()"]');
+          const originalText = uploadButton.textContent;
+          uploadButton.textContent = 'Resizing & Uploading...';
+          uploadButton.disabled = true;
+          
+          // Resize image to quilt dimensions (412 x 800)
+          const resizedImageBlob = await this.resizeImageToQuiltDimensions(file);
+          
+          // Upload to Firebase Storage
+          const { ref, uploadBytes, getDownloadURL } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          const storage = window.firebaseStorage;
+          
+          // Create unique filename with timestamp
+          const timestamp = Date.now();
+          const filename = `quilt-reveal-${timestamp}.png`;
+          const imageRef = ref(storage, `quilt-reveals/${filename}`);
+          
+          // Upload the resized image
+          await uploadBytes(imageRef, resizedImageBlob);
+          const downloadURL = await getDownloadURL(imageRef);
+          
+          // Store image info
+          const imageInfo = {
+            name: filename,
+            url: downloadURL,
+            uploadedAt: timestamp
+          };
+          
+          // Add to available images
+          if (!this.availableRevealImages) {
+            this.availableRevealImages = [];
+          }
+          this.availableRevealImages.push(imageInfo);
+          
+          // Refresh the image options display
+          this.loadRevealImageOptions();
+          
+          // Clear the file input
+          fileInput.value = '';
+          
+          // Reset button
+          uploadButton.textContent = originalText;
+          uploadButton.disabled = false;
+          
+          this.uiService.showToast('✅ Image uploaded and resized successfully!');
+          console.log('Image uploaded:', imageInfo);
           
         } catch (error) {
           console.error('Error uploading image:', error);
-          alert('Error uploading image. Please try again.');
+          this.uiService.showToast('❌ Error uploading image. Please try again.');
+          
+          // Reset button on error
+          const uploadButton = document.querySelector('button[onclick="app.handleUploadRevealImage()"]');
+          if (uploadButton) {
+            uploadButton.textContent = 'Upload Image';
+            uploadButton.disabled = false;
+          }
         }
       }
 
+      async resizeImageToQuiltDimensions(file) {
+        return new Promise((resolve, reject) => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const img = new Image();
+          
+          // Set target dimensions (quilt size)
+          const targetWidth = 412;
+          const targetHeight = 800;
+          
+          img.onload = () => {
+            try {
+              // Set canvas size to target dimensions
+              canvas.width = targetWidth;
+              canvas.height = targetHeight;
+              
+              // Calculate scaling to fit image within target dimensions while maintaining aspect ratio
+              const imageAspect = img.width / img.height;
+              const targetAspect = targetWidth / targetHeight;
+              
+              let drawWidth, drawHeight, offsetX, offsetY;
+              
+              if (imageAspect > targetAspect) {
+                // Image is wider - fit to width
+                drawWidth = targetWidth;
+                drawHeight = targetWidth / imageAspect;
+                offsetX = 0;
+                offsetY = (targetHeight - drawHeight) / 2;
+              } else {
+                // Image is taller - fit to height
+                drawWidth = targetHeight * imageAspect;
+                drawHeight = targetHeight;
+                offsetX = (targetWidth - drawWidth) / 2;
+                offsetY = 0;
+              }
+              
+              // Fill background with white (or any color you prefer)
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, targetWidth, targetHeight);
+              
+              // Draw the resized image centered
+              ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+              
+              // Convert to blob
+              canvas.toBlob((blob) => {
+                if (blob) {
+                  resolve(blob);
+                } else {
+                  reject(new Error('Failed to create image blob'));
+                }
+              }, 'image/png', 0.9);
+              
+            } catch (error) {
+              reject(error);
+            }
+          };
+          
+          img.onerror = () => {
+            reject(new Error('Failed to load image for resizing'));
+          };
+          
+          // Load image from file
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            img.src = e.target.result;
+          };
+          reader.onerror = () => {
+            reject(new Error('Failed to read image file'));
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
       async handleSelectRevealImage() {
-        const selectedImage = document.querySelector('input[name="revealImage"]:checked')?.value;
+        const selectedImageURL = document.querySelector('input[name="revealImage"]:checked')?.value;
         
-        if (!selectedImage) {
+        if (!selectedImageURL) {
           alert('Please select an image first.');
           return;
         }
         
         try {
+          // Create image info object
+          const imageInfo = {
+            name: 'Selected Reveal Image',
+            url: selectedImageURL
+          };
+          
           // Store the selected image preference
-          localStorage.setItem('selectedRevealImage', selectedImage);
+          localStorage.setItem('selectedRevealImage', selectedImageURL);
           
           // Apply the image to the quilt
-          await this.applyRevealImageToQuilt(selectedImage);
+          await this.applyImageToQuilt(imageInfo);
           
-          alert('Reveal image applied successfully!');
+          this.uiService.showToast('✅ Reveal image applied successfully!');
           
         } catch (error) {
           console.error('Error applying reveal image:', error);
-          alert('Error applying image. Please try again.');
+          this.uiService.showToast('❌ Error applying image. Please try again.');
         }
       }
 
@@ -5817,6 +5977,7 @@
             <h3>Quilt Reveal Image Manager</h3>
             <div class="image-upload-section">
               <h4>Upload New Reveal Image</h4>
+              <p style="font-size: 12px; color: #666; margin: 5px 0;">Images will be automatically resized to 412 x 800 pixels</p>
               <input type="file" id="revealImageUpload" accept="image/*" style="margin: 10px 0;">
               <button onclick="app.handleUploadRevealImage()">Upload Image</button>
             </div>
