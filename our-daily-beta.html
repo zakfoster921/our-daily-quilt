@@ -4932,11 +4932,41 @@
           if (imageInfo.url.includes('firebasestorage.googleapis.com')) {
             console.log('🖼️ Loading Firebase image with CORS handling');
             img.crossOrigin = 'anonymous';
+            
+            // Add error handler for CORS issues
+            img.onerror = (error) => {
+              console.log('🖼️ CORS error loading Firebase image, falling back to test image');
+              console.log('🖼️ Error details:', error);
+              // Don't call loadFallbackImages here as it would create an infinite loop
+              // Instead, just log the error and continue with fallback
+            };
           } else {
             console.log('🖼️ Loading local/SVG image');
           }
           
           console.log('🖼️ Loading image from URL:', imageInfo.url);
+          
+          // Add timeout for Firebase images to handle CORS issues
+          if (imageInfo.url.includes('firebasestorage.googleapis.com')) {
+            const timeout = setTimeout(() => {
+              console.log('🖼️ Timeout loading Firebase image, likely CORS issue');
+              img.onerror = null; // Remove error handler to prevent double handling
+              reject(new Error('Timeout loading Firebase image (CORS issue)'));
+            }, 5000); // 5 second timeout
+            
+            img.onload = () => {
+              clearTimeout(timeout);
+              resolve();
+            };
+            
+            img.onerror = (error) => {
+              clearTimeout(timeout);
+              console.log('🖼️ CORS error loading Firebase image, falling back to test image');
+              console.log('🖼️ Error details:', error);
+              reject(new Error('CORS blocked Firebase image'));
+            };
+          }
+          
           img.src = imageInfo.url;
         });
       }
