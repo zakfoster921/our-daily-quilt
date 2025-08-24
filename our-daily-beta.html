@@ -6415,8 +6415,61 @@
           
           // this.updateDebugPanel(`Swipe end: duration=${swipeDuration}ms, distance=${Math.round(swipeDistance)}px`); // DISABLED FOR PRODUCTION
           
-          // Tap handling is now done by the separate handleQuiltFlip function
-          // This prevents conflicts between swipe and tap handlers
+          // Handle taps (short duration and minimal movement) for mobile devices
+          if (swipeDuration < 300 && swipeDistance < 20) {
+            console.log('🔄 TAP detected in swipe end');
+            
+            // Find the block at the tap position
+            let elementAtPosition = document.elementFromPoint(this.swipeStartX, this.swipeStartY);
+            
+            // If we didn't get a rect, try to find the closest one
+            if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
+              const allRects = document.querySelectorAll('#quilt rect');
+              let closestRect = null;
+              let closestDistance = Infinity;
+              
+              allRects.forEach(rect => {
+                const rectBox = rect.getBoundingClientRect();
+                const rectCenterX = rectBox.left + rectBox.width / 2;
+                const rectCenterY = rectBox.top + rectBox.height / 2;
+                const distance = Math.sqrt(Math.pow(this.swipeStartX - rectCenterX, 2) + Math.pow(this.swipeStartY - rectCenterY, 2));
+                
+                if (distance < closestDistance) {
+                  closestDistance = distance;
+                  closestRect = rect;
+                }
+              });
+              
+              if (closestRect && closestDistance < 50) {
+                elementAtPosition = closestRect;
+              }
+            }
+            
+            if (elementAtPosition && elementAtPosition.tagName === 'rect') {
+              const blockId = elementAtPosition.getAttribute('data-block-id');
+              if (blockId) {
+                const newFlipState = this.renderer.toggleBlockFlip(blockId);
+                
+                // Apply CSS class and color directly to the element
+                if (newFlipState) {
+                  elementAtPosition.classList.add('block-flipped');
+                  
+                  // Apply reveal image if one is selected
+                  if (this.currentRevealImage) {
+                    const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+                    elementAtPosition.setAttribute('fill', color);
+                    elementAtPosition.style.setProperty('fill', color, 'important');
+                    console.log(`TAP: Applied color ${color} to block ${blockId}`);
+                  }
+                } else {
+                  elementAtPosition.classList.remove('block-flipped');
+                  elementAtPosition.removeAttribute('fill');
+                }
+                
+                console.log('🔄 TAP: Flipped block', blockId);
+              }
+            }
+          }
           
           // Add a small delay before clearing swipe state to prevent race conditions
           setTimeout(() => {
@@ -6496,9 +6549,8 @@
         document.addEventListener('touchmove', this.handleSwipeMove, { passive: false });
         document.addEventListener('touchend', this.handleSwipeEnd, { passive: false });
         
-        // Add click handler for tap events
+        // Add click handler for tap events (only click, not touchstart to avoid conflicts)
         quiltSVG.addEventListener('click', this.handleQuiltFlip);
-        quiltSVG.addEventListener('touchstart', this.handleQuiltFlip);
         
         // Debug: Log that event listeners are set up
         // Debug panel removed for production
