@@ -5013,15 +5013,34 @@
         revealImage.setAttribute('id', 'quilt-reveal-image');
         revealImage.setAttribute('href', imageInfo.dataUrl);
         
-        // Try using 0,0 as the origin instead of minX,minY
-        revealImage.setAttribute('x', 0);
-        revealImage.setAttribute('y', 0);
-        revealImage.setAttribute('width', this.processedImageData.imageWidth);
-        revealImage.setAttribute('height', this.processedImageData.imageHeight);
-        revealImage.setAttribute('preserveAspectRatio', 'none');
+        // Scale the image to fit the quilt while maintaining aspect ratio
+        const imageAspect = this.processedImageData.imageWidth / this.processedImageData.imageHeight;
+        const quiltAspect = this.processedImageData.quiltWidth / this.processedImageData.quiltHeight;
+        
+        let scaledWidth, scaledHeight, offsetX, offsetY;
+        
+        if (imageAspect > quiltAspect) {
+          // Image is wider than quilt - fit to width
+          scaledWidth = this.processedImageData.quiltWidth;
+          scaledHeight = this.processedImageData.quiltWidth / imageAspect;
+          offsetX = 0;
+          offsetY = (this.processedImageData.quiltHeight - scaledHeight) / 2;
+        } else {
+          // Image is taller than quilt - fit to height
+          scaledWidth = this.processedImageData.quiltHeight * imageAspect;
+          scaledHeight = this.processedImageData.quiltHeight;
+          offsetX = (this.processedImageData.quiltWidth - scaledWidth) / 2;
+          offsetY = 0;
+        }
+        
+        revealImage.setAttribute('x', offsetX);
+        revealImage.setAttribute('y', offsetY);
+        revealImage.setAttribute('width', scaledWidth);
+        revealImage.setAttribute('height', scaledHeight);
+        revealImage.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         revealImage.style.pointerEvents = 'none';
         
-        console.log('🖼️ Created reveal image at 0,0 with size:', this.processedImageData.imageWidth, 'x', this.processedImageData.imageHeight);
+        console.log('🖼️ Created reveal image with proper scaling:', scaledWidth, 'x', scaledHeight, 'at offset:', offsetX, offsetY);
         
         // Add the image to the quilt
         quiltContainer.appendChild(revealImage);
