@@ -6,32 +6,16 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static('.'));
 
-// Helper function to wait for app with retries
-async function waitForApp(page, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      await page.waitForFunction(() => {
-        return window.app && 
-               window.app.archiveService && 
-               window.app.quiltEngine && 
-               window.app.quoteService;
-      }, { timeout: 8000 });
-      return true;
-    } catch (error) {
-      console.log(`Attempt ${i + 1} failed, retrying...`);
-      if (i === maxRetries - 1) throw error;
-      await page.waitForTimeout(2000); // Wait 2 seconds before retry
-    }
-  }
-}
+// Global variables for pre-loaded browser
+let globalBrowser = null;
+let globalPage = null;
+let isPageReady = false;
 
-app.post('/api/generate-instagram', async (req, res) => {
-  let browser = null;
+// Initialize browser and pre-load page
+async function initializeBrowser() {
   try {
-    console.log('🚀 Starting Instagram image generation...');
-    
-    // Launch browser with optimized settings for speed
-    browser = await chromium.launch({
+    console.log('🚀 Initializing browser...');
+    globalBrowser = await chromium.launch({
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -48,25 +32,57 @@ app.post('/api/generate-instagram', async (req, res) => {
       ]
     });
     
-    const page = await browser.newPage();
+    globalPage = await globalBrowser.newPage();
+    globalPage.setDefaultTimeout(15000);
     
-    // Set a shorter timeout and optimize page loading
-    page.setDefaultTimeout(12000); // 12 seconds
-    
-    // Navigate to the live quilt page with faster settings
     console.log('📱 Loading quilt page...');
-    await page.goto('https://www.zakfoster.com/odq2.html', {
+    await globalPage.goto('https://www.zakfoster.com/odq2.html', {
       waitUntil: 'domcontentloaded',
-      timeout: 10000
+      timeout: 15000
     });
     
-    // Wait for the app to load with retry logic
     console.log('⏳ Waiting for app to load...');
-    await waitForApp(page);
+    await globalPage.waitForFunction(() => {
+      return window.app && 
+             window.app.archiveService && 
+             window.app.quiltEngine && 
+             window.app.quoteService;
+    }, { timeout: 15000 });
     
-    // Generate the Instagram image
+    isPageReady = true;
+    console.log('✅ Browser initialized and ready!');
+    
+  } catch (error) {
+    console.error('❌ Failed to initialize browser:', error);
+    isPageReady = false;
+  }
+}
+
+// Initialize browser on startup
+initializeBrowser();
+
+// Re-initialize browser if needed
+async function ensureBrowserReady() {
+  if (!isPageReady || !globalPage) {
+    console.log('🔄 Re-initializing browser...');
+    await initializeBrowser();
+  }
+  return isPageReady;
+}
+
+app.post('/api/generate-instagram', async (req, res) => {
+  try {
+    console.log('🚀 Starting Instagram image generation...');
+    
+    // Ensure browser is ready
+    const browserReady = await ensureBrowserReady();
+    if (!browserReady) {
+      throw new Error('Browser not ready');
+    }
+    
+    // Generate the Instagram image using pre-loaded page
     console.log('🎨 Generating Instagram image...');
-    const result = await page.evaluate(async () => {
+    const result = await globalPage.evaluate(async () => {
       try {
         const app = window.app;
         const blocks = app.quiltEngine.blocks;
@@ -108,10 +124,6 @@ app.post('/api/generate-instagram', async (req, res) => {
       timestamp: new Date().toISOString(),
       suggestion: 'Try again in a few minutes'
     });
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
 });
 
@@ -134,7 +146,8 @@ app.get('/api/health', (req, res) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     service: 'Instagram Quilt Generator',
-    version: '1.0.0'
+    version: '1.0.0',
+    browserReady: isPageReady
   });
 });
 
@@ -149,28 +162,13 @@ app.get('/api/simple-test', (req, res) => {
 });
 
 app.get('/api/test', async (req, res) => {
-  let browser = null;
   try {
-    browser = await chromium.launch({
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
-      ]
-    });
+    const browserReady = await ensureBrowserReady();
+    if (!browserReady) {
+      throw new Error('Browser not ready');
+    }
     
-    const page = await browser.newPage();
-    page.setDefaultTimeout(12000);
-    
-    await page.goto('https://www.zakfoster.com/odq2.html', {
-      waitUntil: 'domcontentloaded',
-      timeout: 10000
-    });
-    
-    // Use the same retry logic
-    await waitForApp(page);
-    
-    const title = await page.title();
+    const title = await globalPage.title();
     
     res.json({
       success: true,
@@ -185,11 +183,16 @@ app.get('/api/test', async (req, res) => {
       error: error.message,
       timestamp: new Date().toISOString()
     });
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('🛑 Shutting down gracefully...');
+  if (globalBrowser) {
+    await globalBrowser.close();
+  }
+  process.exit(0);
 });
 
 app.listen(PORT, () => {
