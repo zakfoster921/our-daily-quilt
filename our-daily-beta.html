@@ -4750,26 +4750,26 @@
           let blob = null;
           
           try {
-            // Try blob first (better for CORS)
-            blob = await getBlob(selectedImageRef);
-            imageUrl = URL.createObjectURL(blob);
-            console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'blob URL created');
-          } catch (blobError) {
-            console.log('🔄 Blob failed, trying direct URL:', blobError.message);
+            // Try direct URL first (better for live sites)
+            imageUrl = await getDownloadURL(selectedImageRef);
+            console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'direct URL created');
+          } catch (urlError) {
+            console.log('🔄 Direct URL failed, trying blob:', urlError.message);
             try {
-              // Fallback to direct URL
-              imageUrl = await getDownloadURL(selectedImageRef);
-              console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'direct URL created');
-                         } catch (urlError) {
-               console.log('❌ Both blob and direct URL failed:', urlError.message);
-               if (urlError.message.includes('CORS') || urlError.message.includes('Access-Control-Allow-Origin')) {
-                 console.log('🔄 CORS issue detected - this is normal when running locally');
-                 console.log('💡 Firebase images will work when deployed to a proper server');
-                 throw new Error('CORS blocked Firebase image (normal when running locally)');
-               } else {
-                 throw new Error('Could not load Firebase image: ' + urlError.message);
-               }
-             }
+              // Fallback to blob
+              blob = await getBlob(selectedImageRef);
+              imageUrl = URL.createObjectURL(blob);
+              console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'blob URL created');
+            } catch (blobError) {
+              console.log('❌ Both direct URL and blob failed:', blobError.message);
+              if (blobError.message.includes('CORS') || blobError.message.includes('Access-Control-Allow-Origin')) {
+                console.log('🔄 CORS issue detected - this is normal when running locally');
+                console.log('💡 Firebase images will work when deployed to a proper server');
+                throw new Error('CORS blocked Firebase image (normal when running locally)');
+              } else {
+                throw new Error('Could not load Firebase image: ' + blobError.message);
+              }
+            }
           }
           
           // Store the selected image info
