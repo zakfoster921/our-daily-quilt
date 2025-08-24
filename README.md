@@ -13,7 +13,7 @@ An interactive quilt-building application with image reveal functionality.
 ## Live Demo
 
 Visit the live version to test the Firebase image reveal feature:
-[Live Demo](https://your-username.github.io/your-repo-name/)
+[Live Demo](https://zakfoster921.github.io/our-daily-quilt/)
 
 ## Local Development
 
