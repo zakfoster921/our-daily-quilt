@@ -4993,33 +4993,60 @@
         
         console.log(`Applying image pieces to ${flippedBlocks.length} flipped blocks`);
         
+        // Create a single pattern for the entire image
+        const patternId = 'quilt-reveal-pattern';
+        this.createQuiltImagePattern(patternId, imageInfo.dataUrl);
+        
+        // Apply the same pattern to all flipped blocks
         flippedBlocks.forEach(blockId => {
           const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
           if (blockElement) {
-            // Find the block data
-            const block = this.quiltEngine.blocks.find(b => b.id === blockId);
-            if (block) {
-              // Calculate the portion of the image this block should show
-              // Use the block's position relative to the quilt dimensions
-              const quiltWidth = this.processedImageData.quiltWidth;
-              const quiltHeight = this.processedImageData.quiltHeight;
-              
-              // Calculate image coordinates based on block position relative to quilt
-              const imageX = (block.x / quiltWidth) * this.processedImageData.imageWidth;
-              const imageY = (block.y / quiltHeight) * this.processedImageData.imageHeight;
-              
-              // Create a pattern for this specific block
-              const patternId = `pattern-${blockId}`;
-              this.createBlockImagePattern(patternId, imageInfo.dataUrl, imageX, imageY, block.width, block.height);
-              
-              // Apply the pattern to the block
-              blockElement.setAttribute('fill', `url(#${patternId})`);
-              blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
-              
-              console.log(`Applied image piece to block ${blockId} at image coords:`, imageX, imageY);
-            }
+            // Apply the pattern to the block
+            blockElement.setAttribute('fill', `url(#${patternId})`);
+            blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
+            
+            console.log(`Applied image pattern to block ${blockId}`);
           }
         });
+      }
+
+      createQuiltImagePattern(patternId, imageDataUrl) {
+        console.log('🖼️ Creating quilt image pattern:', patternId);
+        
+        // Remove existing pattern if it exists
+        const existingPattern = document.getElementById(patternId);
+        if (existingPattern) {
+          existingPattern.remove();
+        }
+        
+        // Create new pattern
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', patternId);
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('x', -this.processedImageData.minX);
+        pattern.setAttribute('y', -this.processedImageData.minY);
+        pattern.setAttribute('width', this.processedImageData.quiltWidth);
+        pattern.setAttribute('height', this.processedImageData.quiltHeight);
+        
+        // Add image to pattern
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        image.setAttribute('href', imageDataUrl);
+        image.setAttribute('width', this.processedImageData.quiltWidth);
+        image.setAttribute('height', this.processedImageData.quiltHeight);
+        image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        
+        pattern.appendChild(image);
+        
+        // Add to SVG defs - ensure defs exists
+        let defs = document.querySelector('#quilt defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          const quilt = document.querySelector('#quilt');
+          quilt.insertBefore(defs, quilt.firstChild);
+        }
+        defs.appendChild(pattern);
+        
+        console.log('✅ Quilt image pattern created and added to defs:', patternId);
       }
 
       createBlockImagePattern(patternId, imageDataUrl, x, y, width, height) {
