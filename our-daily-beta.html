@@ -1822,14 +1822,14 @@
         debugMode: true
       },
       FIREBASE: {
-        // DISABLED FOR LOCAL TESTING
-        // apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
-        // authDomain: "our-daily.firebaseapp.com",
-        // projectId: "our-daily",
-        // storageBucket: "our-daily.firebasestorage.app",
-        // messagingSenderId: "337201931314",
-        // appId: "1:337201931314:web:fb5677846d03eb285ac82b",
-        // measurementId: "G-65XB7QC1F4"
+        // ENABLED FOR IMAGE REVEAL FUNCTIONALITY
+        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+        authDomain: "our-daily.firebaseapp.com",
+        projectId: "our-daily",
+        storageBucket: "our-daily.firebasestorage.app",
+        messagingSenderId: "337201931314",
+        appId: "1:337201931314:web:fb5677846d03eb285ac82b",
+        measurementId: "G-65XB7QC1F4"
       },
       COLOR_PICKER: {
         wheelSize: 280,
@@ -4077,7 +4077,7 @@
           console.log('🔍 DEBUGGING: Quilt loaded, blocks count:', this.quiltEngine.blocks.length);
           
           this.renderer.initialize();
-          this.renderQuilt();
+          await this.renderQuilt();
           this.updateSquareCounter();
           
           // Initialize UI after portal is shown
@@ -4609,21 +4609,30 @@
 
       async initializeFirebaseForImages() {
         // Only initialize Firebase if not already done
-        if (window.firebaseApp) {
+        if (window.firebaseApp && window.firebaseStorage) {
+          console.log('🔥 Firebase already initialized');
           return window.firebaseApp;
         }
         
         try {
+          console.log('🔥 Initializing Firebase for images...');
+          console.log('🔥 CONFIG.FIREBASE exists:', !!CONFIG.FIREBASE);
+          console.log('🔥 CONFIG.FIREBASE keys:', Object.keys(CONFIG.FIREBASE || {}));
+          
           const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
           const { getStorage } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
           
+          console.log('🔥 Firebase config:', CONFIG.FIREBASE);
           const firebaseApp = initializeApp(CONFIG.FIREBASE);
           const storage = getStorage(firebaseApp);
           
           window.firebaseApp = firebaseApp;
           window.firebaseStorage = storage;
           
-          console.log('🔥 Firebase initialized for image storage');
+          console.log('🔥 Firebase initialized successfully');
+          console.log('🔥 window.firebaseApp set:', !!window.firebaseApp);
+          console.log('🔥 window.firebaseStorage set:', !!window.firebaseStorage);
+          console.log('🔥 Storage instance:', storage);
           return firebaseApp;
         } catch (error) {
           console.error('Failed to initialize Firebase for images:', error);
@@ -4684,6 +4693,330 @@
         
         // Apply color directly to flipped blocks (working approach)
         this.applyColorToFlippedBlocks(imageName);
+      }
+
+      async loadRandomRevealImage() {
+        try {
+          // Always try to initialize Firebase first
+          console.log('🔥 Attempting to initialize Firebase...');
+          await this.initializeFirebaseForImages();
+          
+          // Check if Firebase is available after initialization
+          if (!window.firebaseApp || !window.firebaseStorage) {
+            console.log('Firebase still not available after initialization, using fallback images');
+            return this.loadFallbackImages();
+          }
+          
+          await this.initializeFirebaseForImages();
+          
+          // Get list of images from Firebase Storage
+          const { ref, listAll, getDownloadURL, getBlob } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          const storage = window.firebaseStorage;
+          
+          // Try different possible folder names
+          const possibleFolders = ['quilt-reveals', 'quilt reveals', 'quiltreveals', 'reveals', 'images'];
+          let result = null;
+          let folderName = null;
+          
+          for (const folder of possibleFolders) {
+            try {
+              console.log(`🖼️ Trying Firebase folder: "${folder}"`);
+              const revealsRef = ref(storage, folder);
+              result = await listAll(revealsRef);
+              if (result.items.length > 0) {
+                folderName = folder;
+                console.log(`✅ Found ${result.items.length} images in Firebase folder: "${folder}"`);
+                break;
+              } else {
+                console.log(`📁 Folder "${folder}" exists but is empty`);
+              }
+            } catch (error) {
+              console.log(`❌ Folder "${folder}" not found:`, error.message);
+            }
+          }
+          
+          if (!result || result.items.length === 0) {
+            console.log('No images found in Firebase, using fallback images');
+            return this.loadFallbackImages();
+          }
+          
+          // Randomly select an image
+          const randomIndex = Math.floor(Math.random() * result.items.length);
+          const selectedImageRef = result.items[randomIndex];
+          
+          // Try to get the image URL (may fail due to CORS when running locally)
+          console.log('🖼️ Getting Firebase image URL...');
+          let imageUrl;
+          let blob = null;
+          
+          try {
+            // Try blob first (better for CORS)
+            blob = await getBlob(selectedImageRef);
+            imageUrl = URL.createObjectURL(blob);
+            console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'blob URL created');
+          } catch (blobError) {
+            console.log('🔄 Blob failed, trying direct URL:', blobError.message);
+            try {
+              // Fallback to direct URL
+              imageUrl = await getDownloadURL(selectedImageRef);
+              console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'direct URL created');
+                         } catch (urlError) {
+               console.log('❌ Both blob and direct URL failed:', urlError.message);
+               if (urlError.message.includes('CORS') || urlError.message.includes('Access-Control-Allow-Origin')) {
+                 console.log('🔄 CORS issue detected - this is normal when running locally');
+                 console.log('💡 Firebase images will work when deployed to a proper server');
+                 throw new Error('CORS blocked Firebase image (normal when running locally)');
+               } else {
+                 throw new Error('Could not load Firebase image: ' + urlError.message);
+               }
+             }
+          }
+          
+          // Store the selected image info
+          this.currentRevealImage = {
+            name: selectedImageRef.name,
+            url: imageUrl,
+            blob: blob // Keep reference to clean up later
+          };
+          
+          console.log('🖼️ Stored currentRevealImage:', this.currentRevealImage);
+          
+          // Apply the image to the quilt
+          await this.applyImageToQuilt(this.currentRevealImage);
+          
+          return this.currentRevealImage;
+          
+        } catch (error) {
+          console.error('Error loading Firebase image:', error);
+          console.log('Falling back to test images');
+          return this.loadFallbackImages();
+        }
+      }
+
+      async loadFallbackImages() {
+        // Use CORS-friendly test images as fallback
+        const testImages = [
+          {
+            name: 'test-image-1',
+            url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ3JhZDEiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZmY2YjZiO3N0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM0ZWNkYzQ7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyYWQxKSIgLz4KICA8dGV4dCB4PSI0MDAiIHk9IjMwMCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjQ4IiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+UmV2ZWFsIEltYWdlIDE8L3RleHQ+Cjwvc3ZnPgo='
+          },
+          {
+            name: 'test-image-2', 
+            url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ3JhZDIiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojNGVjZGM0O3N0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZjZiNmI7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyYWQyKSIgLz4KICA8dGV4dCB4PSI0MDAiIHk9IjMwMCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjQ4IiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+UmV2ZWFsIEltYWdlIDI8L3RleHQ+Cjwvc3ZnPgo='
+          },
+          {
+            name: 'test-image-3',
+            url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ3JhZDMiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZmZhNzI2O3N0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmViM2I7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyYWQzKSIgLz4KICA8dGV4dCB4PSI0MDAiIHk9IjMwMCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjQ4IiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+UmV2ZWFsIEltYWdlIDM8L3RleHQ+Cjwvc3ZnPgo='
+          }
+        ];
+        
+        // Randomly select a test image
+        const randomIndex = Math.floor(Math.random() * testImages.length);
+        const selectedImage = testImages[randomIndex];
+        
+        console.log('🎲 Randomly selected fallback image:', selectedImage.name);
+        
+        // Store the selected image info
+        this.currentRevealImage = selectedImage;
+        
+        // Apply the image to the quilt
+        await this.applyImageToQuilt(this.currentRevealImage);
+        
+        return this.currentRevealImage;
+      }
+
+      async forceLoadFirebaseImage() {
+        console.log('🔥 Force loading Firebase image...');
+        try {
+          const result = await this.loadRandomRevealImage();
+          if (result) {
+            this.uiService.showToast('✅ Firebase image loaded successfully!');
+          } else {
+            this.uiService.showToast('❌ Failed to load Firebase image');
+          }
+        } catch (error) {
+          console.error('Error force loading Firebase image:', error);
+          this.uiService.showToast('❌ Error loading Firebase image');
+        }
+      }
+
+      async applyImageToQuilt(imageInfo) {
+        console.log('🖼️ applyImageToQuilt called with:', imageInfo);
+        
+        if (!imageInfo) {
+          console.log('❌ No imageInfo provided');
+          return;
+        }
+        
+        if (!imageInfo.url) {
+          console.log('❌ No imageInfo.url provided');
+          return;
+        }
+        
+        console.log('🖼️ Image URL type:', typeof imageInfo.url);
+        console.log('🖼️ Image URL value:', imageInfo.url);
+        
+        console.log('Applying image to quilt:', imageInfo.name);
+        
+        // Create image pattern for the quilt
+        await this.createImagePattern(imageInfo);
+        
+        // Apply to flipped blocks
+        this.applyImageToFlippedBlocks(imageInfo);
+      }
+
+      async createImagePattern(imageInfo) {
+        console.log('🖼️ Creating image pattern for:', imageInfo.name);
+        
+        // Create a canvas to load and process the image
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        
+        return new Promise((resolve, reject) => {
+          img.onload = () => {
+            console.log('🖼️ Image loaded, dimensions:', img.width, 'x', img.height);
+            
+            // Get quilt dimensions
+            const blocks = this.quiltEngine.blocks;
+            if (blocks.length === 0) {
+              reject('No blocks in quilt');
+              return;
+            }
+            
+            const minX = Math.min(...blocks.map(b => b.x));
+            const minY = Math.min(...blocks.map(b => b.y));
+            const maxX = Math.max(...blocks.map(b => b.x + b.width));
+            const maxY = Math.max(...blocks.map(b => b.y + b.height));
+            const quiltWidth = maxX - minX;
+            const quiltHeight = maxY - minY;
+            
+            console.log('🖼️ Quilt dimensions:', quiltWidth, 'x', quiltHeight);
+            
+            // Set canvas size to match quilt dimensions
+            canvas.width = quiltWidth;
+            canvas.height = quiltHeight;
+            
+            // Draw the image scaled to fit the quilt
+            ctx.drawImage(img, 0, 0, quiltWidth, quiltHeight);
+            
+            // Convert to data URL for SVG pattern
+            const imageDataUrl = canvas.toDataURL('image/png');
+            
+            // Store the processed image data
+            this.processedImageData = {
+              dataUrl: imageDataUrl,
+              quiltWidth: quiltWidth,
+              quiltHeight: quiltHeight,
+              minX: minX,
+              minY: minY
+            };
+            
+            console.log('✅ Image pattern created for quilt, data URL length:', imageDataUrl.length);
+            resolve();
+          };
+          
+          img.onerror = (error) => {
+            console.error('🖼️ Failed to load image:', error);
+            reject('Failed to load image');
+          };
+          
+          // Ensure we have a valid URL
+          if (!imageInfo.url || typeof imageInfo.url !== 'string') {
+            console.error('Invalid image URL:', imageInfo.url);
+            reject('Invalid image URL');
+            return;
+          }
+          
+          // Handle CORS for Firebase images
+          if (imageInfo.url.includes('firebasestorage.googleapis.com')) {
+            console.log('🖼️ Loading Firebase image with CORS handling');
+            img.crossOrigin = 'anonymous';
+          } else {
+            console.log('🖼️ Loading local/SVG image');
+          }
+          
+          console.log('🖼️ Loading image from URL:', imageInfo.url);
+          img.src = imageInfo.url;
+        });
+      }
+
+      applyImageToFlippedBlocks(imageInfo) {
+        if (!this.processedImageData) {
+          console.log('No processed image data available');
+          return;
+        }
+        
+        const flippedBlocks = this.renderer.getFlippedBlocks();
+        
+        if (flippedBlocks.length === 0) {
+          console.log('No flipped blocks to apply image to');
+          return;
+        }
+        
+        console.log(`Applying image pieces to ${flippedBlocks.length} flipped blocks`);
+        
+        flippedBlocks.forEach(blockId => {
+          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+          if (blockElement) {
+            // Find the block data
+            const block = this.quiltEngine.blocks.find(b => b.id === blockId);
+            if (block) {
+              // Calculate the portion of the image this block should show
+              const imageX = block.x - this.processedImageData.minX;
+              const imageY = block.y - this.processedImageData.minY;
+              
+              // Create a pattern for this specific block
+              const patternId = `pattern-${blockId}`;
+              this.createBlockImagePattern(patternId, imageInfo.dataUrl, imageX, imageY, block.width, block.height);
+              
+              // Apply the pattern to the block
+              blockElement.setAttribute('fill', `url(#${patternId})`);
+              blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
+              
+              console.log(`Applied image piece to block ${blockId}`);
+            }
+          }
+        });
+      }
+
+      createBlockImagePattern(patternId, imageDataUrl, x, y, width, height) {
+        console.log('🖼️ Creating pattern:', patternId, 'for block at', x, y, 'size', width, height);
+        
+        // Remove existing pattern if it exists
+        const existingPattern = document.getElementById(patternId);
+        if (existingPattern) {
+          existingPattern.remove();
+        }
+        
+        // Create new pattern
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', patternId);
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('x', -x);
+        pattern.setAttribute('y', -y);
+        pattern.setAttribute('width', this.processedImageData.quiltWidth);
+        pattern.setAttribute('height', this.processedImageData.quiltHeight);
+        
+        // Add image to pattern
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        image.setAttribute('href', imageDataUrl);
+        image.setAttribute('width', this.processedImageData.quiltWidth);
+        image.setAttribute('height', this.processedImageData.quiltHeight);
+        image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        
+        pattern.appendChild(image);
+        
+        // Add to SVG defs - ensure defs exists
+        let defs = document.querySelector('#quilt defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          const quilt = document.querySelector('#quilt');
+          quilt.insertBefore(defs, quilt.firstChild);
+        }
+        defs.appendChild(pattern);
+        
+        console.log('✅ Pattern created and added to defs:', patternId);
       }
 
       applyColorToFlippedBlocks(imageName) {
@@ -4776,74 +5109,9 @@
         console.log('Pattern element:', pattern);
       }
 
-      createImagePattern(imageUrl, patternId) {
-        const quiltSVG = document.getElementById('quilt');
-        if (!quiltSVG) {
-          console.error('Quilt SVG not found');
-          return;
-        }
-        
-        console.log('Creating pattern for:', imageUrl, patternId);
-        
-        // Remove existing pattern if it exists
-        const existingPattern = quiltSVG.querySelector(`#pattern-${patternId}`);
-        if (existingPattern) {
-          existingPattern.remove();
-          console.log('Removed existing pattern');
-        }
-        
-        // Create defs if it doesn't exist
-        let defs = quiltSVG.querySelector('defs');
-        if (!defs) {
-          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-          quiltSVG.insertBefore(defs, quiltSVG.firstChild);
-          console.log('Created defs element');
-        }
-        
-        // Create pattern
-        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
-        pattern.setAttribute('id', `pattern-${patternId}`);
-        pattern.setAttribute('patternUnits', 'objectBoundingBox');
-        pattern.setAttribute('width', '1');
-        pattern.setAttribute('height', '1');
-        
-        // Create image element
-        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        image.setAttribute('href', imageUrl);
-        image.setAttribute('width', '100%');
-        image.setAttribute('height', '100%');
-        image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
-        
-        pattern.appendChild(image);
-        defs.appendChild(pattern);
-        
-        console.log(`Created SVG pattern: pattern-${patternId}`);
-        console.log('Pattern element:', pattern);
-        console.log('Defs element:', defs);
-      }
+      // OLD createImagePattern function removed - using new async version instead
 
-      applyImageToFlippedBlocks(patternId) {
-        // Get all blocks that are currently flipped
-        const flippedBlocks = this.renderer.getFlippedBlocks();
-        
-        if (flippedBlocks.length === 0) {
-          console.log('No flipped blocks to apply image to');
-          return;
-        }
-        
-        console.log(`Applying pattern to ${flippedBlocks.length} flipped blocks`);
-        
-        // Apply the SVG pattern to all flipped blocks
-        flippedBlocks.forEach(blockId => {
-          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
-          if (blockElement) {
-            // Apply the SVG pattern as fill
-            blockElement.setAttribute('fill', `url(#pattern-${patternId})`);
-            
-            console.log(`Applied pattern to block ${blockId}`);
-          }
-        });
-      }
+      // OLD applyImageToFlippedBlocks function removed - using new version instead
 
       // Debug function to test admin button - call from console: app.debugAdminButton()
       debugAdminButton() {
@@ -5507,6 +5775,7 @@
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
             <button onclick="app.showRevealImageManager()">Manage Reveal Images</button>
+        <button onclick="app.forceLoadFirebaseImage()">🔥 Load Firebase Image</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
         `;
@@ -5862,7 +6131,7 @@
         }
       }
 
-      renderQuilt() {
+      async renderQuilt() {
         console.log('🔄 renderQuilt() called'); // TEMPORARILY RE-ENABLED FOR DEBUGGING
         // Debug panel removed for production
         
@@ -5874,6 +6143,15 @@
         
         // Ensure quote is displayed on quilt screen
         this.populateQuiltQuote();
+        
+        // Auto-load random reveal image if not already loaded (non-blocking)
+        if (!this.currentRevealImage || !this.currentRevealImage.url) {
+          console.log('🎲 Auto-loading random reveal image...');
+          // Don't await - let it load in background
+          this.loadRandomRevealImage().catch(error => {
+            console.log('Could not auto-load reveal image:', error);
+          });
+        }
       }
 
       ensureQuiltFits() {
@@ -6455,7 +6733,20 @@
                   elementAtPosition.classList.add('block-flipped');
                   
                   // Apply reveal image if one is selected
-                  if (this.currentRevealImage) {
+                  if (this.currentRevealImage && this.currentRevealImage.url) {
+                    // Apply image piece to this block
+                    const block = this.quiltEngine.blocks.find(b => b.id === blockId);
+                    if (block && this.processedImageData) {
+                      const imageX = block.x - this.processedImageData.minX;
+                      const imageY = block.y - this.processedImageData.minY;
+                      const patternId = `pattern-${blockId}`;
+                      this.createBlockImagePattern(patternId, this.processedImageData.dataUrl, imageX, imageY, block.width, block.height);
+                      elementAtPosition.setAttribute('fill', `url(#${patternId})`);
+                      elementAtPosition.style.setProperty('fill', `url(#${patternId})`, 'important');
+                      console.log(`TAP: Applied image piece to block ${blockId}`);
+                    }
+                  } else if (this.currentRevealImage) {
+                    // Fallback to color if image not loaded yet
                     const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
                     elementAtPosition.setAttribute('fill', color);
                     elementAtPosition.style.setProperty('fill', color, 'important');
@@ -6515,7 +6806,30 @@
             event.target.classList.add('block-flipped');
             
             // Apply reveal image if one is selected
-            if (this.currentRevealImage) {
+            if (this.currentRevealImage && this.currentRevealImage.url) {
+              console.log('🖼️ TAP: Applying image to block', blockId);
+              // Apply image piece to this block
+              const block = this.quiltEngine.blocks.find(b => b.id === blockId);
+              if (block && this.processedImageData) {
+                const imageX = block.x - this.processedImageData.minX;
+                const imageY = block.y - this.processedImageData.minY;
+                const patternId = `pattern-${blockId}`;
+                this.createBlockImagePattern(patternId, this.processedImageData.dataUrl, imageX, imageY, block.width, block.height);
+                event.target.setAttribute('fill', `url(#${patternId})`);
+                event.target.style.setProperty('fill', `url(#${patternId})`, 'important');
+                console.log(`✅ TAP: Applied image piece to block ${blockId}`);
+              } else if (block) {
+                // Fallback to color if processedImageData is missing
+                const color = this.currentRevealImage.name === 'test-image-1' ? '#ff6b6b' : 
+                             this.currentRevealImage.name === 'test-image-2' ? '#4ecdc4' : '#ffa726';
+                event.target.setAttribute('fill', color);
+                event.target.style.setProperty('fill', color, 'important');
+                console.log(`🔄 TAP: Applied fallback color ${color} to block ${blockId}`);
+              } else {
+                console.log('❌ TAP: Block not found');
+              }
+            } else if (this.currentRevealImage) {
+              // Fallback to color if image not loaded yet
               const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
               event.target.setAttribute('fill', color);
               event.target.style.setProperty('fill', color, 'important');
@@ -6646,7 +6960,20 @@
               elementAtPosition.classList.add('block-flipped');
               
               // Apply reveal image if one is selected
-              if (this.currentRevealImage) {
+              if (this.currentRevealImage && this.currentRevealImage.url) {
+                // Apply image piece to this block
+                const block = this.quiltEngine.blocks.find(b => b.id === blockId);
+                if (block && this.processedImageData) {
+                  const imageX = block.x - this.processedImageData.minX;
+                  const imageY = block.y - this.processedImageData.minY;
+                  const patternId = `pattern-${blockId}`;
+                  this.createBlockImagePattern(patternId, this.processedImageData.dataUrl, imageX, imageY, block.width, block.height);
+                  elementAtPosition.setAttribute('fill', `url(#${patternId})`);
+                  elementAtPosition.style.setProperty('fill', `url(#${patternId})`, 'important');
+                  console.log(`Applied image piece to block ${blockId}`);
+                }
+              } else if (this.currentRevealImage) {
+                // Fallback to color if image not loaded yet
                 const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
                 elementAtPosition.setAttribute('fill', color);
                 elementAtPosition.style.setProperty('fill', color, 'important');
