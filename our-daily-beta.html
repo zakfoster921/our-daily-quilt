@@ -4909,7 +4909,9 @@
               quiltWidth: quiltWidth,
               quiltHeight: quiltHeight,
               minX: minX,
-              minY: minY
+              minY: minY,
+              imageWidth: img.width,
+              imageHeight: img.height
             };
             
             console.log('✅ Image pattern created for quilt, data URL length:', imageDataUrl.length);
@@ -4998,8 +5000,13 @@
             const block = this.quiltEngine.blocks.find(b => b.id === blockId);
             if (block) {
               // Calculate the portion of the image this block should show
-              const imageX = block.x - this.processedImageData.minX;
-              const imageY = block.y - this.processedImageData.minY;
+              // Use the block's position relative to the quilt dimensions
+              const quiltWidth = this.processedImageData.quiltWidth;
+              const quiltHeight = this.processedImageData.quiltHeight;
+              
+              // Calculate image coordinates based on block position relative to quilt
+              const imageX = (block.x / quiltWidth) * this.processedImageData.imageWidth;
+              const imageY = (block.y / quiltHeight) * this.processedImageData.imageHeight;
               
               // Create a pattern for this specific block
               const patternId = `pattern-${blockId}`;
@@ -5009,7 +5016,7 @@
               blockElement.setAttribute('fill', `url(#${patternId})`);
               blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
               
-              console.log(`Applied image piece to block ${blockId}`);
+              console.log(`Applied image piece to block ${blockId} at image coords:`, imageX, imageY);
             }
           }
         });
