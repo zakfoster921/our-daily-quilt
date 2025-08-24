@@ -4750,24 +4750,24 @@
           let blob = null;
           
           try {
-            // Try direct URL first (better for live sites)
-            imageUrl = await getDownloadURL(selectedImageRef);
-            console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'direct URL created');
-          } catch (urlError) {
-            console.log('🔄 Direct URL failed, trying blob:', urlError.message);
+            // Try blob first (better for CORS)
+            blob = await getBlob(selectedImageRef);
+            imageUrl = URL.createObjectURL(blob);
+            console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'blob URL created');
+          } catch (blobError) {
+            console.log('🔄 Blob failed, trying direct URL:', blobError.message);
             try {
-              // Fallback to blob
-              blob = await getBlob(selectedImageRef);
-              imageUrl = URL.createObjectURL(blob);
-              console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'blob URL created');
-            } catch (blobError) {
-              console.log('❌ Both direct URL and blob failed:', blobError.message);
-              if (blobError.message.includes('CORS') || blobError.message.includes('Access-Control-Allow-Origin')) {
+              // Fallback to direct URL
+              imageUrl = await getDownloadURL(selectedImageRef);
+              console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'direct URL created');
+            } catch (urlError) {
+              console.log('❌ Both blob and direct URL failed:', urlError.message);
+              if (urlError.message.includes('CORS') || urlError.message.includes('Access-Control-Allow-Origin')) {
                 console.log('🔄 CORS issue detected - this is normal when running locally');
                 console.log('💡 Firebase images will work when deployed to a proper server');
                 throw new Error('CORS blocked Firebase image (normal when running locally)');
               } else {
-                throw new Error('Could not load Firebase image: ' + blobError.message);
+                throw new Error('Could not load Firebase image: ' + urlError.message);
               }
             }
           }
@@ -4788,8 +4788,8 @@
           
         } catch (error) {
           console.error('Error loading Firebase image:', error);
-          console.log('Falling back to test images');
-          return this.loadFallbackImages();
+          console.log('Firebase image loading failed - no fallback');
+          throw error; // Don't fall back, let the error propagate
         }
       }
 
@@ -4933,12 +4933,17 @@
             console.log('🖼️ Loading Firebase image with CORS handling');
             img.crossOrigin = 'anonymous';
             
+            // Try to load with credentials
+            img.crossOrigin = 'use-credentials';
+            
             // Add error handler for CORS issues
             img.onerror = (error) => {
-              console.log('🖼️ CORS error loading Firebase image, falling back to test image');
+              console.log('🖼️ CORS error loading Firebase image, trying alternative method');
               console.log('🖼️ Error details:', error);
-              // Don't call loadFallbackImages here as it would create an infinite loop
-              // Instead, just log the error and continue with fallback
+              
+              // Try without crossOrigin as fallback
+              img.crossOrigin = null;
+              img.src = imageInfo.url;
             };
           } else {
             console.log('🖼️ Loading local/SVG image');
