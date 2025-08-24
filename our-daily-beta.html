@@ -4811,32 +4811,30 @@
               canvas.width = targetWidth;
               canvas.height = targetHeight;
               
-              // Calculate scaling to fit image within target dimensions while maintaining aspect ratio
+              // Calculate scaling to fill the entire target area (crop approach)
               const imageAspect = img.width / img.height;
               const targetAspect = targetWidth / targetHeight;
               
-              let drawWidth, drawHeight, offsetX, offsetY;
+              let sourceX, sourceY, sourceWidth, sourceHeight;
               
               if (imageAspect > targetAspect) {
-                // Image is wider - fit to width
-                drawWidth = targetWidth;
-                drawHeight = targetWidth / imageAspect;
-                offsetX = 0;
-                offsetY = (targetHeight - drawHeight) / 2;
+                // Image is wider than target - scale to height and crop width
+                const scaledWidth = img.height * targetAspect;
+                sourceWidth = scaledWidth;
+                sourceHeight = img.height;
+                sourceX = (img.width - scaledWidth) / 2; // Center crop
+                sourceY = 0;
               } else {
-                // Image is taller - fit to height
-                drawWidth = targetHeight * imageAspect;
-                drawHeight = targetHeight;
-                offsetX = (targetWidth - drawWidth) / 2;
-                offsetY = 0;
+                // Image is taller than target - scale to width and crop height
+                const scaledHeight = img.width / targetAspect;
+                sourceWidth = img.width;
+                sourceHeight = scaledHeight;
+                sourceX = 0;
+                sourceY = (img.height - scaledHeight) / 2; // Center crop
               }
               
-              // Fill background with white (or any color you prefer)
-              ctx.fillStyle = '#ffffff';
-              ctx.fillRect(0, 0, targetWidth, targetHeight);
-              
-              // Draw the resized image centered
-              ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+              // Draw the cropped portion of the image to fill the entire canvas
+              ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
               
               // Convert to blob
               canvas.toBlob((blob) => {
