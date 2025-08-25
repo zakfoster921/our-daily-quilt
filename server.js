@@ -7,6 +7,9 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static('.'));
 
+// In-memory storage for generated images
+const imageStore = new Map();
+
 // Initialize Firebase Admin (you'll need to add your service account key)
 let db;
 try {
@@ -166,14 +169,23 @@ app.post('/api/generate-instagram', async (req, res) => {
     // Generate Instagram image
     const imageData = await generateInstagramImageFromQuilt(quiltData.blocks, quiltData.quote);
     
+    // Save image to memory and create URL
+    const timestamp = Date.now();
+    const filename = `instagram-${timestamp}.png`;
+    imageStore.set(filename, imageData);
+    
+    // Create public URL
+    const baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
+    const imageUrl = `${baseUrl}/api/image/${filename}`;
+    
     const result = {
       success: true,
-      image: imageData,
+      imageUrl: imageUrl,
       caption: quiltData.quote,
       date: quiltData.date,
       blockCount: quiltData.blocks.length,
       captionLength: quiltData.quote.length,
-      imageSize: imageData.length
+      note: 'Test this URL in your browser to verify the image loads'
     };
     
     console.log('✅ Instagram image generated successfully from Firestore');
@@ -188,6 +200,39 @@ app.post('/api/generate-instagram', async (req, res) => {
       suggestion: 'Check Firestore connection and data'
     });
   }
+});
+
+// Serve generated images
+app.get('/api/image/:filename', (req, res) => {
+  const { filename } = req.params;
+  const imageData = imageStore.get(filename);
+  
+  if (!imageData) {
+    return res.status(404).json({ error: 'Image not found' });
+  }
+  
+  // Convert base64 to buffer
+  const base64Data = imageData.replace(/^data:image\/png;base64,/, '');
+  const buffer = Buffer.from(base64Data, 'base64');
+  
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+  res.send(buffer);
+});
+
+// Clean up old images (keep only last 10)
+app.get('/api/cleanup-images', (req, res) => {
+  const filenames = Array.from(imageStore.keys());
+  if (filenames.length > 10) {
+    const toDelete = filenames.slice(0, filenames.length - 10);
+    toDelete.forEach(filename => imageStore.delete(filename));
+    console.log(`🧹 Cleaned up ${toDelete.length} old images`);
+  }
+  res.json({ 
+    success: true, 
+    totalImages: imageStore.size,
+    cleaned: filenames.length > 10 ? filenames.length - 10 : 0
+  });
 });
 
 // Fallback endpoint for testing
