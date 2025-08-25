@@ -10,16 +10,24 @@ app.use(express.static('.'));
 // Initialize Firebase Admin (you'll need to add your service account key)
 let db;
 try {
-  // For now, we'll use a placeholder - you'll need to add your actual credentials
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
-    // Add your project ID here
-    projectId: 'your-project-id'
-  });
+  // Use environment variable for service account
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+  } else {
+    // Fallback to application default
+    admin.initializeApp({
+      credential: admin.credential.applicationDefault(),
+      projectId: process.env.FIREBASE_PROJECT_ID || 'your-project-id'
+    });
+  }
   db = admin.firestore();
   console.log('✅ Firebase Admin initialized');
 } catch (error) {
   console.log('⚠️ Firebase Admin not initialized - will use fallback mode');
+  console.error('Firebase error:', error.message);
 }
 
 // Generate Instagram image from quilt data
