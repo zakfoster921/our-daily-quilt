@@ -1,6 +1,6 @@
 const express = require('express');
 const admin = require('firebase-admin');
-const { chromium } = require('playwright');
+const { createCanvas } = require('canvas');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -9,10 +9,6 @@ app.use(express.static('.'));
 
 // In-memory storage for generated images
 const imageStore = new Map();
-
-// Global browser instance for performance
-let globalBrowser = null;
-let globalPage = null;
 
 // Initialize Firebase Admin (you'll need to add your service account key)
 let db;
@@ -37,111 +33,73 @@ try {
   console.error('Firebase error:', error.message);
 }
 
-// Initialize browser
-async function initializeBrowser() {
-  if (globalBrowser) return globalBrowser;
+// Generate Instagram image from quilt data (server-side)
+async function generateInstagramImageFromQuilt(blocks, quote) {
+  const canvas = createCanvas(1080, 1350); // 4:5 ratio for Instagram
+  const ctx = canvas.getContext('2d');
   
-  console.log('🚀 Initializing browser...');
-  globalBrowser = await chromium.launch({
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu'
-    ]
+  // Fill background
+  ctx.fillStyle = '#f8f9fa';
+  ctx.fillRect(0, 0, 1080, 1350);
+  
+  // Calculate quilt layout
+  const blockSize = 40;
+  const padding = 60;
+  const availableWidth = 1080 - (padding * 2);
+  const availableHeight = 1080 - (padding * 2); // Leave bottom 270px for quote
+  
+  // Center the quilt
+  const quiltWidth = Math.min(blocks.length * blockSize, availableWidth);
+  const quiltHeight = Math.ceil(quiltWidth / availableWidth) * blockSize;
+  const startX = padding + (availableWidth - quiltWidth) / 2;
+  const startY = padding + (availableHeight - quiltHeight) / 2;
+  
+  // Draw quilt blocks
+  blocks.forEach((block, index) => {
+    const row = Math.floor(index / Math.floor(availableWidth / blockSize));
+    const col = index % Math.floor(availableWidth / blockSize);
+    const x = startX + (col * blockSize);
+    const y = startY + (row * blockSize);
+    
+    // Draw block
+    ctx.fillStyle = block.color || '#6c757d';
+    ctx.fillRect(x, y, blockSize - 2, blockSize - 2);
   });
   
-  globalPage = await globalBrowser.newPage();
-  globalPage.setDefaultTimeout(15000);
+  // Add quote at bottom
+  ctx.fillStyle = '#212529';
+  ctx.font = 'bold 32px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   
-  console.log('✅ Browser initialized');
-  return globalBrowser;
-}
-
-// Wait for app to be ready
-async function waitForApp(page) {
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      console.log(`🔄 Attempt ${attempt}: Waiting for app to be ready...`);
-      
-      // Navigate to the app
-      await page.goto('https://www.zakfoster.com/odq2.html', {
-        waitUntil: 'domcontentloaded',
-        timeout: 10000
-      });
-      
-      // Click onboarding buttons if they exist
-      for (let i = 0; i < 3; i++) {
-        try {
-          await page.waitForSelector('button:has-text("Enter"), button:has-text("Start"), button:has-text("Begin"), button:has-text("Continue"), button:has-text("Next")', { timeout: 3000 });
-          await page.click('button:has-text("Enter"), button:has-text("Start"), button:has-text("Begin"), button:has-text("Continue"), button:has-text("Next")');
-          console.log(`✅ Clicked onboarding button ${i + 1}`);
-          await page.waitForTimeout(1000);
-        } catch (e) {
-          console.log(`ℹ️ No more onboarding buttons to click`);
-          break;
-        }
-      }
-      
-      // Wait for the app to be ready
-      await page.waitForFunction(() => {
-        return window.app && window.app.quiltEngine && window.app.quiltEngine.blocks && window.app.quiltEngine.blocks.length > 1;
-      }, { timeout: 8000 });
-      
-      console.log('✅ App is ready!');
-      return true;
-    } catch (error) {
-      console.log(`❌ Attempt ${attempt} failed:`, error.message);
-      if (attempt === maxAttempts) {
-        throw new Error(`Failed to load app after ${maxAttempts} attempts`);
-      }
-      await page.waitForTimeout(2000);
+  // Wrap text if needed
+  const maxWidth = 1000;
+  const words = quote.split(' ');
+  const lines = [];
+  let currentLine = '';
+  
+  words.forEach(word => {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
     }
-  }
-}
-
-// Generate Instagram image using the actual app
-async function generateInstagramImageFromApp() {
-  const browser = await initializeBrowser();
-  const page = globalPage;
+  });
+  if (currentLine) lines.push(currentLine);
   
-  try {
-    // Wait for app to be ready
-    await waitForApp(page);
-    
-    // Call the generateInstagramImage function
-    console.log('🎨 Generating Instagram image...');
-    const imageData = await page.evaluate(async () => {
-      if (!window.app || !window.app.archiveService) {
-        throw new Error('App not ready');
-      }
-      
-      // Get current quilt data
-      const quiltData = window.app.quiltEngine.blocks;
-      if (!quiltData || quiltData.length <= 1) {
-        throw new Error('No quilt data available');
-      }
-      
-      // Generate Instagram image using the actual app function
-      const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData);
-      
-      if (!instagramImage) {
-        throw new Error('Failed to generate Instagram image');
-      }
-      
-      return instagramImage;
-    });
-    
-    console.log('✅ Instagram image generated successfully');
-    return imageData;
-  } catch (error) {
-    console.error('❌ Error generating Instagram image:', error);
-    throw error;
-  }
+  // Draw quote lines
+  const lineHeight = 40;
+  const quoteY = 1350 - 150 - (lines.length - 1) * lineHeight / 2;
+  lines.forEach((line, index) => {
+    ctx.fillText(line, 540, quoteY + index * lineHeight);
+  });
+  
+  // Convert to base64
+  const buffer = canvas.toBuffer('image/png');
+  return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
 // Get today's quilt data from Firestore
@@ -209,7 +167,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const quiltData = await getTodayQuiltData();
     
     // Generate Instagram image
-    const imageData = await generateInstagramImageFromApp();
+    const imageData = await generateInstagramImageFromQuilt(quiltData.blocks, quiltData.quote);
     
     // Save image to memory and create URL
     const timestamp = Date.now();
