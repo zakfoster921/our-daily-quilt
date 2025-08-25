@@ -51,27 +51,20 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
   const quiltWidth = maxX - minX;
   const quiltHeight = maxY - minY;
   
-  // Calculate scale to fit quilt in available space
-  const padding = 60;
-  const availableWidth = 1080 - (padding * 2);
-  const availableHeight = 1080 - (padding * 2); // Leave bottom 270px for quote
+  // Use fixed 4:5 dimensions (1070 x 1340) - same as client
+  const targetWidth = 1070;  // 1080 - 10px padding
+  const targetHeight = 1340; // 1350 - 10px padding
   
-  const scaleX = availableWidth / quiltWidth;
-  const scaleY = availableHeight / quiltHeight;
-  const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
+  // Center the quilt in the Instagram canvas (5px padding all around)
+  const startX = 5;  // 5px from left
+  const startY = 5;  // 5px from top
   
-  // Center the quilt
-  const scaledQuiltWidth = quiltWidth * scale;
-  const scaledQuiltHeight = quiltHeight * scale;
-  const startX = padding + (availableWidth - scaledQuiltWidth) / 2;
-  const startY = padding + (availableHeight - scaledQuiltHeight) / 2;
-  
-  // Draw quilt blocks using their actual positions
+  // Draw quilt blocks using their actual positions (no scaling)
   blocks.forEach((block) => {
-    const x = startX + (block.x - minX) * scale;
-    const y = startY + (block.y - minY) * scale;
-    const width = block.width * scale;
-    const height = block.height * scale;
+    const x = startX + block.x;
+    const y = startY + block.y;
+    const width = block.width;
+    const height = block.height;
     
     // Draw block
     ctx.fillStyle = block.color || '#6c757d';
