@@ -1,9 +1,20 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static('.'));
+
+// Ensure images directory exists
+const imagesDir = path.join(__dirname, 'public', 'images');
+if (!fs.existsSync(imagesDir)) {
+  fs.mkdirSync(imagesDir, { recursive: true });
+}
+
+// Serve static files from public directory
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Simple Instagram image generation without external page
 async function generateSimpleInstagramImage() {
@@ -53,19 +64,27 @@ async function generateSimpleInstagramImage() {
   ctx.font = '20px Arial';
   ctx.fillText(randomQuote, canvasWidth / 2, 400);
   
-  // Convert to base64
+  // Generate filename with timestamp
+  const timestamp = Date.now();
+  const filename = `instagram-${timestamp}.png`;
+  const filepath = path.join(imagesDir, filename);
+  
+  // Save image to file
   const buffer = canvasInstance.toBuffer('image/png');
-  const base64Image = buffer.toString('base64');
-  const dataURL = `data:image/png;base64,${base64Image}`;
+  fs.writeFileSync(filepath, buffer);
+  
+  // Generate public URL
+  const baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
+  const imageUrl = `${baseUrl}/public/images/${filename}`;
   
   return {
     success: true,
-    image: dataURL,
+    image: imageUrl,
     caption: randomQuote,
     date: today.toISOString().split('T')[0],
     blockCount: 0,
     captionLength: randomQuote.length,
-    imageSize: dataURL.length
+    imageSize: buffer.length
   };
 }
 
