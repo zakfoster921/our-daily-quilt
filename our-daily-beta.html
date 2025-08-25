@@ -3502,13 +3502,31 @@
             date: Utils.getTodayKey()
           };
           
-          // if (this.db) {
-          //   // Save to Firestore
-          //   const today = Utils.getTodayKey();
-          //   const quiltRef = window.firestore.doc(this.db, 'quilts', today);
-          //   await window.firestore.setDoc(quiltRef, quiltData);
-          //   this.logger.log('💾 Saved quilt to Firestore');
-          // }
+          if (this.db && window.firestore) {
+            // Save to Firestore
+            const today = Utils.getTodayKey();
+            const quiltRef = window.firestore.doc(this.db, 'quilts', today);
+            await window.firestore.setDoc(quiltRef, quiltData);
+            this.logger.log('💾 Saved quilt to Firestore');
+            
+            // Also save today's quote to Firestore
+            try {
+              const todayQuote = window.app?.quoteService?.getTodayQuote();
+              if (todayQuote) {
+                const quoteData = {
+                  text: todayQuote.text,
+                  author: todayQuote.author,
+                  date: today,
+                  lastUpdated: new Date().toISOString()
+                };
+                const quoteRef = window.firestore.doc(this.db, 'quotes', today);
+                await window.firestore.setDoc(quoteRef, quoteData);
+                this.logger.log('💾 Saved today\'s quote to Firestore');
+              }
+            } catch (quoteError) {
+              console.warn('⚠️ Could not save quote to Firestore:', quoteError);
+            }
+          }
           
           // Also save to localStorage as backup with safety check
           if (quiltData.blocks && quiltData.blocks.length > 0) {

@@ -101,29 +101,58 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
 
 // Get today's quilt data from Firestore
 async function getTodayQuiltData() {
-  if (!db) {
-    throw new Error('Firestore not initialized');
-  }
+  if (!db) { throw new Error('Firestore not initialized'); }
   
   const today = new Date();
-  const dateString = today.toISOString().split('T')[0];
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const todayString = today.toISOString().split('T')[0];
+  const yesterdayString = yesterday.toISOString().split('T')[0];
   
   try {
-    // Query today's quilt data
-    const quiltDoc = await db.collection('quilts').doc(dateString).get();
+    // Try today first
+    console.log(`🔍 Looking for quilt data for ${todayString}...`);
+    let quiltDoc = await db.collection('quilts').doc(todayString).get();
+    let dateUsed = todayString;
+    
     if (!quiltDoc.exists) {
-      throw new Error(`No quilt data found for ${dateString}`);
+      // Try yesterday if today doesn't exist
+      console.log(`📅 No data for ${todayString}, trying ${yesterdayString}...`);
+      quiltDoc = await db.collection('quilts').doc(yesterdayString).get();
+      dateUsed = yesterdayString;
+      
+      if (!quiltDoc.exists) {
+        throw new Error(`No quilt data found for ${todayString} or ${yesterdayString}`);
+      }
     }
     
     const quiltData = quiltDoc.data();
-    return {
-      blocks: quiltData.blocks || [],
-      quote: quiltData.quote || "Every day is a new beginning.",
-      date: dateString
+    console.log(`✅ Found quilt data for ${dateUsed} with ${quiltData.blocks?.length || 0} blocks`);
+    
+    // Try to get the quote for the same date
+    let quote = "Every day is a new beginning.";
+    try {
+      const quoteDoc = await db.collection('quotes').doc(dateUsed).get();
+      if (quoteDoc.exists) {
+        const quoteData = quoteDoc.data();
+        quote = `${quoteData.text} — ${quoteData.author}`;
+        console.log(`✅ Found quote for ${dateUsed}: "${quote}"`);
+      } else {
+        console.log(`📝 No quote found for ${dateUsed}, using default`);
+      }
+    } catch (quoteError) {
+      console.warn(`⚠️ Could not fetch quote for ${dateUsed}:`, quoteError.message);
+    }
+    
+    return { 
+      blocks: quiltData.blocks || [], 
+      quote: quote, 
+      date: dateUsed 
     };
-  } catch (error) {
-    console.error('Error fetching quilt data:', error);
-    throw error;
+  } catch (error) { 
+    console.error('Error fetching quilt data:', error); 
+    throw error; 
   }
 }
 
