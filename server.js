@@ -42,6 +42,20 @@ app.post('/api/generate-instagram', async (req, res) => {
       timeout: 15000
     });
     
+    // Click through onboarding buttons (up to 3 buttons)
+    console.log('🔘 Clicking through onboarding buttons...');
+    for (let i = 0; i < 3; i++) {
+      try {
+        await page.waitForSelector('button:has-text("Enter"), button:has-text("Start"), button:has-text("Begin"), button:has-text("Continue"), button:has-text("Next"), .enter-button, .start-button, .continue-button', { timeout: 3000 });
+        await page.click('button:has-text("Enter"), button:has-text("Start"), button:has-text("Begin"), button:has-text("Continue"), button:has-text("Next"), .enter-button, .start-button, .continue-button');
+        console.log(`✅ Clicked button ${i + 1}`);
+        await page.waitForTimeout(1000); // Wait a bit between clicks
+      } catch (error) {
+        console.log(`ℹ️ No more buttons to click after ${i} clicks`);
+        break;
+      }
+    }
+    
     // Wait for the app to load
     console.log('⏳ Waiting for app to load...');
     await page.waitForFunction(() => {
