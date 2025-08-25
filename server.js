@@ -114,8 +114,8 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
   return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
-// Get today's quilt data from Firestore
-async function getTodayQuiltData() {
+// Get today's Instagram image from Firestore
+async function getTodayInstagramImage() {
   if (!db) { throw new Error('Firestore not initialized'); }
   
   const today = new Date();
@@ -127,23 +127,23 @@ async function getTodayQuiltData() {
   
   try {
     // Try today first
-    console.log(`🔍 Looking for quilt data for ${todayString}...`);
-    let quiltDoc = await db.collection('quilts').doc(todayString).get();
+    console.log(`🔍 Looking for Instagram image for ${todayString}...`);
+    let imageDoc = await db.collection('instagram-images').doc(todayString).get();
     let dateUsed = todayString;
     
-    if (!quiltDoc.exists) {
+    if (!imageDoc.exists) {
       // Try yesterday if today doesn't exist
-      console.log(`📅 No data for ${todayString}, trying ${yesterdayString}...`);
-      quiltDoc = await db.collection('quilts').doc(yesterdayString).get();
+      console.log(`📅 No image for ${todayString}, trying ${yesterdayString}...`);
+      imageDoc = await db.collection('instagram-images').doc(yesterdayString).get();
       dateUsed = yesterdayString;
       
-      if (!quiltDoc.exists) {
-        throw new Error(`No quilt data found for ${todayString} or ${yesterdayString}`);
+      if (!imageDoc.exists) {
+        throw new Error(`No Instagram image found for ${todayString} or ${yesterdayString}`);
       }
     }
     
-    const quiltData = quiltDoc.data();
-    console.log(`✅ Found quilt data for ${dateUsed} with ${quiltData.blocks?.length || 0} blocks`);
+    const imageData = imageDoc.data();
+    console.log(`✅ Found Instagram image for ${dateUsed}`);
     
     // Try to get the quote for the same date
     let quote = "Every day is a new beginning.";
@@ -161,12 +161,12 @@ async function getTodayQuiltData() {
     }
     
     return { 
-      blocks: quiltData.blocks || [], 
+      imageData: imageData.imageData, 
       quote: quote, 
       date: dateUsed 
     };
   } catch (error) { 
-    console.error('Error fetching quilt data:', error); 
+    console.error('Error fetching Instagram image:', error); 
     throw error; 
   }
 }
@@ -175,16 +175,13 @@ app.post('/api/generate-instagram', async (req, res) => {
   try {
     console.log('🚀 Starting Instagram image generation from Firestore...');
     
-    // Get today's quilt data
-    const quiltData = await getTodayQuiltData();
-    
-    // Generate Instagram image
-    const imageData = await generateInstagramImageFromQuilt(quiltData.blocks, quiltData.quote);
+    // Get today's saved Instagram image
+    const imageData = await getTodayInstagramImage();
     
     // Save image to memory and create URL
     const timestamp = Date.now();
     const filename = `instagram-${timestamp}.png`;
-    imageStore.set(filename, imageData);
+    imageStore.set(filename, imageData.imageData);
     
     // Create public URL
     let baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
@@ -197,10 +194,9 @@ app.post('/api/generate-instagram', async (req, res) => {
     const result = {
       success: true,
       imageUrl: imageUrl,
-      caption: quiltData.quote,
-      date: quiltData.date,
-      blockCount: quiltData.blocks.length,
-      captionLength: quiltData.quote.length,
+      caption: imageData.quote,
+      date: imageData.date,
+      captionLength: imageData.quote.length,
       note: 'Test this URL in your browser to verify the image loads'
     };
     

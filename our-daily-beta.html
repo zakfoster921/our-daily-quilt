@@ -3531,6 +3531,23 @@
             } catch (quoteError) {
               console.warn('⚠️ Could not save quote to Firestore:', quoteError);
             }
+            
+            // Also save the generated Instagram image to Firestore
+            try {
+              const instagramImage = await this.generateInstagramImage(quiltData.blocks);
+              if (instagramImage) {
+                const imageData = {
+                  imageData: instagramImage,
+                  date: today,
+                  lastUpdated: new Date().toISOString()
+                };
+                const imageRef = window.firestore.doc(window.db, 'instagram-images', today);
+                await window.firestore.setDoc(imageRef, imageData);
+                this.logger.log('💾 Saved Instagram image to Firestore');
+              }
+            } catch (imageError) {
+              console.warn('⚠️ Could not save Instagram image to Firestore:', imageError);
+            }
           }
           
           // Also save to localStorage as backup with safety check
