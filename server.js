@@ -67,7 +67,7 @@ async function generateSimpleInstagramImage() {
   generatedImages.set(filename, buffer);
   
   // Generate public URL
-  const baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
+  const baseUrl = `https://our-daily-quilt-production.up.railway.app`;
   const imageUrl = `${baseUrl}/api/image/${filename}`;
   
   return {
