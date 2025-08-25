@@ -589,10 +589,10 @@ try {
 
     /* ===== QUILT ===== */
     #quilt {
-      width: 100vw !important;
-      height: 100%;
-      max-width: 100vw !important;
-      max-height: 100%;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
       background: transparent;
       position: relative;
       display: block;
@@ -960,18 +960,20 @@ try {
         height: 288px; 
       }
       .quilt-container {
-        width: 100% !important;
-        max-width: 100vw !important;
-        height: 90vh !important;
+        width: calc(100% - 40px) !important;
+        max-width: calc(100vw - 40px) !important;
+        height: calc((100vw - 40px) * 1.25) !important;
+        max-height: 90vh !important;
         position: relative !important;
         flex-shrink: 0 !important;
-        display: block !important;
-        align-items: stretch !important;
-        justify-content: stretch !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
         overflow: visible !important;
-        margin: 0 !important;
+        margin: 0 20px !important;
         padding: 0 !important;
-        border: none !important;
+        border: 3px solid blue !important;
+        box-sizing: border-box !important;
       }
       
       #quilt { 
@@ -1050,6 +1052,7 @@ try {
         width: 100% !important;
         max-width: 100vw !important;
         box-sizing: border-box !important;
+        border: 3px solid green !important;
       }
       
       #screen-portal,
@@ -1753,7 +1756,7 @@ try {
       </div>
       
                      <!-- Button container - side panel on desktop -->
-                               <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: 3px solid purple;">
+                               <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: 3px solid orange;">
                  
         <!-- Quote display at top of button container -->
         <div class="quilt-quote-display" style="margin-bottom: 20px;">
@@ -3670,16 +3673,16 @@ try {
       }
 
       getTodayQuote() {
-        // Use UTC time for day calculation - quote changes at 5:00 AM UTC (midnight Chicago)
+        // Use UTC time for day calculation - quote changes at 7:00 AM UTC
         const now = new Date();
         
-        // Adjust for 5 AM UTC day boundary instead of midnight UTC
-        // If it's before 5 AM UTC, use yesterday's quote
+        // Adjust for 7 AM UTC day boundary instead of midnight UTC
+        // If it's before 7 AM UTC, use yesterday's quote
         const utcHours = now.getUTCHours();
         const adjustedDate = new Date(now);
         
-        if (utcHours < 5) {
-          // Before 5 AM UTC, use yesterday's date
+        if (utcHours < 7) {
+          // Before 7 AM UTC, use yesterday's date
           adjustedDate.setUTCDate(adjustedDate.getUTCDate() - 1);
         }
         
@@ -3882,46 +3885,45 @@ try {
           return;
         }
 
-        // Use stored bounds if available, otherwise calculate from blocks
-        let minX, minY, quiltWidth, quiltHeight;
+        // Calculate actual quilt bounds from blocks
+        const minX = Math.min(...blocks.map(b => b.x));
+        const minY = Math.min(...blocks.map(b => b.y));
+        const maxX = Math.max(...blocks.map(b => b.x + b.width));
+        const maxY = Math.max(...blocks.map(b => b.y + b.height));
         
-        if (this.quiltBounds) {
-          // Use stored bounds (original quilt dimensions)
-          minX = this.quiltBounds.minX;
-          minY = this.quiltBounds.minY;
-          quiltWidth = this.quiltBounds.width;
-          quiltHeight = this.quiltBounds.height;
-        } else {
-          // Fallback to calculating from current blocks
-          minX = Math.min(...blocks.map(b => b.x));
-          minY = Math.min(...blocks.map(b => b.y));
-          const maxX = Math.max(...blocks.map(b => b.x + b.width));
-          const maxY = Math.max(...blocks.map(b => b.y + b.height));
-          quiltWidth = maxX - minX;
-          quiltHeight = maxY - minY;
-        }
+        const actualQuiltWidth = maxX - minX;
+        const actualQuiltHeight = maxY - minY;
         
-        // Use fixed 4:5 dimensions (1070 x 1340)
-        const targetWidth = 1070;
-        const targetHeight = 1340;
+        // Add some padding around the quilt content
+        const padding = 20;
+        const viewBoxWidth = actualQuiltWidth + (padding * 2);
+        const viewBoxHeight = actualQuiltHeight + (padding * 2);
         
-        // Set viewBox to fixed 4:5 dimensions
-        this.quiltSVG.setAttribute('viewBox', `0 0 ${targetWidth} ${targetHeight}`);
+        // Set viewBox to actual quilt content with padding
+        this.quiltSVG.setAttribute('viewBox', `${minX - padding} ${minY - padding} ${viewBoxWidth} ${viewBoxHeight}`);
         
-        // Set SVG dimensions
-        this.quiltSVG.setAttribute('width', targetWidth);
-        this.quiltSVG.setAttribute('height', targetHeight);
+        // Set SVG dimensions to fill container
+        this.quiltSVG.setAttribute('width', '100%');
+        this.quiltSVG.setAttribute('height', '100%');
         
-        console.log('🔧 USING FIXED 4:5 DIMENSIONS:', targetWidth, 'x', targetHeight);
+        console.log('🔧 USING ACTUAL QUILT DIMENSIONS:', actualQuiltWidth, 'x', actualQuiltHeight);
         
-        // Mobile: Center the quilt content
+        // Mobile: Center the quilt content and fit fully inside container
         this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         
-        // Use 4:5 dimensions from getQuiltDimensions
-        this.quiltSVG.style.width = targetWidth + 'px';
-        this.quiltSVG.style.height = targetHeight + 'px';
-        this.quiltSVG.style.maxWidth = 'none';
-        this.quiltSVG.style.maxHeight = 'none';
+        // Make SVG fill the entire container with !important
+        this.quiltSVG.style.setProperty('width', '100%', 'important');
+        this.quiltSVG.style.setProperty('height', '100%', 'important');
+        this.quiltSVG.style.setProperty('max-width', '100%', 'important');
+        this.quiltSVG.style.setProperty('max-height', '100%', 'important');
+        
+        // Debug: Log SVG dimensions
+        console.log('🔧 SVG dimensions set to:', {
+          width: this.quiltSVG.style.width,
+          height: this.quiltSVG.style.height,
+          viewBox: this.quiltSVG.getAttribute('viewBox'),
+          preserveAspectRatio: this.quiltSVG.getAttribute('preserveAspectRatio')
+        });
         
         // No global flip - individual blocks will be flipped when touched
 
@@ -6390,20 +6392,20 @@ try {
         const scheduleDailyCycle = () => {
           const now = new Date();
           
-          // Calculate next 4:30 AM UTC (archive)
+          // Calculate next 6:30 AM UTC (archive)
           const nextArchive = new Date(now);
-          nextArchive.setUTCHours(4, 30, 0, 0); // 4:30:00 AM UTC
+          nextArchive.setUTCHours(6, 30, 0, 0); // 6:30:00 AM UTC
           
-          // If it's already past 4:30 AM UTC today, schedule for tomorrow
+          // If it's already past 6:30 AM UTC today, schedule for tomorrow
           if (now >= nextArchive) {
             nextArchive.setUTCDate(nextArchive.getUTCDate() + 1);
           }
           
-          // Calculate next 5:00 AM UTC (reset)
+          // Calculate next 7:00 AM UTC (reset)
           const nextReset = new Date(now);
-          nextReset.setUTCHours(5, 0, 0, 0); // 5:00:00 AM UTC
+          nextReset.setUTCHours(7, 0, 0, 0); // 7:00:00 AM UTC
           
-          // If it's already past 5:00 AM UTC today, schedule for tomorrow
+          // If it's already past 7:00 AM UTC today, schedule for tomorrow
           if (now >= nextReset) {
             nextReset.setUTCDate(nextReset.getUTCDate() + 1);
           }
@@ -6411,13 +6413,13 @@ try {
           const timeUntilArchive = nextArchive.getTime() - now.getTime();
           const timeUntilReset = nextReset.getTime() - now.getTime();
           
-          this.logger.log(`📦 Next archive scheduled for: ${nextArchive.toISOString()} (4:30 AM UTC)`);
-          this.logger.log(`🔄 Next reset scheduled for: ${nextReset.toISOString()} (5:00 AM UTC)`);
+          this.logger.log(`📦 Next archive scheduled for: ${nextArchive.toISOString()} (6:30 AM UTC)`);
+          this.logger.log(`🔄 Next reset scheduled for: ${nextReset.toISOString()} (7:00 AM UTC)`);
           
-          // Schedule archive at 4:30 AM UTC
+          // Schedule archive at 6:30 AM UTC
           if (timeUntilArchive > 0) {
             setTimeout(async () => {
-              this.logger.log('📦 4:30 AM UTC reached - archiving current quilt');
+              this.logger.log('📦 6:30 AM UTC reached - archiving current quilt');
               const archiveSuccess = await this.performDailyArchive();
               
               // Store archive status for reset check (using UTC date)
@@ -6427,10 +6429,10 @@ try {
             }, timeUntilArchive);
           }
           
-          // Schedule reset at 5:00 AM UTC
+          // Schedule reset at 7:00 AM UTC
           if (timeUntilReset > 0) {
             setTimeout(async () => {
-              this.logger.log('🔄 5:00 AM UTC reached - checking archive status before reset');
+              this.logger.log('🔄 7:00 AM UTC reached - checking archive status before reset');
               await this.performDailyReset();
               scheduleDailyCycle(); // Schedule next day's cycle
             }, timeUntilReset);
