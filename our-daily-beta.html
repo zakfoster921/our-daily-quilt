@@ -2847,6 +2847,81 @@ try {
         }
       }
 
+      // Generate Instagram-ready image (4:5 portrait ratio)
+      async generateInstagramImage(blocks, quote = null) {
+        try {
+          if (!blocks || blocks.length === 0) {
+            this.logger.warn('No blocks provided for Instagram image generation');
+            return null;
+          }
+
+          // Instagram optimal size: 1080x1350 (4:5 ratio)
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          canvas.width = 1080;
+          canvas.height = 1350;
+          
+          // Fill background with your app's color
+          ctx.fillStyle = '#f6f4f1';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // Use fixed 4:5 dimensions (1070 x 1340) - same as main app
+          const targetWidth = 1070;  // 1080 - 10px padding
+          const targetHeight = 1340; // 1350 - 10px padding
+          
+          // Center the quilt in the Instagram canvas (5px padding all around)
+          const offsetX = 5;  // 5px from left
+          const offsetY = 5;  // 5px from top
+          
+          // Debug: Log block dimensions
+          console.log('🔍 INSTAGRAM DEBUG - Block dimensions:', blocks.map(b => `${b.width}x${b.height} at (${b.x},${b.y})`));
+          
+          // Draw each block
+          blocks.forEach(block => {
+            // Add jitter effects (same as current quilt)
+            const jitterX = (Math.random() - 0.5) * 8;
+            const jitterY = (Math.random() - 0.5) * 8;
+            const jitterRotation = (Math.random() - 0.5) * 4;
+            
+            const jitteredX = block.x + jitterX;
+            const jitteredY = block.y + jitterY;
+            
+            // Transform to canvas coordinates (no scaling needed)
+            const canvasX = offsetX + jitteredX;
+            const canvasY = offsetY + jitteredY;
+            const canvasWidth = block.width;
+            const canvasHeight = block.height;
+            
+            // Save context for rotation
+            ctx.save();
+            
+            // Move to center of block for rotation
+            const centerX = canvasX + canvasWidth / 2;
+            const centerY = canvasY + canvasHeight / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(jitterRotation * Math.PI / 180);
+            
+            // Draw block (no shadow for clean Instagram look)
+            ctx.fillStyle = block.color;
+            ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
+            
+            // Restore context
+            ctx.restore();
+          });
+          
+          // Convert to data URL
+          const dataURL = canvas.toDataURL('image/png', 0.95);
+          
+          this.logger.log(`✅ Generated Instagram image: 1080x1350 (4:5 ratio) - Quilt only`);
+          return dataURL;
+          
+        } catch (error) {
+          this.logger.error('Instagram image generation failed:', error);
+          return null;
+        }
+      }
+
       // Delete archive entry
       async deleteArchive(date) {
         try {
@@ -3032,80 +3107,6 @@ try {
           return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgdmlld0JveD0iMCAwIDgwMCA2MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI4MDAiIGhlaWdodD0iNjAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjQwMCIgeT0iMzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCI+RXJyb3I8L3RleHQ+Cjwvc3ZnPg==';
         }
       }
-
-      // Generate Instagram-ready image (4:5 portrait ratio)
-      async generateInstagramImage(blocks, quote = null) {
-        try {
-          if (!blocks || blocks.length === 0) {
-            this.logger.warn('No blocks provided for Instagram image generation');
-            return null;
-          }
-
-          // Instagram optimal size: 1080x1350 (4:5 ratio)
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          canvas.width = 1080;
-          canvas.height = 1350;
-          
-          // Fill background with your app's color
-          ctx.fillStyle = '#f6f4f1';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          // Use fixed 4:5 dimensions (1070 x 1340) - same as main app
-          const targetWidth = 1070;  // 1080 - 10px padding
-          const targetHeight = 1340; // 1350 - 10px padding
-          
-          // Center the quilt in the Instagram canvas (5px padding all around)
-          const offsetX = 5;  // 5px from left
-          const offsetY = 5;  // 5px from top
-          
-          // Draw each block
-          blocks.forEach(block => {
-            // Add jitter effects (same as current quilt)
-            const jitterX = (Math.random() - 0.5) * 8;
-            const jitterY = (Math.random() - 0.5) * 8;
-            const jitterRotation = (Math.random() - 0.5) * 4;
-            
-            const jitteredX = block.x + jitterX;
-            const jitteredY = block.y + jitterY;
-            
-            // Transform to canvas coordinates (no scaling needed)
-            const canvasX = offsetX + jitteredX;
-            const canvasY = offsetY + jitteredY;
-            const canvasWidth = block.width;
-            const canvasHeight = block.height;
-            
-            // Save context for rotation
-            ctx.save();
-            
-            // Move to center of block for rotation
-            const centerX = canvasX + canvasWidth / 2;
-            const centerY = canvasY + canvasHeight / 2;
-            ctx.translate(centerX, centerY);
-            ctx.rotate(jitterRotation * Math.PI / 180);
-            
-            // Draw block (no shadow for clean Instagram look)
-            ctx.fillStyle = block.color;
-            ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
-            
-            // Restore context
-            ctx.restore();
-          });
-          
-          // Convert to data URL
-          const dataURL = canvas.toDataURL('image/png', 0.95);
-          
-          this.logger.log(`✅ Generated Instagram image: 1080x1350 (4:5 ratio) - Quilt only`);
-          return dataURL;
-          
-        } catch (error) {
-          this.logger.error('Instagram image generation failed:', error);
-          return null;
-        }
-      }
-
-
 
       // Load more archives (for "Load More" button)
       async loadMore() {
