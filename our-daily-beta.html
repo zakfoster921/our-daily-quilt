@@ -6835,13 +6835,41 @@
             link.click();
             document.body.removeChild(link);
             
-            this.uiService.showToast('Instagram image downloaded! 📸');
-            this.logger.log('✅ Instagram test image generated and downloaded');
+            // Save current quilt to Firestore
+            await this.saveQuilt();
+            
+            this.uiService.showToast('Instagram image downloaded and saved to Firestore! 📸💾');
+            this.logger.log('✅ Instagram test image generated, downloaded, and saved to Firestore');
           } else {
             this.uiService.showToast('Failed to generate Instagram image');
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testInstagramImage');
+        }
+      }
+
+      // Save current quilt to Firestore
+      async handleSaveToFirestore() {
+        try {
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            this.uiService.showToast('Add some blocks to the quilt first!');
+            return;
+          }
+
+          this.uiService.showToast('Saving to Firestore...');
+          
+          // Save the current quilt to Firestore
+          const success = await this.saveQuilt();
+          
+          if (success) {
+            this.uiService.showToast('✅ Quilt saved to Firestore!');
+            this.logger.log('✅ Quilt successfully saved to Firestore');
+          } else {
+            this.uiService.showToast('❌ Failed to save to Firestore');
+            this.logger.log('❌ Failed to save quilt to Firestore');
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'saveToFirestore');
         }
       }
 
