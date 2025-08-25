@@ -1,0 +1,29 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow read access to all files with CORS headers
+    match /{allPaths=**} {
+      allow read: if true;
+      
+      // Add CORS headers for cross-origin requests
+      function corsHeaders() {
+        return {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Max-Age': '3600'
+        };
+      }
+    }
+    
+    // Allow anonymous users to upload to quilt-reveals folder
+    match /quilt-reveals/{fileName} {
+      allow write: if request.auth != null;
+    }
+    
+    // Deny all other writes
+    match /{allPaths=**} {
+      allow write: if false;
+    }
+  }
+}

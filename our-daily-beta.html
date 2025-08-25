@@ -1,5 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
+<script>
+// Squarespace Editor Error Prevention
+try {
+  // Prevent common errors that break Squarespace editor
+  if (typeof window !== 'undefined') {
+    // Override console.error to prevent editor crashes
+    const originalError = console.error;
+    console.error = function(...args) {
+      // Only log errors, don't throw them
+      originalError.apply(console, args);
+    };
+    
+    // Prevent unhandled promise rejections
+    window.addEventListener('unhandledrejection', function(event) {
+      console.warn('Prevented unhandled promise rejection:', event.reason);
+      event.preventDefault();
+    });
+    
+    // Prevent other global errors
+    window.addEventListener('error', function(event) {
+      console.warn('Prevented global error:', event.error);
+      event.preventDefault();
+    });
+  }
+} catch (e) {
+  // If error handling itself fails, just continue
+  console.warn('Error handling setup failed:', e);
+}
+</script>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -841,6 +870,42 @@
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    
+    /* ===== FLIP ANIMATIONS ===== */
+    @keyframes quiltFlip {
+      0% { transform: scale(1, 1); }
+      50% { transform: scale(0.95, 0.95); }
+      100% { transform: scale(1, 1); }
+    }
+    
+    .quilt-flipping {
+      animation: quiltFlip 0.6s ease-in-out;
+    }
+    
+    /* Smooth transitions for flip transformations */
+    #quilt rect {
+      transition: transform 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+      transform-origin: center;
+    }
+    
+    /* Simple block flip effect using CSS */
+    #quilt rect.block-flipped {
+      fill: #000000; /* Black for obvious flip side - removed !important */
+      opacity: 0.8;
+      stroke: #ffffff;
+      stroke-width: 2;
+    }
+    
+    /* Playing card flip animation */
+    @keyframes cardFlip {
+      0% { transform: rotateY(0deg); }
+      50% { transform: rotateY(90deg); }
+      100% { transform: rotateY(180deg); }
+    }
+    
+    .block-flipping {
+      animation: cardFlip 0.6s ease-in-out;
     }
 
     /* ===== TOAST ===== */
@@ -1787,12 +1852,15 @@
     <button id="floatingAdminBtn" class="floating-admin-btn" aria-label="Admin controls" style="display: none;">
       ⚙️
     </button>
+    
+
 
   <!-- External dependencies -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <scrip st src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   
   <!-- Firebase SDK will be initialized after CONFIG is defined -->
+  <!-- FIREBASE DISABLED FOR LOCAL TESTING -->
   <script type="module">
     // ===== CONFIGURATION =====
     const CONFIG = {
@@ -1806,6 +1874,7 @@
         debugMode: true
       },
       FIREBASE: {
+        // ENABLED FOR IMAGE REVEAL FUNCTIONALITY
         apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
         authDomain: "our-daily.firebaseapp.com",
         projectId: "our-daily",
@@ -2091,37 +2160,10 @@
       }
       
       initialize() {
-        // Calculate container aspect ratio to match our layout
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        
-        // Mobile container: 90vh height, 100% width (minus padding)
-        // Available space: ~90vh - 2rem × 100% width - 2rem
-        // Add safety margin to ensure quilt fits within container
-        const containerHeight = viewportHeight * 0.9 - 48; // 90vh - 3rem (extra safety)
-        const containerWidth = viewportWidth - 48; // 100% - 3rem (extra safety)
-        
-        // Calculate target aspect ratio to match container
-        let targetAspectRatio = containerWidth / containerHeight;
-        
-        // Mobile: Use a more conservative aspect ratio to ensure quilt fits
-        // Target a shorter quilt that will definitely fit in 90vh container
-        const maxQuiltHeight = containerHeight * 0.8; // Use 80% of available height
-        const maxQuiltWidth = containerWidth * 0.8; // Use 80% of available width
-        targetAspectRatio = maxQuiltWidth / maxQuiltHeight;
-        
-        // Use container aspect ratio for initial block
-        let initialWidth, initialHeight;
-        
-        if (viewportWidth / viewportHeight > targetAspectRatio) {
-          // Viewport is wider than target ratio
-          initialHeight = viewportHeight;
-          initialWidth = viewportHeight * targetAspectRatio;
-        } else {
-          // Viewport is taller than target ratio
-          initialWidth = viewportWidth;
-          initialHeight = viewportWidth / targetAspectRatio;
-        }
+        // Use 4:5 dimensions from getQuiltDimensions
+        const dimensions = Utils.getQuiltDimensions();
+        const initialWidth = dimensions.width;
+        const initialHeight = dimensions.height;
         
         this.blocks = [{
           id: 'initial',
@@ -2336,6 +2378,8 @@
         };
       }
       
+      // Individual block flip state is now handled by the renderer
+      
       // ===== RESPONSIVE QUILT DIMENSIONS =====
       recalculateDimensionsForCurrentViewport() {
         if (this.blocks.length === 0) return;
@@ -2364,8 +2408,8 @@
         // Determine target dimensions based on current viewport
         let targetWidth, targetHeight;
         
-        // Mobile-first: Use 1:2 aspect ratio for better mobile fit with breathing room
-        const targetAspectRatio = 1/2; // 1:2 ratio for mobile-first design with breathing room
+        // Instagram-friendly: Use 4:5 aspect ratio for consistent experience
+        const targetAspectRatio = 4/5; // 4:5 ratio for Instagram portrait format
         
         if (window.innerWidth >= 768) {
           // Desktop: Use mobile aspect ratio, account for button container
@@ -2382,7 +2426,7 @@
             targetHeight = availableWidth / targetAspectRatio;
           }
         } else {
-          // Mobile: Use mobile aspect ratio with breathing room
+          // Mobile: Use 4:5 aspect ratio with breathing room
           const breathingRoom = 0.95; // 95% of viewport for quilt, 5% for breathing room
           const availableWidth = currentViewportWidth * breathingRoom;
           const availableHeight = currentViewportHeight * breathingRoom;
@@ -2500,19 +2544,24 @@
         const isMobile = screenWidth <= 768;
         
         if (isMobile) {
+          // Mobile: Use fixed 4:5 dimensions for Instagram-friendly experience
+          const width = 1070;  // 1080 - 10px padding
+          const height = 1340; // 1350 - 10px padding
           return {
-            width: screenWidth,
-            height: screenHeight,
-            viewBoxWidth: screenWidth,
-            viewBoxHeight: screenHeight
+            width: width,
+            height: height,
+            viewBoxWidth: width,
+            viewBoxHeight: height
           };
         } else {
-          const maxSize = Math.min(screenWidth * 0.8, screenHeight * 0.8);
+          // Desktop: Use fixed 4:5 dimensions for Instagram-friendly experience
+          const width = 1070;  // 1080 - 10px padding
+          const height = 1340; // 1350 - 10px padding
           return {
-            width: maxSize,
-            height: maxSize,
-            viewBoxWidth: maxSize,
-            viewBoxHeight: maxSize
+            width: width,
+            height: height,
+            viewBoxWidth: width,
+            viewBoxHeight: height
           };
         }
       }
@@ -2618,6 +2667,18 @@
                   quiltQuoteDisplay.classList.add('has-content');
                 }
               }
+              
+              // Set up flip handlers when showing quilt screen
+              setTimeout(() => {
+                if (window.app && window.app.setupQuiltFlipHandlers) {
+                  window.app.setupQuiltFlipHandlers();
+                }
+              }, 100);
+            } else {
+              // Remove flip handlers when leaving quilt screen
+              if (window.app && window.app.removeQuiltFlipHandlers) {
+                window.app.removeQuiltFlipHandlers();
+              }
             }
             
             // Handle quote screen fade-in elements
@@ -2626,10 +2687,8 @@
               const fadeElements = document.querySelectorAll('.quote-screen-fade-in');
               fadeElements.forEach(el => el.classList.remove('visible'));
               
-              // Trigger fade-in after 3 seconds
-              setTimeout(() => {
-                fadeElements.forEach(el => el.classList.add('visible'));
-              }, 3000);
+              // Trigger fade-in immediately (removed 3-second delay for testing)
+              fadeElements.forEach(el => el.classList.add('visible'));
             }
             
             // Handle welcome screen fade-in elements
@@ -2736,10 +2795,10 @@
       // Get archives for feed (with pagination)
       async getArchives(page = 0, limit = this.postsPerPage) {
         try {
-          // Try to load from Firestore if we don't have archives cached
-          if (this.archives.size === 0 && window.db && window.firestore) {
-            await this.loadArchivesFromFirestore();
-          }
+                  // Try to load from Firestore if we don't have archives cached
+        // if (this.archives.size === 0 && window.db && window.firestore) {
+        //   await this.loadArchivesFromFirestore();
+        // }
           
           const allArchives = Array.from(this.archives.values())
             .sort((a, b) => new Date(b.date) - new Date(a.date)); // Newest first
@@ -2790,14 +2849,14 @@
       async addArchive(archiveEntry) {
         try {
           // Add to Firestore if available
-          if (window.db && window.firestore) {
-            const archiveRef = window.firestore.doc(window.db, 'archives', archiveEntry.date);
-            await window.firestore.setDoc(archiveRef, {
-              ...archiveEntry,
-              createdAt: new Date().toISOString()
-            });
-            this.logger.log(`📝 Archive saved to Firestore: ${archiveEntry.date}`);
-          }
+          // if (window.db && window.firestore) {
+          //   const archiveRef = window.firestore.doc(window.db, 'archives', archiveEntry.date);
+          //   await window.firestore.setDoc(archiveRef, {
+          //     ...archiveEntry,
+          //     createdAt: new Date().toISOString()
+          //   });
+          //   this.logger.log(`📝 Archive saved to Firestore: ${archiveEntry.date}`);
+          // }
           
           // Add to local cache
           this.archives.set(archiveEntry.date, archiveEntry);
@@ -2809,15 +2868,99 @@
         }
       }
 
+      // Generate Instagram-ready image (4:5 portrait ratio)
+      async generateInstagramImage(blocks, quote = null) {
+        try {
+          if (!blocks || blocks.length === 0) {
+            this.logger.warn('No blocks provided for Instagram image generation');
+            return null;
+          }
+
+          // Instagram optimal size: 1080x1350 (4:5 ratio)
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          canvas.width = 1080;
+          canvas.height = 1350;
+          
+          // Fill background with true white to match Instagram
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // Debug: Check what getQuiltDimensions returns
+          const dimensions = Utils.getQuiltDimensions();
+          console.log('🔍 INSTAGRAM DEBUG - getQuiltDimensions returns:', dimensions);
+          
+          // Use fixed 4:5 dimensions (1070 x 1340) - same as main app
+          const targetWidth = 1070;  // 1080 - 10px padding
+          const targetHeight = 1340; // 1350 - 10px padding
+          
+          // Center the quilt in the Instagram canvas (5px padding all around)
+          const offsetX = 5;  // 5px from left
+          const offsetY = 5;  // 5px from top
+          
+          // Debug: Log block dimensions and coordinate bounds
+          const minX = Math.min(...blocks.map(b => b.x));
+          const minY = Math.min(...blocks.map(b => b.y));
+          const maxX = Math.max(...blocks.map(b => b.x + b.width));
+          const maxY = Math.max(...blocks.map(b => b.y + b.height));
+          console.log('🔍 INSTAGRAM DEBUG - Block dimensions:', blocks.map(b => `${b.width}x${b.height} at (${b.x},${b.y})`));
+          console.log('🔍 INSTAGRAM DEBUG - Coordinate bounds:', `X: ${minX} to ${maxX} (${maxX-minX}), Y: ${minY} to ${maxY} (${maxY-minY})`);
+          
+          // Draw each block
+          blocks.forEach(block => {
+            // Add jitter effects (same as current quilt)
+            const jitterX = (Math.random() - 0.5) * 8;
+            const jitterY = (Math.random() - 0.5) * 8;
+            const jitterRotation = (Math.random() - 0.5) * 4;
+            
+            const jitteredX = block.x + jitterX;
+            const jitteredY = block.y + jitterY;
+            
+            // Transform to canvas coordinates (handle negative coordinates)
+            const canvasX = offsetX + (jitteredX - minX);
+            const canvasY = offsetY + (jitteredY - minY);
+            const canvasWidth = block.width;
+            const canvasHeight = block.height;
+            
+            // Save context for rotation
+            ctx.save();
+            
+            // Move to center of block for rotation
+            const centerX = canvasX + canvasWidth / 2;
+            const centerY = canvasY + canvasHeight / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(jitterRotation * Math.PI / 180);
+            
+            // Draw block (no shadow for clean Instagram look)
+            ctx.fillStyle = block.color;
+            ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
+            
+            // Restore context
+            ctx.restore();
+          });
+          
+          // Convert to data URL
+          const dataURL = canvas.toDataURL('image/png', 0.95);
+          
+          this.logger.log(`✅ Generated Instagram image: 1080x1350 (4:5 ratio) - Quilt only`);
+          return dataURL;
+          
+        } catch (error) {
+          this.logger.error('Instagram image generation failed:', error);
+          return null;
+        }
+      }
+
       // Delete archive entry
       async deleteArchive(date) {
         try {
           // Delete from Firestore if available
-          if (window.db && window.firestore) {
-            const archiveRef = window.firestore.doc(window.db, 'archives', date);
-            await window.firestore.deleteDoc(archiveRef);
-            this.logger.log(`🗑️ Archive deleted from Firestore: ${date}`);
-          }
+          // if (window.db && window.firestore) {
+          //   const archiveRef = window.firestore.doc(window.db, 'archives', date);
+          //   await window.firestore.deleteDoc(archiveRef);
+          //   this.logger.log(`🗑️ Archive deleted from Firestore: ${date}`);
+          // }
           
           // Remove from local cache
           this.archives.delete(date);
@@ -2994,8 +3137,6 @@
           return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgdmlld0JveD0iMCAwIDgwMCA2MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI4MDAiIGhlaWdodD0iNjAwIiBmaWxsPSIjZjZmNGYxIi8+Cjx0ZXh0IHg9IjQwMCIgeT0iMzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCI+RXJyb3I8L3RleHQ+Cjwvc3ZnPg==';
         }
       }
-
-
 
       // Load more archives (for "Load More" button)
       async loadMore() {
@@ -3247,19 +3388,21 @@
       async initialize() {
         try {
           // Wait for Firebase to be available
-          let attempts = 0;
-          while (!window.db && attempts < 50) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            attempts++;
-          }
+          // let attempts = 0;
+          // while (!window.db && attempts < 50) {
+          //   await new Promise(resolve => setTimeout(resolve, 100));
+          //   attempts++;
+          // }
           
-          if (window.db) {
-            this.db = window.db;
-            this.logger.log('✅ Firestore initialized successfully');
-          } else {
-            this.logger.warn('⚠️ Firestore not available, falling back to localStorage');
-            this.db = null;
-          }
+          // if (window.db) {
+          //   this.db = window.db;
+          //   this.logger.log('✅ Firestore initialized successfully');
+          // } else {
+          //   this.logger.warn('⚠️ Firestore not available, falling back to localStorage');
+          //   this.db = null;
+          // }
+          this.logger.log('✅ Using local storage only - Firebase disabled');
+          this.db = null;
         } catch (error) {
           this.logger.warn('⚠️ Firestore initialization failed, falling back to localStorage:', error);
           this.db = null;
@@ -3268,43 +3411,43 @@
 
       async loadQuilt() {
         try {
-          if (this.db) {
-            // Try Firestore first
-            const today = Utils.getTodayKey();
-            this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
-            
-            // Also check what other dates exist in Firestore
-            try {
-              const quiltsRef = window.firestore.collection(this.db, 'quilts');
-              const querySnapshot = await window.firestore.getDocs(quiltsRef);
-              const availableDates = [];
-              querySnapshot.forEach(doc => {
-                const data = doc.data();
-                availableDates.push({
-                  date: doc.id,
-                  blocks: data.blocks?.length || 0,
-                  contributorCount: data.contributorCount || 1
-                });
-              });
-              this.logger.log('📊 Available Firestore dates:', JSON.stringify(availableDates, null, 2));
-            } catch (listError) {
-              this.logger.warn('⚠️ Could not list Firestore documents:', listError);
-            }
-            
-            const quiltRef = window.firestore.doc(this.db, 'quilts', today);
-            const quiltSnap = await window.firestore.getDoc(quiltRef);
-            
-            if (quiltSnap.exists()) {
-              const data = quiltSnap.data();
-              this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
-              return { 
-                blocks: data.blocks || [], 
-                contributorCount: data.contributorCount || 1 
-              };
-            } else {
-              this.logger.warn('⚠️ No Firestore document found for date:', today);
-            }
-          }
+          // if (this.db) {
+          //   // Try Firestore first
+          //   const today = Utils.getTodayKey();
+          //   this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
+          //   
+          //   // Also check what other dates exist in Firestore
+          //   try {
+          //     const quiltsRef = window.firestore.collection(this.db, 'quilts');
+          //     const querySnapshot = await window.firestore.getDocs(quiltsRef);
+          //     const availableDates = [];
+          //     querySnapshot.forEach(doc => {
+          //       constData = doc.data();
+          //     availableDates.push({
+          //       date: doc.id,
+          //       blocks: data.blocks?.length || 0,
+          //       contributorCount: data.contributorCount || 1
+          //     });
+          //   });
+          //   this.logger.log('📊 Available Firestore dates:', JSON.stringify(availableDates, null, 2));
+          // } catch (listError) {
+          //   this.logger.warn('⚠️ Could not list Firestore documents:', listError);
+          // }
+          //   
+          //   const quiltRef = window.firestore.doc(this.db, 'quilts', today);
+          //   const quiltSnap = await window.firestore.getDoc(quiltRef);
+          //   
+          //   if (quiltSnap.exists()) {
+          //     const data = quiltSnap.data();
+          //     this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
+          //     return { 
+          //       blocks: data.blocks || [], 
+          //       contributorCount: data.contributorCount || 1 
+          //     };
+          //   } else {
+          //     this.logger.warn('⚠️ No Firestore document found for date:', today);
+          //   }
+          // }
           
           // Fallback to localStorage
           const savedData = localStorage.getItem('ourDailyQuilt');
@@ -3340,16 +3483,61 @@
             date: Utils.getTodayKey()
           };
           
-          if (this.db) {
-            // Save to Firestore
-            const today = Utils.getTodayKey();
-            const quiltRef = window.firestore.doc(this.db, 'quilts', today);
-            await window.firestore.setDoc(quiltRef, quiltData);
-            this.logger.log('💾 Saved quilt to Firestore');
+          // Check Firestore availability
+          if (!window.db || !window.firestore) {
+            console.warn('⚠️ Firestore not available for saving');
           }
           
-          // Also save to localStorage as backup
-          localStorage.setItem('ourDailyQuilt', JSON.stringify(quiltData));
+          if (window.db && window.firestore) {
+            // Save to Firestore
+            const today = Utils.getTodayKey();
+            const quiltRef = window.firestore.doc(window.db, 'quilts', today);
+            await window.firestore.setDoc(quiltRef, quiltData);
+            this.logger.log('💾 Saved quilt to Firestore');
+            
+            // Also save today's quote to Firestore
+            try {
+              const todayQuote = window.app?.quoteService?.getTodayQuote();
+              if (todayQuote) {
+                const quoteData = {
+                  text: todayQuote.text,
+                  author: todayQuote.author,
+                  date: today,
+                  lastUpdated: new Date().toISOString()
+                };
+                const quoteRef = window.firestore.doc(window.db, 'quotes', today);
+                await window.firestore.setDoc(quoteRef, quoteData);
+                this.logger.log('💾 Saved today\'s quote to Firestore');
+              }
+            } catch (quoteError) {
+              console.warn('⚠️ Could not save quote to Firestore:', quoteError);
+            }
+            
+            // Also save the generated Instagram image to Firestore
+            try {
+              const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData.blocks);
+              if (instagramImage) {
+                const imageData = {
+                  imageData: instagramImage,
+                  date: today,
+                  lastUpdated: new Date().toISOString()
+                };
+                const imageRef = window.firestore.doc(window.db, 'instagram-images', today);
+                await window.firestore.setDoc(imageRef, imageData);
+                this.logger.log('💾 Saved Instagram image to Firestore');
+              }
+            } catch (imageError) {
+              console.warn('⚠️ Could not save Instagram image to Firestore:', imageError);
+            }
+          }
+          
+          // Also save to localStorage as backup with safety check
+          if (quiltData.blocks && quiltData.blocks.length > 0) {
+            localStorage.setItem('ourDailyQuilt', JSON.stringify(quiltData));
+            console.log('💾 Safely saved quilt with', quiltData.blocks.length, 'blocks');
+          } else {
+            console.warn('⚠️ Attempted to save empty quilt data - skipping to prevent data loss');
+          }
           
           return true;
         } catch (error) {
@@ -3606,33 +3794,36 @@
           console.log('📚 Loading quotes from Firestore...');
           
           // Check if global Firestore is available
-          if (!window.db || !window.firestore) {
-            console.log('📚 Global Firestore not available, using default quotes');
-            return false;
-          }
+          // if (!window.db || !window.firestore) {
+          //   console.log('📚 Global Firestore not available, using default quotes');
+          //   return false;
+          // }
           
           // Use the global Firestore functions
-          const docRef = window.firestore.doc(window.db, 'quotes', 'daily');
-          const docSnap = await window.firestore.getDoc(docRef);
+          // const docRef = window.firestore.doc(window.db, 'quotes', 'daily');
+          // const docSnap = await window.firestore.getDoc(docRef);
           
-          if (docSnap.exists() && docSnap.data().quotes) {
-            this.quotes = docSnap.data().quotes;
-            if (docSnap.data().shuffledIndexes) {
-              this.shuffledIndexes = docSnap.data().shuffledIndexes;
-              console.log('✅ Loaded shuffled indexes from Firestore:', this.shuffledIndexes.length, 'indexes');
-            }
-            console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
-            
-            // Update the display if we're on the quote screen
-            if (document.querySelector('.quote-line')) {
-              this.displayQuote();
-            }
-            
-            return true;
-          } else {
-            console.log('📚 No quotes found in Firestore, using defaults');
-            return false;
-          }
+          // if (docSnap.exists() && docSnap.data().quotes) {
+          //   this.quotes = docSnap.data().quotes;
+          //   if (docSnap.data().shuffledIndexes) {
+          //     this.shuffledIndexes = docSnap.data().shuffledIndexes;
+          //     console.log('✅ Loaded shuffled indexes from Firestore:', this.shuffledIndexes.length, 'indexes');
+          //   }
+          //   console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
+          //   
+          //   Update the display if we're on the quote screen
+          //   if (document.querySelector('.quote-line')) {
+          //     this.displayQuote();
+          //   }
+          //   
+          //   return true;
+          // } else {
+          //   console.log('📚 No quotes found in Firestore, using defaults');
+          //   return false;
+          // }
+          
+          console.log('📚 Using default quotes - Firestore disabled');
+          return false;
           
         } catch (error) {
           console.error('❌ Error loading quotes from Firestore:', error);
@@ -3710,45 +3901,29 @@
           quiltHeight = maxY - minY;
         }
         
-        // Use target dimensions if available, otherwise use original
-        let targetWidth, targetHeight;
-        if (this.targetDimensions) {
-          targetWidth = this.targetDimensions.width;
-          targetHeight = this.targetDimensions.height;
-        } else {
-          targetWidth = quiltWidth;
-          targetHeight = quiltHeight;
-        }
+        // Use fixed 4:5 dimensions (1070 x 1340)
+        const targetWidth = 1070;
+        const targetHeight = 1340;
         
-        // Mobile: Add padding around quilt bounds to create breathing room
-        const padding = Math.max(quiltWidth, quiltHeight) * 0.02; // 2% padding
-        const paddedMinX = minX - padding;
-        const paddedMinY = minY - padding;
-        const paddedWidth = quiltWidth + (padding * 2);
-        const paddedHeight = quiltHeight + (padding * 2);
+        // Set viewBox to fixed 4:5 dimensions
+        this.quiltSVG.setAttribute('viewBox', `0 0 ${targetWidth} ${targetHeight}`);
         
-        // console.log('🔍 DEBUG MOBILE:');
-        // console.log('  - Original bounds:', `${minX}, ${minY}, ${quiltWidth}, ${quiltHeight}`);
-        // console.log('  - Padding:', padding);
-        // console.log('  - Padded bounds:', `${paddedMinX}, ${paddedMinY}, ${paddedWidth}, ${paddedHeight}`);
-        
-        // Set viewBox to padded quilt bounds
-        this.quiltSVG.setAttribute('viewBox', `${paddedMinX} ${paddedMinY} ${paddedWidth} ${paddedHeight}`);
-        
-        // Set SVG dimensions to target size (fits within viewport)
+        // Set SVG dimensions
         this.quiltSVG.setAttribute('width', targetWidth);
         this.quiltSVG.setAttribute('height', targetHeight);
+        
+        console.log('🔧 USING FIXED 4:5 DIMENSIONS:', targetWidth, 'x', targetHeight);
         
         // Mobile: Center the quilt content
         this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         
-        // Mobile: Use full container
-        this.quiltSVG.style.width = '100%';
-        this.quiltSVG.style.height = '100%';
-        this.quiltSVG.style.maxWidth = '100%';
-        this.quiltSVG.style.maxHeight = '100%';
+        // Use 4:5 dimensions from getQuiltDimensions
+        this.quiltSVG.style.width = targetWidth + 'px';
+        this.quiltSVG.style.height = targetHeight + 'px';
+        this.quiltSVG.style.maxWidth = 'none';
+        this.quiltSVG.style.maxHeight = 'none';
         
-
+        // No global flip - individual blocks will be flipped when touched
 
         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
         defs.innerHTML = `
@@ -3781,7 +3956,24 @@
           
           const centerX = jitteredBlock.x + jitteredBlock.width / 2;
           const centerY = jitteredBlock.y + jitteredBlock.height / 2;
+          
+          // Apply basic rotation transformation
           rect.setAttribute('transform', `rotate(${jitterRotation} ${centerX} ${centerY})`);
+          
+          // Add flip state as CSS class for simpler handling
+          const blockFlipState = this.getBlockFlipState(block.id);
+          if (blockFlipState) {
+            rect.classList.add('block-flipped');
+            console.log(`🔄 Applied block-flipped class to block ${block.id}`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            
+            // Apply reveal image if one is selected (access through global app instance)
+            if (window.app && window.app.currentRevealImage) {
+              const color = window.app.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+              rect.setAttribute('fill', color);
+              rect.style.setProperty('fill', color, 'important');
+            }
+          }
+          rect.setAttribute('data-block-id', block.id);
           
           // Add user piece highlighting
           if (this.userPieces.has(block.id)) {
@@ -3807,6 +3999,41 @@
       setLastAddedIndex(index) {
         this.lastAddedIndex = index;
       }
+      
+      // Individual block flip state management
+      clearAllFlipStates() {
+        const todayKey = Utils.getTodayKey();
+        localStorage.removeItem(`blockFlips_${todayKey}`);
+        console.log('🔄 Cleared all flip states - quilt loads right side up');
+      }
+      
+      getBlockFlipState(blockId) {
+        const todayKey = Utils.getTodayKey();
+        const flippedBlocks = JSON.parse(localStorage.getItem(`blockFlips_${todayKey}`) || '[]');
+        return flippedBlocks.includes(blockId);
+      }
+      
+      toggleBlockFlip(blockId) {
+        const todayKey = Utils.getTodayKey();
+        const flippedBlocks = JSON.parse(localStorage.getItem(`blockFlips_${todayKey}`) || '[]');
+        
+        if (flippedBlocks.includes(blockId)) {
+          // Remove from flipped blocks
+          const index = flippedBlocks.indexOf(blockId);
+          flippedBlocks.splice(index, 1);
+        } else {
+          // Add to flipped blocks
+          flippedBlocks.push(blockId);
+        }
+        
+        localStorage.setItem(`blockFlips_${todayKey}`, JSON.stringify(flippedBlocks));
+        return flippedBlocks.includes(blockId);
+      }
+
+      getFlippedBlocks() {
+        const todayKey = Utils.getTodayKey();
+        return JSON.parse(localStorage.getItem(`blockFlips_${todayKey}`) || '[]');
+      }
     }
 
     // ===== MAIN APPLICATION =====
@@ -3826,8 +4053,9 @@
         this.uiService = new UIService(this.logger);
         this.errorHandler = new ErrorHandler(this.uiService, this.logger);
         this.dataService = new QuiltDataService(this.logger, this.errorHandler);
-        console.log('🧵 App constructor - window.firebaseApp available:', !!window.firebaseApp);
-        this.quoteService = new QuoteService(window.firebaseApp);
+        // console.log('🧵 App constructor - window.firebaseApp available:', !!window.firebaseApp);
+        // this.quoteService = new QuoteService(window.firebaseApp);
+        this.quoteService = new QuoteService(null); // Use null for local storage only
         this.renderer = new QuiltRendererV2(this.logger);
         this.archiveService = new ArchiveService(this.logger, this.dataService);
         
@@ -4003,33 +4231,40 @@
           
           // Initialize new engine
           this.quiltEngine.initialize();
+          
+          // Clear all flip states to ensure quilt loads right side up
+          this.renderer.clearAllFlipStates();
+          
+          console.log('🔍 DEBUGGING: About to load quilt...');
           await this.loadQuilt();
+          console.log('🔍 DEBUGGING: Quilt loaded, blocks count:', this.quiltEngine.blocks.length);
           
           this.renderer.initialize();
-          this.renderQuilt();
+          await this.renderQuilt();
           this.updateSquareCounter();
           
           // Initialize UI after portal is shown
           this.initializeUI();
           
           // Load quotes from Firestore
-          console.log('🔄 About to load quotes from Firestore...');
-          console.log('🔄 Firebase available:', !!window.firebaseApp);
-          console.log('🔄 Firestore available:', !!window.firestore);
-          console.log('🔄 DB available:', !!window.db);
+          // console.log('🔄 About to load quotes from Firestore...');
+          // console.log('🔄 Firebase available:', !!window.firebaseApp);
+          // console.log('🔄 Firestore available:', !!window.firestore);
+          // console.log('🔄 DB available:', !!window.db);
           
           // Wait a bit for Firebase to be fully initialized
-          if (!window.db || !window.firestore) {
-            console.log('🔄 Waiting for Firebase to initialize...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
+          // if (!window.db || !window.firestore) {
+          //   console.log('🔄 Waiting for Firebase to initialize...');
+          //   await new Promise(resolve => setTimeout(resolve, 1000));
+          // }
           
-          await this.quoteService.loadQuotesFromFirestore();
+          // await this.quoteService.loadQuotesFromFirestore();
+          console.log('🔄 Using local storage only - Firebase disabled');
           
           this.setupAutoTransition();
-          this.setupDailyReset();
+          // this.setupDailyReset(); // DISABLED FOR LOCAL TESTING - prevents automatic resets
           
-
+          // Don't set up flip handlers here - they'll be set up when quilt screen is shown
           
         } catch (error) {
           this.errorHandler.handleError(error, 'App initialization');
@@ -4083,6 +4318,8 @@
         
         // Floating admin button
         this.setupFloatingAdminButton();
+        
+
         
         // Archive event handlers
         this.setupArchiveEventHandlers();
@@ -4310,6 +4547,8 @@
         }
       }
 
+
+
       setupArchiveEventHandlers() {
         // Archive Load More button
         const loadMoreBtn = document.getElementById('archiveLoadMore');
@@ -4474,10 +4713,8 @@
           return true;
         }
         
-        // For development/testing, you can enable admin mode by running in console:
-        // localStorage.setItem('ourDailyIsAdmin', 'true'); location.reload();
-        
-        return false;
+        // For development/testing, enable admin mode by default
+        return true;
       }
 
       enableAdminMode() {
@@ -4506,6 +4743,863 @@
         this.setupFloatingAdminButton();
         console.log('🔧 Admin mode enabled. You can now access admin controls.');
       }
+
+      // Reveal image management functions
+      async loadRevealImageOptions() {
+        try {
+          // Enable Firebase for image storage
+          await this.initializeFirebaseForImages();
+          
+          const optionsContainer = document.getElementById('revealImageOptions');
+          if (!optionsContainer) return;
+          
+          // Check if Firebase is available
+          if (!window.firebaseApp || !window.firebaseStorage) {
+            optionsContainer.innerHTML = '<p>Firebase not available. Please try again.</p>';
+            return;
+          }
+          
+          // Load images from Firebase Storage
+          const { ref, listAll, getDownloadURL } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          const storage = window.firebaseStorage;
+          
+          // Try to get images from quilt-reveals folder
+          const revealsRef = ref(storage, 'quilt-reveals');
+          const result = await listAll(revealsRef);
+          
+          if (result.items.length === 0) {
+            optionsContainer.innerHTML = '<p>No reveal images found. Upload one to get started!</p>';
+            return;
+          }
+          
+          // Build HTML for image options
+          let optionsHTML = '';
+          
+          for (let i = 0; i < result.items.length; i++) {
+            const item = result.items[i];
+            const downloadURL = await getDownloadURL(item);
+            const imageId = `revealImage${i}`;
+            
+            optionsHTML += `
+              <div class="image-option" style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                <input type="radio" name="revealImage" value="${downloadURL}" id="${imageId}">
+                <label for="${imageId}" style="display: flex; align-items: center; gap: 10px;">
+                  <img src="${downloadURL}" alt="Reveal Image ${i + 1}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px;">
+                  <span>${item.name}</span>
+                </label>
+              </div>
+            `;
+          }
+          
+          optionsHTML += '<button onclick="app.handleSelectRevealImage()" style="margin-top: 10px;">Apply Selected Image</button>';
+          
+          optionsContainer.innerHTML = optionsHTML;
+          
+        } catch (error) {
+          console.error('Error loading reveal image options:', error);
+          const optionsContainer = document.getElementById('revealImageOptions');
+          if (optionsContainer) {
+            optionsContainer.innerHTML = '<p>Error loading images. Please try again.</p>';
+          }
+        }
+      }
+
+      async initializeFirebaseForImages() {
+        // Only initialize Firebase if not already done
+        if (window.firebaseApp && window.firebaseStorage && window.firebaseAuth) {
+          console.log('🔥 Firebase already initialized');
+          return window.firebaseApp;
+        }
+        
+        try {
+          console.log('🔥 Initializing Firebase for images...');
+          console.log('🔥 CONFIG.FIREBASE exists:', !!CONFIG.FIREBASE);
+          console.log('🔥 CONFIG.FIREBASE keys:', Object.keys(CONFIG.FIREBASE || {}));
+          
+          const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
+          const { getStorage } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          const { getAuth, signInAnonymously } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js');
+          
+          console.log('🔥 Firebase config:', CONFIG.FIREBASE);
+          const firebaseApp = initializeApp(CONFIG.FIREBASE);
+          const storage = getStorage(firebaseApp);
+          const auth = getAuth(firebaseApp);
+          
+          // Sign in anonymously to enable uploads
+          try {
+            const authResult = await signInAnonymously(auth);
+            console.log('🔥 Anonymous authentication successful:', authResult.user.uid);
+            console.log('🔥 User is authenticated:', auth.currentUser !== null);
+            
+            // Wait a moment for auth to fully propagate
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+          } catch (authError) {
+            console.log('🔥 Anonymous auth failed:', authError);
+            // Try to continue anyway
+          }
+          
+          window.firebaseApp = firebaseApp;
+          window.firebaseStorage = storage;
+          window.firebaseAuth = auth;
+          
+          console.log('🔥 Firebase initialized successfully');
+          console.log('🔥 window.firebaseApp set:', !!window.firebaseApp);
+          console.log('🔥 window.firebaseStorage set:', !!window.firebaseStorage);
+          console.log('🔥 window.firebaseAuth set:', !!window.firebaseAuth);
+          console.log('🔥 Storage instance:', storage);
+          return firebaseApp;
+        } catch (error) {
+          console.error('Failed to initialize Firebase for images:', error);
+          throw error;
+        }
+      }
+
+      async handleUploadRevealImage() {
+        const fileInput = document.getElementById('revealImageUpload');
+        const file = fileInput?.files[0];
+        
+        if (!file) {
+          alert('Please select an image file first.');
+          return;
+        }
+        
+        try {
+          await this.initializeFirebaseForImages();
+          
+          // Show loading message
+          const uploadButton = document.querySelector('button[onclick="app.handleUploadRevealImage()"]');
+          const originalText = uploadButton.textContent;
+          uploadButton.textContent = 'Resizing & Uploading...';
+          uploadButton.disabled = true;
+          
+          // Resize image to quilt dimensions (412 x 800)
+          const resizedImageBlob = await this.resizeImageToQuiltDimensions(file);
+          
+          // Check authentication status before upload
+          if (!window.firebaseAuth) {
+            console.log('🔥 Firebase Auth not initialized, trying to initialize...');
+            await this.initializeFirebaseForImages();
+          }
+          
+          const auth = window.firebaseAuth;
+          console.log('🔥 Auth status before upload:', {
+            currentUser: auth?.currentUser,
+            isAuthenticated: auth?.currentUser !== null,
+            uid: auth?.currentUser?.uid
+          });
+          
+          // Upload to Firebase Storage
+          const { ref, uploadBytes, getDownloadURL } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          const storage = window.firebaseStorage;
+          
+          // Create unique filename with timestamp
+          const timestamp = Date.now();
+          const filename = `quilt-reveal-${timestamp}.png`;
+          const imageRef = ref(storage, `quilt-reveals/${filename}`);
+          
+          // Upload the resized image
+          let downloadURL;
+          try {
+            await uploadBytes(imageRef, resizedImageBlob);
+            downloadURL = await getDownloadURL(imageRef);
+          } catch (uploadError) {
+            console.error('Upload failed:', uploadError);
+            
+            // If upload fails due to permissions, show helpful message
+            if (uploadError.code === 'storage/unauthorized') {
+              console.log('🔥 Upload failed - checking auth status...');
+              console.log('🔥 Auth object:', window.firebaseAuth);
+              console.log('🔥 Current user:', window.firebaseAuth?.currentUser);
+              
+              this.uiService.showToast('❌ Upload failed: Authentication issue. Please check Firebase Console settings.');
+              throw new Error('Firebase authentication issue. Please enable Anonymous Authentication in Firebase Console.');
+            }
+            
+            throw uploadError;
+          }
+          
+          // Store image info
+          const imageInfo = {
+            name: filename,
+            url: downloadURL,
+            uploadedAt: timestamp
+          };
+          
+          // Add to available images
+          if (!this.availableRevealImages) {
+            this.availableRevealImages = [];
+          }
+          this.availableRevealImages.push(imageInfo);
+          
+          // Refresh the image options display
+          this.loadRevealImageOptions();
+          
+          // Clear the file input
+          fileInput.value = '';
+          
+          // Reset button
+          uploadButton.textContent = originalText;
+          uploadButton.disabled = false;
+          
+          this.uiService.showToast('✅ Image uploaded and resized successfully!');
+          console.log('Image uploaded:', imageInfo);
+          
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          this.uiService.showToast('❌ Error uploading image. Please try again.');
+          
+          // Reset button on error
+          const uploadButton = document.querySelector('button[onclick="app.handleUploadRevealImage()"]');
+          if (uploadButton) {
+            uploadButton.textContent = 'Upload Image';
+            uploadButton.disabled = false;
+          }
+        }
+      }
+
+      async resizeImageToQuiltDimensions(file) {
+        return new Promise((resolve, reject) => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const img = new Image();
+          
+          // Set target dimensions (quilt size)
+          const targetWidth = 412;
+          const targetHeight = 800;
+          
+          img.onload = () => {
+            try {
+              // Set canvas size to target dimensions
+              canvas.width = targetWidth;
+              canvas.height = targetHeight;
+              
+              // Calculate scaling to fill the entire target area (crop approach)
+              const imageAspect = img.width / img.height;
+              const targetAspect = targetWidth / targetHeight;
+              
+              let sourceX, sourceY, sourceWidth, sourceHeight;
+              
+              if (imageAspect > targetAspect) {
+                // Image is wider than target - scale to height and crop width
+                const scaledWidth = img.height * targetAspect;
+                sourceWidth = scaledWidth;
+                sourceHeight = img.height;
+                sourceX = (img.width - scaledWidth) / 2; // Center crop
+                sourceY = 0;
+              } else {
+                // Image is taller than target - scale to width and crop height
+                const scaledHeight = img.width / targetAspect;
+                sourceWidth = img.width;
+                sourceHeight = scaledHeight;
+                sourceX = 0;
+                sourceY = (img.height - scaledHeight) / 2; // Center crop
+              }
+              
+              // Draw the cropped portion of the image to fill the entire canvas
+              ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
+              
+              // Convert to blob
+              canvas.toBlob((blob) => {
+                if (blob) {
+                  resolve(blob);
+                } else {
+                  reject(new Error('Failed to create image blob'));
+                }
+              }, 'image/png', 0.9);
+              
+            } catch (error) {
+              reject(error);
+            }
+          };
+          
+          img.onerror = () => {
+            reject(new Error('Failed to load image for resizing'));
+          };
+          
+          // Load image from file
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            img.src = e.target.result;
+          };
+          reader.onerror = () => {
+            reject(new Error('Failed to read image file'));
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async handleSelectRevealImage() {
+        const selectedImageURL = document.querySelector('input[name="revealImage"]:checked')?.value;
+        
+        if (!selectedImageURL) {
+          alert('Please select an image first.');
+          return;
+        }
+        
+        try {
+          // Create image info object
+          const imageInfo = {
+            name: 'Selected Reveal Image',
+            url: selectedImageURL
+          };
+          
+          // Store the selected image preference
+          localStorage.setItem('selectedRevealImage', selectedImageURL);
+          
+          // Apply the image to the quilt
+          await this.applyImageToQuilt(imageInfo);
+          
+          this.uiService.showToast('✅ Reveal image applied successfully!');
+          
+        } catch (error) {
+          console.error('Error applying reveal image:', error);
+          this.uiService.showToast('❌ Error applying image. Please try again.');
+        }
+      }
+
+      async applyRevealImageToQuilt(imageName) {
+        console.log('Applying reveal image:', imageName);
+        
+        // Store the selection
+        this.currentRevealImage = imageName;
+        
+        // Apply image to flipped blocks
+        await this.applyImageToQuilt(this.currentRevealImage);
+      }
+
+      async loadRandomRevealImage() {
+        try {
+          // Always try to initialize Firebase first
+          console.log('🔥 Attempting to initialize Firebase...');
+          await this.initializeFirebaseForImages();
+          
+          // Check if Firebase is available after initialization
+          if (!window.firebaseApp || !window.firebaseStorage) {
+            console.log('Firebase still not available after initialization, using fallback images');
+            return this.loadFallbackImages();
+          }
+          
+          await this.initializeFirebaseForImages();
+          
+          // Get list of images from Firebase Storage
+          const { ref, listAll, getDownloadURL, getBlob } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
+          const storage = window.firebaseStorage;
+          
+          // Try different possible folder names
+          const possibleFolders = ['quilt-reveals', 'quilt reveals', 'quiltreveals', 'reveals', 'images'];
+          let result = null;
+          let folderName = null;
+          
+          for (const folder of possibleFolders) {
+            try {
+              console.log(`🖼️ Trying Firebase folder: "${folder}"`);
+              const revealsRef = ref(storage, folder);
+              result = await listAll(revealsRef);
+              if (result.items.length > 0) {
+                folderName = folder;
+                console.log(`✅ Found ${result.items.length} images in Firebase folder: "${folder}"`);
+                break;
+              } else {
+                console.log(`📁 Folder "${folder}" exists but is empty`);
+              }
+            } catch (error) {
+              console.log(`❌ Folder "${folder}" not found:`, error.message);
+            }
+          }
+          
+          if (!result || result.items.length === 0) {
+            console.log('No images found in Firebase, using fallback images');
+            return this.loadFallbackImages();
+          }
+          
+          // Randomly select an image
+          const randomIndex = Math.floor(Math.random() * result.items.length);
+          const selectedImageRef = result.items[randomIndex];
+          
+          // Try to get the image URL (may fail due to CORS when running locally)
+          console.log('🖼️ Getting Firebase image URL...');
+          let imageUrl;
+          let blob = null;
+          
+          try {
+            // Try blob first (better for CORS)
+            blob = await getBlob(selectedImageRef);
+            imageUrl = URL.createObjectURL(blob);
+            console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'blob URL created');
+          } catch (blobError) {
+            console.log('🔄 Blob failed, trying direct URL:', blobError.message);
+            try {
+              // Fallback to direct URL
+              imageUrl = await getDownloadURL(selectedImageRef);
+              console.log('🎲 Randomly selected Firebase image:', selectedImageRef.name, 'direct URL created');
+            } catch (urlError) {
+              console.log('❌ Both blob and direct URL failed:', urlError.message);
+              if (urlError.message.includes('CORS') || urlError.message.includes('Access-Control-Allow-Origin')) {
+                console.log('🔄 CORS issue detected - this is normal when running locally');
+                console.log('💡 Firebase images will work when deployed to a proper server');
+                throw new Error('CORS blocked Firebase image (normal when running locally)');
+              } else {
+                throw new Error('Could not load Firebase image: ' + urlError.message);
+              }
+            }
+          }
+          
+          // Store the selected image info
+          this.currentRevealImage = {
+            name: selectedImageRef.name,
+            url: imageUrl,
+            blob: blob // Keep reference to clean up later
+          };
+          
+          console.log('🖼️ Stored currentRevealImage:', this.currentRevealImage);
+          
+          // Apply the image to the quilt
+          await this.applyImageToQuilt(this.currentRevealImage);
+          
+          return this.currentRevealImage;
+          
+        } catch (error) {
+          console.error('Error loading Firebase image:', error);
+          console.log('Firebase image loading failed - no fallback');
+          throw error; // Don't fall back, let the error propagate
+        }
+      }
+
+      async loadFallbackImages() {
+        // Use CORS-friendly test images as fallback
+        const testImages = [
+          {
+            name: 'sunset-gradient',
+            url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0ic3Vuc2V0IiBjeD0iNDAwIiBjeT0iMzAwIiByPSI0MDAiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZmY2YjZiO3N0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjUwJSIgc3R5bGU9InN0b3AtY29sb3I6I2ZmYzc0O3N0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmViM2I7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICA8L3JhZGlhbEdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI3N1bnNldCkiIC8+CiAgPHRleHQgeD0iNDAwIiB5PSIzMDAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSI0OCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkRhaWx5IFN1bnNldDwvdGV4dD4KPC9zdmc+Cg=='
+          },
+          {
+            name: 'ocean-waves', 
+            url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ib2NlYW4iIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojNGVjZGM0O3N0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjUwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwNzNhYTtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDA0ZGRkO3N0b3Atb3BhY2l0eToxIiAvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNvY2VhbikiIC8+CiAgPHRleHQgeD0iNDAwIiB5PSIzMDAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSI0OCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk9jZWFuIFdhdmVzPC90ZXh0Pgo8L3N2Zz4K'
+          },
+          {
+            name: 'forest-greens',
+            url: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZm9yZXN0IiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzJkNzQzNDtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0eWxlPSJzdG9wLWNvbG9yOjM4YTg1MzN0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOjQyYjY4MmE7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2ZvcmVzdCkiIC8+CiAgPHRleHQgeD0iNDAwIiB5PSIzMDAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSI0OCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkZvcmVzdCBHcmVlbnM8L3RleHQ+Cjwvc3ZnPgo='
+          }
+        ];
+        
+        // Randomly select a test image
+        const randomIndex = Math.floor(Math.random() * testImages.length);
+        const selectedImage = testImages[randomIndex];
+        
+        console.log('🎲 Randomly selected fallback image:', selectedImage.name);
+        
+        // Store the selected image info
+        this.currentRevealImage = selectedImage;
+        
+        // Apply the image to the quilt
+        await this.applyImageToQuilt(this.currentRevealImage);
+        
+        return this.currentRevealImage;
+      }
+
+      async forceLoadFirebaseImage() {
+        console.log('🔥 Force loading Firebase image...');
+        try {
+          const result = await this.loadRandomRevealImage();
+          if (result) {
+            this.uiService.showToast('✅ Firebase image loaded successfully!');
+          } else {
+            this.uiService.showToast('❌ Failed to load Firebase image');
+          }
+        } catch (error) {
+          console.error('Error force loading Firebase image:', error);
+          this.uiService.showToast('❌ Error loading Firebase image');
+        }
+      }
+
+      async applyImageToQuilt(imageInfo) {
+        // console.log('🖼️ applyImageToQuilt called with:', imageInfo);
+        
+        if (!imageInfo) {
+          console.log('❌ No imageInfo provided');
+          return;
+        }
+        
+        if (!imageInfo.url) {
+          console.log('❌ No imageInfo.url provided');
+          return;
+        }
+        
+        // console.log('🖼️ Image URL type:', typeof imageInfo.url);
+        // console.log('🖼️ Image URL value:', imageInfo.url);
+        
+        console.log('Applying image to quilt:', imageInfo.name);
+        
+        // Create image pattern for the quilt
+        await this.createImagePattern(imageInfo);
+        
+        // Apply to flipped blocks
+        this.applyImageToFlippedBlocks(imageInfo);
+      }
+
+      async createImagePattern(imageInfo) {
+        // console.log('🖼️ Creating image pattern for:', imageInfo.name);
+        
+        // Create a canvas to load and process the image
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        
+        return new Promise((resolve, reject) => {
+          img.onload = () => {
+            console.log('🖼️ Image loaded, dimensions:', img.width, 'x', img.height);
+            
+            // Get quilt dimensions
+            const blocks = this.quiltEngine.blocks;
+            if (blocks.length === 0) {
+              reject('No blocks in quilt');
+              return;
+            }
+            
+            const minX = Math.min(...blocks.map(b => b.x));
+            const minY = Math.min(...blocks.map(b => b.y));
+            const maxX = Math.max(...blocks.map(b => b.x + b.width));
+            const maxY = Math.max(...blocks.map(b => b.y + b.height));
+            const quiltWidth = maxX - minX;
+            const quiltHeight = maxY - minY;
+            
+            console.log('🖼️ Quilt dimensions:', quiltWidth, 'x', quiltHeight);
+            
+            // Scale the image to fit the quilt while maintaining aspect ratio
+            const imageAspect = img.width / img.height;
+            const quiltAspect = quiltWidth / quiltHeight;
+            
+            let scaledWidth, scaledHeight, offsetX, offsetY;
+            
+            if (imageAspect > quiltAspect) {
+              // Image is wider than quilt - fit to width
+              scaledWidth = quiltWidth;
+              scaledHeight = quiltWidth / imageAspect;
+              offsetX = 0;
+              offsetY = (quiltHeight - scaledHeight) / 2;
+            } else {
+              // Image is taller than quilt - fit to height
+              scaledWidth = quiltHeight * imageAspect;
+              scaledHeight = quiltHeight;
+              offsetX = (quiltWidth - scaledWidth) / 2;
+              offsetY = 0;
+            }
+            
+            // Set canvas size to match quilt dimensions
+            canvas.width = quiltWidth;
+            canvas.height = quiltHeight;
+            
+            // Draw the scaled image centered in the quilt area
+            ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+            
+            // Convert to data URL for SVG pattern
+            const imageDataUrl = canvas.toDataURL('image/png');
+            
+            // Store the processed image data
+            this.processedImageData = {
+              dataUrl: imageDataUrl,
+              quiltWidth: quiltWidth,
+              quiltHeight: quiltHeight,
+              minX: minX,
+              minY: minY,
+              imageWidth: scaledWidth,  // Use actual scaled image dimensions
+              imageHeight: scaledHeight, // Use actual scaled image dimensions
+              offsetX: offsetX,         // Store offset for positioning
+              offsetY: offsetY          // Store offset for positioning
+            };
+            
+            console.log('✅ Image pattern created for quilt, data URL length:', imageDataUrl.length);
+            resolve();
+          };
+          
+          img.onerror = (error) => {
+            console.error('🖼️ Failed to load image:', error);
+            reject('Failed to load image');
+          };
+          
+          // Ensure we have a valid URL
+          if (!imageInfo.url || typeof imageInfo.url !== 'string') {
+            console.error('Invalid image URL:', imageInfo.url);
+            reject('Invalid image URL');
+            return;
+          }
+          
+          // Handle CORS for Firebase images
+          if (imageInfo.url.includes('firebasestorage.googleapis.com')) {
+            // console.log('🖼️ Loading Firebase image with CORS handling');
+            img.crossOrigin = 'anonymous';
+            
+            // Try to load with credentials
+            img.crossOrigin = 'use-credentials';
+            
+            // Add error handler for CORS issues
+            img.onerror = (error) => {
+                      // console.log('🖼️ CORS error loading Firebase image, trying alternative method');
+        // console.log('🖼️ Error details:', error);
+              
+              // Try without crossOrigin as fallback
+              img.crossOrigin = null;
+              img.src = imageInfo.url;
+            };
+          } else {
+            // console.log('🖼️ Loading local/SVG image');
+          }
+          
+          // console.log('🖼️ Loading image from URL:', imageInfo.url);
+          
+          // Add timeout for Firebase images to handle CORS issues
+          if (imageInfo.url.includes('firebasestorage.googleapis.com')) {
+            const timeout = setTimeout(() => {
+              // console.log('🖼️ Timeout loading Firebase image, likely CORS issue');
+              img.onerror = null; // Remove error handler to prevent double handling
+              reject(new Error('Timeout loading Firebase image (CORS issue)'));
+            }, 5000); // 5 second timeout
+            
+            img.onload = () => {
+              clearTimeout(timeout);
+              resolve();
+            };
+            
+            img.onerror = (error) => {
+              clearTimeout(timeout);
+              console.log('🖼️ CORS error loading Firebase image, falling back to test image');
+              console.log('🖼️ Error details:', error);
+              reject(new Error('CORS blocked Firebase image'));
+            };
+          }
+          
+          img.src = imageInfo.url;
+        });
+      }
+
+      applyImageToFlippedBlocks(imageInfo) {
+        if (!this.processedImageData) {
+          // console.log('No processed image data available');
+          return;
+        }
+        
+        const flippedBlocks = this.renderer.getFlippedBlocks();
+        
+        if (flippedBlocks.length === 0) {
+          // console.log('No flipped blocks to apply image to');
+          return;
+        }
+        
+        // console.log(`Applying image pieces to ${flippedBlocks.length} flipped blocks`);
+        
+        // Apply individual image pieces to each flipped block
+        flippedBlocks.forEach(blockId => {
+          const block = this.quiltEngine.blocks.find(b => b.id === blockId);
+          if (block && this.processedImageData) {
+            // Calculate the portion of the image that should be shown for this block
+            // Normalize block coordinates from quilt space to image space, accounting for image offset
+            const minX = this.quiltBounds ? this.quiltBounds.minX : 0;
+            const minY = this.quiltBounds ? this.quiltBounds.minY : 0;
+            
+            // Calculate block position relative to the scaled image (accounting for centering offset)
+            const blockRelativeX = block.x - minX - (this.processedImageData.offsetX || 0);
+            const blockRelativeY = block.y - minY - (this.processedImageData.offsetY || 0);
+            
+            // Convert to image coordinates
+            const imageX = (blockRelativeX / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
+            const imageY = (blockRelativeY / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
+            const imageWidth = (block.width / this.processedImageData.quiltWidth) * this.processedImageData.imageWidth;
+            const imageHeight = (block.height / this.processedImageData.quiltHeight) * this.processedImageData.imageHeight;
+            
+            const patternId = `pattern-${blockId}`;
+            this.createBlockImagePattern(patternId, this.processedImageData.dataUrl, imageX, imageY, imageWidth, imageHeight);
+            
+            const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+            if (blockElement) {
+              blockElement.setAttribute('fill', `url(#${patternId})`);
+              blockElement.style.setProperty('fill', `url(#${patternId})`, 'important');
+              blockElement.style.setProperty('stroke', 'none', 'important');
+              blockElement.style.setProperty('opacity', '1', 'important');
+              console.log(`Applied image piece to block ${blockId} at ${imageX},${imageY} size ${imageWidth}x${imageHeight}`);
+            } else {
+              console.log(`❌ Block element not found for ${blockId}`);
+            }
+          }
+        });
+      }
+
+      createQuiltImagePattern(patternId, imageDataUrl) {
+        console.log('🖼️ Creating quilt image pattern:', patternId);
+        
+        // Remove existing pattern if it exists
+        const existingPattern = document.getElementById(patternId);
+        if (existingPattern) {
+          existingPattern.remove();
+        }
+        
+        // Create new pattern
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', patternId);
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('x', -this.processedImageData.minX);
+        pattern.setAttribute('y', -this.processedImageData.minY);
+        pattern.setAttribute('width', this.processedImageData.quiltWidth);
+        pattern.setAttribute('height', this.processedImageData.quiltHeight);
+        
+        // Add image to pattern
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        image.setAttribute('href', imageDataUrl);
+        image.setAttribute('width', this.processedImageData.quiltWidth);
+        image.setAttribute('height', this.processedImageData.quiltHeight);
+        image.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        
+        pattern.appendChild(image);
+        
+        // Add to SVG defs - ensure defs exists
+        let defs = document.querySelector('#quilt defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          const quilt = document.querySelector('#quilt');
+          quilt.insertBefore(defs, quilt.firstChild);
+        }
+        defs.appendChild(pattern);
+        
+        console.log('✅ Quilt image pattern created and added to defs:', patternId);
+      }
+
+      createBlockImagePattern(patternId, imageDataUrl, x, y, width, height) {
+                    console.log('🖼️ Creating pattern:', patternId, 'for block at', x, y, 'size', width, height);
+        
+        // Remove existing pattern if it exists
+        const existingPattern = document.getElementById(patternId);
+        if (existingPattern) {
+          existingPattern.remove();
+        }
+        
+        // Create new pattern
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', patternId);
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('x', 0);
+        pattern.setAttribute('y', 0);
+        pattern.setAttribute('width', width);
+        pattern.setAttribute('height', height);
+        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        pattern.setAttribute('patternContentUnits', 'userSpaceOnUse');
+        
+        // Add image to pattern - positioned to show only the relevant portion
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        image.setAttribute('href', imageDataUrl);
+        image.setAttribute('width', this.processedImageData.imageWidth);
+        image.setAttribute('height', this.processedImageData.imageHeight);
+        image.setAttribute('x', -x);
+        image.setAttribute('y', -y);
+        image.setAttribute('preserveAspectRatio', 'none');
+        image.setAttribute('style', 'shape-rendering: crispEdges; image-rendering: pixelated;');
+        
+        pattern.appendChild(image);
+        
+        // Add to SVG defs - ensure defs exists
+        let defs = document.querySelector('#quilt defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          const quilt = document.querySelector('#quilt');
+          quilt.insertBefore(defs, quilt.firstChild);
+        }
+        defs.appendChild(pattern);
+        
+        console.log('✅ Pattern created and added to defs:', patternId);
+      }
+
+      applyColorToFlippedBlocks(imageName) {
+        // Get all blocks that are currently flipped
+        const flippedBlocks = this.renderer.getFlippedBlocks();
+        
+        if (flippedBlocks.length === 0) {
+          console.log('No flipped blocks to apply color to');
+          return;
+        }
+        
+        const color = imageName === 'image1' ? '#ff6b6b' : '#4ecdc4'; // Red or teal
+        console.log(`Applying color ${color} to ${flippedBlocks.length} flipped blocks`);
+        
+        // Apply the color directly to all flipped blocks
+        flippedBlocks.forEach(blockId => {
+          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+          if (blockElement) {
+            blockElement.setAttribute('fill', color);
+            blockElement.style.setProperty('fill', color, 'important');
+            console.log(`Applied color ${color} to block ${blockId}`);
+          }
+        });
+      }
+
+      applyPatternToFlippedBlocks(patternId) {
+        // Get all blocks that are currently flipped
+        const flippedBlocks = this.renderer.getFlippedBlocks();
+        
+        if (flippedBlocks.length === 0) {
+          console.log('No flipped blocks to apply pattern to');
+          return;
+        }
+        
+        console.log(`Applying pattern to ${flippedBlocks.length} flipped blocks`);
+        
+        // Apply the SVG pattern to all flipped blocks
+        flippedBlocks.forEach(blockId => {
+          const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+          if (blockElement) {
+            const patternUrl = `url(#pattern-${patternId})`;
+            blockElement.setAttribute('fill', patternUrl);
+            blockElement.style.setProperty('fill', patternUrl, 'important');
+            console.log(`Applied pattern to block ${blockId}`);
+          }
+        });
+      }
+
+      createColorPattern(patternId) {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) {
+          console.error('Quilt SVG not found');
+          return;
+        }
+        
+        console.log('Creating color pattern for:', patternId);
+        
+        // Remove existing pattern if it exists
+        const existingPattern = quiltSVG.querySelector(`#pattern-${patternId}`);
+        if (existingPattern) {
+          existingPattern.remove();
+          console.log('Removed existing pattern');
+        }
+        
+        // Create defs if it doesn't exist
+        let defs = quiltSVG.querySelector('defs');
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          quiltSVG.insertBefore(defs, quiltSVG.firstChild);
+          console.log('Created defs element');
+        }
+        
+        // Create pattern with a solid color
+        const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+        pattern.setAttribute('id', `pattern-${patternId}`);
+        pattern.setAttribute('patternUnits', 'objectBoundingBox');
+        pattern.setAttribute('width', '1');
+        pattern.setAttribute('height', '1');
+        
+        // Create a rect with the color
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('width', '100%');
+        rect.setAttribute('height', '100%');
+        rect.setAttribute('fill', patternId === 'image1' ? '#ff6b6b' : '#4ecdc4'); // Red or teal
+        
+        pattern.appendChild(rect);
+        defs.appendChild(pattern);
+        
+        console.log(`Created color pattern: pattern-${patternId}`);
+        console.log('Pattern element:', pattern);
+      }
+
+      // OLD createImagePattern function removed - using new async version instead
+
+      // OLD applyImageToFlippedBlocks function removed - using new version instead
 
       // Debug function to test admin button - call from console: app.debugAdminButton()
       debugAdminButton() {
@@ -5088,18 +6182,92 @@
 
 
 
+      showRevealImageManager() {
+        const menu = document.createElement('div');
+        menu.className = 'reveal-image-manager';
+        menu.innerHTML = `
+          <div class="reveal-image-manager-content">
+            <h3>Quilt Reveal Image Manager</h3>
+            <div class="image-upload-section">
+              <h4>Upload New Reveal Image</h4>
+              <p style="font-size: 12px; color: #666; margin: 5px 0;">Images will be automatically resized to 412 x 800 pixels</p>
+              <input type="file" id="revealImageUpload" accept="image/*" style="margin: 10px 0;">
+              <button onclick="app.handleUploadRevealImage()">Upload Image</button>
+            </div>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
+            <div class="image-selection-section">
+              <h4>Select Active Reveal Image</h4>
+              <div id="revealImageOptions">
+                <p>Loading available images...</p>
+              </div>
+            </div>
+            <button onclick="this.parentElement.parentElement.remove()">Close</button>
+          </div>
+        `;
+        
+        menu.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          border: 2px solid #000;
+          border-radius: 8px;
+          padding: 20px;
+          z-index: 1001;
+          box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+          min-width: 300px;
+          max-height: 80vh;
+          overflow-y: auto;
+        `;
+        
+        const content = menu.querySelector('.reveal-image-manager-content');
+        content.style.cssText = `
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        `;
+        
+        const buttons = menu.querySelectorAll('button');
+        buttons.forEach(btn => {
+          btn.style.cssText = `
+            padding: 8px 16px;
+            border: 1px solid #000;
+            background: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+          `;
+        });
+        
+        menu.addEventListener('click', (e) => {
+          if (e.target === menu) {
+            menu.remove();
+          }
+        });
+        
+        document.body.appendChild(menu);
+        
+        // Load available images
+        this.loadRevealImageOptions();
+      }
+
       showAdminMenu() {
         const menu = document.createElement('div');
         menu.className = 'admin-menu';
         menu.innerHTML = `
           <div class="admin-menu-content">
-            <h3>Admin Controls</h3>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
-            <h4>Quote Management</h4>
+            <button onclick="app.handleTestInstagramImage()">📸 Generate Instagram Image</button>
+            <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ccc;">
+            <button onclick="app.showRevealImageManager()">Manage Reveal Images</button>
+        <button onclick="app.forceLoadFirebaseImage()">🔥 Load Firebase Image</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
         `;
@@ -5457,7 +6625,10 @@
         }
       }
 
-      renderQuilt() {
+      async renderQuilt() {
+        console.log('🔄 renderQuilt() called'); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+        // Debug panel removed for production
+        
         this.ensureQuiltFits();
         
         const state = this.quiltEngine.getState();
@@ -5466,6 +6637,16 @@
         
         // Ensure quote is displayed on quilt screen
         this.populateQuiltQuote();
+        
+        // Auto-load random reveal image if not already loaded (non-blocking)
+        // DISABLED: Causing CORS errors
+        // if (!this.currentRevealImage || !this.currentRevealImage.url) {
+        //   console.log('🎲 Auto-loading random reveal image...');
+        //   // Don't await - let it load in background
+        //   this.loadRandomRevealImage().catch(error => {
+        //     console.log('Could not auto-load reveal image:', error);
+        //   });
+        // }
       }
 
       ensureQuiltFits() {
@@ -5518,17 +6699,24 @@
 
       async handleAddColor() {
         try {
+          console.log('🎨 handleAddColor called');
+          console.log('🎨 Color values:', { hue: this.selectedHue, sat: this.selectedSaturation, light: this.selectedLightness });
+          
           const selectedColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+          console.log('🎨 Converted color:', selectedColor);
           
           // Debug logging
           // console.log('Color selection debug');
           
           if (!selectedColor || !Utils.validateHexColor(selectedColor)) {
             this.logger.warn('Invalid color selected');
+            console.log('❌ Color validation failed:', { selectedColor, isValid: Utils.validateHexColor(selectedColor) });
             return;
           }
 
+          console.log('🎨 Calling quiltEngine.addColor with:', selectedColor);
           const result = this.quiltEngine.addColor(selectedColor);
+          console.log('🎨 addColor result:', result);
           
           if (result) {
             // Find the new block for animation
@@ -5552,7 +6740,6 @@
             await this.saveQuilt();
             this.renderQuilt();
             
-    
             this.uiService.showScreen('screen-quilt');
           }
           
@@ -5642,6 +6829,100 @@
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testAddBlock');
+        }
+      }
+
+      // Test Instagram image generation
+      async handleTestInstagramImage() {
+        try {
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            this.uiService.showToast('Add some blocks to the quilt first!');
+            return;
+          }
+
+          // Generate Instagram image (quilt only, no quote)
+          const instagramImage = await this.archiveService.generateInstagramImage(
+            this.quiltEngine.blocks
+          );
+          
+          if (instagramImage) {
+            // Create download link
+            const link = document.createElement('a');
+            link.href = instagramImage;
+            link.download = `instagram-quilt-${new Date().toISOString().split('T')[0]}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Save current quilt to Firestore
+            await this.saveQuilt();
+            
+            this.uiService.showToast('Instagram image downloaded and saved to Firestore! 📸💾');
+            this.logger.log('✅ Instagram test image generated, downloaded, and saved to Firestore');
+          } else {
+            this.uiService.showToast('Failed to generate Instagram image');
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'testInstagramImage');
+        }
+      }
+
+      // Save current quilt to Firestore
+      async handleSaveToFirestore() {
+        try {
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            this.uiService.showToast('Add some blocks to the quilt first!');
+            return;
+          }
+
+          this.uiService.showToast('Saving to Firestore...');
+          
+          // Save the current quilt to Firestore
+          const success = await this.saveQuilt();
+          
+          if (success) {
+            this.uiService.showToast('✅ Quilt saved to Firestore!');
+            this.logger.log('✅ Quilt successfully saved to Firestore');
+          } else {
+            this.uiService.showToast('❌ Failed to save to Firestore');
+            this.logger.log('❌ Failed to save quilt to Firestore');
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'saveToFirestore');
+        }
+      }
+
+      // Test Zapier webhook
+      async handleTestZapierWebhook() {
+        try {
+          if (!window.zapierWebhookAPI) {
+            this.uiService.showToast('Zapier webhook API not available');
+            return;
+          }
+
+          this.uiService.showToast('Testing Zapier webhook...');
+          
+          // Test the webhook
+          const result = await window.zapierWebhookAPI.generateInstagramImage();
+          
+          if (result.success) {
+            console.log('✅ Zapier webhook test successful:', result);
+            this.uiService.showToast(`✅ Webhook test successful! Generated image for ${result.blockCount} blocks`);
+            
+            // Show the response in console for debugging
+            console.log('📸 Zapier webhook response:', {
+              success: result.success,
+              date: result.date,
+              blockCount: result.blockCount,
+              captionLength: result.caption.length,
+              imageSize: result.image.length
+            });
+          } else {
+            console.error('❌ Zapier webhook test failed:', result);
+            this.uiService.showToast(`❌ Webhook test failed: ${result.error}`);
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'testZapierWebhook');
         }
       }
 
@@ -5899,6 +7180,423 @@
         }
       }
 
+      // ===== FLIP FUNCTIONALITY =====
+      setupQuiltFlipHandlers() {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) {
+          this.logger.warn('Quilt SVG not found for flip handlers');
+          return;
+        }
+
+        // Remove existing handlers to prevent duplicates
+        quiltSVG.removeEventListener('click', this.handleQuiltFlip);
+        quiltSVG.removeEventListener('touchstart', this.handleQuiltFlip);
+        quiltSVG.removeEventListener('mousedown', this.handleSwipeStart);
+        quiltSVG.removeEventListener('touchstart', this.handleSwipeStart);
+
+        // Add swipe handlers for continuous flipping
+        this.isSwipingToFlip = false;
+        this.flippedInCurrentSwipe = new Set();
+        this.lastSwipeX = null;
+        this.lastSwipeY = null;
+
+        this.handleSwipeStart = (event) => {
+          console.log('🔄 MAIN HANDLER: Swipe start called');
+          // Debug panel removed for production
+          
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen || currentScreen.id !== 'screen-quilt') {
+            console.log('🔄 Swipe ignored - not on quilt screen');
+            return;
+          }
+
+          console.log('🔄 Swipe start:', event.type, event.target.tagName, 'touches:', event.touches?.length);
+
+          // Always activate swipe mode when starting on the quilt (rect or SVG)
+          this.isSwipingToFlip = true;
+          this.flippedInCurrentSwipe.clear();
+          // Debug panel removed for production
+          
+          // Store start position for tap detection
+          this.swipeStartTime = Date.now();
+          this.swipeStartX = event.touches ? event.touches[0].clientX : event.clientX;
+          this.swipeStartY = event.touches ? event.touches[0].clientY : event.clientY;
+          
+          // REMOVED: Tap detection from handleSwipeStart to prevent double-flipping
+          // Tap detection will be handled in handleSwipeEnd based on movement distance
+          
+          console.log('🔄 Swipe mode activated');
+        };
+
+        this.handleSwipeMove = (event) => {
+          try {
+            // Debug panel removed for production
+            
+            if (!this.isSwipingToFlip) {
+              // Debug panel removed for production
+              return;
+            }
+            
+                       // Get current coordinates - TRYING DIFFERENT APPROACH for mobile touch
+           let currentX, currentY;
+           // Debug panel removed for production
+           
+           // Try multiple sources for coordinates
+           if (event.changedTouches && event.changedTouches.length > 0) {
+             currentX = event.changedTouches[0].clientX;
+             currentY = event.changedTouches[0].clientY;
+           } else if (event.touches && event.touches.length > 0) {
+             currentX = event.touches[0].clientX;
+             currentY = event.touches[0].clientY;
+           } else if (event.targetTouches && event.targetTouches.length > 0) {
+             currentX = event.targetTouches[0].clientX;
+             currentY = event.targetTouches[0].clientY;
+           } else {
+             currentX = event.clientX;
+             currentY = event.clientY;
+           }
+           
+           // Check if coordinates are actually changing (with some tolerance)
+           const coordChangeThreshold = 5; // pixels
+           const xDiff = Math.abs(currentX - (this.lastSwipeX || 0));
+           const yDiff = Math.abs(currentY - (this.lastSwipeY || 0));
+           
+           if (xDiff < coordChangeThreshold && yDiff < coordChangeThreshold) {
+             // Debug panel removed for production
+             return; // Skip if coordinates haven't changed enough
+           }
+           
+           this.lastSwipeX = currentX;
+           this.lastSwipeY = currentY;
+          
+                      console.log('🔄 Swipe move:', event.type, 'touches:', event.touches?.length, 'at', currentX, currentY);
+            // Debug panel removed for production
+            
+            // Now prevent default since we're actually swiping
+            event.preventDefault();
+            this.flipBlockAtPosition(event);
+          } catch (error) {
+            // Debug panel removed for production
+            console.error('Error in handleSwipeMove:', error);
+          }
+        };
+
+        this.handleSwipeEnd = (event) => {
+          // Check if this was a tap (minimal movement)
+          const swipeDuration = Date.now() - this.swipeStartTime;
+          const swipeDistance = Math.sqrt(
+            Math.pow((event.changedTouches ? event.changedTouches[0].clientX : event.clientX) - this.swipeStartX, 2) +
+            Math.pow((event.changedTouches ? event.changedTouches[0].clientY : event.clientY) - this.swipeStartY, 2)
+          );
+          
+          // this.updateDebugPanel(`Swipe end: duration=${swipeDuration}ms, distance=${Math.round(swipeDistance)}px`); // DISABLED FOR PRODUCTION
+          
+          // Handle taps (short duration and minimal movement) for mobile devices
+          if (swipeDuration < 300 && swipeDistance < 20) {
+            console.log('🔄 TAP detected in swipe end');
+            
+            // Find the block at the tap position
+            let elementAtPosition = document.elementFromPoint(this.swipeStartX, this.swipeStartY);
+            
+            // If we didn't get a rect, try to find the closest one
+            if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
+              const allRects = document.querySelectorAll('#quilt rect');
+              let closestRect = null;
+              let closestDistance = Infinity;
+              
+              allRects.forEach(rect => {
+                const rectBox = rect.getBoundingClientRect();
+                const rectCenterX = rectBox.left + rectBox.width / 2;
+                const rectCenterY = rectBox.top + rectBox.height / 2;
+                const distance = Math.sqrt(Math.pow(this.swipeStartX - rectCenterX, 2) + Math.pow(this.swipeStartY - rectCenterY, 2));
+                
+                if (distance < closestDistance) {
+                  closestDistance = distance;
+                  closestRect = rect;
+                }
+              });
+              
+              if (closestRect && closestDistance < 50) {
+                elementAtPosition = closestRect;
+              }
+            }
+            
+            if (elementAtPosition && elementAtPosition.tagName === 'rect') {
+              const blockId = elementAtPosition.getAttribute('data-block-id');
+              if (blockId) {
+                const newFlipState = this.renderer.toggleBlockFlip(blockId);
+                
+                // Apply CSS class and color directly to the element
+                if (newFlipState) {
+                  elementAtPosition.classList.add('block-flipped');
+                  
+                  // Apply reveal image if one is selected
+                  if (this.currentRevealImage && this.currentRevealImage.url) {
+                    // Apply the single reveal image to all flipped blocks
+                    this.applyImageToFlippedBlocks(this.currentRevealImage);
+                    console.log(`TAP: Applied reveal image to all flipped blocks`);
+                  } else if (this.currentRevealImage) {
+                    // Fallback to color if image not loaded yet
+                    const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+                    elementAtPosition.setAttribute('fill', color);
+                    elementAtPosition.style.setProperty('fill', color, 'important');
+                    console.log(`TAP: Applied color ${color} to block ${blockId}`);
+                  }
+                } else {
+                  elementAtPosition.classList.remove('block-flipped');
+                  elementAtPosition.removeAttribute('fill');
+                }
+                
+                console.log('🔄 TAP: Flipped block', blockId);
+              }
+            }
+          }
+          
+          // Add a small delay before clearing swipe state to prevent race conditions
+          setTimeout(() => {
+            this.isSwipingToFlip = false;
+            this.flippedInCurrentSwipe.clear();
+            // Debug panel removed for production
+            console.log('🔄 Swipe ended');
+          }, 50); // 50ms delay to allow handleSwipeMove to process
+        };
+
+        // Add new handlers
+        this.handleQuiltFlip = (event) => {
+          // Only allow flip on quilt screen and only if clicking on actual quilt blocks
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen || currentScreen.id !== 'screen-quilt') {
+            console.log('🔄 Flip ignored - not on quilt screen');
+            return;
+          }
+          
+          // Check if the click target is a rect (quilt block)
+          if (event.target.tagName !== 'rect') {
+            console.log('🔄 Flip ignored - not clicking on a quilt block');
+            return;
+          }
+          
+          event.preventDefault();
+          event.stopPropagation();
+          
+          // Get the block ID from the clicked rect
+          const blockId = event.target.getAttribute('data-block-id');
+          if (!blockId) {
+            console.log('🔄 No block ID found');
+            return;
+          }
+          
+          console.log('🔄 Flipping individual block:', blockId);
+          
+          // Toggle the individual block's flip state
+          const newFlipState = this.renderer.toggleBlockFlip(blockId);
+          
+          // Apply CSS class and image directly to the element
+          if (newFlipState) {
+            event.target.classList.add('block-flipped');
+            
+            // Apply reveal image if one is selected
+            if (this.currentRevealImage && this.currentRevealImage.url) {
+              console.log('🖼️ TAP: Applying image to block', blockId);
+              // Apply the single reveal image to all flipped blocks
+              this.applyImageToFlippedBlocks(this.currentRevealImage);
+              console.log(`✅ TAP: Applied reveal image to all flipped blocks`);
+            } else if (this.currentRevealImage) {
+              // Fallback to color if image not loaded yet
+              const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+              event.target.setAttribute('fill', color);
+              event.target.style.setProperty('fill', color, 'important');
+              console.log(`TAP: Applied color ${color} to block ${blockId}`);
+            } else {
+              console.log('TAP: No reveal image selected');
+            }
+                      } else {
+              event.target.classList.remove('block-flipped');
+              // Remove background image when unflipped
+              event.target.removeAttribute('fill'); // Let CSS handle the fill
+            }
+          
+          // Add flip animation to the specific block
+          event.target.style.transition = 'transform 0.3s ease-in-out';
+          
+          // DON'T call renderQuilt() - it recreates DOM elements and wipes out CSS classes
+          // this.renderQuilt();
+          
+          this.logger.log(`🔄 Block ${blockId} flip toggled: ${newFlipState}`);
+        };
+
+        // Add swipe event listeners
+        quiltSVG.addEventListener('mousedown', this.handleSwipeStart);
+        quiltSVG.addEventListener('mousemove', this.handleSwipeMove);
+        quiltSVG.addEventListener('mouseup', this.handleSwipeEnd);
+        quiltSVG.addEventListener('mouseleave', this.handleSwipeEnd);
+        
+        // Use document-level listeners for touch events (more reliable)
+        document.addEventListener('touchstart', this.handleSwipeStart, { passive: false });
+        document.addEventListener('touchmove', this.handleSwipeMove, { passive: false });
+        document.addEventListener('touchend', this.handleSwipeEnd, { passive: false });
+        
+        // Add click handler for tap events (only click, not touchstart to avoid conflicts)
+        quiltSVG.addEventListener('click', this.handleQuiltFlip);
+        
+        // Debug: Log that event listeners are set up
+        // Debug panel removed for production
+        
+        // REMOVED: Duplicate SVG touch listeners that were causing conflicts
+        
+        // Tap handling is now done in handleSwipeEnd based on movement distance
+        
+        // Debug panel removed for production
+        // this.createDebugPanel();
+        
+        // Touch event testing removed for production
+        // this.testTouchEvents();
+        
+        // Make sure the SVG is interactive
+        quiltSVG.style.cursor = 'pointer';
+        quiltSVG.style.pointerEvents = 'auto';
+        quiltSVG.style.userSelect = 'none';
+        
+        // Prevent scrolling on the quilt area
+        quiltSVG.style.touchAction = 'none';
+        quiltSVG.style.overscrollBehavior = 'none';
+        
+        // Also prevent scrolling on the body when touching the quilt
+        document.body.style.overscrollBehavior = 'none';
+        
+        this.logger.log('🔄 Quilt swipe-to-flip handlers set up');
+      }
+
+      // Debug panel creation removed for production
+      // createDebugPanel() { ... }
+
+      // Debug panel update removed for production
+      // updateDebugPanel(message) { ... }
+
+      // Touch event testing removed for production
+      // testTouchEvents() { ... }
+
+      flipBlockAtPosition(event) {
+        // Debug panel removed for production
+        
+        let clientX, clientY;
+        
+        // Get coordinates from mouse or touch event
+        if (event.touches && event.touches.length > 0) {
+          clientX = event.touches[0].clientX;
+          clientY = event.touches[0].clientY;
+          console.log('🔄 Touch coordinates:', clientX, clientY);
+        } else if (event.changedTouches && event.changedTouches.length > 0) {
+          // For touchend events
+          clientX = event.changedTouches[0].clientX;
+          clientY = event.changedTouches[0].clientY;
+          console.log('🔄 Changed touch coordinates:', clientX, clientY);
+        } else {
+          clientX = event.clientX;
+          clientY = event.clientY;
+          console.log('🔄 Mouse coordinates:', clientX, clientY);
+        }
+        
+        console.log('🔄 Looking for block at:', clientX, clientY);
+        // Debug panel removed for production
+        
+        // Find the element at this position - look for rect specifically
+        let elementAtPosition = document.elementFromPoint(clientX, clientY);
+        
+                  // If we didn't get a rect, try looking at all elements at this point
+          if (!elementAtPosition || elementAtPosition.tagName !== 'rect') {
+            const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
+            // this.updateDebugPanel(`Elements at point: ${elementsAtPoint.map(el => el.tagName).join(', ')}`); // DISABLED FOR PRODUCTION
+            const rectElement = elementsAtPoint.find(el => el.tagName === 'rect');
+            if (rectElement) {
+              elementAtPosition = rectElement;
+              // this.updateDebugPanel(`Found rect in elements list`); // DISABLED FOR PRODUCTION
+            }
+          }
+        
+        console.log('🔄 Element found:', elementAtPosition?.tagName, elementAtPosition?.getAttribute('data-block-id'));
+        // Debug panel removed for production
+        
+        if (elementAtPosition && elementAtPosition.tagName === 'rect') {
+          const blockId = elementAtPosition.getAttribute('data-block-id');
+          // Debug panel removed for production
+          
+          if (blockId && !this.flippedInCurrentSwipe.has(blockId)) {
+            // Flip this block and remember we flipped it in this swipe
+            this.flippedInCurrentSwipe.add(blockId);
+            
+            const newFlipState = this.renderer.toggleBlockFlip(blockId);
+            // Debug panel removed for production
+            
+            // Apply CSS class directly to the element
+            if (newFlipState) {
+              elementAtPosition.classList.add('block-flipped');
+              
+              // Apply reveal image if one is selected
+              if (this.currentRevealImage && this.currentRevealImage.url) {
+                // Apply the single reveal image to all flipped blocks
+                this.applyImageToFlippedBlocks(this.currentRevealImage);
+                console.log(`Applied reveal image to all flipped blocks`);
+              } else if (this.currentRevealImage) {
+                // Fallback to color if image not loaded yet
+                const color = this.currentRevealImage === 'image1' ? '#ff6b6b' : '#4ecdc4';
+                elementAtPosition.setAttribute('fill', color);
+                elementAtPosition.style.setProperty('fill', color, 'important');
+                console.log(`Applied color ${color} to block ${blockId}`);
+              } else {
+                console.log('No reveal image selected');
+              }
+            } else {
+              elementAtPosition.classList.remove('block-flipped');
+                          // Remove background image when unflipped
+            elementAtPosition.removeAttribute('fill'); // Let CSS handle the fill
+            }
+            
+            // DON'T call renderQuilt() - it recreates DOM elements and wipes out CSS classes
+            // this.updateDebugPanel(`Calling renderQuilt()`); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+            // this.renderQuilt(); // NEEDED - to apply CSS class to DOM elements
+            
+            console.log(`🔄 Swiped block ${blockId} flip toggled: ${newFlipState}`);
+            // Debug panel removed for production
+          } else if (blockId) {
+            console.log(`🔄 Block ${blockId} already flipped in this swipe`);
+            // Debug panel removed for production
+          } else {
+            // this.updateDebugPanel(`SWIPE: No blockId found on rect`); // DISABLED FOR PRODUCTION
+          }
+        } else {
+          console.log('🔄 No rect found at position');
+          // this.updateDebugPanel('SWIPE: No rect found at position'); // DISABLED FOR PRODUCTION
+        }
+      }
+
+      removeQuiltFlipHandlers() {
+        const quiltSVG = document.getElementById('quilt');
+        if (quiltSVG) {
+          // Remove swipe handlers
+          quiltSVG.removeEventListener('mousedown', this.handleSwipeStart);
+          quiltSVG.removeEventListener('mousemove', this.handleSwipeMove);
+          quiltSVG.removeEventListener('mouseup', this.handleSwipeEnd);
+          quiltSVG.removeEventListener('mouseleave', this.handleSwipeEnd);
+          quiltSVG.removeEventListener('touchstart', this.handleSwipeStart);
+          quiltSVG.removeEventListener('touchmove', this.handleSwipeMove);
+          quiltSVG.removeEventListener('touchend', this.handleSwipeEnd);
+          
+          // Remove document listeners
+          document.removeEventListener('touchstart', this.handleSwipeStart);
+          document.removeEventListener('touchmove', this.handleSwipeMove);
+          document.removeEventListener('touchend', this.handleSwipeEnd);
+          
+          // Remove old click handler if it exists
+          if (this.handleQuiltFlip) {
+            quiltSVG.removeEventListener('click', this.handleQuiltFlip);
+            quiltSVG.removeEventListener('touchstart', this.handleQuiltFlip);
+          }
+          
+          this.logger.log('🔄 Quilt swipe-to-flip handlers removed');
+        }
+      }
+
       async handleCreateArchive() {
         try {
           const archiveEntry = await this.createArchiveSnapshot();
@@ -6120,6 +7818,7 @@
       window.resetQuilt = () => app.handleResetQuilt();
       window.createArchive = () => app.handleCreateArchive();
       window.createTestArchives = () => app.handleCreateTestArchives();
+      window.generateInstagramImage = () => app.handleTestInstagramImage();
       
       // Admin console commands
       window.enableAdmin = () => app.enableAdminMode();
@@ -6227,6 +7926,95 @@
     });
 
     console.log('🧵 Our Daily Quilt Beta - Loading...');
+    
+    // ===== ZAPIER WEBHOOK API =====
+    // Simple API endpoint for Zapier to generate Instagram images
+    window.zapierWebhookAPI = {
+      // Generate Instagram image for Zapier
+      async generateInstagramImage(date = null) {
+        try {
+          console.log('📸 Zapier webhook called for Instagram image generation');
+          
+          // Wait for app to be ready
+          let attempts = 0;
+          while (!window.app && attempts < 50) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+          }
+          
+          if (!window.app) {
+            throw new Error('App not initialized');
+          }
+          
+          // Load quilt data for the specified date (or today)
+          let quiltData;
+          if (date) {
+            // Load specific date from archive
+            const archiveEntry = window.app.archiveService.archives.get(date);
+            if (archiveEntry && archiveEntry.quilt) {
+              quiltData = archiveEntry.quilt;
+            } else {
+              throw new Error(`No archive found for date: ${date}`);
+            }
+          } else {
+            // Use current quilt
+            if (!window.app.quiltEngine.blocks || window.app.quiltEngine.blocks.length <= 1) {
+              throw new Error('No quilt data available');
+            }
+            quiltData = window.app.quiltEngine.blocks;
+          }
+          
+          // Generate Instagram image
+          const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData);
+          
+          if (!instagramImage) {
+            throw new Error('Failed to generate Instagram image');
+          }
+          
+          // Get quote for caption
+          let quote = null;
+          if (date) {
+            quote = window.app.quoteService.getQuoteForDate(date);
+          } else {
+            quote = window.app.quoteService.getTodayQuote();
+          }
+          
+          // Return data for Zapier
+          const response = {
+            success: true,
+            image: instagramImage,
+            caption: `${quote.text} — ${quote.author}`,
+            date: date || new Date().toISOString().split('T')[0],
+            blockCount: quiltData.length,
+            timestamp: new Date().toISOString()
+          };
+          
+          console.log('✅ Instagram image generated for Zapier:', response.date);
+          return response;
+          
+        } catch (error) {
+          console.error('❌ Zapier webhook error:', error);
+          return {
+            success: false,
+            error: error.message,
+            timestamp: new Date().toISOString()
+          };
+        }
+      },
+      
+      // Health check endpoint
+      async healthCheck() {
+        return {
+          status: 'healthy',
+          appReady: !!window.app,
+          timestamp: new Date().toISOString()
+        };
+      }
+    };
+    
+    // Make webhook available globally
+    window.generateInstagramForZapier = window.zapierWebhookAPI.generateInstagramImage;
+    window.zapierHealthCheck = window.zapierWebhookAPI.healthCheck;
     
     // Initialize Firebase after CONFIG is defined
     (async () => {
