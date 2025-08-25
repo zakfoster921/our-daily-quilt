@@ -2523,59 +2523,25 @@ try {
         const isMobile = screenWidth <= 768;
         
         if (isMobile) {
-          // Mobile: Use 4:5 aspect ratio for Instagram-friendly experience
-          const targetAspectRatio = 4/5;
-          const availableWidth = screenWidth * 0.95; // 95% of screen width
-          const availableHeight = screenHeight * 0.95; // 95% of screen height
-          
-          if (availableWidth / availableHeight > targetAspectRatio) {
-            // Screen is wider than 4:5 ratio - fit to height
-            const height = availableHeight;
-            const width = availableHeight * targetAspectRatio;
-            return {
-              width: width,
-              height: height,
-              viewBoxWidth: width,
-              viewBoxHeight: height
-            };
-          } else {
-            // Screen is taller than 4:5 ratio - fit to width
-            const width = availableWidth;
-            const height = availableWidth / targetAspectRatio;
-            return {
-              width: width,
-              height: height,
-              viewBoxWidth: width,
-              viewBoxHeight: height
-            };
-          }
+          // Mobile: Use fixed 4:5 dimensions for Instagram-friendly experience
+          const width = 1070;  // 1080 - 10px padding
+          const height = 1340; // 1350 - 10px padding
+          return {
+            width: width,
+            height: height,
+            viewBoxWidth: width,
+            viewBoxHeight: height
+          };
         } else {
-          // Desktop: Use 4:5 aspect ratio, account for button container
-          const targetAspectRatio = 4/5;
-          const availableWidth = screenWidth * 0.7; // 70% for quilt container
-          const availableHeight = screenHeight * 0.9; // 90% of screen height
-          
-          if (availableWidth / availableHeight > targetAspectRatio) {
-            // Available area is wider than 4:5 ratio - fit to height
-            const height = availableHeight;
-            const width = availableHeight * targetAspectRatio;
-            return {
-              width: width,
-              height: height,
-              viewBoxWidth: width,
-              viewBoxHeight: height
-            };
-          } else {
-            // Available area is taller than 4:5 ratio - fit to width
-            const width = availableWidth;
-            const height = availableWidth / targetAspectRatio;
-            return {
-              width: width,
-              height: height,
-              viewBoxWidth: width,
-              viewBoxHeight: height
-            };
-          }
+          // Desktop: Use fixed 4:5 dimensions for Instagram-friendly experience
+          const width = 1070;  // 1080 - 10px padding
+          const height = 1340; // 1350 - 10px padding
+          return {
+            width: width,
+            height: height,
+            viewBoxWidth: width,
+            viewBoxHeight: height
+          };
         }
       }
 
@@ -3086,32 +3052,13 @@ try {
           ctx.fillStyle = '#f6f4f1';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           
-          // Use the same 4:5 target dimensions as the main app
-          const targetAspectRatio = 4/5;
-          const targetWidth = 1000; // Base width
-          const targetHeight = targetWidth / targetAspectRatio; // 1250 for 4:5 ratio
+          // Use fixed 4:5 dimensions (1070 x 1340) - same as main app
+          const targetWidth = 1070;  // 1080 - 10px padding
+          const targetHeight = 1340; // 1350 - 10px padding
           
-          // Calculate quilt bounds
-          const minX = Math.min(...blocks.map(b => b.x));
-          const minY = Math.min(...blocks.map(b => b.y));
-          const maxX = Math.max(...blocks.map(b => b.x + b.width));
-          const maxY = Math.max(...blocks.map(b => b.y + b.height));
-          
-          const quiltWidth = maxX - minX;
-          const quiltHeight = maxY - minY;
-          
-          // Scale the quilt to fit the 4:5 target dimensions (same as main app)
-          const scaleX = targetWidth / quiltWidth;
-          const scaleY = targetHeight / quiltHeight;
-          const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
-          
-          // Calculate the scaled quilt dimensions
-          const scaledQuiltWidth = quiltWidth * scale;
-          const scaledQuiltHeight = quiltHeight * scale;
-          
-          // Center the quilt in the Instagram canvas
-          const offsetX = (canvas.width - scaledQuiltWidth) / 2;
-          const offsetY = (canvas.height - scaledQuiltHeight) / 2;
+          // Center the quilt in the Instagram canvas (5px padding all around)
+          const offsetX = 5;  // 5px from left
+          const offsetY = 5;  // 5px from top
           
           // Draw each block
           blocks.forEach(block => {
@@ -3123,11 +3070,11 @@ try {
             const jitteredX = block.x + jitterX;
             const jitteredY = block.y + jitterY;
             
-            // Transform to canvas coordinates
-            const canvasX = offsetX + (jitteredX - minX) * scale;
-            const canvasY = offsetY + (jitteredY - minY) * scale;
-            const canvasWidth = block.width * scale;
-            const canvasHeight = block.height * scale;
+            // Transform to canvas coordinates (no scaling needed)
+            const canvasX = offsetX + jitteredX;
+            const canvasY = offsetY + jitteredY;
+            const canvasWidth = block.width;
+            const canvasHeight = block.height;
             
             // Save context for rotation
             ctx.save();
@@ -3896,50 +3843,18 @@ try {
           quiltHeight = maxY - minY;
         }
         
-        // Use 4:5 target dimensions from getQuiltDimensions
-        const dimensions = Utils.getQuiltDimensions();
-        const targetWidth = dimensions.width;
-        const targetHeight = dimensions.height;
+        // Use fixed 4:5 dimensions (1070 x 1340)
+        const targetWidth = 1070;
+        const targetHeight = 1340;
         
-        // Mobile: Add padding around quilt bounds to create breathing room
-        const padding = Math.max(quiltWidth, quiltHeight) * 0.02; // 2% padding
-        const paddedMinX = minX - padding;
-        const paddedMinY = minY - padding;
-        const paddedWidth = quiltWidth + (padding * 2);
-        const paddedHeight = quiltHeight + (padding * 2);
-        
-        // console.log('🔍 DEBUG MOBILE:');
-        // console.log('  - Original bounds:', `${minX}, ${minY}, ${quiltWidth}, ${quiltHeight}`);
-        // console.log('  - Padding:', padding);
-        // console.log('  - Padded bounds:', `${paddedMinX}, ${paddedMinY}, ${paddedWidth}, ${paddedHeight}`);
-        
-        // Set viewBox to 4:5 target dimensions (0, 0, targetWidth, targetHeight)
+        // Set viewBox to fixed 4:5 dimensions
         this.quiltSVG.setAttribute('viewBox', `0 0 ${targetWidth} ${targetHeight}`);
         
-        // Set SVG dimensions to target size (fits within viewport)
+        // Set SVG dimensions
         this.quiltSVG.setAttribute('width', targetWidth);
         this.quiltSVG.setAttribute('height', targetHeight);
         
-        // Calculate scaling to fill 4:5 frame with quilt content
-        const scaleX = targetWidth / paddedWidth;
-        const scaleY = targetHeight / paddedHeight;
-        const scale = Math.max(scaleX, scaleY); // Use larger scale to fill completely
-        console.log('🔧 USING Math.max SCALE:', scale, '(should be larger than before)');
-        
-        // Calculate centering offset
-        const scaledQuiltWidth = paddedWidth * scale;
-        const scaledQuiltHeight = paddedHeight * scale;
-        const offsetX = (targetWidth - scaledQuiltWidth) / 2;
-        const offsetY = (targetHeight - scaledQuiltHeight) / 2;
-        
-        // Debug logging
-        console.log('🔍 SCALING DEBUG:');
-        console.log('  - Target dimensions:', targetWidth, 'x', targetHeight);
-        console.log('  - Padded quilt bounds:', paddedWidth, 'x', paddedHeight);
-        console.log('  - Scale factors:', scaleX, scaleY);
-        console.log('  - Final scale:', scale);
-        console.log('  - Scaled quilt size:', scaledQuiltWidth, 'x', scaledQuiltHeight);
-        console.log('  - Offsets:', offsetX, offsetY);
+        console.log('🔧 USING FIXED 4:5 DIMENSIONS:', targetWidth, 'x', targetHeight);
         
         // Mobile: Center the quilt content
         this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -3965,17 +3880,11 @@ try {
           const jitterY = (Math.random() - 0.5) * 6;
           const jitterRotation = (Math.random() - 0.5) * 3;
           
-          // Transform block coordinates to fit within 4:5 frame
-          const transformedX = (block.x - paddedMinX) * scale + offsetX + jitterX;
-          const transformedY = (block.y - paddedMinY) * scale + offsetY + jitterY;
-          const transformedWidth = block.width * scale;
-          const transformedHeight = block.height * scale;
-          
           const jitteredBlock = {
-            x: transformedX,
-            y: transformedY,
-            width: transformedWidth,
-            height: transformedHeight,
+            x: block.x + jitterX,
+            y: block.y + jitterY,
+            width: block.width,
+            height: block.height,
             color: block.color,
             rotation: jitterRotation
           };
