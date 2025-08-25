@@ -175,7 +175,11 @@ app.post('/api/generate-instagram', async (req, res) => {
     imageStore.set(filename, imageData);
     
     // Create public URL
-    const baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
+    let baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
+    // Ensure baseUrl always starts with https://
+    if (!baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
+    }
     const imageUrl = `${baseUrl}/api/image/${filename}`;
     
     const result = {
