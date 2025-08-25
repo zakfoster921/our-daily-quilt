@@ -963,16 +963,16 @@ try {
         width: calc(100% - 40px) !important;
         max-width: calc(100vw - 40px) !important;
         height: calc((100vw - 40px) * 1.25) !important;
-        max-height: 90vh !important;
+        max-height: calc(100vh - 40px) !important;
         position: relative !important;
         flex-shrink: 0 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         overflow: visible !important;
-        margin: 0 20px !important;
+        margin: 20px !important;
         padding: 0 !important;
-        border: 3px solid blue !important;
+        border: none !important;
         box-sizing: border-box !important;
       }
       
@@ -1052,7 +1052,7 @@ try {
         width: 100% !important;
         max-width: 100vw !important;
         box-sizing: border-box !important;
-        border: 3px solid green !important;
+        border: none !important;
       }
       
       #screen-portal,
@@ -1756,7 +1756,7 @@ try {
       </div>
       
                      <!-- Button container - side panel on desktop -->
-                               <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: 3px solid orange;">
+                               <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: none;">
                  
         <!-- Quote display at top of button container -->
         <div class="quilt-quote-display" style="margin-bottom: 20px;">
@@ -3856,6 +3856,32 @@ try {
         this.lastAddedIndex = null;
         this.userPieces = new Set();
       }
+      
+      // Calculate progressive jitter decrease based on number of blocks
+      calculateJitterMultiplier(blockCount) {
+        if (blockCount <= 10) {
+          return 1.0; // Full jitter for first 10 blocks
+        } else if (blockCount >= 60) {
+          return 0.05; // Very minimal jitter after 60 blocks
+        } else {
+          // More aggressive decrease from 1.0 to 0.05 between 10 and 60 blocks
+          const progress = (blockCount - 10) / (60 - 10);
+          return 1.0 - (progress * 0.95);
+        }
+      }
+      
+      // Calculate rotation jitter multiplier (decreases to minimal by 100 blocks)
+      calculateRotationMultiplier(blockCount) {
+        if (blockCount <= 10) {
+          return 1.0; // Full rotation for first 10 blocks
+        } else if (blockCount >= 100) {
+          return 0.33; // Minimal rotation after 100 blocks (0.75° × 0.33 = 0.25°)
+        } else {
+          // Decrease from 1.0 to 0.33 between 10 and 100 blocks
+          const progress = (blockCount - 10) / (100 - 10);
+          return 1.0 - (progress * 0.67);
+        }
+      }
 
       initialize() {
         this.quiltSVG = document.getElementById('quilt');
@@ -3935,14 +3961,24 @@ try {
         `;
         this.quiltSVG.appendChild(defs);
 
+        const jitterMultiplier = this.calculateJitterMultiplier(blocks.length);
+        const rotationMultiplier = this.calculateRotationMultiplier(blocks.length);
+        
+        // Debug: Log jitter multipliers
+        console.log(`🎯 Progressive jitter: ${blocks.length} blocks → position: ${jitterMultiplier.toFixed(2)}, rotation: ${rotationMultiplier.toFixed(2)}`);
+        
         blocks.forEach((block, i) => {
-          const jitterX = (Math.random() - 0.5) * 6;
-          const jitterY = (Math.random() - 0.5) * 6;
-          const jitterRotation = (Math.random() - 0.5) * 3;
+          const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
+          const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
+          const jitterRotation = (Math.random() - 0.5) * 1.5 * rotationMultiplier;
+          
+          // Calculate gap compensation for rotation
+          const rotationRadians = jitterRotation * Math.PI / 180;
+          const maxExtension = Math.max(block.width, block.height) * Math.abs(Math.sin(rotationRadians)) * 0.3;
           
           const jitteredBlock = {
-            x: block.x + jitterX,
-            y: block.y + jitterY,
+            x: block.x + jitterX - (maxExtension * 0.5),
+            y: block.y + jitterY - (maxExtension * 0.5),
             width: block.width,
             height: block.height,
             color: block.color,
@@ -4077,6 +4113,19 @@ try {
         this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
         this.colorHasBeenSelected = false;
         this.isDragging = false;
+      }
+      
+      // Calculate progressive jitter decrease based on number of blocks
+      calculateJitterMultiplier(blockCount) {
+        if (blockCount <= 10) {
+          return 1.0; // Full jitter for first 10 blocks
+        } else if (blockCount >= 60) {
+          return 0.05; // Very minimal jitter after 60 blocks
+        } else {
+          // More aggressive decrease from 1.0 to 0.05 between 10 and 60 blocks
+          const progress = (blockCount - 10) / (60 - 10);
+          return 1.0 - (progress * 0.95);
+        }
       }
       
       checkDeviceAndRedirect() {
@@ -6255,10 +6304,19 @@ try {
       }
 
       showAdminMenu() {
+        const currentBlockCount = this.quiltEngine ? this.quiltEngine.blocks.length : 0;
+        const jitterMultiplier = this.renderer ? this.renderer.calculateJitterMultiplier(currentBlockCount) : 1.0;
+        const rotationMultiplier = this.renderer ? this.renderer.calculateRotationMultiplier(currentBlockCount) : 1.0;
+        
         const menu = document.createElement('div');
         menu.className = 'admin-menu';
         menu.innerHTML = `
           <div class="admin-menu-content">
+            <div style="background: #f0f0f0; padding: 10px; border-radius: 4px; margin-bottom: 10px; text-align: center; font-weight: bold;">
+              📊 Current Blocks: ${currentBlockCount}<br>
+              🎯 Position Jitter: ${jitterMultiplier.toFixed(2)}<br>
+              🔄 Rotation Jitter: ${rotationMultiplier.toFixed(2)}
+            </div>
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
