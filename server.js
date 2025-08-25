@@ -38,8 +38,8 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
   const canvas = createCanvas(1080, 1350); // 4:5 ratio for Instagram
   const ctx = canvas.getContext('2d');
   
-  // Fill background
-  ctx.fillStyle = '#f8f9fa';
+  // Fill background with true white to match Instagram
+  ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, 1080, 1350);
   
   // Calculate quilt bounds from actual block positions
