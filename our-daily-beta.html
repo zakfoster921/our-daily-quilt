@@ -2874,8 +2874,13 @@ try {
           const offsetX = 5;  // 5px from left
           const offsetY = 5;  // 5px from top
           
-          // Debug: Log block dimensions
+          // Debug: Log block dimensions and coordinate bounds
+          const minX = Math.min(...blocks.map(b => b.x));
+          const minY = Math.min(...blocks.map(b => b.y));
+          const maxX = Math.max(...blocks.map(b => b.x + b.width));
+          const maxY = Math.max(...blocks.map(b => b.y + b.height));
           console.log('🔍 INSTAGRAM DEBUG - Block dimensions:', blocks.map(b => `${b.width}x${b.height} at (${b.x},${b.y})`));
+          console.log('🔍 INSTAGRAM DEBUG - Coordinate bounds:', `X: ${minX} to ${maxX} (${maxX-minX}), Y: ${minY} to ${maxY} (${maxY-minY})`);
           
           // Draw each block
           blocks.forEach(block => {
@@ -2887,9 +2892,9 @@ try {
             const jitteredX = block.x + jitterX;
             const jitteredY = block.y + jitterY;
             
-            // Transform to canvas coordinates (no scaling needed)
-            const canvasX = offsetX + jitteredX;
-            const canvasY = offsetY + jitteredY;
+            // Transform to canvas coordinates (handle negative coordinates)
+            const canvasX = offsetX + (jitteredX - minX);
+            const canvasY = offsetY + (jitteredY - minY);
             const canvasWidth = block.width;
             const canvasHeight = block.height;
             
