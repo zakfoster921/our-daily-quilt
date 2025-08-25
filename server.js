@@ -7,14 +7,8 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static('.'));
 
-// Ensure images directory exists
-const imagesDir = path.join(__dirname, 'public', 'images');
-if (!fs.existsSync(imagesDir)) {
-  fs.mkdirSync(imagesDir, { recursive: true });
-}
-
-// Serve static files from public directory
-app.use('/public', express.static(path.join(__dirname, 'public')));
+// Store generated images in memory (for Railway)
+const generatedImages = new Map();
 
 // Simple Instagram image generation without external page
 async function generateSimpleInstagramImage() {
@@ -67,15 +61,14 @@ async function generateSimpleInstagramImage() {
   // Generate filename with timestamp
   const timestamp = Date.now();
   const filename = `instagram-${timestamp}.png`;
-  const filepath = path.join(imagesDir, filename);
   
-  // Save image to file
+  // Save image buffer to memory
   const buffer = canvasInstance.toBuffer('image/png');
-  fs.writeFileSync(filepath, buffer);
+  generatedImages.set(filename, buffer);
   
   // Generate public URL
   const baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
-  const imageUrl = `${baseUrl}/public/images/${filename}`;
+  const imageUrl = `${baseUrl}/api/image/${filename}`;
   
   return {
     success: true,
@@ -87,6 +80,20 @@ async function generateSimpleInstagramImage() {
     imageSize: buffer.length
   };
 }
+
+// Endpoint to serve generated images
+app.get('/api/image/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const imageBuffer = generatedImages.get(filename);
+  
+  if (imageBuffer) {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    res.send(imageBuffer);
+  } else {
+    res.status(404).json({ error: 'Image not found' });
+  }
+});
 
 app.post('/api/generate-instagram', async (req, res) => {
   try {
