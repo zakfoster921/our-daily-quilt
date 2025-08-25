@@ -3884,12 +3884,23 @@
         // console.log('  - Padding:', padding);
         // console.log('  - Padded bounds:', `${paddedMinX}, ${paddedMinY}, ${paddedWidth}, ${paddedHeight}`);
         
-        // Set viewBox to padded quilt bounds
-        this.quiltSVG.setAttribute('viewBox', `${paddedMinX} ${paddedMinY} ${paddedWidth} ${paddedHeight}`);
+        // Set viewBox to 4:5 target dimensions (0, 0, targetWidth, targetHeight)
+        this.quiltSVG.setAttribute('viewBox', `0 0 ${targetWidth} ${targetHeight}`);
         
         // Set SVG dimensions to target size (fits within viewport)
         this.quiltSVG.setAttribute('width', targetWidth);
         this.quiltSVG.setAttribute('height', targetHeight);
+        
+        // Calculate scaling to fit quilt content within 4:5 frame
+        const scaleX = targetWidth / paddedWidth;
+        const scaleY = targetHeight / paddedHeight;
+        const scale = Math.min(scaleX, scaleY); // Use smaller scale to fit completely
+        
+        // Calculate centering offset
+        const scaledQuiltWidth = paddedWidth * scale;
+        const scaledQuiltHeight = paddedHeight * scale;
+        const offsetX = (targetWidth - scaledQuiltWidth) / 2;
+        const offsetY = (targetHeight - scaledQuiltHeight) / 2;
         
         // Mobile: Center the quilt content
         this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -3915,11 +3926,17 @@
           const jitterY = (Math.random() - 0.5) * 6;
           const jitterRotation = (Math.random() - 0.5) * 3;
           
+          // Transform block coordinates to fit within 4:5 frame
+          const transformedX = (block.x - paddedMinX) * scale + offsetX + jitterX;
+          const transformedY = (block.y - paddedMinY) * scale + offsetY + jitterY;
+          const transformedWidth = block.width * scale;
+          const transformedHeight = block.height * scale;
+          
           const jitteredBlock = {
-            x: block.x + jitterX,
-            y: block.y + jitterY,
-            width: block.width,
-            height: block.height,
+            x: transformedX,
+            y: transformedY,
+            width: transformedWidth,
+            height: transformedHeight,
             color: block.color,
             rotation: jitterRotation
           };
