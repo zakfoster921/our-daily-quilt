@@ -42,28 +42,40 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
   ctx.fillStyle = '#f8f9fa';
   ctx.fillRect(0, 0, 1080, 1350);
   
-  // Calculate quilt layout
-  const blockSize = 40;
+  // Calculate quilt bounds from actual block positions
+  const minX = Math.min(...blocks.map(b => b.x));
+  const minY = Math.min(...blocks.map(b => b.y));
+  const maxX = Math.max(...blocks.map(b => b.x + b.width));
+  const maxY = Math.max(...blocks.map(b => b.y + b.height));
+  
+  const quiltWidth = maxX - minX;
+  const quiltHeight = maxY - minY;
+  
+  // Calculate scale to fit quilt in available space
   const padding = 60;
   const availableWidth = 1080 - (padding * 2);
   const availableHeight = 1080 - (padding * 2); // Leave bottom 270px for quote
   
-  // Center the quilt
-  const quiltWidth = Math.min(blocks.length * blockSize, availableWidth);
-  const quiltHeight = Math.ceil(quiltWidth / availableWidth) * blockSize;
-  const startX = padding + (availableWidth - quiltWidth) / 2;
-  const startY = padding + (availableHeight - quiltHeight) / 2;
+  const scaleX = availableWidth / quiltWidth;
+  const scaleY = availableHeight / quiltHeight;
+  const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
   
-  // Draw quilt blocks
-  blocks.forEach((block, index) => {
-    const row = Math.floor(index / Math.floor(availableWidth / blockSize));
-    const col = index % Math.floor(availableWidth / blockSize);
-    const x = startX + (col * blockSize);
-    const y = startY + (row * blockSize);
+  // Center the quilt
+  const scaledQuiltWidth = quiltWidth * scale;
+  const scaledQuiltHeight = quiltHeight * scale;
+  const startX = padding + (availableWidth - scaledQuiltWidth) / 2;
+  const startY = padding + (availableHeight - scaledQuiltHeight) / 2;
+  
+  // Draw quilt blocks using their actual positions
+  blocks.forEach((block) => {
+    const x = startX + (block.x - minX) * scale;
+    const y = startY + (block.y - minY) * scale;
+    const width = block.width * scale;
+    const height = block.height * scale;
     
     // Draw block
     ctx.fillStyle = block.color || '#6c757d';
-    ctx.fillRect(x, y, blockSize - 2, blockSize - 2);
+    ctx.fillRect(x, y, width, height);
   });
   
   // Add quote at bottom
