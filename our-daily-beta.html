@@ -3084,6 +3084,11 @@
           ctx.fillStyle = '#f6f4f1';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           
+          // Use the same 4:5 target dimensions as the main app
+          const targetAspectRatio = 4/5;
+          const targetWidth = 1000; // Base width
+          const targetHeight = targetWidth / targetAspectRatio; // 1250 for 4:5 ratio
+          
           // Calculate quilt bounds
           const minX = Math.min(...blocks.map(b => b.x));
           const minY = Math.min(...blocks.map(b => b.y));
@@ -3093,20 +3098,16 @@
           const quiltWidth = maxX - minX;
           const quiltHeight = maxY - minY;
           
-          // Calculate scale to fit quilt in the entire image with minimal breathing room
-          const horizontalPadding = 5; // Just a few pixels on left and right
-          const verticalPadding = 10; // Just a few pixels on top and bottom
-          const availableWidth = canvas.width - (horizontalPadding * 2);
-          const availableHeight = canvas.height - (verticalPadding * 2);
+          // Scale the quilt to fit the 4:5 target dimensions (same as main app)
+          const scaleX = targetWidth / quiltWidth;
+          const scaleY = targetHeight / quiltHeight;
+          const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
           
-          const scaleX = availableWidth / quiltWidth;
-          const scaleY = availableHeight / quiltHeight;
-          // For Instagram: use the same logic as the main app - fit to the constraining dimension
-          const scale = Math.min(scaleX, scaleY); // Use the smaller scale to ensure quilt fits completely
-          
-          // Center the quilt in the image
+          // Calculate the scaled quilt dimensions
           const scaledQuiltWidth = quiltWidth * scale;
           const scaledQuiltHeight = quiltHeight * scale;
+          
+          // Center the quilt in the Instagram canvas
           const offsetX = (canvas.width - scaledQuiltWidth) / 2;
           const offsetY = (canvas.height - scaledQuiltHeight) / 2;
           
