@@ -143,10 +143,30 @@ app.get('/api/simple-test', (req, res) => {
   });
 });
 
+// Test endpoint to generate and return image URL
+app.get('/api/test-image', async (req, res) => {
+  try {
+    console.log('🧪 Testing image generation...');
+    const result = await generateSimpleInstagramImage();
+    res.json({
+      success: true,
+      imageUrl: result.image,
+      caption: result.caption,
+      note: 'Test this URL in your browser to verify the image loads'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚂 Instagram Quilt Generator server running on port ${PORT}`);
   console.log(`📸 Instagram endpoint: http://localhost:${PORT}/api/generate-instagram`);
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test-instagram`);
+  console.log(`🖼️ Test image: http://localhost:${PORT}/api/test-image`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
 });
