@@ -890,6 +890,18 @@ try {
     }
     
     .toast.show { opacity: 1; }
+    
+    .toast-link {
+      color: #4ecdc4;
+      text-decoration: underline;
+      margin-left: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    
+    .toast-link:hover {
+      color: #45b7aa;
+    }
 
     /* ===== RESPONSIVE ===== */
     @media (max-width: 768px) {
@@ -2605,10 +2617,23 @@ try {
         this.logger = logger;
       }
 
-      showToast(message, duration = CONFIG.APP.toastDuration) {
+      showToast(message, duration = CONFIG.APP.toastDuration, link = null) {
         const toast = document.getElementById('toast');
         if (!toast) return;
-        toast.textContent = message;
+        
+        if (link) {
+          // Create toast with link
+          toast.innerHTML = `
+            <span>${message}</span>
+            <a href="${link.url}" target="_blank" rel="noopener noreferrer" class="toast-link">
+              ${link.text}
+            </a>
+          `;
+        } else {
+          // Regular toast without link
+          toast.textContent = message;
+        }
+        
         toast.classList.add('show');
         setTimeout(() => toast.classList.remove('show'), duration);
       }
@@ -7785,6 +7810,7 @@ try {
       window.createArchive = () => app.handleCreateArchive();
       window.createTestArchives = () => app.handleCreateTestArchives();
       window.generateInstagramImage = () => app.handleTestInstagramImage();
+      window.testToastWithLink = () => app.uiService.showToast('Check out our new feature!', 5000, { url: 'https://example.com', text: 'Learn More' });
       
       // Admin console commands
       window.enableAdmin = () => app.enableAdminMode();
