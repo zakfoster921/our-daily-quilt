@@ -1874,6 +1874,36 @@ try {
       }
     };
 
+    // ===== FIREBASE INITIALIZATION =====
+    // Initialize Firebase immediately after CONFIG is defined
+    console.log('🔥 Starting early Firebase initialization...');
+    
+    // Use dynamic imports to load Firebase modules
+    Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js')
+    ]).then(([{ initializeApp }, { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, orderBy, limit, addDoc, updateDoc, deleteDoc }]) => {
+      try {
+        // Initialize Firebase
+        const firebaseApp = initializeApp(CONFIG.FIREBASE);
+        const db = getFirestore(firebaseApp);
+        
+        // Make Firebase available globally
+        window.firebaseApp = firebaseApp;
+        window.db = db;
+        window.firestore = { collection, doc, setDoc, getDoc, getDocs, query, orderBy, limit, addDoc, updateDoc, deleteDoc };
+        
+        console.log('🔥 Firebase initialized successfully (early)');
+        
+        // Dispatch event to notify that Firebase is ready
+        document.dispatchEvent(new CustomEvent('firebaseReady'));
+      } catch (error) {
+        console.warn('⚠️ Firebase initialization failed:', error);
+      }
+    }).catch(error => {
+      console.warn('⚠️ Failed to load Firebase modules:', error);
+    });
+
     // ===== COLOR UTILITIES (LAB Color Space) =====
     class ColorUtilsV2 {
       static colorCache = new Map();
@@ -3345,21 +3375,46 @@ try {
       async initialize() {
         try {
           // Wait for Firebase to be available
-          // let attempts = 0;
-          // while (!window.db && attempts < 50) {
-          //   await new Promise(resolve => setTimeout(resolve, 100));
-          //   attempts++;
-          // }
+          console.log('🔄 DataService: Waiting for Firebase...');
           
-          // if (window.db) {
-          //   this.db = window.db;
-          //   this.logger.log('✅ Firestore initialized successfully');
-          // } else {
-          //   this.logger.warn('⚠️ Firestore not available, falling back to localStorage');
-          //   this.db = null;
-          // }
-          this.logger.log('✅ Using local storage only - Firebase disabled');
-          this.db = null;
+          // First try to wait for the firebaseReady event
+          await new Promise((resolve) => {
+            if (window.db) {
+              resolve();
+              return;
+            }
+            
+            const timeout = setTimeout(() => {
+              document.removeEventListener('firebaseReady', onFirebaseReady);
+              resolve();
+            }, 5000); // 5 second timeout
+            
+            const onFirebaseReady = () => {
+              clearTimeout(timeout);
+              document.removeEventListener('firebaseReady', onFirebaseReady);
+              resolve();
+            };
+            
+            document.addEventListener('firebaseReady', onFirebaseReady);
+          });
+          
+          // Fallback: wait with polling
+          let attempts = 0;
+          while (!window.db && attempts < 200) { // Increased from 100 to 200 attempts (20 seconds)
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+            if (attempts % 20 === 0) {
+              console.log(`🔄 DataService: Still waiting for Firebase... (attempt ${attempts}/200)`);
+            }
+          }
+          
+          if (window.db) {
+            this.db = window.db;
+            this.logger.log('✅ Firestore initialized successfully');
+          } else {
+            this.logger.warn('⚠️ Firestore not available, falling back to localStorage');
+            this.db = null;
+          }
         } catch (error) {
           this.logger.warn('⚠️ Firestore initialization failed, falling back to localStorage:', error);
           this.db = null;
@@ -3368,43 +3423,43 @@ try {
 
       async loadQuilt() {
         try {
-          // if (this.db) {
-          //   // Try Firestore first
-          //   const today = Utils.getTodayKey();
-          //   this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
-          //   
-          //   // Also check what other dates exist in Firestore
-          //   try {
-          //     const quiltsRef = window.firestore.collection(this.db, 'quilts');
-          //     const querySnapshot = await window.firestore.getDocs(quiltsRef);
-          //     const availableDates = [];
-          //     querySnapshot.forEach(doc => {
-          //       constData = doc.data();
-          //     availableDates.push({
-          //       date: doc.id,
-          //       blocks: data.blocks?.length || 0,
-          //       contributorCount: data.contributorCount || 1
-          //     });
-          //   });
-          //   this.logger.log('📊 Available Firestore dates:', JSON.stringify(availableDates, null, 2));
-          // } catch (listError) {
-          //   this.logger.warn('⚠️ Could not list Firestore documents:', listError);
-          // }
-          //   
-          //   const quiltRef = window.firestore.doc(this.db, 'quilts', today);
-          //   const quiltSnap = await window.firestore.getDoc(quiltRef);
-          //   
-          //   if (quiltSnap.exists()) {
-          //     const data = quiltSnap.data();
-          //     this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
-          //     return { 
-          //       blocks: data.blocks || [], 
-          //       contributorCount: data.contributorCount || 1 
-          //     };
-          //   } else {
-          //     this.logger.warn('⚠️ No Firestore document found for date:', today);
-          //   }
-          // }
+          if (this.db) {
+            // Try Firestore first
+            const today = Utils.getTodayKey();
+            this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
+            
+            // Also check what other dates exist in Firestore
+            try {
+              const quiltsRef = window.firestore.collection(this.db, 'quilts');
+              const querySnapshot = await window.firestore.getDocs(quiltsRef);
+              const availableDates = [];
+              querySnapshot.forEach(doc => {
+                const data = doc.data();
+                availableDates.push({
+                  date: doc.id,
+                  blocks: data.blocks?.length || 0,
+                  contributorCount: data.contributorCount || 1
+                });
+              });
+              this.logger.log('📊 Available Firestore dates:', JSON.stringify(availableDates, null, 2));
+            } catch (listError) {
+              this.logger.warn('⚠️ Could not list Firestore documents:', listError);
+            }
+              
+            const quiltRef = window.firestore.doc(this.db, 'quilts', today);
+            const quiltSnap = await window.firestore.getDoc(quiltRef);
+            
+            if (quiltSnap.exists()) {
+              const data = quiltSnap.data();
+              this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
+              return { 
+                blocks: data.blocks || [], 
+                contributorCount: data.contributorCount || 1 
+              };
+            } else {
+              this.logger.warn('⚠️ No Firestore document found for date:', today);
+            }
+          }
           
           // Fallback to localStorage
           const savedData = localStorage.getItem('ourDailyQuilt');
@@ -3716,6 +3771,13 @@ try {
           return;
         }
         
+        // Track retry attempts to prevent infinite loops
+        const retryCount = parseInt(quoteElement.dataset.retryCount || '0');
+        if (retryCount >= 3) {
+          console.log('Quote element still not visible after 3 retries, giving up');
+          return;
+        }
+        
         // Mark as checked to prevent re-runs
         quoteElement.dataset.lengthChecked = 'true';
         
@@ -3726,6 +3788,7 @@ try {
             console.log('Quote element not visible yet, retrying...');
             // Reset the flag and retry after a longer delay
             delete quoteElement.dataset.lengthChecked;
+            quoteElement.dataset.retryCount = (retryCount + 1).toString();
             setTimeout(() => this.checkQuoteLength(quoteElement), 500);
             return;
           }
@@ -3912,233 +3975,6 @@ try {
           <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
             <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,0,0.15)"/>
           </filter>
-          
-          <!-- Organic calico-style patterns -->
-          <pattern id="dots1" patternUnits="userSpaceOnUse" width="12" height="12">
-            <circle cx="6" cy="6" r="1.5" fill="rgba(255,255,255,0.25)"/>
-            <circle cx="2" cy="2" r="1" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="10" cy="10" r="1" fill="rgba(255,255,255,0.15)"/>
-          </pattern>
-          
-          <pattern id="dots2" patternUnits="userSpaceOnUse" width="14" height="14">
-            <circle cx="7" cy="7" r="1.8" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="3" cy="3" r="0.8" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="11" cy="11" r="0.8" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="7" cy="3" r="0.6" fill="rgba(255,255,255,0.1)"/>
-          </pattern>
-          
-          <pattern id="dots3" patternUnits="userSpaceOnUse" width="10" height="10">
-            <circle cx="5" cy="5" r="1.2" fill="rgba(255,255,255,0.18)"/>
-            <circle cx="2" cy="2" r="0.7" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="8" cy="8" r="0.7" fill="rgba(255,255,255,0.12)"/>
-          </pattern>
-          
-          <pattern id="dots4" patternUnits="userSpaceOnUse" width="12" height="24">
-            <!-- Row 1: Normal grid -->
-            <circle cx="6" cy="6" r="1.5" fill="rgba(255,255,255,0.25)"/>
-            <circle cx="2" cy="2" r="1" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="10" cy="10" r="1" fill="rgba(255,255,255,0.15)"/>
-            <!-- Row 2: Offset by half width -->
-            <circle cx="0" cy="18" r="1.5" fill="rgba(255,255,255,0.25)"/>
-            <circle cx="8" cy="14" r="1" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="4" cy="22" r="1" fill="rgba(255,255,255,0.15)"/>
-          </pattern>
-          
-          <pattern id="dots5" patternUnits="userSpaceOnUse" width="14" height="28">
-            <!-- Row 1: Normal grid -->
-            <circle cx="7" cy="7" r="1.8" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="3" cy="3" r="0.8" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="11" cy="11" r="0.8" fill="rgba(255,255,255,0.12)"/>
-            <!-- Row 2: Offset by half width -->
-            <circle cx="0" cy="21" r="1.8" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="10" cy="17" r="0.8" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="4" cy="25" r="0.8" fill="rgba(255,255,255,0.12)"/>
-          </pattern>
-          
-          <pattern id="dots6" patternUnits="userSpaceOnUse" width="16" height="16">
-            <!-- Irregular hand-drawn style dots -->
-            <ellipse cx="4" cy="4" rx="1.8" ry="1.2" fill="rgba(255,255,255,0.25)"/>
-            <ellipse cx="12" cy="6" rx="1.2" ry="1.6" fill="rgba(255,255,255,0.18)"/>
-            <ellipse cx="8" cy="12" rx="1.5" ry="1.1" fill="rgba(255,255,255,0.22)"/>
-            <ellipse cx="2" cy="10" rx="0.9" ry="1.3" fill="rgba(255,255,255,0.15)"/>
-            <ellipse cx="14" cy="14" rx="1.1" ry="0.8" fill="rgba(255,255,255,0.12)"/>
-          </pattern>
-          
-          <pattern id="dots7" patternUnits="userSpaceOnUse" width="18" height="18">
-            <!-- Scattered organic dots -->
-            <circle cx="3" cy="3" r="1.1" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="15" cy="5" r="0.8" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="9" cy="9" r="1.4" fill="rgba(255,255,255,0.25)"/>
-            <circle cx="5" cy="15" r="0.6" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="12" cy="12" r="1.0" fill="rgba(255,255,255,0.18)"/>
-            <circle cx="7" cy="7" r="0.7" fill="rgba(255,255,255,0.1)"/>
-          </pattern>
-          
-          <pattern id="stripes1" patternUnits="userSpaceOnUse" width="8" height="8">
-            <line x1="0" y1="4" x2="8" y2="4" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-            <line x1="4" y1="0" x2="4" y2="8" stroke="rgba(255,255,255,0.15)" stroke-width="0.5"/>
-          </pattern>
-          
-          <pattern id="stripes2" patternUnits="userSpaceOnUse" width="12" height="12">
-            <line x1="0" y1="6" x2="12" y2="6" stroke="rgba(255,255,255,0.18)" stroke-width="1.2"/>
-            <line x1="6" y1="0" x2="6" y2="12" stroke="rgba(255,255,255,0.12)" stroke-width="0.8"/>
-            <line x1="0" y1="3" x2="12" y2="3" stroke="rgba(255,255,255,0.1)" stroke-width="0.4"/>
-          </pattern>
-          
-          <pattern id="stripes3" patternUnits="userSpaceOnUse" width="10" height="10">
-            <line x1="0" y1="5" x2="10" y2="5" stroke="rgba(255,255,255,0.15)" stroke-width="0.8"/>
-            <line x1="5" y1="0" x2="5" y2="10" stroke="rgba(255,255,255,0.12)" stroke-width="0.6"/>
-          </pattern>
-          
-          <pattern id="stripes4" patternUnits="userSpaceOnUse" width="8" height="16">
-            <!-- Row 1: Normal grid -->
-            <line x1="0" y1="4" x2="8" y2="4" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-            <line x1="4" y1="0" x2="4" y2="8" stroke="rgba(255,255,255,0.15)" stroke-width="0.5"/>
-            <!-- Row 2: Offset by half width -->
-            <line x1="4" y1="12" x2="12" y2="12" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-            <line x1="8" y1="8" x2="8" y2="16" stroke="rgba(255,255,255,0.15)" stroke-width="0.5"/>
-          </pattern>
-          
-          <pattern id="stripes5" patternUnits="userSpaceOnUse" width="12" height="24">
-            <!-- Row 1: Normal grid -->
-            <line x1="0" y1="6" x2="12" y2="6" stroke="rgba(255,255,255,0.18)" stroke-width="1.2"/>
-            <line x1="6" y1="0" x2="6" y2="12" stroke="rgba(255,255,255,0.12)" stroke-width="0.8"/>
-            <line x1="0" y1="3" x2="12" y2="3" stroke="rgba(255,255,255,0.1)" stroke-width="0.4"/>
-            <!-- Row 2: Offset by half width -->
-            <line x1="6" y1="18" x2="18" y2="18" stroke="rgba(255,255,255,0.18)" stroke-width="1.2"/>
-            <line x1="12" y1="12" x2="12" y2="24" stroke="rgba(255,255,255,0.12)" stroke-width="0.8"/>
-            <line x1="6" y1="15" x2="18" y2="15" stroke="rgba(255,255,255,0.1)" stroke-width="0.4"/>
-          </pattern>
-          
-          <pattern id="stripes6" patternUnits="userSpaceOnUse" width="16" height="16">
-            <!-- Wavy organic stripes -->
-            <path d="M0,4 Q4,2 8,4 T16,4" stroke="rgba(255,255,255,0.2)" stroke-width="1" fill="none"/>
-            <path d="M0,12 Q4,10 8,12 T16,12" stroke="rgba(255,255,255,0.15)" stroke-width="0.8" fill="none"/>
-            <path d="M4,0 Q6,4 4,8 T4,16" stroke="rgba(255,255,255,0.12)" stroke-width="0.6" fill="none"/>
-          </pattern>
-          
-          <pattern id="stripes7" patternUnits="userSpaceOnUse" width="20" height="20">
-            <!-- Irregular hand-drawn stripes -->
-            <path d="M0,5 L20,6" stroke="rgba(255,255,255,0.18)" stroke-width="1.2" fill="none"/>
-            <path d="M0,15 L20,14" stroke="rgba(255,255,255,0.15)" stroke-width="0.9" fill="none"/>
-            <path d="M5,0 L6,20" stroke="rgba(255,255,255,0.12)" stroke-width="0.7" fill="none"/>
-            <path d="M15,0 L14,20" stroke="rgba(255,255,255,0.1)" stroke-width="0.5" fill="none"/>
-          </pattern>
-          
-          <pattern id="floral1" patternUnits="userSpaceOnUse" width="24" height="24">
-            <circle cx="12" cy="12" r="3" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="9" cy="9" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="15" cy="9" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="12" cy="6" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="12" cy="18" r="1.5" fill="rgba(255,255,255,0.15)"/>
-          </pattern>
-          
-          <pattern id="floral2" patternUnits="userSpaceOnUse" width="28" height="28">
-            <circle cx="14" cy="14" r="3.5" fill="rgba(255,255,255,0.18)"/>
-            <circle cx="11" cy="11" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="17" cy="11" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="14" cy="8" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="14" cy="20" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="11" cy="17" r="1.2" fill="rgba(255,255,255,0.08)"/>
-          </pattern>
-          
-          <pattern id="floral3" patternUnits="userSpaceOnUse" width="24" height="48">
-            <!-- Row 1: Normal grid -->
-            <circle cx="12" cy="12" r="3" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="9" cy="9" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="15" cy="9" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="12" cy="6" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="12" cy="18" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <!-- Row 2: Offset by half width -->
-            <circle cx="0" cy="36" r="3" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="21" cy="33" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="3" cy="33" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="0" cy="30" r="1.5" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="0" cy="42" r="1.5" fill="rgba(255,255,255,0.15)"/>
-          </pattern>
-          
-          <pattern id="floral4" patternUnits="userSpaceOnUse" width="28" height="56">
-            <!-- Row 1: Normal grid -->
-            <circle cx="14" cy="14" r="3.5" fill="rgba(255,255,255,0.18)"/>
-            <circle cx="11" cy="11" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="17" cy="11" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="14" cy="8" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="14" cy="20" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="11" cy="17" r="1.2" fill="rgba(255,255,255,0.08)"/>
-            <!-- Row 2: Offset by half width -->
-            <circle cx="0" cy="42" r="3.5" fill="rgba(255,255,255,0.18)"/>
-            <circle cx="25" cy="39" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="3" cy="39" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="0" cy="36" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="0" cy="48" r="2" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="25" cy="45" r="1.2" fill="rgba(255,255,255,0.08)"/>
-          </pattern>
-          
-          <pattern id="floral5" patternUnits="userSpaceOnUse" width="32" height="32">
-            <!-- Asymmetrical organic flower -->
-            <ellipse cx="16" cy="16" rx="4" ry="3" fill="rgba(255,255,255,0.2)"/>
-            <ellipse cx="12" cy="12" rx="2.5" ry="1.8" fill="rgba(255,255,255,0.15)"/>
-            <ellipse cx="20" cy="14" rx="1.8" ry="2.2" fill="rgba(255,255,255,0.15)"/>
-            <ellipse cx="16" cy="8" rx="1.5" ry="2.5" fill="rgba(255,255,255,0.12)"/>
-            <ellipse cx="14" cy="22" rx="2.2" ry="1.5" fill="rgba(255,255,255,0.12)"/>
-            <circle cx="16" cy="16" r="1.2" fill="rgba(255,255,255,0.08)"/>
-          </pattern>
-          
-          <pattern id="floral6" patternUnits="userSpaceOnUse" width="36" height="36">
-            <!-- Scattered wildflower style -->
-            <ellipse cx="8" cy="8" rx="2.5" ry="1.8" fill="rgba(255,255,255,0.18)"/>
-            <ellipse cx="28" cy="12" rx="1.8" ry="2.2" fill="rgba(255,255,255,0.15)"/>
-            <ellipse cx="18" cy="24" rx="2.2" ry="1.5" fill="rgba(255,255,255,0.16)"/>
-            <ellipse cx="12" cy="30" rx="1.5" ry="2.0" fill="rgba(255,255,255,0.12)"/>
-            <ellipse cx="24" cy="6" rx="1.8" ry="1.6" fill="rgba(255,255,255,0.14)"/>
-            <circle cx="18" cy="18" r="0.8" fill="rgba(255,255,255,0.08)"/>
-          </pattern>
-          
-          <pattern id="geometric1" patternUnits="userSpaceOnUse" width="10" height="10">
-            <polygon points="5,2 7,5 5,8 3,5" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="5" cy="5" r="1" fill="rgba(255,255,255,0.1)"/>
-          </pattern>
-          
-          <pattern id="geometric2" patternUnits="userSpaceOnUse" width="12" height="12">
-            <polygon points="6,3 8,6 6,9 4,6" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="6" cy="6" r="1.2" fill="rgba(255,255,255,0.08)"/>
-            <polygon points="3,3 5,6 3,9 1,6" fill="rgba(255,255,255,0.1)"/>
-          </pattern>
-          
-          <pattern id="geometric3" patternUnits="userSpaceOnUse" width="10" height="20">
-            <!-- Row 1: Normal grid -->
-            <polygon points="5,2 7,5 5,8 3,5" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="5" cy="5" r="1" fill="rgba(255,255,255,0.1)"/>
-            <!-- Row 2: Offset by half width -->
-            <polygon points="0,12 2,15 0,18 -2,15" fill="rgba(255,255,255,0.2)"/>
-            <circle cx="0" cy="15" r="1" fill="rgba(255,255,255,0.1)"/>
-          </pattern>
-          
-          <pattern id="geometric4" patternUnits="userSpaceOnUse" width="12" height="24">
-            <!-- Row 1: Normal grid -->
-            <polygon points="6,3 8,6 6,9 4,6" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="6" cy="6" r="1.2" fill="rgba(255,255,255,0.08)"/>
-            <polygon points="3,3 5,6 3,9 1,6" fill="rgba(255,255,255,0.1)"/>
-            <!-- Row 2: Offset by half width -->
-            <polygon points="0,15 2,18 0,21 -2,18" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="0" cy="18" r="1.2" fill="rgba(255,255,255,0.08)"/>
-            <polygon points="9,15 11,18 9,21 7,18" fill="rgba(255,255,255,0.1)"/>
-          </pattern>
-          
-          <pattern id="geometric5" patternUnits="userSpaceOnUse" width="20" height="20">
-            <!-- Irregular organic shapes -->
-            <path d="M5,2 Q8,1 11,2 T17,2 L15,8 Q12,9 9,8 T3,8 Z" fill="rgba(255,255,255,0.18)"/>
-            <path d="M2,12 Q5,11 8,12 T14,12 L12,18 Q9,19 6,18 T0,18 Z" fill="rgba(255,255,255,0.15)"/>
-            <circle cx="10" cy="10" r="1.5" fill="rgba(255,255,255,0.08)"/>
-          </pattern>
-          
-          <pattern id="geometric6" patternUnits="userSpaceOnUse" width="24" height="24">
-            <!-- Scattered organic shapes -->
-            <ellipse cx="6" cy="6" rx="3" ry="2" fill="rgba(255,255,255,0.16)"/>
-            <polygon points="18,8 20,12 18,16 16,12" fill="rgba(255,255,255,0.14)"/>
-            <path d="M4,18 Q8,16 12,18 T20,18" stroke="rgba(255,255,255,0.12)" stroke-width="1" fill="none"/>
-            <circle cx="12" cy="12" r="1.8" fill="rgba(255,255,255,0.08)"/>
-          </pattern>
         `;
         this.quiltSVG.appendChild(defs);
 
@@ -4206,20 +4042,20 @@ try {
           rect.setAttribute('height', jitteredBlock.height);
           rect.setAttribute('fill', jitteredBlock.color);
           
-          // Apply organic calico pattern based on color
-          const basePatternType = getPatternForColor(jitteredBlock.color);
-                                       const patternVariations = {
-            dots: ['dots1', 'dots2', 'dots3', 'dots4', 'dots5', 'dots6', 'dots7'],
-            stripes: ['stripes1', 'stripes2', 'stripes3', 'stripes4', 'stripes5', 'stripes6', 'stripes7'],
-            floral: ['floral1', 'floral2', 'floral3', 'floral4', 'floral5', 'floral6'],
-            geometric: ['geometric1', 'geometric2', 'geometric3', 'geometric4', 'geometric5', 'geometric6']
-          };
-          
-          // Randomly select a variation of the pattern type
-          const variations = patternVariations[basePatternType];
-          const randomVariation = variations[Math.floor(Math.random() * variations.length)];
-          
-                   // Add organic randomness to pattern opacity, positioning, and scale
+                   // Create individual pattern elements for this block instead of using tiling patterns
+         const basePatternType = getPatternForColor(jitteredBlock.color);
+         const patternVariations = {
+           dots: ['dots1', 'dots2', 'dots3', 'dots4', 'dots5', 'dots6', 'dots7'],
+           stripes: ['stripes1', 'stripes2', 'stripes3', 'stripes4', 'stripes5', 'stripes6', 'stripes7'],
+           floral: ['floral1', 'floral2', 'floral3', 'floral4', 'floral5', 'floral6'],
+           geometric: ['geometric1', 'geometric2', 'geometric3', 'geometric4', 'geometric5', 'geometric6']
+         };
+         
+         // Randomly select a variation of the pattern type
+         const variations = patternVariations[basePatternType];
+         const randomVariation = variations[Math.floor(Math.random() * variations.length)];
+         
+         // Add organic randomness to pattern opacity, positioning, and scale
          const opacityVariation = 0.7 + (Math.random() * 0.6); // 0.7 to 1.3 (more variation)
          
          // Calculate safe offset limits to keep pattern within block bounds
@@ -4229,31 +4065,37 @@ try {
          const patternOffsetY = (Math.random() - 0.5) * maxOffsetY * 2; // -maxOffset to +maxOffset
          
          // Calculate safe scale to ensure pattern fills block but doesn't overflow
-         const blockAspectRatio = jitteredBlock.width / jitteredBlock.height;
-         const patternAspectRatio = 1; // Most patterns are roughly square
          const scaleVariation = 0.9 + (Math.random() * 0.2); // 0.9 to 1.1 (smaller scale range)
          
          // Calculate safe rotation to prevent overflow
          const maxRotation = Math.min(4, 15 / Math.max(jitteredBlock.width, jitteredBlock.height)); // Smaller blocks get less rotation
          const rotationVariation = (Math.random() - 0.5) * maxRotation * 2; // -maxRotation to +maxRotation
 
-         rect.setAttribute('fill', `url(#${randomVariation})`);
-         rect.style.opacity = opacityVariation;
-         rect.style.transform = `translate(${patternOffsetX}px, ${patternOffsetY}px) scale(${scaleVariation}) rotate(${rotationVariation}deg)`;
+         // Create individual pattern elements for this block
+         const patternGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+         patternGroup.setAttribute('opacity', opacityVariation);
          
-         // Add clipping to ensure pattern stays within block bounds
+         patternGroup.setAttribute('transform', `translate(${jitteredBlock.x + patternOffsetX}, ${jitteredBlock.y + patternOffsetY}) scale(${scaleVariation}) rotate(${rotationVariation} ${jitteredBlock.width/2} ${jitteredBlock.height/2})`);
+         
+         // Create clipping path for this block
          const clipPathId = `clip-${i}`;
          const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
          clipPath.setAttribute('id', clipPathId);
          const clipRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-         clipRect.setAttribute('x', jitteredBlock.x);
-         clipRect.setAttribute('y', jitteredBlock.y);
+         clipRect.setAttribute('x', 0);
+         clipRect.setAttribute('y', 0);
          clipRect.setAttribute('width', jitteredBlock.width);
          clipRect.setAttribute('height', jitteredBlock.height);
          clipPath.appendChild(clipRect);
          this.quiltSVG.appendChild(clipPath);
          
-         rect.setAttribute('clip-path', `url(#${clipPathId})`);
+         patternGroup.setAttribute('clip-path', `url(#${clipPathId})`);
+         
+         // Create pattern elements based on the selected variation
+         this.createPatternElements(patternGroup, randomVariation, jitteredBlock.width, jitteredBlock.height);
+         
+         // Add the pattern group to the SVG
+         this.quiltSVG.appendChild(patternGroup);
           
           // Create background rect for the base color
           const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -4298,6 +4140,335 @@ try {
 
       setLastAddedIndex(index) {
         this.lastAddedIndex = index;
+      }
+      
+      createPatternElements(patternGroup, variation, blockWidth, blockHeight) {
+        // Create individual pattern elements based on the variation type
+        const patternData = this.getPatternData(variation);
+        
+        // Scale pattern to fit block size
+        const scaleX = blockWidth / patternData.width;
+        const scaleY = blockHeight / patternData.height;
+        const scale = Math.min(scaleX, scaleY) * 0.8; // 80% to ensure it fits within block
+        
+        // Create pattern elements
+        patternData.elements.forEach(element => {
+          const elementNode = document.createElementNS('http://www.w3.org/2000/svg', element.type);
+          
+          // Set attributes based on element type
+          if (element.type === 'circle') {
+            elementNode.setAttribute('cx', element.cx * scale);
+            elementNode.setAttribute('cy', element.cy * scale);
+            elementNode.setAttribute('r', element.r * scale);
+          } else if (element.type === 'ellipse') {
+            elementNode.setAttribute('cx', element.cx * scale);
+            elementNode.setAttribute('cy', element.cy * scale);
+            elementNode.setAttribute('rx', element.rx * scale);
+            elementNode.setAttribute('ry', element.ry * scale);
+          } else if (element.type === 'line') {
+            elementNode.setAttribute('x1', element.x1 * scale);
+            elementNode.setAttribute('y1', element.y1 * scale);
+            elementNode.setAttribute('x2', element.x2 * scale);
+            elementNode.setAttribute('y2', element.y2 * scale);
+          } else if (element.type === 'path') {
+            // Scale path coordinates
+            const scaledPath = element.d.replace(/(\d+(?:\.\d+)?)/g, (match) => {
+              return parseFloat(match) * scale;
+            });
+            elementNode.setAttribute('d', scaledPath);
+          } else if (element.type === 'polygon') {
+            const scaledPoints = element.points.split(' ').map(point => {
+              const [x, y] = point.split(',').map(Number);
+              return `${x * scale},${y * scale}`;
+            }).join(' ');
+            elementNode.setAttribute('points', scaledPoints);
+          }
+          
+          // Set common attributes
+          if (element.fill) elementNode.setAttribute('fill', element.fill);
+          if (element.stroke) elementNode.setAttribute('stroke', element.stroke);
+          if (element.strokeWidth) elementNode.setAttribute('stroke-width', element.strokeWidth * scale);
+          
+          patternGroup.appendChild(elementNode);
+        });
+      }
+      
+      getPatternData(variation) {
+        // Define pattern data for each variation
+        const patterns = {
+          dots1: {
+            width: 12, height: 12,
+            elements: [
+              { type: 'circle', cx: 6, cy: 6, r: 1.5, fill: 'rgba(255,255,255,0.25)' },
+              { type: 'circle', cx: 2, cy: 2, r: 1, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 10, cy: 10, r: 1, fill: 'rgba(255,255,255,0.15)' }
+            ]
+          },
+          dots2: {
+            width: 14, height: 14,
+            elements: [
+              { type: 'circle', cx: 7, cy: 7, r: 1.8, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 3, cy: 3, r: 0.8, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 11, cy: 11, r: 0.8, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 7, cy: 3, r: 0.6, fill: 'rgba(255,255,255,0.1)' }
+            ]
+          },
+          dots3: {
+            width: 10, height: 10,
+            elements: [
+              { type: 'circle', cx: 5, cy: 5, r: 1.2, fill: 'rgba(255,255,255,0.18)' },
+              { type: 'circle', cx: 2, cy: 2, r: 0.7, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 8, cy: 8, r: 0.7, fill: 'rgba(255,255,255,0.12)' }
+            ]
+          },
+          dots4: {
+            width: 12, height: 24,
+            elements: [
+              // Row 1
+              { type: 'circle', cx: 6, cy: 6, r: 1.5, fill: 'rgba(255,255,255,0.25)' },
+              { type: 'circle', cx: 2, cy: 2, r: 1, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 10, cy: 10, r: 1, fill: 'rgba(255,255,255,0.15)' },
+              // Row 2 (offset)
+              { type: 'circle', cx: 0, cy: 18, r: 1.5, fill: 'rgba(255,255,255,0.25)' },
+              { type: 'circle', cx: 8, cy: 14, r: 1, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 4, cy: 22, r: 1, fill: 'rgba(255,255,255,0.15)' }
+            ]
+          },
+          dots5: {
+            width: 14, height: 28,
+            elements: [
+              // Row 1
+              { type: 'circle', cx: 7, cy: 7, r: 1.8, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 3, cy: 3, r: 0.8, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 11, cy: 11, r: 0.8, fill: 'rgba(255,255,255,0.12)' },
+              // Row 2 (offset)
+              { type: 'circle', cx: 0, cy: 21, r: 1.8, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 10, cy: 17, r: 0.8, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 4, cy: 25, r: 0.8, fill: 'rgba(255,255,255,0.12)' }
+            ]
+          },
+          dots6: {
+            width: 16, height: 16,
+            elements: [
+              { type: 'ellipse', cx: 4, cy: 4, rx: 1.8, ry: 1.2, fill: 'rgba(255,255,255,0.25)' },
+              { type: 'ellipse', cx: 12, cy: 6, rx: 1.2, ry: 1.6, fill: 'rgba(255,255,255,0.18)' },
+              { type: 'ellipse', cx: 8, cy: 12, rx: 1.5, ry: 1.1, fill: 'rgba(255,255,255,0.22)' },
+              { type: 'ellipse', cx: 2, cy: 10, rx: 0.9, ry: 1.3, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'ellipse', cx: 14, cy: 14, rx: 1.1, ry: 0.8, fill: 'rgba(255,255,255,0.12)' }
+            ]
+          },
+          dots7: {
+            width: 18, height: 18,
+            elements: [
+              { type: 'circle', cx: 3, cy: 3, r: 1.1, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 15, cy: 5, r: 0.8, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 9, cy: 9, r: 1.4, fill: 'rgba(255,255,255,0.25)' },
+              { type: 'circle', cx: 5, cy: 15, r: 0.6, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 12, cy: 12, r: 1.0, fill: 'rgba(255,255,255,0.18)' },
+              { type: 'circle', cx: 7, cy: 7, r: 0.7, fill: 'rgba(255,255,255,0.1)' }
+            ]
+          },
+          stripes1: {
+            width: 8, height: 8,
+            elements: [
+              { type: 'line', x1: 0, y1: 4, x2: 8, y2: 4, stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 },
+              { type: 'line', x1: 4, y1: 0, x2: 4, y2: 8, stroke: 'rgba(255,255,255,0.15)', strokeWidth: 0.5 }
+            ]
+          },
+          stripes2: {
+            width: 12, height: 12,
+            elements: [
+              { type: 'line', x1: 0, y1: 6, x2: 12, y2: 6, stroke: 'rgba(255,255,255,0.18)', strokeWidth: 1.2 },
+              { type: 'line', x1: 6, y1: 0, x2: 6, y2: 12, stroke: 'rgba(255,255,255,0.12)', strokeWidth: 0.8 },
+              { type: 'line', x1: 0, y1: 3, x2: 12, y2: 3, stroke: 'rgba(255,255,255,0.1)', strokeWidth: 0.4 }
+            ]
+          },
+          stripes3: {
+            width: 10, height: 10,
+            elements: [
+              { type: 'line', x1: 0, y1: 5, x2: 10, y2: 5, stroke: 'rgba(255,255,255,0.15)', strokeWidth: 0.8 },
+              { type: 'line', x1: 5, y1: 0, x2: 5, y2: 10, stroke: 'rgba(255,255,255,0.12)', strokeWidth: 0.6 }
+            ]
+          },
+          stripes4: {
+            width: 8, height: 16,
+            elements: [
+              // Row 1
+              { type: 'line', x1: 0, y1: 4, x2: 8, y2: 4, stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 },
+              { type: 'line', x1: 4, y1: 0, x2: 4, y2: 8, stroke: 'rgba(255,255,255,0.15)', strokeWidth: 0.5 },
+              // Row 2 (offset)
+              { type: 'line', x1: 4, y1: 12, x2: 12, y2: 12, stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 },
+              { type: 'line', x1: 8, y1: 8, x2: 8, y2: 16, stroke: 'rgba(255,255,255,0.15)', strokeWidth: 0.5 }
+            ]
+          },
+          stripes5: {
+            width: 12, height: 24,
+            elements: [
+              // Row 1
+              { type: 'line', x1: 0, y1: 6, x2: 12, y2: 6, stroke: 'rgba(255,255,255,0.18)', strokeWidth: 1.2 },
+              { type: 'line', x1: 6, y1: 0, x2: 6, y2: 12, stroke: 'rgba(255,255,255,0.12)', strokeWidth: 0.8 },
+              { type: 'line', x1: 0, y1: 3, x2: 12, y2: 3, stroke: 'rgba(255,255,255,0.1)', strokeWidth: 0.4 },
+              // Row 2 (offset)
+              { type: 'line', x1: 6, y1: 18, x2: 18, y2: 18, stroke: 'rgba(255,255,255,0.18)', strokeWidth: 1.2 },
+              { type: 'line', x1: 12, y1: 12, x2: 12, y2: 24, stroke: 'rgba(255,255,255,0.12)', strokeWidth: 0.8 },
+              { type: 'line', x1: 6, y1: 15, x2: 18, y2: 15, stroke: 'rgba(255,255,255,0.1)', strokeWidth: 0.4 }
+            ]
+          },
+          stripes6: {
+            width: 16, height: 16,
+            elements: [
+              { type: 'path', d: 'M0,4 Q4,2 8,4 T16,4', stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 },
+              { type: 'path', d: 'M0,12 Q4,10 8,12 T16,12', stroke: 'rgba(255,255,255,0.15)', strokeWidth: 0.8 },
+              { type: 'path', d: 'M4,0 Q6,4 4,8 T4,16', stroke: 'rgba(255,255,255,0.12)', strokeWidth: 0.6 }
+            ]
+          },
+          stripes7: {
+            width: 20, height: 20,
+            elements: [
+              { type: 'path', d: 'M0,5 L20,6', stroke: 'rgba(255,255,255,0.18)', strokeWidth: 1.2 },
+              { type: 'path', d: 'M0,15 L20,14', stroke: 'rgba(255,255,255,0.15)', strokeWidth: 0.9 },
+              { type: 'path', d: 'M5,0 L6,20', stroke: 'rgba(255,255,255,0.12)', strokeWidth: 0.7 },
+              { type: 'path', d: 'M15,0 L14,20', stroke: 'rgba(255,255,255,0.1)', strokeWidth: 0.5 }
+            ]
+          },
+          floral1: {
+            width: 24, height: 24,
+            elements: [
+              { type: 'circle', cx: 12, cy: 12, r: 3, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 9, cy: 9, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 15, cy: 9, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 12, cy: 6, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 12, cy: 18, r: 1.5, fill: 'rgba(255,255,255,0.15)' }
+            ]
+          },
+          floral2: {
+            width: 28, height: 28,
+            elements: [
+              { type: 'circle', cx: 14, cy: 14, r: 3.5, fill: 'rgba(255,255,255,0.18)' },
+              { type: 'circle', cx: 11, cy: 11, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 17, cy: 11, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 14, cy: 8, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 14, cy: 20, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 11, cy: 17, r: 1.2, fill: 'rgba(255,255,255,0.08)' }
+            ]
+          },
+          floral3: {
+            width: 24, height: 48,
+            elements: [
+              // Row 1
+              { type: 'circle', cx: 12, cy: 12, r: 3, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 9, cy: 9, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 15, cy: 9, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 12, cy: 6, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 12, cy: 18, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              // Row 2 (offset)
+              { type: 'circle', cx: 0, cy: 36, r: 3, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 21, cy: 33, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 3, cy: 33, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 0, cy: 30, r: 1.5, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 0, cy: 42, r: 1.5, fill: 'rgba(255,255,255,0.15)' }
+            ]
+          },
+          floral4: {
+            width: 28, height: 56,
+            elements: [
+              // Row 1
+              { type: 'circle', cx: 14, cy: 14, r: 3.5, fill: 'rgba(255,255,255,0.18)' },
+              { type: 'circle', cx: 11, cy: 11, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 17, cy: 11, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 14, cy: 8, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 14, cy: 20, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 11, cy: 17, r: 1.2, fill: 'rgba(255,255,255,0.08)' },
+              // Row 2 (offset)
+              { type: 'circle', cx: 0, cy: 42, r: 3.5, fill: 'rgba(255,255,255,0.18)' },
+              { type: 'circle', cx: 25, cy: 39, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 3, cy: 39, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 0, cy: 36, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 0, cy: 48, r: 2, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 25, cy: 45, r: 1.2, fill: 'rgba(255,255,255,0.08)' }
+            ]
+          },
+          floral5: {
+            width: 32, height: 32,
+            elements: [
+              { type: 'ellipse', cx: 16, cy: 16, rx: 4, ry: 3, fill: 'rgba(255,255,255,0.2)' },
+              { type: 'ellipse', cx: 12, cy: 12, rx: 2.5, ry: 1.8, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'ellipse', cx: 20, cy: 14, rx: 1.8, ry: 2.2, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'ellipse', cx: 16, cy: 8, rx: 1.5, ry: 2.5, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'ellipse', cx: 14, cy: 22, rx: 2.2, ry: 1.5, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'circle', cx: 16, cy: 16, r: 1.2, fill: 'rgba(255,255,255,0.08)' }
+            ]
+          },
+          floral6: {
+            width: 36, height: 36,
+            elements: [
+              { type: 'ellipse', cx: 8, cy: 8, rx: 2.5, ry: 1.8, fill: 'rgba(255,255,255,0.18)' },
+              { type: 'ellipse', cx: 28, cy: 12, rx: 1.8, ry: 2.2, fill: 'rgba(255,255,255,0.15)' },
+              { type: 'ellipse', cx: 18, cy: 24, rx: 2.2, ry: 1.5, fill: 'rgba(255,255,255,0.16)' },
+              { type: 'ellipse', cx: 12, cy: 30, rx: 1.5, ry: 2.0, fill: 'rgba(255,255,255,0.12)' },
+              { type: 'ellipse', cx: 24, cy: 6, rx: 1.8, ry: 1.6, fill: 'rgba(255,255,255,0.14)' },
+              { type: 'circle', cx: 18, cy: 18, r: 0.8, fill: 'rgba(255,255,255,0.08)' }
+            ]
+          },
+          geometric1: {
+            width: 10, height: 10,
+            elements: [
+              { type: 'polygon', points: '5,2 7,5 5,8 3,5', fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 5, cy: 5, r: 1, fill: 'rgba(255,255,255,0.1)' }
+            ]
+          },
+          geometric2: {
+            width: 12, height: 12,
+            elements: [
+              { type: 'polygon', points: '6,3 8,6 6,9 4,6', fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 6, cy: 6, r: 1.2, fill: 'rgba(255,255,255,0.08)' },
+              { type: 'polygon', points: '3,3 5,6 3,9 1,6', fill: 'rgba(255,255,255,0.1)' }
+            ]
+          },
+          geometric3: {
+            width: 10, height: 20,
+            elements: [
+              // Row 1
+              { type: 'polygon', points: '5,2 7,5 5,8 3,5', fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 5, cy: 5, r: 1, fill: 'rgba(255,255,255,0.1)' },
+              // Row 2 (offset)
+              { type: 'polygon', points: '0,12 2,15 0,18 -2,15', fill: 'rgba(255,255,255,0.2)' },
+              { type: 'circle', cx: 0, cy: 15, r: 1, fill: 'rgba(255,255,255,0.1)' }
+            ]
+          },
+          geometric4: {
+            width: 12, height: 24,
+            elements: [
+              // Row 1
+              { type: 'polygon', points: '6,3 8,6 6,9 4,6', fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 6, cy: 6, r: 1.2, fill: 'rgba(255,255,255,0.08)' },
+              { type: 'polygon', points: '3,3 5,6 3,9 1,6', fill: 'rgba(255,255,255,0.1)' },
+              // Row 2 (offset)
+              { type: 'polygon', points: '0,15 2,18 0,21 -2,18', fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 0, cy: 18, r: 1.2, fill: 'rgba(255,255,255,0.08)' },
+              { type: 'polygon', points: '9,15 11,18 9,21 7,18', fill: 'rgba(255,255,255,0.1)' }
+            ]
+          },
+          geometric5: {
+            width: 20, height: 20,
+            elements: [
+              { type: 'path', d: 'M5,2 Q8,1 11,2 T17,2 L15,8 Q12,9 9,8 T3,8 Z', fill: 'rgba(255,255,255,0.18)' },
+              { type: 'path', d: 'M2,12 Q5,11 8,12 T14,12 L12,18 Q9,19 6,18 T0,18 Z', fill: 'rgba(255,255,255,0.15)' },
+              { type: 'circle', cx: 10, cy: 10, r: 1.5, fill: 'rgba(255,255,255,0.08)' }
+            ]
+          },
+          geometric6: {
+            width: 24, height: 24,
+            elements: [
+              { type: 'ellipse', cx: 6, cy: 6, rx: 3, ry: 2, fill: 'rgba(255,255,255,0.16)' },
+              { type: 'polygon', points: '18,8 20,12 18,16 16,12', fill: 'rgba(255,255,255,0.14)' },
+              { type: 'path', d: 'M4,18 Q8,16 12,18 T20,18', stroke: 'rgba(255,255,255,0.12)', strokeWidth: 1 },
+              { type: 'circle', cx: 12, cy: 12, r: 1.8, fill: 'rgba(255,255,255,0.08)' }
+            ]
+          }
+        };
+        
+        return patterns[variation] || patterns.dots1;
       }
       
 
@@ -4506,8 +4677,23 @@ try {
         try {
           this.uiService.showScreen('screen-portal');
           
-          await this.dataService.initialize();
+          // Add a small delay to ensure Firebase is initialized
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
           this.setupEventListeners();
+          
+          // Wait for Firebase to be ready before initializing DataService
+          console.log('🔄 Waiting for Firebase to initialize...');
+          let attempts = 0;
+          while (!window.db && attempts < 100) { // Increased from 50 to 100 attempts
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+            if (attempts % 20 === 0) {
+              console.log(`🔄 Still waiting for Firebase... (attempt ${attempts}/100)`);
+            }
+          }
+          
+          await this.dataService.initialize();
           
           // Initialize new engine
           this.quiltEngine.initialize();
@@ -4526,22 +4712,22 @@ try {
           this.initializeUI();
           
           // Load quotes from Firestore
-          // console.log('🔄 About to load quotes from Firestore...');
-          // console.log('🔄 Firebase available:', !!window.firebaseApp);
-          // console.log('🔄 Firestore available:', !!window.firestore);
-          // console.log('🔄 DB available:', !!window.db);
+          console.log('🔄 About to load quotes from Firestore...');
+          console.log('🔄 Firebase available:', !!window.firebaseApp);
+          console.log('🔄 Firestore available:', !!window.firestore);
+          console.log('🔄 DB available:', !!window.db);
           
           // Wait a bit for Firebase to be fully initialized
-          // if (!window.db || !window.firestore) {
-          //   console.log('🔄 Waiting for Firebase to initialize...');
-          //   await new Promise(resolve => setTimeout(resolve, 1000));
-          // }
+          if (!window.db || !window.firestore) {
+            console.log('🔄 Waiting for Firebase to initialize...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
           
-          // await this.quoteService.loadQuotesFromFirestore();
-          console.log('🔄 Using local storage only - Firebase disabled');
+          await this.quoteService.loadQuotesFromFirestore();
+          console.log('🔄 Firestore enabled - quotes loaded from database');
           
           this.setupAutoTransition();
-          // this.setupDailyReset(); // DISABLED FOR LOCAL TESTING - prevents automatic resets
+          this.setupDailyReset(); // ENABLED - automatic daily archive and reset
           
           // Don't set up flip handlers here - they'll be set up when quilt screen is shown
           
@@ -4783,11 +4969,18 @@ try {
       }
 
       handleWindowResize() {
-        if (this.quiltEngine.blocks && this.quiltEngine.blocks.length > 0) {
-          // Recalculate dimensions for new viewport size
-          this.quiltEngine.recalculateDimensionsForCurrentViewport();
-          this.renderQuilt();
+        // Debounce resize events to prevent excessive re-rendering
+        if (this.resizeTimeout) {
+          clearTimeout(this.resizeTimeout);
         }
+        
+        this.resizeTimeout = setTimeout(() => {
+          if (this.quiltEngine.blocks && this.quiltEngine.blocks.length > 0) {
+            // Recalculate dimensions for new viewport size
+            this.quiltEngine.recalculateDimensionsForCurrentViewport();
+            this.renderQuilt();
+          }
+        }, 250); // 250ms debounce
       }
 
       setupFloatingAdminButton() {
@@ -6820,7 +7013,7 @@ try {
       }
 
       async renderQuilt() {
-        console.log('🔄 renderQuilt() called'); // TEMPORARILY RE-ENABLED FOR DEBUGGING
+        // Debug logging removed to reduce console noise
         // Debug panel removed for production
         
         this.ensureQuiltFits();
@@ -7795,26 +7988,40 @@ try {
     window.generateInstagramForZapier = window.zapierWebhookAPI.generateInstagramImage;
     window.zapierHealthCheck = window.zapierWebhookAPI.healthCheck;
     
-    // Initialize Firebase after CONFIG is defined
-    (async () => {
-      try {
-        const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
-        const { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, orderBy, limit, addDoc, updateDoc, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-        
-        // Initialize Firebase
-        const firebaseApp = initializeApp(CONFIG.FIREBASE);
-        const db = getFirestore(firebaseApp);
-        
-        // Make Firebase available globally
-        window.firebaseApp = firebaseApp;
-        window.db = db;
-        window.firestore = { collection, doc, setDoc, getDoc, getDocs, query, orderBy, limit, addDoc, updateDoc, deleteDoc };
-        
-        console.log('🔥 Firebase initialized successfully');
-      } catch (error) {
-        console.warn('⚠️ Firebase initialization failed:', error);
-      }
-    })();
+    // Automatic Firebase reconnection system
+    window.setupAutomaticFirebaseReconnection = function() {
+      let checkAttempts = 0;
+      const maxChecks = 15;
+      
+      const checkAndReconnect = () => {
+        if (window.db     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file window.app) {
+          if (window.app.dataService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file !window.app.dataService.db) {
+            window.app.dataService.db = window.db;
+            console.log("✅ DataService automatically reconnected to Firebase");
+          }
+          if (window.app.archiveService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file window.app.archiveService.dataService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file !window.app.archiveService.dataService.db) {
+            window.app.archiveService.dataService.db = window.db;
+            console.log("✅ ArchiveService automatically reconnected to Firebase");
+          }
+          console.log("✅ All services reconnected to Firebase automatically");
+          return;
+        }
+        checkAttempts++;
+        if (checkAttempts < maxChecks) {
+          setTimeout(checkAndReconnect, 2000);
+        }
+      };
+      setTimeout(checkAndReconnect, 2000);
+    };
+    
+    // Start automatic reconnection
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", window.setupAutomaticFirebaseReconnection);
+    } else {
+      window.setupAutomaticFirebaseReconnection();
+    }
+    
+    // Firebase initialization moved to earlier in the file
   </script>
 </body>
 </html>
