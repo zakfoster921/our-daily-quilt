@@ -3527,16 +3527,20 @@ try {
             
             // Also save the generated Instagram image to Firestore
             try {
-              const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData.blocks);
-              if (instagramImage) {
-                const imageData = {
-                  imageData: instagramImage,
-                  date: today,
-                  lastUpdated: new Date().toISOString()
-                };
-                const imageRef = window.firestore.doc(window.db, 'instagram-images', today);
-                await window.firestore.setDoc(imageRef, imageData);
-                this.logger.log('💾 Saved Instagram image to Firestore');
+              if (window.app?.archiveService?.generateInstagramImage) {
+                const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData.blocks);
+                if (instagramImage) {
+                  const imageData = {
+                    imageData: instagramImage,
+                    date: today,
+                    lastUpdated: new Date().toISOString()
+                  };
+                  const imageRef = window.firestore.doc(window.db, 'instagram-images', today);
+                  await window.firestore.setDoc(imageRef, imageData);
+                  this.logger.log('💾 Saved Instagram image to Firestore');
+                }
+              } else {
+                console.warn('⚠️ ArchiveService.generateInstagramImage not available');
               }
             } catch (imageError) {
               console.warn('⚠️ Could not save Instagram image to Firestore:', imageError);
@@ -7988,10 +7992,6 @@ try {
     window.generateInstagramForZapier = window.zapierWebhookAPI.generateInstagramImage;
     window.zapierHealthCheck = window.zapierWebhookAPI.healthCheck;
     
-    // Firebase initialization moved to earlier in the file
-  </script>
-</body>
-</html>
     // Automatic Firebase reconnection system
     window.autoReconnectToFirebase = function() {
       if (window.db && window.app) {
@@ -8012,3 +8012,8 @@ try {
 
     // Also check immediately
     window.autoReconnectToFirebase();
+    
+    // Firebase initialization moved to earlier in the file
+  </script>
+</body>
+</html>
