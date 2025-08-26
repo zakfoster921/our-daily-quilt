@@ -3400,11 +3400,11 @@ try {
           
           // Fallback: wait with polling
           let attempts = 0;
-          while (!window.db while (!window.db && attempts < 200)while (!window.db && attempts < 200) attempts < 1000) { // Increased from 100 to 200 attempts (20 seconds)
+          while (!window.db && attempts < 200) { // Increased from 100 to 200 attempts (20 seconds)
             await new Promise(resolve => setTimeout(resolve, 100));
             attempts++;
             if (attempts % 20 === 0) {
-              console.log(`🔄 DataService: Still waiting for Firebase... (attempt ${attempts}/1000)`);
+              console.log(`🔄 DataService: Still waiting for Firebase... (attempt ${attempts}/200)`);
             }
           }
           
@@ -3423,6 +3423,12 @@ try {
 
       async loadQuilt() {
         try {
+          // Check if Firebase became available since initialization
+          if (!this.db && window.db) {
+            this.db = window.db;
+            this.logger.log('✅ Firestore became available - switching to Firestore');
+          }
+          
           if (this.db) {
             // Try Firestore first
             const today = Utils.getTodayKey();
@@ -4685,11 +4691,11 @@ try {
           // Wait for Firebase to be ready before initializing DataService
           console.log('🔄 Waiting for Firebase to initialize...');
           let attempts = 0;
-          while (!window.db while (!window.db && attempts < 100)while (!window.db && attempts < 100) attempts < 600) { // Increased from 50 to 100 attempts
+          while (!window.db && attempts < 100) { // Increased from 50 to 100 attempts
             await new Promise(resolve => setTimeout(resolve, 100));
             attempts++;
             if (attempts % 20 === 0) {
-              console.log(`🔄 Still waiting for Firebase... (attempt ${attempts}/600)`);
+              console.log(`🔄 Still waiting for Firebase... (attempt ${attempts}/100)`);
             }
           }
           
@@ -7994,12 +8000,12 @@ try {
       const maxChecks = 15;
       
       const checkAndReconnect = () => {
-        if (window.db     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file window.app) {
-          if (window.app.dataService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file !window.app.dataService.db) {
+        if (window.db && window.app) {
+          if (window.app.dataService && !window.app.dataService.db) {
             window.app.dataService.db = window.db;
             console.log("✅ DataService automatically reconnected to Firebase");
           }
-          if (window.app.archiveService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file window.app.archiveService.dataService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file !window.app.archiveService.dataService.db) {
+          if (window.app.archiveService && window.app.archiveService.dataService && !window.app.archiveService.dataService.db) {
             window.app.archiveService.dataService.db = window.db;
             console.log("✅ ArchiveService automatically reconnected to Firebase");
           }
@@ -8020,6 +8026,27 @@ try {
     } else {
       window.setupAutomaticFirebaseReconnection();
     }
+    
+    // Automatic Firebase reconnection - add this right before </script>
+    window.autoReconnectToFirebase = function() {
+      if (window.db     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file window.app) {
+        if (window.app.dataService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file !window.app.dataService.db) {
+          window.app.dataService.db = window.db;
+          console.log("✅ DataService auto-reconnected to Firebase");
+        }
+        if (window.app.archiveService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file window.app.archiveService.dataService     // Firebase initialization moved to earlier in the file    // Firebase initialization moved to earlier in the file !window.app.archiveService.dataService.db) {
+          window.app.archiveService.dataService.db = window.db;
+          console.log("✅ ArchiveService auto-reconnected to Firebase");
+        }
+        console.log("✅ All services auto-reconnected to Firebase");
+      }
+    };
+    
+    // Check every 2 seconds for Firebase availability
+    setInterval(window.autoReconnectToFirebase, 2000);
+    
+    // Also check immediately
+    window.autoReconnectToFirebase();
     
     // Firebase initialization moved to earlier in the file
   </script>
