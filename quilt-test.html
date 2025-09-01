@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quilt Test - EXACT Copy</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f6f4f1;
+            color: #333;
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #0056CC;
+        }
+        
+        .block-count {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007AFF;
+        }
+        
+        .quilt-container {
+            width: 100%;
+            height: 600px;
+            position: relative;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        .quilt-container svg {
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            margin: 0;
+            padding: 0;
+            display: block;
+            position: relative;
+            flex-shrink: 0;
+            min-height: 100px;
+            visibility: visible;
+            opacity: 1;
+            z-index: 1;
+        }
+        
+        .stats {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h2>Quilt Test - EXACT Copy from Live Site</h2>
+        
+        <div class="control-group">
+            <label>Block Count: <span class="block-count" id="blockCount">0</span></label>
+        </div>
+        
+        <div class="control-group">
+            <label>Add Blocks:</label>
+            <button onclick="addBlock()">Add Block</button>
+            <button onclick="addBlocks(10)">Add 10 Blocks</button>
+            <button onclick="addBlocks(25)">Add 25 Blocks</button>
+            <button onclick="resetQuilt()">Reset Quilt</button>
+        </div>
+    </div>
+    
+    <div class="quilt-container">
+        <svg id="quilt" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet">
+            <!-- Quilt blocks will be rendered here -->
+        </svg>
+    </div>
+    
+    <div class="stats" id="stats">
+        <div>Current Overlap: <span id="currentOverlap">15</span>px</div>
+        <div>Overlap Reduction: <span id="overlapReduction">0</span>%</div>
+        <div>Jitter Multiplier: <span id="jitterMultiplier">1.0</span></div>
+        <div>Rotation Multiplier: <span id="rotationMultiplier">1.0</span></div>
+        <div>Quilt Dimensions: <span id="quiltDimensions">0 x 0</span></div>
+    </div>
+
+    <script>
+        // EXACT COPY of the quilt engine from the live site
+        class SimpleQuiltEngine {
+            constructor(userId = null) {
+                this.blocks = [];
+                this.submissionCount = 0;
+                this.deviceId = userId || this.getOrCreateDeviceId();
+            }
+            
+            getOrCreateDeviceId() {
+                let deviceId = localStorage.getItem('quiltDeviceId');
+                if (!deviceId) {
+                    deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('quiltDeviceId', deviceId);
+                }
+                return deviceId;
+            }
+            
+            initialize() {
+                // Use 4:5 dimensions from getQuiltDimensions
+                const dimensions = { width: 200, height: 300 }; // Simplified for test
+                const initialWidth = dimensions.width;
+                const initialHeight = dimensions.height;
+                
+                this.blocks = [{
+                    id: 'initial',
+                    x: 0,
+                    y: 0,
+                    width: initialWidth,
+                    height: initialHeight,
+                    color: '#f7b733',
+                    contributorId: this.deviceId,
+                    submissionIndex: 0
+                }];
+                
+                this.submissionCount = 0;
+            }
+            
+            addSubmission() {
+                this.submissionCount++;
+                return this.submissionCount;
+            }
+            
+            addColor(newColor) {
+                this.submissionCount++;
+                
+                // Find a random block to split
+                const splittableBlocks = this.blocks.filter(block => 
+                    block.width > 60 && block.height > 60
+                );
+                
+                if (splittableBlocks.length === 0) {
+                    // If no blocks can be split, we can't add more colors
+                    // TODO: Implement alternative strategy for when no blocks can be split
+                    console.warn('No blocks can be split and edge placement is disabled');
+                    return null;
+                }
+                
+                const randomBlock = splittableBlocks[Math.floor(Math.random() * splittableBlocks.length)];
+                const splitResult = this.splitBlock(randomBlock, newColor);
+                
+                // Replace the original block with the split result
+                const blockIndex = this.blocks.findIndex(b => b.id === randomBlock.id);
+                this.blocks.splice(blockIndex, 1, ...splitResult);
+                
+                this.recordUserContribution(splitResult[1].id, newColor, this.submissionCount);
+                
+                return {
+                    originalBlock: randomBlock,
+                    newBlocks: splitResult,
+                    submissionIndex: this.submissionCount
+                };
+            }
+            
+            splitBlock(block, newColor) {
+                // Calculate progressive overlap reduction based on number of blocks
+                const baseOverlap = 15; // Starting overlap
+                const effectiveBlockCount = this.blocks.length + 1; // Account for the new block being added
+                const overlapReductionFactor = Math.min(0.5, effectiveBlockCount / 40); // Reduce by 50% at 40 blocks
+                const currentOverlap = Math.max(2, baseOverlap * (1 - overlapReductionFactor)); // Minimum 2px overlap
+                
+                // Store for display
+                this.currentOverlap = currentOverlap;
+                this.overlapReductionPercent = (overlapReductionFactor * 100).toFixed(1);
+                
+                // Debug: Log overlap calculation visibly
+                console.log(`🔧 OVERLAP DEBUG: ${this.blocks.length} → ${effectiveBlockCount} blocks → reduction: ${(overlapReductionFactor * 100).toFixed(1)}% → overlap: ${currentOverlap.toFixed(1)}px`);
+                document.getElementById('currentOverlap').textContent = currentOverlap.toFixed(1);
+                document.getElementById('overlapReduction').textContent = (overlapReductionFactor * 100).toFixed(1);
+                
+                // VISIBLE DEBUG - Update stats immediately
+                document.getElementById('currentOverlap').textContent = currentOverlap.toFixed(1);
+                document.getElementById('overlapReduction').textContent = this.overlapReductionPercent;
+                
+                console.log(`🔧 OVERLAP DEBUG: ${this.blocks.length} → ${effectiveBlockCount} blocks → reduction: ${(overlapReductionFactor * 100).toFixed(1)}% → overlap: ${currentOverlap.toFixed(1)}px`);
+                
+                const isWider = block.width > block.height;
+                const splitDirection = isWider ? 'vertical' : 'horizontal';
+                
+                if (splitDirection === 'horizontal') {
+                    const splitHeight = block.height * (0.3 + Math.random() * 0.4);
+                    
+                    const block1 = {
+                        ...block,
+                        id: block.id + '_1',
+                        height: splitHeight
+                    };
+                    
+                    const block2 = {
+                        ...block,
+                        id: block.id + '_2',
+                        y: block.y + splitHeight - currentOverlap, // Progressive overlap reduction
+                        height: block.height - splitHeight + (currentOverlap * 2), // Compensate for overlap
+                        color: newColor,
+                        contributorId: this.deviceId,
+                        submissionIndex: this.submissionCount
+                    };
+                    
+                    return [block1, block2];
+                } else {
+                    const splitWidth = block.width * (0.3 + Math.random() * 0.4);
+                    
+                    const block1 = {
+                        ...block,
+                        id: block.id + '_1',
+                        width: splitWidth
+                    };
+                    
+                    const block2 = {
+                        ...block,
+                        id: block.id + '_2',
+                        x: block.x + splitWidth - currentOverlap, // Progressive overlap reduction
+                        width: block.width - splitWidth + (currentOverlap * 2), // Compensate for overlap
+                        color: newColor,
+                        contributorId: this.deviceId,
+                        submissionIndex: this.submissionCount
+                    };
+                    
+                    return [block1, block2];
+                }
+            }
+            
+            recordUserContribution(blockId, color, submissionIndex) {
+                // Simplified for test
+                console.log(`User contribution: ${blockId}, ${color}, ${submissionIndex}`);
+            }
+            
+            getQuiltBounds() {
+                if (this.blocks.length === 0) return { minX: 0, minY: 0, maxX: 800, maxY: 600 };
+                
+                const minX = Math.min(...this.blocks.map(b => b.x));
+                const minY = Math.min(...this.blocks.map(b => b.y));
+                const maxX = Math.max(...this.blocks.map(b => b.x + b.width));
+                const maxY = Math.max(...this.blocks.map(b => b.y + b.height));
+                
+                return { minX, minY, maxX, maxY };
+            }
+        }
+        
+        // EXACT COPY of QuiltRendererV2 from the live site
+        class QuiltRendererV2 {
+            constructor(logger) {
+                this.logger = logger;
+                this.quiltSVG = null;
+                this.lastAddedIndex = null;
+                this.userPieces = new Set();
+            }
+            
+            // Calculate progressive jitter decrease based on number of blocks
+            calculateJitterMultiplier(blockCount) {
+                if (blockCount <= 10) {
+                    return 1.0; // Full jitter for first 10 blocks
+                } else if (blockCount >= 60) {
+                    return 0.05; // Very minimal jitter after 60 blocks
+                } else {
+                    // More aggressive decrease from 1.0 to 0.05 between 10 and 60 blocks
+                    const progress = (blockCount - 10) / (60 - 10);
+                    return 1.0 - (progress * 0.95);
+                }
+            }
+            
+            // Calculate rotation jitter multiplier (decreases to minimal by 100 blocks)
+            calculateRotationMultiplier(blockCount) {
+                if (blockCount <= 10) {
+                    return 1.0; // Full rotation for first 10 blocks
+                } else if (blockCount >= 100) {
+                    return 0.33; // Minimal rotation after 100 blocks (0.75° × 0.33 = 0.25°)
+                } else {
+                    // Decrease from 1.0 to 0.33 between 10 and 100 blocks
+                    const progress = (blockCount - 10) / (100 - 10);
+                    return 1.0 - (progress * 0.67);
+                }
+            }
+
+            initialize() {
+                this.quiltSVG = document.getElementById('quilt');
+                if (!this.quiltSVG) {
+                    throw new Error('Quilt SVG element not found');
+                }
+                
+                // Set initial viewBox to viewport dimensions
+                const viewportWidth = 800;
+                const viewportHeight = 600;
+                this.quiltSVG.setAttribute('viewBox', `0 0 ${viewportWidth} ${viewportHeight}`);
+                this.quiltSVG.setAttribute('width', viewportWidth);
+                this.quiltSVG.setAttribute('height', viewportHeight);
+                this.quiltSVG.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+            }
+
+            renderBlocks(blocks, userPieces = []) {
+                if (!this.quiltSVG) {
+                    this.logger.warn('Quilt SVG not found');
+                    return;
+                }
+
+                this.quiltSVG.innerHTML = '';
+                this.userPieces = new Set(userPieces.map(b => b.id));
+
+                if (blocks.length === 0) {
+                    console.log('🔧 renderBlocks: No blocks to render, showing placeholder');
+                    // Add a placeholder when no blocks exist
+                    this.quiltSVG.innerHTML = `
+                        <rect x="0" y="0" width="100%" height="100%" fill="#f0f0f0" opacity="0.5"/>
+                        <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" 
+                              font-family="Arial, sans-serif" font-size="24" fill="#666">
+                          No quilt blocks to display (blocks.length: ${blocks.length})
+                        </text>
+                    `;
+                    this.quiltSVG.setAttribute('viewBox', '0 0 400 300');
+                    this.quiltSVG.setAttribute('width', '100%');
+                    this.quiltSVG.setAttribute('height', '100%');
+                    return;
+                }
+
+                // Calculate actual quilt bounds from blocks
+                const minX = Math.min(...blocks.map(b => b.x));
+                const minY = Math.min(...blocks.map(b => b.y));
+                const maxX = Math.max(...blocks.map(b => b.x + b.width));
+                const maxY = Math.max(...blocks.map(b => b.y + b.height));
+                
+                const actualQuiltWidth = maxX - minX;
+                const actualQuiltHeight = maxY - minY;
+                
+                // Add some padding around the quilt content
+                const padding = 20;
+                const viewBoxWidth = actualQuiltWidth + (padding * 2);
+                const viewBoxHeight = actualQuiltHeight + (padding * 2);
+                
+                // Set viewBox to actual quilt content with padding
+                this.quiltSVG.setAttribute('viewBox', `${minX - padding} ${minY - padding} ${viewBoxWidth} ${viewBoxHeight}`);
+                
+                // Set SVG dimensions to fill container
+                this.quiltSVG.setAttribute('width', '100%');
+                this.quiltSVG.setAttribute('height', '100%');
+                this.quiltSVG.style.isolation = 'isolate'; // Required for blend modes to work
+                
+                console.log('🔧 USING ACTUAL QUILT DIMENSIONS:', actualQuiltWidth, 'x', actualQuiltHeight);
+                
+                // Mobile: Center the quilt content and fit fully inside container
+                this.quiltSVG.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                
+                // Make SVG fill the entire container with !important
+                this.quiltSVG.style.setProperty('width', '100%', 'important');
+                this.quiltSVG.style.setProperty('height', '100%', 'important');
+                this.quiltSVG.style.setProperty('max-width', '100%', 'important');
+                this.quiltSVG.style.setProperty('max-height', '100%', 'important');
+                
+                // Debug: Log SVG dimensions
+                console.log('🔧 SVG dimensions set to:', {
+                    width: this.quiltSVG.style.width,
+                    height: this.quiltSVG.style.height,
+                    viewBox: this.quiltSVG.getAttribute('viewBox'),
+                    preserveAspectRatio: this.quiltSVG.getAttribute('preserveAspectRatio')
+                });
+                
+                // No global flip - individual blocks will be flipped when touched
+
+                const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+                defs.innerHTML = `
+                    <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,0,0.15)"/>
+                    </filter>
+                `;
+                this.quiltSVG.appendChild(defs);
+
+                const jitterMultiplier = this.calculateJitterMultiplier(blocks.length);
+                const rotationMultiplier = this.calculateRotationMultiplier(blocks.length);
+                
+                // Store for display
+                this.jitterMultiplier = jitterMultiplier;
+                this.rotationMultiplier = rotationMultiplier;
+                
+                // Debug: Log jitter multipliers
+                console.log(`🎯 Progressive jitter: ${blocks.length} blocks → position: ${jitterMultiplier.toFixed(2)}, rotation: ${rotationMultiplier.toFixed(2)}`);
+                
+                // Pattern selection function
+                const getPatternForColor = (color) => {
+                    // Convert hex to HSL to determine color family
+                    const hex = color.replace('#', '');
+                    const r = parseInt(hex.substr(0, 2), 16) / 255;
+                    const g = parseInt(hex.substr(2, 2), 16) / 255;
+                    const b = parseInt(hex.substr(4, 2), 16) / 255;
+                    
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    const l = (max + min) / 2;
+                    
+                    let h = 0;
+                    if (max !== min) {
+                        const d = max - min;
+                        switch (max) {
+                            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                            case g: h = (b - r) / d + 2; break;
+                            case b: h = (r - g) / d + 4; break;
+                        }
+                        h /= 6;
+                    }
+                    
+                    const hue = h * 360;
+                    const saturation = l === 0 || l === 1 ? 0 : (max - l) / Math.min(l, 1 - l);
+                    
+                    // Pattern selection based on color characteristics
+                    if (saturation < 0.3) return 'geometric'; // Low saturation = neutral
+                    if (hue < 60 || hue > 300) return 'dots'; // Warm colors (red, orange, yellow, pink)
+                    if (hue < 180) return 'stripes'; // Cool colors (green, blue)
+                    return 'floral'; // Purple and other colors
+                };
+                
+                console.log('🔧 Starting to render blocks...');
+                blocks.forEach((block, i) => {
+                    console.log(`🔧 Rendering block ${i}:`, { x: block.x, y: block.y, width: block.width, height: block.height, color: block.color });
+                    const jitterX = (Math.random() - 0.5) * 12 * jitterMultiplier;
+                    const jitterY = (Math.random() - 0.5) * 12 * jitterMultiplier;
+                    const jitterRotation = (Math.random() - 0.5) * 3 * rotationMultiplier;
+                    
+                    // Calculate gap compensation for rotation
+                    const rotationRadians = jitterRotation * Math.PI / 180;
+                    const maxExtension = Math.max(block.width, block.height) * Math.abs(Math.sin(rotationRadians)) * 0.3;
+                    
+                    const jitteredBlock = {
+                        x: block.x + jitterX - (maxExtension * 0.5),
+                        y: block.y + jitterY - (maxExtension * 0.5),
+                        width: block.width,
+                        height: block.height,
+                        color: block.color,
+                        rotation: jitterRotation
+                    };
+                    
+                    // Create hand-cut polygon instead of perfect rectangle
+                    const handCutPolygon = this.createHandCutPolygon(jitteredBlock.x, jitteredBlock.y, jitteredBlock.width, jitteredBlock.height, jitterMultiplier);
+                    
+                    handCutPolygon.setAttribute('fill', jitteredBlock.color);
+                    handCutPolygon.setAttribute('mix-blend-mode', 'multiply');
+                    handCutPolygon.style.mixBlendMode = 'multiply'; // Also set via CSS style
+                    
+                    // Apply base color and blend mode
+                    handCutPolygon.setAttribute('fill', jitteredBlock.color);
+                    handCutPolygon.setAttribute('mix-blend-mode', 'multiply');
+                    handCutPolygon.style.mixBlendMode = 'multiply';
+                    
+                    // Create individual pattern elements for this block instead of using tiling patterns
+                    const basePatternType = getPatternForColor(jitteredBlock.color);
+                    const patternVariations = {
+                        dots: ['dots1', 'dots2', 'dots3', 'dots4', 'dots5', 'dots6', 'dots7'],
+                        stripes: ['stripes1', 'stripes2', 'stripes3', 'stripes4', 'stripes5', 'stripes6', 'stripes7'],
+                        floral: ['floral1', 'floral2', 'floral3', 'floral4', 'floral5', 'floral6'],
+                        geometric: ['geometric1', 'geometric2', 'geometric3', 'geometric4', 'geometric5', 'geometric6']
+                    };
+                    
+                    // Randomly select a variation of the pattern type
+                    const variations = patternVariations[basePatternType];
+                    const randomVariation = variations[Math.floor(Math.random() * variations.length)];
+                    
+                    // Add organic randomness to pattern opacity, positioning, and scale
+                    const opacityVariation = 0.7 + (Math.random() * 0.6); // 0.7 to 1.3 (more variation)
+                    
+                    // Calculate safe offset limits to keep pattern within block bounds
+                    const maxOffsetX = Math.min(3, jitteredBlock.width * 0.1); // 10% of block width max
+                    const maxOffsetY = Math.min(3, jitteredBlock.height * 0.1); // 10% of block height max
+                    const patternOffsetX = (Math.random() - 0.5) * maxOffsetX * 2; // -maxOffset to +maxOffset
+                    const patternOffsetY = (Math.random() - 0.5) * maxOffsetY * 2; // -maxOffset to +maxOffset
+                    
+                    // Calculate safe scale to ensure pattern fills block but doesn't overflow
+                    const scaleVariation = 0.9 + (Math.random() * 0.2); // 0.9 to 1.1 (smaller scale range)
+                    
+                    // Calculate safe rotation to prevent overflow
+                    const maxRotation = Math.min(4, 15 / Math.max(jitteredBlock.width, jitteredBlock.height)); // Smaller blocks get less rotation
+                    const rotationVariation = (Math.random() - 0.5) * maxRotation * 2; // -maxRotation to +maxRotation
+
+                    // Create individual pattern elements for this block
+                    const patternGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    patternGroup.setAttribute('opacity', opacityVariation);
+                    
+                    patternGroup.setAttribute('transform', `translate(${jitteredBlock.x + patternOffsetX}, ${jitteredBlock.y + patternOffsetY}) scale(${scaleVariation}) rotate(${rotationVariation} ${jitteredBlock.width/2} ${jitteredBlock.height/2})`);
+                    
+                    // Create clipping path for this block
+                    const clipPathId = `clip-${i}`;
+                    const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+                    clipPath.setAttribute('id', clipPathId);
+                    const clipRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    clipRect.setAttribute('x', 0);
+                    clipRect.setAttribute('y', 0);
+                    clipRect.setAttribute('width', jitteredBlock.width);
+                    clipRect.setAttribute('height', jitteredBlock.height);
+                    clipPath.appendChild(clipRect);
+                    this.quiltSVG.appendChild(clipPath);
+                    
+                    patternGroup.setAttribute('clip-path', `url(#${clipPathId})`);
+                    
+                    // Create pattern elements based on the selected variation
+                    this.createPatternElements(patternGroup, randomVariation, jitteredBlock.width, jitteredBlock.height);
+                    
+                    // Add the pattern group to the SVG
+                    this.quiltSVG.appendChild(patternGroup);
+                    
+                    const centerX = jitteredBlock.x + jitteredBlock.width / 2;
+                    const centerY = jitteredBlock.y + jitteredBlock.height / 2;
+                    
+                    // Apply rotation transformation
+                    handCutPolygon.setAttribute('transform', `rotate(${jitterRotation} ${centerX} ${centerY})`);
+                    
+                    handCutPolygon.setAttribute('data-block-id', block.id);
+                    
+                    // Add user piece highlighting
+                    if (this.userPieces.has(block.id)) {
+                        handCutPolygon.classList.add('user-piece-highlight');
+                    }
+                    
+                    // Add new block animation
+                    if (i === this.lastAddedIndex) {
+                        handCutPolygon.setAttribute('opacity', '0');
+                        handCutPolygon.classList.add('new-block');
+                        handCutPolygon.addEventListener('animationend', () => {
+                            handCutPolygon.classList.remove('new-block');
+                            handCutPolygon.removeAttribute('opacity');
+                        }, { once: true });
+                    }
+                    
+                    this.quiltSVG.appendChild(handCutPolygon);
+                    console.log(`🔧 Added block ${i} to SVG`);
+                });
+                
+                console.log('🔧 Finished rendering all blocks. SVG children count:', this.quiltSVG.children.length);
+
+                this.lastAddedIndex = null;
+                
+                // Update stats
+                this.updateStats(blocks);
+            }
+
+            setLastAddedIndex(index) {
+                this.lastAddedIndex = index;
+            }
+            
+            // Create hand-cut polygon with organic, wavy edges
+            createHandCutPolygon(x, y, width, height, jitterMultiplier) {
+                const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                
+                // Create organic, wavy edges with 1-2 segments along each side
+                const points = [];
+                const handCutVariation = 4 * jitterMultiplier; // 4px max variation
+                const segments = 2; // Number of segments per edge for subtle waviness
+                
+                // Top edge (left to right)
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    const baseX = t * width;
+                    const baseY = 0;
+                    const variationX = (Math.random() - 0.5) * handCutVariation;
+                    const variationY = (Math.random() - 0.5) * handCutVariation;
+                    points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+                }
+                
+                // Right edge (top to bottom)
+                for (let i = 1; i <= segments; i++) {
+                    const t = i / segments;
+                    const baseX = width;
+                    const baseY = t * height;
+                    const variationX = (Math.random() - 0.5) * handCutVariation;
+                    const variationY = (Math.random() - 0.5) * handCutVariation;
+                    points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+                }
+                
+                // Bottom edge (right to left)
+                for (let i = 1; i <= segments; i++) {
+                    const t = i / segments;
+                    const baseX = width - (t * width);
+                    const baseY = height;
+                    const variationX = (Math.random() - 0.5) * handCutVariation;
+                    const variationY = (Math.random() - 0.5) * handCutVariation;
+                    points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+                }
+                
+                // Left edge (bottom to top)
+                for (let i = 1; i <= segments; i++) {
+                    const t = i / segments;
+                    const baseX = 0;
+                    const baseY = height - (t * height);
+                    const variationX = (Math.random() - 0.5) * handCutVariation;
+                    const variationY = (Math.random() - 0.5) * handCutVariation;
+                    points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+                }
+                
+                polygon.setAttribute('points', points.join(' '));
+                return polygon;
+            }
+            
+            createPatternElements(patternGroup, variation, blockWidth, blockHeight) {
+                // Create individual pattern elements based on the variation type
+                const patternData = this.getPatternData(variation);
+                
+                // Scale pattern to fit block size
+                const scaleX = blockWidth / patternData.width;
+                const scaleY = blockHeight / patternData.height;
+                const scale = Math.min(scaleX, scaleY) * 0.8; // 80% to ensure it fits within block
+                
+                // Create pattern elements
+                patternData.elements.forEach(element => {
+                    const elementNode = document.createElementNS('http://www.w3.org/2000/svg', element.type);
+                    
+                    // Set attributes based on element type
+                    if (element.type === 'circle') {
+                        elementNode.setAttribute('cx', element.cx * scale);
+                        elementNode.setAttribute('cy', element.cy * scale);
+                        elementNode.setAttribute('r', element.r * scale);
+                    } else if (element.type === 'ellipse') {
+                        elementNode.setAttribute('cx', element.cx * scale);
+                        elementNode.setAttribute('cy', element.cy * scale);
+                        elementNode.setAttribute('rx', element.rx * scale);
+                        elementNode.setAttribute('ry', element.ry * scale);
+                    } else if (element.type === 'line') {
+                        elementNode.setAttribute('x1', element.x1 * scale);
+                        elementNode.setAttribute('y1', element.y1 * scale);
+                        elementNode.setAttribute('x2', element.x2 * scale);
+                        elementNode.setAttribute('y2', element.y2 * scale);
+                    } else if (element.type === 'path') {
+                        // Scale path coordinates
+                        const scaledPath = element.d.replace(/(\d+(?:\.\d+)?)/g, (match) => {
+                            return parseFloat(match) * scale;
+                        });
+                        elementNode.setAttribute('d', scaledPath);
+                    } else if (element.type === 'polygon') {
+                        const scaledPoints = element.points.split(' ').map(point => {
+                            const [x, y] = point.split(',').map(Number);
+                            return `${x * scale},${y * scale}`;
+                        }).join(' ');
+                        elementNode.setAttribute('points', scaledPoints);
+                    }
+                    
+                    // Set common attributes
+                    if (element.fill) elementNode.setAttribute('fill', element.fill);
+                    if (element.stroke) elementNode.setAttribute('stroke', element.stroke);
+                    if (element.strokeWidth) elementNode.setAttribute('stroke-width', element.strokeWidth * scale);
+                    
+                    patternGroup.appendChild(elementNode);
+                });
+            }
+            
+            getPatternData(variation) {
+                // Define pattern data for each variation
+                const patterns = {
+                    dots1: {
+                        width: 12, height: 12,
+                        elements: [
+                            { type: 'circle', cx: 6, cy: 6, r: 1.5, fill: 'rgba(255,255,255,0.25)' },
+                            { type: 'circle', cx: 2, cy: 2, r: 1, fill: 'rgba(255,255,255,0.15)' },
+                            { type: 'circle', cx: 10, cy: 10, r: 1, fill: 'rgba(255,255,255,0.15)' }
+                        ]
+                    },
+                    dots2: {
+                        width: 14, height: 14,
+                        elements: [
+                            { type: 'circle', cx: 7, cy: 7, r: 1.8, fill: 'rgba(255,255,255,0.2)' },
+                            { type: 'circle', cx: 3, cy: 3, r: 0.8, fill: 'rgba(255,255,255,0.12)' },
+                            { type: 'circle', cx: 11, cy: 11, r: 0.8, fill: 'rgba(255,255,255,0.12)' },
+                            { type: 'circle', cx: 7, cy: 3, r: 0.6, fill: 'rgba(255,255,255,0.1)' }
+                        ]
+                    },
+                    stripes1: {
+                        width: 8, height: 8,
+                        elements: [
+                            { type: 'line', x1: 0, y1: 4, x2: 8, y2: 4, stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 },
+                            { type: 'line', x1: 4, y1: 0, x2: 4, y2: 8, stroke: 'rgba(255,255,255,0.15)', strokeWidth: 0.5 }
+                        ]
+                    },
+                    stripes2: {
+                        width: 12, height: 12,
+                        elements: [
+                            { type: 'line', x1: 0, y1: 6, x2: 12, y2: 6, stroke: 'rgba(255,255,255,0.18)', strokeWidth: 1.2 },
+                            { type: 'line', x1: 6, y1: 0, x2: 6, y2: 12, stroke: 'rgba(255,255,255,0.12)', strokeWidth: 0.8 },
+                            { type: 'line', x1: 0, y1: 3, x2: 12, y2: 3, stroke: 'rgba(255,255,255,0.1)', strokeWidth: 0.4 }
+                        ]
+                    },
+                    geometric1: {
+                        width: 10, height: 10,
+                        elements: [
+                            { type: 'polygon', points: '5,2 8,5 5,8 2,5', fill: 'rgba(255,255,255,0.2)' }
+                        ]
+                    },
+                    geometric2: {
+                        width: 12, height: 12,
+                        elements: [
+                            { type: 'rect', x: 3, y: 3, width: 6, height: 6, fill: 'rgba(255,255,255,0.15)' }
+                        ]
+                    },
+                    floral1: {
+                        width: 12, height: 12,
+                        elements: [
+                            { type: 'path', d: 'M6,2 Q8,4 6,6 T6,10 Q4,8 6,6 T6,2', fill: 'rgba(255,255,255,0.2)' }
+                        ]
+                    },
+                    floral2: {
+                        width: 14, height: 14,
+                        elements: [
+                            { type: 'circle', cx: 7, cy: 7, r: 2, fill: 'rgba(255,255,255,0.18)' },
+                            { type: 'path', d: 'M7,3 Q9,5 7,7 T7,11 Q5,9 7,7 T7,3', fill: 'rgba(255,255,255,0.15)' }
+                        ]
+                    }
+                };
+                
+                return patterns[variation] || patterns.dots1;
+            }
+            
+            updateStats(blocks) {
+                document.getElementById('blockCount').textContent = blocks.length;
+                document.getElementById('jitterMultiplier').textContent = this.jitterMultiplier?.toFixed(2) || '1.0';
+                document.getElementById('rotationMultiplier').textContent = this.rotationMultiplier?.toFixed(2) || '1.0';
+                
+                if (blocks.length > 0) {
+                    const bounds = {
+                        minX: Math.min(...blocks.map(b => b.x)),
+                        minY: Math.min(...blocks.map(b => b.y)),
+                        maxX: Math.max(...blocks.map(b => b.x + b.width)),
+                        maxY: Math.max(...blocks.map(b => b.y + b.height))
+                    };
+                    document.getElementById('quiltDimensions').textContent = 
+                        `${Math.round(bounds.maxX - bounds.minX)} x ${Math.round(bounds.maxY - bounds.minY)}`;
+                }
+            }
+        }
+        
+        // Initialize
+        const quiltEngine = new SimpleQuiltEngine();
+        const renderer = new QuiltRendererV2({ warn: console.warn });
+        
+        // Generate random colors
+        function getRandomColor() {
+            const colors = [
+                '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', 
+                '#54a0ff', '#5f27cd', '#f7b733', '#eee3b0', '#7615d1', '#54a0ff',
+                '#fdb0d7', '#5b9be4', '#e59ac7', '#b378c7', '#4ecdc4', '#e6c4e9',
+                '#ccffff', '#8af14e', '#992499', '#69867c', '#f19532', '#e1eb54',
+                '#803300', '#a9d9a6', '#70170f', '#fb4444', '#a2fd42', '#5ae565'
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+        
+        // Control functions
+        function addBlock() {
+            const result = quiltEngine.addColor(getRandomColor());
+            if (result) {
+                renderer.renderBlocks(quiltEngine.blocks);
+            }
+        }
+        
+        function addBlocks(count) {
+            for (let i = 0; i < count; i++) {
+                const result = quiltEngine.addColor(getRandomColor());
+                if (!result) break;
+            }
+            renderer.renderBlocks(quiltEngine.blocks);
+        }
+        
+        function resetQuilt() {
+            quiltEngine.initialize();
+            renderer.renderBlocks(quiltEngine.blocks);
+        }
+        
+        // Initial render
+        quiltEngine.initialize();
+        renderer.initialize();
+        renderer.renderBlocks(quiltEngine.blocks);
+    </script>
+</body>
+</html>
