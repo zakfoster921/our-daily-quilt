@@ -2475,11 +2475,16 @@ try {
         if (blockArea > 15000) gridSize = 3; // 3x3 for very large blocks
         if (blockArea > 25000) gridSize = 4; // 4x4 for extremely large blocks
         
-        const cellWidth = block.width / gridSize;
-        const cellHeight = block.height / gridSize;
+        // Generate variable column widths and row heights for organic feel
+        const columnWidths = this.generateVariableDimensions(block.width, gridSize);
+        const rowHeights = this.generateVariableDimensions(block.height, gridSize);
+        
+        // Calculate average cell size for minimum size check
+        const avgCellWidth = block.width / gridSize;
+        const avgCellHeight = block.height / gridSize;
         
         // Ensure minimum cell size - if cells would be too small, don't create checkerboard
-        if (cellWidth < minBlockSize || cellHeight < minBlockSize) {
+        if (avgCellWidth < minBlockSize || avgCellHeight < minBlockSize) {
           // Fall back to regular split instead of tiny checkerboard (avoid recursion)
           return this.performRegularSplit(block, newColor);
         }
@@ -2488,14 +2493,27 @@ try {
         const cells = [];
         const colors = [block.color, newColor]; // Alternate between original and new color
         
+        // Calculate cumulative positions for variable dimensions
+        const columnPositions = [0];
+        const rowPositions = [0];
+        
+        for (let i = 0; i < gridSize; i++) {
+          columnPositions.push(columnPositions[i] + columnWidths[i]);
+          rowPositions.push(rowPositions[i] + rowHeights[i]);
+        }
+        
         for (let row = 0; row < gridSize; row++) {
           for (let col = 0; col < gridSize; col++) {
             const cellIndex = row * gridSize + col;
             const colorIndex = (row + col) % 2; // Checkerboard pattern
             
+            // Use variable dimensions for this cell
+            const cellWidth = columnWidths[col];
+            const cellHeight = rowHeights[row];
+            
             // Add very subtle randomness to cell boundaries for organic feel
             // Reduce jitter for smaller cells to prevent gaps and negative dimensions
-            const jitterMultiplier = Math.min(0.01, 20 / Math.min(cellWidth, cellHeight)); // Smaller cells = less jitter
+            const jitterMultiplier = Math.min(0.011, 20 / Math.min(cellWidth, cellHeight)); // Smaller cells = less jitter (increased by 10%)
             const jitterX = (Math.random() - 0.5) * jitterMultiplier;
             const jitterY = (Math.random() - 0.5) * jitterMultiplier;
             
@@ -2507,9 +2525,9 @@ try {
             const finalWidth = Math.max(1, jitteredWidth);
             const finalHeight = Math.max(1, jitteredHeight);
             
-            // Calculate cell position with jitter, ensuring it stays within block bounds
-            const cellX = block.x + col * cellWidth + (jitterX * cellWidth);
-            const cellY = block.y + row * cellHeight + (jitterY * cellHeight);
+            // Calculate cell position using variable dimensions
+            const cellX = block.x + columnPositions[col] + (jitterX * cellWidth);
+            const cellY = block.y + rowPositions[row] + (jitterY * cellHeight);
             
             // Ensure cell doesn't go outside block boundaries
             const finalX = Math.max(block.x, Math.min(cellX, block.x + block.width - finalWidth));
@@ -2536,6 +2554,29 @@ try {
         }
         
         return cells;
+      }
+      
+      generateVariableDimensions(totalSize, gridSize) {
+        // Generate slightly varied dimensions that sum to totalSize
+        // Each dimension will be within ±15% of the average size
+        const averageSize = totalSize / gridSize;
+        const variationRange = averageSize * 0.15; // ±15% variation
+        
+        const dimensions = [];
+        let remainingSize = totalSize;
+        
+        // Generate all but the last dimension with variation
+        for (let i = 0; i < gridSize - 1; i++) {
+          const variation = (Math.random() - 0.5) * 2 * variationRange;
+          const dimension = Math.max(averageSize * 0.5, averageSize + variation);
+          dimensions.push(dimension);
+          remainingSize -= dimension;
+        }
+        
+        // The last dimension gets whatever is left to ensure total equals totalSize
+        dimensions.push(Math.max(averageSize * 0.5, remainingSize));
+        
+        return dimensions;
       }
       
       getColorSimilarity(color1, color2) {
@@ -4170,30 +4211,32 @@ try {
         this.userPieces = new Set();
       }
       
-      // Calculate progressive jitter decrease based on number of blocks
-      calculateJitterMultiplier(blockCount) {
-        if (blockCount <= 15) {
-          return 1.0; // Full jitter for first 15 blocks
-        } else if (blockCount >= 80) {
-          return 0.2; // Much tighter density for filled quilts
-        } else {
-          // More aggressive decrease from 1.0 to 0.2 between 15 and 80 blocks
-          const progress = (blockCount - 15) / (80 - 15);
-          return 1.0 - (progress * 0.8);
-        }
+      // Calculate jitter multiplier based on block size (like checkerboard approach)
+      calculateJitterMultiplier(blockWidth, blockHeight) {
+        const blockArea = blockWidth * blockHeight;
+        const minBlockSize = 20; // Minimum size for reference
+        const maxBlockSize = 200; // Maximum size for reference
+        
+        // Normalize block size to 0-1 range
+        const normalizedSize = Math.min(1, Math.max(0, (blockArea - minBlockSize * minBlockSize) / (maxBlockSize * maxBlockSize - minBlockSize * minBlockSize)));
+        
+        // Larger blocks get more jitter, smaller blocks get less jitter
+        // Range from 0.1 (tiny blocks) to 1.0 (large blocks)
+        return 0.1 + (normalizedSize * 0.9);
       }
       
-      // Calculate rotation jitter multiplier (decreases to minimal by 80 blocks)
-      calculateRotationMultiplier(blockCount) {
-        if (blockCount <= 15) {
-          return 1.0; // Full rotation for first 15 blocks
-        } else if (blockCount >= 80) {
-          return 0.2; // Much tighter rotation for filled quilts
-        } else {
-          // More aggressive decrease from 1.0 to 0.2 between 15 and 80 blocks
-          const progress = (blockCount - 15) / (80 - 15);
-          return 1.0 - (progress * 0.8);
-        }
+      // Calculate rotation jitter multiplier based on block size (like checkerboard approach)
+      calculateRotationMultiplier(blockWidth, blockHeight) {
+        const blockArea = blockWidth * blockHeight;
+        const minBlockSize = 20; // Minimum size for reference
+        const maxBlockSize = 200; // Maximum size for reference
+        
+        // Normalize block size to 0-1 range
+        const normalizedSize = Math.min(1, Math.max(0, (blockArea - minBlockSize * minBlockSize) / (maxBlockSize * maxBlockSize - minBlockSize * minBlockSize)));
+        
+        // Larger blocks get more rotation, smaller blocks get less rotation
+        // Range from 0.05 (tiny blocks) to 1.0 (large blocks)
+        return 0.05 + (normalizedSize * 0.95);
       }
 
       initialize() {
@@ -4331,8 +4374,8 @@ try {
           return filter;
         };
 
-        const jitterMultiplier = this.calculateJitterMultiplier(blocks.length);
-        const rotationMultiplier = this.calculateRotationMultiplier(blocks.length);
+        // Calculate jitter per block based on individual block size
+        // We'll calculate these inside the block loop since each block has different dimensions
         
         // Debug: Log jitter multipliers
         
@@ -4398,6 +4441,10 @@ try {
             this.quiltSVG.appendChild(rect);
             return; // Skip the rest of the block rendering logic
           }
+          
+          // Calculate jitter based on this specific block's size
+          const jitterMultiplier = this.calculateJitterMultiplier(block.width, block.height);
+          const rotationMultiplier = this.calculateRotationMultiplier(block.width, block.height);
           
           const jitterX = (Math.random() - 0.5) * 12 * jitterMultiplier;
           const jitterY = (Math.random() - 0.5) * 12 * jitterMultiplier;
@@ -4985,18 +5032,6 @@ try {
         this.isDragging = false;
       }
       
-      // Calculate progressive jitter decrease based on number of blocks
-      calculateJitterMultiplier(blockCount) {
-        if (blockCount <= 10) {
-          return 1.0; // Full jitter for first 10 blocks
-        } else if (blockCount >= 60) {
-          return 0.05; // Very minimal jitter after 60 blocks
-        } else {
-          // More aggressive decrease from 1.0 to 0.05 between 10 and 60 blocks
-          const progress = (blockCount - 10) / (60 - 10);
-          return 1.0 - (progress * 0.95);
-        }
-      }
       
       checkDeviceAndRedirect() {
         const isDesktop = window.innerWidth >= 768;
