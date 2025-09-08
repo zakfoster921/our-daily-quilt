@@ -2247,7 +2247,7 @@ try {
           // 1) First TWO splits cannot be special pattern
           // 2) Likelihood for splits 3-6 = 50%
           // 3) No two back-to-back special patterns
-          // 4) After split 6, use 10% chance
+          // 4) After split 6, use 25% chance
           
           let shouldCreateSpecialPattern = false;
           
@@ -2273,9 +2273,9 @@ try {
               console.log(`🎯 SPLITS 3-6: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (50% chance, rule 2)`);
             }
           } else {
-            // After split 6: 10% chance
-            shouldCreateSpecialPattern = Math.random() < 0.10;
-            console.log(`🎯 AFTER SPLIT 6: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (10% chance)`);
+            // After split 6: 25% chance
+            shouldCreateSpecialPattern = Math.random() < 0.25;
+            console.log(`🎯 AFTER SPLIT 6: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (25% chance)`);
           }
           
           if (shouldCreateSpecialPattern) {
@@ -2377,6 +2377,12 @@ try {
           if (splitHeight < minBlockSize) splitHeight = minBlockSize;
           if (block.height - splitHeight < minBlockSize) splitHeight = block.height - minBlockSize;
           
+          // Final safety check: ensure splitHeight is valid
+          if (splitHeight <= 0 || splitHeight >= block.height) {
+            // If constraints create invalid split, use 50/50 split
+            splitHeight = block.height / 2;
+          }
+          
           const originalPatternId = block.originalPatternId || (block.patternType === 'special' ? block.id : undefined);
           if (originalPatternId) {
             console.log(`🎯 INHERITANCE: Block ${block.id} splitting - child blocks will inherit originalPatternId: ${originalPatternId}`);
@@ -2387,7 +2393,9 @@ try {
             id: block.id + '_1',
             height: splitHeight,
             // Preserve special pattern properties
-            originalPatternId: originalPatternId
+            originalPatternId: originalPatternId,
+            patternType: block.patternType,
+            specialPatternType: block.specialPatternType
           };
           
           const block2 = {
@@ -2399,10 +2407,14 @@ try {
             contributorId: this.deviceId,
             submissionIndex: this.submissionCount,
             // Preserve special pattern properties
-            originalPatternId: originalPatternId
+            originalPatternId: originalPatternId,
+            patternType: block.patternType,
+            specialPatternType: block.specialPatternType
           };
           
           console.log(`🔧 REGULAR SPLIT: Block ${block.id} split into 2 blocks: ${block1.id}, ${block2.id}`);
+          console.log(`🔧 BLOCK1: x=${block1.x}, y=${block1.y}, w=${block1.width}, h=${block1.height}, color=${block1.color}`);
+          console.log(`🔧 BLOCK2: x=${block2.x}, y=${block2.y}, w=${block2.width}, h=${block2.height}, color=${block2.color}`);
           return [block1, block2];
         } else {
           // More balanced split: 40-60% instead of 30-70%
@@ -2412,6 +2424,12 @@ try {
           // Ensure both resulting blocks meet size constraints
           if (splitWidth < minBlockSize) splitWidth = minBlockSize;
           if (block.width - splitWidth < minBlockSize) splitWidth = block.width - minBlockSize;
+          
+          // Final safety check: ensure splitWidth is valid
+          if (splitWidth <= 0 || splitWidth >= block.width) {
+            // If constraints create invalid split, use 50/50 split
+            splitWidth = block.width / 2;
+          }
           
           const originalPatternId = block.originalPatternId || (block.patternType === 'special' ? block.id : undefined);
           if (originalPatternId) {
@@ -2423,7 +2441,9 @@ try {
             id: block.id + '_1',
             width: splitWidth,
             // Preserve special pattern properties
-            originalPatternId: originalPatternId
+            originalPatternId: originalPatternId,
+            patternType: block.patternType,
+            specialPatternType: block.specialPatternType
           };
           
           const block2 = {
@@ -2435,10 +2455,14 @@ try {
             contributorId: this.deviceId,
             submissionIndex: this.submissionCount,
             // Preserve special pattern properties
-            originalPatternId: originalPatternId
+            originalPatternId: originalPatternId,
+            patternType: block.patternType,
+            specialPatternType: block.specialPatternType
           };
           
           console.log(`🔧 REGULAR SPLIT: Block ${block.id} split into 2 blocks: ${block1.id}, ${block2.id}`);
+          console.log(`🔧 BLOCK1: x=${block1.x}, y=${block1.y}, w=${block1.width}, h=${block1.height}, color=${block1.color}`);
+          console.log(`🔧 BLOCK2: x=${block2.x}, y=${block2.y}, w=${block2.width}, h=${block2.height}, color=${block2.color}`);
           return [block1, block2];
         }
       }
@@ -2460,7 +2484,7 @@ try {
         if (isSpecialPatternBlock) {
           // For existing special pattern blocks, require VERY SIMILAR colors to preserve pattern
           const colorSimilarity = this.getColorSimilarity(block.color, newColor);
-          if (colorSimilarity > 0.95) {
+          if (colorSimilarity > 0.90) {
             console.log(`🎯 NO NESTED PATTERNS: Special pattern block ${block.id} has similar color (${colorSimilarity.toFixed(3)}) - using regular split to prevent nested patterns`);
             return this.performRegularSplit(block, newColor);
           }
@@ -2513,24 +2537,28 @@ try {
       getAvailablePatterns(block, newColor) {
         // Determine which patterns are suitable for this block
         const blockArea = block.width * block.height;
-        const minBlockSize = 20;
-        const avgCellSize = Math.sqrt(blockArea) / 2; // Rough estimate for 2x2 grid
+        const minSpecialPatternArea = 50000; // 50,000 square pixels minimum for special patterns
         
         const availablePatterns = [];
         
-        // Checkerboard is available if block is large enough
-        if (avgCellSize >= minBlockSize) {
-          availablePatterns.push('checkerboard');
-        }
-        
-        // Stripes pattern is available for blocks with good aspect ratio
-        if (block.width > 80 && block.height > 80) {
-          availablePatterns.push('stripes');
-        }
-        
-        // Log Cabin pattern is available for larger blocks (needs more space for spiral)
-        if (block.width > 120 && block.height > 120) {
-          availablePatterns.push('logcabin');
+        // All special patterns require blocks of 50,000 square pixels or larger
+        if (blockArea >= minSpecialPatternArea) {
+          // Checkerboard is available for large blocks
+          const minBlockSize = 20;
+          const avgCellSize = Math.sqrt(blockArea) / 2; // Rough estimate for 2x2 grid
+          if (avgCellSize >= minBlockSize) {
+            availablePatterns.push('checkerboard');
+          }
+          
+          // Stripes pattern is available for large blocks with good aspect ratio
+          if (block.width > 80 && block.height > 80) {
+            availablePatterns.push('stripes');
+          }
+          
+          // Log Cabin pattern is available for large blocks (needs more space for spiral)
+          if (block.width > 120 && block.height > 120) {
+            availablePatterns.push('logcabin');
+          }
         }
         
         return availablePatterns;
@@ -2599,7 +2627,7 @@ try {
             
             // Add very subtle randomness to cell boundaries for organic feel
             // Reduce jitter for smaller cells to prevent gaps and negative dimensions
-            const jitterMultiplier = Math.min(0.011, 20 / Math.min(cellWidth, cellHeight)); // Smaller cells = less jitter (increased by 10%)
+            const jitterMultiplier = Math.min(0.05, 20 / Math.min(cellWidth, cellHeight)); // Smaller cells = less jitter (increased for organic feel)
             const jitterX = (Math.random() - 0.5) * jitterMultiplier;
             const jitterY = (Math.random() - 0.5) * jitterMultiplier;
             
@@ -2615,9 +2643,10 @@ try {
             const cellX = block.x + columnPositions[col] + (jitterX * cellWidth);
             const cellY = block.y + rowPositions[row] + (jitterY * cellHeight);
             
-            // Ensure cell doesn't go outside block boundaries
-            const finalX = Math.max(block.x, Math.min(cellX, block.x + block.width - finalWidth));
-            const finalY = Math.max(block.y, Math.min(cellY, block.y + block.height - finalHeight));
+            // Allow cells to extend slightly beyond block boundaries for organic edges
+            const boundaryBuffer = Math.min(block.width, block.height) * 0.02; // 2% of smallest dimension
+            const finalX = Math.max(block.x - boundaryBuffer, Math.min(cellX, block.x + block.width - finalWidth + boundaryBuffer));
+            const finalY = Math.max(block.y - boundaryBuffer, Math.min(cellY, block.y + block.height - finalHeight + boundaryBuffer));
             
             // Ensure minimum positive dimensions to prevent SVG errors
             
@@ -2644,10 +2673,10 @@ try {
       }
       
       generateVariableDimensions(totalSize, gridSize) {
-        // Generate slightly varied dimensions that sum to totalSize
-        // Each dimension will be within ±15% of the average size
+        // Generate varied dimensions that sum to totalSize
+        // Each dimension will be within ±25% of the average size for more organic variation
         const averageSize = totalSize / gridSize;
-        const variationRange = averageSize * 0.15; // ±15% variation
+        const variationRange = averageSize * 0.25; // ±25% variation (increased from ±15%)
         
         const dimensions = [];
         let remainingSize = totalSize;
@@ -2711,22 +2740,23 @@ try {
             const colorIndex = i % 2; // Alternate colors
             
             // Add subtle jitter to stripe boundaries
-            const jitterMultiplier = Math.min(0.01, 20 / Math.min(block.width, stripeHeights[i]));
+            const jitterMultiplier = Math.min(0.05, 20 / Math.min(block.width, stripeHeights[i]));
             const jitterY = (Math.random() - 0.5) * jitterMultiplier;
             
             // Calculate stripe dimensions with jitter
             const jitteredHeight = stripeHeights[i] * (1 + jitterY * 2);
             const finalHeight = Math.max(1, jitteredHeight);
             
-            // Calculate stripe position
+            // Calculate stripe position with organic edge variation
             const stripeY = block.y + stripePositions[i] + (jitterY * stripeHeights[i]);
-            const finalY = Math.max(block.y, Math.min(stripeY, block.y + block.height - finalHeight));
+            const boundaryBuffer = Math.min(block.width, block.height) * 0.02; // 2% of smallest dimension
+            const finalY = Math.max(block.y - boundaryBuffer, Math.min(stripeY, block.y + block.height - finalHeight + boundaryBuffer));
             
             const cell = {
               id: block.id + '_pattern_stripes_' + i,
-              x: block.x,
+              x: block.x - boundaryBuffer,
               y: finalY,
-              width: block.width,
+              width: block.width + (boundaryBuffer * 2),
               height: finalHeight,
               color: colors[colorIndex],
               contributorId: this.deviceId,
@@ -2752,23 +2782,24 @@ try {
             const colorIndex = i % 2; // Alternate colors
             
             // Add subtle jitter to stripe boundaries
-            const jitterMultiplier = Math.min(0.01, 20 / Math.min(stripeWidths[i], block.height));
+            const jitterMultiplier = Math.min(0.05, 20 / Math.min(stripeWidths[i], block.height));
             const jitterX = (Math.random() - 0.5) * jitterMultiplier;
             
             // Calculate stripe dimensions with jitter
             const jitteredWidth = stripeWidths[i] * (1 + jitterX * 2);
             const finalWidth = Math.max(1, jitteredWidth);
             
-            // Calculate stripe position
+            // Calculate stripe position with organic edge variation
             const stripeX = block.x + stripePositions[i] + (jitterX * stripeWidths[i]);
-            const finalX = Math.max(block.x, Math.min(stripeX, block.x + block.width - finalWidth));
+            const boundaryBuffer = Math.min(block.width, block.height) * 0.02; // 2% of smallest dimension
+            const finalX = Math.max(block.x - boundaryBuffer, Math.min(stripeX, block.x + block.width - finalWidth + boundaryBuffer));
             
             const cell = {
               id: block.id + '_pattern_stripes_' + i,
               x: finalX,
-              y: block.y,
+              y: block.y - boundaryBuffer,
               width: finalWidth,
-              height: block.height,
+              height: block.height + (boundaryBuffer * 2),
               color: colors[colorIndex],
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount,
@@ -2835,7 +2866,7 @@ try {
         let buildingBottom = centerY + centerSize;
         
         // Add subtle jitter
-        const jitterMultiplier = 0.01;
+        const jitterMultiplier = 0.05;
         
         // Create 8 strips in spiral order: Right, Up, Left, Down, Right, Up, Left, Down
         const stripSequence = [
@@ -4906,31 +4937,29 @@ try {
         
         blocks.forEach((block, i) => {
           
-          // Special handling for special pattern cells - render as simple rectangles
+          // Special handling for special pattern cells - render as organic polygons
           if (block.patternType === 'special' && block.specialPatternType) {
             // Ensure positive dimensions to prevent SVG errors
             const safeWidth = Math.max(1, block.width);
             const safeHeight = Math.max(1, block.height);
             
-            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            rect.setAttribute('x', block.x);
-            rect.setAttribute('y', block.y);
-            rect.setAttribute('width', safeWidth);
-            rect.setAttribute('height', safeHeight);
-            rect.setAttribute('fill', block.color);
-            rect.setAttribute('stroke', 'none');
+            // Use organic polygon for special patterns too
+            const jitterMultiplier = this.calculateJitterMultiplier(block.width, block.height);
+            const handCutPolygon = this.createHandCutPolygon(block.x, block.y, safeWidth, safeHeight, jitterMultiplier);
+            handCutPolygon.setAttribute('fill', block.color);
+            handCutPolygon.setAttribute('stroke', 'none');
             
             // Add new block animation for special pattern cells
             if (i === this.lastAddedIndex) {
-              rect.setAttribute('opacity', '0');
-              rect.classList.add('new-block');
-              rect.addEventListener('animationend', () => {
-                rect.classList.remove('new-block');
-                rect.removeAttribute('opacity');
+              handCutPolygon.setAttribute('opacity', '0');
+              handCutPolygon.classList.add('new-block');
+              handCutPolygon.addEventListener('animationend', () => {
+                handCutPolygon.classList.remove('new-block');
+                handCutPolygon.removeAttribute('opacity');
               }, { once: true });
             }
             
-            this.quiltSVG.appendChild(rect);
+            this.quiltSVG.appendChild(handCutPolygon);
             return; // Skip the rest of the block rendering logic
           }
           
@@ -4938,8 +4967,8 @@ try {
           const jitterMultiplier = this.calculateJitterMultiplier(block.width, block.height);
           const rotationMultiplier = this.calculateRotationMultiplier(block.width, block.height);
           
-          const jitterX = (Math.random() - 0.5) * 12 * jitterMultiplier;
-          const jitterY = (Math.random() - 0.5) * 12 * jitterMultiplier;
+          const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
+          const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
           const jitterRotation = (Math.random() - 0.5) * 3 * rotationMultiplier;
           
           // Calculate gap compensation for rotation
