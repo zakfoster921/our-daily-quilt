@@ -3918,6 +3918,18 @@ try {
               }
             }
             
+            // Send current color to parent page when color picker screen is shown
+            if (screenId === 'screen-color') {
+              try {
+                const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+                if (currentColor && Utils.validateHexColor(currentColor)) {
+                  window.parent.postMessage({ type: 'odq-bg', color: currentColor }, '*');
+                }
+              } catch (error) {
+                console.log('Could not send color to parent page:', error);
+              }
+            }
+            
             // Handle quote screen fade-in elements
             if (screenId === 'screen-quote') {
               // Reset fade-in elements to hidden state
@@ -6326,6 +6338,16 @@ try {
         const colorScreen = document.getElementById('screen-color');
         if (colorScreen) {
           colorScreen.style.backgroundColor = hexColor;
+        }
+        
+        // Send color to parent page for background extension
+        try {
+          if (hexColor && Utils.validateHexColor(hexColor)) {
+            window.parent.postMessage({ type: 'odq-bg', color: hexColor }, '*');
+          }
+        } catch (error) {
+          // Silently fail if postMessage is not available (e.g., not in iframe)
+          console.log('Could not send color to parent page:', error);
         }
         
         if (valueSlider) {
