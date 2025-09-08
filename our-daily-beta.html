@@ -5942,9 +5942,20 @@ try {
       
       
       checkDeviceAndRedirect() {
-        // Check both iframe dimensions and parent window dimensions
+        // Check iframe dimensions only (avoid cross-origin issues)
         const iframeWidth = window.innerWidth;
-        const parentWidth = window.parent && window.parent !== window ? window.parent.innerWidth : window.innerWidth;
+        let parentWidth = iframeWidth; // Default fallback
+        
+        // Try to get parent width, but handle cross-origin errors gracefully
+        try {
+          if (window.parent && window.parent !== window) {
+            parentWidth = window.parent.innerWidth;
+          }
+        } catch (error) {
+          // Cross-origin access blocked - use iframe width only
+          console.log('🖥️ Cross-origin access blocked, using iframe width only');
+          parentWidth = iframeWidth;
+        }
         
         // Consider it desktop if either the iframe or parent window is desktop-sized
         const isDesktop = iframeWidth >= 768 || parentWidth >= 768;
