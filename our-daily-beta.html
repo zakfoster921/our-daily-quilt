@@ -32,7 +32,7 @@ try {
 </script>
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Our Daily Quilt - Beta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1251,23 +1251,34 @@ try {
         z-index: 1000 !important;
       }
       
-      /* Make color picker extend behind status bar */
+      /* Make sure the screen itself isn't adding any top gap */
       #screen-color {
-        padding-top: 0 !important;
         margin-top: 0 !important;
-        top: 0 !important;
-        position: fixed !important;
-        z-index: 1000 !important;
+        padding-top: 0 !important;
         background-color: var(--current-color, #ffffff) !important;
       }
       
-      /* Override mobile safe area padding for color picker */
-      @media (max-width: 768px) {
-        #screen-color {
-          padding-top: 0 !important;
-          padding-bottom: 0 !important;
-          padding-left: 0 !important;
-          padding-right: 0 !important;
+      /* Let the color screen paint behind the iOS status bar */
+      body.color-mode-active {
+        /* body itself takes on the live color */
+        background-color: var(--current-color, #f6f4f1) !important;
+      }
+
+      /* Kill the mobile safe-area padding only while color screen is active */
+      body.color-mode-active {
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+      }
+
+      /* Keep your existing mobile padding for all other screens: */
+      @media (max-width: 480px) {
+        body:not(.color-mode-active) {
+          padding-top: env(safe-area-inset-top) !important;
+          padding-bottom: env(safe-area-inset-bottom) !important;
+          padding-left: env(safe-area-inset-left) !important;
+          padding-right: env(safe-area-inset-right) !important;
         }
       }
       
@@ -3952,15 +3963,23 @@ try {
             
             // Send current color to parent page when color picker screen is shown
             if (screenId === 'screen-color') {
+              // Add class to body for color mode
+              document.body.classList.add('color-mode-active');
+              
               try {
                 const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
                 if (currentColor && Utils.validateHexColor(currentColor)) {
                   console.log('🎨 Sending color to parent:', currentColor);
                   window.parent.postMessage({ type: 'odq-bg', color: currentColor }, '*');
+                  // Update CSS variable for body background
+                  document.documentElement.style.setProperty('--current-color', currentColor);
                 }
               } catch (error) {
                 console.log('Could not send color to parent page:', error);
               }
+            } else {
+              // Remove class when leaving color screen
+              document.body.classList.remove('color-mode-active');
             }
             
             // Handle quote screen fade-in elements
@@ -8676,6 +8695,8 @@ try {
           try {
             console.log('🎨 Sending color to parent (add color):', selectedColor);
             window.parent.postMessage({ type: 'odq-bg', color: selectedColor }, '*');
+            // Update CSS variable for body background
+            document.documentElement.style.setProperty('--current-color', selectedColor);
           } catch (error) {
             // Silently fail if postMessage is not available (e.g., not in iframe)
             console.log('Could not send color to parent page:', error);
