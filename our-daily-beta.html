@@ -2525,6 +2525,10 @@ try {
             return this.createOrganicStripes(block, newColor);
           case 'logcabin':
             return this.createLogCabin(block, newColor);
+          case 'framed':
+            return this.createFramedPattern(block, newColor);
+          case 'railfence':
+            return this.createRailFencePattern(block, newColor);
           // Future patterns can be added here:
           // case 'dots':
           //   return this.createDotsPattern(block, newColor);
@@ -2558,6 +2562,20 @@ try {
           // Log Cabin pattern is available for large blocks (needs more space for spiral)
           if (block.width > 120 && block.height > 120) {
             availablePatterns.push('logcabin');
+          }
+          
+          // Framed pattern is available for medium-large blocks
+          if (block.width > 60 && block.height > 60) {
+            availablePatterns.push('framed');
+          }
+          
+          // Rail Fence pattern is available for large blocks (needs space for 2x2 quadrants with 3 strips each)
+          // Also requires square-ish aspect ratio (not too rectangular)
+          if (block.width > 100 && block.height > 100) {
+            const aspectRatio = Math.max(block.width, block.height) / Math.min(block.width, block.height);
+            if (aspectRatio <= 1.5) { // Max 1.5:1 ratio (e.g., 150x100 is OK, 200x100 is not)
+              availablePatterns.push('railfence');
+            }
           }
         }
         
@@ -3049,6 +3067,212 @@ try {
         return cells;
       }
       
+      createFramedPattern(block, newColor) {
+        // Create a framed pattern: outer frame with inner square
+        // Frame thickness is 15% of the smaller dimension
+        
+        const frameThickness = Math.min(block.width, block.height) * 0.15;
+        const innerSize = Math.min(block.width, block.height) - (frameThickness * 2);
+        
+        // Center the inner square
+        const innerX = block.x + (block.width - innerSize) / 2;
+        const innerY = block.y + (block.height - innerSize) / 2;
+        
+        // Generate color palette for frame and inner square
+        const colorPalette = this.generateColorPalette(block.color, newColor, 2);
+        
+        // Add jitter for organic feel
+        const jitterMultiplier = 0.05;
+        
+        const cells = [];
+        
+        // Create outer frame (4 rectangular pieces)
+        const frameJitterX = (Math.random() - 0.5) * jitterMultiplier * frameThickness;
+        const frameJitterY = (Math.random() - 0.5) * jitterMultiplier * frameThickness;
+        
+        // Top frame
+        const topFrame = {
+          id: block.id + '_pattern_framed_top',
+          x: block.x + frameJitterX,
+          y: block.y + frameJitterY,
+          width: block.width,
+          height: frameThickness,
+          color: colorPalette[0],
+          contributorId: this.deviceId,
+          submissionIndex: this.submissionCount,
+          patternType: 'special',
+          specialPatternType: 'framed',
+          originalPatternId: block.id
+        };
+        cells.push(topFrame);
+        
+        // Bottom frame
+        const bottomFrame = {
+          id: block.id + '_pattern_framed_bottom',
+          x: block.x + frameJitterX,
+          y: block.y + block.height - frameThickness + frameJitterY,
+          width: block.width,
+          height: frameThickness,
+          color: colorPalette[0],
+          contributorId: this.deviceId,
+          submissionIndex: this.submissionCount,
+          patternType: 'special',
+          specialPatternType: 'framed',
+          originalPatternId: block.id
+        };
+        cells.push(bottomFrame);
+        
+        // Left frame
+        const leftFrame = {
+          id: block.id + '_pattern_framed_left',
+          x: block.x + frameJitterX,
+          y: block.y + frameThickness + frameJitterY,
+          width: frameThickness,
+          height: block.height - (frameThickness * 2),
+          color: colorPalette[0],
+          contributorId: this.deviceId,
+          submissionIndex: this.submissionCount,
+          patternType: 'special',
+          specialPatternType: 'framed',
+          originalPatternId: block.id
+        };
+        cells.push(leftFrame);
+        
+        // Right frame
+        const rightFrame = {
+          id: block.id + '_pattern_framed_right',
+          x: block.x + block.width - frameThickness + frameJitterX,
+          y: block.y + frameThickness + frameJitterY,
+          width: frameThickness,
+          height: block.height - (frameThickness * 2),
+          color: colorPalette[0],
+          contributorId: this.deviceId,
+          submissionIndex: this.submissionCount,
+          patternType: 'special',
+          specialPatternType: 'framed',
+          originalPatternId: block.id
+        };
+        cells.push(rightFrame);
+        
+        // Create inner rectangle that fills the entire frame area
+        const innerJitterX = (Math.random() - 0.5) * jitterMultiplier * frameThickness;
+        const innerJitterY = (Math.random() - 0.5) * jitterMultiplier * frameThickness;
+        
+        const innerRectangle = {
+          id: block.id + '_pattern_framed_inner',
+          x: block.x + frameThickness + innerJitterX,
+          y: block.y + frameThickness + innerJitterY,
+          width: block.width - (frameThickness * 2),
+          height: block.height - (frameThickness * 2),
+          color: colorPalette[1],
+          contributorId: this.deviceId,
+          submissionIndex: this.submissionCount,
+          patternType: 'special',
+          specialPatternType: 'framed',
+          originalPatternId: block.id
+        };
+        cells.push(innerRectangle);
+        
+        return cells;
+      }
+      
+      createRailFencePattern(block, newColor) {
+        // Create a rail fence pattern: 2x2 quadrants, each with 3 parallel strips
+        // Alternating orientations create pinwheel effect
+        
+        // Generate 3-color palette
+        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
+        
+        // Calculate quadrant dimensions
+        const quadrantWidth = block.width / 2;
+        const quadrantHeight = block.height / 2;
+        
+        // Add jitter for organic feel
+        const jitterMultiplier = 0.05;
+        
+        const cells = [];
+        
+        // Define quadrants with their orientations
+        const quadrants = [
+          { name: 'top-left', x: block.x, y: block.y, orientation: 'vertical' },
+          { name: 'top-right', x: block.x + quadrantWidth, y: block.y, orientation: 'horizontal' },
+          { name: 'bottom-left', x: block.x, y: block.y + quadrantHeight, orientation: 'horizontal' },
+          { name: 'bottom-right', x: block.x + quadrantWidth, y: block.y + quadrantHeight, orientation: 'vertical' }
+        ];
+        
+        quadrants.forEach((quadrant, quadrantIndex) => {
+          // Generate variable strip dimensions
+          let stripDimensions;
+          if (quadrant.orientation === 'vertical') {
+            // Vertical strips: variable widths, fixed height
+            stripDimensions = this.generateVariableDimensions(quadrantWidth, 3);
+          } else {
+            // Horizontal strips: fixed width, variable heights
+            stripDimensions = this.generateVariableDimensions(quadrantHeight, 3);
+          }
+          
+          // Calculate cumulative positions
+          const positions = [0];
+          for (let i = 0; i < stripDimensions.length; i++) {
+            positions.push(positions[i] + stripDimensions[i]);
+          }
+          
+          // Create 3 strips in this quadrant
+          for (let stripIndex = 0; stripIndex < 3; stripIndex++) {
+            // Create cross pattern: new color (index 1) forms the cross like in reference
+            // Use all 3 colors: original (0), new (1), darker (2)
+            let colorIndex;
+            if (quadrant.name === 'top-left' || quadrant.name === 'bottom-right') {
+              // Vertical quadrants: middle strip is new color (forms vertical cross)
+              colorIndex = stripIndex === 1 ? 1 : (stripIndex === 0 ? 0 : 2); // middle = new, outer = original/dark
+            } else {
+              // Horizontal quadrants: outer strips are new color (forms horizontal cross)
+              colorIndex = stripIndex === 1 ? 0 : 1; // middle = original, outer = new
+            }
+            
+            const color = colorPalette[colorIndex];
+            
+            // Add jitter
+            const jitterX = (Math.random() - 0.5) * jitterMultiplier * stripDimensions[stripIndex];
+            const jitterY = (Math.random() - 0.5) * jitterMultiplier * stripDimensions[stripIndex];
+            
+            let stripX, stripY, stripWidth, stripHeight;
+            
+            if (quadrant.orientation === 'vertical') {
+              // Vertical strips
+              stripX = quadrant.x + positions[stripIndex] + jitterX;
+              stripY = quadrant.y + jitterY;
+              stripWidth = stripDimensions[stripIndex];
+              stripHeight = quadrantHeight;
+            } else {
+              // Horizontal strips
+              stripX = quadrant.x + jitterX;
+              stripY = quadrant.y + positions[stripIndex] + jitterY;
+              stripWidth = quadrantWidth;
+              stripHeight = stripDimensions[stripIndex];
+            }
+            
+            const strip = {
+              id: block.id + '_pattern_railfence_' + quadrant.name + '_' + stripIndex,
+              x: stripX,
+              y: stripY,
+              width: stripWidth,
+              height: stripHeight,
+              color: color,
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'railfence',
+              originalPatternId: block.id
+            };
+            
+            cells.push(strip);
+          }
+        });
+        
+        return cells;
+      }
+      
       generateColorPalette(baseColor1, baseColor2, numColors = 5) {
         // Generate a palette of colors from 2 base colors
         // Creates lighter and darker versions for patterns that need multiple colors
@@ -3087,20 +3311,20 @@ try {
       }
       
       lightenColorHsl(hsl, amount) {
-        // Lighten a color by increasing lightness
+        // Lighten a color by increasing lightness, but don't go too light (max 85%)
         return {
           h: hsl.h,
           s: hsl.s,
-          l: Math.min(100, hsl.l + (amount * 100))
+          l: Math.min(85, hsl.l + (amount * 100))
         };
       }
       
       darkenColorHsl(hsl, amount) {
-        // Darken a color by decreasing lightness
+        // Darken a color by decreasing lightness, but don't go too dark (min 15%)
         return {
           h: hsl.h,
           s: hsl.s,
-          l: Math.max(0, hsl.l - (amount * 100))
+          l: Math.max(15, hsl.l - (amount * 100))
         };
       }
       
