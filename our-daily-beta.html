@@ -2334,11 +2334,23 @@ try {
         
         const splitResult = this.splitBlock(selectedBlock, newColor);
         
+        // Debug: Log the split result
+        console.log(`🔧 SPLIT RESULT: Block ${selectedBlock.id} split into ${splitResult.length} blocks:`, splitResult.map(b => b.id));
+        
         // Replace the original block with the split result
         const blockIndex = this.blocks.findIndex(b => b.id === selectedBlock.id);
+        const beforeCount = this.blocks.length;
         this.blocks.splice(blockIndex, 1, ...splitResult);
+        const afterCount = this.blocks.length;
         
-        this.recordUserContribution(splitResult[1].id, newColor, this.submissionCount);
+        console.log(`🔧 BLOCK COUNT: Before: ${beforeCount}, After: ${afterCount}, Net change: ${afterCount - beforeCount}`);
+        
+        // Record user contribution - handle different split result sizes
+        if (splitResult.length >= 2) {
+          this.recordUserContribution(splitResult[1].id, newColor, this.submissionCount);
+        } else if (splitResult.length === 1) {
+          this.recordUserContribution(splitResult[0].id, newColor, this.submissionCount);
+        }
         
         return {
           originalBlock: selectedBlock,
@@ -2390,6 +2402,7 @@ try {
             originalPatternId: originalPatternId
           };
           
+          console.log(`🔧 REGULAR SPLIT: Block ${block.id} split into 2 blocks: ${block1.id}, ${block2.id}`);
           return [block1, block2];
         } else {
           // More balanced split: 40-60% instead of 30-70%
@@ -2425,6 +2438,7 @@ try {
             originalPatternId: originalPatternId
           };
           
+          console.log(`🔧 REGULAR SPLIT: Block ${block.id} split into 2 blocks: ${block1.id}, ${block2.id}`);
           return [block1, block2];
         }
       }
@@ -2455,13 +2469,86 @@ try {
           console.log(`🎯 SPECIAL: Creating special pattern for ${block.id} (${block.color}) with ${newColor}`);
           // Clean up the flag
           delete block._shouldCreateSpecialPattern;
-          return this.createOrganicCheckerboard(block, newColor);
+          return this.createSpecialPattern(block, newColor);
         }
         
         // If no pattern is created, perform regular split
         return this.performRegularSplit(block, newColor);
       }
       
+      createSpecialPattern(block, newColor) {
+        // Generic pattern creation system
+        // Select which pattern type to create based on block characteristics and randomness
+        
+        const blockArea = block.width * block.height;
+        const availablePatterns = this.getAvailablePatterns(block, newColor);
+        
+        if (availablePatterns.length === 0) {
+          console.log(`🎯 NO PATTERNS: No suitable patterns available for block ${block.id} - falling back to regular split`);
+          return this.performRegularSplit(block, newColor);
+        }
+        
+        // Select pattern type (currently only checkerboard, but extensible)
+        const selectedPatternType = this.selectPatternType(availablePatterns, block, newColor);
+        
+        console.log(`🎯 PATTERN SELECTION: Creating ${selectedPatternType} pattern for block ${block.id}`);
+        
+        // Create the selected pattern
+        switch (selectedPatternType) {
+          case 'checkerboard':
+            return this.createOrganicCheckerboard(block, newColor);
+          case 'stripes':
+            return this.createOrganicStripes(block, newColor);
+          case 'logcabin':
+            return this.createLogCabin(block, newColor);
+          // Future patterns can be added here:
+          // case 'dots':
+          //   return this.createDotsPattern(block, newColor);
+          default:
+            console.log(`🎯 UNKNOWN PATTERN: ${selectedPatternType} not implemented - falling back to regular split`);
+            return this.performRegularSplit(block, newColor);
+        }
+      }
+      
+      getAvailablePatterns(block, newColor) {
+        // Determine which patterns are suitable for this block
+        const blockArea = block.width * block.height;
+        const minBlockSize = 20;
+        const avgCellSize = Math.sqrt(blockArea) / 2; // Rough estimate for 2x2 grid
+        
+        const availablePatterns = [];
+        
+        // Checkerboard is available if block is large enough
+        if (avgCellSize >= minBlockSize) {
+          availablePatterns.push('checkerboard');
+        }
+        
+        // Stripes pattern is available for blocks with good aspect ratio
+        if (block.width > 80 && block.height > 80) {
+          availablePatterns.push('stripes');
+        }
+        
+        // Log Cabin pattern is available for larger blocks (needs more space for spiral)
+        if (block.width > 120 && block.height > 120) {
+          availablePatterns.push('logcabin');
+        }
+        
+        return availablePatterns;
+      }
+      
+      selectPatternType(availablePatterns, block, newColor) {
+        // Select which pattern type to create
+        // Currently simple - just pick the first available (checkerboard)
+        // Future: could add weighted selection, color-based selection, etc.
+        
+        if (availablePatterns.length === 1) {
+          return availablePatterns[0];
+        }
+        
+        // Randomly select between available patterns for variety
+        const randomIndex = Math.floor(Math.random() * availablePatterns.length);
+        return availablePatterns[randomIndex];
+      }
       
       createOrganicCheckerboard(block, newColor) {
         // Create a 2x2 organic checkerboard pattern
@@ -2488,7 +2575,6 @@ try {
           // Fall back to regular split instead of tiny checkerboard (avoid recursion)
           return this.performRegularSplit(block, newColor);
         }
-        
         
         const cells = [];
         const colors = [block.color, newColor]; // Alternate between original and new color
@@ -2553,6 +2639,7 @@ try {
           }
         }
         
+        console.log(`🔧 CHECKERBOARD: Created ${cells.length} cells for block ${block.id}`);
         return cells;
       }
       
@@ -2577,6 +2664,413 @@ try {
         dimensions.push(Math.max(averageSize * 0.5, remainingSize));
         
         return dimensions;
+      }
+      
+      createOrganicStripes(block, newColor) {
+        // Create organic stripes pattern with variable column/row widths
+        // Stripes can be either horizontal or vertical based on block aspect ratio
+        
+        const minBlockSize = 20;
+        const blockArea = block.width * block.height;
+        
+        // Determine if stripes should be horizontal or vertical based on aspect ratio
+        const aspectRatio = block.width / block.height;
+        const isHorizontal = aspectRatio > 1.2; // Wider blocks get horizontal stripes
+        const isVertical = aspectRatio < 0.8;   // Taller blocks get vertical stripes
+        const isSquare = !isHorizontal && !isVertical; // Square blocks get random orientation
+        
+        // Choose stripe orientation
+        let stripeOrientation;
+        if (isSquare) {
+          stripeOrientation = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+        } else if (isHorizontal) {
+          stripeOrientation = 'horizontal';
+        } else {
+          stripeOrientation = 'vertical';
+        }
+        
+        // Determine number of stripes based on block size
+        let numStripes = 3; // Default to 3 stripes
+        if (blockArea > 20000) numStripes = 4;
+        if (blockArea > 40000) numStripes = 5;
+        
+        const cells = [];
+        const colors = [block.color, newColor]; // Alternate between original and new color
+        
+        if (stripeOrientation === 'horizontal') {
+          // Create horizontal stripes with variable heights
+          const stripeHeights = this.generateVariableDimensions(block.height, numStripes);
+          
+          // Calculate cumulative positions for variable heights
+          const stripePositions = [0];
+          for (let i = 0; i < numStripes; i++) {
+            stripePositions.push(stripePositions[i] + stripeHeights[i]);
+          }
+          
+          for (let i = 0; i < numStripes; i++) {
+            const colorIndex = i % 2; // Alternate colors
+            
+            // Add subtle jitter to stripe boundaries
+            const jitterMultiplier = Math.min(0.01, 20 / Math.min(block.width, stripeHeights[i]));
+            const jitterY = (Math.random() - 0.5) * jitterMultiplier;
+            
+            // Calculate stripe dimensions with jitter
+            const jitteredHeight = stripeHeights[i] * (1 + jitterY * 2);
+            const finalHeight = Math.max(1, jitteredHeight);
+            
+            // Calculate stripe position
+            const stripeY = block.y + stripePositions[i] + (jitterY * stripeHeights[i]);
+            const finalY = Math.max(block.y, Math.min(stripeY, block.y + block.height - finalHeight));
+            
+            const cell = {
+              id: block.id + '_pattern_stripes_' + i,
+              x: block.x,
+              y: finalY,
+              width: block.width,
+              height: finalHeight,
+              color: colors[colorIndex],
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'stripes',
+              originalPatternId: block.id
+            };
+            
+            cells.push(cell);
+          }
+        } else {
+          // Create vertical stripes with variable widths
+          const stripeWidths = this.generateVariableDimensions(block.width, numStripes);
+          
+          // Calculate cumulative positions for variable widths
+          const stripePositions = [0];
+          for (let i = 0; i < numStripes; i++) {
+            stripePositions.push(stripePositions[i] + stripeWidths[i]);
+          }
+          
+          for (let i = 0; i < numStripes; i++) {
+            const colorIndex = i % 2; // Alternate colors
+            
+            // Add subtle jitter to stripe boundaries
+            const jitterMultiplier = Math.min(0.01, 20 / Math.min(stripeWidths[i], block.height));
+            const jitterX = (Math.random() - 0.5) * jitterMultiplier;
+            
+            // Calculate stripe dimensions with jitter
+            const jitteredWidth = stripeWidths[i] * (1 + jitterX * 2);
+            const finalWidth = Math.max(1, jitteredWidth);
+            
+            // Calculate stripe position
+            const stripeX = block.x + stripePositions[i] + (jitterX * stripeWidths[i]);
+            const finalX = Math.max(block.x, Math.min(stripeX, block.x + block.width - finalWidth));
+            
+            const cell = {
+              id: block.id + '_pattern_stripes_' + i,
+              x: finalX,
+              y: block.y,
+              width: finalWidth,
+              height: block.height,
+              color: colors[colorIndex],
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'stripes',
+              originalPatternId: block.id
+            };
+            
+            cells.push(cell);
+          }
+        }
+        
+        return cells;
+      }
+      
+      createLogCabin(block, newColor) {
+        // Create Log Cabin pattern with proper spiral construction
+        // Classic Log Cabin: center square + 8 strips in counterclockwise spiral
+        // Must fill the entire original block dimensions
+        
+        // Generate 5-color palette from the 2 input colors
+        const colorPalette = this.generateColorPalette(block.color, newColor, 5);
+        
+        const cells = [];
+        
+        // Calculate dimensions to fill the entire block
+        // For a Log Cabin with 8 strips, we need to work backwards from the final size
+        // Each strip adds to the building area, so we need to calculate strip thickness
+        // to ensure the final Log Cabin fills the entire block
+        
+        // Calculate how much space we have for strips on each side
+        const availableWidth = block.width;
+        const availableHeight = block.height;
+        
+        // For 8 strips in spiral: 2 strips per side (right, up, left, down, right, up, left, down)
+        // Each side gets 2 strips, so we divide by 4 (sides) * 2 (strips per side) = 8 total strips
+        const stripThickness = Math.min(availableWidth, availableHeight) / 6; // 6 gives us good proportions
+        
+        // Center square should be about 2x strip thickness
+        const centerSize = stripThickness * 2;
+        const centerX = block.x + (block.width - centerSize) / 2;
+        const centerY = block.y + (block.height - centerSize) / 2;
+        
+        // Create center square (Piece 1)
+        const centerCell = {
+          id: block.id + '_pattern_logcabin_1',
+          x: centerX,
+          y: centerY,
+          width: centerSize,
+          height: centerSize,
+          color: colorPalette[0], // Use first color for center
+          contributorId: this.deviceId,
+          submissionIndex: this.submissionCount,
+          patternType: 'special',
+          specialPatternType: 'logcabin',
+          originalPatternId: block.id
+        };
+        cells.push(centerCell);
+        
+        // Track the current "building area" - starts as just the center square
+        let buildingLeft = centerX;
+        let buildingTop = centerY;
+        let buildingRight = centerX + centerSize;
+        let buildingBottom = centerY + centerSize;
+        
+        // Add subtle jitter
+        const jitterMultiplier = 0.01;
+        
+        // Create 8 strips in spiral order: Right, Up, Left, Down, Right, Up, Left, Down
+        const stripSequence = [
+          { side: 'right', colorIndex: 1 },
+          { side: 'up', colorIndex: 2 },
+          { side: 'left', colorIndex: 3 },
+          { side: 'down', colorIndex: 4 },
+          { side: 'right', colorIndex: 1 },
+          { side: 'up', colorIndex: 2 },
+          { side: 'left', colorIndex: 3 },
+          { side: 'down', colorIndex: 4 }
+        ];
+        
+        for (let i = 0; i < stripSequence.length; i++) {
+          const { side, colorIndex } = stripSequence[i];
+          let stripX, stripY, stripWidth, stripHeight;
+          
+          // Add jitter
+          const jitterX = (Math.random() - 0.5) * jitterMultiplier * stripThickness;
+          const jitterY = (Math.random() - 0.5) * jitterMultiplier * stripThickness;
+          
+          switch (side) {
+            case 'right':
+              // Add strip to the right side
+              stripX = buildingRight + jitterX;
+              stripY = buildingTop + jitterY;
+              stripWidth = stripThickness;
+              stripHeight = buildingBottom - buildingTop;
+              // Expand building area to include this strip
+              buildingRight += stripThickness;
+              break;
+              
+            case 'up':
+              // Add strip to the top
+              stripX = buildingLeft + jitterX;
+              stripY = buildingTop - stripThickness + jitterY;
+              stripWidth = buildingRight - buildingLeft;
+              stripHeight = stripThickness;
+              // Expand building area to include this strip
+              buildingTop -= stripThickness;
+              break;
+              
+            case 'left':
+              // Add strip to the left side
+              stripX = buildingLeft - stripThickness + jitterX;
+              stripY = buildingTop + jitterY;
+              stripWidth = stripThickness;
+              stripHeight = buildingBottom - buildingTop;
+              // Expand building area to include this strip
+              buildingLeft -= stripThickness;
+              break;
+              
+            case 'down':
+              // Add strip to the bottom
+              stripX = buildingLeft + jitterX;
+              stripY = buildingBottom + jitterY;
+              stripWidth = buildingRight - buildingLeft;
+              stripHeight = stripThickness;
+              // Expand building area to include this strip
+              buildingBottom += stripThickness;
+              break;
+          }
+          
+          // Ensure positive dimensions
+          stripWidth = Math.max(1, stripWidth);
+          stripHeight = Math.max(1, stripHeight);
+          
+          // Ensure strip stays within block boundaries
+          stripX = Math.max(block.x, Math.min(stripX, block.x + block.width - stripWidth));
+          stripY = Math.max(block.y, Math.min(stripY, block.y + block.height - stripHeight));
+          
+          const strip = {
+            id: block.id + '_pattern_logcabin_' + (i + 2), // Start from piece 2
+            x: stripX,
+            y: stripY,
+            width: stripWidth,
+            height: stripHeight,
+            color: colorPalette[colorIndex % colorPalette.length],
+            contributorId: this.deviceId,
+            submissionIndex: this.submissionCount,
+            patternType: 'special',
+            specialPatternType: 'logcabin',
+            originalPatternId: block.id
+          };
+          
+          cells.push(strip);
+        }
+        
+        // Add spacer blocks to fill any remaining space
+        // Check if we need to fill gaps on the left or right sides
+        const finalLeft = buildingLeft;
+        const finalRight = buildingRight;
+        const finalTop = buildingTop;
+        const finalBottom = buildingBottom;
+        
+        // Fill left gap if needed
+        if (finalLeft > block.x) {
+          const leftGapWidth = finalLeft - block.x;
+          if (leftGapWidth > 1) { // Only add if gap is significant
+            const spacerLeft = {
+              id: block.id + '_pattern_logcabin_spacer_left',
+              x: block.x,
+              y: finalTop,
+              width: leftGapWidth,
+              height: finalBottom - finalTop,
+              color: colorPalette[0], // Use first color for spacers
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'logcabin',
+              originalPatternId: block.id
+            };
+            cells.push(spacerLeft);
+          }
+        }
+        
+        // Fill right gap if needed
+        if (finalRight < block.x + block.width) {
+          const rightGapWidth = (block.x + block.width) - finalRight;
+          if (rightGapWidth > 1) { // Only add if gap is significant
+            const spacerRight = {
+              id: block.id + '_pattern_logcabin_spacer_right',
+              x: finalRight,
+              y: finalTop,
+              width: rightGapWidth,
+              height: finalBottom - finalTop,
+              color: colorPalette[1], // Use second color for spacers
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'logcabin',
+              originalPatternId: block.id
+            };
+            cells.push(spacerRight);
+          }
+        }
+        
+        // Fill top gap if needed
+        if (finalTop > block.y) {
+          const topGapHeight = finalTop - block.y;
+          if (topGapHeight > 1) { // Only add if gap is significant
+            const spacerTop = {
+              id: block.id + '_pattern_logcabin_spacer_top',
+              x: finalLeft,
+              y: block.y,
+              width: finalRight - finalLeft,
+              height: topGapHeight,
+              color: colorPalette[2], // Use third color for spacers
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'logcabin',
+              originalPatternId: block.id
+            };
+            cells.push(spacerTop);
+          }
+        }
+        
+        // Fill bottom gap if needed
+        if (finalBottom < block.y + block.height) {
+          const bottomGapHeight = (block.y + block.height) - finalBottom;
+          if (bottomGapHeight > 1) { // Only add if gap is significant
+            const spacerBottom = {
+              id: block.id + '_pattern_logcabin_spacer_bottom',
+              x: finalLeft,
+              y: finalBottom,
+              width: finalRight - finalLeft,
+              height: bottomGapHeight,
+              color: colorPalette[3], // Use fourth color for spacers
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'logcabin',
+              originalPatternId: block.id
+            };
+            cells.push(spacerBottom);
+          }
+        }
+        
+        return cells;
+      }
+      
+      generateColorPalette(baseColor1, baseColor2, numColors = 5) {
+        // Generate a palette of colors from 2 base colors
+        // Creates lighter and darker versions for patterns that need multiple colors
+        // Uses ±15% lightness variations for subtle, harmonious colors
+        
+        const colors = [baseColor1, baseColor2];
+        
+        if (numColors <= 2) {
+          return colors.slice(0, numColors);
+        }
+        
+        // Convert base colors to HSL for better color manipulation
+        const hsl1 = this.hexToHsl(baseColor1);
+        const hsl2 = this.hexToHsl(baseColor2);
+        
+        // Generate additional colors by lightening and darkening
+        const additionalColors = [];
+        
+        // Create lighter versions of both colors (±15% lightness)
+        const light1 = this.lightenColorHsl(hsl1, 0.15);
+        const light2 = this.lightenColorHsl(hsl2, 0.15);
+        
+        // Create darker versions of both colors (±15% lightness)
+        const dark1 = this.darkenColorHsl(hsl1, 0.15);
+        const dark2 = this.darkenColorHsl(hsl2, 0.15);
+        
+        // Add colors to palette in a logical order
+        additionalColors.push(Utils.hslToHex(light1.h, light1.s, light1.l));
+        additionalColors.push(Utils.hslToHex(light2.h, light2.s, light2.l));
+        additionalColors.push(Utils.hslToHex(dark1.h, dark1.s, dark1.l));
+        additionalColors.push(Utils.hslToHex(dark2.h, dark2.s, dark2.l));
+        
+        // Combine and return the requested number of colors
+        const fullPalette = [...colors, ...additionalColors];
+        return fullPalette.slice(0, numColors);
+      }
+      
+      lightenColorHsl(hsl, amount) {
+        // Lighten a color by increasing lightness
+        return {
+          h: hsl.h,
+          s: hsl.s,
+          l: Math.min(100, hsl.l + (amount * 100))
+        };
+      }
+      
+      darkenColorHsl(hsl, amount) {
+        // Darken a color by decreasing lightness
+        return {
+          h: hsl.h,
+          s: hsl.s,
+          l: Math.max(0, hsl.l - (amount * 100))
+        };
       }
       
       getColorSimilarity(color1, color2) {
@@ -4211,7 +4705,7 @@ try {
         this.userPieces = new Set();
       }
       
-      // Calculate jitter multiplier based on block size (like checkerboard approach)
+      // Calculate progressive jitter decrease based on number of blocks
       calculateJitterMultiplier(blockWidth, blockHeight) {
         const blockArea = blockWidth * blockHeight;
         const minBlockSize = 20; // Minimum size for reference
@@ -4377,8 +4871,6 @@ try {
         // Calculate jitter per block based on individual block size
         // We'll calculate these inside the block loop since each block has different dimensions
         
-        // Debug: Log jitter multipliers
-        
         // Pattern selection function
         const getPatternForColor = (color) => {
           // Convert hex to HSL to determine color family
@@ -4414,8 +4906,8 @@ try {
         
         blocks.forEach((block, i) => {
           
-          // Special handling for checkerboard cells - render as simple rectangles
-          if (block.specialPatternType === 'checkerboard') {
+          // Special handling for special pattern cells - render as simple rectangles
+          if (block.patternType === 'special' && block.specialPatternType) {
             // Ensure positive dimensions to prevent SVG errors
             const safeWidth = Math.max(1, block.width);
             const safeHeight = Math.max(1, block.height);
@@ -4428,7 +4920,7 @@ try {
             rect.setAttribute('fill', block.color);
             rect.setAttribute('stroke', 'none');
             
-            // Add new block animation for checkerboard cells
+            // Add new block animation for special pattern cells
             if (i === this.lastAddedIndex) {
               rect.setAttribute('opacity', '0');
               rect.classList.add('new-block');
