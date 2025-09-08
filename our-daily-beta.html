@@ -2243,34 +2243,87 @@ try {
         }
         
         if (!selectedBlock) {
-          // Special rules for first few splits:
-          // 1) First TWO splits cannot be special pattern
-          // 2) Likelihood for splits 3-6 = 50%
-          // 3) No two back-to-back special patterns
-          // 4) After split 6, use 25% chance
+          // Special rules for pattern creation:
+          // 1) Likelihood for splits 1-6 = 50%
+          // 2) No two back-to-back special patterns
+          // 3) After split 6, use 25% chance
+          // 4) NEW: Reserve minimum 30% of blocks as regular (prevent all-special quilt)
+          
+          // Calculate current special pattern density
+          const totalBlocks = this.blocks.length;
+          const specialPatternCount = this.blocks.filter(block => 
+            block.patternType === 'special' || 
+            block.id.includes('_pattern_') ||
+            block.originalPatternId
+          ).length;
+          const specialPatternDensity = specialPatternCount / totalBlocks;
+          const minRegularDensity = 0.30; // Reserve 30% for regular blocks
           
           let shouldCreateSpecialPattern = false;
           
-          if (this.submissionCount <= 2) {
-            // Rule 1: First TWO splits cannot be special pattern
+          // Rule 4: Check if we've hit the special pattern density limit
+          if (specialPatternDensity >= (1 - minRegularDensity)) {
             shouldCreateSpecialPattern = false;
-            console.log(`🎯 FIRST TWO SPLITS: Cannot create special pattern (rule 1)`);
-          } else if (this.submissionCount >= 3 && this.submissionCount <= 6) {
+            console.log(`🎯 DENSITY LIMIT: Special pattern density ${(specialPatternDensity * 100).toFixed(1)}% >= ${((1 - minRegularDensity) * 100).toFixed(1)}% limit - must create regular block (rule 4)`);
+          } else if (this.submissionCount >= 1 && this.submissionCount <= 6) {
             // Rule 2: Splits 2-6 have 50% chance
             // Rule 3: Check if previous split was special pattern
+            // Special pattern blocks are created with the current submissionIndex, so we need to check for blocks
+            // that were created in the previous submission (submissionIndex === this.submissionCount - 1)
             const wasLastSplitSpecialPattern = this.blocks.some(block => 
-              block.submissionIndex === this.submissionCount - 1 && 
+              block.submissionIndex === (this.submissionCount - 1) && 
               (block.patternType === 'special' || block.id.includes('_pattern_'))
             );
             
-            if (wasLastSplitSpecialPattern) {
+            // Debug: Log what blocks we're checking
+            const previousBlocks = this.blocks.filter(block => block.submissionIndex === (this.submissionCount - 1));
+            const previousSpecialBlocks = previousBlocks.filter(block => 
+              block.patternType === 'special' || block.id.includes('_pattern_')
+            );
+            console.log(`🎯 DEBUG: Checking split ${this.submissionCount}, previous blocks: ${previousBlocks.length}, previous special blocks: ${previousSpecialBlocks.length}, wasLastSplitSpecialPattern: ${wasLastSplitSpecialPattern}`);
+            
+            // Debug: Log all blocks and their submissionIndex
+            console.log(`🎯 DEBUG: All blocks:`, this.blocks.map(block => ({
+              id: block.id,
+              submissionIndex: block.submissionIndex,
+              patternType: block.patternType,
+              hasPattern: block.id.includes('_pattern_')
+            })));
+            
+            // Debug: Log previous blocks in detail
+            if (previousBlocks.length > 0) {
+              console.log(`🎯 DEBUG: Previous blocks detail:`, previousBlocks.map(block => ({
+                id: block.id,
+                submissionIndex: block.submissionIndex,
+                patternType: block.patternType,
+                hasPattern: block.id.includes('_pattern_'),
+                isSpecial: block.patternType === 'special' || block.id.includes('_pattern_')
+              })));
+            }
+            
+            // NEW RULE: If first split was special pattern, second split CANNOT be special
+            if (this.submissionCount === 2) {
+              const wasFirstSplitSpecialPattern = this.blocks.some(block => 
+                block.submissionIndex === 1 && 
+                (block.patternType === 'special' || block.id.includes('_pattern_'))
+              );
+              
+              if (wasFirstSplitSpecialPattern) {
+                shouldCreateSpecialPattern = false;
+                console.log(`🎯 NO CONSECUTIVE SPECIAL: First split was special pattern, second split must be regular (new rule)`);
+              } else {
+                // Rule 1: 50% chance for splits 1-6
+                shouldCreateSpecialPattern = Math.random() < 0.50;
+                console.log(`🎯 SPLIT 2: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (50% chance, rule 1)`);
+              }
+            } else if (wasLastSplitSpecialPattern) {
               // Rule 3: No back-to-back special patterns
               shouldCreateSpecialPattern = false;
               console.log(`🎯 NO BACK-TO-BACK: Previous split was special pattern (rule 3)`);
             } else {
-              // Rule 2: 50% chance for splits 3-6
+              // Rule 1: 50% chance for splits 1-6
               shouldCreateSpecialPattern = Math.random() < 0.50;
-              console.log(`🎯 SPLITS 3-6: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (50% chance, rule 2)`);
+              console.log(`🎯 SPLITS 1-6: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (50% chance, rule 1)`);
             }
           } else {
             // After split 6: 25% chance
@@ -2295,27 +2348,45 @@ try {
             const topCount = Math.max(1, Math.floor(colorContrastScores.length * 0.3));
             const topBlocks = colorContrastScores.slice(0, topCount);
             
-            
-            selectedBlock = topBlocks[Math.floor(Math.random() * topBlocks.length)].block;
-            
-            
-            // Mark this block for special pattern creation
-            selectedBlock._shouldCreateSpecialPattern = true;
+            // Safety check: if no regular blocks available, fall back to regular block selection
+            if (topBlocks.length === 0) {
+              console.log(`🎯 NO REGULAR BLOCKS: Falling back to regular block selection`);
+              selectedBlock = null; // Will trigger regular block selection below
+            } else {
+              selectedBlock = topBlocks[Math.floor(Math.random() * topBlocks.length)].block;
+              // Mark this block for special pattern creation
+              selectedBlock._shouldCreateSpecialPattern = true;
+            }
           } else {
             // Logging is already handled in the conditional blocks above
             // Regular splitting for regular blocks only - no color restrictions
             // Size-based selection: pick from largest blocks most of the time
-            const topCount = Math.max(1, Math.floor(regularBlocks.length * 0.2)); // Top 20% largest
-            const largestBlocks = regularBlocks.slice(0, topCount);
             
-            // 90% chance to pick from largest blocks, 10% chance for variety
-            if (Math.random() < 0.9) {
-              selectedBlock = largestBlocks[Math.floor(Math.random() * largestBlocks.length)];
-              console.log(`🎯 REGULAR SELECTION: Selected from largest blocks (${largestBlocks.length} blocks) - chosen: ${selectedBlock.id} (${selectedBlock.width.toFixed(1)}x${selectedBlock.height.toFixed(1)})`);
+            // Safety check: ensure we have regular blocks to work with
+            if (regularBlocks.length === 0) {
+              console.log(`🎯 NO REGULAR BLOCKS: No regular blocks available for selection`);
+              selectedBlock = null; // Will trigger fallback logic
             } else {
-              // Small chance to pick from any block for variety
-              selectedBlock = regularBlocks[Math.floor(Math.random() * regularBlocks.length)];
-              console.log(`🎯 REGULAR SELECTION: Selected from all regular blocks (${regularBlocks.length} blocks) - chosen: ${selectedBlock.id} (${selectedBlock.width.toFixed(1)}x${selectedBlock.height.toFixed(1)})`);
+              const topCount = Math.max(1, Math.floor(regularBlocks.length * 0.2)); // Top 20% largest
+              const largestBlocks = regularBlocks.slice(0, topCount);
+              
+              // 90% chance to pick from largest blocks, 10% chance for variety
+              if (Math.random() < 0.9 && largestBlocks.length > 0) {
+                selectedBlock = largestBlocks[Math.floor(Math.random() * largestBlocks.length)];
+                if (selectedBlock) {
+                  console.log(`🎯 REGULAR SELECTION: Selected from largest blocks (${largestBlocks.length} blocks) - chosen: ${selectedBlock.id} (${selectedBlock.width.toFixed(1)}x${selectedBlock.height.toFixed(1)})`);
+                } else {
+                  console.log(`🎯 REGULAR SELECTION: Selected from largest blocks but got undefined block`);
+                }
+              } else {
+                // Small chance to pick from any block for variety
+                selectedBlock = regularBlocks[Math.floor(Math.random() * regularBlocks.length)];
+                if (selectedBlock) {
+                  console.log(`🎯 REGULAR SELECTION: Selected from all regular blocks (${regularBlocks.length} blocks) - chosen: ${selectedBlock.id} (${selectedBlock.width.toFixed(1)}x${selectedBlock.height.toFixed(1)})`);
+                } else {
+                  console.log(`🎯 REGULAR SELECTION: Selected from all regular blocks but got undefined block`);
+                }
+              }
             }
           }
         }
@@ -2529,6 +2600,8 @@ try {
             return this.createFramedPattern(block, newColor);
           case 'railfence':
             return this.createRailFencePattern(block, newColor);
+          case 'cross':
+            return this.createCrossPattern(block, newColor);
           // Future patterns can be added here:
           // case 'dots':
           //   return this.createDotsPattern(block, newColor);
@@ -2577,6 +2650,15 @@ try {
               availablePatterns.push('railfence');
             }
           }
+          
+          // Cross pattern is available for large blocks (needs space for 3x3 grid)
+          // Also requires square-ish aspect ratio (not too rectangular)
+          if (block.width > 90 && block.height > 90) {
+            const aspectRatio = Math.max(block.width, block.height) / Math.min(block.width, block.height);
+            if (aspectRatio <= 1.5) { // Max 1.5:1 ratio (e.g., 150x100 is OK, 200x100 is not)
+              availablePatterns.push('cross');
+            }
+          }
         }
         
         return availablePatterns;
@@ -2590,6 +2672,7 @@ try {
         if (availablePatterns.length === 1) {
           return availablePatterns[0];
         }
+        
         
         // Randomly select between available patterns for variety
         const randomIndex = Math.floor(Math.random() * availablePatterns.length);
@@ -2736,10 +2819,11 @@ try {
           stripeOrientation = 'vertical';
         }
         
-        // Determine number of stripes based on block size
+        // Determine number of stripes based on block size (max 4 stripes)
         let numStripes = 3; // Default to 3 stripes
         if (blockArea > 20000) numStripes = 4;
-        if (blockArea > 40000) numStripes = 5;
+        // Cap at 4 stripes maximum
+        numStripes = Math.min(numStripes, 4);
         
         const cells = [];
         const colors = [block.color, newColor]; // Alternate between original and new color
@@ -3269,6 +3353,85 @@ try {
             cells.push(strip);
           }
         });
+        
+        return cells;
+      }
+      
+      createCrossPattern(block, newColor) {
+        // Create a 3x3 cross pattern: center + 4 cross arms + 4 corners
+        // Center and cross arms form the cross, corners are different color
+        
+        // Generate 4-color palette (need 4 colors: original, new, third, fourth for center)
+        const colorPalette = this.generateColorPalette(block.color, newColor, 4);
+        
+        // Calculate cell dimensions for 3x3 grid
+        const cellWidth = block.width / 3;
+        const cellHeight = block.height / 3;
+        
+        // Generate variable dimensions for organic feel
+        const columnWidths = this.generateVariableDimensions(block.width, 3);
+        const rowHeights = this.generateVariableDimensions(block.height, 3);
+        
+        // Calculate cumulative positions
+        const columnPositions = [0];
+        const rowPositions = [0];
+        for (let i = 0; i < 3; i++) {
+          columnPositions.push(columnPositions[i] + columnWidths[i]);
+          rowPositions.push(rowPositions[i] + rowHeights[i]);
+        }
+        
+        // Add jitter for organic feel
+        const jitterMultiplier = 0.05;
+        
+        const cells = [];
+        
+        // Create 3x3 grid
+        for (let row = 0; row < 3; row++) {
+          for (let col = 0; col < 3; col++) {
+            const cellIndex = row * 3 + col;
+            
+            // Determine if this cell is part of the cross
+            const isCenter = (row === 1 && col === 1);
+            const isCrossArm = (row === 1 && col !== 1) || (col === 1 && row !== 1);
+            const isCorner = (row === 0 || row === 2) && (col === 0 || col === 2);
+            
+            // Assign colors: center = fourth color, cross arms = new color, corners = third color
+            let color;
+            if (isCenter) {
+              color = colorPalette[3]; // Fourth color for center (distinct from corners)
+            } else if (isCrossArm) {
+              color = colorPalette[1]; // New color for cross arms
+            } else {
+              color = colorPalette[2]; // Third color for corners
+            }
+            
+            // Add jitter
+            const jitterX = (Math.random() - 0.5) * jitterMultiplier * columnWidths[col];
+            const jitterY = (Math.random() - 0.5) * jitterMultiplier * rowHeights[row];
+            
+            // Calculate cell position and dimensions
+            const cellX = block.x + columnPositions[col] + jitterX;
+            const cellY = block.y + rowPositions[row] + jitterY;
+            const cellWidth = columnWidths[col];
+            const cellHeight = rowHeights[row];
+            
+            const cell = {
+              id: block.id + '_pattern_cross_' + cellIndex,
+              x: cellX,
+              y: cellY,
+              width: cellWidth,
+              height: cellHeight,
+              color: color,
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'cross',
+              originalPatternId: block.id
+            };
+            
+            cells.push(cell);
+          }
+        }
         
         return cells;
       }
