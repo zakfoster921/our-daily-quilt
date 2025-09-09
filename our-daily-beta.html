@@ -63,7 +63,7 @@ try {
     });
 
     // Global function to update colors (called by color picker)
-    window.ODQ_onColorChange = function (hex) {
+    window.ODQ_onColorChange = function (hex, fastTransition = false) {
       // Update CSS custom property and body background
       document.documentElement.style.setProperty('--current-color', hex);
       document.body.style.backgroundColor = hex;
@@ -72,6 +72,22 @@ try {
       const metaThemeColor = document.querySelector('meta[name="theme-color"]');
       if (metaThemeColor) {
         metaThemeColor.setAttribute('content', hex);
+      }
+      
+      // Handle transition timing coordination
+      if (fastTransition) {
+        // For fast transitions (like when leaving color picker), temporarily disable transitions
+        document.body.style.transition = 'none';
+        document.documentElement.style.transition = 'none';
+        
+        // Force immediate update
+        void document.body.offsetHeight; // reflow
+        
+        // Re-enable transitions after a brief delay
+        setTimeout(() => {
+          document.body.style.transition = '';
+          document.documentElement.style.transition = '';
+        }, 50);
       }
     };
   })();
@@ -4054,25 +4070,27 @@ try {
               }
             }
             
-            // Handle color picker screen transitions
+            // Handle color picker screen transitions with proper timing
             if (screenId === 'screen-color') {
               // Add class to body for color mode
               document.body.classList.add('color-mode-active');
               
-              // Set current color immediately
-              const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
-              if (currentColor && Utils.validateHexColor(currentColor)) {
-                if (window.ODQ_onColorChange) {
-                  window.ODQ_onColorChange(currentColor);
+              // Delay color change to match screen transition timing
+              setTimeout(() => {
+                const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+                if (currentColor && Utils.validateHexColor(currentColor)) {
+                  if (window.ODQ_onColorChange) {
+                    window.ODQ_onColorChange(currentColor);
+                  }
                 }
-              }
+              }, 100); // Small delay to let screen transition start
             } else {
               // Remove color mode class when leaving color picker
               document.body.classList.remove('color-mode-active');
               
-              // Reset to default color
+              // Reset to default color with fast transition to match screen timing
               if (window.ODQ_onColorChange) {
-                window.ODQ_onColorChange('#f6f4f1');
+                window.ODQ_onColorChange('#f6f4f1', true); // true = fast transition
               }
             }
             
