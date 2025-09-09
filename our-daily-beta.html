@@ -9716,5 +9716,39 @@ try {
     
     // Firebase initialization moved to earlier in the file
   </script>
-</body>
+  <!-- Direct parent communication script -->
+  <script>
+  // Send color to parent page directly
+  function sendColorToParent(color) {
+    try {
+      console.log('🎨 Sending color to parent directly:', color);
+      window.parent.postMessage({ type: 'odq-bg', color: color }, '*');
+      
+      // Also try to set parent background directly (if same origin)
+      try {
+        window.parent.document.body.style.backgroundColor = color;
+        console.log('🎨 Set parent background directly');
+      } catch (e) {
+        console.log('🎨 Cannot set parent background directly (cross-origin)');
+      }
+    } catch (error) {
+      console.log('🎨 Error sending to parent:', error);
+    }
+  }
+
+  // Send initial color
+  setTimeout(function() {
+    sendColorToParent('#f6f4f1');
+  }, 1000);
+
+  // Override the existing color change function
+  if (window.ODQ_onColorChange) {
+    var originalODQ_onColorChange = window.ODQ_onColorChange;
+    window.ODQ_onColorChange = function(hex) {
+      originalODQ_onColorChange(hex);
+      sendColorToParent(hex);
+    };
+  }
+  </script>
+  </body>
 </html>
