@@ -1353,6 +1353,11 @@ try {
       body {
         transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
       }
+      
+      /* Ensure html root also snaps with body for status bar area */
+      html {
+        background-color: inherit;
+      }
 
       /* Kill the mobile safe-area padding only while color screen is active */
       body.color-mode-active {
@@ -4069,52 +4074,39 @@ try {
                 console.log('Could not send color to parent page:', error);
               }
             } else {
-              // Remove class when leaving color screen
+              // Snap-then-swap solution: freeze transitions, snap to neutral, force paint, then swap
+              const NEUTRAL = '#f6f4f1';
+              const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
+              
+              // 1) Snap iframe background immediately (no transition)
               document.body.classList.remove('color-mode-active');
-              
-              // Temporarily disable transition to prevent status bar area lingering
               document.body.style.transition = 'none';
+              document.body.style.backgroundColor = NEUTRAL;
+              document.documentElement.style.setProperty('--current-color', NEUTRAL);
               
-              // Set background color immediately
-              document.body.style.backgroundColor = '#f6f4f1';
-              document.documentElement.style.setProperty('--current-color', '#f6f4f1');
-              
-              // Re-enable transition after a brief delay
-              setTimeout(() => {
-                document.body.style.transition = '';
-              }, 50);
-              
-              // Send multiple rapid messages to parent to ensure status bar area updates
+              // Tell parent to snap immediately too
               try {
-                const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
-                
-                // Send immediate message
                 window.parent.postMessage({ 
                   type: 'odq-bg', 
-                  color: '#f6f4f1',
+                  color: NEUTRAL, 
                   fastTransition: true 
                 }, targetOrigin);
-                
-                // Send follow-up messages to ensure parent gets the update
-                setTimeout(() => {
-                  window.parent.postMessage({ 
-                    type: 'odq-bg', 
-                    color: '#f6f4f1',
-                    fastTransition: true 
-                  }, targetOrigin);
-                }, 10);
-                
-                setTimeout(() => {
-                  window.parent.postMessage({ 
-                    type: 'odq-bg', 
-                    color: '#f6f4f1',
-                    fastTransition: true 
-                  }, targetOrigin);
-                }, 50);
-                
               } catch (error) {
                 console.log('Could not send default color to parent page:', error);
               }
+              
+              // 2) Force a paint so iOS updates the status bar now
+              requestAnimationFrame(() => {
+                void document.body.offsetHeight; // reflow
+                
+                // 3) Now perform the actual screen swap
+                // The screen swap will happen in the next part of the function
+                
+                // Restore transition on the next frame
+                requestAnimationFrame(() => {
+                  document.body.style.transition = ''; // restore your 1.2s easing
+                });
+              });
             }
             
              // Handle quote screen fade-in elements
