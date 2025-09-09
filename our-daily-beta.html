@@ -3970,7 +3970,8 @@ try {
                 const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
                 if (currentColor && Utils.validateHexColor(currentColor)) {
                   console.log('🎨 Sending color to parent:', currentColor);
-                  window.parent.postMessage({ type: 'odq-bg', color: currentColor }, '*');
+                  // Send new format message
+                  window.parent.postMessage({ odqBG: currentColor, active: true }, '*');
                   // Update CSS variable for body background
                   document.documentElement.style.setProperty('--current-color', currentColor);
                 }
@@ -3980,6 +3981,12 @@ try {
             } else {
               // Remove class when leaving color screen
               document.body.classList.remove('color-mode-active');
+              // Send default color to parent
+              try {
+                window.parent.postMessage({ odqBG: '#f6f4f1', active: false }, '*');
+              } catch (error) {
+                console.log('Could not send default color to parent page:', error);
+              }
             }
             
             // Handle quote screen fade-in elements
@@ -6398,7 +6405,7 @@ try {
         try {
           if (hexColor && Utils.validateHexColor(hexColor)) {
             console.log('🎨 Sending color to parent (color wheel):', hexColor);
-            window.parent.postMessage({ type: 'odq-bg', color: hexColor }, '*');
+            window.parent.postMessage({ odqBG: hexColor, active: true }, '*');
           }
         } catch (error) {
           // Silently fail if postMessage is not available (e.g., not in iframe)
@@ -8694,7 +8701,7 @@ try {
           // Send color to parent page for background extension
           try {
             console.log('🎨 Sending color to parent (add color):', selectedColor);
-            window.parent.postMessage({ type: 'odq-bg', color: selectedColor }, '*');
+            window.parent.postMessage({ odqBG: selectedColor, active: true }, '*');
             // Update CSS variable for body background
             document.documentElement.style.setProperty('--current-color', selectedColor);
           } catch (error) {
