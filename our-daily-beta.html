@@ -49,7 +49,10 @@ try {
   (function () {
     // 1) helper: post color to parent page
     function sendBGToParent(color) {
-      try { window.parent.postMessage({ type: 'odq-bg', color: String(color || '').trim() }, '*'); } catch (e) {}
+      try { 
+        const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
+        window.parent.postMessage({ type: 'odq-bg', color: String(color || '').trim() }, targetOrigin); 
+      } catch (e) {}
     }
 
     // 2) send an initial color as soon as possible (fallback if your app sets it later)
@@ -9726,7 +9729,9 @@ try {
   function sendColorToParent(color) {
     try {
       console.log('🎨 Sending color to parent directly:', color);
-      window.parent.postMessage({ type: 'odq-bg', color: color }, '*');
+      // Use specific origin instead of wildcard to avoid privacy warnings
+      const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
+      window.parent.postMessage({ type: 'odq-bg', color: color }, targetOrigin);
       
       // Also try to set parent background directly (if same origin)
       try {
@@ -9747,7 +9752,14 @@ try {
     var originalODQ_onColorChange = window.ODQ_onColorChange;
     window.ODQ_onColorChange = function(hex) {
       originalODQ_onColorChange(hex);
-      sendColorToParent(hex);
+      // Only send color if color picker screen is active
+      const colorScreen = document.getElementById('screen-color');
+      if (colorScreen && colorScreen.classList.contains('active')) {
+        console.log('🎨 ODQ_onColorChange: Color picker active, sending color:', hex);
+        sendColorToParent(hex);
+      } else {
+        console.log('🎨 ODQ_onColorChange: Color picker NOT active, NOT sending color:', hex);
+      }
     };
   }
   </script>
