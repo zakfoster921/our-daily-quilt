@@ -51,12 +51,16 @@ try {
            function sendBGToParent(color, fastTransition = false) {
              try {
                const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
-               window.parent.postMessage({ 
+               const message = { 
                  type: 'odq-bg', 
                  color: String(color || '').trim(),
                  fastTransition: fastTransition
-               }, targetOrigin);
-             } catch (e) {}
+               };
+               console.log('🎨 Sending message to parent:', message, 'targetOrigin:', targetOrigin);
+               window.parent.postMessage(message, targetOrigin);
+             } catch (e) {
+               console.log('🎨 Error sending message to parent:', e);
+             }
            }
 
     // 2) send an initial color as soon as possible (fallback if your app sets it later)
@@ -64,7 +68,14 @@ try {
       // Try a CSS var first; otherwise fall back to computed body background
       var cssVar = getComputedStyle(document.documentElement).getPropertyValue('--current-color').trim();
       var initial = cssVar || getComputedStyle(document.body).backgroundColor || '#f6f4f1';
+      console.log('🎨 Sending initial color to parent:', initial);
       sendBGToParent(initial);
+      
+      // Also send a follow-up message after a short delay to ensure parent gets it
+      setTimeout(() => {
+        console.log('🎨 Sending follow-up initial color to parent:', initial);
+        sendBGToParent(initial);
+      }, 100);
     });
 
            // 3) call this when your picker changes value
