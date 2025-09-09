@@ -49,6 +49,8 @@ try {
   <script>
   // Direct color control - no parent communication needed
   (function () {
+    let metaUpdateTimeout = null;
+    
     // Set initial color on page load
     document.addEventListener('DOMContentLoaded', function () {
       const initial = '#f6f4f1'; // Default warm neutral
@@ -71,7 +73,21 @@ try {
       // Update theme-color meta tag for status bar area
       const metaThemeColor = document.querySelector('meta[name="theme-color"]');
       if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', hex);
+        if (fastTransition) {
+          // For fast transitions (like when leaving color picker), update immediately
+          metaThemeColor.setAttribute('content', hex);
+        } else {
+          // For normal transitions (like when picking colors), throttle the meta tag updates
+          // Clear any existing timeout
+          if (metaUpdateTimeout) {
+            clearTimeout(metaUpdateTimeout);
+          }
+          
+          // Update meta tag after a brief delay to avoid constant updates during dragging
+          metaUpdateTimeout = setTimeout(() => {
+            metaThemeColor.setAttribute('content', hex);
+          }, 100); // Small delay to throttle updates
+        }
       }
       
       // Handle transition timing coordination
