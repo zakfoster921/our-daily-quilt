@@ -49,64 +49,45 @@ try {
   <script>
   // Direct color control - no parent communication needed
   (function () {
-    let metaUpdateTimeout = null;
-    
-    // Set initial color on page load
-    document.addEventListener('DOMContentLoaded', function () {
-      const initial = '#f6f4f1'; // Default warm neutral
-      document.documentElement.style.setProperty('--current-color', initial);
-      document.body.style.backgroundColor = initial;
-      
-      // Update theme-color meta tag for status bar area
-      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-      if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', initial);
-      }
-    });
+    let metaUpdateTimer = null;
+    const meta = document.querySelector('meta[name="theme-color"]');
 
-    // Global function to update colors (called by color picker)
-    window.ODQ_onColorChange = function (hex, fastTransition = false) {
-      // Update CSS custom property and body background
+    function setThemeColor(hex, { fast=false } = {}) {
+      // always set body + CSS var right away
       document.documentElement.style.setProperty('--current-color', hex);
       document.body.style.backgroundColor = hex;
-      
-      // Update theme-color meta tag for status bar area
-      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-      if (metaThemeColor) {
-        if (fastTransition) {
-          // For fast transitions (like when leaving color picker), update immediately
-          metaThemeColor.setAttribute('content', hex);
-        } else {
-          // For normal transitions (like when picking colors), delay meta tag update
-          // to match the 1.2s CSS transition timing
-          // Clear any existing timeout
-          if (metaUpdateTimeout) {
-            clearTimeout(metaUpdateTimeout);
-          }
-          
-          // Update meta tag after the CSS transition completes (1.2s)
-          metaUpdateTimeout = setTimeout(() => {
-            metaThemeColor.setAttribute('content', hex);
-          }, 1200); // Match the 1.2s transition timing
-        }
-      }
-      
-      // Handle transition timing coordination
-      if (fastTransition) {
-        // For fast transitions (like when leaving color picker), temporarily disable transitions
+
+      if (!meta) return;
+
+      if (fast) {
+        // kill any pending delayed update and snap now
+        if (metaUpdateTimer) { clearTimeout(metaUpdateTimer); metaUpdateTimer = null; }
+        meta.setAttribute('content', hex);
+        // freeze transitions for one frame so the snap applies before swap
         document.body.style.transition = 'none';
-        document.documentElement.style.transition = 'none';
-        
-        // Force immediate update
-        void document.body.offsetHeight; // reflow
-        
-        // Re-enable transitions after a brief delay
-        setTimeout(() => {
-          document.body.style.transition = '';
-          document.documentElement.style.transition = '';
-        }, 50);
+        void document.body.offsetHeight; // force paint
+        requestAnimationFrame(() => { document.body.style.transition = ''; });
+      } else {
+        // frequent while dragging the picker = short debounce, not 1.2s delay
+        if (metaUpdateTimer) clearTimeout(metaUpdateTimer);
+        metaUpdateTimer = setTimeout(() => {
+          meta.setAttribute('content', hex);
+          metaUpdateTimer = null;
+        }, 150);
       }
+    }
+
+    // expose
+    window.ODQ_onColorChange = (hex, fast=false) => setThemeColor(hex, { fast });
+
+    // helper you call right BEFORE leaving the color screen
+    window.ODQ_snapNeutralBeforeSwap = function () {
+      if (metaUpdateTimer) { clearTimeout(metaUpdateTimer); metaUpdateTimer = null; }
+      setThemeColor('#f6f4f1', { fast:true });
     };
+
+    // initial paint
+    document.addEventListener('DOMContentLoaded', () => setThemeColor('#f6f4f1', { fast:true }));
   })();
   </script>
   <style>
@@ -1380,9 +1361,9 @@ try {
         transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
       }
       
-      /* Add transition to body background for smooth status bar area transitions */
+      /* Remove body transition - status bar should snap, not follow slow animation */
       body {
-        transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        transition: none;
       }
       
       /* Ensure html root also snaps with body for status bar area */
@@ -4105,9 +4086,9 @@ try {
               // Remove color mode class when leaving color picker
               document.body.classList.remove('color-mode-active');
               
-              // Reset to default color with fast transition to match screen timing
-              if (window.ODQ_onColorChange) {
-                window.ODQ_onColorChange('#f6f4f1', true); // true = fast transition
+              // Snap to neutral color immediately before screen swap
+              if (window.ODQ_snapNeutralBeforeSwap) {
+                window.ODQ_snapNeutralBeforeSwap();
               }
             }
             
