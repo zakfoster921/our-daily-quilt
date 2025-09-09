@@ -4072,18 +4072,21 @@ try {
               // Add class to body for color mode
               document.body.classList.add('color-mode-active');
               
-              try {
-                const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
-                if (currentColor && Utils.validateHexColor(currentColor)) {
-                  console.log('🎨 Sending color to parent:', currentColor);
-                  // Use the new helper function
-                  if (window.ODQ_onColorChange) {
-                    window.ODQ_onColorChange(currentColor);
+              // Delay color change to match screen transition timing
+              setTimeout(() => {
+                try {
+                  const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+                  if (currentColor && Utils.validateHexColor(currentColor)) {
+                    console.log('🎨 Sending color to parent (delayed for transition):', currentColor);
+                    // Use the new helper function with normal transition
+                    if (window.ODQ_onColorChange) {
+                      window.ODQ_onColorChange(currentColor, false); // false = normal transition
+                    }
                   }
+                } catch (error) {
+                  console.log('Could not send color to parent page:', error);
                 }
-              } catch (error) {
-                console.log('Could not send color to parent page:', error);
-              }
+              }, 100); // Small delay to let screen transition start
             } else {
               // Snap-then-swap solution: freeze transitions, snap to neutral, force paint, then swap
               const NEUTRAL = '#f6f4f1';
@@ -4095,12 +4098,12 @@ try {
               document.body.style.backgroundColor = NEUTRAL;
               document.documentElement.style.setProperty('--current-color', NEUTRAL);
               
-              // Tell parent to snap immediately too
+              // Tell parent to transition to neutral (not instant)
               try {
                 window.parent.postMessage({ 
                   type: 'odq-bg', 
                   color: NEUTRAL, 
-                  fastTransition: true 
+                  fastTransition: false // Use normal transition to match screen timing
                 }, targetOrigin);
               } catch (error) {
                 console.log('Could not send default color to parent page:', error);
