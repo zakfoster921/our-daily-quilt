@@ -4043,7 +4043,7 @@ try {
               }
             }
             
-            // Handle quote screen fade-in elements
+             // Handle quote screen fade-in elements
             if (screenId === 'screen-quote') {
               // Reset fade-in elements to hidden state
               const fadeElements = document.querySelectorAll('.quote-screen-fade-in');
@@ -6455,13 +6455,16 @@ try {
           document.documentElement.style.setProperty('--current-color', hexColor);
         }
         
-        // Send color to parent page for background extension
+        // Send color to parent page for background extension (only if color picker screen is active)
         try {
           if (hexColor && Utils.validateHexColor(hexColor)) {
-            console.log('🎨 Sending color to parent (color wheel):', hexColor);
-            // Use the new helper function
-            if (window.ODQ_onColorChange) {
-              window.ODQ_onColorChange(hexColor);
+            const colorScreen = document.getElementById('screen-color');
+            if (colorScreen && colorScreen.classList.contains('active')) {
+              console.log('🎨 Sending color to parent (color wheel):', hexColor);
+              // Use the new helper function
+              if (window.ODQ_onColorChange) {
+                window.ODQ_onColorChange(hexColor);
+              }
             }
           }
         } catch (error) {
@@ -8755,12 +8758,15 @@ try {
             return;
           }
 
-          // Send color to parent page for background extension
+          // Send color to parent page for background extension (only if color picker screen is active)
           try {
-            console.log('🎨 Sending color to parent (add color):', selectedColor);
-            // Use the new helper function
-            if (window.ODQ_onColorChange) {
-              window.ODQ_onColorChange(selectedColor);
+            const colorScreen = document.getElementById('screen-color');
+            if (colorScreen && colorScreen.classList.contains('active')) {
+              console.log('🎨 Sending color to parent (add color):', selectedColor);
+              // Use the new helper function
+              if (window.ODQ_onColorChange) {
+                window.ODQ_onColorChange(selectedColor);
+              }
             }
           } catch (error) {
             // Silently fail if postMessage is not available (e.g., not in iframe)
@@ -9741,9 +9747,12 @@ try {
     }
   }
 
-  // Send initial color
+  // Send initial color only if on color picker screen
   setTimeout(function() {
-    sendColorToParent('#f6f4f1');
+    const colorScreen = document.getElementById('screen-color');
+    if (colorScreen && colorScreen.classList.contains('active')) {
+      sendColorToParent('#f6f4f1');
+    }
   }, 1000);
 
   // Override the existing color change function
