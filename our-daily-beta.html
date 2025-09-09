@@ -37,6 +37,35 @@ try {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+  
+  <!-- ODQ: send color to Squarespace parent -->
+  <script>
+  // ---- ODQ: send color to Squarespace parent ----
+  (function () {
+    // 1) helper: post color to parent page
+    function sendBGToParent(color) {
+      try { window.parent.postMessage({ type: 'odq-bg', color: String(color || '').trim() }, '*'); } catch (e) {}
+    }
+
+    // 2) send an initial color as soon as possible (fallback if your app sets it later)
+    document.addEventListener('DOMContentLoaded', function () {
+      // Try a CSS var first; otherwise fall back to computed body background
+      var cssVar = getComputedStyle(document.documentElement).getPropertyValue('--current-color').trim();
+      var initial = cssVar || getComputedStyle(document.body).backgroundColor || '#f6f4f1';
+      sendBGToParent(initial);
+    });
+
+    // 3) call this when your picker changes value
+    //    If you already have a callback for color changes, just add sendBGToParent(hex) there.
+    window.ODQ_onColorChange = function (hex) {
+      // keep your own UI in sync if you want:
+      document.documentElement.style.setProperty('--current-color', hex);
+      document.body.style.background = hex;
+      // notify parent:
+      sendBGToParent(hex);
+    };
+  })();
+  </script>
   <style>
     /* ===== RESET & BASE STYLES ===== */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -3988,10 +4017,10 @@ try {
                 const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
                 if (currentColor && Utils.validateHexColor(currentColor)) {
                   console.log('🎨 Sending color to parent:', currentColor);
-                  // Send new format message
-                  window.parent.postMessage({ odqBG: currentColor, active: true }, '*');
-                  // Update CSS variable for body background
-                  document.documentElement.style.setProperty('--current-color', currentColor);
+                  // Use the new helper function
+                  if (window.ODQ_onColorChange) {
+                    window.ODQ_onColorChange(currentColor);
+                  }
                 }
               } catch (error) {
                 console.log('Could not send color to parent page:', error);
@@ -4001,7 +4030,9 @@ try {
               document.body.classList.remove('color-mode-active');
               // Send default color to parent
               try {
-                window.parent.postMessage({ odqBG: '#f6f4f1', active: false }, '*');
+                if (window.ODQ_onColorChange) {
+                  window.ODQ_onColorChange('#f6f4f1');
+                }
               } catch (error) {
                 console.log('Could not send default color to parent page:', error);
               }
@@ -6423,7 +6454,10 @@ try {
         try {
           if (hexColor && Utils.validateHexColor(hexColor)) {
             console.log('🎨 Sending color to parent (color wheel):', hexColor);
-            window.parent.postMessage({ odqBG: hexColor, active: true }, '*');
+            // Use the new helper function
+            if (window.ODQ_onColorChange) {
+              window.ODQ_onColorChange(hexColor);
+            }
           }
         } catch (error) {
           // Silently fail if postMessage is not available (e.g., not in iframe)
@@ -8719,9 +8753,10 @@ try {
           // Send color to parent page for background extension
           try {
             console.log('🎨 Sending color to parent (add color):', selectedColor);
-            window.parent.postMessage({ odqBG: selectedColor, active: true }, '*');
-            // Update CSS variable for body background
-            document.documentElement.style.setProperty('--current-color', selectedColor);
+            // Use the new helper function
+            if (window.ODQ_onColorChange) {
+              window.ODQ_onColorChange(selectedColor);
+            }
           } catch (error) {
             // Silently fail if postMessage is not available (e.g., not in iframe)
             console.log('Could not send color to parent page:', error);
