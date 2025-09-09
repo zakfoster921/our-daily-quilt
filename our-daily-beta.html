@@ -33,6 +33,8 @@ try {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f6f4f1" />
+  <meta name="color-scheme" content="light" />
   <title>Our Daily Quilt - Beta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,50 +45,35 @@ try {
   console.log('🎯 TEST: Script in head is running!');
   </script>
   
-  <!-- ODQ: send color to Squarespace parent -->
+  <!-- Direct color control for GitHub deployment -->
   <script>
-  // ---- ODQ: send color to Squarespace parent ----
+  // Direct color control - no parent communication needed
   (function () {
-           // 1) helper: post color to parent page
-           function sendBGToParent(color, fastTransition = false) {
-             try {
-               const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
-               const message = { 
-                 type: 'odq-bg', 
-                 color: String(color || '').trim(),
-                 fastTransition: fastTransition
-               };
-               console.log('🎨 Sending message to parent:', message, 'targetOrigin:', targetOrigin);
-               window.parent.postMessage(message, targetOrigin);
-             } catch (e) {
-               console.log('🎨 Error sending message to parent:', e);
-             }
-           }
-
-    // 2) send an initial color as soon as possible (fallback if your app sets it later)
+    // Set initial color on page load
     document.addEventListener('DOMContentLoaded', function () {
-      // Try a CSS var first; otherwise fall back to computed body background
-      var cssVar = getComputedStyle(document.documentElement).getPropertyValue('--current-color').trim();
-      var initial = cssVar || getComputedStyle(document.body).backgroundColor || '#f6f4f1';
-      console.log('🎨 Sending initial color to parent:', initial);
-      sendBGToParent(initial);
+      const initial = '#f6f4f1'; // Default warm neutral
+      document.documentElement.style.setProperty('--current-color', initial);
+      document.body.style.backgroundColor = initial;
       
-      // Also send a follow-up message after a short delay to ensure parent gets it
-      setTimeout(() => {
-        console.log('🎨 Sending follow-up initial color to parent:', initial);
-        sendBGToParent(initial);
-      }, 100);
+      // Update theme-color meta tag for status bar area
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', initial);
+      }
     });
 
-           // 3) call this when your picker changes value
-           //    If you already have a callback for color changes, just add sendBGToParent(hex) there.
-           window.ODQ_onColorChange = function (hex, fastTransition = false) {
-             // keep your own UI in sync if you want:
-             document.documentElement.style.setProperty('--current-color', hex);
-             document.body.style.background = hex;
-             // notify parent:
-             sendBGToParent(hex, fastTransition);
-           };
+    // Global function to update colors (called by color picker)
+    window.ODQ_onColorChange = function (hex) {
+      // Update CSS custom property and body background
+      document.documentElement.style.setProperty('--current-color', hex);
+      document.body.style.backgroundColor = hex;
+      
+      // Update theme-color meta tag for status bar area
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', hex);
+      }
+    };
   })();
   </script>
   <style>
@@ -4067,60 +4054,26 @@ try {
               }
             }
             
-            // Send current color to parent page when color picker screen is shown
+            // Handle color picker screen transitions
             if (screenId === 'screen-color') {
               // Add class to body for color mode
               document.body.classList.add('color-mode-active');
               
-              // Delay color change to match screen transition timing
-              setTimeout(() => {
-                try {
-                  const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
-                  if (currentColor && Utils.validateHexColor(currentColor)) {
-                    console.log('🎨 Sending color to parent (delayed for transition):', currentColor);
-                    // Use the new helper function with normal transition
-                    if (window.ODQ_onColorChange) {
-                      window.ODQ_onColorChange(currentColor, false); // false = normal transition
-                    }
-                  }
-                } catch (error) {
-                  console.log('Could not send color to parent page:', error);
+              // Set current color immediately
+              const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+              if (currentColor && Utils.validateHexColor(currentColor)) {
+                if (window.ODQ_onColorChange) {
+                  window.ODQ_onColorChange(currentColor);
                 }
-              }, 100); // Small delay to let screen transition start
-            } else {
-              // Snap-then-swap solution: freeze transitions, snap to neutral, force paint, then swap
-              const NEUTRAL = '#f6f4f1';
-              const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
-              
-              // 1) Snap iframe background immediately (no transition)
-              document.body.classList.remove('color-mode-active');
-              document.body.style.transition = 'none';
-              document.body.style.backgroundColor = NEUTRAL;
-              document.documentElement.style.setProperty('--current-color', NEUTRAL);
-              
-              // Tell parent to transition to neutral (not instant)
-              try {
-                window.parent.postMessage({ 
-                  type: 'odq-bg', 
-                  color: NEUTRAL, 
-                  fastTransition: false // Use normal transition to match screen timing
-                }, targetOrigin);
-              } catch (error) {
-                console.log('Could not send default color to parent page:', error);
               }
+            } else {
+              // Remove color mode class when leaving color picker
+              document.body.classList.remove('color-mode-active');
               
-              // 2) Force a paint so iOS updates the status bar now
-              requestAnimationFrame(() => {
-                void document.body.offsetHeight; // reflow
-                
-                // 3) Now perform the actual screen swap
-                // The screen swap will happen in the next part of the function
-                
-                // Restore transition on the next frame
-                requestAnimationFrame(() => {
-                  document.body.style.transition = ''; // restore your 1.2s easing
-                });
-              });
+              // Reset to default color
+              if (window.ODQ_onColorChange) {
+                window.ODQ_onColorChange('#f6f4f1');
+              }
             }
             
              // Handle quote screen fade-in elements
@@ -6535,26 +6488,15 @@ try {
           document.documentElement.style.setProperty('--current-color', hexColor);
         }
         
-        // Send color to parent page for background extension (only if color picker screen is active)
-        try {
-          if (hexColor && Utils.validateHexColor(hexColor)) {
-            const colorScreen = document.getElementById('screen-color');
-            if (colorScreen && colorScreen.classList.contains('active')) {
-              console.log('🎨 Sending color to parent (color wheel):', hexColor);
-              // Use the new helper function
-              if (window.ODQ_onColorChange) {
-                window.ODQ_onColorChange(hexColor);
-                console.log('🎨 ODQ_onColorChange called with:', hexColor);
-              } else {
-                console.log('🎨 ODQ_onColorChange function not found!');
-              }
-            } else {
-              console.log('🎨 Color screen not active, not sending to parent');
+        // Update color directly (no parent communication needed)
+        if (hexColor && Utils.validateHexColor(hexColor)) {
+          const colorScreen = document.getElementById('screen-color');
+          if (colorScreen && colorScreen.classList.contains('active')) {
+            // Update color directly
+            if (window.ODQ_onColorChange) {
+              window.ODQ_onColorChange(hexColor);
             }
           }
-        } catch (error) {
-          // Silently fail if postMessage is not available (e.g., not in iframe)
-          console.log('Could not send color to parent page:', error);
         }
         
         if (valueSlider) {
@@ -8843,19 +8785,12 @@ try {
             return;
           }
 
-          // Send color to parent page for background extension (only if color picker screen is active)
-          try {
-            const colorScreen = document.getElementById('screen-color');
-            if (colorScreen && colorScreen.classList.contains('active')) {
-              console.log('🎨 Sending color to parent (add color):', selectedColor);
-              // Use the new helper function
-              if (window.ODQ_onColorChange) {
-                window.ODQ_onColorChange(selectedColor);
-              }
+          // Update color directly (no parent communication needed)
+          const colorScreen = document.getElementById('screen-color');
+          if (colorScreen && colorScreen.classList.contains('active')) {
+            if (window.ODQ_onColorChange) {
+              window.ODQ_onColorChange(selectedColor);
             }
-          } catch (error) {
-            // Silently fail if postMessage is not available (e.g., not in iframe)
-            console.log('Could not send color to parent page:', error);
           }
 
           const result = this.quiltEngine.addColor(selectedColor);
@@ -9811,50 +9746,6 @@ try {
 
     
     // Firebase initialization moved to earlier in the file
-  </script>
-  <!-- Direct parent communication script -->
-  <script>
-         // Send color to parent page directly
-         function sendColorToParent(color, fastTransition = false) {
-           try {
-             console.log('🎨 Sending color to parent directly:', color, 'fastTransition:', fastTransition);
-             // Use specific origin instead of wildcard to avoid privacy warnings
-             const targetOrigin = window.location.origin.includes('github.io') ? 'https://www.zakfoster.com' : window.location.origin;
-             window.parent.postMessage({ 
-               type: 'odq-bg', 
-               color: color,
-               fastTransition: fastTransition
-             }, targetOrigin);
-
-             // Also try to set parent background directly (if same origin)
-             try {
-               window.parent.document.body.style.backgroundColor = color;
-               console.log('🎨 Set parent background directly');
-             } catch (e) {
-               console.log('🎨 Cannot set parent background directly (cross-origin)');
-             }
-           } catch (error) {
-             console.log('🎨 Error sending to parent:', error);
-           }
-         }
-
-  // Don't send initial color - let it stay at default warm neutral
-
-         // Override the existing color change function
-         if (window.ODQ_onColorChange) {
-           var originalODQ_onColorChange = window.ODQ_onColorChange;
-           window.ODQ_onColorChange = function(hex, fastTransition = false) {
-             originalODQ_onColorChange(hex, fastTransition);
-             // Only send color if color picker screen is active
-             const colorScreen = document.getElementById('screen-color');
-             if (colorScreen && colorScreen.classList.contains('active')) {
-               console.log('🎨 ODQ_onColorChange: Color picker active, sending color:', hex, 'fastTransition:', fastTransition);
-               sendColorToParent(hex, fastTransition);
-             } else {
-               console.log('🎨 ODQ_onColorChange: Color picker NOT active, NOT sending color:', hex);
-             }
-           };
-         }
   </script>
   </body>
 </html>
