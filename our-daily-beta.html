@@ -2911,14 +2911,14 @@ try {
             const cellHeight = rowHeights[row];
             
             // Add very subtle randomness to cell boundaries for organic feel
-            // Reduce jitter for smaller cells to prevent gaps and negative dimensions
-            const jitterMultiplier = Math.min(0.05, 20 / Math.min(cellWidth, cellHeight)); // Smaller cells = less jitter (increased for organic feel)
+            // Reduce jitter significantly to prevent thin slivers
+            const jitterMultiplier = Math.min(0.02, 10 / Math.min(cellWidth, cellHeight)); // Much smaller jitter (2% max)
             const jitterX = (Math.random() - 0.5) * jitterMultiplier;
             const jitterY = (Math.random() - 0.5) * jitterMultiplier;
             
-            // Calculate cell dimensions with jitter, ensuring they remain positive
-            const jitteredWidth = cellWidth * (1 + jitterX * 2);
-            const jitteredHeight = cellHeight * (1 + jitterY * 2);
+            // Calculate cell dimensions with minimal jitter, ensuring they remain positive
+            const jitteredWidth = cellWidth * (1 + jitterX * 1.5); // Reduced from 2 to 1.5
+            const jitteredHeight = cellHeight * (1 + jitterY * 1.5); // Reduced from 2 to 1.5
             
             // Ensure minimum positive dimensions to prevent SVG errors
             const finalWidth = Math.max(1, jitteredWidth);
@@ -2928,20 +2928,29 @@ try {
             const cellX = block.x + columnPositions[col] + (jitterX * cellWidth);
             const cellY = block.y + rowPositions[row] + (jitterY * cellHeight);
             
-            // Constrain cells to stay within block boundaries to prevent thin slivers
-            // Only allow minimal extension (0.5% instead of 2%) to reduce sliver issues
-            const boundaryBuffer = Math.min(block.width, block.height) * 0.005; // 0.5% of smallest dimension
-            let finalX = Math.max(block.x - boundaryBuffer, Math.min(cellX, block.x + block.width - finalWidth + boundaryBuffer));
-            let finalY = Math.max(block.y - boundaryBuffer, Math.min(cellY, block.y + block.height - finalHeight + boundaryBuffer));
+            // Strictly constrain cells to stay within block boundaries - NO extension allowed
+            // This completely prevents thin slivers by keeping all cells inside the original block
+            let finalX = Math.max(block.x, Math.min(cellX, block.x + block.width - finalWidth));
+            let finalY = Math.max(block.y, Math.min(cellY, block.y + block.height - finalHeight));
             
-            // Additional check: if the cell would be too thin (less than 5px), adjust position to center it better
-            if (finalWidth < 5) {
+            // Additional safety check: if the cell would be too thin (less than 8px), 
+            // adjust position to center it better and ensure it's fully visible
+            if (finalWidth < 8) {
               const centerX = block.x + block.width / 2;
               finalX = Math.max(block.x, Math.min(centerX - finalWidth / 2, block.x + block.width - finalWidth));
             }
-            if (finalHeight < 5) {
+            if (finalHeight < 8) {
               const centerY = block.y + block.height / 2;
               finalY = Math.max(block.y, Math.min(centerY - finalHeight / 2, block.y + block.height - finalHeight));
+            }
+            
+            // Final safety check: ensure the cell is completely within the block
+            if (finalX < block.x || finalY < block.y || 
+                finalX + finalWidth > block.x + block.width || 
+                finalY + finalHeight > block.y + block.height) {
+              // If still outside, force it to be centered within the block
+              finalX = block.x + (block.width - finalWidth) / 2;
+              finalY = block.y + (block.height - finalHeight) / 2;
             }
             
             // Ensure minimum positive dimensions to prevent SVG errors
