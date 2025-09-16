@@ -2831,16 +2831,44 @@ try {
       }
       
       createOrganicCheckerboard(block, newColor) {
-        // Create a 2x2 organic checkerboard pattern
+        // Create a dynamic organic checkerboard pattern (2x2, 3x3, or 4x4 based on block size)
         // Each square will have slightly irregular edges to maintain the hand-cut vibe
+        // Grid size: 4x4 for large blocks (200px+), 3x3 for medium (120px+), 2x2 for small (60px+)
         
         const minBlockSize = 20; // Further reduced minimum size to allow smaller checkerboards
         const blockArea = block.width * block.height;
         
-        // Determine grid size based on block area
-        let gridSize = 2; // Default to 2x2
-        if (blockArea > 15000) gridSize = 3; // 3x3 for very large blocks
-        if (blockArea > 25000) gridSize = 4; // 4x4 for extremely large blocks
+        // Determine grid size based on block dimensions for proportional checkerboards
+        // Use the smaller dimension to determine grid size for better proportions
+        const minDimension = Math.min(block.width, block.height);
+        const maxDimension = Math.max(block.width, block.height);
+        const aspectRatio = maxDimension / minDimension;
+        
+        let gridSize = 2; // Default to 2x2 for small blocks
+        
+        // More sophisticated sizing based on block dimensions
+        if (minDimension >= 200) {
+          // Large blocks: 4x4 grid for biggest blocks
+          gridSize = 4;
+        } else if (minDimension >= 120) {
+          // Medium blocks: 3x3 grid for medium blocks  
+          gridSize = 3;
+        } else if (minDimension >= 60) {
+          // Small blocks: 2x2 grid for small blocks
+          gridSize = 2;
+        } else {
+          // Very small blocks: fall back to regular split
+          console.log(`🎯 CHECKERBOARD: Block too small (${minDimension}px) - falling back to regular split`);
+          return this.performRegularSplit(block, newColor);
+        }
+        
+        // Adjust for extreme aspect ratios - if very wide/tall, reduce grid size
+        if (aspectRatio > 3) {
+          gridSize = Math.max(2, gridSize - 1);
+          console.log(`🎯 CHECKERBOARD: Extreme aspect ratio (${aspectRatio.toFixed(1)}) - reducing grid size to ${gridSize}x${gridSize}`);
+        }
+        
+        console.log(`🎯 CHECKERBOARD: Block ${block.id} (${block.width}x${block.height}, min: ${minDimension}px) → ${gridSize}x${gridSize} grid`);
         
         // Generate variable column widths and row heights for organic feel
         const columnWidths = this.generateVariableDimensions(block.width, gridSize);
@@ -2850,11 +2878,16 @@ try {
         const avgCellWidth = block.width / gridSize;
         const avgCellHeight = block.height / gridSize;
         
+        // Dynamic minimum cell size based on grid size - larger grids can have smaller cells
+        const dynamicMinSize = Math.max(15, minBlockSize - (gridSize - 2) * 2); // 15px minimum, reduces for larger grids
+        
         // Ensure minimum cell size - if cells would be too small, don't create checkerboard
-        if (avgCellWidth < minBlockSize || avgCellHeight < minBlockSize) {
-          // Fall back to regular split instead of tiny checkerboard (avoid recursion)
+        if (avgCellWidth < dynamicMinSize || avgCellHeight < dynamicMinSize) {
+          console.log(`🎯 CHECKERBOARD: Cells too small (${avgCellWidth.toFixed(1)}x${avgCellHeight.toFixed(1)} < ${dynamicMinSize}px) - falling back to regular split`);
           return this.performRegularSplit(block, newColor);
         }
+        
+        console.log(`🎯 CHECKERBOARD: Cell size check passed (${avgCellWidth.toFixed(1)}x${avgCellHeight.toFixed(1)} >= ${dynamicMinSize}px)`);
         
         const cells = [];
         const colors = [block.color, newColor]; // Alternate between original and new color
@@ -2895,10 +2928,21 @@ try {
             const cellX = block.x + columnPositions[col] + (jitterX * cellWidth);
             const cellY = block.y + rowPositions[row] + (jitterY * cellHeight);
             
-            // Allow cells to extend slightly beyond block boundaries for organic edges
-            const boundaryBuffer = Math.min(block.width, block.height) * 0.02; // 2% of smallest dimension
-            const finalX = Math.max(block.x - boundaryBuffer, Math.min(cellX, block.x + block.width - finalWidth + boundaryBuffer));
-            const finalY = Math.max(block.y - boundaryBuffer, Math.min(cellY, block.y + block.height - finalHeight + boundaryBuffer));
+            // Constrain cells to stay within block boundaries to prevent thin slivers
+            // Only allow minimal extension (0.5% instead of 2%) to reduce sliver issues
+            const boundaryBuffer = Math.min(block.width, block.height) * 0.005; // 0.5% of smallest dimension
+            let finalX = Math.max(block.x - boundaryBuffer, Math.min(cellX, block.x + block.width - finalWidth + boundaryBuffer));
+            let finalY = Math.max(block.y - boundaryBuffer, Math.min(cellY, block.y + block.height - finalHeight + boundaryBuffer));
+            
+            // Additional check: if the cell would be too thin (less than 5px), adjust position to center it better
+            if (finalWidth < 5) {
+              const centerX = block.x + block.width / 2;
+              finalX = Math.max(block.x, Math.min(centerX - finalWidth / 2, block.x + block.width - finalWidth));
+            }
+            if (finalHeight < 5) {
+              const centerY = block.y + block.height / 2;
+              finalY = Math.max(block.y, Math.min(centerY - finalHeight / 2, block.y + block.height - finalHeight));
+            }
             
             // Ensure minimum positive dimensions to prevent SVG errors
             
