@@ -7779,6 +7779,8 @@ try {
 
       // Quote Management Functions
       showQuoteManager() {
+        console.log('📝 showQuoteManager called');
+        
         // Check if a quote manager modal is already open
         const existingModal = document.querySelector('.quote-manager-modal');
         if (existingModal) {
@@ -7787,29 +7789,55 @@ try {
         }
         
         // Get next 7 days of quotes
+        console.log('📝 Getting next 7 days of quotes...');
         const next7Days = this.getNext7DaysQuotes();
+        console.log('📝 Next 7 days data:', next7Days);
         let quotesHTML = '';
         
         next7Days.forEach((dayData, index) => {
           const { date, quote, dayName } = dayData;
-          quotesHTML += `
-            <div class="quote-day-item" data-index="${dayData.originalIndex}">
-              <div class="day-header">
-                <span class="day-name">${dayName}</span>
-                <span class="day-date">${date}</span>
+          
+          // Safety check for undefined quote
+          if (!quote || !quote.text || !quote.author) {
+            console.warn(`⚠️ Missing quote data for ${dayName} (${date}):`, quote);
+            quotesHTML += `
+              <div class="quote-day-item" data-index="${dayData.originalIndex}">
+                <div class="day-header">
+                  <span class="day-name">${dayName}</span>
+                  <span class="day-date">${date}</span>
+                </div>
+                <div class="quote-content">
+                  <div class="quote-text">"No quote available"</div>
+                  <div class="quote-author">— Unknown</div>
+                </div>
+                <div class="quote-actions">
+                  <button onclick="app.editQuoteForDay(${index})" class="edit-btn">Edit</button>
+                  <button onclick="app.deleteQuoteForDay(${index})" class="delete-btn">Delete</button>
+                  <button onclick="app.swapWithPrevious(${index})" class="swap-btn" ${index === 0 ? 'disabled' : ''}>↑</button>
+                  <button onclick="app.swapWithNext(${index})" class="swap-btn" ${index === 6 ? 'disabled' : ''}>↓</button>
+                </div>
               </div>
-              <div class="quote-content">
-                <div class="quote-text">"${quote.text}"</div>
-                <div class="quote-author">— ${quote.author}</div>
+            `;
+          } else {
+            quotesHTML += `
+              <div class="quote-day-item" data-index="${dayData.originalIndex}">
+                <div class="day-header">
+                  <span class="day-name">${dayName}</span>
+                  <span class="day-date">${date}</span>
+                </div>
+                <div class="quote-content">
+                  <div class="quote-text">"${quote.text}"</div>
+                  <div class="quote-author">— ${quote.author}</div>
+                </div>
+                <div class="quote-actions">
+                  <button onclick="app.editQuoteForDay(${index})" class="edit-btn">Edit</button>
+                  <button onclick="app.deleteQuoteForDay(${index})" class="delete-btn">Delete</button>
+                  <button onclick="app.swapWithPrevious(${index})" class="swap-btn" ${index === 0 ? 'disabled' : ''}>↑</button>
+                  <button onclick="app.swapWithNext(${index})" class="swap-btn" ${index === 6 ? 'disabled' : ''}>↓</button>
+                </div>
               </div>
-              <div class="quote-actions">
-                <button onclick="app.editQuoteForDay(${index})" class="edit-btn">Edit</button>
-                <button onclick="app.deleteQuoteForDay(${index})" class="delete-btn">Delete</button>
-                <button onclick="app.swapWithPrevious(${index})" class="swap-btn" ${index === 0 ? 'disabled' : ''}>↑</button>
-                <button onclick="app.swapWithNext(${index})" class="swap-btn" ${index === 6 ? 'disabled' : ''}>↓</button>
-              </div>
-            </div>
-          `;
+            `;
+          }
         });
         
         const modal = document.createElement('div');
@@ -7853,6 +7881,7 @@ try {
         `;
         
         document.body.appendChild(modal);
+        console.log('📝 Quote manager modal created and appended to body');
         
         // Add CSS for quote items
         const style = document.createElement('style');
