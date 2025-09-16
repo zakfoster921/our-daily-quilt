@@ -2327,8 +2327,6 @@ try {
       }
       
       addColor(newColor) {
-        this.submissionCount++;
-        
         // Find blocks that can be split, prioritizing larger blocks
         // This prevents small blocks from being split when huge blocks are available
         const splittableBlocks = this.blocks.filter(block => {
@@ -2552,6 +2550,9 @@ try {
           }
         }
         
+        
+        // Increment submission count right before creating blocks
+        this.submissionCount++;
         
         const splitResult = this.splitBlock(selectedBlock, newColor);
         
@@ -3890,10 +3891,20 @@ try {
       }
 
       static getTodayKey() {
+        // Use UTC time to match the quote service and daily reset logic
+        // Quote changes at 7:00 AM UTC, so use UTC date consistently
         const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
+        const utcHours = now.getUTCHours();
+        const adjustedDate = new Date(now);
+        
+        // If it's before 7 AM UTC, use yesterday's date (same logic as quote service)
+        if (utcHours < 7) {
+          adjustedDate.setUTCDate(adjustedDate.getUTCDate() - 1);
+        }
+        
+        const year = adjustedDate.getUTCFullYear();
+        const month = String(adjustedDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(adjustedDate.getUTCDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
       }
 
@@ -8461,16 +8472,49 @@ try {
       }
       
       async resetQuiltForNewDay() {
-        this.quiltEngine.initialize();
-        
         try {
+          this.logger.log('🔄 Starting new day quilt reset...');
+          
+          // Get the current date key to verify which day we're resetting for
+          const todayKey = Utils.getTodayKey();
+          this.logger.log('🔄 Resetting quilt for date key:', todayKey);
+          
+          // Initialize the quilt engine with a fresh state
+          this.quiltEngine.initialize();
+          this.logger.log('🔄 Quilt engine reinitialized');
+          
+          // Save empty quilt data to clear any existing data
           await this.dataService.saveQuilt([], 1);
+          this.logger.log('🔄 Empty quilt data saved to clear previous day');
+          
+          // Clear any cached localStorage data to ensure fresh start
+          try {
+            localStorage.removeItem('ourDailyQuilt');
+            localStorage.removeItem('quiltContributions');
+            this.logger.log('🔄 Cleared localStorage cache');
+          } catch (localError) {
+            this.logger.warn('⚠️ Could not clear localStorage cache:', localError);
+          }
+          
+          // Re-render the quilt and update UI
+          this.renderQuilt();
+          this.updateSquareCounter();
+          
+          this.logger.log('✅ New day quilt reset completed successfully');
+          
         } catch (error) {
-          this.logger.warn('⚠️ Failed to clear data for new day:', error);
+          this.logger.error('❌ Failed to reset quilt for new day:', error);
+          
+          // Fallback: try to at least initialize the engine
+          try {
+            this.quiltEngine.initialize();
+            this.renderQuilt();
+            this.updateSquareCounter();
+            this.logger.log('🔄 Fallback reset completed');
+          } catch (fallbackError) {
+            this.logger.error('❌ Fallback reset also failed:', fallbackError);
+          }
         }
-        
-        this.renderQuilt();
-        this.updateSquareCounter();
       }
 
       setupDailyReset() {
