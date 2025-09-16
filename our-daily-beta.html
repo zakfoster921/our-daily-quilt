@@ -2365,7 +2365,7 @@ try {
           // Check if new color is very similar to any special pattern colors
           const hasSimilarColor = specialPatternBlocks.some(block => {
             const similarity = this.getColorSimilarity(block.color, newColor);
-            return similarity > 0.90; // STRICT similar (90%+ similar) - OKLab-based pattern preservation threshold
+            return similarity > 0.93; // STRICT similar (93%+ similar) - OKLab-based pattern preservation threshold
           });
           
           if (hasSimilarColor) {
@@ -2398,7 +2398,7 @@ try {
           // 4) NEW: Reserve minimum 30% of blocks as regular (prevent all-special quilt)
           
           // Count how many special patterns have been created so far
-          // Use a simple counter approach: count unique originalPatternIds
+          // Use a more robust approach: count unique originalPatternIds and track submission-based patterns
           const uniquePatternIds = new Set();
           this.blocks.forEach(block => {
             if (block.originalPatternId) {
@@ -2407,14 +2407,18 @@ try {
           });
           
           const specialPatternsCreated = uniquePatternIds.size;
-          const maxSpecialPatterns = Math.max(3, Math.floor(this.submissionCount * 0.75)); // Allow up to 75% of submissions to be special patterns
+          // More conservative limit: allow up to 60% of submissions to be special patterns, with a hard cap
+          const maxSpecialPatterns = Math.min(Math.max(2, Math.floor(this.submissionCount * 0.60)), Math.floor(this.submissionCount * 0.75));
+          
+          // Debug logging for pattern counting
+          console.log(`🎯 PATTERN COUNT: ${specialPatternsCreated} special patterns created, ${maxSpecialPatterns} allowed (submission ${this.submissionCount})`);
           
           let shouldCreateSpecialPattern = false;
           
-          // Rule 4: Check if we've hit the special pattern count limit (75% of submissions max)
+          // Rule 4: Check if we've hit the special pattern count limit (60% of submissions max, capped at 75%)
           if (specialPatternsCreated >= maxSpecialPatterns) {
             shouldCreateSpecialPattern = false;
-            console.log(`🎯 PATTERN LIMIT: ${specialPatternsCreated} special patterns created >= ${maxSpecialPatterns} limit (75% of ${this.submissionCount} submissions) - must create regular block (rule 4)`);
+            console.log(`🎯 PATTERN LIMIT: ${specialPatternsCreated} special patterns created >= ${maxSpecialPatterns} limit (60% of ${this.submissionCount} submissions, capped at 75%) - must create regular block (rule 4)`);
           } else if (this.submissionCount >= 1 && this.submissionCount <= 6) {
             // Rule 2: Splits 2-6 have 50% chance
             // Rule 3: Check if previous split was special pattern
@@ -2708,7 +2712,7 @@ try {
         if (isSpecialPatternBlock) {
           // For existing special pattern blocks, require VERY SIMILAR colors to preserve pattern
           const colorSimilarity = this.getColorSimilarity(block.color, newColor);
-          if (colorSimilarity > 0.90) {
+          if (colorSimilarity > 0.93) {
             console.log(`🎯 NO NESTED PATTERNS: Special pattern block ${block.id} has similar color (${colorSimilarity.toFixed(3)}) - using regular split to prevent nested patterns`);
             return this.performRegularSplit(block, newColor);
           }
