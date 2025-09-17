@@ -9286,6 +9286,9 @@ try {
             await this.saveQuilt();
             this.renderQuilt();
             
+            // Check if block shuffling should be triggered
+            this.checkAndTriggerShuffling();
+            
             this.uiService.showScreen('screen-quilt');
           }
           
@@ -9600,6 +9603,442 @@ try {
         const families = Object.values(familyCounts).sort((a, b) => b.count - a.count);
         
         return families;
+      }
+
+      // ===== BLOCK SHUFFLING SYSTEM =====
+      
+      analyzeBlockColors() {
+        const colorCounts = {};
+        const blockCount = this.quiltEngine.blocks.length;
+        
+        // Count each color
+        this.quiltEngine.blocks.forEach(block => {
+          const color = block.color;
+          colorCounts[color] = (colorCounts[color] || 0) + 1;
+        });
+        
+        // Find the most popular color
+        let mostPopularColor = null;
+        let maxCount = 0;
+        
+        for (const [color, count] of Object.entries(colorCounts)) {
+          if (count > maxCount) {
+            maxCount = count;
+            mostPopularColor = color;
+          }
+        }
+        
+        return {
+          totalBlocks: blockCount,
+          mostPopularColor: mostPopularColor,
+          mostPopularCount: maxCount,
+          colorCounts: colorCounts
+        };
+      }
+
+      shouldTriggerShuffling() {
+        const analysis = this.analyzeBlockColors();
+        return analysis.totalBlocks >= 100;
+      }
+
+      identifySpecialPatternBlocks() {
+        // Identify blocks that are part of special patterns (checkerboard, stripes, etc.)
+        // These should not be moved during shuffling
+        return this.quiltEngine.blocks.filter(block => 
+          block.patternType === 'special' || 
+          block.specialPatternType || 
+          block.originalPatternId
+        );
+      }
+
+      getShufflableBlocks() {
+        // Get blocks that can be shuffled (exclude special patterns)
+        const specialBlocks = this.identifySpecialPatternBlocks();
+        const specialBlockIds = new Set(specialBlocks.map(block => block.id));
+        
+        return this.quiltEngine.blocks.filter(block => !specialBlockIds.has(block.id));
+      }
+
+      generateArrangementStrategy() {
+        // Randomly select one of the 5 arrangement strategies
+        const strategies = [
+          'column',
+          'single_block', 
+          'multiple_clusters',
+          'frame',
+          'scattered'
+        ];
+        
+        return strategies[Math.floor(Math.random() * strategies.length)];
+      }
+
+      createColumnArrangement(popularColor, shufflableBlocks) {
+        // Create a vertical or horizontal column of the popular color
+        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
+        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
+        
+        // Determine column orientation (vertical or horizontal)
+        const isVertical = Math.random() < 0.5;
+        
+        // Calculate column position
+        const quiltBounds = this.getQuiltBounds();
+        let columnPositions = [];
+        
+        if (isVertical) {
+          // Vertical column - choose left, center, or right
+          const positions = ['left', 'center', 'right'];
+          const position = positions[Math.floor(Math.random() * positions.length)];
+          
+          let startX;
+          if (position === 'left') startX = quiltBounds.minX + 50;
+          else if (position === 'right') startX = quiltBounds.maxX - 200;
+          else startX = quiltBounds.minX + (quiltBounds.maxX - quiltBounds.minX) / 2 - 100;
+          
+          // Create column positions
+          for (let i = 0; i < popularBlocks.length; i++) {
+            columnPositions.push({
+              x: startX,
+              y: quiltBounds.minY + (i * 100) + 50
+            });
+          }
+        } else {
+          // Horizontal column - choose top, center, or bottom
+          const positions = ['top', 'center', 'bottom'];
+          const position = positions[Math.floor(Math.random() * positions.length)];
+          
+          let startY;
+          if (position === 'top') startY = quiltBounds.minY + 50;
+          else if (position === 'bottom') startY = quiltBounds.maxY - 200;
+          else startY = quiltBounds.minY + (quiltBounds.maxY - quiltBounds.minY) / 2 - 100;
+          
+          // Create column positions
+          for (let i = 0; i < popularBlocks.length; i++) {
+            columnPositions.push({
+              x: quiltBounds.minX + (i * 100) + 50,
+              y: startY
+            });
+          }
+        }
+        
+        return { popularBlocks, otherBlocks, columnPositions };
+      }
+
+      createSingleBlockArrangement(popularColor, shufflableBlocks) {
+        // Create a single large block of the popular color
+        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
+        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
+        
+        // Choose a central position for the block
+        const quiltBounds = this.getQuiltBounds();
+        const centerX = quiltBounds.minX + (quiltBounds.maxX - quiltBounds.minX) / 2;
+        const centerY = quiltBounds.minY + (quiltBounds.maxY - quiltBounds.minY) / 2;
+        
+        // Create a large block position
+        const blockSize = Math.min(200, Math.max(100, popularBlocks.length * 20));
+        const blockPositions = [{
+          x: centerX - blockSize / 2,
+          y: centerY - blockSize / 2,
+          width: blockSize,
+          height: blockSize
+        }];
+        
+        return { popularBlocks, otherBlocks, blockPositions };
+      }
+
+      createMultipleClustersArrangement(popularColor, shufflableBlocks) {
+        // Create 2-3 distinct clusters of the popular color
+        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
+        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
+        
+        const numClusters = Math.min(3, Math.max(2, Math.floor(popularBlocks.length / 3)));
+        const blocksPerCluster = Math.floor(popularBlocks.length / numClusters);
+        
+        const quiltBounds = this.getQuiltBounds();
+        const clusterPositions = [];
+        
+        for (let i = 0; i < numClusters; i++) {
+          // Distribute clusters across the quilt
+          const x = quiltBounds.minX + (i * (quiltBounds.maxX - quiltBounds.minX) / numClusters) + 50;
+          const y = quiltBounds.minY + (Math.random() * (quiltBounds.maxY - quiltBounds.minY - 100)) + 50;
+          
+          clusterPositions.push({ x, y });
+        }
+        
+        return { popularBlocks, otherBlocks, clusterPositions, numClusters };
+      }
+
+      createFrameArrangement(popularColor, shufflableBlocks) {
+        // Create a frame/border around the outer edge with the popular color
+        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
+        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
+        
+        const quiltBounds = this.getQuiltBounds();
+        const framePositions = [];
+        
+        // Create frame positions around the edges
+        const frameWidth = 50;
+        
+        // Top edge
+        for (let i = 0; i < popularBlocks.length / 4; i++) {
+          framePositions.push({
+            x: quiltBounds.minX + (i * 100),
+            y: quiltBounds.minY
+          });
+        }
+        
+        // Right edge
+        for (let i = 0; i < popularBlocks.length / 4; i++) {
+          framePositions.push({
+            x: quiltBounds.maxX - frameWidth,
+            y: quiltBounds.minY + (i * 100)
+          });
+        }
+        
+        // Bottom edge
+        for (let i = 0; i < popularBlocks.length / 4; i++) {
+          framePositions.push({
+            x: quiltBounds.maxX - (i * 100),
+            y: quiltBounds.maxY - frameWidth
+          });
+        }
+        
+        // Left edge
+        for (let i = 0; i < popularBlocks.length / 4; i++) {
+          framePositions.push({
+            x: quiltBounds.minX,
+            y: quiltBounds.maxY - (i * 100)
+          });
+        }
+        
+        return { popularBlocks, otherBlocks, framePositions };
+      }
+
+      createScatteredArrangement(popularColor, shufflableBlocks) {
+        // Distribute popular color blocks as accent points throughout the quilt
+        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
+        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
+        
+        const quiltBounds = this.getQuiltBounds();
+        const scatteredPositions = [];
+        
+        // Create scattered positions
+        for (let i = 0; i < popularBlocks.length; i++) {
+          scatteredPositions.push({
+            x: quiltBounds.minX + Math.random() * (quiltBounds.maxX - quiltBounds.minX - 100) + 50,
+            y: quiltBounds.minY + Math.random() * (quiltBounds.maxY - quiltBounds.minY - 100) + 50
+          });
+        }
+        
+        return { popularBlocks, otherBlocks, scatteredPositions };
+      }
+
+      getQuiltBounds() {
+        // Get the current bounds of the quilt
+        if (this.quiltEngine.blocks.length === 0) {
+          return { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
+        }
+        
+        const minX = Math.min(...this.quiltEngine.blocks.map(b => b.x));
+        const minY = Math.min(...this.quiltEngine.blocks.map(b => b.y));
+        const maxX = Math.max(...this.quiltEngine.blocks.map(b => b.x + b.width));
+        const maxY = Math.max(...this.quiltEngine.blocks.map(b => b.y + b.height));
+        
+        return { minX, minY, maxX, maxY };
+      }
+
+      performBlockShuffling() {
+        try {
+          this.logger.log('🔄 Starting block shuffling process...');
+          
+          // Analyze current quilt
+          const analysis = this.analyzeBlockColors();
+          this.logger.log(`📊 Quilt analysis: ${analysis.totalBlocks} blocks, most popular color: ${analysis.mostPopularColor} (${analysis.mostPopularCount} blocks)`);
+          
+          // Get shufflable blocks (exclude special patterns)
+          const shufflableBlocks = this.getShufflableBlocks();
+          this.logger.log(`🎯 Found ${shufflableBlocks.length} shufflable blocks (excluding special patterns)`);
+          
+          if (shufflableBlocks.length < 10) {
+            this.logger.warn('⚠️ Not enough shufflable blocks to perform meaningful shuffling');
+            return false;
+          }
+          
+          // Generate arrangement strategy
+          const strategy = this.generateArrangementStrategy();
+          this.logger.log(`🎨 Selected arrangement strategy: ${strategy}`);
+          
+          // Create arrangement based on strategy
+          let arrangement;
+          switch (strategy) {
+            case 'column':
+              arrangement = this.createColumnArrangement(analysis.mostPopularColor, shufflableBlocks);
+              break;
+            case 'single_block':
+              arrangement = this.createSingleBlockArrangement(analysis.mostPopularColor, shufflableBlocks);
+              break;
+            case 'multiple_clusters':
+              arrangement = this.createMultipleClustersArrangement(analysis.mostPopularColor, shufflableBlocks);
+              break;
+            case 'frame':
+              arrangement = this.createFrameArrangement(analysis.mostPopularColor, shufflableBlocks);
+              break;
+            case 'scattered':
+              arrangement = this.createScatteredArrangement(analysis.mostPopularColor, shufflableBlocks);
+              break;
+            default:
+              this.logger.error('❌ Unknown arrangement strategy');
+              return false;
+          }
+          
+          // Apply the arrangement by swapping colors
+          this.applyColorArrangement(arrangement, strategy);
+          
+          this.logger.log('✅ Block shuffling completed successfully');
+          return true;
+          
+        } catch (error) {
+          this.logger.error('❌ Block shuffling failed:', error);
+          return false;
+        }
+      }
+
+      applyColorArrangement(arrangement, strategy) {
+        // Apply the arrangement by swapping colors between blocks
+        // This preserves the grid structure while creating the desired pattern
+        
+        const { popularBlocks, otherBlocks } = arrangement;
+        
+        // Create a copy of all shufflable blocks for color swapping
+        const allShufflableBlocks = [...popularBlocks, ...otherBlocks];
+        
+        // Shuffle the colors
+        const shuffledColors = allShufflableBlocks.map(block => block.color);
+        this.shuffleArray(shuffledColors);
+        
+        // Apply the shuffled colors to create the arrangement
+        let colorIndex = 0;
+        
+        // First, apply colors to popular blocks in their new arrangement
+        if (strategy === 'column' && arrangement.columnPositions) {
+          for (let i = 0; i < popularBlocks.length; i++) {
+            if (colorIndex < shuffledColors.length) {
+              popularBlocks[i].color = shuffledColors[colorIndex];
+              colorIndex++;
+            }
+          }
+        } else if (strategy === 'single_block' && arrangement.blockPositions) {
+          for (let i = 0; i < popularBlocks.length; i++) {
+            if (colorIndex < shuffledColors.length) {
+              popularBlocks[i].color = shuffledColors[colorIndex];
+              colorIndex++;
+            }
+          }
+        } else if (strategy === 'multiple_clusters' && arrangement.clusterPositions) {
+          for (let i = 0; i < popularBlocks.length; i++) {
+            if (colorIndex < shuffledColors.length) {
+              popularBlocks[i].color = shuffledColors[colorIndex];
+              colorIndex++;
+            }
+          }
+        } else if (strategy === 'frame' && arrangement.framePositions) {
+          for (let i = 0; i < popularBlocks.length; i++) {
+            if (colorIndex < shuffledColors.length) {
+              popularBlocks[i].color = shuffledColors[colorIndex];
+              colorIndex++;
+            }
+          }
+        } else if (strategy === 'scattered' && arrangement.scatteredPositions) {
+          for (let i = 0; i < popularBlocks.length; i++) {
+            if (colorIndex < shuffledColors.length) {
+              popularBlocks[i].color = shuffledColors[colorIndex];
+              colorIndex++;
+            }
+          }
+        }
+        
+        // Apply remaining colors to other blocks
+        for (let i = 0; i < otherBlocks.length; i++) {
+          if (colorIndex < shuffledColors.length) {
+            otherBlocks[i].color = shuffledColors[colorIndex];
+            colorIndex++;
+          }
+        }
+        
+        this.logger.log(`🎨 Applied color arrangement: ${strategy} with ${popularBlocks.length} popular blocks and ${otherBlocks.length} other blocks`);
+      }
+
+      shuffleArray(array) {
+        // Fisher-Yates shuffle algorithm
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+      }
+
+      checkAndTriggerShuffling() {
+        // Check if shuffling should be triggered and perform it
+        if (this.shouldTriggerShuffling()) {
+          this.logger.log('🎯 Triggering block shuffling - quilt has reached 100+ blocks');
+          
+          const success = this.performBlockShuffling();
+          
+          if (success) {
+            // Re-render the quilt with the new arrangement
+            this.renderQuilt();
+            
+            // Save the shuffled quilt
+            this.saveQuilt();
+            
+            this.logger.log('✅ Block shuffling completed and quilt saved');
+          } else {
+            this.logger.error('❌ Block shuffling failed');
+          }
+          
+          return success;
+        }
+        
+        return false;
+      }
+
+      // ===== ADMIN TESTING FUNCTIONS =====
+      
+      testBlockShuffling() {
+        // Admin function to test block shuffling manually
+        this.logger.log('🧪 Testing block shuffling manually...');
+        
+        const analysis = this.analyzeBlockColors();
+        this.logger.log(`📊 Current quilt: ${analysis.totalBlocks} blocks, most popular: ${analysis.mostPopularColor} (${analysis.mostPopularCount} blocks)`);
+        
+        if (analysis.totalBlocks < 10) {
+          this.uiService.showToast('Need at least 10 blocks to test shuffling');
+          return;
+        }
+        
+        const success = this.performBlockShuffling();
+        
+        if (success) {
+          this.renderQuilt();
+          this.saveQuilt();
+          this.uiService.showToast(`Block shuffling test completed! Strategy applied to ${analysis.totalBlocks} blocks.`);
+        } else {
+          this.uiService.showToast('Block shuffling test failed');
+        }
+      }
+
+      analyzeCurrentQuilt() {
+        // Admin function to analyze current quilt state
+        const analysis = this.analyzeBlockColors();
+        const specialBlocks = this.identifySpecialPatternBlocks();
+        const shufflableBlocks = this.getShufflableBlocks();
+        
+        this.logger.log('📊 Quilt Analysis:');
+        this.logger.log(`  Total blocks: ${analysis.totalBlocks}`);
+        this.logger.log(`  Most popular color: ${analysis.mostPopularColor} (${analysis.mostPopularCount} blocks)`);
+        this.logger.log(`  Special pattern blocks: ${specialBlocks.length}`);
+        this.logger.log(`  Shufflable blocks: ${shufflableBlocks.length}`);
+        this.logger.log(`  Color distribution:`, analysis.colorCounts);
+        
+        this.uiService.showToast(`Quilt analysis: ${analysis.totalBlocks} blocks, ${shufflableBlocks.length} shufflable`);
       }
 
       getColorFamily(color) {
@@ -10042,6 +10481,42 @@ try {
       
       console.log(`✅ After fix: All ${shuffledIndexes.length} indexes are now valid (0-${quotesLength-1})`);
       console.log('🔄 Try opening the quote manager again - errors should be gone!');
+    };
+
+    // ===== BLOCK SHUFFLING ADMIN COMMANDS =====
+    
+    // Test block shuffling manually
+    window.testBlockShuffling = () => {
+      console.log('🧪 Testing block shuffling...');
+      app.testBlockShuffling();
+    };
+
+    // Analyze current quilt state
+    window.analyzeQuilt = () => {
+      console.log('📊 Analyzing current quilt...');
+      app.analyzeCurrentQuilt();
+    };
+
+    // Check if shuffling should be triggered
+    window.checkShuffling = () => {
+      const shouldTrigger = app.shouldTriggerShuffling();
+      const analysis = app.analyzeBlockColors();
+      console.log(`🎯 Shuffling check: ${shouldTrigger ? 'SHOULD TRIGGER' : 'NOT YET'} (${analysis.totalBlocks} blocks)`);
+      return shouldTrigger;
+    };
+
+    // Force trigger shuffling (even if under 100 blocks)
+    window.forceShuffling = () => {
+      console.log('🔧 Force triggering block shuffling...');
+      const success = app.performBlockShuffling();
+      if (success) {
+        app.renderQuilt();
+        app.saveQuilt();
+        console.log('✅ Force shuffling completed');
+      } else {
+        console.log('❌ Force shuffling failed');
+      }
+      return success;
     };
       
       // Debug functions
