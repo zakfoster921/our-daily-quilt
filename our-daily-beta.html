@@ -2328,6 +2328,12 @@ try {
       }
       
       addColor(newColor) {
+        // Safety check: ensure newColor is valid
+        if (!newColor || typeof newColor !== 'string' || !newColor.match(/^#[0-9A-Fa-f]{6}$/)) {
+          console.error('Invalid color provided to addColor:', newColor);
+          return false;
+        }
+        
         // Find blocks that can be split, prioritizing larger blocks
         // This prevents small blocks from being split when huge blocks are available
         const splittableBlocks = this.blocks.filter(block => {
@@ -2623,6 +2629,7 @@ try {
             ...block,
             id: block.id + '_1',
             height: splitHeight,
+            color: block.color, // Ensure color is preserved
             // Preserve special pattern properties
             originalPatternId: originalPatternId,
             patternType: block.patternType,
@@ -2634,7 +2641,7 @@ try {
             id: block.id + '_2',
             y: block.y + splitHeight,
             height: block.height - splitHeight,
-            color: newColor,
+            color: newColor, // This should be valid due to addColor validation
             contributorId: this.deviceId,
             submissionIndex: this.submissionCount,
             // Preserve special pattern properties
@@ -5588,6 +5595,11 @@ try {
         };
         
         blocks.forEach((block, i) => {
+          // Safety check: ensure block has valid color
+          if (!block || !block.color || typeof block.color !== 'string') {
+            console.warn('Invalid block found, skipping:', block);
+            return; // Skip this block
+          }
           
           // Special handling for special pattern cells - render as organic polygons
           if (block.patternType === 'special' && block.specialPatternType) {
