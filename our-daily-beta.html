@@ -5550,6 +5550,12 @@ try {
         
         // Pattern selection function
         const getPatternForColor = (color) => {
+          // Safety check: ensure color is valid
+          if (!color || typeof color !== 'string') {
+            console.warn('Invalid color passed to getPatternForColor:', color);
+            return 'geometric'; // Default fallback pattern
+          }
+          
           // Convert hex to HSL to determine color family
           const hex = color.replace('#', '');
           const r = parseInt(hex.substr(0, 2), 16) / 255;
@@ -9111,7 +9117,13 @@ try {
               break;
           }
           
-          return this.hslToHex(newHsl.h, newHsl.s, newHsl.l);
+          const result = this.hslToHex(newHsl.h, newHsl.s, newHsl.l);
+          // Safety check: ensure we always return a valid hex color
+          if (!result || typeof result !== 'string' || !result.match(/^#[0-9A-Fa-f]{6}$/)) {
+            console.warn('Invalid color generated, using fallback:', result);
+            return hexColor; // Return original color as fallback
+          }
+          return result;
         };
         
         // Generate variations for each base color
@@ -9335,7 +9347,13 @@ try {
                 break;
             }
             
-            return this.hslToHex(newHsl.h, newHsl.s, newHsl.l);
+            const result = this.hslToHex(newHsl.h, newHsl.s, newHsl.l);
+            // Safety check: ensure we always return a valid hex color
+            if (!result || typeof result !== 'string' || !result.match(/^#[0-9A-Fa-f]{6}$/)) {
+              console.warn('Invalid color generated, using fallback:', result);
+              return hexColor; // Return original color as fallback
+            }
+            return result;
           };
           
           // Generate variations for each base color
