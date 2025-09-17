@@ -10024,6 +10024,25 @@ try {
       await app.quoteService.regenerateShuffledIndexes();
       console.log('✅ Quote indexes regenerated successfully!');
     };
+
+    // Direct fix for current session - fixes the in-memory shuffledIndexes array
+    window.fixQuoteIndexes = () => {
+      console.log('🔧 Fixing current shuffledIndexes array...');
+      const quotesLength = app.quoteService.quotes.length;
+      const shuffledIndexes = app.quoteService.shuffledIndexes;
+      
+      console.log(`📊 Before fix: ${shuffledIndexes.length} indexes, ${quotesLength} quotes`);
+      
+      // Fix all out-of-bounds indexes by applying modulo
+      for (let i = 0; i < shuffledIndexes.length; i++) {
+        if (shuffledIndexes[i] >= quotesLength) {
+          shuffledIndexes[i] = shuffledIndexes[i] % quotesLength;
+        }
+      }
+      
+      console.log(`✅ After fix: All ${shuffledIndexes.length} indexes are now valid (0-${quotesLength-1})`);
+      console.log('🔄 Try opening the quote manager again - errors should be gone!');
+    };
       
       // Debug functions
       window.debugContainers = () => {
