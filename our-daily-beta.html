@@ -9643,12 +9643,15 @@ try {
 
       identifySpecialPatternBlocks() {
         // Identify blocks that are part of special patterns (checkerboard, stripes, etc.)
-        // These should not be moved during shuffling
-        return this.quiltEngine.blocks.filter(block => 
+        // These should not be moved during shuffling, but they can still split normally
+        const specialBlocks = this.quiltEngine.blocks.filter(block => 
           block.patternType === 'special' || 
           block.specialPatternType || 
           block.originalPatternId
         );
+        
+        console.log(`🛡️ Found ${specialBlocks.length} special pattern blocks (protected from shuffling)`);
+        return specialBlocks;
       }
 
       getShufflableBlocks() {
@@ -9656,7 +9659,10 @@ try {
         const specialBlocks = this.identifySpecialPatternBlocks();
         const specialBlockIds = new Set(specialBlocks.map(block => block.id));
         
-        return this.quiltEngine.blocks.filter(block => !specialBlockIds.has(block.id));
+        const shufflableBlocks = this.quiltEngine.blocks.filter(block => !specialBlockIds.has(block.id));
+        console.log(`🎯 Found ${shufflableBlocks.length} shufflable blocks (${specialBlocks.length} special patterns protected)`);
+        
+        return shufflableBlocks;
       }
 
       generateArrangementStrategy() {
@@ -9849,6 +9855,7 @@ try {
       performBlockShuffling() {
         try {
           this.logger.log('🔄 Starting block shuffling process...');
+          this.logger.log('📝 Note: Special patterns will continue to split normally - only their colors may be rearranged');
           
           // Analyze current quilt
           const analysis = this.analyzeBlockColors();
