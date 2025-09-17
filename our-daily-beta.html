@@ -9068,7 +9068,8 @@ try {
       async handleTestAddBlock() {
         // 50 Representative colors from the Rumi palette
         // Selected to maintain proportional distribution and maximize variety
-        const baseRumiColors = [
+        const expandedRumiColors = [
+          // Original 50 colors
           "#ea9b9a", "#de6c61", "#df9368", "#d57d39", "#d8a746", 
           "#caa22b", "#f6eed5", "#decd61", "#dbcc57", "#ded561",
           "#9ab125", "#6ade61", "#1f931f", "#61de61", "#61de76", 
@@ -9078,97 +9079,22 @@ try {
           "#1f2193", "#7e7de3", "#251f93", "#6c61de", "#4024a8", 
           "#8061de", "#8461de", "#9361de", "#ae61de", "#b261de",
           "#c961de", "#cb61de", "#ce2cb0", "#de61ba", "#eba2ce", 
-          "#de6193", "#de618f", "#bd283c", "#931f25", "#de6165"
+          "#de6193", "#de618f", "#bd283c", "#931f25", "#de6165",
+          // Additional 50 tonal variants
+          "#f0a5a4", "#e67a6f", "#e5a076", "#d98a4f", "#e0b55c",
+          "#d4b03b", "#f8f2e5", "#e6d771", "#e3d667", "#e6d771",
+          "#a8c135", "#7ae671", "#3fa33f", "#71e671", "#71e686",
+          "#30a760", "#3fa39a", "#71e6eb", "#3bcaca", "#71c9ee",
+          "#71c9ee", "#80dae1", "#71c3ee", "#71c1ee", "#5ab9e9",
+          "#71b2ee", "#bfd8ee", "#4177e3", "#7182ee", "#717cee",
+          "#3f3193", "#8e7de3", "#351f93", "#7c61ee", "#5024b8",
+          "#9061ee", "#9461ee", "#a361ee", "#be61ee", "#c261ee",
+          "#d961ee", "#db61ee", "#de2cc0", "#ee61ca", "#fba2de",
+          "#ee6193", "#ee618f", "#cd283c", "#a31f35", "#ee6165"
         ];
         
-        // Create similar but visually distinct tones for each base color
-        const createVariation = (hexColor, variationType) => {
-          const hsl = this.hexToHsl(hexColor);
-          let newHsl = { ...hsl };
-          
-          switch (variationType) {
-            case 'lighter':
-              newHsl.l = Math.min(95, hsl.l + 15); // Lighter
-              newHsl.s = Math.max(20, hsl.s - 10); // Less saturated
-              break;
-            case 'darker':
-              newHsl.l = Math.max(5, hsl.l - 15); // Darker
-              newHsl.s = Math.min(100, hsl.s + 10); // More saturated
-              break;
-            case 'warmer':
-              newHsl.h = (hsl.h + 15) % 360; // Shift hue warmer
-              newHsl.s = Math.min(100, hsl.s + 5); // Slightly more saturated
-              break;
-            case 'cooler':
-              newHsl.h = (hsl.h - 15 + 360) % 360; // Shift hue cooler
-              newHsl.s = Math.min(100, hsl.s + 5); // Slightly more saturated
-              break;
-            case 'muted':
-              newHsl.s = Math.max(15, hsl.s - 20); // Much less saturated
-              newHsl.l = Math.max(5, Math.min(95, hsl.l + (Math.random() - 0.5) * 10)); // Clamped lightness variation
-              break;
-            case 'vibrant':
-              newHsl.s = Math.min(100, hsl.s + 15); // More saturated
-              newHsl.l = Math.max(5, Math.min(95, hsl.l + (Math.random() - 0.5) * 5)); // Clamped lightness variation
-              break;
-            case 'shifted':
-              newHsl.h = (hsl.h + 30) % 360; // More significant hue shift
-              newHsl.s = Math.max(20, hsl.s - 5); // Slightly less saturated
-              break;
-            case 'complementary':
-              newHsl.h = (hsl.h + 180) % 360; // Complementary hue
-              newHsl.s = Math.max(30, hsl.s - 10); // Less saturated
-              break;
-            case 'analogous':
-              newHsl.h = (hsl.h + 60) % 360; // Analogous hue
-              newHsl.s = Math.min(100, hsl.s + 5); // Slightly more saturated
-              break;
-            case 'triadic':
-              newHsl.h = (hsl.h + 120) % 360; // Triadic hue
-              newHsl.s = Math.max(25, hsl.s - 5); // Slightly less saturated
-              break;
-          }
-          
-          // Ensure all HSL values are within valid ranges
-          newHsl.h = Math.max(0, Math.min(360, newHsl.h));
-          newHsl.s = Math.max(0, Math.min(100, newHsl.s));
-          newHsl.l = Math.max(0, Math.min(100, newHsl.l));
-          
-          const result = this.hslToHex(newHsl.h, newHsl.s, newHsl.l);
-          // Safety check: ensure we always return a valid hex color
-          if (!result || typeof result !== 'string' || !result.match(/^#[0-9A-Fa-f]{6}$/)) {
-            console.warn('Invalid color generated, using fallback:', result);
-            return hexColor; // Return original color as fallback
-          }
-          return result;
-        };
-        
-        // Generate variations for each base color
-        const expandedPalette = [];
-        const variationTypes = ['lighter', 'darker', 'warmer', 'cooler', 'muted', 'vibrant', 'shifted', 'complementary', 'analogous', 'triadic'];
-        
-        baseRumiColors.forEach(baseColor => {
-          expandedPalette.push(baseColor); // Keep original
-          // Add one random variation for each base color
-          const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
-          expandedPalette.push(createVariation(baseColor, randomVariation));
-        });
-        
-        // Create additional 50 tonal variants for more variety
-        for (let i = 0; i < 50; i++) {
-          const randomBaseColor = baseRumiColors[Math.floor(Math.random() * baseRumiColors.length)];
-          const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
-          expandedPalette.push(createVariation(randomBaseColor, randomVariation));
-        }
-        
-        // Filter out blacks and very dark colors (lightness < 15%)
-        const filteredPalette = expandedPalette.filter(color => {
-          const hsl = this.hexToHsl(color);
-          return hsl.l >= 15; // Remove colors with lightness less than 15%
-        });
-        
-        // Now we have up to 150 colors (50 original + 100 variations, filtered)
-        const randomColor = filteredPalette[Math.floor(Math.random() * filteredPalette.length)];
+        // Simple random selection from 100 colors
+        const randomColor = expandedRumiColors[Math.floor(Math.random() * expandedRumiColors.length)];
         
         try {
           const result = this.quiltEngine.addColor(randomColor);
@@ -9303,7 +9229,8 @@ try {
         try {
           // Use expanded Rumi colors palette (100 colors total)
           // 50 base colors + 50 variations for more diversity
-          const baseRumiColors = [
+          const expandedRumiColors = [
+            // Original 50 colors
             "#ea9b9a", "#de6c61", "#df9368", "#d57d39", "#d8a746", 
             "#caa22b", "#f6eed5", "#decd61", "#dbcc57", "#ded561",
             "#9ab125", "#6ade61", "#1f931f", "#61de61", "#61de76", 
@@ -9313,97 +9240,22 @@ try {
             "#1f2193", "#7e7de3", "#251f93", "#6c61de", "#4024a8", 
             "#8061de", "#8461de", "#9361de", "#ae61de", "#b261de",
             "#c961de", "#cb61de", "#ce2cb0", "#de61ba", "#eba2ce", 
-            "#de6193", "#de618f", "#bd283c", "#931f25", "#de6165"
+            "#de6193", "#de618f", "#bd283c", "#931f25", "#de6165",
+            // Additional 50 tonal variants
+            "#f0a5a4", "#e67a6f", "#e5a076", "#d98a4f", "#e0b55c",
+            "#d4b03b", "#f8f2e5", "#e6d771", "#e3d667", "#e6d771",
+            "#a8c135", "#7ae671", "#3fa33f", "#71e671", "#71e686",
+            "#30a760", "#3fa39a", "#71e6eb", "#3bcaca", "#71c9ee",
+            "#71c9ee", "#80dae1", "#71c3ee", "#71c1ee", "#5ab9e9",
+            "#71b2ee", "#bfd8ee", "#4177e3", "#7182ee", "#717cee",
+            "#3f3193", "#8e7de3", "#351f93", "#7c61ee", "#5024b8",
+            "#9061ee", "#9461ee", "#a361ee", "#be61ee", "#c261ee",
+            "#d961ee", "#db61ee", "#de2cc0", "#ee61ca", "#fba2de",
+            "#ee6193", "#ee618f", "#cd283c", "#a31f35", "#ee6165"
           ];
           
-          // Create similar but visually distinct tones for each base color
-          const createVariation = (hexColor, variationType) => {
-            const hsl = this.hexToHsl(hexColor);
-            let newHsl = { ...hsl };
-            
-            switch (variationType) {
-              case 'lighter':
-                newHsl.l = Math.min(95, hsl.l + 15);
-                newHsl.s = Math.max(20, hsl.s - 10);
-                break;
-              case 'darker':
-                newHsl.l = Math.max(5, hsl.l - 15);
-                newHsl.s = Math.min(100, hsl.s + 10);
-                break;
-              case 'warmer':
-                newHsl.h = (hsl.h + 15) % 360;
-                newHsl.s = Math.min(100, hsl.s + 5);
-                break;
-              case 'cooler':
-                newHsl.h = (hsl.h - 15 + 360) % 360;
-                newHsl.s = Math.min(100, hsl.s + 5);
-                break;
-            case 'muted':
-              newHsl.s = Math.max(15, hsl.s - 20);
-              newHsl.l = Math.max(5, Math.min(95, hsl.l + (Math.random() - 0.5) * 10)); // Clamped lightness variation
-              break;
-            case 'vibrant':
-              newHsl.s = Math.min(100, hsl.s + 15);
-              newHsl.l = Math.max(5, Math.min(95, hsl.l + (Math.random() - 0.5) * 5)); // Clamped lightness variation
-              break;
-              case 'shifted':
-                newHsl.h = (hsl.h + 30) % 360;
-                newHsl.s = Math.max(20, hsl.s - 5);
-                break;
-              case 'complementary':
-                newHsl.h = (hsl.h + 180) % 360;
-                newHsl.s = Math.max(30, hsl.s - 10);
-                break;
-              case 'analogous':
-                newHsl.h = (hsl.h + 60) % 360;
-                newHsl.s = Math.min(100, hsl.s + 5);
-                break;
-              case 'triadic':
-                newHsl.h = (hsl.h + 120) % 360;
-                newHsl.s = Math.max(25, hsl.s - 5);
-                break;
-            }
-            
-            // Ensure all HSL values are within valid ranges
-            newHsl.h = Math.max(0, Math.min(360, newHsl.h));
-            newHsl.s = Math.max(0, Math.min(100, newHsl.s));
-            newHsl.l = Math.max(0, Math.min(100, newHsl.l));
-            
-            const result = this.hslToHex(newHsl.h, newHsl.s, newHsl.l);
-            // Safety check: ensure we always return a valid hex color
-            if (!result || typeof result !== 'string' || !result.match(/^#[0-9A-Fa-f]{6}$/)) {
-              console.warn('Invalid color generated, using fallback:', result);
-              return hexColor; // Return original color as fallback
-            }
-            return result;
-          };
-          
-          // Generate variations for each base color
-          const expandedPalette = [];
-          const variationTypes = ['lighter', 'darker', 'warmer', 'cooler', 'muted', 'vibrant', 'shifted', 'complementary', 'analogous', 'triadic'];
-          
-          baseRumiColors.forEach(baseColor => {
-            expandedPalette.push(baseColor); // Keep original
-            // Add one random variation for each base color
-            const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
-            expandedPalette.push(createVariation(baseColor, randomVariation));
-          });
-          
-          // Create additional 50 tonal variants for more variety
-          for (let i = 0; i < 50; i++) {
-            const randomBaseColor = baseRumiColors[Math.floor(Math.random() * baseRumiColors.length)];
-            const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
-            expandedPalette.push(createVariation(randomBaseColor, randomVariation));
-          }
-          
-          // Filter out blacks and very dark colors (lightness < 15%)
-          const filteredPalette = expandedPalette.filter(color => {
-            const hsl = this.hexToHsl(color);
-            return hsl.l >= 15; // Remove colors with lightness less than 15%
-          });
-          
-          // Shuffle and pick 10 random colors from filtered palette (up to 150 colors)
-          const shuffled = [...filteredPalette].sort(() => 0.5 - Math.random());
+          // Shuffle and pick 10 random colors from 100 colors
+          const shuffled = [...expandedRumiColors].sort(() => 0.5 - Math.random());
           const selectedColors = shuffled.slice(0, 10);
           
           
