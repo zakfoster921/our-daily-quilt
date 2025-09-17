@@ -723,8 +723,8 @@ try {
       gap: 0.5rem;
       margin-bottom: 1rem;
       padding: 0.75rem;
-      background: rgba(255, 255, 255, 0.8);
-      border: 1px solid #000;
+      background: transparent;
+      border: none;
       border-radius: 8px;
       font-family: inherit;
     }
@@ -1064,8 +1064,8 @@ try {
 
       
       #screen-quilt .square-counter {
-        background: #fff !important;
-        border: 2px solid #000 !important;
+        background: transparent !important;
+        border: none !important;
         margin: 1rem 0.5rem 0.5rem 0.5rem !important;
         padding: 0.5rem !important;
         border-radius: 6px !important;
@@ -1876,6 +1876,11 @@ try {
           <p class="quilt-quote-author"></p>
         </div>
         
+        <!-- People counter moved above buttons -->
+        <div class="square-counter">
+          <span class="counter-label">Building today's quilt together: <span class="counter-number" id="squareCounter">1</span></span>
+        </div>
+        
         <div class="button-group">
           <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="View on Instagram">View on Instagram</button>                                              
           <!-- <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white;">SHOW ME MY PIECE</button> -->                                                                                           
@@ -1886,10 +1891,6 @@ try {
           <button class="btn" data-next="screen-about" aria-label="About this project">About ODQ</button>
         </div>
         
-        <!-- People counter moved below buttons -->
-        <div class="square-counter">
-          <span class="counter-label">Building today's quilt together: <span class="counter-number" id="squareCounter">1</span></span>                                                                           
-        </div>
       </div>
     </section>
     </section>
@@ -5255,6 +5256,14 @@ try {
         const dayIndex = Math.floor(adjustedDate.getTime() / (1000 * 60 * 60 * 24));
         const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
         
+        // Safety check: ensure quoteIndex is valid
+        if (quoteIndex >= this.quotes.length || quoteIndex < 0) {
+          console.warn(`⚠️ Invalid quoteIndex ${quoteIndex} for ${this.quotes.length} quotes. Regenerating shuffled indexes.`);
+          this.regenerateShuffledIndexes();
+          const newQuoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
+          return this.quotes[newQuoteIndex];
+        }
+        
         // Quote selected for today
         
         return this.quotes[quoteIndex];
@@ -5266,9 +5275,40 @@ try {
         const dayIndex = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
         const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
         
+        // Safety check: ensure quoteIndex is valid
+        if (quoteIndex >= this.quotes.length || quoteIndex < 0) {
+          console.warn(`⚠️ Invalid quoteIndex ${quoteIndex} for ${this.quotes.length} quotes. Regenerating shuffled indexes.`);
+          this.regenerateShuffledIndexes();
+          const newQuoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
+          console.log(`🔍 getQuoteForDate: ${dateString} (UTC) → dayIndex: ${dayIndex} → quoteIndex: ${newQuoteIndex} → quote: "${this.quotes[newQuoteIndex].text.substring(0, 50)}..."`);
+          return this.quotes[newQuoteIndex];
+        }
+        
         console.log(`🔍 getQuoteForDate: ${dateString} (UTC) → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
         
         return this.quotes[quoteIndex];
+      }
+
+      regenerateShuffledIndexes() {
+        // Create a new shuffled array of indexes based on the current quotes array length
+        const indexes = Array.from({ length: this.quotes.length }, (_, i) => i);
+        
+        // Shuffle the indexes using Fisher-Yates algorithm
+        for (let i = indexes.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [indexes[i], indexes[j]] = [indexes[j], indexes[i]];
+        }
+        
+        // Extend the shuffled array to ensure we have enough indexes for future dates
+        // We need at least 100 indexes to cover many years of daily quotes
+        const targetLength = Math.max(100, indexes.length * 2);
+        while (indexes.length < targetLength) {
+          const randomIndex = Math.floor(Math.random() * this.quotes.length);
+          indexes.push(randomIndex);
+        }
+        
+        this.shuffledIndexes = indexes;
+        console.log(`🔄 Regenerated shuffled indexes: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
       }
 
       displayQuote() {
@@ -8083,6 +8123,10 @@ try {
       removeQuote(index) {
         if (confirm(`Are you sure you want to remove this quote?\n\n"${this.quoteService.quotes[index].text}"\n— ${this.quoteService.quotes[index].author}`)) {
           this.quoteService.quotes.splice(index, 1);
+          
+          // Regenerate shuffled indexes to ensure they're valid for the new quotes array
+          this.quoteService.regenerateShuffledIndexes();
+          
           this.uiService.showToast(`Quote ${index + 1} removed`);
           this.showQuoteManager(); // Refresh the manager
         }
@@ -8134,13 +8178,8 @@ try {
           // Remove the quote from the quotes array
           this.quoteService.quotes.splice(dayData.originalIndex, 1);
           
-          // Update the shuffled indexes to account for the removed quote
-          this.quoteService.shuffledIndexes = this.quoteService.shuffledIndexes.map(index => {
-            if (index > dayData.originalIndex) {
-              return index - 1; // Shift down indexes after the deleted quote
-            }
-            return index;
-          });
+          // Regenerate shuffled indexes to ensure they're valid for the new quotes array
+          this.quoteService.regenerateShuffledIndexes();
           
           this.uiService.showToast(`Quote deleted. New quote will appear for ${dayData.dayName}.`);
           this.showQuoteManager(); // Refresh the manager
@@ -8297,7 +8336,7 @@ try {
           const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
           const quote = this.quoteService.quotes[quoteIndex];
           
-          console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quote=`, quote);
+          console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}, quote=`, quote);
           
           const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
           const dayName = dayNames[futureDate.getDay()];
@@ -9640,6 +9679,8 @@ try {
           const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
           const quote = this.quoteService.quotes[quoteIndex];
           
+          console.log(`🔍 NextWeek Day ${i}: ${dateString} → dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}, quote=`, quote);
+          
           const quoteElement = document.createElement('div');
           quoteElement.style.cssText = `
             border: 1px solid #ddd;
@@ -9667,7 +9708,7 @@ try {
             margin-bottom: 8px;
             line-height: 1.4;
           `;
-          textElement.textContent = `"${quote.text}"`;
+          textElement.textContent = quote && quote.text ? `"${quote.text}"` : "No quote available";
           
           const authorElement = document.createElement('div');
           authorElement.style.cssText = `
@@ -9675,7 +9716,7 @@ try {
             color: #666;
             font-size: 14px;
           `;
-          authorElement.textContent = quote.author;
+          authorElement.textContent = quote && quote.author ? quote.author : "— Unknown";
           
           quoteElement.appendChild(dateElement);
           quoteElement.appendChild(textElement);
