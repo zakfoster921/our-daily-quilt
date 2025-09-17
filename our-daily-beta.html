@@ -8279,9 +8279,29 @@ try {
         });
         
         if (confirm(`Are you sure you want to skip this quote for ${dayData.dayName}?\n\n"${quote.text}"\n${quote.author}\n\nThis will keep the quote in your collection but assign a different quote for ${dayData.dayName}.`)) {
-          // Don't remove the quote from the array - just regenerate shuffled indexes
-          // This will assign a new quote to this day while keeping the original quote available for other days
-          await this.quoteService.regenerateShuffledIndexes();
+          // Calculate the actual day index for this specific day
+          const today = new Date();
+          const utcHours = today.getUTCHours();
+          const adjustedToday = new Date(today);
+          if (utcHours < 7) {
+            adjustedToday.setUTCDate(adjustedToday.getUTCDate() - 1);
+          }
+          
+          const targetDate = new Date(adjustedToday);
+          targetDate.setDate(adjustedToday.getDate() + dayIndex);
+          const dayIndexForShuffled = Math.floor(targetDate.getTime() / (1000 * 60 * 60 * 24));
+          
+          // Find a different quote index for this day
+          let newQuoteIndex;
+          do {
+            newQuoteIndex = Math.floor(Math.random() * this.quoteService.quotes.length);
+          } while (newQuoteIndex === this.quoteService.shuffledIndexes[dayIndexForShuffled % this.quoteService.shuffledIndexes.length]);
+          
+          // Update just this day's assignment
+          this.quoteService.shuffledIndexes[dayIndexForShuffled % this.quoteService.shuffledIndexes.length] = newQuoteIndex;
+          
+          // Save the changes to Firestore
+          await this.quoteService.saveShuffledIndexes();
           
           // If we skipped today's quote, refresh the quote display on the quilt screen
           if (dayData.dayName === 'Today') {
