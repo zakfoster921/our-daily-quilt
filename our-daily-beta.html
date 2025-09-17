@@ -3021,8 +3021,8 @@ try {
         // Stripes can be either horizontal or vertical based on block aspect ratio
         // Uses tonal variants for richer color palette
         
-        // Generate 4-color palette with tonal variants for richer stripes
-        const colorPalette = this.generateColorPalette(block.color, newColor, 4);
+        // Generate 3-color palette with tonal variants for organic stripes
+        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
         
         const minBlockSize = 20;
         const blockArea = block.width * block.height;
@@ -3063,7 +3063,7 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            const colorIndex = i % 4; // Use tonal variants for richer stripes
+            const colorIndex = Math.floor(Math.random() * 3); // Random organic distribution
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(block.width, stripeHeights[i]));
@@ -3105,7 +3105,7 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            const colorIndex = i % 4; // Use tonal variants for richer stripes
+            const colorIndex = Math.floor(Math.random() * 3); // Random organic distribution
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(stripeWidths[i], block.height));
@@ -9125,8 +9125,21 @@ try {
           expandedPalette.push(createVariation(baseColor, randomVariation));
         });
         
-        // Now we have 100 colors (50 original + 50 variations)
-        const randomColor = expandedPalette[Math.floor(Math.random() * expandedPalette.length)];
+        // Create additional 50 tonal variants for more variety
+        for (let i = 0; i < 50; i++) {
+          const randomBaseColor = baseRumiColors[Math.floor(Math.random() * baseRumiColors.length)];
+          const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
+          expandedPalette.push(createVariation(randomBaseColor, randomVariation));
+        }
+        
+        // Filter out blacks and very dark colors (lightness < 15%)
+        const filteredPalette = expandedPalette.filter(color => {
+          const hsl = this.hexToHsl(color);
+          return hsl.l >= 15; // Remove colors with lightness less than 15%
+        });
+        
+        // Now we have up to 150 colors (50 original + 100 variations, filtered)
+        const randomColor = filteredPalette[Math.floor(Math.random() * filteredPalette.length)];
         
         try {
           const result = this.quiltEngine.addColor(randomColor);
@@ -9336,8 +9349,21 @@ try {
             expandedPalette.push(createVariation(baseColor, randomVariation));
           });
           
-          // Shuffle and pick 10 random colors from expanded palette (100 colors)
-          const shuffled = [...expandedPalette].sort(() => 0.5 - Math.random());
+          // Create additional 50 tonal variants for more variety
+          for (let i = 0; i < 50; i++) {
+            const randomBaseColor = baseRumiColors[Math.floor(Math.random() * baseRumiColors.length)];
+            const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
+            expandedPalette.push(createVariation(randomBaseColor, randomVariation));
+          }
+          
+          // Filter out blacks and very dark colors (lightness < 15%)
+          const filteredPalette = expandedPalette.filter(color => {
+            const hsl = this.hexToHsl(color);
+            return hsl.l >= 15; // Remove colors with lightness less than 15%
+          });
+          
+          // Shuffle and pick 10 random colors from filtered palette (up to 150 colors)
+          const shuffled = [...filteredPalette].sort(() => 0.5 - Math.random());
           const selectedColors = shuffled.slice(0, 10);
           
           
