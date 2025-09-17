@@ -5290,6 +5290,21 @@ try {
       }
 
       regenerateShuffledIndexes() {
+        // Try to load existing shuffled indexes from localStorage first
+        const savedIndexes = localStorage.getItem('quiltShuffledIndexes');
+        const savedQuotesLength = localStorage.getItem('quiltQuotesLength');
+        
+        // If we have saved indexes and the quotes array length hasn't changed, use them
+        if (savedIndexes && savedQuotesLength && parseInt(savedQuotesLength) === this.quotes.length) {
+          try {
+            this.shuffledIndexes = JSON.parse(savedIndexes);
+            console.log(`📁 Loaded shuffled indexes from localStorage: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
+            return;
+          } catch (e) {
+            console.warn('⚠️ Failed to parse saved shuffled indexes, regenerating...');
+          }
+        }
+        
         // Create a new shuffled array of indexes based on the current quotes array length
         const indexes = Array.from({ length: this.quotes.length }, (_, i) => i);
         
@@ -5308,7 +5323,19 @@ try {
         }
         
         this.shuffledIndexes = indexes;
+        
+        // Save to localStorage
+        localStorage.setItem('quiltShuffledIndexes', JSON.stringify(this.shuffledIndexes));
+        localStorage.setItem('quiltQuotesLength', this.quotes.length.toString());
+        
         console.log(`🔄 Regenerated shuffled indexes: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
+      }
+
+      saveShuffledIndexes() {
+        // Save current shuffled indexes to localStorage
+        localStorage.setItem('quiltShuffledIndexes', JSON.stringify(this.shuffledIndexes));
+        localStorage.setItem('quiltQuotesLength', this.quotes.length.toString());
+        console.log(`💾 Saved shuffled indexes to localStorage: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
       }
 
       displayQuote() {
@@ -8250,6 +8277,9 @@ try {
           this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length];
         this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
         
+        // Save the changes to localStorage
+        this.quoteService.saveShuffledIndexes();
+        
         this.uiService.showToast(`Swapped quotes for ${previousDay.dayName} and ${currentDay.dayName}`);
         
         // If we swapped today's quote, refresh the quote display on the quilt screen
@@ -8282,6 +8312,9 @@ try {
         this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
           this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length];
         this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
+        
+        // Save the changes to localStorage
+        this.quoteService.saveShuffledIndexes();
         
         this.uiService.showToast(`Swapped quotes for ${currentDay.dayName} and ${nextDay.dayName}`);
         
