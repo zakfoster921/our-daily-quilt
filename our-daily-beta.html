@@ -2758,8 +2758,8 @@ try {
             return this.createLogCabin(block, newColor);
           case 'framed':
             return this.createFramedPattern(block, newColor);
-          case 'railfence':
-            return this.createRailFencePattern(block, newColor);
+          // case 'railfence':
+          //   return this.createRailFencePattern(block, newColor);
           case 'cross':
             return this.createCrossPattern(block, newColor);
           // Future patterns can be added here:
@@ -2802,14 +2802,15 @@ try {
             availablePatterns.push('framed');
           }
           
-          // Rail Fence pattern is available for large blocks (needs space for 2x2 quadrants with 3 strips each)
+          // Rail Fence pattern is available for large blocks (needs space for 2x2 quadrants with 3 strips each)                                                                                                 
           // Also requires square-ish aspect ratio (not too rectangular)
-          if (block.width > 100 && block.height > 100) {
-            const aspectRatio = Math.max(block.width, block.height) / Math.min(block.width, block.height);
-            if (aspectRatio <= 1.5) { // Max 1.5:1 ratio (e.g., 150x100 is OK, 200x100 is not)
-              availablePatterns.push('railfence');
-            }
-          }
+          // COMMENTED OUT: Rail fence pattern disabled
+          // if (block.width > 100 && block.height > 100) {
+          //   const aspectRatio = Math.max(block.width, block.height) / Math.min(block.width, block.height);                                                                                                       
+          //   if (aspectRatio <= 1.5) { // Max 1.5:1 ratio (e.g., 150x100 is OK, 200x100 is not)
+          //     availablePatterns.push('railfence');
+          //   }
+          // }
           
           // Cross pattern is available for large blocks (needs space for 3x3 grid)
           // Also requires square-ish aspect ratio (not too rectangular)
@@ -2843,6 +2844,10 @@ try {
         // Create a dynamic organic checkerboard pattern (2x2, 3x3, or 4x4 based on block size)
         // Each square will have slightly irregular edges to maintain the hand-cut vibe
         // Grid size: 4x4 for very large blocks (250px+), 3x3 for medium (100px+), 2x2 for small (50px+)
+        // Uses tonal variants for richer color palette
+        
+        // Generate 4-color palette with tonal variants for richer checkerboard
+        const colorPalette = this.generateColorPalette(block.color, newColor, 4);
         
         const minBlockSize = 20; // Further reduced minimum size to allow smaller checkerboards
         const blockArea = block.width * block.height;
@@ -2896,10 +2901,10 @@ try {
           return this.performRegularSplit(block, newColor);
         }
         
-        console.log(`🎯 CHECKERBOARD: Cell size check passed (${avgCellWidth.toFixed(1)}x${avgCellHeight.toFixed(1)} >= ${dynamicMinSize}px)`);
+        console.log(`🎯 CHECKERBOARD: Cell size check passed (${avgCellWidth.toFixed(1)}x${avgCellHeight.toFixed(1)} >= ${dynamicMinSize}px)`);                                                                  
         
         const cells = [];
-        const colors = [block.color, newColor]; // Alternate between original and new color
+        // Use tonal variants from the 4-color palette for richer checkerboard
         
         // Calculate cumulative positions for variable dimensions
         const columnPositions = [0];
@@ -2913,7 +2918,9 @@ try {
         for (let row = 0; row < gridSize; row++) {
           for (let col = 0; col < gridSize; col++) {
             const cellIndex = row * gridSize + col;
-            const colorIndex = (row + col) % 2; // Checkerboard pattern
+            // Use tonal variants for richer checkerboard pattern
+            // Alternate between 4 colors in a more complex pattern
+            const colorIndex = (row + col) % 4;
             
             // Use variable dimensions for this cell
             const cellWidth = columnWidths[col];
@@ -2970,7 +2977,7 @@ try {
               y: finalY,
               width: finalWidth,
               height: finalHeight,
-              color: colors[colorIndex],
+              color: colorPalette[colorIndex],
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount,
               patternType: 'special',
@@ -3012,6 +3019,10 @@ try {
       createOrganicStripes(block, newColor) {
         // Create organic stripes pattern with variable column/row widths
         // Stripes can be either horizontal or vertical based on block aspect ratio
+        // Uses tonal variants for richer color palette
+        
+        // Generate 4-color palette with tonal variants for richer stripes
+        const colorPalette = this.generateColorPalette(block.color, newColor, 4);
         
         const minBlockSize = 20;
         const blockArea = block.width * block.height;
@@ -3039,7 +3050,7 @@ try {
         numStripes = Math.min(numStripes, 4);
         
         const cells = [];
-        const colors = [block.color, newColor]; // Alternate between original and new color
+        // Use tonal variants from the 4-color palette for richer stripes
         
         if (stripeOrientation === 'horizontal') {
           // Create horizontal stripes with variable heights
@@ -3052,7 +3063,7 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            const colorIndex = i % 2; // Alternate colors
+            const colorIndex = i % 4; // Use tonal variants for richer stripes
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(block.width, stripeHeights[i]));
@@ -3073,7 +3084,7 @@ try {
               y: finalY,
               width: block.width + (boundaryBuffer * 2),
               height: finalHeight,
-              color: colors[colorIndex],
+              color: colorPalette[colorIndex],
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount,
               patternType: 'special',
@@ -3094,7 +3105,7 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            const colorIndex = i % 2; // Alternate colors
+            const colorIndex = i % 4; // Use tonal variants for richer stripes
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(stripeWidths[i], block.height));
@@ -3115,7 +3126,7 @@ try {
               y: block.y - boundaryBuffer,
               width: finalWidth,
               height: block.height + (boundaryBuffer * 2),
-              color: colors[colorIndex],
+              color: colorPalette[colorIndex],
               contributorId: this.deviceId,
               submissionIndex: this.submissionCount,
               patternType: 'special',
@@ -3375,8 +3386,8 @@ try {
         const innerX = block.x + (block.width - innerSize) / 2;
         const innerY = block.y + (block.height - innerSize) / 2;
         
-        // Generate color palette for frame and inner square
-        const colorPalette = this.generateColorPalette(block.color, newColor, 2);
+        // Generate color palette for frame and inner square with tonal variants
+        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
         
         // Add jitter for organic feel
         const jitterMultiplier = 0.05;
@@ -3410,7 +3421,7 @@ try {
           y: block.y + block.height - frameThickness + frameJitterY,
           width: block.width,
           height: frameThickness,
-          color: colorPalette[0],
+          color: colorPalette[2], // Use third color for variety
           contributorId: this.deviceId,
           submissionIndex: this.submissionCount,
           patternType: 'special',
@@ -3442,7 +3453,7 @@ try {
           y: block.y + frameThickness + frameJitterY,
           width: frameThickness,
           height: block.height - (frameThickness * 2),
-          color: colorPalette[0],
+          color: colorPalette[2], // Use third color for variety
           contributorId: this.deviceId,
           submissionIndex: this.submissionCount,
           patternType: 'special',
@@ -3473,102 +3484,103 @@ try {
         return cells;
       }
       
-      createRailFencePattern(block, newColor) {
-        // Create a rail fence pattern: 2x2 quadrants, each with 3 parallel strips
-        // Alternating orientations create pinwheel effect
-        
-        // Generate 3-color palette
-        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
-        
-        // Calculate quadrant dimensions
-        const quadrantWidth = block.width / 2;
-        const quadrantHeight = block.height / 2;
-        
-        // Add jitter for organic feel
-        const jitterMultiplier = 0.05;
-        
-        const cells = [];
-        
-        // Define quadrants with their orientations
-        const quadrants = [
-          { name: 'top-left', x: block.x, y: block.y, orientation: 'vertical' },
-          { name: 'top-right', x: block.x + quadrantWidth, y: block.y, orientation: 'horizontal' },
-          { name: 'bottom-left', x: block.x, y: block.y + quadrantHeight, orientation: 'horizontal' },
-          { name: 'bottom-right', x: block.x + quadrantWidth, y: block.y + quadrantHeight, orientation: 'vertical' }
-        ];
-        
-        quadrants.forEach((quadrant, quadrantIndex) => {
-          // Generate variable strip dimensions
-          let stripDimensions;
-          if (quadrant.orientation === 'vertical') {
-            // Vertical strips: variable widths, fixed height
-            stripDimensions = this.generateVariableDimensions(quadrantWidth, 3);
-          } else {
-            // Horizontal strips: fixed width, variable heights
-            stripDimensions = this.generateVariableDimensions(quadrantHeight, 3);
-          }
-          
-          // Calculate cumulative positions
-          const positions = [0];
-          for (let i = 0; i < stripDimensions.length; i++) {
-            positions.push(positions[i] + stripDimensions[i]);
-          }
-          
-          // Create 3 strips in this quadrant
-          for (let stripIndex = 0; stripIndex < 3; stripIndex++) {
-            // Create cross pattern: new color (index 1) forms the cross like in reference
-            // Use all 3 colors: original (0), new (1), darker (2)
-            let colorIndex;
-            if (quadrant.name === 'top-left' || quadrant.name === 'bottom-right') {
-              // Vertical quadrants: middle strip is new color (forms vertical cross)
-              colorIndex = stripIndex === 1 ? 1 : (stripIndex === 0 ? 0 : 2); // middle = new, outer = original/dark
-            } else {
-              // Horizontal quadrants: outer strips are new color (forms horizontal cross)
-              colorIndex = stripIndex === 1 ? 0 : 1; // middle = original, outer = new
-            }
-            
-            const color = colorPalette[colorIndex];
-            
-            // Add jitter
-            const jitterX = (Math.random() - 0.5) * jitterMultiplier * stripDimensions[stripIndex];
-            const jitterY = (Math.random() - 0.5) * jitterMultiplier * stripDimensions[stripIndex];
-            
-            let stripX, stripY, stripWidth, stripHeight;
-            
-            if (quadrant.orientation === 'vertical') {
-              // Vertical strips
-              stripX = quadrant.x + positions[stripIndex] + jitterX;
-              stripY = quadrant.y + jitterY;
-              stripWidth = stripDimensions[stripIndex];
-              stripHeight = quadrantHeight;
-            } else {
-              // Horizontal strips
-              stripX = quadrant.x + jitterX;
-              stripY = quadrant.y + positions[stripIndex] + jitterY;
-              stripWidth = quadrantWidth;
-              stripHeight = stripDimensions[stripIndex];
-            }
-            
-            const strip = {
-              id: block.id + '_pattern_railfence_' + quadrant.name + '_' + stripIndex,
-              x: stripX,
-              y: stripY,
-              width: stripWidth,
-              height: stripHeight,
-              color: color,
-              contributorId: this.deviceId,
-              submissionIndex: this.submissionCount,
-              patternType: 'special',
-              specialPatternType: 'railfence',
-              originalPatternId: block.id
-            };
-            
-            cells.push(strip);
-          }
-        });
-        
-        return cells;
-      }
+      // COMMENTED OUT: Rail fence pattern disabled
+      // createRailFencePattern(block, newColor) {
+      //   // Create a rail fence pattern: 2x2 quadrants, each with 3 parallel strips
+      //   // Alternating orientations create pinwheel effect
+      //   
+      //   // Generate 3-color palette
+      //   const colorPalette = this.generateColorPalette(block.color, newColor, 3);
+      //   
+      //   // Calculate quadrant dimensions
+      //   const quadrantWidth = block.width / 2;
+      //   const quadrantHeight = block.height / 2;
+      //   
+      //   // Add jitter for organic feel
+      //   const jitterMultiplier = 0.05;
+      //   
+      //   const cells = [];
+      //   
+      //   // Define quadrants with their orientations
+      //   const quadrants = [
+      //     { name: 'top-left', x: block.x, y: block.y, orientation: 'vertical' },
+      //     { name: 'top-right', x: block.x + quadrantWidth, y: block.y, orientation: 'horizontal' },
+      //     { name: 'bottom-left', x: block.x, y: block.y + quadrantHeight, orientation: 'horizontal' },
+      //     { name: 'bottom-right', x: block.x + quadrantWidth, y: block.y + quadrantHeight, orientation: 'vertical' }
+      //   ];
+      //   
+      //   quadrants.forEach((quadrant, quadrantIndex) => {
+      //     // Generate variable strip dimensions
+      //     let stripDimensions;
+      //     if (quadrant.orientation === 'vertical') {
+      //       // Vertical strips: variable widths, fixed height
+      //       stripDimensions = this.generateVariableDimensions(quadrantWidth, 3);
+      //     } else {
+      //       // Horizontal strips: fixed width, variable heights
+      //       stripDimensions = this.generateVariableDimensions(quadrantHeight, 3);
+      //     }
+      //     
+      //     // Calculate cumulative positions
+      //     const positions = [0];
+      //     for (let i = 0; i < stripDimensions.length; i++) {
+      //       positions.push(positions[i] + stripDimensions[i]);
+      //     }
+      //     
+      //     // Create 3 strips in this quadrant
+      //     for (let stripIndex = 0; stripIndex < 3; stripIndex++) {
+      //       // Create cross pattern: new color (index 1) forms the cross like in reference
+      //       // Use all 3 colors: original (0), new (1), darker (2)
+      //       let colorIndex;
+      //       if (quadrant.name === 'top-left' || quadrant.name === 'bottom-right') {
+      //         // Vertical quadrants: middle strip is new color (forms vertical cross)
+      //         colorIndex = stripIndex === 1 ? 1 : (stripIndex === 0 ? 0 : 2); // middle = new, outer = original/dark
+      //       } else {
+      //         // Horizontal quadrants: outer strips are new color (forms horizontal cross)
+      //         colorIndex = stripIndex === 1 ? 0 : 1; // middle = original, outer = new
+      //       }
+      //       
+      //       const color = colorPalette[colorIndex];
+      //       
+      //       // Add jitter
+      //       const jitterX = (Math.random() - 0.5) * jitterMultiplier * stripDimensions[stripIndex];
+      //       const jitterY = (Math.random() - 0.5) * jitterMultiplier * stripDimensions[stripIndex];
+      //       
+      //       let stripX, stripY, stripWidth, stripHeight;
+      //       
+      //       if (quadrant.orientation === 'vertical') {
+      //         // Vertical strips
+      //         stripX = quadrant.x + positions[stripIndex] + jitterX;
+      //         stripY = quadrant.y + jitterY;
+      //         stripWidth = stripDimensions[stripIndex];
+      //         stripHeight = quadrantHeight;
+      //       } else {
+      //         // Horizontal strips
+      //         stripX = quadrant.x + jitterX;
+      //         stripY = quadrant.y + positions[stripIndex] + jitterY;
+      //         stripWidth = quadrantWidth;
+      //         stripHeight = stripDimensions[stripIndex];
+      //       }
+      //       
+      //       const strip = {
+      //         id: block.id + '_pattern_railfence_' + quadrant.name + '_' + stripIndex,
+      //         x: stripX,
+      //         y: stripY,
+      //         width: stripWidth,
+      //         height: stripHeight,
+      //         color: color,
+      //         contributorId: this.deviceId,
+      //         submissionIndex: this.submissionCount,
+      //         patternType: 'special',
+      //         specialPatternType: 'railfence',
+      //         originalPatternId: block.id
+      //       };
+      //       
+      //       cells.push(strip);
+      //     }
+      //   });
+      //   
+      //   return cells;
+      // }
       
       createCrossPattern(block, newColor) {
         // Create a 3x3 cross pattern: center + 4 cross arms + 4 corners
@@ -9038,7 +9050,7 @@ try {
       async handleTestAddBlock() {
         // 50 Representative colors from the Rumi palette
         // Selected to maintain proportional distribution and maximize variety
-        const representativeRumiColors = [
+        const baseRumiColors = [
           "#ea9b9a", "#de6c61", "#df9368", "#d57d39", "#d8a746", 
           "#caa22b", "#f6eed5", "#decd61", "#dbcc57", "#ded561",
           "#9ab125", "#6ade61", "#1f931f", "#61de61", "#61de76", 
@@ -9050,7 +9062,71 @@ try {
           "#c961de", "#cb61de", "#ce2cb0", "#de61ba", "#eba2ce", 
           "#de6193", "#de618f", "#bd283c", "#931f25", "#de6165"
         ];
-        const randomColor = representativeRumiColors[Math.floor(Math.random() * representativeRumiColors.length)];
+        
+        // Create similar but visually distinct tones for each base color
+        const createVariation = (hexColor, variationType) => {
+          const hsl = Utils.hexToHsl(hexColor);
+          let newHsl = { ...hsl };
+          
+          switch (variationType) {
+            case 'lighter':
+              newHsl.l = Math.min(95, hsl.l + 15); // Lighter
+              newHsl.s = Math.max(20, hsl.s - 10); // Less saturated
+              break;
+            case 'darker':
+              newHsl.l = Math.max(5, hsl.l - 15); // Darker
+              newHsl.s = Math.min(100, hsl.s + 10); // More saturated
+              break;
+            case 'warmer':
+              newHsl.h = (hsl.h + 15) % 360; // Shift hue warmer
+              newHsl.s = Math.min(100, hsl.s + 5); // Slightly more saturated
+              break;
+            case 'cooler':
+              newHsl.h = (hsl.h - 15 + 360) % 360; // Shift hue cooler
+              newHsl.s = Math.min(100, hsl.s + 5); // Slightly more saturated
+              break;
+            case 'muted':
+              newHsl.s = Math.max(15, hsl.s - 20); // Much less saturated
+              newHsl.l = hsl.l + (Math.random() - 0.5) * 10; // Slight lightness variation
+              break;
+            case 'vibrant':
+              newHsl.s = Math.min(100, hsl.s + 15); // More saturated
+              newHsl.l = hsl.l + (Math.random() - 0.5) * 5; // Slight lightness variation
+              break;
+            case 'shifted':
+              newHsl.h = (hsl.h + 30) % 360; // More significant hue shift
+              newHsl.s = Math.max(20, hsl.s - 5); // Slightly less saturated
+              break;
+            case 'complementary':
+              newHsl.h = (hsl.h + 180) % 360; // Complementary hue
+              newHsl.s = Math.max(30, hsl.s - 10); // Less saturated
+              break;
+            case 'analogous':
+              newHsl.h = (hsl.h + 60) % 360; // Analogous hue
+              newHsl.s = Math.min(100, hsl.s + 5); // Slightly more saturated
+              break;
+            case 'triadic':
+              newHsl.h = (hsl.h + 120) % 360; // Triadic hue
+              newHsl.s = Math.max(25, hsl.s - 5); // Slightly less saturated
+              break;
+          }
+          
+          return Utils.hslToHex(newHsl.h, newHsl.s, newHsl.l);
+        };
+        
+        // Generate variations for each base color
+        const expandedPalette = [];
+        const variationTypes = ['lighter', 'darker', 'warmer', 'cooler', 'muted', 'vibrant', 'shifted', 'complementary', 'analogous', 'triadic'];
+        
+        baseRumiColors.forEach(baseColor => {
+          expandedPalette.push(baseColor); // Keep original
+          // Add one random variation for each base color
+          const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
+          expandedPalette.push(createVariation(baseColor, randomVariation));
+        });
+        
+        // Now we have 100 colors (50 original + 50 variations)
+        const randomColor = expandedPalette[Math.floor(Math.random() * expandedPalette.length)];
         
         try {
           const result = this.quiltEngine.addColor(randomColor);
@@ -9183,10 +9259,9 @@ try {
 
       async handleAddColorFamilyBlocks() {
         try {
-          // Use Rumi colors instead of color family analysis
-          // 50 Representative colors from the Rumi palette
-          // Selected to maintain proportional distribution and maximize variety
-          const representativeRumiColors = [
+          // Use expanded Rumi colors palette (100 colors total)
+          // 50 base colors + 50 variations for more diversity
+          const baseRumiColors = [
             "#ea9b9a", "#de6c61", "#df9368", "#d57d39", "#d8a746", 
             "#caa22b", "#f6eed5", "#decd61", "#dbcc57", "#ded561",
             "#9ab125", "#6ade61", "#1f931f", "#61de61", "#61de76", 
@@ -9199,8 +9274,70 @@ try {
             "#de6193", "#de618f", "#bd283c", "#931f25", "#de6165"
           ];
           
-          // Shuffle and pick 10 random Rumi colors
-          const shuffled = [...representativeRumiColors].sort(() => 0.5 - Math.random());
+          // Create similar but visually distinct tones for each base color
+          const createVariation = (hexColor, variationType) => {
+            const hsl = Utils.hexToHsl(hexColor);
+            let newHsl = { ...hsl };
+            
+            switch (variationType) {
+              case 'lighter':
+                newHsl.l = Math.min(95, hsl.l + 15);
+                newHsl.s = Math.max(20, hsl.s - 10);
+                break;
+              case 'darker':
+                newHsl.l = Math.max(5, hsl.l - 15);
+                newHsl.s = Math.min(100, hsl.s + 10);
+                break;
+              case 'warmer':
+                newHsl.h = (hsl.h + 15) % 360;
+                newHsl.s = Math.min(100, hsl.s + 5);
+                break;
+              case 'cooler':
+                newHsl.h = (hsl.h - 15 + 360) % 360;
+                newHsl.s = Math.min(100, hsl.s + 5);
+                break;
+              case 'muted':
+                newHsl.s = Math.max(15, hsl.s - 20);
+                newHsl.l = hsl.l + (Math.random() - 0.5) * 10;
+                break;
+              case 'vibrant':
+                newHsl.s = Math.min(100, hsl.s + 15);
+                newHsl.l = hsl.l + (Math.random() - 0.5) * 5;
+                break;
+              case 'shifted':
+                newHsl.h = (hsl.h + 30) % 360;
+                newHsl.s = Math.max(20, hsl.s - 5);
+                break;
+              case 'complementary':
+                newHsl.h = (hsl.h + 180) % 360;
+                newHsl.s = Math.max(30, hsl.s - 10);
+                break;
+              case 'analogous':
+                newHsl.h = (hsl.h + 60) % 360;
+                newHsl.s = Math.min(100, hsl.s + 5);
+                break;
+              case 'triadic':
+                newHsl.h = (hsl.h + 120) % 360;
+                newHsl.s = Math.max(25, hsl.s - 5);
+                break;
+            }
+            
+            return Utils.hslToHex(newHsl.h, newHsl.s, newHsl.l);
+          };
+          
+          // Generate variations for each base color
+          const expandedPalette = [];
+          const variationTypes = ['lighter', 'darker', 'warmer', 'cooler', 'muted', 'vibrant', 'shifted', 'complementary', 'analogous', 'triadic'];
+          
+          baseRumiColors.forEach(baseColor => {
+            expandedPalette.push(baseColor); // Keep original
+            // Add one random variation for each base color
+            const randomVariation = variationTypes[Math.floor(Math.random() * variationTypes.length)];
+            expandedPalette.push(createVariation(baseColor, randomVariation));
+          });
+          
+          // Shuffle and pick 10 random colors from expanded palette (100 colors)
+          const shuffled = [...expandedPalette].sort(() => 0.5 - Math.random());
           const selectedColors = shuffled.slice(0, 10);
           
           
