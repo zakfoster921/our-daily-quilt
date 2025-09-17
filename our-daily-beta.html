@@ -8174,12 +8174,23 @@ try {
         const dayData = next7Days[dayIndex];
         const quote = dayData.quote;
         
+        console.log(`🗑️ Delete request for dayIndex ${dayIndex}:`, {
+          dayName: dayData.dayName,
+          quote: quote,
+          originalIndex: dayData.originalIndex
+        });
+        
         if (confirm(`Are you sure you want to delete this quote?\n\n"${quote.text}"\n${quote.author}\n\nThis will remove it from the rotation and another quote will automatically appear for ${dayData.dayName}.`)) {
           // Remove the quote from the quotes array
           this.quoteService.quotes.splice(dayData.originalIndex, 1);
           
           // Regenerate shuffled indexes to ensure they're valid for the new quotes array
           this.quoteService.regenerateShuffledIndexes();
+          
+          // If we deleted today's quote, refresh the quote display on the quilt screen
+          if (dayData.dayName === 'Today') {
+            this.quoteService.displayQuote();
+          }
           
           this.uiService.showToast(`Quote deleted. New quote will appear for ${dayData.dayName}.`);
           this.showQuoteManager(); // Refresh the manager
