@@ -9900,6 +9900,9 @@ try {
           // Apply the arrangement by swapping colors
           this.applyColorArrangement(arrangement, strategy);
           
+          // Process special patterns for splitting (they keep their original colors and positions)
+          this.processSpecialPatternsForSplitting();
+          
           this.logger.log('✅ Block shuffling completed successfully');
           return true;
           
@@ -9971,6 +9974,82 @@ try {
         }
         
         this.logger.log(`🎨 Applied color arrangement: ${strategy} with ${popularBlocks.length} popular blocks and ${otherBlocks.length} other blocks`);
+      }
+
+      processSpecialPatternsForSplitting() {
+        // Process special patterns for splitting after main shuffling is complete
+        // Special patterns keep their original colors and positions, but can still split
+        const specialBlocks = this.identifySpecialPatternBlocks();
+        
+        if (specialBlocks.length === 0) {
+          this.logger.log('🎯 No special patterns to process for splitting');
+          return;
+        }
+        
+        this.logger.log(`🔄 Processing ${specialBlocks.length} special pattern blocks for splitting...`);
+        
+        // Process each special pattern block for potential splitting
+        let splitCount = 0;
+        for (const block of specialBlocks) {
+          // Check if this block should split (using the same logic as normal blocks)
+          if (this.shouldBlockSplit(block)) {
+            this.splitBlock(block);
+            splitCount++;
+          }
+        }
+        
+        if (splitCount > 0) {
+          this.logger.log(`✨ Special patterns: ${splitCount} blocks split successfully`);
+        } else {
+          this.logger.log('🎯 Special patterns: No blocks ready to split');
+        }
+      }
+
+      shouldBlockSplit(block) {
+        // Check if a block should split based on color similarity with neighbors
+        // This uses the same logic as the normal splitting system
+        const neighbors = this.getNeighboringBlocks(block);
+        
+        for (const neighbor of neighbors) {
+          const similarity = this.getColorSimilarity(block.color, neighbor.color);
+          if (similarity > 0.93) { // Same threshold as normal splitting
+            return true;
+          }
+        }
+        
+        return false;
+      }
+
+      getNeighboringBlocks(block) {
+        // Get blocks that are adjacent to the given block
+        const neighbors = [];
+        const tolerance = 5; // Small tolerance for positioning
+        
+        for (const otherBlock of this.quiltEngine.blocks) {
+          if (otherBlock.id === block.id) continue;
+          
+          // Check if blocks are adjacent (touching or very close)
+          const isAdjacent = (
+            (Math.abs(otherBlock.x - (block.x + block.width)) < tolerance && 
+             otherBlock.y < block.y + block.height + tolerance && 
+             otherBlock.y + otherBlock.height > block.y - tolerance) ||
+            (Math.abs(block.x - (otherBlock.x + otherBlock.width)) < tolerance && 
+             otherBlock.y < block.y + block.height + tolerance && 
+             otherBlock.y + otherBlock.height > block.y - tolerance) ||
+            (Math.abs(otherBlock.y - (block.y + block.height)) < tolerance && 
+             otherBlock.x < block.x + block.width + tolerance && 
+             otherBlock.x + otherBlock.width > block.x - tolerance) ||
+            (Math.abs(block.y - (otherBlock.y + otherBlock.height)) < tolerance && 
+             otherBlock.x < block.x + block.width + tolerance && 
+             otherBlock.x + otherBlock.width > block.x - tolerance)
+          );
+          
+          if (isAdjacent) {
+            neighbors.push(otherBlock);
+          }
+        }
+        
+        return neighbors;
       }
 
       shuffleArray(array) {
