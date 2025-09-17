@@ -8334,9 +8334,20 @@ try {
           // Get the quote directly from the quotes array using shuffled indexes
           const dayIndex = Math.floor(futureDate.getTime() / (1000 * 60 * 60 * 24));
           const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
-          const quote = this.quoteService.quotes[quoteIndex];
           
-          console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}, quote=`, quote);
+          // Safety check: if quoteIndex is out of bounds, regenerate shuffled indexes
+          let finalQuoteIndex = quoteIndex;
+          if (quoteIndex >= this.quoteService.quotes.length) {
+            console.warn(`⚠️ QuoteIndex ${quoteIndex} out of bounds for ${this.quoteService.quotes.length} quotes. Regenerating shuffled indexes.`);
+            this.quoteService.regenerateShuffledIndexes();
+            finalQuoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
+            console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${finalQuoteIndex} (regenerated), quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}`);
+          } else {
+            console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}`);
+          }
+          
+          const quote = this.quoteService.quotes[finalQuoteIndex];
+          console.log(`🔍 Day ${i}: final quote=`, quote);
           
           const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
           const dayName = dayNames[futureDate.getDay()];
@@ -8345,7 +8356,7 @@ try {
             date: `${month}/${day}`,
             dayName: dayName,
             quote: quote,
-            originalIndex: quoteIndex,
+            originalIndex: finalQuoteIndex,
             dayIndex: i // Use the loop index (1-7) instead of the absolute day index
           });
         }
