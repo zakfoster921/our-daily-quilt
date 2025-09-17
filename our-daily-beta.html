@@ -2853,8 +2853,30 @@ try {
         // Grid size: 4x4 for very large blocks (250px+), 3x3 for medium (100px+), 2x2 for small (50px+)
         // Uses tonal variants for richer color palette
         
-        // Generate 3-color palette with tonal variants for organic checkerboard
-        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
+        // Generate 3-color palette with proper light/dark alternation
+        // Create a third color that matches the lightness of one of the original colors
+        const basePalette = this.generateColorPalette(block.color, newColor, 2);
+        
+        // Get HSL values of the two base colors
+        const hsl1 = this.hexToHsl(basePalette[0]);
+        const hsl2 = this.hexToHsl(basePalette[1]);
+        
+        // Create a third color that has the same lightness as the lighter of the two colors
+        // but with a different hue to add variety while maintaining the light/dark pattern
+        const lighterColor = hsl1.l > hsl2.l ? basePalette[0] : basePalette[1];
+        const lighterHsl = this.hexToHsl(lighterColor);
+        
+        // Create a third color with same lightness but shifted hue
+        const thirdHsl = {
+          h: (lighterHsl.h + 60) % 360, // Shift hue by 60 degrees
+          s: Math.max(20, lighterHsl.s - 10), // Slightly less saturated
+          l: lighterHsl.l // Same lightness
+        };
+        
+        const thirdColor = this.hslToHex(thirdHsl.h, thirdHsl.s, thirdHsl.l);
+        
+        // Arrange colors so we have: [light, dark, light] or [dark, light, dark]
+        const colorPalette = [basePalette[0], basePalette[1], thirdColor];
         
         const minBlockSize = 20; // Further reduced minimum size to allow smaller checkerboards
         const blockArea = block.width * block.height;
@@ -2911,7 +2933,7 @@ try {
         console.log(`🎯 CHECKERBOARD: Cell size check passed (${avgCellWidth.toFixed(1)}x${avgCellHeight.toFixed(1)} >= ${dynamicMinSize}px)`);                                                                  
         
         const cells = [];
-        // Use tonal variants from the 4-color palette for richer checkerboard
+        // Use 2-color alternating pattern for proper checkerboard
         
         // Calculate cumulative positions for variable dimensions
         const columnPositions = [0];
@@ -2925,9 +2947,39 @@ try {
         for (let row = 0; row < gridSize; row++) {
           for (let col = 0; col < gridSize; col++) {
             const cellIndex = row * gridSize + col;
-            // Use tonal variants for organic checkerboard pattern
-            // Random distribution for organic effect (3 colors)
-            const colorIndex = Math.floor(Math.random() * 3);
+            // Proper checkerboard pattern: alternate between light and dark values
+            // Use (row + col) % 2 to determine if this should be light or dark
+            const isLight = (row + col) % 2 === 0;
+            
+            // Choose color based on lightness value
+            let colorIndex;
+            if (isLight) {
+              // Use the lighter color (or the third color which has same lightness as lighter)
+              const hsl1 = this.hexToHsl(colorPalette[0]);
+              const hsl2 = this.hexToHsl(colorPalette[1]);
+              const hsl3 = this.hexToHsl(colorPalette[2]);
+              
+              // Find which colors are light and randomly choose between them
+              const lightColors = [];
+              if (hsl1.l > 50) lightColors.push(0);
+              if (hsl2.l > 50) lightColors.push(1);
+              if (hsl3.l > 50) lightColors.push(2);
+              
+              colorIndex = lightColors[Math.floor(Math.random() * lightColors.length)];
+            } else {
+              // Use the darker color
+              const hsl1 = this.hexToHsl(colorPalette[0]);
+              const hsl2 = this.hexToHsl(colorPalette[1]);
+              const hsl3 = this.hexToHsl(colorPalette[2]);
+              
+              // Find which colors are dark and randomly choose between them
+              const darkColors = [];
+              if (hsl1.l <= 50) darkColors.push(0);
+              if (hsl2.l <= 50) darkColors.push(1);
+              if (hsl3.l <= 50) darkColors.push(2);
+              
+              colorIndex = darkColors[Math.floor(Math.random() * darkColors.length)];
+            }
             
             // Use variable dimensions for this cell
             const cellWidth = columnWidths[col];
