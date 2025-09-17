@@ -5258,10 +5258,11 @@ try {
         
         // Safety check: ensure quoteIndex is valid
         if (quoteIndex >= this.quotes.length || quoteIndex < 0) {
-          console.warn(`⚠️ Invalid quoteIndex ${quoteIndex} for ${this.quotes.length} quotes. Regenerating shuffled indexes.`);
-          this.regenerateShuffledIndexes();
-          const newQuoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
-          return this.quotes[newQuoteIndex];
+          console.warn(`⚠️ Invalid quoteIndex ${quoteIndex} for ${this.quotes.length} quotes. Using fallback index.`);
+          // Use modulo fallback instead of regenerating (which is async)
+          const fallbackIndex = quoteIndex % this.quotes.length;
+          console.log(`🔍 getTodayQuote: Using fallback index ${fallbackIndex} for quoteIndex ${quoteIndex}`);
+          return this.quotes[fallbackIndex];
         }
         
         // Quote selected for today
@@ -5277,11 +5278,11 @@ try {
         
         // Safety check: ensure quoteIndex is valid
         if (quoteIndex >= this.quotes.length || quoteIndex < 0) {
-          console.warn(`⚠️ Invalid quoteIndex ${quoteIndex} for ${this.quotes.length} quotes. Regenerating shuffled indexes.`);
-          this.regenerateShuffledIndexes();
-          const newQuoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
-          console.log(`🔍 getQuoteForDate: ${dateString} (UTC) → dayIndex: ${dayIndex} → quoteIndex: ${newQuoteIndex} → quote: "${this.quotes[newQuoteIndex].text.substring(0, 50)}..."`);
-          return this.quotes[newQuoteIndex];
+          console.warn(`⚠️ Invalid quoteIndex ${quoteIndex} for ${this.quotes.length} quotes. Using fallback index.`);
+          // Use modulo fallback instead of regenerating (which is async)
+          const fallbackIndex = quoteIndex % this.quotes.length;
+          console.log(`🔍 getQuoteForDate: ${dateString} (UTC) → dayIndex: ${dayIndex} → quoteIndex: ${fallbackIndex} (fallback) → quote: "${this.quotes[fallbackIndex].text.substring(0, 50)}..."`);
+          return this.quotes[fallbackIndex];
         }
         
         console.log(`🔍 getQuoteForDate: ${dateString} (UTC) → dayIndex: ${dayIndex} → quoteIndex: ${quoteIndex} → quote: "${this.quotes[quoteIndex].text.substring(0, 50)}..."`);
@@ -5289,19 +5290,39 @@ try {
         return this.quotes[quoteIndex];
       }
 
-      regenerateShuffledIndexes() {
-        // Try to load existing shuffled indexes from localStorage first
-        const savedIndexes = localStorage.getItem('quiltShuffledIndexes');
-        const savedQuotesLength = localStorage.getItem('quiltQuotesLength');
-        
-        // If we have saved indexes and the quotes array length hasn't changed, use them
-        if (savedIndexes && savedQuotesLength && parseInt(savedQuotesLength) === this.quotes.length) {
-          try {
-            this.shuffledIndexes = JSON.parse(savedIndexes);
-            console.log(`📁 Loaded shuffled indexes from localStorage: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
-            return;
-          } catch (e) {
-            console.warn('⚠️ Failed to parse saved shuffled indexes, regenerating...');
+      async regenerateShuffledIndexes() {
+        // Try to load existing shuffled indexes from Firestore first
+        try {
+          if (window.firebaseApp) {
+            const { getFirestore, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+            const db = getFirestore(window.firebaseApp);
+            const quoteAssignmentsRef = doc(db, 'quoteAssignments', 'dailyQuotes');
+            const docSnap = await getDoc(quoteAssignmentsRef);
+            
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (data.shuffledIndexes && data.quotesLength === this.quotes.length) {
+                this.shuffledIndexes = data.shuffledIndexes;
+                console.log(`📁 Loaded shuffled indexes from Firestore: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
+                return;
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to load from Firestore, falling back to localStorage:', error);
+          
+          // Fallback to localStorage
+          const savedIndexes = localStorage.getItem('quiltShuffledIndexes');
+          const savedQuotesLength = localStorage.getItem('quiltQuotesLength');
+          
+          if (savedIndexes && savedQuotesLength && parseInt(savedQuotesLength) === this.quotes.length) {
+            try {
+              this.shuffledIndexes = JSON.parse(savedIndexes);
+              console.log(`📁 Loaded shuffled indexes from localStorage (fallback): ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
+              return;
+            } catch (e) {
+              console.warn('⚠️ Failed to parse saved shuffled indexes, regenerating...');
+            }
           }
         }
         
@@ -5324,18 +5345,36 @@ try {
         
         this.shuffledIndexes = indexes;
         
-        // Save to localStorage
-        localStorage.setItem('quiltShuffledIndexes', JSON.stringify(this.shuffledIndexes));
-        localStorage.setItem('quiltQuotesLength', this.quotes.length.toString());
+        // Save to Firestore (and localStorage as fallback)
+        await this.saveShuffledIndexes();
         
         console.log(`🔄 Regenerated shuffled indexes: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
       }
 
-      saveShuffledIndexes() {
-        // Save current shuffled indexes to localStorage
+      async saveShuffledIndexes() {
+        // Save to Firestore (primary) and localStorage (fallback)
+        try {
+          if (window.firebaseApp) {
+            const { getFirestore, doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+            const db = getFirestore(window.firebaseApp);
+            const quoteAssignmentsRef = doc(db, 'quoteAssignments', 'dailyQuotes');
+            
+            await setDoc(quoteAssignmentsRef, {
+              shuffledIndexes: this.shuffledIndexes,
+              quotesLength: this.quotes.length,
+              lastUpdated: new Date().toISOString()
+            });
+            
+            console.log(`💾 Saved shuffled indexes to Firestore: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to save to Firestore, using localStorage fallback:', error);
+        }
+        
+        // Always save to localStorage as fallback
         localStorage.setItem('quiltShuffledIndexes', JSON.stringify(this.shuffledIndexes));
         localStorage.setItem('quiltQuotesLength', this.quotes.length.toString());
-        console.log(`💾 Saved shuffled indexes to localStorage: ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
+        console.log(`💾 Saved shuffled indexes to localStorage (fallback): ${this.shuffledIndexes.length} indexes for ${this.quotes.length} quotes`);
       }
 
       displayQuote() {
@@ -8150,12 +8189,12 @@ try {
         }
       }
 
-      removeQuote(index) {
+      async removeQuote(index) {
         if (confirm(`Are you sure you want to remove this quote?\n\n"${this.quoteService.quotes[index].text}"\n— ${this.quoteService.quotes[index].author}`)) {
           this.quoteService.quotes.splice(index, 1);
           
           // Regenerate shuffled indexes to ensure they're valid for the new quotes array
-          this.quoteService.regenerateShuffledIndexes();
+          await this.quoteService.regenerateShuffledIndexes();
           
           this.uiService.showToast(`Quote ${index + 1} removed`);
           this.showQuoteManager(); // Refresh the manager
@@ -8199,7 +8238,7 @@ try {
       }
 
       // Delete quote for a specific day (used by the 7-day manager)
-      deleteQuoteForDay(dayIndex) {
+      async deleteQuoteForDay(dayIndex) {
         const next7Days = this.getNext7DaysQuotes();
         const dayData = next7Days[dayIndex];
         const quote = dayData.quote;
@@ -8215,7 +8254,7 @@ try {
           this.quoteService.quotes.splice(dayData.originalIndex, 1);
           
           // Regenerate shuffled indexes to ensure they're valid for the new quotes array
-          this.quoteService.regenerateShuffledIndexes();
+          await this.quoteService.regenerateShuffledIndexes();
           
           // If we deleted today's quote, refresh the quote display on the quilt screen
           if (dayData.dayName === 'Today') {
@@ -8228,7 +8267,7 @@ try {
       }
 
       // Skip quote for a specific day (keeps quote in array but assigns new one for that day)
-      skipQuoteForDay(dayIndex) {
+      async skipQuoteForDay(dayIndex) {
         const next7Days = this.getNext7DaysQuotes();
         const dayData = next7Days[dayIndex];
         const quote = dayData.quote;
@@ -8242,7 +8281,7 @@ try {
         if (confirm(`Are you sure you want to skip this quote for ${dayData.dayName}?\n\n"${quote.text}"\n${quote.author}\n\nThis will keep the quote in your collection but assign a different quote for ${dayData.dayName}.`)) {
           // Don't remove the quote from the array - just regenerate shuffled indexes
           // This will assign a new quote to this day while keeping the original quote available for other days
-          this.quoteService.regenerateShuffledIndexes();
+          await this.quoteService.regenerateShuffledIndexes();
           
           // If we skipped today's quote, refresh the quote display on the quilt screen
           if (dayData.dayName === 'Today') {
@@ -8254,7 +8293,7 @@ try {
         }
       }
 
-      swapWithPrevious(dayIndex) {
+      async swapWithPrevious(dayIndex) {
         if (dayIndex <= 0) return; // Can't swap the first day
         
         const next7Days = this.getNext7DaysQuotes();
@@ -8277,8 +8316,8 @@ try {
           this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length];
         this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
         
-        // Save the changes to localStorage
-        this.quoteService.saveShuffledIndexes();
+        // Save the changes to Firestore
+        await this.quoteService.saveShuffledIndexes();
         
         this.uiService.showToast(`Swapped quotes for ${previousDay.dayName} and ${currentDay.dayName}`);
         
@@ -8290,7 +8329,7 @@ try {
         this.showQuoteManager(); // Refresh the manager
       }
 
-      swapWithNext(dayIndex) {
+      async swapWithNext(dayIndex) {
         if (dayIndex >= 6) return; // Can't swap the last day
         
         const next7Days = this.getNext7DaysQuotes();
@@ -8313,8 +8352,8 @@ try {
           this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length];
         this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
         
-        // Save the changes to localStorage
-        this.quoteService.saveShuffledIndexes();
+        // Save the changes to Firestore
+        await this.quoteService.saveShuffledIndexes();
         
         this.uiService.showToast(`Swapped quotes for ${currentDay.dayName} and ${nextDay.dayName}`);
         
