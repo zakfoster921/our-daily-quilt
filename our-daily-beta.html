@@ -2367,7 +2367,6 @@ try {
         
         // First priority: Check if we should split a special pattern block
         if (specialPatternBlocks.length > 0) {
-          console.log(`🎯 PROTECTION: Found ${specialPatternBlocks.length} special pattern blocks to protect`);
           
           // Check if new color is very similar to any special pattern colors
           const hasSimilarColor = specialPatternBlocks.some(block => {
@@ -2376,7 +2375,6 @@ try {
           });
           
           if (hasSimilarColor) {
-            console.log(`🎯 PROTECTION: Color ${newColor} is similar enough to special pattern colors - allowing split`);
             // Only then prioritize special pattern blocks to preserve pattern integrity
             const colorSimilarityScores = specialPatternBlocks.map(block => {
               const similarity = this.getColorSimilarity(block.color, newColor);
@@ -2389,8 +2387,6 @@ try {
             // Always pick the most similar block for predictable behavior
             selectedBlock = colorSimilarityScores[0].block;
           } else {
-            console.log(`🎯 PROTECTION: Color ${newColor} is NOT similar enough to special pattern colors - protecting special patterns from split`);
-            console.log(`🎯 PROTECTION: Will now select from ${regularBlocks.length} regular blocks instead`);
           }
           // If no similar colors in special patterns, fall through to regular block logic
         }
@@ -2419,15 +2415,12 @@ try {
           const maxSpecialPatterns = Math.min(Math.max(2, Math.floor(this.submissionCount * 0.60)), Math.floor(this.submissionCount * 0.75));
           
           // Debug logging for pattern counting
-          console.log(`🎯 PATTERN COUNT: ${specialPatternsCreated} special patterns created, ${maxSpecialPatterns} allowed (submission ${this.submissionCount})`);
-          console.log(`🎯 BLOCK BREAKDOWN: ${this.blocks.length} total blocks, ${this.blocks.filter(b => b.patternType === 'special').length} special pattern blocks, ${this.blocks.filter(b => b.patternType !== 'special').length} regular blocks`);
           
           let shouldCreateSpecialPattern = false;
           
           // Rule 4: Check if we've hit the special pattern count limit (60% of submissions max, capped at 75%)
           if (specialPatternsCreated >= maxSpecialPatterns) {
             shouldCreateSpecialPattern = false;
-            console.log(`🎯 PATTERN LIMIT: ${specialPatternsCreated} special patterns created >= ${maxSpecialPatterns} limit (60% of ${this.submissionCount} submissions, capped at 75%) - must create regular block (rule 4)`);
           } else if (this.submissionCount >= 1 && this.submissionCount <= 6) {
             // Rule 2: Splits 2-6 have 50% chance
             // Rule 3: Check if previous split was special pattern
@@ -2443,17 +2436,6 @@ try {
             const previousSpecialBlocks = previousBlocks.filter(block => 
               block.patternType === 'special' || block.id.includes('_pattern_')
             );
-            console.log(`🎯 DEBUG: Checking split ${this.submissionCount}, previous blocks: ${previousBlocks.length}, previous special blocks: ${previousSpecialBlocks.length}, wasLastSplitSpecialPattern: ${wasLastSplitSpecialPattern}`);
-            
-            // Debug: Log all blocks and their submissionIndex
-            console.log(`🎯 DEBUG: All blocks:`, this.blocks.map(block => ({
-              id: block.id,
-              submissionIndex: block.submissionIndex,
-              patternType: block.patternType,
-              hasPattern: block.id.includes('_pattern_')
-            })));
-            
-            // Debug: Log previous blocks in detail
             if (previousBlocks.length > 0) {
               console.log(`🎯 DEBUG: Previous blocks detail:`, previousBlocks.map(block => ({
                 id: block.id,
@@ -2473,29 +2455,23 @@ try {
               
               if (wasFirstSplitSpecialPattern) {
                 shouldCreateSpecialPattern = false;
-                console.log(`🎯 NO CONSECUTIVE SPECIAL: First split was special pattern, second split must be regular (new rule)`);
               } else {
                 // Rule 1: 50% chance for splits 1-6
                 shouldCreateSpecialPattern = Math.random() < 0.50;
-                console.log(`🎯 SPLIT 2: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (50% chance, rule 1)`);
               }
             } else if (wasLastSplitSpecialPattern) {
               // Rule 3: No back-to-back special patterns
               shouldCreateSpecialPattern = false;
-              console.log(`🎯 NO BACK-TO-BACK: Previous split was special pattern (rule 3)`);
             } else {
               // Rule 1: 50% chance for splits 1-6
               shouldCreateSpecialPattern = Math.random() < 0.50;
-              console.log(`🎯 SPLITS 1-6: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (50% chance, rule 1)`);
             }
           } else {
             // After split 6: 25% chance
             shouldCreateSpecialPattern = Math.random() < 0.25;
-            console.log(`🎯 AFTER SPLIT 6: ${shouldCreateSpecialPattern ? 'Creating' : 'Not creating'} special pattern (25% chance)`);
           }
           
           if (shouldCreateSpecialPattern) {
-            console.log(`🎯 NEW PATTERN: Creating new special pattern`);
             
             // For special patterns, only consider regular blocks and find the most CONTRASTING color
             const colorContrastScores = regularBlocks.map(block => {
@@ -3029,13 +3005,6 @@ try {
             }
             
             // Ensure minimum positive dimensions to prevent SVG errors
-            
-            // Debug: check if colorIndex and colorPalette are valid
-            if (colorIndex === undefined || colorIndex < 0 || colorIndex >= colorPalette.length) {
-              console.error(`🎯 CHECKERBOARD ERROR: Invalid colorIndex ${colorIndex} for palette length ${colorPalette.length}`);
-              console.error('Color palette:', colorPalette);
-              console.error('Row:', row, 'Col:', col, 'isLight:', isLight);
-            }
             
             const cell = {
               id: block.id + '_pattern_checkerboard_' + cellIndex,
