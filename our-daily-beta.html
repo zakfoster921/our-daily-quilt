@@ -7922,6 +7922,7 @@ try {
                 </div>
                 <div class="quote-actions">
                   <button onclick="app.editQuoteForDay(${index})" class="edit-btn">Edit</button>
+                  <button onclick="app.skipQuoteForDay(${index})" class="skip-btn">Skip</button>
                   <button onclick="app.deleteQuoteForDay(${index})" class="delete-btn">Delete</button>
                   <button onclick="app.swapWithPrevious(${index})" class="swap-btn" ${index === 0 ? 'disabled' : ''}>↑</button>
                   <button onclick="app.swapWithNext(${index})" class="swap-btn" ${index === 6 ? 'disabled' : ''}>↓</button>
@@ -7941,6 +7942,7 @@ try {
                 </div>
                 <div class="quote-actions">
                   <button onclick="app.editQuoteForDay(${index})" class="edit-btn">Edit</button>
+                  <button onclick="app.skipQuoteForDay(${index})" class="skip-btn">Skip</button>
                   <button onclick="app.deleteQuoteForDay(${index})" class="delete-btn">Delete</button>
                   <button onclick="app.swapWithPrevious(${index})" class="swap-btn" ${index === 0 ? 'disabled' : ''}>↑</button>
                   <button onclick="app.swapWithNext(${index})" class="swap-btn" ${index === 6 ? 'disabled' : ''}>↓</button>
@@ -8062,6 +8064,7 @@ try {
             transform: none;
           }
           .edit-btn { color: #0066cc; }
+          .skip-btn { color: #ff8800; }
           .delete-btn { color: #cc0000; }
           .swap-btn { color: #666; }
           .save-btn { background: #2196F3; color: white; padding: 8px 16px; }
@@ -8193,6 +8196,33 @@ try {
           }
           
           this.uiService.showToast(`Quote deleted. New quote will appear for ${dayData.dayName}.`);
+          this.showQuoteManager(); // Refresh the manager
+        }
+      }
+
+      // Skip quote for a specific day (keeps quote in array but assigns new one for that day)
+      skipQuoteForDay(dayIndex) {
+        const next7Days = this.getNext7DaysQuotes();
+        const dayData = next7Days[dayIndex];
+        const quote = dayData.quote;
+        
+        console.log(`⏭️ Skip request for dayIndex ${dayIndex}:`, {
+          dayName: dayData.dayName,
+          quote: quote,
+          originalIndex: dayData.originalIndex
+        });
+        
+        if (confirm(`Are you sure you want to skip this quote for ${dayData.dayName}?\n\n"${quote.text}"\n${quote.author}\n\nThis will keep the quote in your collection but assign a different quote for ${dayData.dayName}.`)) {
+          // Don't remove the quote from the array - just regenerate shuffled indexes
+          // This will assign a new quote to this day while keeping the original quote available for other days
+          this.quoteService.regenerateShuffledIndexes();
+          
+          // If we skipped today's quote, refresh the quote display on the quilt screen
+          if (dayData.dayName === 'Today') {
+            this.quoteService.displayQuote();
+          }
+          
+          this.uiService.showToast(`Quote skipped for ${dayData.dayName}. New quote assigned.`);
           this.showQuoteManager(); // Refresh the manager
         }
       }
