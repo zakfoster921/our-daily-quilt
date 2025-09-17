@@ -8354,13 +8354,13 @@ try {
           const dayIndex = Math.floor(futureDate.getTime() / (1000 * 60 * 60 * 24));
           const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
           
-          // Safety check: if quoteIndex is out of bounds, regenerate shuffled indexes
+          // Safety check: if quoteIndex is out of bounds, use a fallback index
           let finalQuoteIndex = quoteIndex;
           if (quoteIndex >= this.quoteService.quotes.length) {
-            console.warn(`⚠️ QuoteIndex ${quoteIndex} out of bounds for ${this.quoteService.quotes.length} quotes. Regenerating shuffled indexes.`);
-            this.quoteService.regenerateShuffledIndexes();
-            finalQuoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
-            console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${finalQuoteIndex} (regenerated), quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}`);
+            console.warn(`⚠️ QuoteIndex ${quoteIndex} out of bounds for ${this.quoteService.quotes.length} quotes. Using fallback index.`);
+            // Use modulo to get a valid index instead of regenerating the entire array
+            finalQuoteIndex = quoteIndex % this.quoteService.quotes.length;
+            console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${finalQuoteIndex} (fallback), quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}`);
           } else {
             console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}`);
           }
