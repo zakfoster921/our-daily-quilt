@@ -8326,14 +8326,22 @@ try {
       // Get today and next 7 days of quotes (8 days total)
       getNext7DaysQuotes() {
         const next7Days = [];
-        const today = new Date();
+        const now = new Date();
         
-        console.log(`🔍 getNext7DaysQuotes - Today: ${today.toDateString()}`);
+        // Use the same date calculation logic as getTodayQuote() for consistency
+        const utcHours = now.getUTCHours();
+        const adjustedToday = new Date(now);
+        if (utcHours < 7) {
+          // Before 7 AM UTC, use yesterday's date
+          adjustedToday.setUTCDate(adjustedToday.getUTCDate() - 1);
+        }
+        
+        console.log(`🔍 getNext7DaysQuotes - Raw Today: ${now.toDateString()}, Adjusted Today: ${adjustedToday.toDateString()}`);
         console.log(`🔍 Current quotes array length: ${this.quoteService.quotes.length}`);
         
         for (let i = 0; i <= 7; i++) { // Start from today (i=0) to include today's quote
-          const futureDate = new Date(today);
-          futureDate.setDate(today.getDate() + i);
+          const futureDate = new Date(adjustedToday);
+          futureDate.setDate(adjustedToday.getDate() + i);
           
           const year = futureDate.getFullYear();
           const month = String(futureDate.getMonth() + 1).padStart(2, '0');
