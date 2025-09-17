@@ -9912,11 +9912,17 @@ try {
       applyColorArrangement(arrangement, strategy) {
         // Apply the arrangement by swapping colors between blocks
         // This preserves the grid structure while creating the desired pattern
+        // IMPORTANT: Special patterns are completely excluded from color changes
         
         const { popularBlocks, otherBlocks } = arrangement;
         
         // Create a copy of all shufflable blocks for color swapping
-        const allShufflableBlocks = [...popularBlocks, ...otherBlocks];
+        // Only include blocks that are NOT special patterns
+        const allShufflableBlocks = [...popularBlocks, ...otherBlocks].filter(block => 
+          !block.patternType || block.patternType !== 'special'
+        );
+        
+        console.log(`🎨 Color shuffling: ${allShufflableBlocks.length} blocks (special patterns excluded from color changes)`);
         
         // Shuffle the colors
         const shuffledColors = allShufflableBlocks.map(block => block.color);
@@ -9925,50 +9931,43 @@ try {
         // Apply the shuffled colors to create the arrangement
         let colorIndex = 0;
         
+        // Apply colors only to non-special pattern blocks
+        const applyColorToBlock = (block) => {
+          // Only change colors of non-special pattern blocks
+          if (!block.patternType || block.patternType !== 'special') {
+            if (colorIndex < shuffledColors.length) {
+              block.color = shuffledColors[colorIndex];
+              colorIndex++;
+            }
+          }
+        };
+        
         // First, apply colors to popular blocks in their new arrangement
         if (strategy === 'column' && arrangement.columnPositions) {
           for (let i = 0; i < popularBlocks.length; i++) {
-            if (colorIndex < shuffledColors.length) {
-              popularBlocks[i].color = shuffledColors[colorIndex];
-              colorIndex++;
-            }
+            applyColorToBlock(popularBlocks[i]);
           }
         } else if (strategy === 'single_block' && arrangement.blockPositions) {
           for (let i = 0; i < popularBlocks.length; i++) {
-            if (colorIndex < shuffledColors.length) {
-              popularBlocks[i].color = shuffledColors[colorIndex];
-              colorIndex++;
-            }
+            applyColorToBlock(popularBlocks[i]);
           }
         } else if (strategy === 'multiple_clusters' && arrangement.clusterPositions) {
           for (let i = 0; i < popularBlocks.length; i++) {
-            if (colorIndex < shuffledColors.length) {
-              popularBlocks[i].color = shuffledColors[colorIndex];
-              colorIndex++;
-            }
+            applyColorToBlock(popularBlocks[i]);
           }
         } else if (strategy === 'frame' && arrangement.framePositions) {
           for (let i = 0; i < popularBlocks.length; i++) {
-            if (colorIndex < shuffledColors.length) {
-              popularBlocks[i].color = shuffledColors[colorIndex];
-              colorIndex++;
-            }
+            applyColorToBlock(popularBlocks[i]);
           }
         } else if (strategy === 'scattered' && arrangement.scatteredPositions) {
           for (let i = 0; i < popularBlocks.length; i++) {
-            if (colorIndex < shuffledColors.length) {
-              popularBlocks[i].color = shuffledColors[colorIndex];
-              colorIndex++;
-            }
+            applyColorToBlock(popularBlocks[i]);
           }
         }
         
         // Apply remaining colors to other blocks
         for (let i = 0; i < otherBlocks.length; i++) {
-          if (colorIndex < shuffledColors.length) {
-            otherBlocks[i].color = shuffledColors[colorIndex];
-            colorIndex++;
-          }
+          applyColorToBlock(otherBlocks[i]);
         }
         
         this.logger.log(`🎨 Applied color arrangement: ${strategy} with ${popularBlocks.length} popular blocks and ${otherBlocks.length} other blocks`);
