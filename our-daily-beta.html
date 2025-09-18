@@ -3075,10 +3075,24 @@ try {
       createOrganicStripes(block, newColor) {
         // Create organic stripes pattern with variable column/row widths
         // Stripes can be either horizontal or vertical based on block aspect ratio
-        // Uses tonal variants for richer color palette
+        // Enhanced with alternating pattern and subtle variation
         
-        // Generate 3-color palette with tonal variants for organic stripes
-        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
+        // Create alternating stripes with subtle variation
+        // Colors: original block color + user color + lighter variation of user color
+        const originalColor = block.color;
+        const userColor = newColor;
+        
+        // Create a lighter variation of the user color (same as checkerboard)
+        const userHsl = this.hexToHsl(userColor);
+        const lighterUserHsl = {
+          h: userHsl.h, // Same hue
+          s: Math.max(10, userHsl.s - 11), // Slightly less saturated
+          l: Math.min(90, userHsl.l + 11) // 11% lighter
+        };
+        const lighterUserColor = Utils.hslToHex(lighterUserHsl.h, lighterUserHsl.s, lighterUserHsl.l);
+        
+        // Color palette: [originalColor, userColor, lighterUserColor]
+        const colorPalette = [originalColor, userColor, lighterUserColor];
         
         const minBlockSize = 20;
         const blockArea = block.width * block.height;
@@ -3106,7 +3120,7 @@ try {
         numStripes = Math.min(numStripes, 4);
         
         const cells = [];
-        // Use tonal variants from the 4-color palette for richer stripes
+        const userColorStripes = []; // Track which stripes use user color for replacement
         
         if (stripeOrientation === 'horizontal') {
           // Create horizontal stripes with variable heights
@@ -3119,7 +3133,16 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            const colorIndex = Math.floor(Math.random() * 3); // Random organic distribution
+            // Alternating pattern: even indices = original, odd indices = user color
+            const useOriginalColor = i % 2 === 0;
+            let colorIndex;
+            
+            if (useOriginalColor) {
+              colorIndex = 0; // Original color
+            } else {
+              colorIndex = 1; // User color - we'll replace one of these later
+              userColorStripes.push(i);
+            }
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(block.width, stripeHeights[i]));
@@ -3161,7 +3184,16 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            const colorIndex = Math.floor(Math.random() * 3); // Random organic distribution
+            // Alternating pattern: even indices = original, odd indices = user color
+            const useOriginalColor = i % 2 === 0;
+            let colorIndex;
+            
+            if (useOriginalColor) {
+              colorIndex = 0; // Original color
+            } else {
+              colorIndex = 1; // User color - we'll replace one of these later
+              userColorStripes.push(i);
+            }
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(stripeWidths[i], block.height));
@@ -3192,6 +3224,20 @@ try {
             
             cells.push(cell);
           }
+        }
+        
+        // After all stripes are created, replace exactly 1 user color stripe with lighter variation
+        // This preserves the alternating pattern while adding subtle variation
+        if (userColorStripes.length >= 1) {
+          // Randomly select 1 user color stripe to replace with lighter variation
+          const stripeToReplace = userColorStripes[Math.floor(Math.random() * userColorStripes.length)];
+          
+          const stripe = cells.find(c => c.id.endsWith('_' + stripeToReplace));
+          if (stripe) {
+            stripe.color = colorPalette[2]; // Use lighter user color (index 2)
+          }
+          
+          console.log(`🎨 STRIPES: Replaced 1 user color stripe with lighter variation for subtle pattern variation`);
         }
         
         return cells;
