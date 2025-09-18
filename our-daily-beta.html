@@ -2855,32 +2855,24 @@ try {
         // Create a dynamic organic checkerboard pattern (2x2, 3x3, or 4x4 based on block size)
         // Each square will have slightly irregular edges to maintain the hand-cut vibe
         // Grid size: 4x4 for very large blocks (250px+), 3x3 for medium (100px+), 2x2 for small (50px+)
-        // Uses tonal variants for richer color palette
+        // Enhanced with subtle variation: 2 alternating colors + lighter variation of user color
         
-        // Generate 3-color palette with proper light/dark alternation
-        // Create a third color that matches the lightness of one of the original colors
-        const basePalette = this.generateColorPalette(block.color, newColor, 2);
+        // Create a 2-color checkerboard with subtle variation
+        // Colors: original block color + user color + lighter variation of user color
+        const originalColor = block.color;
+        const userColor = newColor;
         
-        // Get HSL values of the two base colors
-        const hsl1 = this.hexToHsl(basePalette[0]);
-        const hsl2 = this.hexToHsl(basePalette[1]);
-        
-        // Create a third color that has the same lightness as the lighter of the two colors
-        // but with a different hue to add variety while maintaining the light/dark pattern
-        const lighterColor = hsl1.l > hsl2.l ? basePalette[0] : basePalette[1];
-        const lighterHsl = this.hexToHsl(lighterColor);
-        
-        // Create a third color with same lightness but shifted hue
-        const thirdHsl = {
-          h: (lighterHsl.h + 60) % 360, // Shift hue by 60 degrees
-          s: Math.max(20, lighterHsl.s - 10), // Slightly less saturated
-          l: lighterHsl.l // Same lightness
+        // Create a lighter variation of the user color
+        const userHsl = this.hexToHsl(userColor);
+        const lighterUserHsl = {
+          h: userHsl.h, // Same hue
+          s: Math.max(10, userHsl.s - 15), // Slightly less saturated
+          l: Math.min(90, userHsl.l + 15) // 15% lighter
         };
+        const lighterUserColor = Utils.hslToHex(lighterUserHsl.h, lighterUserHsl.s, lighterUserHsl.l);
         
-        const thirdColor = Utils.hslToHex(thirdHsl.h, thirdHsl.s, thirdHsl.l);
-        
-        // Arrange colors so we have: [light, dark, light] or [dark, light, dark]
-        const colorPalette = [basePalette[0], basePalette[1], thirdColor];
+        // Color palette: [originalColor, userColor, lighterUserColor]
+        const colorPalette = [originalColor, userColor, lighterUserColor];
         
         const minBlockSize = 20; // Further reduced minimum size to allow smaller checkerboards
         const blockArea = block.width * block.height;
@@ -2948,55 +2940,25 @@ try {
           rowPositions.push(rowPositions[i] + rowHeights[i]);
         }
         
+        // Track which cells will get the user color vs original color for replacement logic
+        const userColorCells = [];
+        const totalCells = gridSize * gridSize;
+        
         for (let row = 0; row < gridSize; row++) {
           for (let col = 0; col < gridSize; col++) {
             const cellIndex = row * gridSize + col;
-            // Proper checkerboard pattern: alternate between light and dark values
-            // Use (row + col) % 2 to determine if this should be light or dark
-            const isLight = (row + col) % 2 === 0;
+            // Proper checkerboard pattern: alternate between original and user colors
+            // Use (row + col) % 2 to determine alternation
+            const useOriginalColor = (row + col) % 2 === 0;
             
-            // Choose color based on lightness value
             let colorIndex;
-            if (isLight) {
-              // Use the lighter color (or the third color which has same lightness as lighter)
-              const hsl1 = this.hexToHsl(colorPalette[0]);
-              const hsl2 = this.hexToHsl(colorPalette[1]);
-              const hsl3 = this.hexToHsl(colorPalette[2]);
-              
-              // Find which colors are light and randomly choose between them
-              const lightColors = [];
-              if (hsl1.l > 50) lightColors.push(0);
-              if (hsl2.l > 50) lightColors.push(1);
-              if (hsl3.l > 50) lightColors.push(2);
-              
-              // Fallback: if no light colors, use the lightest available
-              if (lightColors.length === 0) {
-                const lightnesses = [hsl1.l, hsl2.l, hsl3.l];
-                const lightestIndex = lightnesses.indexOf(Math.max(...lightnesses));
-                colorIndex = lightestIndex;
-              } else {
-                colorIndex = lightColors[Math.floor(Math.random() * lightColors.length)];
-              }
+            if (useOriginalColor) {
+              // Use original block color (index 0)
+              colorIndex = 0;
             } else {
-              // Use the darker color
-              const hsl1 = this.hexToHsl(colorPalette[0]);
-              const hsl2 = this.hexToHsl(colorPalette[1]);
-              const hsl3 = this.hexToHsl(colorPalette[2]);
-              
-              // Find which colors are dark and randomly choose between them
-              const darkColors = [];
-              if (hsl1.l <= 50) darkColors.push(0);
-              if (hsl2.l <= 50) darkColors.push(1);
-              if (hsl3.l <= 50) darkColors.push(2);
-              
-              // Fallback: if no dark colors, use the darkest available
-              if (darkColors.length === 0) {
-                const lightnesses = [hsl1.l, hsl2.l, hsl3.l];
-                const darkestIndex = lightnesses.indexOf(Math.min(...lightnesses));
-                colorIndex = darkestIndex;
-              } else {
-                colorIndex = darkColors[Math.floor(Math.random() * darkColors.length)];
-              }
+              // Use user color (index 1) - we'll replace some of these later
+              colorIndex = 1;
+              userColorCells.push(cellIndex);
             }
             
             // Use variable dimensions for this cell
@@ -3064,6 +3026,23 @@ try {
             
             cells.push(cell);
           }
+        }
+        
+        // After all cells are created, replace exactly 2 user color cells with lighter variation
+        // This preserves the checkerboard structure while adding subtle variation
+        if (userColorCells.length >= 2) {
+          // Randomly select 2 user color cells to replace with lighter variation
+          const shuffledUserCells = [...userColorCells].sort(() => Math.random() - 0.5);
+          const cellsToReplace = shuffledUserCells.slice(0, 2);
+          
+          cellsToReplace.forEach(cellIndex => {
+            const cell = cells.find(c => c.id.endsWith('_' + cellIndex));
+            if (cell) {
+              cell.color = colorPalette[2]; // Use lighter user color (index 2)
+            }
+          });
+          
+          console.log(`🎨 CHECKERBOARD: Replaced 2 user color cells with lighter variation for subtle pattern variation`);
         }
         
         console.log(`🔧 CHECKERBOARD: Created ${cells.length} cells for block ${block.id}`);
