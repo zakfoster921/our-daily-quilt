@@ -186,6 +186,8 @@ try {
         );
         pointer-events: none;
         z-index: 2;
+        transform: translate3d(0, var(--quilt-overlay-shift, 0px), 0);
+        will-change: transform;
       }
     
     /* Base SVG styling - will be overridden by media queries */
@@ -205,6 +207,8 @@ try {
       visibility: visible;
       opacity: 1;
       z-index: 1;
+      transform: translate3d(0, var(--quilt-base-shift, 0px), 0);
+      will-change: transform;
     }
 
 
@@ -1914,7 +1918,7 @@ try {
         </div>
         
         <div class="button-group">
-          <!-- <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button> -->                                                                                  
+          <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
           <button class="btn" data-next="screen-about" aria-label="About this project">About ODQ</button>
         </div>
         
@@ -2399,7 +2403,7 @@ try {
           // Check if new color is very similar to any special pattern colors
           const hasSimilarColor = specialPatternBlocks.some(block => {
             const similarity = this.getColorSimilarity(block.color, newColor);
-            return similarity > 0.93; // STRICT similar (93%+ similar) - OKLab-based pattern preservation threshold
+            return similarity > 0.88; // Strict similar (88%+ similar) - OKLab-based pattern preservation threshold
           });
           
           if (hasSimilarColor) {
@@ -2421,7 +2425,7 @@ try {
         
         if (!selectedBlock) {
           // Special rules for pattern creation:
-          // 1) Likelihood for splits 1-6 = 50%
+          // 1) Likelihood for splits 1-6 = 65%
           // 2) No two back-to-back special patterns
           // 3) After split 6, use 25% chance
           // 4) NEW: Reserve minimum 30% of blocks as regular (prevent all-special quilt)
@@ -2450,7 +2454,7 @@ try {
           if (specialPatternsCreated >= maxSpecialPatterns) {
             shouldCreateSpecialPattern = false;
           } else if (this.submissionCount >= 1 && this.submissionCount <= 6) {
-            // Rule 2: Splits 2-6 have 50% chance
+            // Rule 2: Splits 2-6 have 65% chance
             // Rule 3: Check if previous split was special pattern
             // Special pattern blocks are created with the current submissionIndex, so we need to check for blocks
             // that were created in the previous submission (submissionIndex === this.submissionCount - 1)
@@ -2484,15 +2488,15 @@ try {
               if (wasFirstSplitSpecialPattern) {
                 shouldCreateSpecialPattern = false;
               } else {
-                // Rule 1: 50% chance for splits 1-6
-                shouldCreateSpecialPattern = Math.random() < 0.50;
+                // Rule 1: 65% chance for splits 1-6
+                shouldCreateSpecialPattern = Math.random() < 0.65;
               }
             } else if (wasLastSplitSpecialPattern) {
               // Rule 3: No back-to-back special patterns
               shouldCreateSpecialPattern = false;
             } else {
-              // Rule 1: 50% chance for splits 1-6
-              shouldCreateSpecialPattern = Math.random() < 0.50;
+              // Rule 1: 65% chance for splits 1-6
+              shouldCreateSpecialPattern = Math.random() < 0.65;
             }
           } else {
             // After split 6: 25% chance
@@ -2726,7 +2730,7 @@ try {
         if (isSpecialPatternBlock) {
           // For existing special pattern blocks, require VERY SIMILAR colors to preserve pattern
           const colorSimilarity = this.getColorSimilarity(block.color, newColor);
-          if (colorSimilarity > 0.93) {
+          if (colorSimilarity > 0.88) {
             console.log(`🎯 NO NESTED PATTERNS: Special pattern block ${block.id} has similar color (${colorSimilarity.toFixed(3)}) - using regular split to prevent nested patterns`);
             return this.performRegularSplit(block, newColor);
           }
@@ -6391,6 +6395,18 @@ try {
         this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
         this.colorHasBeenSelected = false;
         this.isDragging = false;
+
+        // Subtle scroll parallax state for quilt screen
+        this.parallaxEnabled = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        this.parallaxBaseRate = 0.06;
+        this.parallaxOverlayMultiplier = 1.5;
+        this.parallaxMaxShift = 12;
+        this.parallaxSmoothing = 0.08;
+        this.parallaxCurrentShift = 0;
+        this.parallaxTargetShift = 0;
+        this.parallaxTicking = false;
+        this.parallaxAnchorScrollTop = 0;
+        this.parallaxScrollListener = null;
       }
       
       
@@ -6671,6 +6687,9 @@ try {
         
         // Archive event handlers
         this.setupArchiveEventHandlers();
+
+        // Subtle quilt parallax setup
+        this.setupQuiltParallax();
         
         // Setup long-press admin access on title
         this.setupLongPressAdminAccess();
@@ -6883,6 +6902,98 @@ try {
             this.renderQuilt();
           }
         }, 250); // 250ms debounce
+      }
+
+      setupQuiltParallax() {
+        if (!this.parallaxEnabled) return;
+
+        const app = document.getElementById('app');
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
+        this.parallaxScrollListener = this.handleParallaxScroll.bind(this);
+
+        // Listen on likely scroll containers for consistency across devices/layouts
+        window.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        if (app) {
+          app.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        }
+        if (quiltScreen) {
+          quiltScreen.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        }
+        if (quiltButtonPanel) {
+          quiltButtonPanel.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        }
+
+        // Update parallax anchor/target on screen changes
+        document.addEventListener('screenChange', (e) => {
+          if (e.detail.screenId === 'screen-quilt') {
+            this.parallaxAnchorScrollTop = this.getCurrentQuiltScrollPosition();
+            this.parallaxTargetShift = 0;
+            this.handleParallaxScroll();
+          } else {
+            this.parallaxTargetShift = 0;
+            this.requestParallaxFrame();
+          }
+        });
+      }
+
+      getCurrentQuiltScrollPosition() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
+        const app = document.getElementById('app');
+
+        // Prefer quilt-specific scroll containers first (most reliable on mobile).
+        const quiltScreenScroll = quiltScreen ? quiltScreen.scrollTop : 0;
+        const quiltPanelScroll = quiltButtonPanel ? quiltButtonPanel.scrollTop : 0;
+        const appScroll = app ? app.scrollTop : 0;
+        const windowScroll = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+
+        return quiltScreenScroll + quiltPanelScroll + appScroll + windowScroll;
+      }
+
+      handleParallaxScroll() {
+        if (!this.parallaxEnabled) return;
+
+        const quiltScreen = document.getElementById('screen-quilt');
+        const isQuiltActive = quiltScreen && quiltScreen.classList.contains('active');
+
+        if (!isQuiltActive) {
+          this.parallaxTargetShift = 0;
+          this.requestParallaxFrame();
+          return;
+        }
+
+        const scrollDelta = this.getCurrentQuiltScrollPosition() - this.parallaxAnchorScrollTop;
+        const rawShift = scrollDelta * this.parallaxBaseRate;
+        this.parallaxTargetShift = Math.max(-this.parallaxMaxShift, Math.min(this.parallaxMaxShift, rawShift));
+        this.requestParallaxFrame();
+      }
+
+      requestParallaxFrame() {
+        if (this.parallaxTicking) return;
+        this.parallaxTicking = true;
+        requestAnimationFrame(() => this.applyQuiltParallaxFrame());
+      }
+
+      applyQuiltParallaxFrame() {
+        this.parallaxCurrentShift += (this.parallaxTargetShift - this.parallaxCurrentShift) * this.parallaxSmoothing;
+
+        // Snap to target near rest to avoid infinite tiny updates
+        if (Math.abs(this.parallaxTargetShift - this.parallaxCurrentShift) < 0.01) {
+          this.parallaxCurrentShift = this.parallaxTargetShift;
+        }
+
+        const baseShift = this.parallaxCurrentShift.toFixed(3);
+        const overlayShift = (this.parallaxCurrentShift * this.parallaxOverlayMultiplier).toFixed(3);
+
+        document.documentElement.style.setProperty('--quilt-base-shift', `${baseShift}px`);
+        document.documentElement.style.setProperty('--quilt-overlay-shift', `${overlayShift}px`);
+
+        if (Math.abs(this.parallaxTargetShift - this.parallaxCurrentShift) > 0.01) {
+          requestAnimationFrame(() => this.applyQuiltParallaxFrame());
+        } else {
+          this.parallaxTicking = false;
+        }
       }
 
 
@@ -8803,7 +8914,9 @@ try {
         const currentBlockCount = this.quiltEngine ? this.quiltEngine.blocks.length : 0;
         
         return `
-          📊 Current Blocks: ${currentBlockCount}
+          📊 Current Blocks: ${currentBlockCount}<br>
+          ⏰ Archive: 6:30 AM UTC | Reset: 7:00 AM UTC<br>
+          📸 Instagram upload is handled by Zapier before reset
         `;
       }
 
@@ -9301,42 +9414,309 @@ try {
             throw new Error('Quilt SVG not found');
           }
 
-          const canvas = await html2canvas(quiltSVG, {
-            backgroundColor: '#f6f4f1',
-            scale: 2,
-            useCORS: true,
-            allowTaint: true
+          // Export the rendered SVG at higher resolution for crisp edges in sharing.
+          const highResBlob = await new Promise((resolve, reject) => {
+            try {
+              const svgClone = quiltSVG.cloneNode(true);
+              svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+              const viewBox = (quiltSVG.getAttribute('viewBox') || '').trim();
+              let sourceWidth = 1080;
+              let sourceHeight = 1080;
+              if (viewBox) {
+                const parts = viewBox.split(/\s+/).map(Number);
+                if (parts.length === 4 && parts.every(Number.isFinite)) {
+                  sourceWidth = Math.max(1, parts[2]);
+                  sourceHeight = Math.max(1, parts[3]);
+                }
+              } else {
+                const rect = quiltSVG.getBoundingClientRect();
+                sourceWidth = Math.max(1, Math.round(rect.width));
+                sourceHeight = Math.max(1, Math.round(rect.height));
+              }
+
+              const maxEdge = 2400;
+              const aspect = sourceWidth / sourceHeight;
+              let outW;
+              let outH;
+              if (aspect >= 1) {
+                outW = maxEdge;
+                outH = Math.round(maxEdge / aspect);
+              } else {
+                outH = maxEdge;
+                outW = Math.round(maxEdge * aspect);
+              }
+
+              svgClone.removeAttribute('style');
+              svgClone.setAttribute('width', String(outW));
+              svgClone.setAttribute('height', String(outH));
+
+              const svgData = new XMLSerializer().serializeToString(svgClone);
+              const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+              const svgUrl = URL.createObjectURL(svgBlob);
+
+              const img = new Image();
+              img.onload = () => {
+                try {
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  canvas.width = outW;
+                  canvas.height = outH;
+                  ctx.fillStyle = '#f6f4f1';
+                  ctx.fillRect(0, 0, outW, outH);
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = 'high';
+                  const iw = Math.max(1, img.naturalWidth || outW);
+                  const ih = Math.max(1, img.naturalHeight || outH);
+                  const scale = Math.min(outW / iw, outH / ih);
+                  const dw = Math.round(iw * scale);
+                  const dh = Math.round(ih * scale);
+                  const ox = Math.floor((outW - dw) / 2);
+                  const oy = Math.floor((outH - dh) / 2);
+                  ctx.drawImage(img, 0, 0, iw, ih, ox, oy, dw, dh);
+                  canvas.toBlob((blob) => {
+                    URL.revokeObjectURL(svgUrl);
+                    if (!blob) {
+                      reject(new Error('Could not convert canvas to blob'));
+                      return;
+                    }
+                    resolve(blob);
+                  }, 'image/png');
+                } catch (drawError) {
+                  URL.revokeObjectURL(svgUrl);
+                  reject(drawError);
+                }
+              };
+              img.onerror = () => {
+                URL.revokeObjectURL(svgUrl);
+                reject(new Error('Failed to render SVG for sharing'));
+              };
+              img.src = svgUrl;
+            } catch (err) {
+              reject(err);
+            }
           });
 
-          canvas.toBlob(async (blob) => {
-            try {
-              const shareData = {
-                title: 'Our Daily Quilt',
-                text: `Check out today's community quilt with ${this.quiltEngine.submissionCount} contributors!`,
-                files: [new File([blob], 'quilt.png', { type: 'image/png' })]
-              };
+          if (!highResBlob) {
+            throw new Error('Failed to generate rendered share image');
+          }
 
-              if (navigator.share && navigator.canShare(shareData)) {
-                await navigator.share(shareData);
-                this.uiService.showToast('Shared successfully!');
-              } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `quilt-${new Date().toISOString().split('T')[0]}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+          // Composite quilt + today's quote onto Instagram Story aspect (9:16, 1080×1920).
+          const storyBlob = await new Promise((resolve, reject) => {
+            const STORY_W = 1080;
+            const STORY_H = 1920;
+            const padX = 48;
+            const padY = 40;
+            const topImagePad = 52;
+            const quiltRegionH = Math.round(STORY_H * 0.62);
+            const quoteTop = quiltRegionH + 40;
+            // Match portal `.title-line` sizing: clamp(2.5rem, 5vw, 3.5rem) and clamp(4.5rem, 8vw, 8rem) at story width.
+            const vw = STORY_W;
+            const TITLE_SCALE = 1.2;
+            const portalTitleLine1Px = Math.round(
+              Math.min(56, Math.max(40, Math.round(vw * 0.05))) * TITLE_SCALE
+            );
+            const portalTitleLine2Px = Math.round(
+              Math.min(128, Math.max(72, Math.round(vw * 0.08))) * TITLE_SCALE
+            );
+            const titleAreaH = Math.round(
+              portalTitleLine1Px + portalTitleLine2Px * 1.05 - 6 + 20
+            );
+            const QUOTE_LINE_LEAD = 1.4 * 0.8;
+            const gapTitleQuilt = 18;
+            const quiltSlotTop = topImagePad + titleAreaH + gapTitleQuilt;
+            const gapQuiltQuote = 32;
+            // Quilt slot height from quiltRegionH (taller slot gives portrait quilts more vertical room).
+            const quiltSlotH = Math.max(160, quoteTop - quiltSlotTop - gapQuiltQuote);
+
+            const quoteObj = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+            const quoteText = (quoteObj.text || '').trim();
+            const quoteAuthor = (quoteObj.author || '').trim();
+
+            const loadQuiltImage = () => new Promise((res, rej) => {
+              const url = URL.createObjectURL(highResBlob);
+              const im = new Image();
+              im.onload = () => {
                 URL.revokeObjectURL(url);
-                
-                this.uiService.showToast('Quilt downloaded!');
-              }
-            } catch (error) {
-              this.logger.error('Share failed:', error);
-              this.uiService.showToast('Share failed. Please try again.');
-            }
-          }, 'image/png', 0.9);
+                res(im);
+              };
+              im.onerror = () => {
+                URL.revokeObjectURL(url);
+                rej(new Error('Failed to load quilt image for story composite'));
+              };
+              im.src = url;
+            });
 
+            const FONT_BODY = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+            const FONT_AUTHOR = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+            const wrapLines = (ctx, text, maxWidth) => {
+              const breakLongWord = (word) => {
+                const out = [];
+                let piece = '';
+                for (const ch of word) {
+                  const next = piece + ch;
+                  if (ctx.measureText(next).width <= maxWidth || piece === '') piece = next;
+                  else {
+                    out.push(piece);
+                    piece = ch;
+                  }
+                }
+                if (piece) out.push(piece);
+                return out;
+              };
+              const words = text.split(/\s+/).filter(Boolean);
+              const lines = [];
+              let line = '';
+              for (const word of words) {
+                const test = line ? `${line} ${word}` : word;
+                if (ctx.measureText(test).width <= maxWidth) {
+                  line = test;
+                } else {
+                  if (line) lines.push(line);
+                  if (ctx.measureText(word).width <= maxWidth) {
+                    line = word;
+                  } else {
+                    const chunks = breakLongWord(word);
+                    for (let c = 0; c < chunks.length - 1; c++) lines.push(chunks[c]);
+                    line = chunks[chunks.length - 1] || '';
+                  }
+                }
+              }
+              if (line) lines.push(line);
+              return lines;
+            };
+
+            loadQuiltImage()
+              .then((quiltImg) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = STORY_W;
+                canvas.height = STORY_H;
+                ctx.fillStyle = '#f6f4f1';
+                ctx.fillRect(0, 0, STORY_W, STORY_H);
+
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = '#000';
+                try {
+                  ctx.letterSpacing = `${Math.round(portalTitleLine1Px * 0.02)}px`;
+                } catch (e) { /* older canvas */ }
+                ctx.font = `500 ${portalTitleLine1Px}px ${FONT_BODY}`;
+                let titleY = topImagePad + 12;
+                ctx.fillText('OUR DAILY', STORY_W / 2, titleY);
+                titleY += portalTitleLine1Px * 0.92 - 8;
+                try {
+                  ctx.letterSpacing = `${Math.round(portalTitleLine2Px * 0.05)}px`;
+                } catch (e) { /* older canvas */ }
+                ctx.font = `900 ${portalTitleLine2Px}px ${FONT_BODY}`;
+                ctx.fillText('QUILT', STORY_W / 2, titleY);
+                try { ctx.letterSpacing = '0px'; } catch (e) { /* */ }
+
+                const slotW = STORY_W - padX * 2;
+                const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
+                const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
+                const scale = Math.min(slotW / iw, quiltSlotH / ih);
+                const dw = Math.round(iw * scale);
+                const dh = Math.round((ih / iw) * dw);
+                const qx = Math.round((STORY_W - dw) / 2);
+                const qy = Math.round(quiltSlotTop + (quiltSlotH - dh) / 2);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(quiltImg, qx, qy, dw, dh);
+
+                // Quote column: same width as rendered quilt bitmap.
+                const textMaxW = Math.max(120, dw);
+                const textX = qx;
+
+                let bodySize = 50;
+                let authorSize = 42;
+                const bodySizeMin = 32;
+                let bodyLines = [];
+                let authorLines = [];
+                if (quoteText) {
+                  for (let attempt = 0; attempt < 12; attempt++) {
+                    ctx.font = `italic 300 ${bodySize}px ${FONT_BODY}`;
+                    bodyLines = wrapLines(ctx, quoteText, textMaxW);
+                    let authorH = 0;
+                    if (quoteAuthor) {
+                      ctx.font = `italic 300 ${authorSize}px ${FONT_AUTHOR}`;
+                      authorLines = wrapLines(ctx, `— ${quoteAuthor}`, textMaxW);
+                      authorH = authorLines.length * (authorSize * QUOTE_LINE_LEAD) + (bodyLines.length ? 16 : 0);
+                    }
+                    const lineH = bodySize * QUOTE_LINE_LEAD;
+                    const needed = quoteTop + bodyLines.length * lineH + authorH + padY;
+                    if (needed <= STORY_H - 24 || bodySize <= bodySizeMin) break;
+                    bodySize -= 2;
+                    authorSize = Math.max(34, Math.round(bodySize * 0.86));
+                  }
+                } else if (quoteAuthor) {
+                  ctx.font = `italic 300 ${authorSize}px ${FONT_AUTHOR}`;
+                  authorLines = wrapLines(ctx, `— ${quoteAuthor}`, textMaxW);
+                }
+
+                const lineHeight = bodySize * QUOTE_LINE_LEAD;
+                const textRightX = textX + textMaxW;
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = '#000';
+                ctx.font = `italic 300 ${bodySize}px ${FONT_BODY}`;
+                let ty = quoteTop;
+                bodyLines.forEach((ln) => {
+                  ctx.fillText(ln, textX, ty);
+                  ty += lineHeight;
+                });
+
+                if (authorLines.length) {
+                  ty += bodyLines.length ? 16 : 0;
+                  ctx.fillStyle = '#333';
+                  ctx.font = `italic 300 ${authorSize}px ${FONT_AUTHOR}`;
+                  const authorLineH = authorSize * QUOTE_LINE_LEAD;
+                  ctx.textAlign = 'right';
+                  authorLines.forEach((ln) => {
+                    ctx.fillText(ln, textRightX, ty);
+                    ty += authorLineH;
+                  });
+                  ctx.textAlign = 'left';
+                }
+
+                canvas.toBlob((blob) => {
+                  if (!blob) {
+                    reject(new Error('Could not create story image blob'));
+                    return;
+                  }
+                  resolve(blob);
+                }, 'image/png', 0.95);
+              })
+              .catch(reject);
+          });
+
+          const filename = `our-daily-quilt-${new Date().toISOString().split('T')[0]}.png`;
+          const imageFile = new File([storyBlob], filename, { type: 'image/png' });
+
+          const shareData = {
+            title: 'Our Daily Quilt',
+            text: `Check out today's community quilt with ${this.quiltEngine.submissionCount} contributors!`,
+            files: [imageFile]
+          };
+
+          const canShareFiles = typeof navigator.canShare === 'function' && navigator.canShare(shareData);
+          if (navigator.share && canShareFiles) {
+            await navigator.share(shareData);
+            this.uiService.showToast('Shared successfully!');
+            return;
+          }
+
+          // Fallback for browsers that don't support file sharing.
+          const url = URL.createObjectURL(storyBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          this.uiService.showToast('Quilt downloaded!');
         } catch (error) {
           this.errorHandler.handleError(error, 'shareFlow');
         }
