@@ -903,8 +903,8 @@ try {
 
     /* Experimental alternate IG story (layout B); production share is #shareBtnCompleted only. */
     .share-story-experimental {
-      margin-top: -3rem;
-      margin-bottom: 1.25rem;
+      margin-top: 0;
+      margin-bottom: 1rem;
     }
     .share-story-experimental .btn {
       font-size: clamp(0.72rem, 2.4vw, 0.88rem);
@@ -1922,6 +1922,10 @@ try {
         <div class="square-counter">
           <span class="counter-label">Building today's quilt together: <span class="counter-number" id="squareCounter">1</span></span>
         </div>
+
+        <div class="button-group share-story-experimental">
+          <button type="button" id="shareStoryExperimentalBtn" class="btn" aria-label="Try alternate Instagram story image layout (experimental)">Story image · layout B (try)</button>
+        </div>
         
         <div class="button-group">
           <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="View on Instagram">View on Instagram</button>                                              
@@ -1931,10 +1935,6 @@ try {
         <div class="button-group">
           <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
           <button class="btn" data-next="screen-about" aria-label="About this project">About ODQ</button>
-        </div>
-
-        <div class="button-group share-story-experimental">
-          <button type="button" id="shareStoryExperimentalBtn" class="btn" aria-label="Try alternate Instagram story image layout (experimental)">Story image · layout B (try)</button>
         </div>
         
       </div>
@@ -5286,6 +5286,19 @@ try {
       }
 
       getTodayQuote() {
+        // Local layout-B tests only: 'short' | 'long' | null. Set null before commit (default).
+        const FORCE_QUOTE_FOR_LAYOUT_TEST = 'short';
+        if (FORCE_QUOTE_FOR_LAYOUT_TEST === 'short') {
+          return { text: 'Creativity takes courage.', author: 'Henri Matisse' };
+        }
+        if (FORCE_QUOTE_FOR_LAYOUT_TEST === 'long') {
+          return {
+            text:
+              'The true measure of our commitment to justice, the character of our society, our commitment to the rule of law, fairness, and equality cannot be measured by how we treat the rich, the powerful, the privileged, and the respected among us.',
+            author: 'Bryan Stevenson',
+          };
+        }
+
         // Use UTC time for day calculation - quote changes at 7:00 AM UTC
         const now = new Date();
         
@@ -9849,10 +9862,6 @@ try {
             const PAPER_FILL = '#f3eee4';
             const FONT_SERIF = 'Georgia, "Times New Roman", Times, serif';
 
-            const quoteObj = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
-            const quoteText = (quoteObj.text || '').trim();
-            const quoteAuthor = (quoteObj.author || '').trim();
-
             const dateKey = new Date().toISOString().split('T')[0];
             let rngSeed = 2166136261;
             for (let i = 0; i < dateKey.length; i++) {
@@ -9871,22 +9880,131 @@ try {
               if (!t) return [];
               const out = [];
               const maxLen = 52;
+              const wordCount = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+
+              /** Biased toward mid-range but varies strip length (same seed → same breaks per day). */
+              const phraseTarget = () => {
+                const a = rnd();
+                const b = rnd();
+                if (a < 0.22) return Math.round(28 + b * 12);
+                if (a < 0.45) return Math.round(40 + b * 14);
+                if (a < 0.78) return Math.round(48 + b * 12);
+                return Math.round(54 + b * 10);
+              };
+
               const pushChunk = (s) => {
                 let rest = s.trim();
                 if (!rest) return;
                 while (rest.length > maxLen) {
-                  let cut = rest.lastIndexOf(' ', maxLen);
-                  if (cut < 16) cut = maxLen;
+                  const sliceHi = Math.max(30, Math.min(maxLen, phraseTarget()));
+                  let cut = rest.lastIndexOf(' ', sliceHi);
+                  if (cut < 14) {
+                    cut = rest.indexOf(' ', 14);
+                    if (cut === -1) cut = Math.min(sliceHi, rest.length - 1);
+                  }
                   out.push(rest.slice(0, cut).trim());
                   rest = rest.slice(cut).trim();
                 }
                 if (rest) out.push(rest);
               };
-              const blocks = t.split(/(?:[.!?]+\s+|;)/);
-              for (const b of blocks) {
-                const p = b.trim();
-                if (p) pushChunk(p);
+
+              const splitFlat = (chunks, regex) =>
+                chunks.flatMap((c) => {
+                  const bits = c.split(regex).map((x) => x.trim()).filter(Boolean);
+                  return bits.length > 1 ? bits : [c];
+                });
+
+              /**
+               * When there is no comma/semicolon, split at clause-like boundaries
+               * (subordinators, relatives, then guarded coordinators) near target width.
+               */
+              const tryConceptualSplit = (chunk, target) => {
+                if (chunk.length <= maxLen) return null;
+                const minI = Math.max(12, Math.floor(target * 0.26));
+                const maxI = Math.min(chunk.length - 12, Math.ceil(target * 1.38));
+                const patterns = [
+                  { re: /\s+(?:because|although|though|unless|until|whether|whenever|wherever)\s+/gi, coord: false },
+                  { re: /\s+(?:when|where|while|before|after|since)\s+/gi, coord: false },
+                  { re: /\s+(?:which|who|whom|whose)\s+/gi, coord: false },
+                  { re: /\s+(?:and|but|or|nor|yet)\s+/gi, coord: true },
+                ];
+                const candidates = [];
+                for (const { re, coord } of patterns) {
+                  re.lastIndex = 0;
+                  let m;
+                  while ((m = re.exec(chunk)) !== null) {
+                    const idx = m.index;
+                    if (idx < minI || idx > maxI) continue;
+                    const left = chunk.slice(0, idx).trim();
+                    const right = chunk.slice(idx).trim();
+                    if (left.length < 10 || right.length < 10) continue;
+                    if (coord && (wordCount(left) < 3 || wordCount(right) < 3)) continue;
+                    const dist = Math.abs(idx - target);
+                    const jitter = rnd() * 14;
+                    candidates.push({ idx, score: dist + jitter });
+                  }
+                }
+                if (!candidates.length) return null;
+                candidates.sort((a, b) => a.score - b.score);
+                const best = candidates[0].score;
+                const pool = candidates.filter((c) => c.score <= best + 16 + rnd() * 10);
+                const pick = pool[Math.floor(rnd() * pool.length)];
+                return [chunk.slice(0, pick.idx).trim(), chunk.slice(pick.idx).trim()];
+              };
+
+              /** Prefer end-of-sentence units, then lighter pauses inside each. */
+              const sentences =
+                t.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((s) => s.trim()).filter(Boolean) || [t];
+
+              for (const sentence of sentences) {
+                let chunks = [sentence];
+                chunks = splitFlat(chunks, /\s*;\s+/);
+                chunks = splitFlat(chunks, /\s+[—–]\s+/);
+                chunks = splitFlat(chunks, /:\s+/);
+                chunks = splitFlat(
+                  chunks,
+                  /,\s+(?=(?:and|but|or|nor|yet|so|because|although|though|while|if|as|when|where|which|who|that)\b)/i
+                );
+                chunks = splitFlat(chunks, /,\s+(?:then|so|yet|still|instead)\s+/i);
+
+                for (let chunk of chunks) {
+                  chunk = chunk.trim();
+                  if (!chunk) continue;
+                  while (chunk.length > maxLen) {
+                    const target = phraseTarget();
+                    const commaScanEnd = Math.min(chunk.length - 1, Math.max(24, target));
+                    let cut = -1;
+                    for (let i = commaScanEnd; i > 12; i--) {
+                      if (chunk[i] === ',') {
+                        cut = i;
+                        break;
+                      }
+                    }
+                    if (cut === -1) {
+                      for (let i = commaScanEnd; i > 12; i--) {
+                        if (chunk[i] === ';') {
+                          cut = i;
+                          break;
+                        }
+                      }
+                    }
+                    if (cut > 0) {
+                      out.push(chunk.slice(0, cut).trim());
+                      chunk = chunk.slice(cut + 1).trim();
+                      continue;
+                    }
+                    const conceptual = tryConceptualSplit(chunk, target);
+                    if (conceptual) {
+                      out.push(conceptual[0]);
+                      chunk = conceptual[1];
+                      continue;
+                    }
+                    break;
+                  }
+                  pushChunk(chunk);
+                }
               }
+
               return out.length ? out : [t];
             };
 
@@ -9941,15 +10059,22 @@ try {
               return lines;
             };
 
-            const drawPaperStrip = (g, cx, cy, w, h, angle, fillPaper) => {
+            const drawPaperStrip = (g, cx, cy, w, h, angle, fillPaper, stripVariant = 'light') => {
               g.save();
               g.translate(cx, cy);
               g.rotate(angle);
               g.fillStyle = fillPaper;
-              g.shadowColor = 'rgba(0,0,0,0.3)';
-              g.shadowBlur = 14;
-              g.shadowOffsetX = 4;
-              g.shadowOffsetY = 6;
+              if (stripVariant === 'dark') {
+                g.shadowColor = 'rgba(0,0,0,0.55)';
+                g.shadowBlur = 18;
+                g.shadowOffsetX = 4;
+                g.shadowOffsetY = 7;
+              } else {
+                g.shadowColor = 'rgba(0,0,0,0.3)';
+                g.shadowBlur = 14;
+                g.shadowOffsetX = 4;
+                g.shadowOffsetY = 6;
+              }
               g.beginPath();
               if (typeof g.roundRect === 'function') {
                 g.roundRect(-w / 2, -h / 2, w, h, 6);
@@ -9966,6 +10091,66 @@ try {
 
             loadQuiltImage()
               .then((quiltImg) => {
+                const quoteObj = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+                const quoteText = String(quoteObj.text ?? quoteObj.body ?? '').trim();
+                const quoteAuthor = String(quoteObj.author ?? '').trim();
+                const quoteWordCount = quoteText ? (quoteText.match(/\S+/g) || []).length : 0;
+                const isShortQuoteLayout = quoteWordCount > 0 && quoteWordCount <= 8;
+
+                /**
+                 * ≤8 words, ≤130 chars: prefer real pauses (; em-dash), then commas,
+                 * then a light coordinator split, then fixed word chunks so we still
+                 * get several strips instead of one wide line (incl. 3-word quotes → 2+1).
+                 */
+                const segmentShortQuoteForLayout = (normalized) => {
+                  const wc = (s) => (String(s).trim() ? String(s).trim().split(/\s+/).length : 0);
+                  const tokens = normalized.match(/\S+/g) || [];
+                  const n = tokens.length;
+                  let segs = [];
+
+                  if (/\s+[—–]\s+/.test(normalized) || /;\s+/.test(normalized)) {
+                    segs = splitIntoPhraseSegments(normalized);
+                  } else {
+                    segs = [normalized];
+                  }
+
+                  if (segs.length === 1) {
+                    const single = segs[0];
+                    if (/,/.test(single)) {
+                      const parts = single.split(/\s*,\s*/).map((s) => s.trim()).filter(Boolean);
+                      if (parts.length > 1) segs = parts;
+                    }
+                  }
+
+                  if (segs.length === 1 && n >= 4) {
+                    const single = segs[0];
+                    const m = single.match(/^(.+?)\s+\b(and|but|or|nor|yet)\s+(.+)$/i);
+                    if (m && wc(m[1]) >= 2 && wc(m[3]) >= 1) {
+                      segs = [m[1].trim(), `${m[2]} ${m[3]}`.trim()];
+                    }
+                  }
+
+                  if (segs.length === 1 && n >= 3) {
+                    const per = n <= 5 ? 2 : 3;
+                    const out = [];
+                    for (let i = 0; i < tokens.length; i += per) {
+                      out.push(tokens.slice(i, i + per).join(' '));
+                    }
+                    if (out.length > 1) segs = out;
+                  }
+
+                  return segs.length ? segs : [normalized];
+                };
+
+                const segmentQuoteForLayout = (text) => {
+                  const normalized = text.replace(/\s+/g, ' ').trim();
+                  if (!normalized) return [];
+                  if (isShortQuoteLayout && normalized.length <= 130) {
+                    return segmentShortQuoteForLayout(normalized);
+                  }
+                  return splitIntoPhraseSegments(normalized);
+                };
+
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 canvas.width = STORY_W;
@@ -9987,9 +10172,13 @@ try {
                 ctx.fillRect(0, 0, STORY_W, STORY_H);
 
                 const innerMaxW = STRIP_MAX_W - PAPER_PAD_X * 2;
-                const QUOTE_AUTHOR_GAP = 64;
+                const layoutQuoteAuthorGap = isShortQuoteLayout ? 78 : 64;
                 let titlePx = Math.round(44 * 1.25);
                 let bodyPx = Math.round(38 * 1.25);
+                if (isShortQuoteLayout) {
+                  titlePx += 6;
+                  bodyPx += 18;
+                }
                 const titleSecondBump = Math.round(8 * 1.25);
                 /** @type {{ lines: string[], font: string, lh: number, w: number, h: number, role: string }[]} */
                 let stripSpecs = [];
@@ -10007,7 +10196,7 @@ try {
                     specs.push({ lines, font, lh, w, h, role });
                   };
 
-                  const segments = splitIntoPhraseSegments(quoteText);
+                  const segments = segmentQuoteForLayout(quoteText);
                   const bodyFont = `400 ${bodyPx}px ${FONT_SERIF}`;
                   ctx.font = bodyFont;
                   for (const seg of segments) {
@@ -10029,11 +10218,11 @@ try {
                 };
 
                 const stackHeight = (specs) => {
-                  let y = STORY_H * 0.12;
+                  let y = STORY_H * (isShortQuoteLayout ? 0.09 : 0.12);
                   for (let i = 0; i < specs.length; i++) {
                     y += specs[i].h + 14;
                     if (i > 0 && specs[i].role === 'author' && specs[i - 1].role === 'quote') {
-                      y += QUOTE_AUTHOR_GAP;
+                      y += layoutQuoteAuthorGap;
                     }
                   }
                   return y;
@@ -10055,14 +10244,40 @@ try {
                   return Math.max(minCx, Math.min(maxCx, cx));
                 };
 
-                const drawStripContent = (spec, cx, cy, jitterA) => {
-                  drawPaperStrip(ctx, cx, cy, spec.w, spec.h, jitterA, PAPER_FILL);
+                /** Short quotes: keep quote strips near center with light jitter. */
+                const shortQuoteStripCenterX = (spec) => {
+                  const minCx = spec.w / 2 + stripEdgeMargin;
+                  const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+                  const cx = STORY_W / 2 + (rnd() - 0.5) * 76;
+                  return Math.max(minCx, Math.min(maxCx, cx));
+                };
+
+                /** Author strips stay entirely in the right half of the story (9:16). */
+                const authorStripCenterX = (spec) => {
+                  const minCx = STORY_W / 2 + spec.w / 2 + stripEdgeMargin;
+                  const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+                  if (minCx >= maxCx) {
+                    return Math.max(
+                      spec.w / 2 + stripEdgeMargin,
+                      Math.min(STORY_W - spec.w / 2 - stripEdgeMargin, STORY_W * 0.75)
+                    );
+                  }
+                  return minCx + rnd() * (maxCx - minCx);
+                };
+
+                const TITLE_STRIP_BG = '#0d0d0c';
+                const TITLE_STRIP_TEXT = '#f3eee4';
+
+                const drawStripContent = (spec, cx, cy, jitterA, stripVariant = 'light') => {
+                  const paper = stripVariant === 'dark' ? TITLE_STRIP_BG : PAPER_FILL;
+                  const ink = stripVariant === 'dark' ? TITLE_STRIP_TEXT : '#0a0a0a';
+                  drawPaperStrip(ctx, cx, cy, spec.w, spec.h, jitterA, paper, stripVariant);
                   ctx.save();
                   ctx.translate(cx, cy);
                   ctx.rotate(jitterA);
                   ctx.textAlign = 'center';
                   ctx.textBaseline = 'middle';
-                  ctx.fillStyle = '#0a0a0a';
+                  ctx.fillStyle = ink;
                   ctx.font = spec.font;
                   const totalTextH = (spec.lines.length - 1) * spec.lh;
                   let ty = -totalTextH / 2;
@@ -10080,15 +10295,18 @@ try {
                   bodyPx -= 2;
                 }
 
-                let cursorY = STORY_H * 0.12;
+                let cursorY = STORY_H * (isShortQuoteLayout ? 0.09 : 0.12);
                 for (let i = 0; i < stripSpecs.length; i++) {
                   if (i > 0 && stripSpecs[i].role === 'author' && stripSpecs[i - 1].role === 'quote') {
-                    cursorY += QUOTE_AUTHOR_GAP;
+                    cursorY += layoutQuoteAuthorGap;
                   }
                   const spec = stripSpecs[i];
                   const gap = 11 + rnd() * 12;
                   const jitterA = (rnd() - 0.5) * 0.055;
-                  const cx = staggerStripCenterX(spec);
+                  let cx;
+                  if (spec.role === 'author') cx = authorStripCenterX(spec);
+                  else if (spec.role === 'quote' && isShortQuoteLayout) cx = shortQuoteStripCenterX(spec);
+                  else cx = staggerStripCenterX(spec);
                   const cy = cursorY + spec.h / 2;
                   cursorY += spec.h + gap;
                   drawStripContent(spec, cx, cy, jitterA);
@@ -10121,8 +10339,8 @@ try {
                 const cxQuilt = cxTitle - quiltSpec.w / 2;
                 const cyDaily = cyQuilt - quiltSpec.h / 2 - titleStripGap - dailySpec.h / 2;
                 const cxDaily = cxTitle - dailySpec.w / 2;
-                drawStripContent(dailySpec, cxDaily, cyDaily, (rnd() - 0.5) * 0.045);
-                drawStripContent(quiltSpec, cxQuilt, cyQuilt, (rnd() - 0.5) * 0.045);
+                drawStripContent(dailySpec, cxDaily, cyDaily, (rnd() - 0.5) * 0.045, 'dark');
+                drawStripContent(quiltSpec, cxQuilt, cyQuilt, (rnd() - 0.5) * 0.045, 'dark');
 
                 canvas.toBlob((blob) => {
                   if (!blob) {
