@@ -353,6 +353,7 @@ try {
       font-weight: 500; 
       line-height: 1.4;
       text-align: center;
+      color: #404040;
     }
     
     .quote-author { 
@@ -361,6 +362,7 @@ try {
       font-style: italic;
       margin-top: 1rem;
       text-align: center;
+      color: #404040;
     }
 
     /* Left-justify long quotes (more than 2 lines) */
@@ -782,7 +784,7 @@ try {
       font-weight: 300;
       margin: 0 0 8px 0;
       line-height: 1.4;
-      color: #000;
+      color: #404040;
       text-align: left;
     }
     
@@ -791,7 +793,7 @@ try {
       font-weight: 300;
       font-style: italic;
       margin: 0;
-      color: #333;
+      color: #404040;
       text-align: left;
     }
     
@@ -4379,7 +4381,7 @@ try {
             const STRIP_MAX_W = STORY_W - (isPostLayout ? 52 : 100);
             const PAPER_PAD_X = 26;
             const PAPER_PAD_Y = 15;
-            const PAPER_FILL = '#f3eee4';
+            const PAPER_FILL = '#ebe8e3';
             const FONT_SERIF = 'Georgia, "Times New Roman", Times, serif';
 
             const rngDateKey = dateKey || new Date().toISOString().split('T')[0];
@@ -4592,33 +4594,150 @@ try {
               return lines;
             };
 
+            const makeStripPaperTextureTile = (variant) => {
+              const sz = 96;
+              const tc = document.createElement('canvas');
+              tc.width = tc.height = sz;
+              const tx = tc.getContext('2d');
+              const img = tx.createImageData(sz, sz);
+              const d = img.data;
+              for (let i = 0; i < d.length; i += 4) {
+                const grain = (rnd() - 0.5) * 68;
+                const speck = rnd() < 0.102 ? (rnd() - 0.5) * 46 : 0;
+                if (variant === 'dark') {
+                  const v = Math.max(24, Math.min(112, 58 + grain * 0.95 + speck));
+                  d[i] = v;
+                  d[i + 1] = Math.max(22, Math.min(110, v - 3 + rnd() * 9));
+                  d[i + 2] = Math.max(20, Math.min(108, v - 5 + rnd() * 9));
+                } else {
+                  /* Correlated luminance + warm split (R>G>B) so multiply/overlay never reads icy. */
+                  const lum = 228 + grain * 0.98 + speck * 0.88;
+                  d[i] = Math.max(160, Math.min(255, lum + 7));
+                  d[i + 1] = Math.max(162, Math.min(255, lum + 2));
+                  d[i + 2] = Math.max(148, Math.min(242, lum - 12));
+                }
+                d[i + 3] = 255;
+              }
+              tx.putImageData(img, 0, 0);
+              tx.globalCompositeOperation = 'soft-light';
+              for (let f = 0; f < 68; f++) {
+                tx.globalAlpha = 0.14 + rnd() * 0.29;
+                tx.strokeStyle = variant === 'dark' ? 'rgba(255,255,255,0.62)' : 'rgba(52,44,38,0.52)';
+                tx.lineWidth = 0.5 + rnd() * 1.45;
+                tx.beginPath();
+                const y0 = rnd() * sz;
+                tx.moveTo(-4, y0);
+                tx.bezierCurveTo(
+                  sz * 0.33,
+                  y0 + (rnd() - 0.5) * 11,
+                  sz * 0.66,
+                  y0 + (rnd() - 0.5) * 11,
+                  sz + 4,
+                  y0 + (rnd() - 0.5) * 9
+                );
+                tx.stroke();
+              }
+              tx.globalCompositeOperation = 'overlay';
+              for (let k = 0; k < 42; k++) {
+                tx.globalAlpha = 0.065 + rnd() * 0.125;
+                tx.fillStyle = variant === 'dark' ? 'rgba(0,0,0,0.92)' : 'rgba(72,58,48,0.72)';
+                tx.beginPath();
+                tx.arc(rnd() * sz, rnd() * sz, 0.5 + rnd() * 3.2, 0, Math.PI * 2);
+                tx.fill();
+              }
+              for (let s = 0; s < 32; s++) {
+                tx.globalAlpha = 0.082 + rnd() * 0.145;
+                tx.strokeStyle = variant === 'dark' ? 'rgba(200,195,180,0.58)' : 'rgba(42,36,32,0.45)';
+                tx.lineWidth = 0.22 + rnd() * 0.62;
+                tx.beginPath();
+                const x0 = rnd() * sz;
+                const y0 = rnd() * sz;
+                tx.moveTo(x0, y0);
+                tx.lineTo(x0 + (rnd() - 0.5) * 14, y0 + (rnd() - 0.5) * 14);
+                tx.stroke();
+              }
+              tx.globalAlpha = 1;
+              tx.globalCompositeOperation = 'source-over';
+              return tc;
+            };
+
+            const stripPaperTexLight = makeStripPaperTextureTile('light');
+            const stripPaperTexDark = makeStripPaperTextureTile('dark');
+
+            /** Hand-cut silhouette: jittered corners + wobbly edges (strip space, centered). */
+            const handCutStripPath = (ctx, sw, sh, rndFn) => {
+              const hw = sw / 2;
+              const hh = sh / 2;
+              const m = Math.min(sw, sh);
+              const maxSide = Math.max(sw, sh);
+              const cornerAmp = Math.min(5.2, Math.max(1.2, m * 0.038));
+              const edgeAmp = Math.min(3.6, Math.max(0.9, m * 0.028));
+              const corners = [
+                { x: -hw + (rndFn() - 0.5) * 2 * cornerAmp, y: -hh + (rndFn() - 0.5) * 2 * cornerAmp },
+                { x: hw + (rndFn() - 0.5) * 2 * cornerAmp, y: -hh + (rndFn() - 0.5) * 2 * cornerAmp },
+                { x: hw + (rndFn() - 0.5) * 2 * cornerAmp, y: hh + (rndFn() - 0.5) * 2 * cornerAmp },
+                { x: -hw + (rndFn() - 0.5) * 2 * cornerAmp, y: hh + (rndFn() - 0.5) * 2 * cornerAmp }
+              ];
+              ctx.beginPath();
+              ctx.moveTo(corners[0].x, corners[0].y);
+              for (let i = 0; i < 4; i++) {
+                const p0 = corners[i];
+                const p1 = corners[(i + 1) % 4];
+                const dx = p1.x - p0.x;
+                const dy = p1.y - p0.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const nx = -dy / len;
+                const ny = dx / len;
+                /* Short sides (typical strip ends): one wobble only; long sides keep 1–3 mid-edge points. */
+                const isShortEdge = len < maxSide * 0.58;
+                const div = isShortEdge ? 2 : 2 + Math.floor(rndFn() * 3);
+                for (let s = 1; s < div; s++) {
+                  const t = s / div;
+                  const wob = (rndFn() - 0.5) * 2 * edgeAmp;
+                  ctx.lineTo(p0.x + dx * t + nx * wob, p0.y + dy * t + ny * wob);
+                }
+                ctx.lineTo(p1.x, p1.y);
+              }
+              ctx.closePath();
+            };
+
             const drawPaperStrip = (g, cx, cy, w, h, angle, fillPaper, stripVariant = 'light') => {
+              const tex = stripVariant === 'dark' ? stripPaperTexDark : stripPaperTexLight;
+              const texPad = 16;
               g.save();
               g.translate(cx, cy);
               g.rotate(angle);
               g.fillStyle = fillPaper;
               if (stripVariant === 'dark') {
-                g.shadowColor = 'rgba(0,0,0,0.55)';
-                g.shadowBlur = 18;
-                g.shadowOffsetX = 4;
-                g.shadowOffsetY = 7;
+                g.shadowColor = 'rgba(0,0,0,0.22)';
+                g.shadowBlur = 16;
+                g.shadowOffsetX = 2;
+                g.shadowOffsetY = 3;
               } else {
-                g.shadowColor = 'rgba(0,0,0,0.3)';
+                g.shadowColor = 'rgba(0,0,0,0.12)';
                 g.shadowBlur = 14;
-                g.shadowOffsetX = 4;
-                g.shadowOffsetY = 6;
+                g.shadowOffsetX = 2;
+                g.shadowOffsetY = 2;
               }
-              g.beginPath();
-              if (typeof g.roundRect === 'function') {
-                g.roundRect(-w / 2, -h / 2, w, h, 6);
-              } else {
-                g.rect(-w / 2, -h / 2, w, h);
-              }
+              handCutStripPath(g, w, h, rnd);
               g.fill();
               g.shadowColor = 'transparent';
               g.shadowBlur = 0;
               g.shadowOffsetX = 0;
               g.shadowOffsetY = 0;
+              g.clip();
+              const pat = g.createPattern(tex, 'repeat');
+              g.globalAlpha = stripVariant === 'dark' ? 0.63 : 0.59;
+              g.globalCompositeOperation = 'multiply';
+              g.fillStyle = pat;
+              g.fillRect(-w / 2 - texPad, -h / 2 - texPad, w + texPad * 2, h + texPad * 2);
+              /* Light strips: soft-light avoids overlay’s cool/metallic cast on paper grain. */
+              g.globalCompositeOperation = stripVariant === 'dark' ? 'overlay' : 'soft-light';
+              g.globalAlpha = stripVariant === 'dark' ? 0.26 : 0.28;
+              g.fillStyle = pat;
+              g.fillRect(-w / 2 - texPad, -h / 2 - texPad, w + texPad * 2, h + texPad * 2);
+              g.globalCompositeOperation = 'source-over';
+              g.globalAlpha = 1;
               g.restore();
             };
 
@@ -4703,7 +4822,7 @@ try {
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(quiltImg, qx, qy, cw, ch);
-                ctx.fillStyle = isPostLayout ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.15)';
+                ctx.fillStyle = isPostLayout ? 'rgba(0,0,0,0.133)' : 'rgba(0,0,0,0.1)';
                 ctx.fillRect(0, 0, STORY_W, STORY_H);
 
                 const innerMaxW = STRIP_MAX_W - PAPER_PAD_X * 2;
@@ -4725,12 +4844,13 @@ try {
                   ? (isShortQuoteLayout ? 0.028 : 0.04)
                   : (isShortQuoteLayout ? 0.09 : 0.12);
                 const stackVertPad = isPostLayout ? 19 : 14;
-                /** @type {{ lines: string[], font: string, lh: number, w: number, h: number, role: string }[]} */
+                /** @type {{ lines: string[], font: string, lh: number, w: number, h: number, role: string, rowGroup?: number, rowSlot?: number }[]} */
                 let stripSpecs = [];
 
                 const buildStripSpecs = () => {
                   const specs = [];
-                  const measureStrip = (lines, font, lineLead, role) => {
+                  let nextRowPairGroup = 1;
+                  const measureStrip = (lines, font, lineLead, role, rowMeta = null) => {
                     ctx.font = font;
                     let tw = 0;
                     for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
@@ -4738,16 +4858,53 @@ try {
                     const lh = fs * lineLead;
                     const w = Math.min(STRIP_MAX_W, Math.ceil(tw + PAPER_PAD_X * 2));
                     const h = Math.ceil(lines.length * lh + PAPER_PAD_Y * 2);
-                    specs.push({ lines, font, lh, w, h, role });
+                    const o = { lines, font, lh, w, h, role };
+                    if (rowMeta) Object.assign(o, rowMeta);
+                    specs.push(o);
+                  };
+
+                  /** Two side-by-side strips for one wrapped line (hand-cut collage). */
+                  const tryPairQuoteLine = (ln, font, lineSalt) => {
+                    if (!ln) return null;
+                    const words = ln.trim().split(/\s+/).filter(Boolean);
+                    if (words.length < 3) return null;
+                    ctx.font = font;
+                    const fullW = ctx.measureText(ln).width;
+                    if (fullW < innerMaxW * 0.22 && words.length < 5) return null;
+                    const lim = innerMaxW + 10;
+                    let best = null;
+                    for (let k = 1; k <= words.length - 1; k++) {
+                      const left = words.slice(0, k).join(' ');
+                      const right = words.slice(k).join(' ');
+                      const wL = ctx.measureText(left).width;
+                      const wR = ctx.measureText(right).width;
+                      if (wL > lim || wR > lim) continue;
+                      if (wL < 14 || wR < 14) continue;
+                      const imbalance = Math.abs(wL - wR);
+                      if (!best || imbalance < best.imbalance) best = { left, right, imbalance };
+                    }
+                    if (!best) return null;
+                    const dch = rngDateKey.charCodeAt(lineSalt % rngDateKey.length);
+                    const pick =
+                      (((lineSalt * 1103515245 + 12345) ^ dch * 31) >>> 0) % 100 < 48;
+                    return pick ? [best.left, best.right] : null;
                   };
 
                   const segments = segmentQuoteForLayout(quoteText);
                   const bodyFont = `400 ${bodyPx}px ${FONT_SERIF}`;
                   ctx.font = bodyFont;
+                  let quoteLineSalt = 0;
                   for (const seg of segments) {
                     const lines = wrapLines(ctx, seg, innerMaxW);
                     for (const ln of lines) {
-                      measureStrip([ln], bodyFont, 1.38, 'quote');
+                      const pair = tryPairQuoteLine(ln, bodyFont, quoteLineSalt++);
+                      if (pair) {
+                        const gid = nextRowPairGroup++;
+                        measureStrip([pair[0]], bodyFont, 1.38, 'quote', { rowGroup: gid, rowSlot: 0 });
+                        measureStrip([pair[1]], bodyFont, 1.38, 'quote', { rowGroup: gid, rowSlot: 1 });
+                      } else {
+                        measureStrip([ln], bodyFont, 1.38, 'quote');
+                      }
                     }
                   }
                   if (quoteAuthor) {
@@ -4764,10 +4921,23 @@ try {
 
                 const stackContentSpan = (specs) => {
                   let h = 0;
-                  for (let i = 0; i < specs.length; i++) {
-                    h += specs[i].h + stackVertPad;
-                    if (i > 0 && specs[i].role === 'author' && specs[i - 1].role === 'quote') {
+                  let i = 0;
+                  while (i < specs.length) {
+                    const spec = specs[i];
+                    if (i > 0 && spec.role === 'author' && specs[i - 1].role === 'quote') {
                       h += layoutQuoteAuthorGap;
+                    }
+                    if (
+                      spec.rowGroup != null &&
+                      spec.rowSlot === 0 &&
+                      specs[i + 1]?.rowGroup === spec.rowGroup &&
+                      specs[i + 1].rowSlot === 1
+                    ) {
+                      h += Math.max(spec.h, specs[i + 1].h) + stackVertPad;
+                      i += 2;
+                    } else {
+                      h += spec.h + stackVertPad;
+                      i += 1;
                     }
                   }
                   return h;
@@ -4812,25 +4982,95 @@ try {
                   return minCx + rnd() * (maxCx - minCx);
                 };
 
-                const TITLE_STRIP_BG = '#0d0d0c';
+                const TITLE_STRIP_BG = '#0f0e0c';
                 const TITLE_STRIP_TEXT = '#f3eee4';
 
                 const drawStripContent = (spec, cx, cy, jitterA, stripVariant = 'light') => {
                   const paper = stripVariant === 'dark' ? TITLE_STRIP_BG : PAPER_FILL;
-                  const ink = stripVariant === 'dark' ? TITLE_STRIP_TEXT : '#0a0a0a';
+                  const ink = stripVariant === 'dark' ? TITLE_STRIP_TEXT : '#404040';
                   drawPaperStrip(ctx, cx, cy, spec.w, spec.h, jitterA, paper, stripVariant);
                   ctx.save();
                   ctx.translate(cx, cy);
                   ctx.rotate(jitterA);
                   ctx.textAlign = 'center';
                   ctx.textBaseline = 'middle';
-                  ctx.fillStyle = ink;
                   ctx.font = spec.font;
                   const totalTextH = (spec.lines.length - 1) * spec.lh;
                   let ty = -totalTextH / 2;
-                  for (const ln of spec.lines) {
-                    ctx.fillText(ln, 0, ty);
-                    ty += spec.lh;
+                  if (stripVariant === 'light') {
+                    /**
+                     * Printed-ink: multiply + stacked blurs + subpixel jitter; last pass is
+                     * light blur only so edges read a bit crisper than an all-soft stack.
+                     */
+                    const inkBody = '#5c544e';
+                    const inkBloom = '#8f857a';
+                    const inkHaze = '#a69a8e';
+                    const drawLinesAt = (ox, oy, drawTy) => {
+                      let t = drawTy;
+                      for (const ln of spec.lines) {
+                        ctx.fillText(ln, ox, t + oy);
+                        t += spec.lh;
+                      }
+                    };
+                    const startY = -totalTextH / 2;
+                    ctx.globalCompositeOperation = 'multiply';
+                    const setBlur = (px) => {
+                      try {
+                        ctx.filter = px > 0 ? `blur(${px}px)` : 'none';
+                      } catch (e) {
+                        /* no filter */
+                      }
+                    };
+                    const jitter = [
+                      [-0.55, 0],
+                      [0.55, 0],
+                      [0, -0.42],
+                      [0, 0.42],
+                      [-0.4, -0.34],
+                      [0.4, -0.34],
+                      [-0.4, 0.34],
+                      [0.4, 0.34],
+                    ];
+                    setBlur(0.82);
+                    ctx.fillStyle = inkHaze;
+                    ctx.globalAlpha = 0.15;
+                    for (const [jx, jy] of jitter) {
+                      drawLinesAt(jx, jy, startY);
+                    }
+                    ctx.fillStyle = inkBloom;
+                    ctx.globalAlpha = 0.34;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0.56);
+                    ctx.fillStyle = inkBloom;
+                    ctx.globalAlpha = 0.48;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0.34);
+                    ctx.fillStyle = inkBody;
+                    ctx.globalAlpha = 0.82;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0.2);
+                    ctx.fillStyle = inkBody;
+                    ctx.globalAlpha = 0.48;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0);
+                    ctx.globalAlpha = 1;
+                    ctx.globalCompositeOperation = 'source-over';
+                  } else {
+                    ctx.fillStyle = ink;
+                    try {
+                      ctx.filter = 'blur(0.28px)';
+                    } catch (e) {
+                      /* no filter */
+                    }
+                    for (const ln of spec.lines) {
+                      ctx.fillText(ln, 0, ty);
+                      ty += spec.lh;
+                    }
+                    try {
+                      ctx.filter = 'none';
+                    } catch (e) {
+                      /* no filter */
+                    }
                   }
                   ctx.restore();
                 };
@@ -4861,12 +5101,42 @@ try {
                   );
                 }
 
-                for (let i = 0; i < stripSpecs.length; i++) {
+                for (let i = 0; i < stripSpecs.length; ) {
                   if (i > 0 && stripSpecs[i].role === 'author' && stripSpecs[i - 1].role === 'quote') {
                     cursorY += layoutQuoteAuthorGap;
                   }
                   const spec = stripSpecs[i];
                   const gap = isPostLayout ? (15 + rnd() * 18) : (11 + rnd() * 12);
+                  if (
+                    spec.rowGroup != null &&
+                    spec.rowSlot === 0 &&
+                    stripSpecs[i + 1]?.rowGroup === spec.rowGroup &&
+                    stripSpecs[i + 1].rowSlot === 1
+                  ) {
+                    const a = spec;
+                    const b = stripSpecs[i + 1];
+                    const pairHGap = 8 + rnd() * 14;
+                    const totalWfix = a.w + pairHGap + b.w;
+                    const topOfRow = cursorY;
+                    const rowH = Math.max(a.h, b.h);
+                    const pseudo = { w: totalWfix, role: 'quote' };
+                    let rowCenterX;
+                    if (isShortQuoteLayout) rowCenterX = shortQuoteStripCenterX(pseudo);
+                    else rowCenterX = staggerStripCenterX(pseudo);
+                    const half = totalWfix / 2;
+                    const minC = stripEdgeMargin + half;
+                    const maxC = STORY_W - stripEdgeMargin - half;
+                    rowCenterX = Math.max(minC, Math.min(maxC, rowCenterX));
+                    const leftCx = rowCenterX - half + a.w / 2;
+                    const rightCx = rowCenterX - half + a.w + pairHGap + b.w / 2;
+                    const jitterA0 = (rnd() - 0.5) * 0.055;
+                    const jitterA1 = (rnd() - 0.5) * 0.055;
+                    drawStripContent(a, leftCx, topOfRow + a.h / 2, jitterA0);
+                    drawStripContent(b, rightCx, topOfRow + b.h / 2, jitterA1);
+                    cursorY = topOfRow + rowH + gap;
+                    i += 2;
+                    continue;
+                  }
                   const jitterA = (rnd() - 0.5) * 0.055;
                   let cx;
                   if (spec.role === 'author') cx = authorStripCenterX(spec);
@@ -4875,6 +5145,7 @@ try {
                   const cy = cursorY + spec.h / 2;
                   cursorY += spec.h + gap;
                   drawStripContent(spec, cx, cy, jitterA);
+                  i += 1;
                 }
 
                 if (!isPostLayout) {
@@ -10465,7 +10736,7 @@ try {
                 const textRightX = textX + textMaxW;
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'top';
-                ctx.fillStyle = '#000';
+                ctx.fillStyle = '#404040';
                 ctx.font = `italic 300 ${bodySize}px ${FONT_BODY}`;
                 let ty = quoteTop;
                 bodyLines.forEach((ln) => {
@@ -10475,7 +10746,7 @@ try {
 
                 if (authorLines.length) {
                   ty += bodyLines.length ? 16 : 0;
-                  ctx.fillStyle = '#333';
+                  ctx.fillStyle = '#404040';
                   ctx.font = `italic 300 ${authorSize}px ${FONT_AUTHOR}`;
                   const authorLineH = authorSize * QUOTE_LINE_LEAD;
                   ctx.textAlign = 'right';
