@@ -900,6 +900,17 @@ try {
     #shareBtnCompleted {
       margin-bottom: 4rem;
     }
+
+    /* Experimental alternate IG story (layout B); production share is #shareBtnCompleted only. */
+    .share-story-experimental {
+      margin-top: -3rem;
+      margin-bottom: 1.25rem;
+    }
+    .share-story-experimental .btn {
+      font-size: clamp(0.72rem, 2.4vw, 0.88rem);
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
     
     /* Default button hover - no color change */
     .btn:hover { 
@@ -1920,6 +1931,10 @@ try {
         <div class="button-group">
           <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
           <button class="btn" data-next="screen-about" aria-label="About this project">About ODQ</button>
+        </div>
+
+        <div class="button-group share-story-experimental">
+          <button type="button" id="shareStoryExperimentalBtn" class="btn" aria-label="Try alternate Instagram story image layout (experimental)">Story image · layout B (try)</button>
         </div>
         
       </div>
@@ -6659,6 +6674,11 @@ try {
           shareBtnCompleted.addEventListener('click', this.handleShare.bind(this));
         }
 
+        const shareStoryExperimentalBtn = document.getElementById('shareStoryExperimentalBtn');
+        if (shareStoryExperimentalBtn) {
+          shareStoryExperimentalBtn.addEventListener('click', this.handleShareStoryExperimental.bind(this));
+        }
+
         // Test buttons
         const showMyPieceBtn = document.getElementById('showMyPieceBtn');
         if (showMyPieceBtn) {
@@ -9722,6 +9742,429 @@ try {
         }
       }
 
+      /**
+       * Experimental second Instagram story layout. Edit this method freely.
+       * Production share output is unchanged: use handleShare() / "Share This Quilt".
+       */
+      async handleShareStoryExperimental() {
+        try {
+          const quiltSVG = document.getElementById('quilt');
+          if (!quiltSVG) {
+            throw new Error('Quilt SVG not found');
+          }
+
+          // Same high-res raster path as handleShare (duplicated so handleShare stays untouched).
+          const highResBlob = await new Promise((resolve, reject) => {
+            try {
+              const svgClone = quiltSVG.cloneNode(true);
+              svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+              const viewBox = (quiltSVG.getAttribute('viewBox') || '').trim();
+              let sourceWidth = 1080;
+              let sourceHeight = 1080;
+              if (viewBox) {
+                const parts = viewBox.split(/\s+/).map(Number);
+                if (parts.length === 4 && parts.every(Number.isFinite)) {
+                  sourceWidth = Math.max(1, parts[2]);
+                  sourceHeight = Math.max(1, parts[3]);
+                }
+              } else {
+                const rect = quiltSVG.getBoundingClientRect();
+                sourceWidth = Math.max(1, Math.round(rect.width));
+                sourceHeight = Math.max(1, Math.round(rect.height));
+              }
+
+              const maxEdge = 2400;
+              const aspect = sourceWidth / sourceHeight;
+              let outW;
+              let outH;
+              if (aspect >= 1) {
+                outW = maxEdge;
+                outH = Math.round(maxEdge / aspect);
+              } else {
+                outH = maxEdge;
+                outW = Math.round(maxEdge * aspect);
+              }
+
+              svgClone.removeAttribute('style');
+              svgClone.setAttribute('width', String(outW));
+              svgClone.setAttribute('height', String(outH));
+
+              const svgData = new XMLSerializer().serializeToString(svgClone);
+              const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+              const svgUrl = URL.createObjectURL(svgBlob);
+
+              const img = new Image();
+              img.onload = () => {
+                try {
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  canvas.width = outW;
+                  canvas.height = outH;
+                  ctx.fillStyle = '#f6f4f1';
+                  ctx.fillRect(0, 0, outW, outH);
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = 'high';
+                  const iw = Math.max(1, img.naturalWidth || outW);
+                  const ih = Math.max(1, img.naturalHeight || outH);
+                  const scale = Math.min(outW / iw, outH / ih);
+                  const dw = Math.round(iw * scale);
+                  const dh = Math.round(ih * scale);
+                  const ox = Math.floor((outW - dw) / 2);
+                  const oy = Math.floor((outH - dh) / 2);
+                  ctx.drawImage(img, 0, 0, iw, ih, ox, oy, dw, dh);
+                  canvas.toBlob((blob) => {
+                    URL.revokeObjectURL(svgUrl);
+                    if (!blob) {
+                      reject(new Error('Could not convert canvas to blob'));
+                      return;
+                    }
+                    resolve(blob);
+                  }, 'image/png');
+                } catch (drawError) {
+                  URL.revokeObjectURL(svgUrl);
+                  reject(drawError);
+                }
+              };
+              img.onerror = () => {
+                URL.revokeObjectURL(svgUrl);
+                reject(new Error('Failed to render SVG for sharing'));
+              };
+              img.src = svgUrl;
+            } catch (err) {
+              reject(err);
+            }
+          });
+
+          if (!highResBlob) {
+            throw new Error('Failed to generate rendered share image');
+          }
+
+          const storyBlob = await new Promise((resolve, reject) => {
+            const STORY_W = 1080;
+            const STORY_H = 1920;
+            const STRIP_MAX_W = STORY_W - 100;
+            const PAPER_PAD_X = 26;
+            const PAPER_PAD_Y = 15;
+            const PAPER_FILL = '#f3eee4';
+            const FONT_SERIF = 'Georgia, "Times New Roman", Times, serif';
+
+            const quoteObj = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+            const quoteText = (quoteObj.text || '').trim();
+            const quoteAuthor = (quoteObj.author || '').trim();
+
+            const dateKey = new Date().toISOString().split('T')[0];
+            let rngSeed = 2166136261;
+            for (let i = 0; i < dateKey.length; i++) {
+              rngSeed = Math.imul(rngSeed ^ dateKey.charCodeAt(i), 16777619);
+            }
+            const rnd = () => {
+              rngSeed |= 0;
+              rngSeed = (rngSeed + 0x6d2b79f5) | 0;
+              let t = Math.imul(rngSeed ^ (rngSeed >>> 15), 1 | rngSeed);
+              t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+              return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+
+            const splitIntoPhraseSegments = (text) => {
+              const t = text.replace(/\s+/g, ' ').trim();
+              if (!t) return [];
+              const out = [];
+              const maxLen = 52;
+              const pushChunk = (s) => {
+                let rest = s.trim();
+                if (!rest) return;
+                while (rest.length > maxLen) {
+                  let cut = rest.lastIndexOf(' ', maxLen);
+                  if (cut < 16) cut = maxLen;
+                  out.push(rest.slice(0, cut).trim());
+                  rest = rest.slice(cut).trim();
+                }
+                if (rest) out.push(rest);
+              };
+              const blocks = t.split(/(?:[.!?]+\s+|;)/);
+              for (const b of blocks) {
+                const p = b.trim();
+                if (p) pushChunk(p);
+              }
+              return out.length ? out : [t];
+            };
+
+            const loadQuiltImage = () => new Promise((res, rej) => {
+              const url = URL.createObjectURL(highResBlob);
+              const im = new Image();
+              im.onload = () => {
+                URL.revokeObjectURL(url);
+                res(im);
+              };
+              im.onerror = () => {
+                URL.revokeObjectURL(url);
+                rej(new Error('Failed to load quilt image for story composite'));
+              };
+              im.src = url;
+            });
+
+            const wrapLines = (c, text, maxWidth) => {
+              const breakLongWord = (word) => {
+                const out = [];
+                let piece = '';
+                for (const ch of word) {
+                  const next = piece + ch;
+                  if (c.measureText(next).width <= maxWidth || piece === '') piece = next;
+                  else {
+                    out.push(piece);
+                    piece = ch;
+                  }
+                }
+                if (piece) out.push(piece);
+                return out;
+              };
+              const words = text.split(/\s+/).filter(Boolean);
+              const lines = [];
+              let line = '';
+              for (const word of words) {
+                const test = line ? `${line} ${word}` : word;
+                if (c.measureText(test).width <= maxWidth) {
+                  line = test;
+                } else {
+                  if (line) lines.push(line);
+                  if (c.measureText(word).width <= maxWidth) {
+                    line = word;
+                  } else {
+                    const chunks = breakLongWord(word);
+                    for (let cc = 0; cc < chunks.length - 1; cc++) lines.push(chunks[cc]);
+                    line = chunks[chunks.length - 1] || '';
+                  }
+                }
+              }
+              if (line) lines.push(line);
+              return lines;
+            };
+
+            const drawPaperStrip = (g, cx, cy, w, h, angle, fillPaper) => {
+              g.save();
+              g.translate(cx, cy);
+              g.rotate(angle);
+              g.fillStyle = fillPaper;
+              g.shadowColor = 'rgba(0,0,0,0.3)';
+              g.shadowBlur = 14;
+              g.shadowOffsetX = 4;
+              g.shadowOffsetY = 6;
+              g.beginPath();
+              if (typeof g.roundRect === 'function') {
+                g.roundRect(-w / 2, -h / 2, w, h, 6);
+              } else {
+                g.rect(-w / 2, -h / 2, w, h);
+              }
+              g.fill();
+              g.shadowColor = 'transparent';
+              g.shadowBlur = 0;
+              g.shadowOffsetX = 0;
+              g.shadowOffsetY = 0;
+              g.restore();
+            };
+
+            loadQuiltImage()
+              .then((quiltImg) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = STORY_W;
+                canvas.height = STORY_H;
+
+                const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
+                const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
+                // Past true “cover” so the PNG’s light margin crops out; tweak if neutral still shows.
+                const COVER_ZOOM = 1.1;
+                const coverScale = Math.max(STORY_W / iw, STORY_H / ih) * COVER_ZOOM;
+                const cw = Math.round(iw * coverScale);
+                const ch = Math.round(ih * coverScale);
+                const qx = Math.round((STORY_W - cw) / 2);
+                const qy = Math.round((STORY_H - ch) / 2);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(quiltImg, qx, qy, cw, ch);
+                ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                ctx.fillRect(0, 0, STORY_W, STORY_H);
+
+                const innerMaxW = STRIP_MAX_W - PAPER_PAD_X * 2;
+                const QUOTE_AUTHOR_GAP = 64;
+                let titlePx = Math.round(44 * 1.25);
+                let bodyPx = Math.round(38 * 1.25);
+                const titleSecondBump = Math.round(8 * 1.25);
+                /** @type {{ lines: string[], font: string, lh: number, w: number, h: number, role: string }[]} */
+                let stripSpecs = [];
+
+                const buildStripSpecs = () => {
+                  const specs = [];
+                  const measureStrip = (lines, font, lineLead, role) => {
+                    ctx.font = font;
+                    let tw = 0;
+                    for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
+                    const fs = parseInt(/(\d+)px/.exec(font)[1], 10);
+                    const lh = fs * lineLead;
+                    const w = Math.min(STRIP_MAX_W, Math.ceil(tw + PAPER_PAD_X * 2));
+                    const h = Math.ceil(lines.length * lh + PAPER_PAD_Y * 2);
+                    specs.push({ lines, font, lh, w, h, role });
+                  };
+
+                  const segments = splitIntoPhraseSegments(quoteText);
+                  const bodyFont = `400 ${bodyPx}px ${FONT_SERIF}`;
+                  ctx.font = bodyFont;
+                  for (const seg of segments) {
+                    const lines = wrapLines(ctx, seg, innerMaxW);
+                    for (const ln of lines) {
+                      measureStrip([ln], bodyFont, 1.38, 'quote');
+                    }
+                  }
+                  if (quoteAuthor) {
+                    const authorFont = `italic 400 ${bodyPx}px ${FONT_SERIF}`;
+                    ctx.font = authorFont;
+                    const authorLines = wrapLines(ctx, quoteAuthor, innerMaxW);
+                    for (const ln of authorLines) {
+                      measureStrip([ln], authorFont, 1.38, 'author');
+                    }
+                  }
+
+                  return specs;
+                };
+
+                const stackHeight = (specs) => {
+                  let y = STORY_H * 0.12;
+                  for (let i = 0; i < specs.length; i++) {
+                    y += specs[i].h + 14;
+                    if (i > 0 && specs[i].role === 'author' && specs[i - 1].role === 'quote') {
+                      y += QUOTE_AUTHOR_GAP;
+                    }
+                  }
+                  return y;
+                };
+
+                const stripEdgeMargin = 40;
+                const staggerStripCenterX = (spec) => {
+                  const roll = rnd();
+                  const minCx = spec.w / 2 + stripEdgeMargin;
+                  const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+                  let cx;
+                  if (roll < 0.34) {
+                    cx = stripEdgeMargin + spec.w / 2 + rnd() * 95;
+                  } else if (roll < 0.67) {
+                    cx = STORY_W / 2 + (rnd() - 0.5) * (STORY_W * 0.3);
+                  } else {
+                    cx = STORY_W - stripEdgeMargin - spec.w / 2 - rnd() * 95;
+                  }
+                  return Math.max(minCx, Math.min(maxCx, cx));
+                };
+
+                const drawStripContent = (spec, cx, cy, jitterA) => {
+                  drawPaperStrip(ctx, cx, cy, spec.w, spec.h, jitterA, PAPER_FILL);
+                  ctx.save();
+                  ctx.translate(cx, cy);
+                  ctx.rotate(jitterA);
+                  ctx.textAlign = 'center';
+                  ctx.textBaseline = 'middle';
+                  ctx.fillStyle = '#0a0a0a';
+                  ctx.font = spec.font;
+                  const totalTextH = (spec.lines.length - 1) * spec.lh;
+                  let ty = -totalTextH / 2;
+                  for (const ln of spec.lines) {
+                    ctx.fillText(ln, 0, ty);
+                    ty += spec.lh;
+                  }
+                  ctx.restore();
+                };
+
+                for (let s = 0; s < 18; s++) {
+                  stripSpecs = buildStripSpecs();
+                  if (stackHeight(stripSpecs) <= STORY_H - 32 || bodyPx <= 24) break;
+                  titlePx -= 1;
+                  bodyPx -= 2;
+                }
+
+                let cursorY = STORY_H * 0.12;
+                for (let i = 0; i < stripSpecs.length; i++) {
+                  if (i > 0 && stripSpecs[i].role === 'author' && stripSpecs[i - 1].role === 'quote') {
+                    cursorY += QUOTE_AUTHOR_GAP;
+                  }
+                  const spec = stripSpecs[i];
+                  const gap = 11 + rnd() * 12;
+                  const jitterA = (rnd() - 0.5) * 0.055;
+                  const cx = staggerStripCenterX(spec);
+                  const cy = cursorY + spec.h / 2;
+                  cursorY += spec.h + gap;
+                  drawStripContent(spec, cx, cy, jitterA);
+                }
+
+                const cornerPadR = 44;
+                const cornerPadB = 52;
+                const titleStripGap = 14;
+                const measureTitleSpecs = () => {
+                  const out = [];
+                  const m = (lines, font, lineLead) => {
+                    ctx.font = font;
+                    let tw = 0;
+                    for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
+                    const fs = parseInt(/(\d+)px/.exec(font)[1], 10);
+                    const lh = fs * lineLead;
+                    const w = Math.min(STRIP_MAX_W, Math.ceil(tw + PAPER_PAD_X * 2));
+                    const h = Math.ceil(lines.length * lh + PAPER_PAD_Y * 2);
+                    out.push({ lines, font, lh, w, h });
+                  };
+                  m(['OUR DAILY'], `700 ${titlePx}px ${FONT_SERIF}`, 1.22);
+                  m(['QUILT'], `700 ${titlePx + titleSecondBump}px ${FONT_SERIF}`, 1.12);
+                  return out;
+                };
+                const titleSpecs = measureTitleSpecs();
+                const dailySpec = titleSpecs[0];
+                const quiltSpec = titleSpecs[1];
+                const cxTitle = STORY_W - cornerPadR;
+                const cyQuilt = STORY_H - cornerPadB - quiltSpec.h / 2;
+                const cxQuilt = cxTitle - quiltSpec.w / 2;
+                const cyDaily = cyQuilt - quiltSpec.h / 2 - titleStripGap - dailySpec.h / 2;
+                const cxDaily = cxTitle - dailySpec.w / 2;
+                drawStripContent(dailySpec, cxDaily, cyDaily, (rnd() - 0.5) * 0.045);
+                drawStripContent(quiltSpec, cxQuilt, cyQuilt, (rnd() - 0.5) * 0.045);
+
+                canvas.toBlob((blob) => {
+                  if (!blob) {
+                    reject(new Error('Could not create experimental story image blob'));
+                    return;
+                  }
+                  resolve(blob);
+                }, 'image/png', 0.95);
+              })
+              .catch(reject);
+          });
+
+          const filename = `our-daily-quilt-story-b-${new Date().toISOString().split('T')[0]}.png`;
+          const imageFile = new File([storyBlob], filename, { type: 'image/png' });
+
+          const shareData = {
+            title: 'Our Daily Quilt (layout B)',
+            text: `Check out today's community quilt with ${this.quiltEngine.submissionCount} contributors!`,
+            files: [imageFile]
+          };
+
+          const canShareFiles = typeof navigator.canShare === 'function' && navigator.canShare(shareData);
+          if (navigator.share && canShareFiles) {
+            await navigator.share(shareData);
+            this.uiService.showToast('Shared (layout B)!');
+            return;
+          }
+
+          const url = URL.createObjectURL(storyBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          this.uiService.showToast('Layout B downloaded!');
+        } catch (error) {
+          this.errorHandler.handleError(error, 'shareFlowExperimental');
+        }
+      }
+
       async handleTestAddBlock() {
         // 50 Representative colors from the Rumi palette
         // Selected to maintain proportional distribution and maximize variety
@@ -10389,6 +10832,7 @@ try {
       window.showMyPiece = () => app.handleShowMyPiece();
       window.switchUser = () => app.handleTestDifferentUser();
       window.shareQuilt = () => app.handleShare();
+      window.shareQuiltStoryExperimental = () => app.handleShareStoryExperimental();
       window.resetQuilt = () => app.handleResetQuilt();
       window.createArchive = () => app.handleCreateArchive();
       window.createTestArchives = () => app.handleCreateTestArchives();
