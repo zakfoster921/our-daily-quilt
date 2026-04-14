@@ -10,6 +10,20 @@ app.use(express.static('.'));
 // In-memory storage for generated images
 const imageStore = new Map();
 
+async function fetchUrlAsImageDataString(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch stored image (${res.status}): ${url}`);
+  }
+  const ct = (res.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+  const buf = Buffer.from(await res.arrayBuffer());
+  const b64 = buf.toString('base64');
+  if (ct === 'image/jpeg' || ct === 'image/jpg') {
+    return `data:image/jpeg;base64,${b64}`;
+  }
+  return `data:image/png;base64,${b64}`;
+}
+
 // Initialize Firebase Admin (you'll need to add your service account key)
 let db;
 try {
@@ -107,37 +121,123 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
   return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
-// Get today's Instagram image from Firestore
-async function getTodayInstagramImage() {
+/** Same calendar rule as Utils.getTodayKey() in the app (quote day; before 7:00 UTC → previous UTC date). */
+function getAppDateKey(d = new Date()) {
+  const utcHours = d.getUTCHours();
+  const adjusted = new Date(d);
+  if (utcHours < 7) {
+    adjusted.setUTCDate(adjusted.getUTCDate() - 1);
+  }
+  const y = adjusted.getUTCFullYear();
+  const m = String(adjusted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(adjusted.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function addDaysToDateKey(dateKey, delta) {
+  const [yy, mm, dd] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(yy, mm - 1, dd));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  const y = dt.getUTCFullYear();
+  const mo = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${da}`;
+}
+
+function hasLayoutBInRaw(raw) {
+  if (!raw) return false;
+  return !!(
+    raw.postLayoutBImageStorageUrl ||
+    raw.layoutBUrl ||
+    raw.postLayoutBImageData
+  );
+}
+
+/**
+ * @param {{ date?: string }} [options] - optional YYYY-MM-DD (e.g. from Zapier body) to force which "app day" to use
+ */
+async function getTodayInstagramImage(options = {}) {
   if (!db) { throw new Error('Firestore not initialized'); }
-  
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  
-  const todayString = today.toISOString().split('T')[0];
-  const yesterdayString = yesterday.toISOString().split('T')[0];
-  
+
+  let primaryKey;
+  let fallbackKey;
+  if (options.date && /^\d{4}-\d{2}-\d{2}$/.test(options.date)) {
+    primaryKey = options.date;
+    fallbackKey = addDaysToDateKey(primaryKey, -1);
+  } else {
+    primaryKey = getAppDateKey();
+    fallbackKey = addDaysToDateKey(primaryKey, -1);
+  }
+
   try {
-    // Try today first
-    console.log(`🔍 Looking for Instagram image for ${todayString}...`);
-    let imageDoc = await db.collection('instagram-images').doc(todayString).get();
-    let dateUsed = todayString;
-    
-    if (!imageDoc.exists) {
-      // Try yesterday if today doesn't exist
-      console.log(`📅 No image for ${todayString}, trying ${yesterdayString}...`);
-      imageDoc = await db.collection('instagram-images').doc(yesterdayString).get();
-      dateUsed = yesterdayString;
-      
-      if (!imageDoc.exists) {
-        throw new Error(`No Instagram image found for ${todayString} or ${yesterdayString}`);
-      }
+    console.log(
+      `🔍 Instagram images: trying app day ${primaryKey}, fallback ${fallbackKey}`
+    );
+    const primarySnap = await db.collection('instagram-images').doc(primaryKey).get();
+    const fallbackSnap = await db.collection('instagram-images').doc(fallbackKey).get();
+
+    let raw;
+    let dateUsed;
+
+    if (primarySnap.exists) {
+      raw = primarySnap.data();
+      dateUsed = primaryKey;
+    } else if (fallbackSnap.exists) {
+      raw = fallbackSnap.data();
+      dateUsed = fallbackKey;
+      console.log(`📅 No doc for ${primaryKey}, using ${fallbackKey}`);
+    } else {
+      throw new Error(
+        `No Instagram image found for ${primaryKey} or ${fallbackKey}`
+      );
     }
-    
-    const imageData = imageDoc.data();
-    console.log(`✅ Found Instagram image for ${dateUsed}`);
-    
+
+    // If today's doc exists but was saved without layout B, fill from previous day (common when keys misaligned before this fix).
+    if (
+      primarySnap.exists &&
+      fallbackSnap.exists &&
+      !hasLayoutBInRaw(raw) &&
+      hasLayoutBInRaw(fallbackSnap.data())
+    ) {
+      const fb = fallbackSnap.data();
+      raw = {
+        ...raw,
+        postLayoutBImageStorageUrl:
+          raw.postLayoutBImageStorageUrl || fb.postLayoutBImageStorageUrl,
+        layoutBUrl: raw.layoutBUrl || fb.layoutBUrl,
+        postLayoutBImageData: raw.postLayoutBImageData || fb.postLayoutBImageData
+      };
+      console.log(`📎 Merged layout B from ${fallbackKey} into ${primaryKey}`);
+    }
+
+    console.log(`✅ Instagram image for ${dateUsed} (layout B: ${hasLayoutBInRaw(raw)})`);
+
+    // Passthrough URLs from client push (Firebase Storage) — prefer these for /api/generate-instagram
+    // so Zapier gets both links even if byte fetch from Storage fails on Railway.
+    const storageClassicUrl = raw.imageStorageUrl || raw.classicUrl || null;
+    const storageLayoutBUrl =
+      raw.postLayoutBImageStorageUrl || raw.layoutBUrl || null;
+
+    let imageDataField = raw.imageData || null;
+    let postLayoutBField = raw.postLayoutBImageData || null;
+
+    // Only fetch bytes when we do not already have a public URL for that slot.
+    if (!imageDataField && !storageClassicUrl && raw.imageStorageUrl) {
+      imageDataField = await fetchUrlAsImageDataString(raw.imageStorageUrl);
+    }
+    if (!imageDataField && !storageClassicUrl && raw.classicUrl) {
+      imageDataField = await fetchUrlAsImageDataString(raw.classicUrl);
+    }
+    if (!postLayoutBField && !storageLayoutBUrl && raw.postLayoutBImageStorageUrl) {
+      postLayoutBField = await fetchUrlAsImageDataString(raw.postLayoutBImageStorageUrl);
+    }
+    if (!postLayoutBField && !storageLayoutBUrl && raw.layoutBUrl) {
+      postLayoutBField = await fetchUrlAsImageDataString(raw.layoutBUrl);
+    }
+    if (!imageDataField && !storageClassicUrl) {
+      throw new Error(`Instagram doc for ${dateUsed} has no imageData or imageStorageUrl`);
+    }
+
     // Try to get the quote for the same date
     let quote = "Every day is a new beginning.";
     try {
@@ -153,11 +253,13 @@ async function getTodayInstagramImage() {
       console.warn(`⚠️ Could not fetch quote for ${dateUsed}:`, quoteError.message);
     }
     
-    return { 
-      imageData: imageData.imageData,
-      postLayoutBImageData: imageData.postLayoutBImageData || null,
-      quote: quote, 
-      date: dateUsed 
+    return {
+      imageData: imageDataField,
+      postLayoutBImageData: postLayoutBField || null,
+      storageClassicUrl,
+      storageLayoutBUrl,
+      quote: quote,
+      date: dateUsed
     };
   } catch (error) { 
     console.error('Error fetching Instagram image:', error); 
@@ -168,45 +270,62 @@ async function getTodayInstagramImage() {
 app.post('/api/generate-instagram', async (req, res) => {
   try {
     console.log('🚀 Starting Instagram image generation from Firestore...');
-    
-    // Get today's saved Instagram image
-    const imageData = await getTodayInstagramImage();
-    
-    // Save image to memory and create URL
-    const timestamp = Date.now();
-    const filename = `instagram-${timestamp}.png`;
-    imageStore.set(filename, imageData.imageData);
 
-    let postLayoutBFilename = null;
-    if (imageData.postLayoutBImageData) {
-      postLayoutBFilename = `instagram-post-layout-b-${timestamp}.png`;
-      imageStore.set(postLayoutBFilename, imageData.postLayoutBImageData);
-    }
+    const bodyDate =
+      req.body && typeof req.body.date === 'string' ? req.body.date.trim() : undefined;
+    const imageData = await getTodayInstagramImage(
+      bodyDate ? { date: bodyDate } : {}
+    );
 
-    // Create public URL
     let baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
-    // Ensure baseUrl always starts with https://
     if (!baseUrl.startsWith('https://')) {
       baseUrl = `https://${baseUrl}`;
     }
-    const imageUrl = `${baseUrl}/api/image/${filename}`;
-    const postLayoutBImageUrl = postLayoutBFilename
-      ? `${baseUrl}/api/image/${postLayoutBFilename}`
-      : null;
 
+    const timestamp = Date.now();
+
+    // Prefer Firebase Storage URLs from Firestore (reliable for Zapier). Fall back to proxying via /api/image.
+    let imageUrl = '';
+    let postLayoutBImageUrl = '';
+
+    if (imageData.storageClassicUrl) {
+      imageUrl = imageData.storageClassicUrl;
+    } else if (imageData.imageData) {
+      const filename = `instagram-${timestamp}.png`;
+      imageStore.set(filename, imageData.imageData);
+      imageUrl = `${baseUrl}/api/image/${filename}`;
+    }
+
+    if (imageData.storageLayoutBUrl) {
+      postLayoutBImageUrl = imageData.storageLayoutBUrl;
+    } else if (imageData.postLayoutBImageData) {
+      const postLayoutBFilename = `instagram-post-layout-b-${timestamp}.png`;
+      imageStore.set(postLayoutBFilename, imageData.postLayoutBImageData);
+      postLayoutBImageUrl = `${baseUrl}/api/image/${postLayoutBFilename}`;
+    }
+
+    const hasLayoutB = !!postLayoutBImageUrl;
+    // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
+    const apiVersion = 'instagram-api-3-storage-passthrough';
+    // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
+    // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const result = {
+      apiVersion,
       success: true,
-      imageUrl: imageUrl,
-      postLayoutBImageUrl,
+      imageUrl,
+      postLayoutBImageUrl: postLayoutBImageUrl || '',
+      classicImageUrl: imageUrl,
+      layoutBImageUrl: postLayoutBImageUrl || '',
+      imageUrls: hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl],
       caption: imageData.quote,
       date: imageData.date,
       captionLength: imageData.quote.length,
-      hasPostLayoutB: !!imageData.postLayoutBImageData,
+      hasPostLayoutB: hasLayoutB,
       note:
-        'imageUrl = classic4:5 quilt card. postLayoutBImageUrl = feed post with paper strips (4:5 layout B), when archived that day.'
+        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. If your Zap uses Firestore directly, map postLayoutBImageStorageUrl (not postLayoutBImageUrl).'
     };
     
-    console.log('✅ Instagram assets from Firestore:', imageData.postLayoutBImageData ? 'classic + layout B URLs' : 'classic URL only');
+    console.log('✅ Instagram assets from Firestore:', hasLayoutB ? 'classic + layout B URLs' : 'classic URL only');
     res.json(result);
     
   } catch (error) {
@@ -229,11 +348,17 @@ app.get('/api/image/:filename', (req, res) => {
     return res.status(404).json({ error: 'Image not found' });
   }
   
-  // Convert base64 to buffer
-  const base64Data = imageData.replace(/^data:image\/png;base64,/, '');
+  let mime = 'image/png';
+  let base64Data = imageData;
+  if (/^data:image\/jpeg;base64,/i.test(imageData)) {
+    mime = 'image/jpeg';
+    base64Data = imageData.replace(/^data:image\/jpeg;base64,/i, '');
+  } else {
+    base64Data = imageData.replace(/^data:image\/png;base64,/i, '');
+  }
   const buffer = Buffer.from(base64Data, 'base64');
-  
-  res.setHeader('Content-Type', 'image/png');
+
+  res.setHeader('Content-Type', mime);
   res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
   res.send(buffer);
 });
