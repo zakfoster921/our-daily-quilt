@@ -154,7 +154,8 @@ async function getTodayInstagramImage() {
     }
     
     return { 
-      imageData: imageData.imageData, 
+      imageData: imageData.imageData,
+      postLayoutBImageData: imageData.postLayoutBImageData || null,
       quote: quote, 
       date: dateUsed 
     };
@@ -190,7 +191,8 @@ app.post('/api/generate-instagram', async (req, res) => {
       caption: imageData.quote,
       date: imageData.date,
       captionLength: imageData.quote.length,
-      note: 'Test this URL in your browser to verify the image loads'
+      hasPostLayoutB: !!imageData.postLayoutBImageData,
+      note: 'Test this URL in your browser to verify the image loads. When postLayoutBImageData exists, extend Zapier to upload that asset for the feed (4:5 layout B).'
     };
     
     console.log('✅ Instagram image generated successfully from Firestore');
