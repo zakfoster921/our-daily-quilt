@@ -176,7 +176,13 @@ app.post('/api/generate-instagram', async (req, res) => {
     const timestamp = Date.now();
     const filename = `instagram-${timestamp}.png`;
     imageStore.set(filename, imageData.imageData);
-    
+
+    let postLayoutBFilename = null;
+    if (imageData.postLayoutBImageData) {
+      postLayoutBFilename = `instagram-post-layout-b-${timestamp}.png`;
+      imageStore.set(postLayoutBFilename, imageData.postLayoutBImageData);
+    }
+
     // Create public URL
     let baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
     // Ensure baseUrl always starts with https://
@@ -184,18 +190,23 @@ app.post('/api/generate-instagram', async (req, res) => {
       baseUrl = `https://${baseUrl}`;
     }
     const imageUrl = `${baseUrl}/api/image/${filename}`;
-    
+    const postLayoutBImageUrl = postLayoutBFilename
+      ? `${baseUrl}/api/image/${postLayoutBFilename}`
+      : null;
+
     const result = {
       success: true,
       imageUrl: imageUrl,
+      postLayoutBImageUrl,
       caption: imageData.quote,
       date: imageData.date,
       captionLength: imageData.quote.length,
       hasPostLayoutB: !!imageData.postLayoutBImageData,
-      note: 'Test this URL in your browser to verify the image loads. When postLayoutBImageData exists, extend Zapier to upload that asset for the feed (4:5 layout B).'
+      note:
+        'imageUrl = classic4:5 quilt card. postLayoutBImageUrl = feed post with paper strips (4:5 layout B), when archived that day.'
     };
     
-    console.log('✅ Instagram image generated successfully from Firestore');
+    console.log('✅ Instagram assets from Firestore:', imageData.postLayoutBImageData ? 'classic + layout B URLs' : 'classic URL only');
     res.json(result);
     
   } catch (error) {
