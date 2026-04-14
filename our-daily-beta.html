@@ -4144,6 +4144,68 @@ try {
           day: 'numeric'
         });
       }
+
+      static dataUrlToBlob(dataUrl) {
+        const m = String(dataUrl).match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) {
+          throw new Error('Invalid data URL');
+        }
+        const binary = atob(m[2]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return new Blob([bytes], { type: m[1] });
+      }
+
+      /**
+       * Uploads PNGs to Firebase Storage and writes `instagram-images/{dateKey}` with URLs only
+       * (Firestore field limit ~1 MiB — inline base64 exceeds that for layout B).
+       */
+      static async writeInstagramImagesDocForZapier({ dateKey, instagramImage, postLayoutBImageData }) {
+        if (!window.db || !window.firestore) {
+          throw new Error('Firestore not ready');
+        }
+        if (!instagramImage && !postLayoutBImageData) {
+          throw new Error('No images to upload');
+        }
+        if (!window.app || typeof window.app.initializeFirebaseForImages !== 'function') {
+          throw new Error('App not ready for Storage upload');
+        }
+        await window.app.initializeFirebaseForImages();
+        if (!window.firebaseStorage) {
+          throw new Error('Firebase Storage not initialized');
+        }
+        const { ref, uploadBytes, getDownloadURL } = await import(
+          'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js'
+        );
+        const storage = window.firebaseStorage;
+        const basePath = `instagram-zapier/${dateKey}`;
+        let imageStorageUrl = null;
+        let postLayoutBImageStorageUrl = null;
+        if (instagramImage) {
+          const r = ref(storage, `${basePath}/classic.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(instagramImage));
+          imageStorageUrl = await getDownloadURL(r);
+        }
+        if (postLayoutBImageData) {
+          const r = ref(storage, `${basePath}/layout-b.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(postLayoutBImageData));
+          postLayoutBImageStorageUrl = await getDownloadURL(r);
+        }
+        const docPayload = {
+          date: dateKey,
+          lastUpdated: new Date().toISOString(),
+          imageStorageUrl,
+          postLayoutBImageStorageUrl,
+          // Short aliases — Zapier’s Firestore step often shows long names in the UI but maps them as null; pick these in the dropdown instead.
+          classicUrl: imageStorageUrl || null,
+          layoutBUrl: postLayoutBImageStorageUrl || null
+        };
+        const imageRef = window.firestore.doc(window.db, 'instagram-images', dateKey);
+        await window.firestore.setDoc(imageRef, docPayload);
+        return docPayload;
+      }
     }
 
     // ===== LOGGING SERVICE =====
@@ -4664,6 +4726,125 @@ try {
             const stripPaperTexLight = makeStripPaperTextureTile('light');
             const stripPaperTexDark = makeStripPaperTextureTile('dark');
 
+            /**
+             * Full-canvas magazine print finish: fiber/tooth, subtle halftone, micro-imperfections.
+             * Runs once at the end so it applies to quilt + strips for both story (9:16) and post (4:5).
+             */
+            const applyLayoutBMagazinePrintFinish = (g, w, h) => {
+              const fiberSz = 144;
+              const fc = document.createElement('canvas');
+              fc.width = fiberSz;
+              fc.height = fiberSz;
+              const fx = fc.getContext('2d');
+              const fImg = fx.createImageData(fiberSz, fiberSz);
+              const fd = fImg.data;
+              for (let i = 0; i < fd.length; i += 4) {
+                const grain = (rnd() - 0.5) * 26;
+                const speck = rnd() < 0.11 ? (rnd() - 0.5) * 18 : 0;
+                const lum = 232 + grain * 0.85 + speck * 0.75;
+                fd[i] = Math.max(198, Math.min(255, lum + 6));
+                fd[i + 1] = Math.max(196, Math.min(255, lum + 1));
+                fd[i + 2] = Math.max(186, Math.min(250, lum - 10));
+                fd[i + 3] = 255;
+              }
+              fx.putImageData(fImg, 0, 0);
+              fx.globalCompositeOperation = 'soft-light';
+              for (let f = 0; f < 52; f++) {
+                fx.globalAlpha = 0.07 + rnd() * 0.11;
+                fx.strokeStyle = 'rgba(48,40,34,0.42)';
+                fx.lineWidth = 0.35 + rnd() * 0.95;
+                fx.beginPath();
+                const y0 = rnd() * fiberSz;
+                fx.moveTo(-6, y0);
+                fx.bezierCurveTo(
+                  fiberSz * 0.35,
+                  y0 + (rnd() - 0.5) * 10,
+                  fiberSz * 0.65,
+                  y0 + (rnd() - 0.5) * 10,
+                  fiberSz + 6,
+                  y0 + (rnd() - 0.5) * 8
+                );
+                fx.stroke();
+              }
+              fx.globalCompositeOperation = 'overlay';
+              for (let k = 0; k < 28; k++) {
+                fx.globalAlpha = 0.045 + rnd() * 0.09;
+                fx.fillStyle = 'rgba(62,52,44,0.55)';
+                fx.beginPath();
+                fx.arc(rnd() * fiberSz, rnd() * fiberSz, 0.4 + rnd() * 2.8, 0, Math.PI * 2);
+                fx.fill();
+              }
+              fx.globalAlpha = 1;
+              fx.globalCompositeOperation = 'source-over';
+
+              const halftoneSz = 40;
+              const hc = document.createElement('canvas');
+              hc.width = halftoneSz;
+              hc.height = halftoneSz;
+              const hx = hc.getContext('2d');
+              const step = 4;
+              const dotR = 0.52 + rnd() * 0.38;
+              hx.fillStyle = 'rgba(28,24,20,0.38)';
+              for (let y = 0; y < halftoneSz + step; y += step) {
+                for (let x = 0; x < halftoneSz + step; x += step) {
+                  const ox = (rnd() - 0.5) * 0.75;
+                  const oy = (rnd() - 0.5) * 0.75;
+                  hx.beginPath();
+                  hx.arc(x + step * 0.5 + ox, y + step * 0.5 + oy, dotR, 0, Math.PI * 2);
+                  hx.fill();
+                }
+              }
+
+              g.save();
+              const fiberPat = g.createPattern(fc, 'repeat');
+              g.globalCompositeOperation = 'multiply';
+              g.globalAlpha = 0.14;
+              g.fillStyle = fiberPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'soft-light';
+              g.globalAlpha = 0.2;
+              g.fillStyle = fiberPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'multiply';
+              g.globalAlpha = 0.18;
+              const halfPat = g.createPattern(hc, 'repeat');
+              g.fillStyle = halfPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'overlay';
+              g.globalAlpha = 0.13;
+              g.fillStyle = halfPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'soft-light';
+              g.globalAlpha = 0.07;
+              g.fillStyle = halfPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'source-over';
+              g.globalAlpha = 1;
+
+              for (let s = 0; s < 28 + Math.floor(rnd() * 16); s++) {
+                g.strokeStyle = `rgba(34,30,26,${0.05 + rnd() * 0.09})`;
+                g.lineWidth = 0.35 + rnd() * 0.55;
+                g.beginPath();
+                const x1 = rnd() * w;
+                const y1 = rnd() * h;
+                g.moveTo(x1, y1);
+                g.lineTo(
+                  x1 + (rnd() - 0.5) * w * 0.14,
+                  y1 + (rnd() - 0.5) * h * 0.14
+                );
+                g.stroke();
+              }
+              for (let d = 0; d < 92; d++) {
+                g.fillStyle =
+                  rnd() < 0.5
+                    ? `rgba(255,252,248,${0.045 + rnd() * 0.09})`
+                    : `rgba(16,14,12,${0.055 + rnd() * 0.09})`;
+                const px = 1 + rnd() * 3.2;
+                g.fillRect(rnd() * w, rnd() * h, px, px);
+              }
+              g.restore();
+            };
+
             /** Hand-cut silhouette: jittered corners + wobbly edges (strip space, centered). */
             const handCutStripPath = (ctx, sw, sh, rndFn) => {
               const hw = sw / 2;
@@ -4797,12 +4978,26 @@ try {
                 };
 
                 const segmentQuoteForLayout = (text) => {
-                  const normalized = text.replace(/\s+/g, ' ').trim();
-                  if (!normalized) return [];
-                  if (isShortQuoteLayout && normalized.length <= 130) {
-                    return segmentShortQuoteForLayout(normalized);
-                  }
-                  return splitIntoPhraseSegments(normalized);
+                  const raw = String(text ?? '');
+                  /** Keep explicit line breaks (e.g. in Firestore) as separate strip groups; do not collapse \n into spaces first. */
+                  const paragraphs = raw
+                    .split(/\r?\n/)
+                    .map((p) => p.replace(/\s+/g, ' ').trim())
+                    .filter(Boolean);
+                  if (!paragraphs.length) return [];
+
+                  const runOne = (normalized) => {
+                    if (!normalized) return [];
+                    if (isShortQuoteLayout && normalized.length <= 130) {
+                      return segmentShortQuoteForLayout(normalized);
+                    }
+                    return splitIntoPhraseSegments(normalized);
+                  };
+
+                  if (paragraphs.length === 1) return runOne(paragraphs[0]);
+                  const out = [];
+                  for (const p of paragraphs) out.push(...runOne(p));
+                  return out;
                 };
 
                 const canvas = document.createElement('canvas');
@@ -5180,6 +5375,8 @@ try {
                   drawStripContent(quiltSpec, cxQuilt, cyQuilt, (rnd() - 0.5) * 0.045, 'dark');
                 }
 
+                applyLayoutBMagazinePrintFinish(ctx, STORY_W, STORY_H);
+
                 canvas.toBlob((blob) => {
                   if (!blob) {
                     reject(new Error('Could not create experimental story image blob'));
@@ -5294,79 +5491,68 @@ try {
       }
 
       // Generate Instagram-ready image (4:5 portrait ratio)
-      async generateInstagramImage(blocks, quote = null) {
+      async generateInstagramImage(blocks, _quote = null) {
         try {
           if (!blocks || blocks.length === 0) {
             this.logger.warn('No blocks provided for Instagram image generation');
             return null;
           }
 
-          // Instagram optimal size: 1080x1350 (4:5 ratio)
+          /**
+           * Match on-screen quilt: rasterize live SVG (viewBox + padding + meet),
+           * then scale to fit 1080×1350. The old path drew blocks at 1:1 coords,
+           * leaving huge white margins vs the scaled SVG view.
+           */
+          let quiltBlob = null;
+          const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
+          if (quiltSVG) {
+            try {
+              quiltBlob = await this.rasterizeQuiltSvgToPngBlob(quiltSVG);
+            } catch (e) {
+              this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
+            }
+          }
+          if (!quiltBlob) {
+            quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
+          }
+          if (!quiltBlob) return null;
+
+          const W = 1080;
+          const H = 1350;
+          const pad = 5;
+          const innerW = W - pad * 2;
+          const innerH = H - pad * 2;
+
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
-          
-          canvas.width = 1080;
-          canvas.height = 1350;
-          
-          // Fill background with true white to match Instagram
+          canvas.width = W;
+          canvas.height = H;
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          
-          // Calculate bounds of all blocks to determine scaling
-          const minX = Math.min(...blocks.map(b => b.x));
-          const minY = Math.min(...blocks.map(b => b.y));
-          const maxX = Math.max(...blocks.map(b => b.x + b.width));
-          const maxY = Math.max(...blocks.map(b => b.y + b.height));
-          
-          // Use fixed 4:5 dimensions (1070 x 1340) - same as main app
-          const targetWidth = 1070;  // 1080 - 10px padding
-          const targetHeight = 1340; // 1350 - 10px padding
-          
-          // Center the quilt in the Instagram canvas (5px padding all around)
-          const offsetX = 5;  // 5px from left
-          const offsetY = 5;  // 5px from top
-          
-          
-          // Draw each block
-          blocks.forEach(block => {
-            // Add jitter effects (same as current quilt)
-            const jitterX = (Math.random() - 0.5) * 8;
-            const jitterY = (Math.random() - 0.5) * 8;
-            const jitterRotation = (Math.random() - 0.5) * 4;
-            
-            const jitteredX = block.x + jitterX;
-            const jitteredY = block.y + jitterY;
-            
-            // Transform to canvas coordinates (handle negative coordinates)
-            const canvasX = offsetX + (jitteredX - minX);
-            const canvasY = offsetY + (jitteredY - minY);
-            const canvasWidth = block.width;
-            const canvasHeight = block.height;
-            
-            // Save context for rotation
-            ctx.save();
-            
-            // Move to center of block for rotation
-            const centerX = canvasX + canvasWidth / 2;
-            const centerY = canvasY + canvasHeight / 2;
-            ctx.translate(centerX, centerY);
-            ctx.rotate(jitterRotation * Math.PI / 180);
-            
-            // Draw block (no shadow for clean Instagram look)
-            ctx.fillStyle = block.color;
-            ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
-            
-            // Restore context
-            ctx.restore();
-          });
-          
-          // Convert to data URL
-          const dataURL = canvas.toDataURL('image/png', 0.95);
-          
-          // Instagram image generated successfully
-          return dataURL;
-          
+          ctx.fillRect(0, 0, W, H);
+
+          const bitmapUrl = URL.createObjectURL(quiltBlob);
+          try {
+            const img = await new Promise((resolve, reject) => {
+              const im = new Image();
+              im.onload = () => resolve(im);
+              im.onerror = () => reject(new Error('Could not decode quilt bitmap'));
+              im.src = bitmapUrl;
+            });
+            const iw = Math.max(1, img.naturalWidth || img.width);
+            const ih = Math.max(1, img.naturalHeight || img.height);
+            const scale = Math.min(innerW / iw, innerH / ih);
+            const dw = Math.round(iw * scale);
+            const dh = Math.round(ih * scale);
+            const dx = pad + (innerW - dw) / 2;
+            const dy = pad + (innerH - dh) / 2;
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, dx, dy, dw, dh);
+          } finally {
+            URL.revokeObjectURL(bitmapUrl);
+          }
+
+          return canvas.toDataURL('image/png', 0.95);
         } catch (error) {
           this.logger.error('Instagram image generation failed:', error);
           return null;
@@ -6170,14 +6356,15 @@ try {
                   );
                 }
                 if (instagramImage || postLayoutBImageData) {
-                  const imageData = {
-                    date: today,
-                    lastUpdated: new Date().toISOString()
-                  };
-                  if (instagramImage) imageData.imageData = instagramImage;
-                  if (postLayoutBImageData) imageData.postLayoutBImageData = postLayoutBImageData;
-                  const imageRef = window.firestore.doc(window.db, 'instagram-images', today);
-                  await window.firestore.setDoc(imageRef, imageData);
+                  if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
+                    await Utils.writeInstagramImagesDocForZapier({
+                      dateKey: today,
+                      instagramImage,
+                      postLayoutBImageData
+                    });
+                  } else {
+                    console.warn('Skipping Instagram Firestore doc: app / Storage init not available');
+                  }
                 }
               } else {
                 console.warn('ArchiveService.generateInstagramImage not available');
@@ -9932,8 +10119,9 @@ try {
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
-            <button onclick="app.handleTestInstagramImage()">📸 Create IG Image</button>
+            <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
             <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
+            <button type="button" onclick="window.app &amp;&amp; window.app.handlePushInstagramAssetsToFirestore()">Push IG images to Firestore (Zapier)</button>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
@@ -10941,7 +11129,7 @@ try {
         }
       }
 
-      // Test Instagram image generation
+      // Test Instagram image: feed post 4:5 Layout B (same asset shape as Zapier postLayoutBImageUrl)
       async handleTestInstagramImage() {
         try {
           if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
@@ -10949,27 +11137,33 @@ try {
             return;
           }
 
-          // Generate Instagram image (quilt only, no quote)
-          const instagramImage = await this.archiveService.generateInstagramImage(
-            this.quiltEngine.blocks
+          if (!this.archiveService.generateInstagramPostLayoutBImage) {
+            this.uiService.showToast('Layout B post generator not available');
+            return;
+          }
+
+          const todayKey = Utils.getTodayKey();
+          const quote = this.quoteService?.getTodayQuote?.() || null;
+          const imageDataUrl = await this.archiveService.generateInstagramPostLayoutBImage(
+            this.quiltEngine.blocks,
+            quote,
+            todayKey
           );
-          
-          if (instagramImage) {
-            // Create download link
+
+          if (imageDataUrl) {
             const link = document.createElement('a');
-            link.href = instagramImage;
-            link.download = `instagram-quilt-${new Date().toISOString().split('T')[0]}.png`;
+            link.href = imageDataUrl;
+            link.download = `instagram-layout-b-post-${todayKey}.png`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
-            // Save current quilt to Firestore
+
             await this.saveQuilt();
-            
-            this.uiService.showToast('Instagram image downloaded and saved to Firestore! 📸💾');
-            this.logger.log('✅ Instagram test image generated, downloaded, and saved to Firestore');
+
+            this.uiService.showToast('Layout B 4:5 post image downloaded; quilt saved to Firestore 📸💾');
+            this.logger.log('✅ Instagram Layout B post image generated and downloaded');
           } else {
-            this.uiService.showToast('Failed to generate Instagram image');
+            this.uiService.showToast('Failed to generate Layout B post image');
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testInstagramImage');
@@ -11024,7 +11218,8 @@ try {
               date: result.date,
               blockCount: result.blockCount,
               captionLength: result.caption.length,
-              imageSize: result.image.length
+              imageSize: result.image.length,
+              hasPostLayoutB: !!result.postImage
             });
           } else {
             console.error('❌ Zapier webhook test failed:', result);
@@ -11032,6 +11227,93 @@ try {
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testZapierWebhook');
+        }
+      }
+
+      /**
+       * Writes `instagram-images/{today}` to Firestore (classic 4:5 + layout B 4:5 when available).
+       * Railway POST /api/generate-instagram reads this doc so Zapier can use imageUrl and postLayoutBImageUrl.
+       */
+      async handlePushInstagramAssetsToFirestore() {
+        try {
+          if (!window.db || !window.firestore) {
+            this.uiService.showToast('Waiting for Firestore to load…');
+            for (let i = 0; i < 120 && (!window.db || !window.firestore); i++) {
+              await new Promise((r) => setTimeout(r, 100));
+            }
+          }
+          if (!window.db || !window.firestore) {
+            this.uiService.showToast(
+              'Firestore not ready — check network, ad blocker, or refresh the page'
+            );
+            console.warn('pushInstagramAssetsToFirestore: window.db / window.firestore missing');
+            return;
+          }
+          const blocks = this.quiltEngine?.blocks;
+          if (!blocks || blocks.length <= 1) {
+            this.uiService.showToast('Need more than one block on the quilt');
+            return;
+          }
+          const arch = this.archiveService;
+          if (!arch?.generateInstagramImage) {
+            this.uiService.showToast('ArchiveService not ready');
+            return;
+          }
+          const today = Utils.getTodayKey();
+          const todayQuote = this.quoteService?.getTodayQuote() || null;
+          this.uiService.showToast('Generating and uploading Instagram assets…');
+          const instagramImage = await arch.generateInstagramImage(blocks);
+          let postLayoutBImageData = null;
+          if (arch.generateInstagramPostLayoutBImage) {
+            postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(
+              blocks,
+              todayQuote,
+              today
+            );
+          }
+          if (!instagramImage && !postLayoutBImageData) {
+            this.uiService.showToast('Failed to generate images');
+            return;
+          }
+          const docPayload = await Utils.writeInstagramImagesDocForZapier({
+            dateKey: today,
+            instagramImage,
+            postLayoutBImageData
+          });
+          const parts = [
+            instagramImage ? 'classic' : null,
+            postLayoutBImageData ? 'layout B' : null
+          ].filter(Boolean);
+          this.uiService.showToast(
+            `Saved instagram-images/${today} (${parts.join(' + ')}) via Storage — refresh Firebase console`
+          );
+          this.logger.log('Instagram assets pushed to Firestore for Zapier', {
+            docPath: `instagram-images/${today}`,
+            hasClassic: !!instagramImage,
+            hasPostLayoutB: !!postLayoutBImageData,
+            storage: {
+              imageStorageUrl: !!docPayload.imageStorageUrl,
+              postLayoutBImageStorageUrl: !!docPayload.postLayoutBImageStorageUrl
+            }
+          });
+        } catch (error) {
+          this.errorHandler.handleError(error, 'pushInstagramAssetsToFirestore');
+          const code = error && error.code;
+          let msg = error.message || 'Firestore upload failed';
+          if (code === 'permission-denied') {
+            msg = 'Firestore permission denied — security rules must allow writes to instagram-images';
+          } else if (code === 'storage/unauthorized') {
+            msg =
+              'Firebase Storage blocked the upload — allow writes to instagram-zapier/ in Storage rules (same auth as reveal uploads)';
+          } else if (
+            /invalid|size|too large|exceed/i.test(msg) ||
+            code === 'invalid-argument'
+          ) {
+            msg =
+              'Document too large for Firestore (max ~1 MB) or invalid data — try smaller images';
+          }
+          console.error('pushInstagramAssetsToFirestore', code, error);
+          this.uiService.showToast(msg);
         }
       }
 
@@ -11779,6 +12061,10 @@ try {
     // Make webhook available globally
     window.generateInstagramForZapier = window.zapierWebhookAPI.generateInstagramImage;
     window.zapierHealthCheck = window.zapierWebhookAPI.healthCheck;
+    window.pushInstagramImagesToFirestoreForZapier = () =>
+      window.app && typeof window.app.handlePushInstagramAssetsToFirestore === 'function'
+        ? window.app.handlePushInstagramAssetsToFirestore()
+        : Promise.reject(new Error('app not ready'));
     
     // Automatic Firebase reconnection system
     window.autoReconnectToFirebase = function() {
