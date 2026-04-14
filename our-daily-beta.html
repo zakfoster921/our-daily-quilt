@@ -2484,19 +2484,19 @@ try {
               if (wasFirstSplitSpecialPattern) {
                 shouldCreateSpecialPattern = false;
               } else {
-                // Rule 1: 35% chance for splits 1-6
-                shouldCreateSpecialPattern = Math.random() < 0.35;
+                // Rule 1: 50% chance for splits 1-6
+                shouldCreateSpecialPattern = Math.random() < 0.50;
               }
             } else if (wasLastSplitSpecialPattern) {
               // Rule 3: No back-to-back special patterns
               shouldCreateSpecialPattern = false;
             } else {
-              // Rule 1: 35% chance for splits 1-6
-              shouldCreateSpecialPattern = Math.random() < 0.35;
+              // Rule 1: 50% chance for splits 1-6
+              shouldCreateSpecialPattern = Math.random() < 0.50;
             }
           } else {
-            // After split 6: 15% chance
-            shouldCreateSpecialPattern = Math.random() < 0.15;
+            // After split 6: 25% chance
+            shouldCreateSpecialPattern = Math.random() < 0.25;
           }
           
           if (shouldCreateSpecialPattern) {
@@ -2855,24 +2855,32 @@ try {
         // Create a dynamic organic checkerboard pattern (2x2, 3x3, or 4x4 based on block size)
         // Each square will have slightly irregular edges to maintain the hand-cut vibe
         // Grid size: 4x4 for very large blocks (250px+), 3x3 for medium (100px+), 2x2 for small (50px+)
-        // Enhanced with subtle variation: 2 alternating colors + lighter variation of user color
+        // Uses tonal variants for richer color palette
         
-        // Create a 2-color checkerboard with subtle variation
-        // Colors: original block color + user color + lighter variation of user color
-        const originalColor = block.color;
-        const userColor = newColor;
+        // Generate 3-color palette with proper light/dark alternation
+        // Create a third color that matches the lightness of one of the original colors
+        const basePalette = this.generateColorPalette(block.color, newColor, 2);
         
-        // Create a lighter variation of the user color
-        const userHsl = this.hexToHsl(userColor);
-        const lighterUserHsl = {
-          h: userHsl.h, // Same hue
-          s: Math.max(10, userHsl.s - 11), // Slightly less saturated
-          l: Math.min(90, userHsl.l + 11) // 11% lighter
+        // Get HSL values of the two base colors
+        const hsl1 = this.hexToHsl(basePalette[0]);
+        const hsl2 = this.hexToHsl(basePalette[1]);
+        
+        // Create a third color that has the same lightness as the lighter of the two colors
+        // but with a different hue to add variety while maintaining the light/dark pattern
+        const lighterColor = hsl1.l > hsl2.l ? basePalette[0] : basePalette[1];
+        const lighterHsl = this.hexToHsl(lighterColor);
+        
+        // Create a third color with same lightness but shifted hue
+        const thirdHsl = {
+          h: (lighterHsl.h + 60) % 360, // Shift hue by 60 degrees
+          s: Math.max(20, lighterHsl.s - 10), // Slightly less saturated
+          l: lighterHsl.l // Same lightness
         };
-        const lighterUserColor = Utils.hslToHex(lighterUserHsl.h, lighterUserHsl.s, lighterUserHsl.l);
         
-        // Color palette: [originalColor, userColor, lighterUserColor]
-        const colorPalette = [originalColor, userColor, lighterUserColor];
+        const thirdColor = Utils.hslToHex(thirdHsl.h, thirdHsl.s, thirdHsl.l);
+        
+        // Arrange colors so we have: [light, dark, light] or [dark, light, dark]
+        const colorPalette = [basePalette[0], basePalette[1], thirdColor];
         
         const minBlockSize = 20; // Further reduced minimum size to allow smaller checkerboards
         const blockArea = block.width * block.height;
@@ -2940,25 +2948,55 @@ try {
           rowPositions.push(rowPositions[i] + rowHeights[i]);
         }
         
-        // Track which cells will get the user color vs original color for replacement logic
-        const userColorCells = [];
-        const totalCells = gridSize * gridSize;
-        
         for (let row = 0; row < gridSize; row++) {
           for (let col = 0; col < gridSize; col++) {
             const cellIndex = row * gridSize + col;
-            // Proper checkerboard pattern: alternate between original and user colors
-            // Use (row + col) % 2 to determine alternation
-            const useOriginalColor = (row + col) % 2 === 0;
+            // Proper checkerboard pattern: alternate between light and dark values
+            // Use (row + col) % 2 to determine if this should be light or dark
+            const isLight = (row + col) % 2 === 0;
             
+            // Choose color based on lightness value
             let colorIndex;
-            if (useOriginalColor) {
-              // Use original block color (index 0)
-              colorIndex = 0;
+            if (isLight) {
+              // Use the lighter color (or the third color which has same lightness as lighter)
+              const hsl1 = this.hexToHsl(colorPalette[0]);
+              const hsl2 = this.hexToHsl(colorPalette[1]);
+              const hsl3 = this.hexToHsl(colorPalette[2]);
+              
+              // Find which colors are light and randomly choose between them
+              const lightColors = [];
+              if (hsl1.l > 50) lightColors.push(0);
+              if (hsl2.l > 50) lightColors.push(1);
+              if (hsl3.l > 50) lightColors.push(2);
+              
+              // Fallback: if no light colors, use the lightest available
+              if (lightColors.length === 0) {
+                const lightnesses = [hsl1.l, hsl2.l, hsl3.l];
+                const lightestIndex = lightnesses.indexOf(Math.max(...lightnesses));
+                colorIndex = lightestIndex;
+              } else {
+                colorIndex = lightColors[Math.floor(Math.random() * lightColors.length)];
+              }
             } else {
-              // Use user color (index 1) - we'll replace some of these later
-              colorIndex = 1;
-              userColorCells.push(cellIndex);
+              // Use the darker color
+              const hsl1 = this.hexToHsl(colorPalette[0]);
+              const hsl2 = this.hexToHsl(colorPalette[1]);
+              const hsl3 = this.hexToHsl(colorPalette[2]);
+              
+              // Find which colors are dark and randomly choose between them
+              const darkColors = [];
+              if (hsl1.l <= 50) darkColors.push(0);
+              if (hsl2.l <= 50) darkColors.push(1);
+              if (hsl3.l <= 50) darkColors.push(2);
+              
+              // Fallback: if no dark colors, use the darkest available
+              if (darkColors.length === 0) {
+                const lightnesses = [hsl1.l, hsl2.l, hsl3.l];
+                const darkestIndex = lightnesses.indexOf(Math.min(...lightnesses));
+                colorIndex = darkestIndex;
+              } else {
+                colorIndex = darkColors[Math.floor(Math.random() * darkColors.length)];
+              }
             }
             
             // Use variable dimensions for this cell
@@ -3028,23 +3066,6 @@ try {
           }
         }
         
-        // After all cells are created, replace exactly 2 user color cells with lighter variation
-        // This preserves the checkerboard structure while adding subtle variation
-        if (userColorCells.length >= 2) {
-          // Randomly select 2 user color cells to replace with lighter variation
-          const shuffledUserCells = [...userColorCells].sort(() => Math.random() - 0.5);
-          const cellsToReplace = shuffledUserCells.slice(0, 2);
-          
-          cellsToReplace.forEach(cellIndex => {
-            const cell = cells.find(c => c.id.endsWith('_' + cellIndex));
-            if (cell) {
-              cell.color = colorPalette[2]; // Use lighter user color (index 2)
-            }
-          });
-          
-          console.log(`🎨 CHECKERBOARD: Replaced 2 user color cells with lighter variation for subtle pattern variation`);
-        }
-        
         console.log(`🔧 CHECKERBOARD: Created ${cells.length} cells for block ${block.id}`);
         return cells;
       }
@@ -3075,24 +3096,10 @@ try {
       createOrganicStripes(block, newColor) {
         // Create organic stripes pattern with variable column/row widths
         // Stripes can be either horizontal or vertical based on block aspect ratio
-        // Enhanced with alternating pattern and subtle variation
+        // Uses tonal variants for richer color palette
         
-        // Create alternating stripes with subtle variation
-        // Colors: original block color + user color + lighter variation of user color
-        const originalColor = block.color;
-        const userColor = newColor;
-        
-        // Create a lighter variation of the user color (same as checkerboard)
-        const userHsl = this.hexToHsl(userColor);
-        const lighterUserHsl = {
-          h: userHsl.h, // Same hue
-          s: Math.max(10, userHsl.s - 11), // Slightly less saturated
-          l: Math.min(90, userHsl.l + 11) // 11% lighter
-        };
-        const lighterUserColor = Utils.hslToHex(lighterUserHsl.h, lighterUserHsl.s, lighterUserHsl.l);
-        
-        // Color palette: [originalColor, userColor, lighterUserColor]
-        const colorPalette = [originalColor, userColor, lighterUserColor];
+        // Generate 3-color palette with tonal variants for organic stripes
+        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
         
         const minBlockSize = 20;
         const blockArea = block.width * block.height;
@@ -3120,7 +3127,7 @@ try {
         numStripes = Math.min(numStripes, 4);
         
         const cells = [];
-        const userColorStripes = []; // Track which stripes use user color for replacement
+        // Use tonal variants from the 4-color palette for richer stripes
         
         if (stripeOrientation === 'horizontal') {
           // Create horizontal stripes with variable heights
@@ -3133,16 +3140,7 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            // Alternating pattern: even indices = original, odd indices = user color
-            const useOriginalColor = i % 2 === 0;
-            let colorIndex;
-            
-            if (useOriginalColor) {
-              colorIndex = 0; // Original color
-            } else {
-              colorIndex = 1; // User color - we'll replace one of these later
-              userColorStripes.push(i);
-            }
+            const colorIndex = Math.floor(Math.random() * 3); // Random organic distribution
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(block.width, stripeHeights[i]));
@@ -3184,16 +3182,7 @@ try {
           }
           
           for (let i = 0; i < numStripes; i++) {
-            // Alternating pattern: even indices = original, odd indices = user color
-            const useOriginalColor = i % 2 === 0;
-            let colorIndex;
-            
-            if (useOriginalColor) {
-              colorIndex = 0; // Original color
-            } else {
-              colorIndex = 1; // User color - we'll replace one of these later
-              userColorStripes.push(i);
-            }
+            const colorIndex = Math.floor(Math.random() * 3); // Random organic distribution
             
             // Add subtle jitter to stripe boundaries
             const jitterMultiplier = Math.min(0.05, 20 / Math.min(stripeWidths[i], block.height));
@@ -3224,20 +3213,6 @@ try {
             
             cells.push(cell);
           }
-        }
-        
-        // After all stripes are created, replace exactly 1 user color stripe with lighter variation
-        // This preserves the alternating pattern while adding subtle variation
-        if (userColorStripes.length >= 1) {
-          // Randomly select 1 user color stripe to replace with lighter variation
-          const stripeToReplace = userColorStripes[Math.floor(Math.random() * userColorStripes.length)];
-          
-          const stripe = cells.find(c => c.id.endsWith('_' + stripeToReplace));
-          if (stripe) {
-            stripe.color = colorPalette[2]; // Use lighter user color (index 2)
-          }
-          
-          console.log(`🎨 STRIPES: Replaced 1 user color stripe with lighter variation for subtle pattern variation`);
         }
         
         return cells;
@@ -5956,9 +5931,6 @@ try {
         }
 
         this.lastAddedIndex = null;
-        
-        // Update the square counter
-        this.updateSquareCounter();
       }
 
       setLastAddedIndex(index) {
@@ -9314,9 +9286,6 @@ try {
             await this.saveQuilt();
             this.renderQuilt();
             
-            // Check if block shuffling should be triggered
-            this.checkAndTriggerShuffling();
-            
             this.uiService.showScreen('screen-quilt');
           }
           
@@ -9428,9 +9397,6 @@ try {
             
             this.renderQuilt();
             await this.saveQuilt();
-            
-            // Check if block shuffling should be triggered
-            this.checkAndTriggerShuffling();
             
             // Update admin stats if menu is open
             this.updateAdminStats();
@@ -9634,527 +9600,6 @@ try {
         const families = Object.values(familyCounts).sort((a, b) => b.count - a.count);
         
         return families;
-      }
-
-      // ===== BLOCK SHUFFLING SYSTEM =====
-      
-      analyzeBlockColors() {
-        const colorCounts = {};
-        const blockCount = this.quiltEngine.blocks.length;
-        
-        // Count each color
-        this.quiltEngine.blocks.forEach(block => {
-          const color = block.color;
-          colorCounts[color] = (colorCounts[color] || 0) + 1;
-        });
-        
-        // Find the most popular color
-        let mostPopularColor = null;
-        let maxCount = 0;
-        
-        for (const [color, count] of Object.entries(colorCounts)) {
-          if (count > maxCount) {
-            maxCount = count;
-            mostPopularColor = color;
-          }
-        }
-        
-        return {
-          totalBlocks: blockCount,
-          mostPopularColor: mostPopularColor,
-          mostPopularCount: maxCount,
-          colorCounts: colorCounts
-        };
-      }
-
-      shouldTriggerShuffling() {
-        const analysis = this.analyzeBlockColors();
-        return analysis.totalBlocks >= 100;
-      }
-
-      identifySpecialPatternBlocks() {
-        // Identify blocks that are part of special patterns (checkerboard, stripes, etc.)
-        // These should not be moved during shuffling, but they can still split normally
-        const specialBlocks = this.quiltEngine.blocks.filter(block => 
-          block.patternType === 'special' || 
-          block.specialPatternType || 
-          block.originalPatternId
-        );
-        
-        console.log(`🛡️ Found ${specialBlocks.length} special pattern blocks (protected from shuffling)`);
-        return specialBlocks;
-      }
-
-      getShufflableBlocks() {
-        // Get blocks that can be shuffled (exclude special patterns)
-        const specialBlocks = this.identifySpecialPatternBlocks();
-        const specialBlockIds = new Set(specialBlocks.map(block => block.id));
-        
-        const shufflableBlocks = this.quiltEngine.blocks.filter(block => !specialBlockIds.has(block.id));
-        console.log(`🎯 Found ${shufflableBlocks.length} shufflable blocks (${specialBlocks.length} special patterns protected)`);
-        
-        return shufflableBlocks;
-      }
-
-      generateArrangementStrategy() {
-        // Randomly select one of the 5 arrangement strategies
-        const strategies = [
-          'column',
-          'single_block', 
-          'multiple_clusters',
-          'frame',
-          'scattered'
-        ];
-        
-        return strategies[Math.floor(Math.random() * strategies.length)];
-      }
-
-      createColumnArrangement(popularColor, shufflableBlocks) {
-        // Create a vertical or horizontal column of the popular color
-        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
-        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
-        
-        // Determine column orientation (vertical or horizontal)
-        const isVertical = Math.random() < 0.5;
-        
-        // Calculate column position
-        const quiltBounds = this.getQuiltBounds();
-        let columnPositions = [];
-        
-        if (isVertical) {
-          // Vertical column - choose left, center, or right
-          const positions = ['left', 'center', 'right'];
-          const position = positions[Math.floor(Math.random() * positions.length)];
-          
-          let startX;
-          if (position === 'left') startX = quiltBounds.minX + 50;
-          else if (position === 'right') startX = quiltBounds.maxX - 200;
-          else startX = quiltBounds.minX + (quiltBounds.maxX - quiltBounds.minX) / 2 - 100;
-          
-          // Create column positions
-          for (let i = 0; i < popularBlocks.length; i++) {
-            columnPositions.push({
-              x: startX,
-              y: quiltBounds.minY + (i * 100) + 50
-            });
-          }
-        } else {
-          // Horizontal column - choose top, center, or bottom
-          const positions = ['top', 'center', 'bottom'];
-          const position = positions[Math.floor(Math.random() * positions.length)];
-          
-          let startY;
-          if (position === 'top') startY = quiltBounds.minY + 50;
-          else if (position === 'bottom') startY = quiltBounds.maxY - 200;
-          else startY = quiltBounds.minY + (quiltBounds.maxY - quiltBounds.minY) / 2 - 100;
-          
-          // Create column positions
-          for (let i = 0; i < popularBlocks.length; i++) {
-            columnPositions.push({
-              x: quiltBounds.minX + (i * 100) + 50,
-              y: startY
-            });
-          }
-        }
-        
-        return { popularBlocks, otherBlocks, columnPositions };
-      }
-
-      createSingleBlockArrangement(popularColor, shufflableBlocks) {
-        // Create a single large block of the popular color
-        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
-        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
-        
-        // Choose a central position for the block
-        const quiltBounds = this.getQuiltBounds();
-        const centerX = quiltBounds.minX + (quiltBounds.maxX - quiltBounds.minX) / 2;
-        const centerY = quiltBounds.minY + (quiltBounds.maxY - quiltBounds.minY) / 2;
-        
-        // Create a large block position
-        const blockSize = Math.min(200, Math.max(100, popularBlocks.length * 20));
-        const blockPositions = [{
-          x: centerX - blockSize / 2,
-          y: centerY - blockSize / 2,
-          width: blockSize,
-          height: blockSize
-        }];
-        
-        return { popularBlocks, otherBlocks, blockPositions };
-      }
-
-      createMultipleClustersArrangement(popularColor, shufflableBlocks) {
-        // Create 2-3 distinct clusters of the popular color
-        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
-        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
-        
-        const numClusters = Math.min(3, Math.max(2, Math.floor(popularBlocks.length / 3)));
-        const blocksPerCluster = Math.floor(popularBlocks.length / numClusters);
-        
-        const quiltBounds = this.getQuiltBounds();
-        const clusterPositions = [];
-        
-        for (let i = 0; i < numClusters; i++) {
-          // Distribute clusters across the quilt
-          const x = quiltBounds.minX + (i * (quiltBounds.maxX - quiltBounds.minX) / numClusters) + 50;
-          const y = quiltBounds.minY + (Math.random() * (quiltBounds.maxY - quiltBounds.minY - 100)) + 50;
-          
-          clusterPositions.push({ x, y });
-        }
-        
-        return { popularBlocks, otherBlocks, clusterPositions, numClusters };
-      }
-
-      createFrameArrangement(popularColor, shufflableBlocks) {
-        // Create a frame/border around the outer edge with the popular color
-        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
-        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
-        
-        const quiltBounds = this.getQuiltBounds();
-        const framePositions = [];
-        
-        // Create frame positions around the edges
-        const frameWidth = 50;
-        
-        // Top edge
-        for (let i = 0; i < popularBlocks.length / 4; i++) {
-          framePositions.push({
-            x: quiltBounds.minX + (i * 100),
-            y: quiltBounds.minY
-          });
-        }
-        
-        // Right edge
-        for (let i = 0; i < popularBlocks.length / 4; i++) {
-          framePositions.push({
-            x: quiltBounds.maxX - frameWidth,
-            y: quiltBounds.minY + (i * 100)
-          });
-        }
-        
-        // Bottom edge
-        for (let i = 0; i < popularBlocks.length / 4; i++) {
-          framePositions.push({
-            x: quiltBounds.maxX - (i * 100),
-            y: quiltBounds.maxY - frameWidth
-          });
-        }
-        
-        // Left edge
-        for (let i = 0; i < popularBlocks.length / 4; i++) {
-          framePositions.push({
-            x: quiltBounds.minX,
-            y: quiltBounds.maxY - (i * 100)
-          });
-        }
-        
-        return { popularBlocks, otherBlocks, framePositions };
-      }
-
-      createScatteredArrangement(popularColor, shufflableBlocks) {
-        // Distribute popular color blocks as accent points throughout the quilt
-        const popularBlocks = shufflableBlocks.filter(block => block.color === popularColor);
-        const otherBlocks = shufflableBlocks.filter(block => block.color !== popularColor);
-        
-        const quiltBounds = this.getQuiltBounds();
-        const scatteredPositions = [];
-        
-        // Create scattered positions
-        for (let i = 0; i < popularBlocks.length; i++) {
-          scatteredPositions.push({
-            x: quiltBounds.minX + Math.random() * (quiltBounds.maxX - quiltBounds.minX - 100) + 50,
-            y: quiltBounds.minY + Math.random() * (quiltBounds.maxY - quiltBounds.minY - 100) + 50
-          });
-        }
-        
-        return { popularBlocks, otherBlocks, scatteredPositions };
-      }
-
-      getQuiltBounds() {
-        // Get the current bounds of the quilt
-        if (this.quiltEngine.blocks.length === 0) {
-          return { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
-        }
-        
-        const minX = Math.min(...this.quiltEngine.blocks.map(b => b.x));
-        const minY = Math.min(...this.quiltEngine.blocks.map(b => b.y));
-        const maxX = Math.max(...this.quiltEngine.blocks.map(b => b.x + b.width));
-        const maxY = Math.max(...this.quiltEngine.blocks.map(b => b.y + b.height));
-        
-        return { minX, minY, maxX, maxY };
-      }
-
-      performBlockShuffling() {
-        try {
-          this.logger.log('🔄 Starting block shuffling process...');
-          this.logger.log('📝 Note: Special patterns will continue to split normally - only their colors may be rearranged');
-          
-          // Analyze current quilt
-          const analysis = this.analyzeBlockColors();
-          this.logger.log(`📊 Quilt analysis: ${analysis.totalBlocks} blocks, most popular color: ${analysis.mostPopularColor} (${analysis.mostPopularCount} blocks)`);
-          
-          // Get shufflable blocks (exclude special patterns)
-          const shufflableBlocks = this.getShufflableBlocks();
-          this.logger.log(`🎯 Found ${shufflableBlocks.length} shufflable blocks (excluding special patterns)`);
-          
-          if (shufflableBlocks.length < 10) {
-            this.logger.warn('⚠️ Not enough shufflable blocks to perform meaningful shuffling');
-            return false;
-          }
-          
-          // Generate arrangement strategy
-          const strategy = this.generateArrangementStrategy();
-          this.logger.log(`🎨 Selected arrangement strategy: ${strategy}`);
-          
-          // Create arrangement based on strategy
-          let arrangement;
-          switch (strategy) {
-            case 'column':
-              arrangement = this.createColumnArrangement(analysis.mostPopularColor, shufflableBlocks);
-              break;
-            case 'single_block':
-              arrangement = this.createSingleBlockArrangement(analysis.mostPopularColor, shufflableBlocks);
-              break;
-            case 'multiple_clusters':
-              arrangement = this.createMultipleClustersArrangement(analysis.mostPopularColor, shufflableBlocks);
-              break;
-            case 'frame':
-              arrangement = this.createFrameArrangement(analysis.mostPopularColor, shufflableBlocks);
-              break;
-            case 'scattered':
-              arrangement = this.createScatteredArrangement(analysis.mostPopularColor, shufflableBlocks);
-              break;
-            default:
-              this.logger.error('❌ Unknown arrangement strategy');
-              return false;
-          }
-          
-          // Apply the arrangement by swapping colors
-          this.applyColorArrangement(arrangement, strategy);
-          
-          // Process special patterns for splitting (they keep their original colors and positions)
-          this.processSpecialPatternsForSplitting();
-          
-          this.logger.log('✅ Block shuffling completed successfully');
-          return true;
-          
-        } catch (error) {
-          this.logger.error('❌ Block shuffling failed:', error);
-          return false;
-        }
-      }
-
-      applyColorArrangement(arrangement, strategy) {
-        // Apply the arrangement by swapping colors between blocks
-        // This preserves the grid structure while creating the desired pattern
-        // IMPORTANT: Special patterns are completely excluded from color changes
-        
-        const { popularBlocks, otherBlocks } = arrangement;
-        
-        // Create a copy of all shufflable blocks for color swapping
-        // Only include blocks that are NOT special patterns
-        const allShufflableBlocks = [...popularBlocks, ...otherBlocks].filter(block => 
-          !block.patternType || block.patternType !== 'special'
-        );
-        
-        console.log(`🎨 Color shuffling: ${allShufflableBlocks.length} blocks (special patterns excluded from color changes)`);
-        
-        // Shuffle the colors
-        const shuffledColors = allShufflableBlocks.map(block => block.color);
-        this.shuffleArray(shuffledColors);
-        
-        // Apply the shuffled colors to create the arrangement
-        let colorIndex = 0;
-        
-        // Apply colors only to non-special pattern blocks
-        const applyColorToBlock = (block) => {
-          // Only change colors of non-special pattern blocks
-          if (!block.patternType || block.patternType !== 'special') {
-            if (colorIndex < shuffledColors.length) {
-              block.color = shuffledColors[colorIndex];
-              colorIndex++;
-            }
-          }
-        };
-        
-        // First, apply colors to popular blocks in their new arrangement
-        if (strategy === 'column' && arrangement.columnPositions) {
-          for (let i = 0; i < popularBlocks.length; i++) {
-            applyColorToBlock(popularBlocks[i]);
-          }
-        } else if (strategy === 'single_block' && arrangement.blockPositions) {
-          for (let i = 0; i < popularBlocks.length; i++) {
-            applyColorToBlock(popularBlocks[i]);
-          }
-        } else if (strategy === 'multiple_clusters' && arrangement.clusterPositions) {
-          for (let i = 0; i < popularBlocks.length; i++) {
-            applyColorToBlock(popularBlocks[i]);
-          }
-        } else if (strategy === 'frame' && arrangement.framePositions) {
-          for (let i = 0; i < popularBlocks.length; i++) {
-            applyColorToBlock(popularBlocks[i]);
-          }
-        } else if (strategy === 'scattered' && arrangement.scatteredPositions) {
-          for (let i = 0; i < popularBlocks.length; i++) {
-            applyColorToBlock(popularBlocks[i]);
-          }
-        }
-        
-        // Apply remaining colors to other blocks
-        for (let i = 0; i < otherBlocks.length; i++) {
-          applyColorToBlock(otherBlocks[i]);
-        }
-        
-        this.logger.log(`🎨 Applied color arrangement: ${strategy} with ${popularBlocks.length} popular blocks and ${otherBlocks.length} other blocks`);
-      }
-
-      processSpecialPatternsForSplitting() {
-        // Process special patterns for splitting after main shuffling is complete
-        // Special patterns keep their original colors and positions, but can still split
-        const specialBlocks = this.identifySpecialPatternBlocks();
-        
-        if (specialBlocks.length === 0) {
-          this.logger.log('🎯 No special patterns to process for splitting');
-          return;
-        }
-        
-        this.logger.log(`🔄 Processing ${specialBlocks.length} special pattern blocks for splitting...`);
-        
-        // Process each special pattern block for potential splitting
-        let splitCount = 0;
-        for (const block of specialBlocks) {
-          // Check if this block should split (using the same logic as normal blocks)
-          if (this.shouldBlockSplit(block)) {
-            this.splitBlock(block);
-            splitCount++;
-          }
-        }
-        
-        if (splitCount > 0) {
-          this.logger.log(`✨ Special patterns: ${splitCount} blocks split successfully`);
-        } else {
-          this.logger.log('🎯 Special patterns: No blocks ready to split');
-        }
-      }
-
-      shouldBlockSplit(block) {
-        // Check if a block should split based on color similarity with neighbors
-        // This uses the same logic as the normal splitting system
-        const neighbors = this.getNeighboringBlocks(block);
-        
-        for (const neighbor of neighbors) {
-          const similarity = this.quiltEngine.getColorSimilarity(block.color, neighbor.color);
-          if (similarity > 0.93) { // Same threshold as normal splitting
-            return true;
-          }
-        }
-        
-        return false;
-      }
-
-      getNeighboringBlocks(block) {
-        // Get blocks that are adjacent to the given block
-        const neighbors = [];
-        const tolerance = 5; // Small tolerance for positioning
-        
-        for (const otherBlock of this.quiltEngine.blocks) {
-          if (otherBlock.id === block.id) continue;
-          
-          // Check if blocks are adjacent (touching or very close)
-          const isAdjacent = (
-            (Math.abs(otherBlock.x - (block.x + block.width)) < tolerance && 
-             otherBlock.y < block.y + block.height + tolerance && 
-             otherBlock.y + otherBlock.height > block.y - tolerance) ||
-            (Math.abs(block.x - (otherBlock.x + otherBlock.width)) < tolerance && 
-             otherBlock.y < block.y + block.height + tolerance && 
-             otherBlock.y + otherBlock.height > block.y - tolerance) ||
-            (Math.abs(otherBlock.y - (block.y + block.height)) < tolerance && 
-             otherBlock.x < block.x + block.width + tolerance && 
-             otherBlock.x + otherBlock.width > block.x - tolerance) ||
-            (Math.abs(block.y - (otherBlock.y + otherBlock.height)) < tolerance && 
-             otherBlock.x < block.x + block.width + tolerance && 
-             otherBlock.x + otherBlock.width > block.x - tolerance)
-          );
-          
-          if (isAdjacent) {
-            neighbors.push(otherBlock);
-          }
-        }
-        
-        return neighbors;
-      }
-
-      shuffleArray(array) {
-        // Fisher-Yates shuffle algorithm
-        for (let i = array.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [array[i], array[j]] = [array[j], array[i]];
-        }
-      }
-
-      checkAndTriggerShuffling() {
-        // Check if shuffling should be triggered and perform it
-        if (this.shouldTriggerShuffling()) {
-          this.logger.log('🎯 Triggering block shuffling - quilt has reached 100+ blocks');
-          
-          const success = this.performBlockShuffling();
-          
-          if (success) {
-            // Re-render the quilt with the new arrangement
-            this.renderQuilt();
-            
-            // Save the shuffled quilt
-            this.saveQuilt();
-            
-            this.logger.log('✅ Block shuffling completed and quilt saved');
-          } else {
-            this.logger.error('❌ Block shuffling failed');
-          }
-          
-          return success;
-        }
-        
-        return false;
-      }
-
-      // ===== ADMIN TESTING FUNCTIONS =====
-      
-      testBlockShuffling() {
-        // Admin function to test block shuffling manually
-        this.logger.log('🧪 Testing block shuffling manually...');
-        
-        const analysis = this.analyzeBlockColors();
-        this.logger.log(`📊 Current quilt: ${analysis.totalBlocks} blocks, most popular: ${analysis.mostPopularColor} (${analysis.mostPopularCount} blocks)`);
-        
-        if (analysis.totalBlocks < 10) {
-          this.uiService.showToast('Need at least 10 blocks to test shuffling');
-          return;
-        }
-        
-        const success = this.performBlockShuffling();
-        
-        if (success) {
-          this.renderQuilt();
-          this.saveQuilt();
-          this.uiService.showToast(`Block shuffling test completed! Strategy applied to ${analysis.totalBlocks} blocks.`);
-        } else {
-          this.uiService.showToast('Block shuffling test failed');
-        }
-      }
-
-      analyzeCurrentQuilt() {
-        // Admin function to analyze current quilt state
-        const analysis = this.analyzeBlockColors();
-        const specialBlocks = this.identifySpecialPatternBlocks();
-        const shufflableBlocks = this.getShufflableBlocks();
-        
-        this.logger.log('📊 Quilt Analysis:');
-        this.logger.log(`  Total blocks: ${analysis.totalBlocks}`);
-        this.logger.log(`  Most popular color: ${analysis.mostPopularColor} (${analysis.mostPopularCount} blocks)`);
-        this.logger.log(`  Special pattern blocks: ${specialBlocks.length}`);
-        this.logger.log(`  Shufflable blocks: ${shufflableBlocks.length}`);
-        this.logger.log(`  Color distribution:`, analysis.colorCounts);
-        
-        this.uiService.showToast(`Quilt analysis: ${analysis.totalBlocks} blocks, ${shufflableBlocks.length} shufflable`);
       }
 
       getColorFamily(color) {
@@ -10597,42 +10042,6 @@ try {
       
       console.log(`✅ After fix: All ${shuffledIndexes.length} indexes are now valid (0-${quotesLength-1})`);
       console.log('🔄 Try opening the quote manager again - errors should be gone!');
-    };
-
-    // ===== BLOCK SHUFFLING ADMIN COMMANDS =====
-    
-    // Test block shuffling manually
-    window.testBlockShuffling = () => {
-      console.log('🧪 Testing block shuffling...');
-      app.testBlockShuffling();
-    };
-
-    // Analyze current quilt state
-    window.analyzeQuilt = () => {
-      console.log('📊 Analyzing current quilt...');
-      app.analyzeCurrentQuilt();
-    };
-
-    // Check if shuffling should be triggered
-    window.checkShuffling = () => {
-      const shouldTrigger = app.shouldTriggerShuffling();
-      const analysis = app.analyzeBlockColors();
-      console.log(`🎯 Shuffling check: ${shouldTrigger ? 'SHOULD TRIGGER' : 'NOT YET'} (${analysis.totalBlocks} blocks)`);
-      return shouldTrigger;
-    };
-
-    // Force trigger shuffling (even if under 100 blocks)
-    window.forceShuffling = () => {
-      console.log('🔧 Force triggering block shuffling...');
-      const success = app.performBlockShuffling();
-      if (success) {
-        app.renderQuilt();
-        app.saveQuilt();
-        console.log('✅ Force shuffling completed');
-      } else {
-        console.log('❌ Force shuffling failed');
-      }
-      return success;
     };
       
       // Debug functions
