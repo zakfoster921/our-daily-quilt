@@ -186,6 +186,8 @@ try {
         );
         pointer-events: none;
         z-index: 2;
+        transform: translate3d(0, var(--quilt-overlay-shift, 0px), 0);
+        will-change: transform;
       }
     
     /* Base SVG styling - will be overridden by media queries */
@@ -205,6 +207,8 @@ try {
       visibility: visible;
       opacity: 1;
       z-index: 1;
+      transform: translate3d(0, var(--quilt-base-shift, 0px), 0);
+      will-change: transform;
     }
 
 
@@ -2399,7 +2403,7 @@ try {
           // Check if new color is very similar to any special pattern colors
           const hasSimilarColor = specialPatternBlocks.some(block => {
             const similarity = this.getColorSimilarity(block.color, newColor);
-            return similarity > 0.93; // STRICT similar (93%+ similar) - OKLab-based pattern preservation threshold
+            return similarity > 0.88; // Strict similar (88%+ similar) - OKLab-based pattern preservation threshold
           });
           
           if (hasSimilarColor) {
@@ -2421,7 +2425,7 @@ try {
         
         if (!selectedBlock) {
           // Special rules for pattern creation:
-          // 1) Likelihood for splits 1-6 = 50%
+          // 1) Likelihood for splits 1-6 = 65%
           // 2) No two back-to-back special patterns
           // 3) After split 6, use 25% chance
           // 4) NEW: Reserve minimum 30% of blocks as regular (prevent all-special quilt)
@@ -2450,7 +2454,7 @@ try {
           if (specialPatternsCreated >= maxSpecialPatterns) {
             shouldCreateSpecialPattern = false;
           } else if (this.submissionCount >= 1 && this.submissionCount <= 6) {
-            // Rule 2: Splits 2-6 have 50% chance
+            // Rule 2: Splits 2-6 have 65% chance
             // Rule 3: Check if previous split was special pattern
             // Special pattern blocks are created with the current submissionIndex, so we need to check for blocks
             // that were created in the previous submission (submissionIndex === this.submissionCount - 1)
@@ -2484,15 +2488,15 @@ try {
               if (wasFirstSplitSpecialPattern) {
                 shouldCreateSpecialPattern = false;
               } else {
-                // Rule 1: 50% chance for splits 1-6
-                shouldCreateSpecialPattern = Math.random() < 0.50;
+                // Rule 1: 65% chance for splits 1-6
+                shouldCreateSpecialPattern = Math.random() < 0.65;
               }
             } else if (wasLastSplitSpecialPattern) {
               // Rule 3: No back-to-back special patterns
               shouldCreateSpecialPattern = false;
             } else {
-              // Rule 1: 50% chance for splits 1-6
-              shouldCreateSpecialPattern = Math.random() < 0.50;
+              // Rule 1: 65% chance for splits 1-6
+              shouldCreateSpecialPattern = Math.random() < 0.65;
             }
           } else {
             // After split 6: 25% chance
@@ -2726,7 +2730,7 @@ try {
         if (isSpecialPatternBlock) {
           // For existing special pattern blocks, require VERY SIMILAR colors to preserve pattern
           const colorSimilarity = this.getColorSimilarity(block.color, newColor);
-          if (colorSimilarity > 0.93) {
+          if (colorSimilarity > 0.88) {
             console.log(`🎯 NO NESTED PATTERNS: Special pattern block ${block.id} has similar color (${colorSimilarity.toFixed(3)}) - using regular split to prevent nested patterns`);
             return this.performRegularSplit(block, newColor);
           }
@@ -6391,6 +6395,18 @@ try {
         this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
         this.colorHasBeenSelected = false;
         this.isDragging = false;
+
+        // Subtle scroll parallax state for quilt screen
+        this.parallaxEnabled = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        this.parallaxBaseRate = 0.03;
+        this.parallaxOverlayMultiplier = 1.35;
+        this.parallaxMaxShift = 6;
+        this.parallaxSmoothing = 0.08;
+        this.parallaxCurrentShift = 0;
+        this.parallaxTargetShift = 0;
+        this.parallaxTicking = false;
+        this.parallaxAnchorScrollTop = 0;
+        this.parallaxScrollListener = null;
       }
       
       
@@ -6671,6 +6687,9 @@ try {
         
         // Archive event handlers
         this.setupArchiveEventHandlers();
+
+        // Subtle quilt parallax setup
+        this.setupQuiltParallax();
         
         // Setup long-press admin access on title
         this.setupLongPressAdminAccess();
@@ -6883,6 +6902,82 @@ try {
             this.renderQuilt();
           }
         }, 250); // 250ms debounce
+      }
+
+      setupQuiltParallax() {
+        if (!this.parallaxEnabled) return;
+
+        const app = document.getElementById('app');
+        this.parallaxScrollListener = this.handleParallaxScroll.bind(this);
+
+        // Listen on both likely scroll containers for consistency across devices/layouts
+        window.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        if (app) {
+          app.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        }
+
+        // Update parallax anchor/target on screen changes
+        document.addEventListener('screenChange', (e) => {
+          if (e.detail.screenId === 'screen-quilt') {
+            this.parallaxAnchorScrollTop = this.getCurrentScrollTop();
+            this.parallaxTargetShift = 0;
+            this.handleParallaxScroll();
+          } else {
+            this.parallaxTargetShift = 0;
+            this.requestParallaxFrame();
+          }
+        });
+      }
+
+      getCurrentScrollTop() {
+        const app = document.getElementById('app');
+        if (app && app.scrollTop > 0) return app.scrollTop;
+        return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+      }
+
+      handleParallaxScroll() {
+        if (!this.parallaxEnabled) return;
+
+        const quiltScreen = document.getElementById('screen-quilt');
+        const isQuiltActive = quiltScreen && quiltScreen.classList.contains('active');
+
+        if (!isQuiltActive) {
+          this.parallaxTargetShift = 0;
+          this.requestParallaxFrame();
+          return;
+        }
+
+        const scrollDelta = this.getCurrentScrollTop() - this.parallaxAnchorScrollTop;
+        const rawShift = scrollDelta * this.parallaxBaseRate;
+        this.parallaxTargetShift = Math.max(-this.parallaxMaxShift, Math.min(this.parallaxMaxShift, rawShift));
+        this.requestParallaxFrame();
+      }
+
+      requestParallaxFrame() {
+        if (this.parallaxTicking) return;
+        this.parallaxTicking = true;
+        requestAnimationFrame(() => this.applyQuiltParallaxFrame());
+      }
+
+      applyQuiltParallaxFrame() {
+        this.parallaxCurrentShift += (this.parallaxTargetShift - this.parallaxCurrentShift) * this.parallaxSmoothing;
+
+        // Snap to target near rest to avoid infinite tiny updates
+        if (Math.abs(this.parallaxTargetShift - this.parallaxCurrentShift) < 0.01) {
+          this.parallaxCurrentShift = this.parallaxTargetShift;
+        }
+
+        const baseShift = this.parallaxCurrentShift.toFixed(3);
+        const overlayShift = (this.parallaxCurrentShift * this.parallaxOverlayMultiplier).toFixed(3);
+
+        document.documentElement.style.setProperty('--quilt-base-shift', `${baseShift}px`);
+        document.documentElement.style.setProperty('--quilt-overlay-shift', `${overlayShift}px`);
+
+        if (Math.abs(this.parallaxTargetShift - this.parallaxCurrentShift) > 0.01) {
+          requestAnimationFrame(() => this.applyQuiltParallaxFrame());
+        } else {
+          this.parallaxTicking = false;
+        }
       }
 
 
@@ -8803,7 +8898,9 @@ try {
         const currentBlockCount = this.quiltEngine ? this.quiltEngine.blocks.length : 0;
         
         return `
-          📊 Current Blocks: ${currentBlockCount}
+          📊 Current Blocks: ${currentBlockCount}<br>
+          ⏰ Archive: 6:30 AM UTC | Reset: 7:00 AM UTC<br>
+          📸 Instagram upload is handled by Zapier before reset
         `;
       }
 
