@@ -6398,9 +6398,9 @@ try {
 
         // Subtle scroll parallax state for quilt screen
         this.parallaxEnabled = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-        this.parallaxBaseRate = 0.03;
-        this.parallaxOverlayMultiplier = 1.35;
-        this.parallaxMaxShift = 6;
+        this.parallaxBaseRate = 0.06;
+        this.parallaxOverlayMultiplier = 1.5;
+        this.parallaxMaxShift = 12;
         this.parallaxSmoothing = 0.08;
         this.parallaxCurrentShift = 0;
         this.parallaxTargetShift = 0;
@@ -6908,18 +6908,26 @@ try {
         if (!this.parallaxEnabled) return;
 
         const app = document.getElementById('app');
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
         this.parallaxScrollListener = this.handleParallaxScroll.bind(this);
 
-        // Listen on both likely scroll containers for consistency across devices/layouts
+        // Listen on likely scroll containers for consistency across devices/layouts
         window.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
         if (app) {
           app.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        }
+        if (quiltScreen) {
+          quiltScreen.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        }
+        if (quiltButtonPanel) {
+          quiltButtonPanel.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
         }
 
         // Update parallax anchor/target on screen changes
         document.addEventListener('screenChange', (e) => {
           if (e.detail.screenId === 'screen-quilt') {
-            this.parallaxAnchorScrollTop = this.getCurrentScrollTop();
+            this.parallaxAnchorScrollTop = this.getCurrentQuiltScrollPosition();
             this.parallaxTargetShift = 0;
             this.handleParallaxScroll();
           } else {
@@ -6929,10 +6937,18 @@ try {
         });
       }
 
-      getCurrentScrollTop() {
+      getCurrentQuiltScrollPosition() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
         const app = document.getElementById('app');
-        if (app && app.scrollTop > 0) return app.scrollTop;
-        return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+
+        // Prefer quilt-specific scroll containers first (most reliable on mobile).
+        const quiltScreenScroll = quiltScreen ? quiltScreen.scrollTop : 0;
+        const quiltPanelScroll = quiltButtonPanel ? quiltButtonPanel.scrollTop : 0;
+        const appScroll = app ? app.scrollTop : 0;
+        const windowScroll = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+
+        return quiltScreenScroll + quiltPanelScroll + appScroll + windowScroll;
       }
 
       handleParallaxScroll() {
@@ -6947,7 +6963,7 @@ try {
           return;
         }
 
-        const scrollDelta = this.getCurrentScrollTop() - this.parallaxAnchorScrollTop;
+        const scrollDelta = this.getCurrentQuiltScrollPosition() - this.parallaxAnchorScrollTop;
         const rawShift = scrollDelta * this.parallaxBaseRate;
         this.parallaxTargetShift = Math.max(-this.parallaxMaxShift, Math.min(this.parallaxMaxShift, rawShift));
         this.requestParallaxFrame();
