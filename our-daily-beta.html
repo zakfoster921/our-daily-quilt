@@ -439,6 +439,65 @@ try {
       opacity: 1 !important;
     }
 
+    /* Phase 1 continuous-flow feel for portal -> quote -> color */
+    .flow-enter-from-bottom {
+      transform: translateY(22px);
+      opacity: 0;
+    }
+    .flow-enter-from-top {
+      transform: translateY(-22px);
+      opacity: 0;
+    }
+    .flow-exit-to-top {
+      transform: translateY(-22px);
+      opacity: 0;
+    }
+    .flow-exit-to-bottom {
+      transform: translateY(22px);
+      opacity: 0;
+    }
+    .flow-enter-active {
+      transform: translateY(0);
+      opacity: 1;
+      transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease;
+    }
+    .flow-exit-active {
+      transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
+    }
+
+    /* True continuous intro flow: portal -> quote -> color in one scroll container */
+    body.intro-flow-active #app {
+      height: 100dvh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    body.intro-flow-active .screen:not(#screen-portal):not(#screen-quote):not(#screen-color) {
+      display: none !important;
+    }
+
+    body.intro-flow-active #screen-portal,
+    body.intro-flow-active #screen-quote,
+    body.intro-flow-active #screen-color {
+      position: relative !important;
+      display: flex !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      bottom: auto !important;
+      width: 100%;
+      min-height: 100dvh;
+      max-height: none !important;
+      height: 100dvh !important;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      transform: none !important;
+    }
+
     /* Welcome screen fade-in elements */
     .welcome-screen-fade-in {
       opacity: 0 !important;
@@ -4617,17 +4676,100 @@ try {
 
       showScreen(screenId) {
         try {
-          document.querySelectorAll(".screen").forEach(s => {
-            s.classList.remove("active");
-            s.style.display = 'none';
-          });
-          
+          const introIds = window.app?.getIntroScreenIds?.() || new Set();
+          const inIntro = introIds.has(screenId);
+          const introEnabled = !!window.app?.isIntroFlowEnabled?.();
+          if (introEnabled && inIntro) {
+            window.app.scrollIntroTo(screenId, 'smooth');
+            return;
+          }
+          if (introEnabled && !inIntro) {
+            window.app.disableIntroFlow();
+          }
+
+          const previousActive = document.querySelector('.screen.active');
+          const previousId = previousActive ? previousActive.id : null;
+          const prevOrder = this._flowScreenOrder?.[previousId];
+          const nextOrder = this._flowScreenOrder?.[screenId];
+          const isFlowTransition =
+            previousId &&
+            previousId !== screenId &&
+            prevOrder !== undefined &&
+            nextOrder !== undefined;
+
           const target = document.getElementById(screenId);
           if (target) {
-            target.style.display = 'flex';
-            target.classList.add("active");
-            
-            target.offsetHeight;
+            if (isFlowTransition) {
+              if (this._flowTransitioning) return;
+              this._flowTransitioning = true;
+
+              const enteringClass =
+                nextOrder > prevOrder ? 'flow-enter-from-bottom' : 'flow-enter-from-top';
+              const exitingClass =
+                nextOrder > prevOrder ? 'flow-exit-to-top' : 'flow-exit-to-bottom';
+
+              target.style.display = 'flex';
+              target.classList.remove(
+                'flow-enter-from-bottom',
+                'flow-enter-from-top',
+                'flow-enter-active',
+                'flow-exit-to-top',
+                'flow-exit-to-bottom',
+                'flow-exit-active'
+              );
+              target.classList.add(enteringClass, 'active');
+
+              if (previousActive) {
+                previousActive.classList.remove(
+                  'flow-enter-from-bottom',
+                  'flow-enter-from-top',
+                  'flow-enter-active',
+                  'flow-exit-to-top',
+                  'flow-exit-to-bottom',
+                  'flow-exit-active'
+                );
+                previousActive.classList.add(exitingClass, 'flow-exit-active');
+              }
+
+              target.offsetHeight;
+              requestAnimationFrame(() => {
+                target.classList.add('flow-enter-active');
+              });
+
+              setTimeout(() => {
+                if (previousActive) {
+                  previousActive.classList.remove(
+                    'active',
+                    'flow-enter-from-bottom',
+                    'flow-enter-from-top',
+                    'flow-enter-active',
+                    'flow-exit-to-top',
+                    'flow-exit-to-bottom',
+                    'flow-exit-active'
+                  );
+                  previousActive.style.display = 'none';
+                }
+                target.classList.remove(
+                  'flow-enter-from-bottom',
+                  'flow-enter-from-top',
+                  'flow-enter-active',
+                  'flow-exit-to-top',
+                  'flow-exit-to-bottom',
+                  'flow-exit-active'
+                );
+                this._flowTransitioning = false;
+              }, 380);
+            } else {
+              document.querySelectorAll(".screen").forEach(s => {
+                s.classList.remove("active");
+                s.style.display = 'none';
+              });
+
+              target.style.display = 'flex';
+              target.classList.add("active");
+
+              target.offsetHeight;
+            }
             
             // Set date immediately when portal screen is shown
             if (screenId === 'screen-portal') {
@@ -8024,6 +8166,15 @@ try {
         this._scrollNavTouchStartY = null;
         this._scrollNavLastTriggerAt = 0;
         this._scrollNavCooldownMs = 550;
+        this._flowScreenOrder = {
+          'screen-portal': 0,
+          'screen-quote': 1,
+          'screen-color': 2
+        };
+        this._flowTransitioning = false;
+        this._introScreenIds = new Set(['screen-portal', 'screen-quote', 'screen-color']);
+        this._introFlowEnabled = false;
+        this._introFlowScrollListener = null;
       }
       
       
@@ -8256,7 +8407,12 @@ try {
           btn.addEventListener("click", e => {
             e.preventDefault();
             const targetId = btn.getAttribute("data-next");
-            if (targetId) this.uiService.showScreen(targetId);
+            if (!targetId) return;
+            if (this.isIntroFlowEnabled() && this._introScreenIds.has(targetId)) {
+              this.scrollIntroTo(targetId, 'smooth');
+              return;
+            }
+            this.uiService.showScreen(targetId);
           });
         });
 
@@ -8290,7 +8446,7 @@ try {
         // Keyboard navigation
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
 
-        // Scroll/swipe navigation for early flow screens
+        // Legacy gesture navigation is disabled when intro flow is enabled.
         this.setupScreenScrollNavigation();
         
         // Window resize handler
@@ -8318,7 +8474,89 @@ try {
         localStorage.removeItem('ourDailyIsAdmin');
       }
 
+      getIntroScreenIds() {
+        return this._introScreenIds;
+      }
+
+      isIntroFlowEnabled() {
+        return !!this._introFlowEnabled;
+      }
+
+      enableIntroFlow(initialScreenId = 'screen-portal') {
+        if (this._introFlowEnabled) {
+          this.scrollIntroTo(initialScreenId, 'auto');
+          return;
+        }
+        const app = document.getElementById('app');
+        if (!app) return;
+
+        document.body.classList.add('intro-flow-active');
+        this._introFlowEnabled = true;
+
+        document.querySelectorAll('.screen').forEach((s) => {
+          if (this._introScreenIds.has(s.id)) {
+            s.style.display = 'flex';
+            s.classList.add('active');
+          } else {
+            s.style.display = 'none';
+            s.classList.remove('active');
+          }
+        });
+
+        if (!this._introFlowScrollListener) {
+          this._introFlowScrollListener = () => this.syncIntroFlowActiveSection();
+          app.addEventListener('scroll', this._introFlowScrollListener, { passive: true });
+        }
+
+        this.scrollIntroTo(initialScreenId, 'auto');
+      }
+
+      disableIntroFlow() {
+        if (!this._introFlowEnabled) return;
+        const app = document.getElementById('app');
+        if (app && this._introFlowScrollListener) {
+          app.removeEventListener('scroll', this._introFlowScrollListener);
+          this._introFlowScrollListener = null;
+        }
+        this._introFlowEnabled = false;
+        document.body.classList.remove('intro-flow-active');
+      }
+
+      scrollIntroTo(screenId, behavior = 'smooth') {
+        if (!this._introFlowEnabled || !this._introScreenIds.has(screenId)) return;
+        const app = document.getElementById('app');
+        const section = document.getElementById(screenId);
+        if (!app || !section) return;
+        app.scrollTo({ top: section.offsetTop, behavior });
+        this.syncIntroFlowActiveSection();
+      }
+
+      syncIntroFlowActiveSection() {
+        if (!this._introFlowEnabled) return;
+        const app = document.getElementById('app');
+        if (!app) return;
+        let nearest = null;
+        let nearestDist = Infinity;
+        for (const id of this._introScreenIds) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          const d = Math.abs(el.offsetTop - app.scrollTop);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearest = el;
+          }
+        }
+        if (!nearest) return;
+        for (const id of this._introScreenIds) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          if (el === nearest) el.classList.add('active');
+          else el.classList.remove('active');
+        }
+      }
+
       setupScreenScrollNavigation() {
+        if (this.isIntroFlowEnabled()) return;
         const nextByScreen = {
           'screen-portal': 'screen-quote',
           'screen-quote': 'screen-color'
@@ -10608,10 +10846,11 @@ try {
 
       initializeUI() {
         this.quoteService.displayQuote();
-        this.uiService.showScreen('screen-portal');
+        this.enableIntroFlow('screen-portal');
       }
 
       setupAutoTransition() {
+        if (this.isIntroFlowEnabled()) return;
         // Always set up the auto-transition regardless of current screen
         const delay = 1500; // Fixed 1.5 seconds for all devices
         
