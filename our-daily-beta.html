@@ -7038,6 +7038,16 @@ try {
                 const quoteRef = window.firestore.doc(window.db, 'quotes', today);
                 await window.firestore.setDoc(quoteRef, quoteData);
                 // Quote saved to Firestore
+
+                // Dedicated usage log for per-day quote usage sync back to Notion.
+                const usageRef = window.firestore.doc(window.db, 'dailyQuoteUsage', today);
+                await window.firestore.setDoc(usageRef, {
+                  text: todayQuote.text,
+                  author: todayQuote.author,
+                  sourceId: todayQuote.sourceId || null,
+                  date: today,
+                  lastUpdated: new Date().toISOString()
+                }, { merge: true });
               }
             } catch (quoteError) {
               console.warn('⚠️ Could not save quote to Firestore:', quoteError);

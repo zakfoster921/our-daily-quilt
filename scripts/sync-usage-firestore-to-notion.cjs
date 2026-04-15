@@ -1,0 +1,153 @@
+#!/usr/bin/env node
+/* eslint-disable no-console */
+require('dotenv').config();
+const admin = require('firebase-admin');
+
+const NOTION_API_VERSION = '2022-06-28';
+
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value || !String(value).trim()) {
+    throw new Error(`Missing required env var: ${name}`);
+  }
+  return String(value).trim();
+}
+
+function normalize(str) {
+  return String(str || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function quoteKey(text, author) {
+  return `${normalize(text)}|||${normalize(author)}`;
+}
+
+function isDateDocId(id) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(id || '').trim());
+}
+
+function initFirestore() {
+  if (admin.apps.length) return admin.firestore();
+
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+  } else {
+    admin.initializeApp({
+      credential: admin.credential.applicationDefault(),
+      projectId: process.env.FIREBASE_PROJECT_ID
+    });
+  }
+  return admin.firestore();
+}
+
+async function notionPatchPage(pageId, notionToken, payload) {
+  const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${notionToken}`,
+      'Notion-Version': NOTION_API_VERSION,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Notion page patch failed (${res.status}) for ${pageId}: ${body}`);
+  }
+}
+
+async function notionGetDatabaseSchema(databaseId, notionToken) {
+  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${notionToken}`,
+      'Notion-Version': NOTION_API_VERSION
+    }
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Notion DB schema fetch failed (${res.status}): ${body}`);
+  }
+  const json = await res.json();
+  return json.properties || {};
+}
+
+async function run() {
+  const dryRun = process.argv.includes('--dry-run');
+  const notionToken = requireEnv('NOTION_TOKEN');
+  const notionDatabaseId = requireEnv('NOTION_DATABASE_ID');
+  const db = initFirestore();
+
+  const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const usageDateCollection = process.env.FIRESTORE_DAILY_QUOTES_COLLECTION || 'dailyQuoteUsage';
+
+  const notionSchema = await notionGetDatabaseSchema(notionDatabaseId, notionToken);
+  const hasTimesUsed = !!notionSchema.times_used;
+  const hasLastUsedDate = !!notionSchema.last_used_date;
+  if (!hasTimesUsed && !hasLastUsedDate) {
+    throw new Error(
+      "Notion DB needs at least one of these properties: 'times_used' (number), 'last_used_date' (date)"
+    );
+  }
+
+  const allSnap = await db.collection(collectionName).get();
+  const notionDocs = [];
+  const byKey = new Map();
+
+  for (const doc of allSnap.docs) {
+    const data = doc.data() || {};
+    if (data.source !== 'notion') continue;
+    const text = data.text || '';
+    const author = data.author || '';
+    const sourceId = data.sourceId || doc.id;
+    if (!text || !author || !sourceId) continue;
+    const key = quoteKey(text, author);
+    const rec = { sourceId, text, author, key };
+    notionDocs.push(rec);
+    byKey.set(key, rec);
+  }
+
+  const usageSnap = await db.collection(usageDateCollection).get();
+  const usage = new Map(); // key -> { count, lastDate }
+  for (const doc of usageSnap.docs) {
+    if (!isDateDocId(doc.id)) continue;
+    const d = doc.data() || {};
+    const key = quoteKey(d.text, d.author);
+    if (!key || key === '|||') continue;
+    const existing = usage.get(key) || { count: 0, lastDate: null };
+    existing.count += 1;
+    if (!existing.lastDate || doc.id > existing.lastDate) existing.lastDate = doc.id;
+    usage.set(key, existing);
+  }
+
+  let updates = 0;
+  for (const q of notionDocs) {
+    const u = usage.get(q.key);
+    if (!u) continue;
+
+    const properties = {};
+    if (hasTimesUsed) properties.times_used = { number: u.count };
+    if (hasLastUsedDate) properties.last_used_date = { date: { start: u.lastDate } };
+    if (!Object.keys(properties).length) continue;
+
+    updates += 1;
+    if (!dryRun) {
+      await notionPatchPage(q.sourceId, notionToken, { properties });
+    }
+  }
+
+  console.log(
+    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} updated=${updates}`
+  );
+}
+
+run().catch((err) => {
+  console.error('[usage-sync] failed:', err.message);
+  process.exit(1);
+});
+
