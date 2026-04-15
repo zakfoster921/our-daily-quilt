@@ -2177,10 +2177,36 @@ try {
     }
 
     .reflection-body {
-      margin: 0 0 2rem;
+      margin: 0;
       font-size: 1.15rem;
       line-height: 1.65;
       color: #333;
+    }
+
+    .reflection-prompt-card {
+      border: none;
+      border-radius: 4px;
+      padding: 1.2rem;
+      margin: 0 auto 1.4rem;
+      background: #fff;
+      width: 81%;
+      max-width: 450px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 120px;
+      overflow: visible;
+      position: relative;
+    }
+
+    .reflection-guidance {
+      margin: 0 0 2rem;
+      font-size: 1rem;
+      line-height: 1.65;
+      color: #333;
+      text-align: left;
+      max-width: 680px;
     }
 
     /* Match quilt stack buttons to reflection CTA style */
@@ -2582,7 +2608,10 @@ try {
     <section class="screen" id="screen-reflection" role="main" aria-label="Reflection prompt screen">
       <div class="reflection-container">
         <h1 class="reflection-title">REFLECTION PROMPT</h1>
-        <p class="reflection-body">[this will come from a question we'll later insert in code that corresponds to each day's quote. question will change daily.]</p>
+        <div class="reflection-prompt-card">
+          <p class="reflection-body">[this will come from a question we'll later insert in code that corresponds to each day's quote. question will change daily.]</p>
+        </div>
+        <p class="reflection-guidance">The prompt below is designed to help you go deeper with today's idea. There are many ways to structure this reflection.<br><br>Free-writing can be really generative. Some people chose a certain number of pages to write, some people set a timer. You can hand-write in a journal or you can type on your computer. Choose whichever path that feels most helpful to you.</p>
         <button class="btn back-to-quilt-btn" data-next="screen-quilt" aria-label="Back to current quilt">
           <span class="stack-btn-content">
             <span class="stack-btn-chevron" aria-hidden="true">
@@ -5003,6 +5032,18 @@ try {
                 if (quiltQuoteDisplay && text && author) {
                   quiltQuoteDisplay.classList.add('has-content');
                 }
+              }
+            }
+
+            if (screenId === 'screen-reflection') {
+              const quoteService = window.app?.quoteService;
+              const reflectionBody = document.querySelector('.reflection-body');
+              if (quoteService && reflectionBody) {
+                const todayQuote = quoteService.getTodayQuote();
+                const reflectionPrompt =
+                  String(todayQuote?.reflectionPrompt || '').trim() ||
+                  '[Reflection prompt coming soon for this quote.]';
+                reflectionBody.textContent = reflectionPrompt;
               }
             }
             
@@ -7429,6 +7470,16 @@ try {
             quiltQuoteDisplay.classList.add('has-content');
           }
 
+          // Keep reflection screen content in sync with today's quote.
+          const reflectionBody = document.querySelector('.reflection-body');
+          if (reflectionBody) {
+            const todayQuote = this.getTodayQuote();
+            const reflectionPrompt =
+              String(todayQuote?.reflectionPrompt || '').trim() ||
+              '[Reflection prompt coming soon for this quote.]';
+            reflectionBody.textContent = reflectionPrompt;
+          }
+
         } catch (error) {
           console.error('Error displaying quote:', error);
         }
@@ -7482,38 +7533,64 @@ try {
       async loadQuotesFromFirestore() {
         try {
           console.log('📚 Loading quotes from Firestore...');
-          
-          // Check if global Firestore is available
-          // if (!window.db || !window.firestore) {
-          //   console.log('📚 Global Firestore not available, using default quotes');
-          //   return false;
-          // }
-          
-          // Use the global Firestore functions
-          // const docRef = window.firestore.doc(window.db, 'quotes', 'daily');
-          // const docSnap = await window.firestore.getDoc(docRef);
-          
-          // if (docSnap.exists() && docSnap.data().quotes) {
-          //   this.quotes = docSnap.data().quotes;
-          //   if (docSnap.data().shuffledIndexes) {
-          //     this.shuffledIndexes = docSnap.data().shuffledIndexes;
-          //     console.log('✅ Loaded shuffled indexes from Firestore:', this.shuffledIndexes.length, 'indexes');
-          //   }
-          //   console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
-          //   
-          //   Update the display if we're on the quote screen
-          //   if (document.querySelector('.quote-line')) {
-          //     this.displayQuote();
-          //   }
-          //   
-          //   return true;
-          // } else {
-          //   console.log('📚 No quotes found in Firestore, using defaults');
-          //   return false;
-          // }
-          
-          console.log('📚 Using default quotes - Firestore disabled');
-          return false;
+
+          if (!window.db || !window.firestore) {
+            console.log('📚 Firestore not available, using default quotes');
+            return false;
+          }
+
+          const quotesCollection = window.firestore.collection(window.db, 'quotes');
+          const snapshot = await window.firestore.getDocs(quotesCollection);
+          if (snapshot.empty) {
+            console.log('📚 Firestore quotes collection is empty, using defaults');
+            return false;
+          }
+
+          const firestoreQuotes = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() || {};
+            // Ignore date snapshot docs; use Notion-synced canonical quote rows.
+            if (data.source !== 'notion') return;
+
+            const text = String(data.text || '').trim();
+            const author = String(data.author || '').trim();
+            if (!text || !author) return;
+
+            const active =
+              typeof data.active === 'boolean'
+                ? data.active
+                : String(data.active || '').trim().toLowerCase() !== 'false';
+            if (!active) return;
+
+            firestoreQuotes.push({
+              text,
+              author,
+              reflectionPrompt: String(data.reflectionPrompt || '').trim(),
+              sourceId: String(data.sourceId || docSnap.id),
+              sortOrder:
+                typeof data.sortOrder === 'number' && Number.isFinite(data.sortOrder)
+                  ? data.sortOrder
+                  : Number.MAX_SAFE_INTEGER
+            });
+          });
+
+          if (!firestoreQuotes.length) {
+            console.log('📚 No active Notion-synced Firestore quotes found, using defaults');
+            return false;
+          }
+
+          firestoreQuotes.sort((a, b) => {
+            if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+            return a.text.localeCompare(b.text);
+          });
+
+          this.quotes = firestoreQuotes.map(({ sortOrder, ...rest }) => rest);
+          console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
+
+          if (document.querySelector('.quote-line')) {
+            this.displayQuote();
+          }
+          return true;
           
         } catch (error) {
           console.error('❌ Error loading quotes from Firestore:', error);
