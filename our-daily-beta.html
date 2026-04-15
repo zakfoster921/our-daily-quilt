@@ -2163,7 +2163,7 @@ try {
     }
   </style>
 </head>
-<body>
+<body class="intro-flow-active">
 
   
   <main id="app">
@@ -8336,7 +8336,9 @@ try {
 
       async initialize() {
         try {
-          this.uiService.showScreen('screen-portal');
+          // Intro scroll layout must apply immediately; waiting until after Firebase/quilt load
+          // used to swap from absolute single-screen layout to the stacked 100dvh sections ~1–2s later (visible jump).
+          this.enableIntroFlow('screen-portal');
           
           // Add a small delay to ensure Firebase is initialized
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -8397,7 +8399,7 @@ try {
           
         } catch (error) {
           this.errorHandler.handleError(error, 'App initialization');
-          this.uiService.showScreen('screen-portal');
+          this.enableIntroFlow('screen-portal');
         }
       }
 
@@ -10846,7 +10848,9 @@ try {
 
       initializeUI() {
         this.quoteService.displayQuote();
-        this.enableIntroFlow('screen-portal');
+        if (!this.isIntroFlowEnabled()) {
+          this.enableIntroFlow('screen-portal');
+        }
       }
 
       setupAutoTransition() {
