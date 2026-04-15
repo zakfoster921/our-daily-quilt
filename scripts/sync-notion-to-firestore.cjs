@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch (_) {
+  // dotenv is optional in CI where env vars come from GitHub secrets.
+}
 const admin = require('firebase-admin');
 
 const NOTION_API_VERSION = '2022-06-28';
