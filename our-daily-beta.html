@@ -498,10 +498,24 @@ try {
       transform: none !important;
     }
 
-    /* Nudge: scroll hint on portal (once per session; hidden for reduced motion) */
+    /* Portal: center headline stack in remaining space; chevron stays at bottom (intro flow) */
+    body.intro-flow-active #screen-portal .portal-main {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 0;
+      width: 100%;
+    }
+    body.intro-flow-active #screen-portal .portal-scroll-hint {
+      flex-shrink: 0;
+      margin-top: 0;
+    }
+
+    /* Nudge: scroll hint on portal (hidden for reduced motion) */
     .portal-scroll-hint {
       position: relative;
-      margin-top: auto;
       padding-bottom: max(1.35rem, env(safe-area-inset-bottom, 0px));
       display: flex;
       flex-direction: column;
@@ -2215,17 +2229,19 @@ try {
 
     <!-- Portal Screen -->
     <section class="screen active" id="screen-portal" role="main" aria-label="Welcome screen">
-      <div class="portal-header">
-        <div class="title-container">
-          <h1 class="title-line">OUR DAILY</h1>
-          <h1 class="title-line">QUILT</h1>
+      <div class="portal-main">
+        <div class="portal-header">
+          <div class="title-container">
+            <h1 class="title-line">OUR DAILY</h1>
+            <h1 class="title-line">QUILT</h1>
+          </div>
+          <p class="date" id="date-text" aria-live="polite"></p>
         </div>
-        <p class="date" id="date-text" aria-live="polite"></p>
+        
+        <div style="margin-top: 2rem;"></div>
+        
+        <p class="portal-question">First we gather<br>then we build</p>
       </div>
-      
-      <div style="margin-top: 2rem;"></div>
-      
-      <p class="portal-question">First we gather<br>then we build</p>
 
       <div class="portal-scroll-hint" id="portalScrollHint" hidden aria-hidden="true">
         <span class="portal-scroll-hint-sr">Scroll for today's quote</span>
@@ -8231,6 +8247,7 @@ try {
         this._introFlowScrollListener = null;
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
+        this._lastIntroSnapSectionId = null;
       }
       
       
@@ -8543,6 +8560,9 @@ try {
       enableIntroFlow(initialScreenId = 'screen-portal') {
         if (this._introFlowEnabled) {
           this.scrollIntroTo(initialScreenId, 'auto');
+          if (initialScreenId === 'screen-portal') {
+            this.schedulePortalScrollHint();
+          }
           return;
         }
         const app = document.getElementById('app');
@@ -8572,12 +8592,6 @@ try {
       }
 
       schedulePortalScrollHint() {
-        const SESSION_FLAG = 'odqPortalScrollHintSession';
-        try {
-          if (sessionStorage.getItem(SESSION_FLAG)) return;
-        } catch (_) {
-          return;
-        }
         if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
           return;
         }
@@ -8586,12 +8600,6 @@ try {
         if (!hint || !app) return;
 
         this.clearPortalScrollHintSchedule();
-
-        const markSessionDone = () => {
-          try {
-            sessionStorage.setItem(SESSION_FLAG, '1');
-          } catch (_) {}
-        };
 
         const hideHint = () => {
           hint.classList.remove('portal-scroll-hint--visible');
@@ -8606,7 +8614,6 @@ try {
               clearTimeout(this._portalScrollHintTimer);
               this._portalScrollHintTimer = null;
             }
-            markSessionDone();
             hideHint();
             app.removeEventListener('scroll', onScroll);
             this._portalScrollHintOnScroll = null;
@@ -8619,12 +8626,10 @@ try {
           this._portalScrollHintTimer = null;
           if (!this.isIntroFlowEnabled()) return;
           if (app.scrollTop > 28) {
-            markSessionDone();
             app.removeEventListener('scroll', onScroll);
             this._portalScrollHintOnScroll = null;
             return;
           }
-          markSessionDone();
           hint.hidden = false;
           hint.setAttribute('aria-hidden', 'false');
           hint.classList.add('portal-scroll-hint--visible');
@@ -8686,11 +8691,22 @@ try {
           }
         }
         if (!nearest) return;
+        const prevSnap = this._lastIntroSnapSectionId;
+        const nextId = nearest.id;
+        this._lastIntroSnapSectionId = nextId;
         for (const id of this._introScreenIds) {
           const el = document.getElementById(id);
           if (!el) continue;
           if (el === nearest) el.classList.add('active');
           else el.classList.remove('active');
+        }
+        if (
+          nextId === 'screen-portal' &&
+          prevSnap != null &&
+          prevSnap !== 'screen-portal' &&
+          app.scrollTop <= 48
+        ) {
+          this.schedulePortalScrollHint();
         }
       }
 
