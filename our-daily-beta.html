@@ -444,6 +444,10 @@ try {
     .quote-screen-fade-in.btn.visible {
       opacity: 1 !important;
     }
+    /* Intro flow no longer uses showScreen() transitions for quote; keep these visible. */
+    body.intro-flow-active .quote-screen-fade-in {
+      opacity: 1 !important;
+    }
 
     /* Phase 1 continuous-flow feel for portal -> quote -> color */
     .flow-enter-from-bottom {
@@ -524,6 +528,10 @@ try {
       opacity: 0;
       transform: translate3d(0, 10px, 0);
       transition: opacity 0.45s ease, transform 0.45s ease;
+    }
+    body.intro-flow-active #screen-color .color-entry-prompt {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
     }
     .color-entry-prompt.is-visible {
       opacity: 1;
@@ -2330,7 +2338,7 @@ try {
 
     <!-- Color Picker Screen -->
     <section class="screen" id="screen-color" role="main" aria-label="Color picker screen">
-      <p class="color-entry-prompt" id="colorEntryPrompt" hidden aria-hidden="true">What color does this call to mind?</p>
+      <p class="color-entry-prompt" id="colorEntryPrompt">What color does this call to mind?</p>
       <div class="color-picker-container">
         <div class="css-color-wheel" id="colorWheelCanvas" role="button" tabindex="0" aria-label="Color wheel - click or drag to select hue"></div>
         <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
@@ -8723,8 +8731,6 @@ try {
         const colorEntry = document.getElementById('colorEntryPrompt');
         if (colorEntry) {
           colorEntry.classList.remove('is-visible');
-          colorEntry.hidden = true;
-          colorEntry.setAttribute('aria-hidden', 'true');
         }
         this._introFlowEnabled = false;
         document.body.classList.remove('intro-flow-active');
@@ -8807,16 +8813,8 @@ try {
         }
 
         const colorEntry = document.getElementById('colorEntryPrompt');
-        if (colorEntry) {
-          if (nextId === 'screen-color') {
-            colorEntry.hidden = false;
-            colorEntry.setAttribute('aria-hidden', 'false');
-            requestAnimationFrame(() => colorEntry.classList.add('is-visible'));
-          } else {
-            colorEntry.classList.remove('is-visible');
-            colorEntry.hidden = true;
-            colorEntry.setAttribute('aria-hidden', 'true');
-          }
+        if (colorEntry && nextId === 'screen-color') {
+          requestAnimationFrame(() => colorEntry.classList.add('is-visible'));
         }
 
         this.updateQuotePromptScrollReveal();
