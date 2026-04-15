@@ -5034,7 +5034,7 @@ try {
                 const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
                 const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
                 
-                if (quiltQuoteText) quiltQuoteText.textContent = text;
+                if (quiltQuoteText) quiltQuoteText.innerHTML = quoteService.formatQuoteLineForDisplay(text);
                 if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = author;
                 
                 // Show the quote display when content is populated
@@ -7445,7 +7445,9 @@ try {
           fadeElements.forEach(el => el.classList.remove('visible'));
           
           if (quoteLine) {
-            quoteLine.textContent = text;
+            delete quoteLine.dataset.lengthChecked;
+            delete quoteLine.dataset.retryCount;
+            quoteLine.innerHTML = this.formatQuoteLineForDisplay(text);
             
             // IMMEDIATE check: If text is longer than ~100 characters, apply long-quote class immediately
             if (text.length > 100) {
@@ -7471,7 +7473,7 @@ try {
           const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
           const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
           
-          if (quiltQuoteText) quiltQuoteText.textContent = text;
+          if (quiltQuoteText) quiltQuoteText.innerHTML = this.formatQuoteLineForDisplay(text);
           if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = author;
           
           // Show the quote display when content is populated
@@ -7509,6 +7511,24 @@ try {
 
         // Add gentle spacing between sentences for card readability.
         return withManualBreaks.replace(/([.!?])\s+(?=[A-Z0-9“"'])/g, '$1<br><br>');
+      }
+
+      /** Escape quote text and insert a line break between sentences (main + quilt quote UI). */
+      formatQuoteLineForDisplay(quoteText) {
+        const raw = String(quoteText || '').trim();
+        if (!raw) return '';
+        const escaped = raw
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        const withManualBreaks = escaped
+          .replace(/\r\n/g, '\n')
+          .replace(/\n{2,}/g, '<br><br>')
+          .replace(/\n/g, '<br>');
+        // (?<!\d) avoids splitting decimals like "3.14" when a space follows (rare in quotes).
+        return withManualBreaks.replace(/(?<!\d)([.!?])\s+(?=[A-Z0-9“"'])/g, '$1<br>');
       }
 
       // Check if quote is longer than 2 lines and apply appropriate styling
@@ -9379,12 +9399,6 @@ try {
           }
         });
 
-        // Quilt screen scroll listener for Instagram promotion
-        document.addEventListener('screenChange', (e) => {
-          if (e.detail.screenId === 'screen-quilt') {
-            this.setupQuiltScrollListener();
-          }
-        });
       }
 
       async handleArchiveLoadMore() {
@@ -9420,38 +9434,6 @@ try {
       initializeArchiveScreen() {
         // Render the archive feed
         this.archiveService.renderArchiveFeed();
-      }
-
-      setupQuiltScrollListener() {
-        // Remove any existing scroll listener
-        if (this.quiltScrollListener) {
-          document.removeEventListener('scroll', this.quiltScrollListener);
-        }
-
-        // Create scroll listener for Instagram promotion
-        this.quiltScrollListener = (e) => {
-          // Check if user has already seen the Instagram toast
-          if (localStorage.getItem('instagramToastShown')) return;
-          
-          // Check if we're on the quilt screen
-          const quiltScreen = document.getElementById('screen-quilt');
-          if (!quiltScreen || !quiltScreen.classList.contains('active')) return;
-          
-          // Show Instagram promotion toast
-          this.uiService.showToast('Follow on IG to see how this turns out!', 6000, {
-            url: 'https://www.instagram.com/ourdailyquilt/',
-            text: '@ourdailyquilt'
-          });
-          
-          // Mark as shown permanently in localStorage
-          localStorage.setItem('instagramToastShown', 'true');
-          
-          // Remove the scroll listener after showing
-          document.removeEventListener('scroll', this.quiltScrollListener);
-        };
-
-        // Add scroll listener
-        document.addEventListener('scroll', this.quiltScrollListener);
       }
 
       // Create archive snapshot from current quilt
@@ -11683,7 +11665,7 @@ try {
           const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
           const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
           
-          if (quiltQuoteText) quiltQuoteText.textContent = text;
+          if (quiltQuoteText) quiltQuoteText.innerHTML = this.quoteService.formatQuoteLineForDisplay(text);
           if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = author;
           
           // Show the quote display when content is populated
