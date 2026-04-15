@@ -353,6 +353,7 @@ try {
       font-weight: 500; 
       line-height: 1.4;
       text-align: center;
+      color: #404040;
     }
     
     .quote-author { 
@@ -361,6 +362,7 @@ try {
       font-style: italic;
       margin-top: 1rem;
       text-align: center;
+      color: #404040;
     }
 
     /* Left-justify long quotes (more than 2 lines) */
@@ -782,7 +784,7 @@ try {
       font-weight: 300;
       margin: 0 0 8px 0;
       line-height: 1.4;
-      color: #000;
+      color: #404040;
       text-align: left;
     }
     
@@ -791,7 +793,7 @@ try {
       font-weight: 300;
       font-style: italic;
       margin: 0;
-      color: #333;
+      color: #404040;
       text-align: left;
     }
     
@@ -900,7 +902,90 @@ try {
     #shareBtnCompleted {
       margin-bottom: 4rem;
     }
-    
+
+    .share-chooser-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100002;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .share-chooser-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 12, 10, 0.55);
+    }
+    .share-chooser-panel {
+      position: relative;
+      max-width: 520px;
+      width: 100%;
+      max-height: min(92vh, 720px);
+      overflow: auto;
+      background: #f6f4f1;
+      border-radius: 12px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+      padding: 18px 16px 16px;
+      box-sizing: border-box;
+    }
+    .share-chooser-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .share-chooser-card {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      padding: 8px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      font: inherit;
+      text-align: center;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .share-chooser-card:hover,
+    .share-chooser-card:focus-visible {
+      outline: none;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    }
+    .share-chooser-card img {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 9 / 16;
+      object-fit: contain;
+      border-radius: 6px;
+      background: #eae6e1;
+      display: block;
+    }
+    .share-chooser-card .share-chooser-label {
+      font-weight: 700;
+      font-size: 0.78rem;
+      letter-spacing: 0.03em;
+    }
+    .share-chooser-cancel {
+      margin-top: 14px;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .share-chooser-loading {
+      text-align: center;
+      padding: 24px 12px;
+      color: #444;
+      font-size: 0.9rem;
+    }
+
     /* Default button hover - no color change */
     .btn:hover { 
       transform: translateY(-1px);
@@ -1887,7 +1972,7 @@ try {
           <input type="range" id="valueSlider" min="25" max="90" value="50" aria-label="Adjust color brightness" />
         </div>
       </div>
-      <button class="btn" id="addColorBtn" aria-label="Add selected color to the community quilt">ADD COLOR TO QUILT</button>
+      <button class="btn" id="addColorBtn" aria-label="Add your color to the community quilt">Add your color</button>
     </section>
 
     <!-- Quilt Screen -->
@@ -1911,14 +1996,14 @@ try {
         <div class="square-counter">
           <span class="counter-label">Building today's quilt together: <span class="counter-number" id="squareCounter">1</span></span>
         </div>
-        
+
         <div class="button-group">
-          <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="View on Instagram">View on Instagram</button>                                              
+          <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="Follow on Instagram">Follow on Instagram</button>                                              
           <!-- <button id="showMyPieceBtn" class="btn" style="background: #4CAF50; color: white;">SHOW ME MY PIECE</button> -->                                                                                           
         </div>
         
         <div class="button-group">
-          <!-- <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button> -->                                                                                  
+          <button id="shareBtnCompleted" class="btn" aria-label="Share this community quilt">Share This Quilt</button>
           <button class="btn" data-next="screen-about" aria-label="About this project">About ODQ</button>
         </div>
         
@@ -4126,6 +4211,68 @@ try {
           day: 'numeric'
         });
       }
+
+      static dataUrlToBlob(dataUrl) {
+        const m = String(dataUrl).match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) {
+          throw new Error('Invalid data URL');
+        }
+        const binary = atob(m[2]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return new Blob([bytes], { type: m[1] });
+      }
+
+      /**
+       * Uploads PNGs to Firebase Storage and writes `instagram-images/{dateKey}` with URLs only
+       * (Firestore field limit ~1 MiB — inline base64 exceeds that for layout B).
+       */
+      static async writeInstagramImagesDocForZapier({ dateKey, instagramImage, postLayoutBImageData }) {
+        if (!window.db || !window.firestore) {
+          throw new Error('Firestore not ready');
+        }
+        if (!instagramImage && !postLayoutBImageData) {
+          throw new Error('No images to upload');
+        }
+        if (!window.app || typeof window.app.initializeFirebaseForImages !== 'function') {
+          throw new Error('App not ready for Storage upload');
+        }
+        await window.app.initializeFirebaseForImages();
+        if (!window.firebaseStorage) {
+          throw new Error('Firebase Storage not initialized');
+        }
+        const { ref, uploadBytes, getDownloadURL } = await import(
+          'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js'
+        );
+        const storage = window.firebaseStorage;
+        const basePath = `instagram-zapier/${dateKey}`;
+        let imageStorageUrl = null;
+        let postLayoutBImageStorageUrl = null;
+        if (instagramImage) {
+          const r = ref(storage, `${basePath}/classic.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(instagramImage));
+          imageStorageUrl = await getDownloadURL(r);
+        }
+        if (postLayoutBImageData) {
+          const r = ref(storage, `${basePath}/layout-b.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(postLayoutBImageData));
+          postLayoutBImageStorageUrl = await getDownloadURL(r);
+        }
+        const docPayload = {
+          date: dateKey,
+          lastUpdated: new Date().toISOString(),
+          imageStorageUrl,
+          postLayoutBImageStorageUrl,
+          // Short aliases — Zapier’s Firestore step often shows long names in the UI but maps them as null; pick these in the dropdown instead.
+          classicUrl: imageStorageUrl || null,
+          layoutBUrl: postLayoutBImageStorageUrl || null
+        };
+        const imageRef = window.firestore.doc(window.db, 'instagram-images', dateKey);
+        await window.firestore.setDoc(imageRef, docPayload);
+        return docPayload;
+      }
     }
 
     // ===== LOGGING SERVICE =====
@@ -4345,6 +4492,975 @@ try {
       }
     }
 
+    /**
+     * Instagram layout B: full-bleed quilt, paper quote strips; story (9:16) adds a corner title strip.
+     * @param {Blob} highResBlob
+     * @param {string} quoteText
+     * @param {string} quoteAuthor
+     * @param {number} layoutW
+     * @param {number} layoutH 1920 = story, 1350 = 4:5 post
+     * @param {string} [dateKey]
+     */
+    async function composeInstagramLayoutBFromQuiltBlob(highResBlob, quoteText, quoteAuthor, layoutW, layoutH, dateKey) {
+      return new Promise((resolve, reject) => {
+            const STORY_W = layoutW;
+            const STORY_H = layoutH;
+            /**4:5 feed export: no corner title, strips use more vertical space and width. */
+            const isPostLayout =
+              (layoutW === 1080 && layoutH === 1350) ||
+              Math.abs(layoutW / Math.max(1, layoutH) - 1080 / 1350) < 0.03;
+            const STRIP_MAX_W = STORY_W - (isPostLayout ? 52 : 100);
+            const PAPER_PAD_X = 26;
+            const PAPER_PAD_Y = 15;
+            const PAPER_FILL = '#ebe8e3';
+            const FONT_SERIF = 'Georgia, "Times New Roman", Times, serif';
+
+            const rngDateKey = dateKey || new Date().toISOString().split('T')[0];
+            let rngSeed = 2166136261;
+            for (let i = 0; i < rngDateKey.length; i++) {
+              rngSeed = Math.imul(rngSeed ^ rngDateKey.charCodeAt(i), 16777619);
+            }
+            const rnd = () => {
+              rngSeed |= 0;
+              rngSeed = (rngSeed + 0x6d2b79f5) | 0;
+              let t = Math.imul(rngSeed ^ (rngSeed >>> 15), 1 | rngSeed);
+              t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+              return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+
+            const splitIntoPhraseSegments = (text) => {
+              const t = text.replace(/\s+/g, ' ').trim();
+              if (!t) return [];
+              const out = [];
+              const maxLen = 52;
+              const wordCount = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+
+              /** Biased toward mid-range but varies strip length (same seed → same breaks per day). */
+              const phraseTarget = () => {
+                const a = rnd();
+                const b = rnd();
+                if (a < 0.22) return Math.round(28 + b * 12);
+                if (a < 0.45) return Math.round(40 + b * 14);
+                if (a < 0.78) return Math.round(48 + b * 12);
+                return Math.round(54 + b * 10);
+              };
+
+              const pushChunk = (s) => {
+                let rest = s.trim();
+                if (!rest) return;
+                while (rest.length > maxLen) {
+                  const sliceHi = Math.max(30, Math.min(maxLen, phraseTarget()));
+                  let cut = rest.lastIndexOf(' ', sliceHi);
+                  if (cut < 14) {
+                    cut = rest.indexOf(' ', 14);
+                    if (cut === -1) cut = Math.min(sliceHi, rest.length - 1);
+                  }
+                  out.push(rest.slice(0, cut).trim());
+                  rest = rest.slice(cut).trim();
+                }
+                if (rest) out.push(rest);
+              };
+
+              const splitFlat = (chunks, regex) =>
+                chunks.flatMap((c) => {
+                  const bits = c.split(regex).map((x) => x.trim()).filter(Boolean);
+                  return bits.length > 1 ? bits : [c];
+                });
+
+              /**
+               * Clause-style breaks for “poetic” strips without punctuation.
+               * Works on medium-length chunks too (not only when length > maxLen).
+               */
+              const tryConceptualSplit = (chunk, target) => {
+                const len = chunk.length;
+                if (len < 20) return null;
+                const minI = Math.max(6, Math.floor(target * 0.2), Math.floor(len * 0.12));
+                const maxI = Math.min(len - 6, Math.ceil(target * 1.45), Math.ceil(len * 0.9));
+                if (minI >= maxI) return null;
+                const patterns = [
+                  { re: /\s+(?:because|although|though|unless|until|whether|whenever|wherever)\s+/gi, coord: false },
+                  { re: /\s+(?:when|where|while|before|after|since)\s+/gi, coord: false },
+                  { re: /\s+(?:which|who|whom|whose)\s+/gi, coord: false },
+                  { re: /\s+(?:and|but|or|nor|yet)\s+/gi, coord: true },
+                ];
+                const candidates = [];
+                for (const { re, coord } of patterns) {
+                  re.lastIndex = 0;
+                  let m;
+                  while ((m = re.exec(chunk)) !== null) {
+                    const idx = m.index;
+                    if (idx < minI || idx > maxI) continue;
+                    const left = chunk.slice(0, idx).trim();
+                    const right = chunk.slice(idx).trim();
+                    if (left.length < 6 || right.length < 6) continue;
+                    if (wordCount(left) < 2 || wordCount(right) < 2) continue;
+                    const dist = Math.abs(idx - target);
+                    const jitter = rnd() * 14;
+                    candidates.push({ idx, score: dist + jitter });
+                  }
+                }
+                if (!candidates.length) return null;
+                candidates.sort((a, b) => a.score - b.score);
+                const best = candidates[0].score;
+                const pool = candidates.filter((c) => c.score <= best + 16 + rnd() * 10);
+                const pick = pool[Math.floor(rnd() * pool.length)];
+                return [chunk.slice(0, pick.idx).trim(), chunk.slice(pick.idx).trim()];
+              };
+
+              /** Prefer end-of-sentence units, then lighter pauses inside each. */
+              const sentences =
+                t.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((s) => s.trim()).filter(Boolean) || [t];
+
+              for (const sentence of sentences) {
+                let chunks = [sentence];
+                chunks = splitFlat(chunks, /\s*;\s+/);
+                chunks = splitFlat(chunks, /\s+[—–]\s+/);
+                chunks = splitFlat(chunks, /:\s+/);
+                chunks = splitFlat(
+                  chunks,
+                  /,\s+(?=(?:and|but|or|nor|yet|so|because|although|though|while|if|as|when|where|which|who|that)\b)/i
+                );
+                chunks = splitFlat(chunks, /,\s+(?:then|so|yet|still|instead)\s+/i);
+
+                for (let chunk of chunks) {
+                  chunk = chunk.trim();
+                  if (!chunk) continue;
+                  while (chunk.length > maxLen) {
+                    const target = phraseTarget();
+                    const commaScanEnd = Math.min(chunk.length - 1, Math.max(24, target));
+                    let cut = -1;
+                    for (let i = commaScanEnd; i > 12; i--) {
+                      if (chunk[i] === ',') {
+                        cut = i;
+                        break;
+                      }
+                    }
+                    if (cut === -1) {
+                      for (let i = commaScanEnd; i > 12; i--) {
+                        if (chunk[i] === ';') {
+                          cut = i;
+                          break;
+                        }
+                      }
+                    }
+                    if (cut > 0) {
+                      out.push(chunk.slice(0, cut).trim());
+                      chunk = chunk.slice(cut + 1).trim();
+                      continue;
+                    }
+                    const conceptual = tryConceptualSplit(chunk, target);
+                    if (conceptual) {
+                      out.push(conceptual[0]);
+                      chunk = conceptual[1];
+                      continue;
+                    }
+                    break;
+                  }
+                  for (let guard = 0; guard < 10 && chunk.length >= 20; guard++) {
+                    if (wordCount(chunk) < 5) break;
+                    const conceptual = tryConceptualSplit(chunk, phraseTarget());
+                    if (!conceptual) break;
+                    const left = conceptual[0];
+                    const right = conceptual[1];
+                    if (left.length < 8 || right.length < 8) break;
+                    if (wordCount(left) < 2 || wordCount(right) < 2) break;
+                    out.push(left);
+                    chunk = right;
+                  }
+                  pushChunk(chunk);
+                }
+              }
+
+              return out.length ? out : [t];
+            };
+
+            const loadQuiltImage = () => new Promise((res, rej) => {
+              const url = URL.createObjectURL(highResBlob);
+              const im = new Image();
+              im.onload = () => {
+                URL.revokeObjectURL(url);
+                res(im);
+              };
+              im.onerror = () => {
+                URL.revokeObjectURL(url);
+                rej(new Error('Failed to load quilt image for story composite'));
+              };
+              im.src = url;
+            });
+
+            const wrapLines = (c, text, maxWidth) => {
+              const breakLongWord = (word) => {
+                const out = [];
+                let piece = '';
+                for (const ch of word) {
+                  const next = piece + ch;
+                  if (c.measureText(next).width <= maxWidth || piece === '') piece = next;
+                  else {
+                    out.push(piece);
+                    piece = ch;
+                  }
+                }
+                if (piece) out.push(piece);
+                return out;
+              };
+              const words = text.split(/\s+/).filter(Boolean);
+              const lines = [];
+              let line = '';
+              for (const word of words) {
+                const test = line ? `${line} ${word}` : word;
+                if (c.measureText(test).width <= maxWidth) {
+                  line = test;
+                } else {
+                  if (line) lines.push(line);
+                  if (c.measureText(word).width <= maxWidth) {
+                    line = word;
+                  } else {
+                    const chunks = breakLongWord(word);
+                    for (let cc = 0; cc < chunks.length - 1; cc++) lines.push(chunks[cc]);
+                    line = chunks[chunks.length - 1] || '';
+                  }
+                }
+              }
+              if (line) lines.push(line);
+              return lines;
+            };
+
+            const makeStripPaperTextureTile = (variant) => {
+              const sz = 96;
+              const tc = document.createElement('canvas');
+              tc.width = tc.height = sz;
+              const tx = tc.getContext('2d');
+              const img = tx.createImageData(sz, sz);
+              const d = img.data;
+              for (let i = 0; i < d.length; i += 4) {
+                const grain = (rnd() - 0.5) * 68;
+                const speck = rnd() < 0.102 ? (rnd() - 0.5) * 46 : 0;
+                if (variant === 'dark') {
+                  const v = Math.max(24, Math.min(112, 58 + grain * 0.95 + speck));
+                  d[i] = v;
+                  d[i + 1] = Math.max(22, Math.min(110, v - 3 + rnd() * 9));
+                  d[i + 2] = Math.max(20, Math.min(108, v - 5 + rnd() * 9));
+                } else {
+                  /* Correlated luminance + warm split (R>G>B) so multiply/overlay never reads icy. */
+                  const lum = 228 + grain * 0.98 + speck * 0.88;
+                  d[i] = Math.max(160, Math.min(255, lum + 7));
+                  d[i + 1] = Math.max(162, Math.min(255, lum + 2));
+                  d[i + 2] = Math.max(148, Math.min(242, lum - 12));
+                }
+                d[i + 3] = 255;
+              }
+              tx.putImageData(img, 0, 0);
+              tx.globalCompositeOperation = 'soft-light';
+              for (let f = 0; f < 68; f++) {
+                tx.globalAlpha = 0.14 + rnd() * 0.29;
+                tx.strokeStyle = variant === 'dark' ? 'rgba(255,255,255,0.62)' : 'rgba(52,44,38,0.52)';
+                tx.lineWidth = 0.5 + rnd() * 1.45;
+                tx.beginPath();
+                const y0 = rnd() * sz;
+                tx.moveTo(-4, y0);
+                tx.bezierCurveTo(
+                  sz * 0.33,
+                  y0 + (rnd() - 0.5) * 11,
+                  sz * 0.66,
+                  y0 + (rnd() - 0.5) * 11,
+                  sz + 4,
+                  y0 + (rnd() - 0.5) * 9
+                );
+                tx.stroke();
+              }
+              tx.globalCompositeOperation = 'overlay';
+              for (let k = 0; k < 42; k++) {
+                tx.globalAlpha = 0.065 + rnd() * 0.125;
+                tx.fillStyle = variant === 'dark' ? 'rgba(0,0,0,0.92)' : 'rgba(72,58,48,0.72)';
+                tx.beginPath();
+                tx.arc(rnd() * sz, rnd() * sz, 0.5 + rnd() * 3.2, 0, Math.PI * 2);
+                tx.fill();
+              }
+              for (let s = 0; s < 32; s++) {
+                tx.globalAlpha = 0.082 + rnd() * 0.145;
+                tx.strokeStyle = variant === 'dark' ? 'rgba(200,195,180,0.58)' : 'rgba(42,36,32,0.45)';
+                tx.lineWidth = 0.22 + rnd() * 0.62;
+                tx.beginPath();
+                const x0 = rnd() * sz;
+                const y0 = rnd() * sz;
+                tx.moveTo(x0, y0);
+                tx.lineTo(x0 + (rnd() - 0.5) * 14, y0 + (rnd() - 0.5) * 14);
+                tx.stroke();
+              }
+              tx.globalAlpha = 1;
+              tx.globalCompositeOperation = 'source-over';
+              return tc;
+            };
+
+            const stripPaperTexLight = makeStripPaperTextureTile('light');
+            const stripPaperTexDark = makeStripPaperTextureTile('dark');
+
+            /**
+             * Full-canvas magazine print finish: fiber/tooth, subtle halftone, micro-imperfections.
+             * Runs once at the end so it applies to quilt + strips for both story (9:16) and post (4:5).
+             */
+            const applyLayoutBMagazinePrintFinish = (g, w, h) => {
+              const fiberSz = 144;
+              const fc = document.createElement('canvas');
+              fc.width = fiberSz;
+              fc.height = fiberSz;
+              const fx = fc.getContext('2d');
+              const fImg = fx.createImageData(fiberSz, fiberSz);
+              const fd = fImg.data;
+              for (let i = 0; i < fd.length; i += 4) {
+                const grain = (rnd() - 0.5) * 26;
+                const speck = rnd() < 0.11 ? (rnd() - 0.5) * 18 : 0;
+                const lum = 232 + grain * 0.85 + speck * 0.75;
+                fd[i] = Math.max(198, Math.min(255, lum + 6));
+                fd[i + 1] = Math.max(196, Math.min(255, lum + 1));
+                fd[i + 2] = Math.max(186, Math.min(250, lum - 10));
+                fd[i + 3] = 255;
+              }
+              fx.putImageData(fImg, 0, 0);
+              fx.globalCompositeOperation = 'soft-light';
+              for (let f = 0; f < 52; f++) {
+                fx.globalAlpha = 0.07 + rnd() * 0.11;
+                fx.strokeStyle = 'rgba(48,40,34,0.42)';
+                fx.lineWidth = 0.35 + rnd() * 0.95;
+                fx.beginPath();
+                const y0 = rnd() * fiberSz;
+                fx.moveTo(-6, y0);
+                fx.bezierCurveTo(
+                  fiberSz * 0.35,
+                  y0 + (rnd() - 0.5) * 10,
+                  fiberSz * 0.65,
+                  y0 + (rnd() - 0.5) * 10,
+                  fiberSz + 6,
+                  y0 + (rnd() - 0.5) * 8
+                );
+                fx.stroke();
+              }
+              fx.globalCompositeOperation = 'overlay';
+              for (let k = 0; k < 28; k++) {
+                fx.globalAlpha = 0.045 + rnd() * 0.09;
+                fx.fillStyle = 'rgba(62,52,44,0.55)';
+                fx.beginPath();
+                fx.arc(rnd() * fiberSz, rnd() * fiberSz, 0.4 + rnd() * 2.8, 0, Math.PI * 2);
+                fx.fill();
+              }
+              fx.globalAlpha = 1;
+              fx.globalCompositeOperation = 'source-over';
+
+              const halftoneSz = 40;
+              const hc = document.createElement('canvas');
+              hc.width = halftoneSz;
+              hc.height = halftoneSz;
+              const hx = hc.getContext('2d');
+              const step = 4;
+              const dotR = 0.52 + rnd() * 0.38;
+              hx.fillStyle = 'rgba(28,24,20,0.38)';
+              for (let y = 0; y < halftoneSz + step; y += step) {
+                for (let x = 0; x < halftoneSz + step; x += step) {
+                  const ox = (rnd() - 0.5) * 0.75;
+                  const oy = (rnd() - 0.5) * 0.75;
+                  hx.beginPath();
+                  hx.arc(x + step * 0.5 + ox, y + step * 0.5 + oy, dotR, 0, Math.PI * 2);
+                  hx.fill();
+                }
+              }
+
+              g.save();
+              const fiberPat = g.createPattern(fc, 'repeat');
+              g.globalCompositeOperation = 'multiply';
+              g.globalAlpha = 0.14;
+              g.fillStyle = fiberPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'soft-light';
+              g.globalAlpha = 0.2;
+              g.fillStyle = fiberPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'multiply';
+              g.globalAlpha = 0.18;
+              const halfPat = g.createPattern(hc, 'repeat');
+              g.fillStyle = halfPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'overlay';
+              g.globalAlpha = 0.13;
+              g.fillStyle = halfPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'soft-light';
+              g.globalAlpha = 0.07;
+              g.fillStyle = halfPat;
+              g.fillRect(0, 0, w, h);
+              g.globalCompositeOperation = 'source-over';
+              g.globalAlpha = 1;
+
+              for (let s = 0; s < 28 + Math.floor(rnd() * 16); s++) {
+                g.strokeStyle = `rgba(34,30,26,${0.05 + rnd() * 0.09})`;
+                g.lineWidth = 0.35 + rnd() * 0.55;
+                g.beginPath();
+                const x1 = rnd() * w;
+                const y1 = rnd() * h;
+                g.moveTo(x1, y1);
+                g.lineTo(
+                  x1 + (rnd() - 0.5) * w * 0.14,
+                  y1 + (rnd() - 0.5) * h * 0.14
+                );
+                g.stroke();
+              }
+              for (let d = 0; d < 92; d++) {
+                g.fillStyle =
+                  rnd() < 0.5
+                    ? `rgba(255,252,248,${0.045 + rnd() * 0.09})`
+                    : `rgba(16,14,12,${0.055 + rnd() * 0.09})`;
+                const px = 1 + rnd() * 3.2;
+                g.fillRect(rnd() * w, rnd() * h, px, px);
+              }
+              g.restore();
+            };
+
+            /** Hand-cut silhouette: jittered corners + wobbly edges (strip space, centered). */
+            const handCutStripPath = (ctx, sw, sh, rndFn) => {
+              const hw = sw / 2;
+              const hh = sh / 2;
+              const m = Math.min(sw, sh);
+              const maxSide = Math.max(sw, sh);
+              const cornerAmp = Math.min(5.2, Math.max(1.2, m * 0.038));
+              const edgeAmp = Math.min(3.6, Math.max(0.9, m * 0.028));
+              const corners = [
+                { x: -hw + (rndFn() - 0.5) * 2 * cornerAmp, y: -hh + (rndFn() - 0.5) * 2 * cornerAmp },
+                { x: hw + (rndFn() - 0.5) * 2 * cornerAmp, y: -hh + (rndFn() - 0.5) * 2 * cornerAmp },
+                { x: hw + (rndFn() - 0.5) * 2 * cornerAmp, y: hh + (rndFn() - 0.5) * 2 * cornerAmp },
+                { x: -hw + (rndFn() - 0.5) * 2 * cornerAmp, y: hh + (rndFn() - 0.5) * 2 * cornerAmp }
+              ];
+              ctx.beginPath();
+              ctx.moveTo(corners[0].x, corners[0].y);
+              for (let i = 0; i < 4; i++) {
+                const p0 = corners[i];
+                const p1 = corners[(i + 1) % 4];
+                const dx = p1.x - p0.x;
+                const dy = p1.y - p0.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const nx = -dy / len;
+                const ny = dx / len;
+                /* Short sides (typical strip ends): one wobble only; long sides keep 1–3 mid-edge points. */
+                const isShortEdge = len < maxSide * 0.58;
+                const div = isShortEdge ? 2 : 2 + Math.floor(rndFn() * 3);
+                for (let s = 1; s < div; s++) {
+                  const t = s / div;
+                  const wob = (rndFn() - 0.5) * 2 * edgeAmp;
+                  ctx.lineTo(p0.x + dx * t + nx * wob, p0.y + dy * t + ny * wob);
+                }
+                ctx.lineTo(p1.x, p1.y);
+              }
+              ctx.closePath();
+            };
+
+            const drawPaperStrip = (g, cx, cy, w, h, angle, fillPaper, stripVariant = 'light') => {
+              const tex = stripVariant === 'dark' ? stripPaperTexDark : stripPaperTexLight;
+              const texPad = 16;
+              g.save();
+              g.translate(cx, cy);
+              g.rotate(angle);
+              g.fillStyle = fillPaper;
+              if (stripVariant === 'dark') {
+                g.shadowColor = 'rgba(0,0,0,0.22)';
+                g.shadowBlur = 16;
+                g.shadowOffsetX = 2;
+                g.shadowOffsetY = 3;
+              } else {
+                g.shadowColor = 'rgba(0,0,0,0.12)';
+                g.shadowBlur = 14;
+                g.shadowOffsetX = 2;
+                g.shadowOffsetY = 2;
+              }
+              handCutStripPath(g, w, h, rnd);
+              g.fill();
+              g.shadowColor = 'transparent';
+              g.shadowBlur = 0;
+              g.shadowOffsetX = 0;
+              g.shadowOffsetY = 0;
+              g.clip();
+              const pat = g.createPattern(tex, 'repeat');
+              g.globalAlpha = stripVariant === 'dark' ? 0.63 : 0.59;
+              g.globalCompositeOperation = 'multiply';
+              g.fillStyle = pat;
+              g.fillRect(-w / 2 - texPad, -h / 2 - texPad, w + texPad * 2, h + texPad * 2);
+              /* Light strips: soft-light avoids overlay’s cool/metallic cast on paper grain. */
+              g.globalCompositeOperation = stripVariant === 'dark' ? 'overlay' : 'soft-light';
+              g.globalAlpha = stripVariant === 'dark' ? 0.26 : 0.28;
+              g.fillStyle = pat;
+              g.fillRect(-w / 2 - texPad, -h / 2 - texPad, w + texPad * 2, h + texPad * 2);
+              g.globalCompositeOperation = 'source-over';
+              g.globalAlpha = 1;
+              g.restore();
+            };
+
+            loadQuiltImage()
+              .then((quiltImg) => {
+                const quoteWordCount = quoteText ? (quoteText.match(/\S+/g) || []).length : 0;
+                const isShortQuoteLayout = quoteWordCount > 0 && quoteWordCount <= 8;
+
+                /**
+                 * ≤8 words, ≤130 chars: prefer real pauses (; em-dash), then commas,
+                 * then a light coordinator split, then fixed word chunks so we still
+                 * get several strips instead of one wide line (incl. 3-word quotes → 2+1).
+                 */
+                const segmentShortQuoteForLayout = (normalized) => {
+                  const wc = (s) => (String(s).trim() ? String(s).trim().split(/\s+/).length : 0);
+                  const tokens = normalized.match(/\S+/g) || [];
+                  const n = tokens.length;
+                  let segs = [];
+
+                  if (/\s+[—–]\s+/.test(normalized) || /;\s+/.test(normalized)) {
+                    segs = splitIntoPhraseSegments(normalized);
+                  } else {
+                    segs = [normalized];
+                  }
+
+                  if (segs.length === 1) {
+                    const single = segs[0];
+                    if (/,/.test(single)) {
+                      const parts = single.split(/\s*,\s*/).map((s) => s.trim()).filter(Boolean);
+                      if (parts.length > 1) segs = parts;
+                    }
+                  }
+
+                  if (segs.length === 1 && n >= 4) {
+                    const single = segs[0];
+                    const m = single.match(/^(.+?)\s+\b(and|but|or|nor|yet)\s+(.+)$/i);
+                    if (m && wc(m[1]) >= 2 && wc(m[3]) >= 1) {
+                      segs = [m[1].trim(), `${m[2]} ${m[3]}`.trim()];
+                    }
+                  }
+
+                  if (segs.length === 1 && n >= 6 && normalized.length >= 20) {
+                    const poetic = splitIntoPhraseSegments(normalized);
+                    if (poetic.length > 1) segs = poetic;
+                  }
+
+                  if (segs.length === 1 && n >= 3) {
+                    const per = n <= 5 ? 2 : 3;
+                    const out = [];
+                    for (let i = 0; i < tokens.length; i += per) {
+                      out.push(tokens.slice(i, i + per).join(' '));
+                    }
+                    if (out.length > 1) segs = out;
+                  }
+
+                  return segs.length ? segs : [normalized];
+                };
+
+                const segmentQuoteForLayout = (text) => {
+                  const raw = String(text ?? '');
+                  /** Keep explicit line breaks (e.g. in Firestore) as separate strip groups; do not collapse \n into spaces first. */
+                  const paragraphs = raw
+                    .split(/\r?\n/)
+                    .map((p) => p.replace(/\s+/g, ' ').trim())
+                    .filter(Boolean);
+                  if (!paragraphs.length) return [];
+
+                  const runOne = (normalized) => {
+                    if (!normalized) return [];
+                    if (isShortQuoteLayout && normalized.length <= 130) {
+                      return segmentShortQuoteForLayout(normalized);
+                    }
+                    return splitIntoPhraseSegments(normalized);
+                  };
+
+                  if (paragraphs.length === 1) return runOne(paragraphs[0]);
+                  const out = [];
+                  for (const p of paragraphs) out.push(...runOne(p));
+                  return out;
+                };
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = STORY_W;
+                canvas.height = STORY_H;
+
+                const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
+                const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
+                // Past true “cover” so the PNG’s light margin crops out; tweak if neutral still shows.
+                const COVER_ZOOM = isPostLayout ? 1.04 : 1.1;
+                const coverScale = Math.max(STORY_W / iw, STORY_H / ih) * COVER_ZOOM;
+                const cw = Math.round(iw * coverScale);
+                const ch = Math.round(ih * coverScale);
+                const qx = Math.round((STORY_W - cw) / 2);
+                const qy = Math.round((STORY_H - ch) / 2);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(quiltImg, qx, qy, cw, ch);
+                ctx.fillStyle = isPostLayout ? 'rgba(0,0,0,0.133)' : 'rgba(0,0,0,0.1)';
+                ctx.fillRect(0, 0, STORY_W, STORY_H);
+
+                const innerMaxW = STRIP_MAX_W - PAPER_PAD_X * 2;
+                const layoutQuoteAuthorGap = isPostLayout
+                  ? (isShortQuoteLayout ? 72 : 58)
+                  : (isShortQuoteLayout ? 78 : 64);
+                let bodyPx = Math.round(38 * 1.25);
+                if (isShortQuoteLayout) {
+                  bodyPx += 18;
+                }
+                if (isPostLayout) {
+                  bodyPx += 10;
+                }
+                const stripTopFrac = isPostLayout
+                  ? (isShortQuoteLayout ? 0.028 : 0.04)
+                  : (isShortQuoteLayout ? 0.09 : 0.12);
+                const stackVertPad = isPostLayout ? 19 : 14;
+                /** @type {{ lines: string[], font: string, lh: number, w: number, h: number, role: string, rowGroup?: number, rowSlot?: number }[]} */
+                let stripSpecs = [];
+
+                const buildStripSpecs = () => {
+                  const specs = [];
+                  let nextRowPairGroup = 1;
+                  const measureStrip = (lines, font, lineLead, role, rowMeta = null) => {
+                    ctx.font = font;
+                    let tw = 0;
+                    for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
+                    const fs = parseInt(/(\d+)px/.exec(font)[1], 10);
+                    const lh = fs * lineLead;
+                    const w = Math.min(STRIP_MAX_W, Math.ceil(tw + PAPER_PAD_X * 2));
+                    const h = Math.ceil(lines.length * lh + PAPER_PAD_Y * 2);
+                    const o = { lines, font, lh, w, h, role };
+                    if (rowMeta) Object.assign(o, rowMeta);
+                    specs.push(o);
+                  };
+
+                  /** Two side-by-side strips for one wrapped line (hand-cut collage). */
+                  const tryPairQuoteLine = (ln, font, lineSalt) => {
+                    if (!ln) return null;
+                    const words = ln.trim().split(/\s+/).filter(Boolean);
+                    if (words.length < 3) return null;
+                    ctx.font = font;
+                    const fullW = ctx.measureText(ln).width;
+                    if (fullW < innerMaxW * 0.22 && words.length < 5) return null;
+                    const lim = innerMaxW + 10;
+                    let best = null;
+                    for (let k = 1; k <= words.length - 1; k++) {
+                      const left = words.slice(0, k).join(' ');
+                      const right = words.slice(k).join(' ');
+                      const wL = ctx.measureText(left).width;
+                      const wR = ctx.measureText(right).width;
+                      if (wL > lim || wR > lim) continue;
+                      if (wL < 14 || wR < 14) continue;
+                      const imbalance = Math.abs(wL - wR);
+                      if (!best || imbalance < best.imbalance) best = { left, right, imbalance };
+                    }
+                    if (!best) return null;
+                    const dch = rngDateKey.charCodeAt(lineSalt % rngDateKey.length);
+                    const pick =
+                      (((lineSalt * 1103515245 + 12345) ^ dch * 31) >>> 0) % 100 < 48;
+                    return pick ? [best.left, best.right] : null;
+                  };
+
+                  const segments = segmentQuoteForLayout(quoteText);
+                  const bodyFont = `400 ${bodyPx}px ${FONT_SERIF}`;
+                  ctx.font = bodyFont;
+                  let quoteLineSalt = 0;
+                  for (const seg of segments) {
+                    const lines = wrapLines(ctx, seg, innerMaxW);
+                    for (const ln of lines) {
+                      const pair = tryPairQuoteLine(ln, bodyFont, quoteLineSalt++);
+                      if (pair) {
+                        const gid = nextRowPairGroup++;
+                        measureStrip([pair[0]], bodyFont, 1.38, 'quote', { rowGroup: gid, rowSlot: 0 });
+                        measureStrip([pair[1]], bodyFont, 1.38, 'quote', { rowGroup: gid, rowSlot: 1 });
+                      } else {
+                        measureStrip([ln], bodyFont, 1.38, 'quote');
+                      }
+                    }
+                  }
+                  if (quoteAuthor) {
+                    const authorFont = `italic 400 ${bodyPx}px ${FONT_SERIF}`;
+                    ctx.font = authorFont;
+                    const authorLines = wrapLines(ctx, quoteAuthor, innerMaxW);
+                    for (const ln of authorLines) {
+                      measureStrip([ln], authorFont, 1.38, 'author');
+                    }
+                  }
+
+                  return specs;
+                };
+
+                const stackContentSpan = (specs) => {
+                  let h = 0;
+                  let i = 0;
+                  while (i < specs.length) {
+                    const spec = specs[i];
+                    if (i > 0 && spec.role === 'author' && specs[i - 1].role === 'quote') {
+                      h += layoutQuoteAuthorGap;
+                    }
+                    if (
+                      spec.rowGroup != null &&
+                      spec.rowSlot === 0 &&
+                      specs[i + 1]?.rowGroup === spec.rowGroup &&
+                      specs[i + 1].rowSlot === 1
+                    ) {
+                      h += Math.max(spec.h, specs[i + 1].h) + stackVertPad;
+                      i += 2;
+                    } else {
+                      h += spec.h + stackVertPad;
+                      i += 1;
+                    }
+                  }
+                  return h;
+                };
+
+                const stackHeight = (specs) => STORY_H * stripTopFrac + stackContentSpan(specs);
+
+                const stripEdgeMargin = 40;
+                const staggerStripCenterX = (spec) => {
+                  const roll = rnd();
+                  const minCx = spec.w / 2 + stripEdgeMargin;
+                  const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+                  let cx;
+                  if (roll < 0.34) {
+                    cx = stripEdgeMargin + spec.w / 2 + rnd() * 95;
+                  } else if (roll < 0.67) {
+                    cx = STORY_W / 2 + (rnd() - 0.5) * (STORY_W * 0.3);
+                  } else {
+                    cx = STORY_W - stripEdgeMargin - spec.w / 2 - rnd() * 95;
+                  }
+                  return Math.max(minCx, Math.min(maxCx, cx));
+                };
+
+                /** Short quotes: keep quote strips near center with light jitter. */
+                const shortQuoteStripCenterX = (spec) => {
+                  const minCx = spec.w / 2 + stripEdgeMargin;
+                  const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+                  const cx = STORY_W / 2 + (rnd() - 0.5) * 76;
+                  return Math.max(minCx, Math.min(maxCx, cx));
+                };
+
+                /** Author strips stay entirely in the right half of the story (9:16). */
+                const authorStripCenterX = (spec) => {
+                  const minCx = STORY_W / 2 + spec.w / 2 + stripEdgeMargin;
+                  const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+                  if (minCx >= maxCx) {
+                    return Math.max(
+                      spec.w / 2 + stripEdgeMargin,
+                      Math.min(STORY_W - spec.w / 2 - stripEdgeMargin, STORY_W * 0.75)
+                    );
+                  }
+                  return minCx + rnd() * (maxCx - minCx);
+                };
+
+                const TITLE_STRIP_BG = '#0f0e0c';
+                const TITLE_STRIP_TEXT = '#f3eee4';
+
+                const drawStripContent = (spec, cx, cy, jitterA, stripVariant = 'light') => {
+                  let paper;
+                  let ink;
+                  /** Dark title = charcoal paper + cream type; title-invert = cream paper + charcoal type. */
+                  let paperTexVariant = 'light';
+                  if (stripVariant === 'dark') {
+                    paper = TITLE_STRIP_BG;
+                    ink = TITLE_STRIP_TEXT;
+                    paperTexVariant = 'dark';
+                  } else if (stripVariant === 'title-invert') {
+                    paper = TITLE_STRIP_TEXT;
+                    ink = TITLE_STRIP_BG;
+                    paperTexVariant = 'light';
+                  } else {
+                    paper = PAPER_FILL;
+                    ink = '#404040';
+                    paperTexVariant = 'light';
+                  }
+                  drawPaperStrip(ctx, cx, cy, spec.w, spec.h, jitterA, paper, paperTexVariant);
+                  ctx.save();
+                  ctx.translate(cx, cy);
+                  ctx.rotate(jitterA);
+                  ctx.textAlign = 'center';
+                  ctx.textBaseline = 'middle';
+                  ctx.font = spec.font;
+                  const totalTextH = (spec.lines.length - 1) * spec.lh;
+                  let ty = -totalTextH / 2;
+                  if (stripVariant === 'light') {
+                    /**
+                     * Printed-ink: multiply + stacked blurs + subpixel jitter; last pass is
+                     * light blur only so edges read a bit crisper than an all-soft stack.
+                     */
+                    const inkBody = '#5c544e';
+                    const inkBloom = '#8f857a';
+                    const inkHaze = '#a69a8e';
+                    const drawLinesAt = (ox, oy, drawTy) => {
+                      let t = drawTy;
+                      for (const ln of spec.lines) {
+                        ctx.fillText(ln, ox, t + oy);
+                        t += spec.lh;
+                      }
+                    };
+                    const startY = -totalTextH / 2;
+                    ctx.globalCompositeOperation = 'multiply';
+                    const setBlur = (px) => {
+                      try {
+                        ctx.filter = px > 0 ? `blur(${px}px)` : 'none';
+                      } catch (e) {
+                        /* no filter */
+                      }
+                    };
+                    const jitter = [
+                      [-0.55, 0],
+                      [0.55, 0],
+                      [0, -0.42],
+                      [0, 0.42],
+                      [-0.4, -0.34],
+                      [0.4, -0.34],
+                      [-0.4, 0.34],
+                      [0.4, 0.34],
+                    ];
+                    setBlur(0.82);
+                    ctx.fillStyle = inkHaze;
+                    ctx.globalAlpha = 0.15;
+                    for (const [jx, jy] of jitter) {
+                      drawLinesAt(jx, jy, startY);
+                    }
+                    ctx.fillStyle = inkBloom;
+                    ctx.globalAlpha = 0.34;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0.56);
+                    ctx.fillStyle = inkBloom;
+                    ctx.globalAlpha = 0.48;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0.34);
+                    ctx.fillStyle = inkBody;
+                    ctx.globalAlpha = 0.82;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0.2);
+                    ctx.fillStyle = inkBody;
+                    ctx.globalAlpha = 0.48;
+                    drawLinesAt(0, 0, startY);
+                    setBlur(0);
+                    ctx.globalAlpha = 1;
+                    ctx.globalCompositeOperation = 'source-over';
+                  } else {
+                    ctx.fillStyle = ink;
+                    try {
+                      ctx.filter = 'blur(0.28px)';
+                    } catch (e) {
+                      /* no filter */
+                    }
+                    for (const ln of spec.lines) {
+                      ctx.fillText(ln, 0, ty);
+                      ty += spec.lh;
+                    }
+                    try {
+                      ctx.filter = 'none';
+                    } catch (e) {
+                      /* no filter */
+                    }
+                  }
+                  ctx.restore();
+                };
+
+                const stripBudget = isPostLayout ? STORY_H * 0.97 : STORY_H - 32;
+                const minBodyPx = isPostLayout ? 22 : 24;
+                const shrinkIters = isPostLayout ? 24 : 18;
+                for (let s = 0; s < shrinkIters; s++) {
+                  stripSpecs = buildStripSpecs();
+                  if (stackHeight(stripSpecs) <= stripBudget || bodyPx <= minBodyPx) break;
+                  bodyPx -= 2;
+                }
+
+                const contentSpan = stackContentSpan(stripSpecs);
+                const vPadTop = isPostLayout ? 20 : 28;
+                const vPadBottom = isPostLayout ? 22 : 118;
+                const maxCenteredSpan = STORY_H - vPadTop - vPadBottom;
+                const centerJitter = (rnd() - 0.5) * (isPostLayout ? 72 : 96);
+                let cursorY;
+                if (contentSpan > maxCenteredSpan) {
+                  cursorY = STORY_H * stripTopFrac;
+                } else {
+                  cursorY = (STORY_H - contentSpan) / 2 + centerJitter;
+                  cursorY = Math.max(
+                    vPadTop,
+                    Math.min(cursorY, STORY_H - contentSpan - vPadBottom)
+                  );
+                }
+
+                for (let i = 0; i < stripSpecs.length; ) {
+                  if (i > 0 && stripSpecs[i].role === 'author' && stripSpecs[i - 1].role === 'quote') {
+                    cursorY += layoutQuoteAuthorGap;
+                  }
+                  const spec = stripSpecs[i];
+                  const gap = isPostLayout ? (15 + rnd() * 18) : (11 + rnd() * 12);
+                  if (
+                    spec.rowGroup != null &&
+                    spec.rowSlot === 0 &&
+                    stripSpecs[i + 1]?.rowGroup === spec.rowGroup &&
+                    stripSpecs[i + 1].rowSlot === 1
+                  ) {
+                    const a = spec;
+                    const b = stripSpecs[i + 1];
+                    const pairHGap = 8 + rnd() * 14;
+                    const totalWfix = a.w + pairHGap + b.w;
+                    const topOfRow = cursorY;
+                    const rowH = Math.max(a.h, b.h);
+                    const pseudo = { w: totalWfix, role: 'quote' };
+                    let rowCenterX;
+                    if (isShortQuoteLayout) rowCenterX = shortQuoteStripCenterX(pseudo);
+                    else rowCenterX = staggerStripCenterX(pseudo);
+                    const half = totalWfix / 2;
+                    const minC = stripEdgeMargin + half;
+                    const maxC = STORY_W - stripEdgeMargin - half;
+                    rowCenterX = Math.max(minC, Math.min(maxC, rowCenterX));
+                    const leftCx = rowCenterX - half + a.w / 2;
+                    const rightCx = rowCenterX - half + a.w + pairHGap + b.w / 2;
+                    const jitterA0 = (rnd() - 0.5) * 0.055;
+                    const jitterA1 = (rnd() - 0.5) * 0.055;
+                    drawStripContent(a, leftCx, topOfRow + a.h / 2, jitterA0);
+                    drawStripContent(b, rightCx, topOfRow + b.h / 2, jitterA1);
+                    cursorY = topOfRow + rowH + gap;
+                    i += 2;
+                    continue;
+                  }
+                  const jitterA = (rnd() - 0.5) * 0.055;
+                  let cx;
+                  if (spec.role === 'author') cx = authorStripCenterX(spec);
+                  else if (spec.role === 'quote' && isShortQuoteLayout) cx = shortQuoteStripCenterX(spec);
+                  else cx = staggerStripCenterX(spec);
+                  const cy = cursorY + spec.h / 2;
+                  cursorY += spec.h + gap;
+                  drawStripContent(spec, cx, cy, jitterA);
+                  i += 1;
+                }
+
+                if (!isPostLayout) {
+                  const cornerPadR = 44;
+                  const cornerPadB = 52;
+                  const STORY_TITLE_LABEL = '@ourdailyquilt';
+                  const measureTitleSpecs = () => {
+                    const font = `400 ${bodyPx}px ${FONT_SERIF}`;
+                    const lineLead = 1.38;
+                    ctx.font = font;
+                    const lines = wrapLines(ctx, STORY_TITLE_LABEL, innerMaxW);
+                    let tw = 0;
+                    for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
+                    const fs = parseInt(/(\d+)px/.exec(font)[1], 10);
+                    const lh = fs * lineLead;
+                    const w = Math.min(STRIP_MAX_W, Math.ceil(tw + PAPER_PAD_X * 2));
+                    const h = Math.ceil(lines.length * lh + PAPER_PAD_Y * 2);
+                    return { lines, font, lh, w, h };
+                  };
+                  const titleSpec = measureTitleSpecs();
+                  const cxTitle = STORY_W - cornerPadR;
+                  const cyStrip = STORY_H - cornerPadB - titleSpec.h / 2;
+                  const cxStrip = cxTitle - titleSpec.w / 2;
+                  drawStripContent(titleSpec, cxStrip, cyStrip, (rnd() - 0.5) * 0.045, 'title-invert');
+                }
+
+                applyLayoutBMagazinePrintFinish(ctx, STORY_W, STORY_H);
+
+                canvas.toBlob((blob) => {
+                  if (!blob) {
+                    reject(new Error('Could not create experimental story image blob'));
+                    return;
+                  }
+                  resolve(blob);
+                }, 'image/png', 0.95);
+              })
+              .catch(reject);
+      });
+    }
+
+
     // ===== ARCHIVE SERVICE =====
     class ArchiveService {
       constructor(logger, dataService) {
@@ -4446,81 +5562,267 @@ try {
       }
 
       // Generate Instagram-ready image (4:5 portrait ratio)
-      async generateInstagramImage(blocks, quote = null) {
+      async generateInstagramImage(blocks, _quote = null) {
         try {
           if (!blocks || blocks.length === 0) {
             this.logger.warn('No blocks provided for Instagram image generation');
             return null;
           }
 
-          // Instagram optimal size: 1080x1350 (4:5 ratio)
+          /**
+           * Match on-screen quilt: rasterize live SVG (viewBox + padding + meet),
+           * then scale to fit 1080×1350. The old path drew blocks at 1:1 coords,
+           * leaving huge white margins vs the scaled SVG view.
+           */
+          let quiltBlob = null;
+          const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
+          if (quiltSVG) {
+            try {
+              quiltBlob = await this.rasterizeQuiltSvgToPngBlob(quiltSVG);
+            } catch (e) {
+              this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
+            }
+          }
+          if (!quiltBlob) {
+            quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
+          }
+          if (!quiltBlob) return null;
+
+          const W = 1080;
+          const H = 1350;
+          const pad = 5;
+          const innerW = W - pad * 2;
+          const innerH = H - pad * 2;
+
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
-          
-          canvas.width = 1080;
-          canvas.height = 1350;
-          
-          // Fill background with true white to match Instagram
+          canvas.width = W;
+          canvas.height = H;
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          
-          // Calculate bounds of all blocks to determine scaling
-          const minX = Math.min(...blocks.map(b => b.x));
-          const minY = Math.min(...blocks.map(b => b.y));
-          const maxX = Math.max(...blocks.map(b => b.x + b.width));
-          const maxY = Math.max(...blocks.map(b => b.y + b.height));
-          
-          // Use fixed 4:5 dimensions (1070 x 1340) - same as main app
-          const targetWidth = 1070;  // 1080 - 10px padding
-          const targetHeight = 1340; // 1350 - 10px padding
-          
-          // Center the quilt in the Instagram canvas (5px padding all around)
-          const offsetX = 5;  // 5px from left
-          const offsetY = 5;  // 5px from top
-          
-          
-          // Draw each block
-          blocks.forEach(block => {
-            // Add jitter effects (same as current quilt)
-            const jitterX = (Math.random() - 0.5) * 8;
-            const jitterY = (Math.random() - 0.5) * 8;
-            const jitterRotation = (Math.random() - 0.5) * 4;
-            
-            const jitteredX = block.x + jitterX;
-            const jitteredY = block.y + jitterY;
-            
-            // Transform to canvas coordinates (handle negative coordinates)
-            const canvasX = offsetX + (jitteredX - minX);
-            const canvasY = offsetY + (jitteredY - minY);
-            const canvasWidth = block.width;
-            const canvasHeight = block.height;
-            
-            // Save context for rotation
-            ctx.save();
-            
-            // Move to center of block for rotation
-            const centerX = canvasX + canvasWidth / 2;
-            const centerY = canvasY + canvasHeight / 2;
-            ctx.translate(centerX, centerY);
-            ctx.rotate(jitterRotation * Math.PI / 180);
-            
-            // Draw block (no shadow for clean Instagram look)
-            ctx.fillStyle = block.color;
-            ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
-            
-            // Restore context
-            ctx.restore();
-          });
-          
-          // Convert to data URL
-          const dataURL = canvas.toDataURL('image/png', 0.95);
-          
-          // Instagram image generated successfully
-          return dataURL;
-          
+          ctx.fillRect(0, 0, W, H);
+
+          const bitmapUrl = URL.createObjectURL(quiltBlob);
+          try {
+            const img = await new Promise((resolve, reject) => {
+              const im = new Image();
+              im.onload = () => resolve(im);
+              im.onerror = () => reject(new Error('Could not decode quilt bitmap'));
+              im.src = bitmapUrl;
+            });
+            const iw = Math.max(1, img.naturalWidth || img.width);
+            const ih = Math.max(1, img.naturalHeight || img.height);
+            const scale = Math.min(innerW / iw, innerH / ih);
+            const dw = Math.round(iw * scale);
+            const dh = Math.round(ih * scale);
+            const dx = pad + (innerW - dw) / 2;
+            const dy = pad + (innerH - dh) / 2;
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, dx, dy, dw, dh);
+          } finally {
+            URL.revokeObjectURL(bitmapUrl);
+          }
+
+          return canvas.toDataURL('image/png', 0.95);
         } catch (error) {
           this.logger.error('Instagram image generation failed:', error);
+          return null;
+        }
+      }
+
+      /** High-res PNG blob from the live quilt SVG (same path as layout B story share). */
+      async rasterizeQuiltSvgToPngBlob(quiltSVG) {
+        return new Promise((resolve, reject) => {
+          try {
+            const svgClone = quiltSVG.cloneNode(true);
+            svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+            const viewBox = (quiltSVG.getAttribute('viewBox') || '').trim();
+            let sourceWidth = 1080;
+            let sourceHeight = 1080;
+            if (viewBox) {
+              const parts = viewBox.split(/\s+/).map(Number);
+              if (parts.length === 4 && parts.every(Number.isFinite)) {
+                sourceWidth = Math.max(1, parts[2]);
+                sourceHeight = Math.max(1, parts[3]);
+              }
+            } else {
+              const rect = quiltSVG.getBoundingClientRect();
+              sourceWidth = Math.max(1, Math.round(rect.width));
+              sourceHeight = Math.max(1, Math.round(rect.height));
+            }
+
+            const maxEdge = 2400;
+            const aspect = sourceWidth / sourceHeight;
+            let outW;
+            let outH;
+            if (aspect >= 1) {
+              outW = maxEdge;
+              outH = Math.round(maxEdge / aspect);
+            } else {
+              outH = maxEdge;
+              outW = Math.round(maxEdge * aspect);
+            }
+
+            svgClone.removeAttribute('style');
+            svgClone.setAttribute('width', String(outW));
+            svgClone.setAttribute('height', String(outH));
+
+            const svgData = new XMLSerializer().serializeToString(svgClone);
+            const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+            const svgUrl = URL.createObjectURL(svgBlob);
+
+            const img = new Image();
+            img.onload = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = outW;
+                canvas.height = outH;
+                ctx.fillStyle = '#f6f4f1';
+                ctx.fillRect(0, 0, outW, outH);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                const iw = Math.max(1, img.naturalWidth || outW);
+                const ih = Math.max(1, img.naturalHeight || outH);
+                const scale = Math.min(outW / iw, outH / ih);
+                const dw = Math.round(iw * scale);
+                const dh = Math.round(ih * scale);
+                const ox = Math.floor((outW - dw) / 2);
+                const oy = Math.floor((outH - dh) / 2);
+                ctx.drawImage(img, 0, 0, iw, ih, ox, oy, dw, dh);
+                canvas.toBlob((blob) => {
+                  URL.revokeObjectURL(svgUrl);
+                  if (!blob) {
+                    reject(new Error('Could not convert canvas to blob'));
+                    return;
+                  }
+                  resolve(blob);
+                }, 'image/png');
+              } catch (drawError) {
+                URL.revokeObjectURL(svgUrl);
+                reject(drawError);
+              }
+            };
+            img.onerror = () => {
+              URL.revokeObjectURL(svgUrl);
+              reject(new Error('Failed to render SVG for sharing'));
+            };
+            img.src = svgUrl;
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }
+
+      /** Fallback raster when SVG is not available (e.g. headless / Zapier). */
+      async generateQuiltRasterBlobFromBlocks(blocks) {
+        if (!blocks || blocks.length === 0) return null;
+        const minX = Math.min(...blocks.map((b) => b.x));
+        const minY = Math.min(...blocks.map((b) => b.y));
+        const maxX = Math.max(...blocks.map((b) => b.x + b.width));
+        const maxY = Math.max(...blocks.map((b) => b.y + b.height));
+        const quiltW = maxX - minX;
+        const quiltH = maxY - minY;
+        const maxEdge = 2400;
+        const aspect = quiltW / Math.max(1, quiltH);
+        let outW;
+        let outH;
+        if (aspect >= 1) {
+          outW = maxEdge;
+          outH = Math.round(maxEdge / aspect);
+        } else {
+          outH = maxEdge;
+          outW = Math.round(maxEdge * aspect);
+        }
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = outW;
+        canvas.height = outH;
+        ctx.fillStyle = '#f6f4f1';
+        ctx.fillRect(0, 0, outW, outH);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        const scale = Math.min(outW / quiltW, outH / quiltH);
+        const offsetX = (outW - quiltW * scale) / 2;
+        const offsetY = (outH - quiltH * scale) / 2;
+        blocks.forEach((block) => {
+          const jitterX = (Math.random() - 0.5) * 8;
+          const jitterY = (Math.random() - 0.5) * 8;
+          const jitterRotation = (Math.random() - 0.5) * 4;
+          const jitteredX = block.x + jitterX;
+          const jitteredY = block.y + jitterY;
+          const canvasX = offsetX + (jitteredX - minX) * scale;
+          const canvasY = offsetY + (jitteredY - minY) * scale;
+          const canvasWidth = block.width * scale;
+          const canvasHeight = block.height * scale;
+          ctx.save();
+          const centerX = canvasX + canvasWidth / 2;
+          const centerY = canvasY + canvasHeight / 2;
+          ctx.translate(centerX, centerY);
+          ctx.rotate((jitterRotation * Math.PI) / 180);
+          ctx.fillStyle = block.color;
+          ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
+          ctx.restore();
+        });
+        return new Promise((resolve, reject) => {
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              reject(new Error('Could not create quilt raster blob'));
+              return;
+            }
+            resolve(blob);
+          }, 'image/png');
+        });
+      }
+
+      /**
+       * Instagram feed post (4:5,1080×1350): same layout B aesthetic as the experimental story image.
+       */
+      async generateInstagramPostLayoutBImage(blocks, quoteObj = null, dateKey = null) {
+        try {
+          if (!blocks || blocks.length === 0) {
+            this.logger.warn('No blocks for post layout B image');
+            return null;
+          }
+          const dk = dateKey || Utils.getTodayKey();
+          let highResBlob = null;
+          const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
+          if (quiltSVG) {
+            try {
+              highResBlob = await this.rasterizeQuiltSvgToPngBlob(quiltSVG);
+            } catch (e) {
+              this.logger.warn('SVG raster failed, falling back to blocks:', e);
+            }
+          }
+          if (!highResBlob) {
+            highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
+          }
+          if (!highResBlob) return null;
+
+          const q =
+            quoteObj ||
+            (typeof window !== 'undefined' && window.app?.quoteService?.getTodayQuote?.()) ||
+            { text: '', author: '' };
+          const quoteText = String(q.text ?? q.body ?? '').trim();
+          const quoteAuthor = String(q.author ?? '').trim();
+
+          const postBlob = await composeInstagramLayoutBFromQuiltBlob(
+            highResBlob,
+            quoteText,
+            quoteAuthor,
+            1080,
+            1350,
+            dk
+          );
+          return await new Promise((resolve) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(fr.result || null);
+            fr.onerror = () => resolve(null);
+            fr.readAsDataURL(postBlob);
+          });
+        } catch (error) {
+          this.logger.error('Instagram post layout B generation failed:', error);
           return null;
         }
       }
@@ -5110,25 +6412,36 @@ try {
               console.warn('⚠️ Could not save quote to Firestore:', quoteError);
             }
             
-            // Also save the generated Instagram image to Firestore
+            // Save Instagram assets: quilt-only 4:5 plus layout-B 4:5 post (quote composite)
             try {
-              if (window.app?.archiveService?.generateInstagramImage) {
-                const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData.blocks);
-                if (instagramImage) {
-                  const imageData = {
-                    imageData: instagramImage,
-                    date: today,
-                    lastUpdated: new Date().toISOString()
-                  };
-                  const imageRef = window.firestore.doc(window.db, 'instagram-images', today);
-                  await window.firestore.setDoc(imageRef, imageData);
-                  // Instagram image saved to Firestore
+              const arch = window.app?.archiveService;
+              if (arch?.generateInstagramImage) {
+                const todayQuote = window.app?.quoteService?.getTodayQuote() || null;
+                const instagramImage = await arch.generateInstagramImage(quiltData.blocks);
+                let postLayoutBImageData = null;
+                if (arch.generateInstagramPostLayoutBImage) {
+                  postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(
+                    quiltData.blocks,
+                    todayQuote,
+                    today
+                  );
+                }
+                if (instagramImage || postLayoutBImageData) {
+                  if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
+                    await Utils.writeInstagramImagesDocForZapier({
+                      dateKey: today,
+                      instagramImage,
+                      postLayoutBImageData
+                    });
+                  } else {
+                    console.warn('Skipping Instagram Firestore doc: app / Storage init not available');
+                  }
                 }
               } else {
-                console.warn('⚠️ ArchiveService.generateInstagramImage not available');
+                console.warn('ArchiveService.generateInstagramImage not available');
               }
             } catch (imageError) {
-              console.warn('⚠️ Could not save Instagram image to Firestore:', imageError);
+              console.warn('Could not save Instagram image to Firestore:', imageError);
             }
           }
           
@@ -5271,6 +6584,19 @@ try {
       }
 
       getTodayQuote() {
+        // Local layout-B tests only: 'short' | 'long' | null. Set null before commit (default).
+        const FORCE_QUOTE_FOR_LAYOUT_TEST = null;
+        if (FORCE_QUOTE_FOR_LAYOUT_TEST === 'short') {
+          return { text: 'Creativity takes courage.', author: 'Henri Matisse' };
+        }
+        if (FORCE_QUOTE_FOR_LAYOUT_TEST === 'long') {
+          return {
+            text:
+              'The true measure of our commitment to justice, the character of our society, our commitment to the rule of law, fairness, and equality cannot be measured by how we treat the rich, the powerful, the privileged, and the respected among us.',
+            author: 'Bryan Stevenson',
+          };
+        }
+
         // Use UTC time for day calculation - quote changes at 7:00 AM UTC
         const now = new Date();
         
@@ -6658,6 +7984,7 @@ try {
         if (shareBtnCompleted) {
           shareBtnCompleted.addEventListener('click', this.handleShare.bind(this));
         }
+
 
         // Test buttons
         const showMyPieceBtn = document.getElementById('showMyPieceBtn');
@@ -8855,8 +10182,9 @@ try {
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
             <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
-            <button onclick="app.handleTestInstagramImage()">📸 Create IG Image</button>
+            <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
             <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
+            <button type="button" onclick="window.app &amp;&amp; window.app.handlePushInstagramAssetsToFirestore()">Push IG images to Firestore (Zapier)</button>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
@@ -9407,51 +10735,468 @@ try {
         }
       }
 
-      async handleShare() {
-        try {
-          const quiltSVG = document.getElementById('quilt');
-          if (!quiltSVG) {
-            throw new Error('Quilt SVG not found');
-          }
+      async getHighResQuiltBlobForShare() {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) {
+          throw new Error('Quilt SVG not found');
+        }
+        let blob = await this.archiveService.rasterizeQuiltSvgToPngBlob(quiltSVG).catch(() => null);
+        if (!blob) {
+          blob = await this.archiveService.generateQuiltRasterBlobFromBlocks(this.quiltEngine.blocks);
+        }
+        if (!blob) {
+          throw new Error('Failed to generate rendered share image');
+        }
+        return blob;
+      }
 
-          const canvas = await html2canvas(quiltSVG, {
-            backgroundColor: '#f6f4f1',
-            scale: 2,
-            useCORS: true,
-            allowTaint: true
+      async createOriginalStoryShareBlob(highResBlob) {
+        return new Promise((resolve, reject) => {
+          const STORY_W = 1080;
+          const STORY_H = 1920;
+          const padX = 48;
+          const padY = 40;
+          const topImagePad = 52;
+          const quiltRegionH = Math.round(STORY_H * 0.62);
+          const quoteTop = quiltRegionH + 40;
+          const vw = STORY_W;
+          const TITLE_SCALE = 1.2;
+          const portalTitleLine1Px = Math.round(
+            Math.min(56, Math.max(40, Math.round(vw * 0.05))) * TITLE_SCALE
+          );
+          const portalTitleLine2Px = Math.round(
+            Math.min(128, Math.max(72, Math.round(vw * 0.08))) * TITLE_SCALE
+          );
+          const titleAreaH = Math.round(
+            portalTitleLine1Px + portalTitleLine2Px * 1.05 - 6 + 20
+          );
+          const QUOTE_LINE_LEAD = 1.4 * 0.8;
+          const gapTitleQuilt = 18;
+          const quiltSlotTop = topImagePad + titleAreaH + gapTitleQuilt;
+          const gapQuiltQuote = 32;
+          const quiltSlotH = Math.max(160, quoteTop - quiltSlotTop - gapQuiltQuote);
+
+          const quoteObj = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+          const quoteText = String(quoteObj.text ?? quoteObj.body ?? '').trim();
+          const quoteAuthor = String(quoteObj.author ?? '').trim();
+
+          const loadQuiltImage = () => new Promise((res, rej) => {
+            const url = URL.createObjectURL(highResBlob);
+            const im = new Image();
+            im.onload = () => {
+              URL.revokeObjectURL(url);
+              res(im);
+            };
+            im.onerror = () => {
+              URL.revokeObjectURL(url);
+              rej(new Error('Failed to load quilt image for story composite'));
+            };
+            im.src = url;
           });
 
-          canvas.toBlob(async (blob) => {
-            try {
-              const shareData = {
-                title: 'Our Daily Quilt',
-                text: `Check out today's community quilt with ${this.quiltEngine.submissionCount} contributors!`,
-                files: [new File([blob], 'quilt.png', { type: 'image/png' })]
-              };
+          const FONT_BODY = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          const FONT_AUTHOR = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
-              if (navigator.share && navigator.canShare(shareData)) {
-                await navigator.share(shareData);
-                this.uiService.showToast('Shared successfully!');
-              } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `quilt-${new Date().toISOString().split('T')[0]}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                
-                this.uiService.showToast('Quilt downloaded!');
+          const wrapLines = (ctx, text, maxWidth) => {
+            const breakLongWord = (word) => {
+              const out = [];
+              let piece = '';
+              for (const ch of word) {
+                const next = piece + ch;
+                if (ctx.measureText(next).width <= maxWidth || piece === '') piece = next;
+                else {
+                  out.push(piece);
+                  piece = ch;
+                }
               }
-            } catch (error) {
-              this.logger.error('Share failed:', error);
-              this.uiService.showToast('Share failed. Please try again.');
+              if (piece) out.push(piece);
+              return out;
+            };
+            const words = text.split(/\s+/).filter(Boolean);
+            const lines = [];
+            let line = '';
+            for (const word of words) {
+              const test = line ? `${line} ${word}` : word;
+              if (ctx.measureText(test).width <= maxWidth) {
+                line = test;
+              } else {
+                if (line) lines.push(line);
+                if (ctx.measureText(word).width <= maxWidth) {
+                  line = word;
+                } else {
+                  const chunks = breakLongWord(word);
+                  for (let c = 0; c < chunks.length - 1; c++) lines.push(chunks[c]);
+                  line = chunks[chunks.length - 1] || '';
+                }
+              }
             }
-          }, 'image/png', 0.9);
+            if (line) lines.push(line);
+            return lines;
+          };
 
+          loadQuiltImage()
+            .then((quiltImg) => {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              canvas.width = STORY_W;
+              canvas.height = STORY_H;
+              ctx.fillStyle = '#f6f4f1';
+              ctx.fillRect(0, 0, STORY_W, STORY_H);
+
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'top';
+              ctx.fillStyle = '#000';
+              try {
+                ctx.letterSpacing = `${Math.round(portalTitleLine1Px * 0.02)}px`;
+              } catch (e) { /* older canvas */ }
+              ctx.font = `500 ${portalTitleLine1Px}px ${FONT_BODY}`;
+              let titleY = topImagePad + 12;
+              ctx.fillText('OUR DAILY', STORY_W / 2, titleY);
+              titleY += portalTitleLine1Px * 0.92 - 8;
+              try {
+                ctx.letterSpacing = `${Math.round(portalTitleLine2Px * 0.05)}px`;
+              } catch (e) { /* older canvas */ }
+              ctx.font = `900 ${portalTitleLine2Px}px ${FONT_BODY}`;
+              ctx.fillText('QUILT', STORY_W / 2, titleY);
+              try { ctx.letterSpacing = '0px'; } catch (e) { /* */ }
+
+              const slotW = STORY_W - padX * 2;
+              const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
+              const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
+              const scale = Math.min(slotW / iw, quiltSlotH / ih);
+              const dw = Math.round(iw * scale);
+              const dh = Math.round((ih / iw) * dw);
+              const qx = Math.round((STORY_W - dw) / 2);
+              const qy = Math.round(quiltSlotTop + (quiltSlotH - dh) / 2);
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(quiltImg, qx, qy, dw, dh);
+
+              const textMaxW = Math.max(120, dw);
+              const textX = qx;
+
+              let bodySize = 50;
+              let authorSize = 42;
+              const bodySizeMin = 32;
+              let bodyLines = [];
+              let authorLines = [];
+              if (quoteText) {
+                for (let attempt = 0; attempt < 12; attempt++) {
+                  ctx.font = `italic 300 ${bodySize}px ${FONT_BODY}`;
+                  bodyLines = wrapLines(ctx, quoteText, textMaxW);
+                  let authorH = 0;
+                  if (quoteAuthor) {
+                    ctx.font = `italic 300 ${authorSize}px ${FONT_AUTHOR}`;
+                    authorLines = wrapLines(ctx, `— ${quoteAuthor}`, textMaxW);
+                    authorH = authorLines.length * (authorSize * QUOTE_LINE_LEAD) + (bodyLines.length ? 16 : 0);
+                  }
+                  const lineH = bodySize * QUOTE_LINE_LEAD;
+                  const needed = quoteTop + bodyLines.length * lineH + authorH + padY;
+                  if (needed <= STORY_H - 24 || bodySize <= bodySizeMin) break;
+                  bodySize -= 2;
+                  authorSize = Math.max(34, Math.round(bodySize * 0.86));
+                }
+              } else if (quoteAuthor) {
+                ctx.font = `italic 300 ${authorSize}px ${FONT_AUTHOR}`;
+                authorLines = wrapLines(ctx, `— ${quoteAuthor}`, textMaxW);
+              }
+
+              const lineHeight = bodySize * QUOTE_LINE_LEAD;
+              const textRightX = textX + textMaxW;
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'top';
+              ctx.fillStyle = '#404040';
+              ctx.font = `italic 300 ${bodySize}px ${FONT_BODY}`;
+              let ty = quoteTop;
+              bodyLines.forEach((ln) => {
+                ctx.fillText(ln, textX, ty);
+                ty += lineHeight;
+              });
+
+              if (authorLines.length) {
+                ty += bodyLines.length ? 16 : 0;
+                ctx.fillStyle = '#404040';
+                ctx.font = `italic 300 ${authorSize}px ${FONT_AUTHOR}`;
+                const authorLineH = authorSize * QUOTE_LINE_LEAD;
+                ctx.textAlign = 'right';
+                authorLines.forEach((ln) => {
+                  ctx.fillText(ln, textRightX, ty);
+                  ty += authorLineH;
+                });
+                ctx.textAlign = 'left';
+              }
+
+              canvas.toBlob((blob) => {
+                if (!blob) {
+                  reject(new Error('Could not create story image blob'));
+                  return;
+                }
+                resolve(blob);
+              }, 'image/png', 0.95);
+            })
+            .catch(reject);
+        });
+      }
+
+      async shareBlobWithSystem(blob, filename, shareTitle, shareText) {
+        const imageFile = new File([blob], filename, { type: 'image/png' });
+        const shareData = {
+          title: shareTitle,
+          text: shareText,
+          files: [imageFile]
+        };
+        const canShareFiles =
+          typeof navigator.canShare === 'function' && navigator.canShare(shareData);
+        if (navigator.share && canShareFiles) {
+          await navigator.share(shareData);
+          this.uiService.showToast('Shared successfully!');
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.uiService.showToast('Downloaded!');
+      }
+
+      async buildShareChooserPreviews(highResBlob) {
+        const dk = Utils.getTodayKey();
+        const qt = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+        const qText = String(qt.text ?? qt.body ?? '').trim();
+        const qAuthor = String(qt.author ?? '').trim();
+
+        /** Same pixel dimensions as the downloaded share (1080×1920); UI scales with CSS only. */
+        const [origStoryBlob, lbStoryBlob] = await Promise.all([
+          this.createOriginalStoryShareBlob(highResBlob),
+          composeInstagramLayoutBFromQuiltBlob(highResBlob, qText, qAuthor, 1080, 1920, dk)
+        ]);
+
+        return {
+          storyModernUrl: URL.createObjectURL(origStoryBlob),
+          storyCollageUrl: URL.createObjectURL(lbStoryBlob)
+        };
+      }
+
+      closeShareChooserModal() {
+        if (this._shareChooserRevoke) {
+          this._shareChooserRevoke.forEach((u) => {
+            try {
+              URL.revokeObjectURL(u);
+            } catch (e) { /* */ }
+          });
+          this._shareChooserRevoke = null;
+        }
+        const el = document.getElementById('shareChooserModal');
+        if (el) el.remove();
+        if (this._shareChooserKeyEsc) {
+          document.removeEventListener('keydown', this._shareChooserKeyEsc);
+          this._shareChooserKeyEsc = null;
+        }
+      }
+
+      showShareChooserModal(previews) {
+        this.closeShareChooserModal();
+        const revoke = [];
+        const track = (u) => {
+          if (u) revoke.push(u);
+        };
+        track(previews.storyModernUrl);
+        track(previews.storyCollageUrl);
+        this._shareChooserRevoke = revoke;
+
+        const wrap = document.createElement('div');
+        wrap.id = 'shareChooserModal';
+        wrap.className = 'share-chooser-modal';
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        wrap.setAttribute('aria-label', 'Share');
+
+        const cards = [
+          {
+            variant: 'story-modern',
+            src: previews.storyModernUrl,
+            label: 'STORY MODERN'
+          },
+          {
+            variant: 'story-collage',
+            src: previews.storyCollageUrl,
+            label: 'STORY COLLAGE'
+          }
+        ];
+
+        wrap.innerHTML = `
+          <div class="share-chooser-backdrop" data-share-close="1"></div>
+          <div class="share-chooser-panel">
+            <div class="share-chooser-grid"></div>
+            <button type="button" class="share-chooser-cancel" data-share-close="1">Cancel</button>
+          </div>
+        `;
+        const grid = wrap.querySelector('.share-chooser-grid');
+        for (const c of cards) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'share-chooser-card';
+          btn.dataset.variant = c.variant;
+          const img = document.createElement('img');
+          img.src = c.src || '';
+          img.alt = c.label;
+          if (!c.src) img.style.opacity = '0.3';
+          const lab = document.createElement('span');
+          lab.className = 'share-chooser-label';
+          lab.textContent = c.label;
+          btn.appendChild(img);
+          btn.appendChild(lab);
+          btn.addEventListener('click', async () => {
+            this.closeShareChooserModal();
+            try {
+              await this.executeShareVariant(c.variant);
+            } catch (err) {
+              this.errorHandler.handleError(err, 'shareFlow');
+            }
+          });
+          grid.appendChild(btn);
+        }
+
+        wrap.addEventListener('click', (e) => {
+          if (e.target && e.target.dataset && e.target.dataset.shareClose === '1') {
+            this.closeShareChooserModal();
+          }
+        });
+
+        this._shareChooserKeyEsc = (e) => {
+          if (e.key === 'Escape') this.closeShareChooserModal();
+        };
+        document.addEventListener('keydown', this._shareChooserKeyEsc);
+
+        document.body.appendChild(wrap);
+        const firstBtn = wrap.querySelector('.share-chooser-card');
+        if (firstBtn) firstBtn.focus();
+      }
+
+      async executeShareVariant(variant) {
+        const dateStr = new Date().toISOString().split('T')[0];
+        const sub = this.quiltEngine.submissionCount;
+        const shareText = `Check out today's community quilt with ${sub} contributors!`;
+        switch (variant) {
+          case 'story-modern': {
+            const highRes = await this.getHighResQuiltBlobForShare();
+            const blob = await this.createOriginalStoryShareBlob(highRes);
+            await this.shareBlobWithSystem(
+              blob,
+              `our-daily-quilt-story-modern-${dateStr}.png`,
+              'STORY MODERN',
+              shareText
+            );
+            break;
+          }
+          case 'story-collage':
+            await this.exportLayoutBShareImage(
+              1920,
+              'STORY COLLAGE',
+              'our-daily-quilt-story-collage',
+              'Shared!',
+              'Downloaded!'
+            );
+            break;
+          default:
+            break;
+        }
+      }
+
+      async handleShare() {
+        try {
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            this.uiService.showToast('Add some blocks to the quilt first!');
+            return;
+          }
+
+          this.uiService.showToast('Preparing story formats…');
+
+          const highResBlob = await this.getHighResQuiltBlobForShare();
+          const previews = await this.buildShareChooserPreviews(highResBlob);
+          this.showShareChooserModal(previews);
         } catch (error) {
           this.errorHandler.handleError(error, 'shareFlow');
+        }
+      }
+
+      /**
+       * Layout B share: full-bleed quilt + quote strips (9:16 story or 4:5 post canvas).
+       * Share chooser uses this for STORY COLLAGE (9:16); experimental handlers use post/story sizes too.
+       */
+      async exportLayoutBShareImage(layoutH, shareTitle, filenameStem, toastShared, toastDownloaded) {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG) {
+          throw new Error('Quilt SVG not found');
+        }
+        const highResBlob = await this.archiveService.rasterizeQuiltSvgToPngBlob(quiltSVG);
+        if (!highResBlob) {
+          throw new Error('Failed to generate rendered share image');
+        }
+        const qt = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+        const qText = String(qt.text ?? qt.body ?? '').trim();
+        const qAuthor = String(qt.author ?? '').trim();
+        const outBlob = await composeInstagramLayoutBFromQuiltBlob(
+          highResBlob,
+          qText,
+          qAuthor,
+          1080,
+          layoutH,
+          Utils.getTodayKey()
+        );
+        const filename = `${filenameStem}-${new Date().toISOString().split('T')[0]}.png`;
+        const imageFile = new File([outBlob], filename, { type: 'image/png' });
+        const shareData = {
+          title: shareTitle,
+          text: `Check out today's community quilt with ${this.quiltEngine.submissionCount} contributors!`,
+          files: [imageFile]
+        };
+        const canShareFiles = typeof navigator.canShare === 'function' && navigator.canShare(shareData);
+        if (navigator.share && canShareFiles) {
+          await navigator.share(shareData);
+          this.uiService.showToast(toastShared);
+          return;
+        }
+        const url = URL.createObjectURL(outBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.uiService.showToast(toastDownloaded);
+      }
+
+      async handleShareStoryExperimental() {
+        try {
+          await this.exportLayoutBShareImage(
+            1920,
+            'Our Daily Quilt (layout B)',
+            'our-daily-quilt-story-b',
+            'Shared (layout B)!',
+            'Layout B downloaded!'
+          );
+        } catch (error) {
+          this.errorHandler.handleError(error, 'shareFlowExperimental');
+        }
+      }
+
+      async handleSharePostLayoutExperimental() {
+        try {
+          await this.exportLayoutBShareImage(
+            1350,
+            'Our Daily Quilt (layout B · 4:5 post)',
+            'our-daily-quilt-post-b',
+            'Post layout (4:5) shared!',
+            'Post layout (4:5) downloaded!'
+          );
+        } catch (error) {
+          this.errorHandler.handleError(error, 'shareFlowExperimental');
         }
       }
 
@@ -9521,7 +11266,7 @@ try {
         }
       }
 
-      // Test Instagram image generation
+      // Test Instagram image: feed post 4:5 Layout B (same asset shape as Zapier postLayoutBImageUrl)
       async handleTestInstagramImage() {
         try {
           if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
@@ -9529,27 +11274,33 @@ try {
             return;
           }
 
-          // Generate Instagram image (quilt only, no quote)
-          const instagramImage = await this.archiveService.generateInstagramImage(
-            this.quiltEngine.blocks
+          if (!this.archiveService.generateInstagramPostLayoutBImage) {
+            this.uiService.showToast('Layout B post generator not available');
+            return;
+          }
+
+          const todayKey = Utils.getTodayKey();
+          const quote = this.quoteService?.getTodayQuote?.() || null;
+          const imageDataUrl = await this.archiveService.generateInstagramPostLayoutBImage(
+            this.quiltEngine.blocks,
+            quote,
+            todayKey
           );
-          
-          if (instagramImage) {
-            // Create download link
+
+          if (imageDataUrl) {
             const link = document.createElement('a');
-            link.href = instagramImage;
-            link.download = `instagram-quilt-${new Date().toISOString().split('T')[0]}.png`;
+            link.href = imageDataUrl;
+            link.download = `instagram-layout-b-post-${todayKey}.png`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
-            // Save current quilt to Firestore
+
             await this.saveQuilt();
-            
-            this.uiService.showToast('Instagram image downloaded and saved to Firestore! 📸💾');
-            this.logger.log('✅ Instagram test image generated, downloaded, and saved to Firestore');
+
+            this.uiService.showToast('Layout B 4:5 post image downloaded; quilt saved to Firestore 📸💾');
+            this.logger.log('✅ Instagram Layout B post image generated and downloaded');
           } else {
-            this.uiService.showToast('Failed to generate Instagram image');
+            this.uiService.showToast('Failed to generate Layout B post image');
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testInstagramImage');
@@ -9604,7 +11355,8 @@ try {
               date: result.date,
               blockCount: result.blockCount,
               captionLength: result.caption.length,
-              imageSize: result.image.length
+              imageSize: result.image.length,
+              hasPostLayoutB: !!result.postImage
             });
           } else {
             console.error('❌ Zapier webhook test failed:', result);
@@ -9612,6 +11364,93 @@ try {
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testZapierWebhook');
+        }
+      }
+
+      /**
+       * Writes `instagram-images/{today}` to Firestore (classic 4:5 + layout B 4:5 when available).
+       * Railway POST /api/generate-instagram reads this doc so Zapier can use imageUrl and postLayoutBImageUrl.
+       */
+      async handlePushInstagramAssetsToFirestore() {
+        try {
+          if (!window.db || !window.firestore) {
+            this.uiService.showToast('Waiting for Firestore to load…');
+            for (let i = 0; i < 120 && (!window.db || !window.firestore); i++) {
+              await new Promise((r) => setTimeout(r, 100));
+            }
+          }
+          if (!window.db || !window.firestore) {
+            this.uiService.showToast(
+              'Firestore not ready — check network, ad blocker, or refresh the page'
+            );
+            console.warn('pushInstagramAssetsToFirestore: window.db / window.firestore missing');
+            return;
+          }
+          const blocks = this.quiltEngine?.blocks;
+          if (!blocks || blocks.length <= 1) {
+            this.uiService.showToast('Need more than one block on the quilt');
+            return;
+          }
+          const arch = this.archiveService;
+          if (!arch?.generateInstagramImage) {
+            this.uiService.showToast('ArchiveService not ready');
+            return;
+          }
+          const today = Utils.getTodayKey();
+          const todayQuote = this.quoteService?.getTodayQuote() || null;
+          this.uiService.showToast('Generating and uploading Instagram assets…');
+          const instagramImage = await arch.generateInstagramImage(blocks);
+          let postLayoutBImageData = null;
+          if (arch.generateInstagramPostLayoutBImage) {
+            postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(
+              blocks,
+              todayQuote,
+              today
+            );
+          }
+          if (!instagramImage && !postLayoutBImageData) {
+            this.uiService.showToast('Failed to generate images');
+            return;
+          }
+          const docPayload = await Utils.writeInstagramImagesDocForZapier({
+            dateKey: today,
+            instagramImage,
+            postLayoutBImageData
+          });
+          const parts = [
+            instagramImage ? 'classic' : null,
+            postLayoutBImageData ? 'layout B' : null
+          ].filter(Boolean);
+          this.uiService.showToast(
+            `Saved instagram-images/${today} (${parts.join(' + ')}) via Storage — refresh Firebase console`
+          );
+          this.logger.log('Instagram assets pushed to Firestore for Zapier', {
+            docPath: `instagram-images/${today}`,
+            hasClassic: !!instagramImage,
+            hasPostLayoutB: !!postLayoutBImageData,
+            storage: {
+              imageStorageUrl: !!docPayload.imageStorageUrl,
+              postLayoutBImageStorageUrl: !!docPayload.postLayoutBImageStorageUrl
+            }
+          });
+        } catch (error) {
+          this.errorHandler.handleError(error, 'pushInstagramAssetsToFirestore');
+          const code = error && error.code;
+          let msg = error.message || 'Firestore upload failed';
+          if (code === 'permission-denied') {
+            msg = 'Firestore permission denied — security rules must allow writes to instagram-images';
+          } else if (code === 'storage/unauthorized') {
+            msg =
+              'Firebase Storage blocked the upload — allow writes to instagram-zapier/ in Storage rules (same auth as reveal uploads)';
+          } else if (
+            /invalid|size|too large|exceed/i.test(msg) ||
+            code === 'invalid-argument'
+          ) {
+            msg =
+              'Document too large for Firestore (max ~1 MB) or invalid data — try smaller images';
+          }
+          console.error('pushInstagramAssetsToFirestore', code, error);
+          this.uiService.showToast(msg);
         }
       }
 
@@ -10122,6 +11961,8 @@ try {
       window.showMyPiece = () => app.handleShowMyPiece();
       window.switchUser = () => app.handleTestDifferentUser();
       window.shareQuilt = () => app.handleShare();
+      window.shareQuiltStoryExperimental = () => app.handleShareStoryExperimental();
+      window.shareQuiltPostLayoutExperimental = () => app.handleSharePostLayoutExperimental();
       window.resetQuilt = () => app.handleResetQuilt();
       window.createArchive = () => app.handleCreateArchive();
       window.createTestArchives = () => app.handleCreateTestArchives();
@@ -10297,27 +12138,36 @@ try {
             quiltData = window.app.quiltEngine.blocks;
           }
           
-          // Generate Instagram image
+          const dk = date || new Date().toISOString().split('T')[0];
+
           const instagramImage = await window.app.archiveService.generateInstagramImage(quiltData);
-          
-          if (!instagramImage) {
-            throw new Error('Failed to generate Instagram image');
-          }
-          
-          // Get quote for caption
+
           let quote = null;
           if (date) {
             quote = window.app.quoteService.getQuoteForDate(date);
           } else {
             quote = window.app.quoteService.getTodayQuote();
           }
-          
-          // Return data for Zapier
+
+          let postImage = null;
+          if (window.app.archiveService.generateInstagramPostLayoutBImage) {
+            postImage = await window.app.archiveService.generateInstagramPostLayoutBImage(quiltData, quote, dk);
+          }
+
+          if (!instagramImage && !postImage) {
+            throw new Error('Failed to generate Instagram images');
+          }
+
+          const caption = quote && (quote.text || quote.body)
+            ? `${quote.text ?? quote.body} — ${quote.author ?? ''}`
+            : '';
+
           const response = {
             success: true,
             image: instagramImage,
-            caption: `${quote.text} — ${quote.author}`,
-            date: date || new Date().toISOString().split('T')[0],
+            postImage,
+            caption,
+            date: dk,
             blockCount: quiltData.length,
             timestamp: new Date().toISOString()
           };
@@ -10348,6 +12198,10 @@ try {
     // Make webhook available globally
     window.generateInstagramForZapier = window.zapierWebhookAPI.generateInstagramImage;
     window.zapierHealthCheck = window.zapierWebhookAPI.healthCheck;
+    window.pushInstagramImagesToFirestoreForZapier = () =>
+      window.app && typeof window.app.handlePushInstagramAssetsToFirestore === 'function'
+        ? window.app.handlePushInstagramAssetsToFirestore()
+        : Promise.reject(new Error('app not ready'));
     
     // Automatic Firebase reconnection system
     window.autoReconnectToFirebase = function() {
