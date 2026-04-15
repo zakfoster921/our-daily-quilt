@@ -411,12 +411,11 @@ try {
     .quote-prompt { 
       font-size: clamp(1.2rem, 3vw, 1.5rem); 
       margin: 2rem 0 0rem; 
-    }
-    body.intro-flow-active .quote-prompt.quote-scroll-reveal {
-      opacity: 0;
-      transform: translate3d(0, 14px, 0);
-      transition: opacity 180ms linear, transform 180ms ease-out;
-      will-change: opacity, transform;
+      text-align: center;
+      max-width: 24rem;
+      line-height: 1.35;
+      font-style: italic;
+      color: #404040;
     }
     
     .arrow-down {
@@ -514,34 +513,6 @@ try {
       overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
       align-items: center !important;
-    }
-
-    .color-entry-prompt {
-      font-size: clamp(1.05rem, 2.8vw, 1.35rem);
-      font-style: italic;
-      font-weight: 500;
-      text-align: center;
-      margin: 0 1rem 0.75rem;
-      max-width: 22rem;
-      color: #404040;
-      line-height: 1.35;
-      opacity: 0;
-      transform: translate3d(0, 10px, 0);
-      transition: opacity 0.45s ease, transform 0.45s ease;
-    }
-    body.intro-flow-active #screen-color .color-entry-prompt {
-      opacity: 1;
-      transform: translate3d(0, 0, 0);
-    }
-    .color-entry-prompt.is-visible {
-      opacity: 1;
-      transform: translate3d(0, 0, 0);
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .color-entry-prompt {
-        transition: none;
-        transform: none;
-      }
     }
 
     /* Portal: center headline stack in remaining space; chevron stays at bottom (intro flow) */
@@ -2330,15 +2301,12 @@ try {
             <p class="quote-author" aria-live="polite"></p>
           </div>
         </div>
-        <p class="quote-prompt quote-scroll-reveal">What color does this call to mind?</p>
-        <div class="arrow-down quote-screen-fade-in">↓</div>
-        <button class="btn quote-screen-fade-in" data-next="screen-color" aria-label="Add your color to the quilt">ADD YOUR COLOR</button>
+        <p class="quote-prompt quote-screen-fade-in">What color does this call to mind?</p>
       </div>
     </section>
 
     <!-- Color Picker Screen -->
     <section class="screen" id="screen-color" role="main" aria-label="Color picker screen">
-      <p class="color-entry-prompt" id="colorEntryPrompt">What color does this call to mind?</p>
       <div class="color-picker-container">
         <div class="css-color-wheel" id="colorWheelCanvas" role="button" tabindex="0" aria-label="Color wheel - click or drag to select hue"></div>
         <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
@@ -8295,8 +8263,6 @@ try {
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
-        this._quotePromptRevealEl = null;
-        this._quoteInnerScrollHandler = null;
       }
       
       
@@ -8635,16 +8601,9 @@ try {
           app.addEventListener('scroll', this._introFlowScrollListener, { passive: true });
         }
 
-        const quotePanel = document.getElementById('screen-quote');
-        if (quotePanel && !this._quoteInnerScrollHandler) {
-          this._quoteInnerScrollHandler = () => this.updateQuotePromptScrollReveal();
-          quotePanel.addEventListener('scroll', this._quoteInnerScrollHandler, { passive: true });
-        }
-
         this.scrollIntroTo(initialScreenId, 'auto');
         Utils.refreshPortalDateText();
         this.schedulePortalScrollHint();
-        this.updateQuotePromptScrollReveal();
       }
 
       schedulePortalScrollHint() {
@@ -8718,20 +8677,6 @@ try {
           hint.hidden = true;
           hint.setAttribute('aria-hidden', 'true');
         }
-        const quotePanel = document.getElementById('screen-quote');
-        if (quotePanel && this._quoteInnerScrollHandler) {
-          quotePanel.removeEventListener('scroll', this._quoteInnerScrollHandler);
-          this._quoteInnerScrollHandler = null;
-        }
-        const prompt = this._quotePromptRevealEl || document.querySelector('#screen-quote .quote-prompt.quote-scroll-reveal');
-        if (prompt) {
-          prompt.style.opacity = '';
-          prompt.style.transform = '';
-        }
-        const colorEntry = document.getElementById('colorEntryPrompt');
-        if (colorEntry) {
-          colorEntry.classList.remove('is-visible');
-        }
         this._introFlowEnabled = false;
         document.body.classList.remove('intro-flow-active');
       }
@@ -8743,39 +8688,6 @@ try {
         if (!app || !section) return;
         app.scrollTo({ top: section.offsetTop, behavior });
         this.syncIntroFlowActiveSection();
-        this.updateQuotePromptScrollReveal();
-      }
-
-      updateQuotePromptScrollReveal() {
-        if (!this._introFlowEnabled) return;
-        const app = document.getElementById('app');
-        const quoteSection = document.getElementById('screen-quote');
-        if (!app || !quoteSection) return;
-
-        if (!this._quotePromptRevealEl) {
-          this._quotePromptRevealEl = quoteSection.querySelector('.quote-prompt.quote-scroll-reveal');
-        }
-        const prompt = this._quotePromptRevealEl;
-        if (!prompt) return;
-
-        const appPast = app.scrollTop - quoteSection.offsetTop;
-        const innerPast = quoteSection.scrollTop || 0;
-        const localScroll = Math.max(appPast, innerPast);
-        const revealStart = 6;
-        const revealRange = 42;
-        const rawProgress = (localScroll - revealStart) / revealRange;
-        const progress = Math.max(0, Math.min(1, rawProgress));
-
-        if (progress <= 0) {
-          prompt.style.opacity = '0';
-          prompt.style.transform = 'translate3d(0, 14px, 0)';
-          return;
-        }
-
-        const y = (1 - progress) * 14;
-        const alpha = Math.max(progress, 0.28);
-        prompt.style.opacity = String(alpha);
-        prompt.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0)`;
       }
 
       syncIntroFlowActiveSection() {
@@ -8811,13 +8723,6 @@ try {
         ) {
           this.schedulePortalScrollHint();
         }
-
-        const colorEntry = document.getElementById('colorEntryPrompt');
-        if (colorEntry && nextId === 'screen-color') {
-          requestAnimationFrame(() => colorEntry.classList.add('is-visible'));
-        }
-
-        this.updateQuotePromptScrollReveal();
       }
 
       setupScreenScrollNavigation() {
