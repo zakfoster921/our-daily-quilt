@@ -144,6 +144,91 @@ function addDaysToDateKey(dateKey, delta) {
   return `${y}-${mo}-${da}`;
 }
 
+function getUtcIsoNow() {
+  return new Date().toISOString();
+}
+
+async function runDailyResetForDate(dateKey, source = 'unknown') {
+  if (!db) {
+    throw new Error('Firestore not initialized');
+  }
+
+  const opId = `daily-reset-${dateKey}`;
+  const opRef = db.collection('ops').doc(opId);
+  const opSnap = await opRef.get();
+  if (opSnap.exists && opSnap.data()?.status === 'success') {
+    return {
+      success: true,
+      date: dateKey,
+      alreadyReset: true,
+      archived: !!opSnap.data()?.archived
+    };
+  }
+
+  const quiltRef = db.collection('quilts').doc(dateKey);
+  const quoteRef = db.collection('quotes').doc(dateKey);
+  const archiveRef = db.collection('archives').doc(dateKey);
+
+  const [quiltSnap, quoteSnap, archiveSnap] = await Promise.all([
+    quiltRef.get(),
+    quoteRef.get(),
+    archiveRef.get()
+  ]);
+
+  const quiltData = quiltSnap.exists ? quiltSnap.data() : null;
+  const quoteData = quoteSnap.exists ? quoteSnap.data() : null;
+
+  let archived = false;
+  if (!archiveSnap.exists && quiltData && Array.isArray(quiltData.blocks) && quiltData.blocks.length > 1) {
+    const archivePayload = {
+      date: dateKey,
+      quilt: {
+        blocks: quiltData.blocks || [],
+        contributorCount: quiltData.contributorCount || 1
+      },
+      quote: quoteData
+        ? { text: quoteData.text || '', author: quoteData.author || '' }
+        : null,
+      userCount: quiltData.contributorCount || 1,
+      isComplete: true,
+      resetSource: source,
+      archivedAt: getUtcIsoNow()
+    };
+    await archiveRef.set(archivePayload, { merge: true });
+    archived = true;
+  }
+
+  await quiltRef.set(
+    {
+      blocks: [],
+      contributorCount: 1,
+      date: dateKey,
+      lastUpdated: getUtcIsoNow(),
+      resetBy: source,
+      resetAt: getUtcIsoNow()
+    },
+    { merge: true }
+  );
+
+  await opRef.set(
+    {
+      status: 'success',
+      date: dateKey,
+      archived,
+      source,
+      completedAt: getUtcIsoNow()
+    },
+    { merge: true }
+  );
+
+  return {
+    success: true,
+    date: dateKey,
+    alreadyReset: false,
+    archived
+  };
+}
+
 function hasLayoutBInRaw(raw) {
   if (!raw) return false;
   return !!(
@@ -410,6 +495,43 @@ app.get('/api/simple-test', (req, res) => {
     server: 'Instagram Quilt Generator (Firestore)',
     ready: true
   });
+});
+
+app.post('/api/daily-reset', async (req, res) => {
+  try {
+    const expectedToken = process.env.RESET_TOKEN;
+    if (!expectedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'RESET_TOKEN is not configured on server'
+      });
+    }
+
+    const providedToken = req.header('x-reset-token');
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized'
+      });
+    }
+
+    const bodyDate =
+      req.body && typeof req.body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date.trim())
+        ? req.body.date.trim()
+        : null;
+    const dateKey = bodyDate || getAppDateKey();
+    const source = req.body?.source || 'api';
+
+    const result = await runDailyResetForDate(dateKey, source);
+    return res.json(result);
+  } catch (error) {
+    console.error('❌ Daily reset endpoint failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Daily reset failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
 });
 
 app.listen(PORT, () => {

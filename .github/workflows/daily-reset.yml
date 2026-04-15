@@ -1,0 +1,48 @@
+name: Daily Quilt Reset
+
+on:
+  schedule:
+    # 07:00 UTC daily
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  daily-reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call reset endpoint
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RESET_URL:-}" ] || [ -z "${RESET_TOKEN:-}" ]; then
+            echo "Missing RESET_URL or RESET_TOKEN secret"
+            exit 1
+          fi
+
+          echo "Calling daily reset endpoint..."
+          http_code=$(curl -sS -o response.json -w "%{http_code}" \
+            -X POST "$RESET_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-reset-token: $RESET_TOKEN" \
+            --data '{"source":"github-actions","mode":"daily"}')
+
+          echo "HTTP $http_code"
+          cat response.json
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "Reset request failed"
+            exit 1
+          fi
+
+          python - <<'PY'
+import json, sys
+with open("response.json", "r", encoding="utf-8") as f:
+    data = json.load(f)
+if data.get("success") is not True:
+    print("Reset returned success=false")
+    sys.exit(1)
+print("Reset ok for date:", data.get("date"))
+PY
