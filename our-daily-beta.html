@@ -8019,6 +8019,11 @@ try {
         this.parallaxTicking = false;
         this.parallaxAnchorScrollTop = 0;
         this.parallaxScrollListener = null;
+
+        // Gesture-based screen flow: portal -> quote -> color
+        this._scrollNavTouchStartY = null;
+        this._scrollNavLastTriggerAt = 0;
+        this._scrollNavCooldownMs = 550;
       }
       
       
@@ -8234,8 +8239,7 @@ try {
           
           await this.quoteService.loadQuotesFromFirestore();
           console.log('🔄 Firestore enabled - quotes loaded from database');
-          
-          this.setupAutoTransition();
+          // Portal progression is user-driven via scroll/swipe gesture now.
           this.setupDailyReset(); // ENABLED - automatic daily archive and reset
           
           // Don't set up flip handlers here - they'll be set up when quilt screen is shown
@@ -8285,6 +8289,9 @@ try {
 
         // Keyboard navigation
         document.addEventListener('keydown', this.handleKeyDown.bind(this));
+
+        // Scroll/swipe navigation for early flow screens
+        this.setupScreenScrollNavigation();
         
         // Window resize handler
         window.addEventListener('resize', this.handleWindowResize.bind(this));
@@ -8309,6 +8316,50 @@ try {
         
         // Clear any existing admin flags to ensure clean state
         localStorage.removeItem('ourDailyIsAdmin');
+      }
+
+      setupScreenScrollNavigation() {
+        const nextByScreen = {
+          'screen-portal': 'screen-quote',
+          'screen-quote': 'screen-color'
+        };
+
+        const triggerNext = () => {
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen) return;
+          const now = Date.now();
+          if (now - this._scrollNavLastTriggerAt < this._scrollNavCooldownMs) return;
+          const next = nextByScreen[currentScreen.id];
+          if (!next) return;
+          this._scrollNavLastTriggerAt = now;
+          this.uiService.showScreen(next);
+        };
+
+        window.addEventListener('wheel', (e) => {
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen) return;
+          if (!nextByScreen[currentScreen.id]) return;
+          if (e.deltaY > 28) {
+            e.preventDefault();
+            triggerNext();
+          }
+        }, { passive: false });
+
+        window.addEventListener('touchstart', (e) => {
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen || !nextByScreen[currentScreen.id]) return;
+          this._scrollNavTouchStartY = e.touches?.[0]?.clientY ?? null;
+        }, { passive: true });
+
+        window.addEventListener('touchend', (e) => {
+          const currentScreen = document.querySelector('.screen.active');
+          if (!currentScreen || !nextByScreen[currentScreen.id]) return;
+          const endY = e.changedTouches?.[0]?.clientY ?? null;
+          if (this._scrollNavTouchStartY == null || endY == null) return;
+          const dy = this._scrollNavTouchStartY - endY;
+          this._scrollNavTouchStartY = null;
+          if (dy > 56) triggerNext();
+        }, { passive: true });
       }
 
       setupColorPicker() {
@@ -8487,6 +8538,20 @@ try {
       }
 
       handleKeyDown(event) {
+        if (event.key === 'ArrowDown' || event.key === 'PageDown') {
+          const currentScreen = document.querySelector('.screen.active');
+          const nextByScreen = {
+            'screen-portal': 'screen-quote',
+            'screen-quote': 'screen-color'
+          };
+          const next = currentScreen ? nextByScreen[currentScreen.id] : null;
+          if (next) {
+            event.preventDefault();
+            this.uiService.showScreen(next);
+            return;
+          }
+        }
+
         if (event.key === 'Escape') {
           const currentScreen = document.querySelector('.screen.active');
           if (currentScreen) {
