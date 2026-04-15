@@ -2,15 +2,14 @@ name: Daily Quilt Reset
 
 on:
   schedule:
-    # 07:00 UTC daily
     - cron: "0 7 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 jobs:
   daily-reset:
     runs-on: ubuntu-latest
     steps:
-      - name: Call reset endpoint
+      - name: Call daily reset endpoint
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
           RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
@@ -22,7 +21,6 @@ jobs:
             exit 1
           fi
 
-          echo "Calling daily reset endpoint..."
           http_code=$(curl -sS -o response.json -w "%{http_code}" \
             -X POST "$RESET_URL" \
             -H "Content-Type: application/json" \
@@ -32,12 +30,12 @@ jobs:
           echo "HTTP $http_code"
           cat response.json
 
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 299 ]; then
             echo "Reset request failed"
             exit 1
           fi
 
-          if ! grep -q '"success":[[:space:]]*true' response.json; then
+          if ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' response.json; then
             echo "Reset returned success=false"
             exit 1
           fi
