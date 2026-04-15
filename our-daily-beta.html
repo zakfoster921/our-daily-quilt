@@ -498,6 +498,51 @@ try {
       transform: none !important;
     }
 
+    /* Nudge: scroll hint on portal (once per session; hidden for reduced motion) */
+    .portal-scroll-hint {
+      position: relative;
+      margin-top: auto;
+      padding-bottom: max(1.35rem, env(safe-area-inset-bottom, 0px));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      color: rgba(0, 0, 0, 0.38);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 480ms ease;
+    }
+    .portal-scroll-hint--visible {
+      opacity: 1;
+    }
+    .portal-scroll-hint-chevron {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: portal-scroll-hint-bounce 1.65s ease-in-out infinite;
+    }
+    @keyframes portal-scroll-hint-bounce {
+      0%, 100% { transform: translateY(0); }
+      45% { transform: translateY(7px); }
+      55% { transform: translateY(7px); }
+    }
+    .portal-scroll-hint-sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .portal-scroll-hint {
+        display: none !important;
+      }
+    }
+
     /* Welcome screen fade-in elements */
     .welcome-screen-fade-in {
       opacity: 0 !important;
@@ -2181,6 +2226,13 @@ try {
       <div style="margin-top: 2rem;"></div>
       
       <p class="portal-question">First we gather<br>then we build</p>
+
+      <div class="portal-scroll-hint" id="portalScrollHint" hidden aria-hidden="true">
+        <span class="portal-scroll-hint-sr">Scroll for today's quote</span>
+        <span class="portal-scroll-hint-chevron" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </div>
     </section>
 
     <!-- Welcome Screen (First Time Only) -->
@@ -8177,6 +8229,8 @@ try {
         this._introScreenIds = new Set(['screen-portal', 'screen-quote', 'screen-color']);
         this._introFlowEnabled = false;
         this._introFlowScrollListener = null;
+        this._portalScrollHintTimer = null;
+        this._portalScrollHintOnScroll = null;
       }
       
       
@@ -8514,6 +8568,79 @@ try {
 
         this.scrollIntroTo(initialScreenId, 'auto');
         Utils.refreshPortalDateText();
+        this.schedulePortalScrollHint();
+      }
+
+      schedulePortalScrollHint() {
+        const SESSION_FLAG = 'odqPortalScrollHintSession';
+        try {
+          if (sessionStorage.getItem(SESSION_FLAG)) return;
+        } catch (_) {
+          return;
+        }
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          return;
+        }
+        const hint = document.getElementById('portalScrollHint');
+        const app = document.getElementById('app');
+        if (!hint || !app) return;
+
+        this.clearPortalScrollHintSchedule();
+
+        const markSessionDone = () => {
+          try {
+            sessionStorage.setItem(SESSION_FLAG, '1');
+          } catch (_) {}
+        };
+
+        const hideHint = () => {
+          hint.classList.remove('portal-scroll-hint--visible');
+          hint.hidden = true;
+          hint.setAttribute('aria-hidden', 'true');
+        };
+
+        const onScroll = () => {
+          if (!this.isIntroFlowEnabled()) return;
+          if (app.scrollTop > 28) {
+            if (this._portalScrollHintTimer) {
+              clearTimeout(this._portalScrollHintTimer);
+              this._portalScrollHintTimer = null;
+            }
+            markSessionDone();
+            hideHint();
+            app.removeEventListener('scroll', onScroll);
+            this._portalScrollHintOnScroll = null;
+          }
+        };
+        this._portalScrollHintOnScroll = onScroll;
+        app.addEventListener('scroll', onScroll, { passive: true });
+
+        this._portalScrollHintTimer = setTimeout(() => {
+          this._portalScrollHintTimer = null;
+          if (!this.isIntroFlowEnabled()) return;
+          if (app.scrollTop > 28) {
+            markSessionDone();
+            app.removeEventListener('scroll', onScroll);
+            this._portalScrollHintOnScroll = null;
+            return;
+          }
+          markSessionDone();
+          hint.hidden = false;
+          hint.setAttribute('aria-hidden', 'false');
+          hint.classList.add('portal-scroll-hint--visible');
+        }, 1000);
+      }
+
+      clearPortalScrollHintSchedule() {
+        if (this._portalScrollHintTimer) {
+          clearTimeout(this._portalScrollHintTimer);
+          this._portalScrollHintTimer = null;
+        }
+        const app = document.getElementById('app');
+        if (app && this._portalScrollHintOnScroll) {
+          app.removeEventListener('scroll', this._portalScrollHintOnScroll);
+          this._portalScrollHintOnScroll = null;
+        }
       }
 
       disableIntroFlow() {
@@ -8522,6 +8649,13 @@ try {
         if (app && this._introFlowScrollListener) {
           app.removeEventListener('scroll', this._introFlowScrollListener);
           this._introFlowScrollListener = null;
+        }
+        this.clearPortalScrollHintSchedule();
+        const hint = document.getElementById('portalScrollHint');
+        if (hint) {
+          hint.classList.remove('portal-scroll-hint--visible');
+          hint.hidden = true;
+          hint.setAttribute('aria-hidden', 'true');
         }
         this._introFlowEnabled = false;
         document.body.classList.remove('intro-flow-active');
