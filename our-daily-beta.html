@@ -2175,7 +2175,7 @@ try {
           <h1 class="title-line">OUR DAILY</h1>
           <h1 class="title-line">QUILT</h1>
         </div>
-        <p class="date" id="date-text" aria-live="polite">Tuesday, August 19, 2025</p>
+        <p class="date" id="date-text" aria-live="polite"></p>
       </div>
       
       <div style="margin-top: 2rem;"></div>
@@ -4550,6 +4550,13 @@ try {
         });
       }
 
+      static refreshPortalDateText() {
+        const dateText = document.getElementById('date-text');
+        if (dateText) {
+          dateText.textContent = Utils.formatDate();
+        }
+      }
+
       static dataUrlToBlob(dataUrl) {
         const m = String(dataUrl).match(/^data:([^;]+);base64,(.+)$/);
         if (!m) {
@@ -4773,12 +4780,7 @@ try {
             
             // Set date immediately when portal screen is shown
             if (screenId === 'screen-portal') {
-              const dateText = document.getElementById("date-text");
-              if (dateText) {
-                const formattedDate = Utils.formatDate();
-                dateText.textContent = formattedDate;
-                console.log('📅 Date set immediately for portal:', formattedDate);
-              }
+              Utils.refreshPortalDateText();
             }
             
 
@@ -8511,6 +8513,7 @@ try {
         }
 
         this.scrollIntroTo(initialScreenId, 'auto');
+        Utils.refreshPortalDateText();
       }
 
       disableIntroFlow() {
@@ -12523,29 +12526,25 @@ try {
     // ===== INITIALIZATION =====
     document.addEventListener('DOMContentLoaded', async () => {
       const app = new SimplifiedQuiltAppV2();
-      
+      window.app = app;
+
+      // Before async initialize (Firebase, quilt) so the portal date is never a stale placeholder.
+      Utils.refreshPortalDateText();
+
       // Only initialize if not redirected to desktop
       if (app && typeof app.initialize === 'function') {
         await app.initialize();
       }
-      
-      window.app = app;
-      
-      // Set date immediately when page loads (not just when portal screen shows)
-      const dateText = document.getElementById("date-text");
-      if (dateText) {
-        const formattedDate = Utils.formatDate();
-        dateText.textContent = formattedDate;
-        console.log('📅 Date set immediately on page load:', formattedDate);
-      }
-      
+
+      Utils.refreshPortalDateText();
+
       // Lock screen orientation to portrait
       if (screen.orientation && screen.orientation.lock) {
         screen.orientation.lock('portrait').catch(err => {
-          console.log('📱 Could not lock orientation:', err);
+          console.log('\u{1F4F1} Could not lock orientation:', err);
         });
       }
-      
+
       // Resize title text to match widths
       resizeTitleText();
       
