@@ -275,7 +275,7 @@ try {
     .portal-header .title-line:last-child {
       font-weight: 900;
       font-size: clamp(4.5rem, 8vw, 8rem);
-      margin-top: -0.5rem;
+      margin-top: -1rem;
       margin-bottom: 1.5rem;
       letter-spacing: 0.05em;
       width: 100%;
@@ -411,6 +411,12 @@ try {
     .quote-prompt { 
       font-size: clamp(1.2rem, 3vw, 1.5rem); 
       margin: 2rem 0 0rem; 
+    }
+    body.intro-flow-active .quote-prompt.quote-scroll-reveal {
+      opacity: 0;
+      transform: translate3d(0, 14px, 0);
+      transition: opacity 180ms linear, transform 180ms ease-out;
+      will-change: opacity, transform;
     }
     
     .arrow-down {
@@ -2284,7 +2290,7 @@ try {
             <p class="quote-author" aria-live="polite"></p>
           </div>
         </div>
-        <p class="quote-prompt quote-screen-fade-in">What color comes to mind<br>when you read this?</p>
+        <p class="quote-prompt quote-scroll-reveal">What color does this call to mind?</p>
         <div class="arrow-down quote-screen-fade-in">↓</div>
         <button class="btn quote-screen-fade-in" data-next="screen-color" aria-label="Add your color to the quilt">ADD YOUR COLOR</button>
       </div>
@@ -2520,9 +2526,9 @@ try {
       },
       COLOR_PICKER: {
         wheelSize: 280,
-        defaultHue: 45,
-        defaultLightness: 62.5,
-        saturation: 65
+        defaultHue: 36,
+        defaultLightness: 95.5,
+        saturation: 21.7
       },
       QUILT: {
         viewBoxWidth: 800,
@@ -8248,6 +8254,7 @@ try {
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
+        this._quotePromptRevealEl = null;
       }
       
       
@@ -8589,6 +8596,7 @@ try {
         this.scrollIntroTo(initialScreenId, 'auto');
         Utils.refreshPortalDateText();
         this.schedulePortalScrollHint();
+        this.updateQuotePromptScrollReveal();
       }
 
       schedulePortalScrollHint() {
@@ -8662,6 +8670,11 @@ try {
           hint.hidden = true;
           hint.setAttribute('aria-hidden', 'true');
         }
+        const prompt = this._quotePromptRevealEl || document.querySelector('#screen-quote .quote-prompt.quote-scroll-reveal');
+        if (prompt) {
+          prompt.style.opacity = '';
+          prompt.style.transform = '';
+        }
         this._introFlowEnabled = false;
         document.body.classList.remove('intro-flow-active');
       }
@@ -8673,6 +8686,36 @@ try {
         if (!app || !section) return;
         app.scrollTo({ top: section.offsetTop, behavior });
         this.syncIntroFlowActiveSection();
+        this.updateQuotePromptScrollReveal();
+      }
+
+      updateQuotePromptScrollReveal() {
+        if (!this._introFlowEnabled) return;
+        const app = document.getElementById('app');
+        const quoteSection = document.getElementById('screen-quote');
+        if (!app || !quoteSection) return;
+
+        if (!this._quotePromptRevealEl) {
+          this._quotePromptRevealEl = quoteSection.querySelector('.quote-prompt.quote-scroll-reveal');
+        }
+        const prompt = this._quotePromptRevealEl;
+        if (!prompt) return;
+
+        const localScroll = app.scrollTop - quoteSection.offsetTop;
+        const revealStart = 170; // Let people read quote before prompt appears.
+        const revealRange = 170;
+        const rawProgress = (localScroll - revealStart) / revealRange;
+        const progress = Math.max(0, Math.min(1, rawProgress));
+
+        if (progress <= 0) {
+          prompt.style.opacity = '0';
+          prompt.style.transform = 'translate3d(0, 14px, 0)';
+          return;
+        }
+
+        const y = (1 - progress) * 14;
+        prompt.style.opacity = String(progress);
+        prompt.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0)`;
       }
 
       syncIntroFlowActiveSection() {
@@ -8708,6 +8751,7 @@ try {
         ) {
           this.schedulePortalScrollHint();
         }
+        this.updateQuotePromptScrollReveal();
       }
 
       setupScreenScrollNavigation() {
