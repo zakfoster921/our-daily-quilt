@@ -1,0 +1,51 @@
+name: Notion Firestore Sync
+
+on:
+  schedule:
+    # Once daily at 07:15 UTC
+    - cron: "15 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies (skip native builds)
+        run: npm ci --ignore-scripts
+
+      - name: Validate required secrets
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NOTION_TOKEN:-}" ] || [ -z "${NOTION_DATABASE_ID:-}" ] || [ -z "${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" ]; then
+            echo "Missing required secrets: NOTION_TOKEN, NOTION_DATABASE_ID, GOOGLE_APPLICATION_CREDENTIALS_JSON"
+            exit 1
+          fi
+
+      - name: Sync quotes (Notion -> Firestore)
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+        run: npm run sync:quotes
+
+      - name: Sync usage (Firestore -> Notion)
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          FIRESTORE_DAILY_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_DAILY_QUOTES_COLLECTION }}
+        run: npm run sync:usage
