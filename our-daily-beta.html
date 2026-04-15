@@ -432,20 +432,16 @@ try {
     }
     body.intro-flow-active #screen-quote .quote-card {
       flex-shrink: 0;
+      margin-top: clamp(1.25rem, 6vh, 3.5rem);
     }
     body.intro-flow-active #screen-quote .quote-prompt {
       margin-top: auto;
       margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
       padding: 0 1rem;
-      opacity: 0;
-      transform: translate3d(0, 16px, 0);
-      transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1), transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
-      will-change: opacity, transform;
-    }
-    body.intro-flow-active #screen-quote.active .quote-prompt,
-    body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--visible {
       opacity: 1;
-      transform: translate3d(0, 0, 0);
+      transform: none;
+      transition: none;
+      will-change: auto;
     }
     @media (prefers-reduced-motion: reduce) {
       body.intro-flow-active #screen-quote .quote-prompt {
@@ -8942,6 +8938,7 @@ try {
         }
         
         if (valueSlider) {
+          valueSlider.value = String(Math.round(this.selectedLightness));
           valueSlider.style.background = `linear-gradient(to right,
             hsl(${this.selectedHue}, ${this.selectedSaturation}%, 20%), 
             hsl(${this.selectedHue}, ${this.selectedSaturation}%, 90%))`;
@@ -8951,6 +8948,7 @@ try {
       setHueFromCoords(x, y) {
         const colorWheel = document.getElementById('colorWheelCanvas');
         const indicator = document.getElementById('colorIndicator');
+        const valueSlider = document.getElementById('valueSlider');
         const rect = colorWheel.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
@@ -8989,7 +8987,15 @@ try {
             indicator.style.top = `${relativeY}px`;
           }
         }
-        
+
+        // Match the first wheel pick to the visible slider value (fixes lighter-than-picked tint).
+        if (!this.colorHasBeenSelected && valueSlider) {
+          const sliderLightness = parseInt(valueSlider.value, 10);
+          if (!Number.isNaN(sliderLightness)) {
+            this.selectedLightness = sliderLightness;
+          }
+        }
+
         this.colorHasBeenSelected = true;
         this.updateColorWheel();
       }
