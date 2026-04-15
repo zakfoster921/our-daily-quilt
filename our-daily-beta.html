@@ -6412,24 +6412,33 @@ try {
               console.warn('⚠️ Could not save quote to Firestore:', quoteError);
             }
             
-            // Save Instagram assets: quilt-only 4:5 plus layout-B 4:5 post (quote composite)
-            try {
-              const arch = window.app?.archiveService;
-              if (arch?.generateInstagramImage) {
+            /**
+             * Instagram + Zapier assets are heavy (canvas + Storage). Run after quilt/quote
+             * writes so UI (e.g. color picker → quilt) is not blocked on image generation.
+             */
+            const igBlocks = quiltData.blocks;
+            const igDateKey = today;
+            void (async () => {
+              try {
+                const arch = window.app?.archiveService;
+                if (!arch?.generateInstagramImage) {
+                  console.warn('ArchiveService.generateInstagramImage not available');
+                  return;
+                }
                 const todayQuote = window.app?.quoteService?.getTodayQuote() || null;
-                const instagramImage = await arch.generateInstagramImage(quiltData.blocks);
+                const instagramImage = await arch.generateInstagramImage(igBlocks);
                 let postLayoutBImageData = null;
                 if (arch.generateInstagramPostLayoutBImage) {
                   postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(
-                    quiltData.blocks,
+                    igBlocks,
                     todayQuote,
-                    today
+                    igDateKey
                   );
                 }
                 if (instagramImage || postLayoutBImageData) {
                   if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
                     await Utils.writeInstagramImagesDocForZapier({
-                      dateKey: today,
+                      dateKey: igDateKey,
                       instagramImage,
                       postLayoutBImageData
                     });
@@ -6437,12 +6446,10 @@ try {
                     console.warn('Skipping Instagram Firestore doc: app / Storage init not available');
                   }
                 }
-              } else {
-                console.warn('ArchiveService.generateInstagramImage not available');
+              } catch (imageError) {
+                console.warn('Could not save Instagram image to Firestore:', imageError);
               }
-            } catch (imageError) {
-              console.warn('Could not save Instagram image to Firestore:', imageError);
-            }
+            })();
           }
           
           // Also save to localStorage as backup with safety check
@@ -8633,21 +8640,20 @@ try {
         
         try {
           
-          const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
+          const { initializeApp, getApp, getApps } = await import(
+            'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'
+          );
           const { getStorage } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
           const { getAuth, signInAnonymously } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js');
           
-          const firebaseApp = initializeApp(CONFIG.FIREBASE);
+          /** Reuse [DEFAULT] app from Firestore init — avoid duplicate initializeApp() throw. */
+          const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(CONFIG.FIREBASE);
           const storage = getStorage(firebaseApp);
           const auth = getAuth(firebaseApp);
           
-          // Sign in anonymously to enable uploads
+          // Sign in anonymously to enable uploads (requires host in Firebase Auth → Authorized domains)
           try {
-            const authResult = await signInAnonymously(auth);
-            
-            // Wait a moment for auth to fully propagate
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
+            await signInAnonymously(auth);
           } catch (authError) {
             // Try to continue anyway
           }
