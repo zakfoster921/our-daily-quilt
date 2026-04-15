@@ -2569,7 +2569,7 @@ try {
       COLOR_PICKER: {
         wheelSize: 280,
         defaultHue: 36,
-        defaultLightness: 95.5,
+        defaultLightness: 50,
         saturation: 21.7
       },
       QUILT: {
@@ -4925,8 +4925,14 @@ try {
               // Add class to body for color mode
               document.body.classList.add('color-mode-active');
               
-              // Delay color change to match screen transition timing
+              // Keep warm neutral on first entry; only apply picker color after user interaction.
               setTimeout(() => {
+                if (!this.colorHasBeenSelected) {
+                  if (window.ODQ_onColorChange) {
+                    window.ODQ_onColorChange('#f6f4f1', true);
+                  }
+                  return;
+                }
                 const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
                 if (currentColor && Utils.validateHexColor(currentColor)) {
                   if (window.ODQ_onColorChange) {
@@ -8910,6 +8916,7 @@ try {
 
       handleValueSliderChange(e) {
         this.selectedLightness = parseInt(e.target.value);
+        this.colorHasBeenSelected = true;
         this.updateColorWheel();
       }
 
@@ -8920,14 +8927,14 @@ try {
         const hexColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
         
         const colorScreen = document.getElementById('screen-color');
-        if (colorScreen) {
+        if (colorScreen && this.colorHasBeenSelected) {
           colorScreen.style.backgroundColor = hexColor;
           // Set CSS custom property for status bar extension
           document.documentElement.style.setProperty('--current-color', hexColor);
         }
         
         // Update color directly (no parent communication needed)
-        if (hexColor && Utils.validateHexColor(hexColor)) {
+        if (this.colorHasBeenSelected && hexColor && Utils.validateHexColor(hexColor)) {
           const colorScreen = document.getElementById('screen-color');
           if (colorScreen && colorScreen.classList.contains('active')) {
             // Update color directly
