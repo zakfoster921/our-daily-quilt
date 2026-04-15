@@ -8702,9 +8702,9 @@ try {
         if (!prompt) return;
 
         const localScroll = app.scrollTop - quoteSection.offsetTop;
-        // With mandatory snap, users can transition quickly; start reveal earlier so it is actually seen.
-        const revealStart = 38;
-        const revealRange = 120;
+        // With mandatory snap, reveal almost immediately once the user starts moving past the quote.
+        const revealStart = 6;
+        const revealRange = 42;
         const rawProgress = (localScroll - revealStart) / revealRange;
         const progress = Math.max(0, Math.min(1, rawProgress));
 
@@ -8715,7 +8715,9 @@ try {
         }
 
         const y = (1 - progress) * 14;
-        prompt.style.opacity = String(progress);
+        // Keep a minimum visible alpha once reveal begins so it doesn't feel like it never appeared.
+        const alpha = Math.max(progress, 0.28);
+        prompt.style.opacity = String(alpha);
         prompt.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0)`;
       }
 
