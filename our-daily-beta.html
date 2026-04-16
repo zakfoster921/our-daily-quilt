@@ -446,31 +446,15 @@ try {
       margin-top: auto;
       margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
       padding: 1rem 1.25rem 2.5rem;
-    }
-
-    /* Small outline echo of portal title graphic (hand-cut square); rotation set in JS from scroll */
-    .quote-title-silhouette {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin: 0.35rem auto 0;
-      padding: 0 0.5rem max(0.75rem, env(safe-area-inset-bottom, 0px));
-      color: rgba(64, 64, 64, 0.42);
-      pointer-events: none;
-      flex-shrink: 0;
-      transform-origin: 50% 50%;
-      will-change: transform;
-    }
-    .quote-title-silhouette-svg {
-      display: block;
-      width: clamp(44px, 11vw, 56px);
-      height: auto;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .quote-title-silhouette {
-        transform: none !important;
-        will-change: auto;
-      }
+      /* Pins to lower area while user scrolls past the extra runway (intro quote → color). */
+      position: sticky;
+      bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
+      z-index: 2;
+      align-self: center;
+      max-width: min(24rem, 92vw);
+      background: #f6f4f1;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
     }
 
     .arrow-down {
@@ -568,6 +552,11 @@ try {
       overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
       align-items: center !important;
+      /* Taller than one viewport so #app scroll has a short “dwell” before color; question stays sticky below. */
+      height: auto !important;
+      min-height: 100dvh !important;
+      padding-bottom: clamp(22dvh, 28vh, 36dvh);
+      box-sizing: border-box;
     }
 
     /* Portal: center headline stack in remaining space; chevron stays at bottom (intro flow) */
@@ -2470,26 +2459,6 @@ try {
         </div>
         <div class="quote-flow-lower">
           <p class="quote-prompt">What color does this call to mind?</p>
-          <div class="quote-title-silhouette" aria-hidden="true">
-            <svg
-              class="quote-title-silhouette-svg"
-              viewBox="0 0 100 100"
-              width="52"
-              height="52"
-              focusable="false"
-            >
-              <!-- Organic hand-cut tile silhouette (echo of portal-our-daily-quilt lockup) -->
-              <path
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.25"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                vector-effect="non-scaling-stroke"
-                d="M 22 16 C 11 14 9 28 12 40 C 8 52 10 66 16 78 C 24 90 42 92 58 89 C 76 86 91 78 90 60 C 89 44 93 30 84 20 C 74 10 54 12 38 14 C 30 15 26 16 22 16 Z"
-              />
-            </svg>
-          </div>
         </div>
       </div>
     </section>
@@ -8588,8 +8557,6 @@ try {
         this._introScreenIds = new Set(['screen-portal', 'screen-quote', 'screen-color']);
         this._introFlowEnabled = false;
         this._introFlowScrollListener = null;
-        this._quoteSilhouetteScrollListener = null;
-        this._silhouetteWindowScrollListener = null;
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
@@ -8908,8 +8875,6 @@ try {
           if (initialScreenId === 'screen-portal') {
             this.schedulePortalScrollHint();
           }
-          this.ensureQuoteSilhouetteSpinListeners();
-          requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
           return;
         }
         const app = document.getElementById('app');
@@ -8929,34 +8894,13 @@ try {
         });
 
         if (!this._introFlowScrollListener) {
-          this._introFlowScrollListener = () => {
-            this.syncIntroFlowActiveSection();
-            this.updateQuoteTitleSilhouetteSpin();
-          };
+          this._introFlowScrollListener = () => this.syncIntroFlowActiveSection();
           app.addEventListener('scroll', this._introFlowScrollListener, { passive: true });
         }
-
-        this.ensureQuoteSilhouetteSpinListeners();
 
         this.scrollIntroTo(initialScreenId, 'auto');
         Utils.refreshPortalDateText();
         this.schedulePortalScrollHint();
-        requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
-      }
-
-      ensureQuoteSilhouetteSpinListeners() {
-        const quoteForSpin = document.getElementById('screen-quote');
-        if (quoteForSpin && !this._quoteSilhouetteScrollListener) {
-          this._quoteSilhouetteScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
-          quoteForSpin.addEventListener('scroll', this._quoteSilhouetteScrollListener, { passive: true });
-        }
-        if (!this._silhouetteWindowScrollListener) {
-          this._silhouetteWindowScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
-          window.addEventListener('scroll', this._silhouetteWindowScrollListener, { passive: true });
-          if (window.visualViewport) {
-            window.visualViewport.addEventListener('scroll', this._silhouetteWindowScrollListener, { passive: true });
-          }
-        }
       }
 
       schedulePortalScrollHint() {
@@ -9024,20 +8968,6 @@ try {
           this._introFlowScrollListener = null;
         }
         this.clearPortalScrollHintSchedule();
-        const quoteSpinEl = document.getElementById('screen-quote');
-        if (quoteSpinEl && this._quoteSilhouetteScrollListener) {
-          quoteSpinEl.removeEventListener('scroll', this._quoteSilhouetteScrollListener);
-          this._quoteSilhouetteScrollListener = null;
-        }
-        if (this._silhouetteWindowScrollListener) {
-          window.removeEventListener('scroll', this._silhouetteWindowScrollListener);
-          if (window.visualViewport) {
-            window.visualViewport.removeEventListener('scroll', this._silhouetteWindowScrollListener);
-          }
-          this._silhouetteWindowScrollListener = null;
-        }
-        const spinWrap = document.querySelector('.quote-title-silhouette');
-        if (spinWrap) spinWrap.style.transform = '';
         const hint = document.getElementById('portalScrollHint');
         if (hint) {
           hint.classList.remove('portal-scroll-hint--visible');
@@ -9055,7 +8985,6 @@ try {
         if (!app || !section) return;
         app.scrollTo({ top: section.offsetTop, behavior });
         this.syncIntroFlowActiveSection();
-        requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
       }
 
       syncIntroFlowActiveSection() {
@@ -9091,38 +9020,6 @@ try {
         ) {
           this.schedulePortalScrollHint();
         }
-      }
-
-      /**
-       * Intro quote: small title-outline under the question rotates gently with scroll.
-       * Uses viewport geometry (not offsetTop) so flex/scroll-snap layouts still get nonzero progress;
-       * also folds in inner #screen-quote scroll when the panel overflows.
-       */
-      updateQuoteTitleSilhouetteSpin() {
-        const wrap = document.querySelector('.quote-title-silhouette');
-        if (!wrap) return;
-        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          wrap.style.transform = '';
-          return;
-        }
-        const quoteEl = document.getElementById('screen-quote');
-        const app = document.getElementById('app');
-        if (!quoteEl || !app) return;
-
-        const innerMax = quoteEl.scrollHeight - quoteEl.clientHeight;
-        let innerT = innerMax > 10 ? quoteEl.scrollTop / innerMax : 0;
-        innerT = Math.max(0, Math.min(1, innerT));
-
-        const ar = app.getBoundingClientRect();
-        const qr = quoteEl.getBoundingClientRect();
-        const slipped = ar.top - qr.top;
-        const denom = Math.max(app.clientHeight * 0.42, 130);
-        let outerT = slipped / denom;
-        outerT = Math.max(0, Math.min(1, outerT));
-
-        const t = Math.max(outerT, innerT * 0.92);
-        const deg = t * 36;
-        wrap.style.transform = `rotate(${deg}deg)`;
       }
 
       setupScreenScrollNavigation() {
