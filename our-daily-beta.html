@@ -8560,6 +8560,7 @@ try {
         this._introScreenIds = new Set(['screen-portal', 'screen-quote', 'screen-color']);
         this._introFlowEnabled = false;
         this._introFlowScrollListener = null;
+        this._quoteScreenScrollListener = null;
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
@@ -8878,6 +8879,11 @@ try {
           if (initialScreenId === 'screen-portal') {
             this.schedulePortalScrollHint();
           }
+          const quoteScreenEarly = document.getElementById('screen-quote');
+          if (quoteScreenEarly && !this._quoteScreenScrollListener) {
+            this._quoteScreenScrollListener = () => this.updateQuoteProgressiveFocus();
+            quoteScreenEarly.addEventListener('scroll', this._quoteScreenScrollListener, { passive: true });
+          }
           requestAnimationFrame(() => this.updateQuoteProgressiveFocus());
           return;
         }
@@ -8903,6 +8909,12 @@ try {
             this.updateQuoteProgressiveFocus();
           };
           app.addEventListener('scroll', this._introFlowScrollListener, { passive: true });
+        }
+
+        const quoteScreenEl = document.getElementById('screen-quote');
+        if (quoteScreenEl && !this._quoteScreenScrollListener) {
+          this._quoteScreenScrollListener = () => this.updateQuoteProgressiveFocus();
+          quoteScreenEl.addEventListener('scroll', this._quoteScreenScrollListener, { passive: true });
         }
 
         this.scrollIntroTo(initialScreenId, 'auto');
@@ -8974,6 +8986,11 @@ try {
         if (app && this._introFlowScrollListener) {
           app.removeEventListener('scroll', this._introFlowScrollListener);
           this._introFlowScrollListener = null;
+        }
+        const quoteScreenEl = document.getElementById('screen-quote');
+        if (quoteScreenEl && this._quoteScreenScrollListener) {
+          quoteScreenEl.removeEventListener('scroll', this._quoteScreenScrollListener);
+          this._quoteScreenScrollListener = null;
         }
         this.clearPortalScrollHintSchedule();
         const hint = document.getElementById('portalScrollHint');
@@ -9084,17 +9101,23 @@ try {
           return;
         }
 
-        const start = quoteEl.offsetTop;
-        const h = quoteEl.offsetHeight;
-        const st = app.scrollTop;
-        // 0 = just entered quote snap; 1 = scrolled toward next section
-        const denom = Math.max(h * 0.5, 1);
-        let t = (st - start) / denom;
+        // #screen-quote scrolls internally (overflow-y: auto) — app scroll alone missed user movement.
+        const innerMax = quoteEl.scrollHeight - quoteEl.clientHeight;
+        let t = 0;
+        if (innerMax > 12) {
+          t = quoteEl.scrollTop / innerMax;
+        } else {
+          const start = quoteEl.offsetTop;
+          const st = app.scrollTop;
+          const travel = Math.max(quoteEl.offsetHeight * 0.45, app.clientHeight * 0.25, 120);
+          t = (st - start) / travel;
+        }
         t = Math.max(0, Math.min(1, t));
 
-        const promptOp = 0.66 + 0.34 * t;
-        const cardOp = 1 - 0.08 * t;
-        const promptRgb = Math.round(55 + 25 * (1 - t));
+        // Stronger range so the shift reads clearly (soft → full).
+        const promptOp = 0.34 + 0.66 * t;
+        const cardOp = 1 - 0.14 * t;
+        const promptRgb = Math.round(118 - 54 * t);
         promptEl.style.opacity = String(promptOp);
         cardEl.style.opacity = String(cardOp);
         promptEl.style.color = `rgb(${promptRgb}, ${promptRgb}, ${promptRgb})`;
