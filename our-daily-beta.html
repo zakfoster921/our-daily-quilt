@@ -458,16 +458,18 @@ try {
       color: rgba(64, 64, 64, 0.42);
       pointer-events: none;
       flex-shrink: 0;
+      transform-origin: 50% 50%;
+      will-change: transform;
     }
     .quote-title-silhouette-svg {
       display: block;
       width: clamp(44px, 11vw, 56px);
       height: auto;
-      transform-origin: 50% 50%;
     }
     @media (prefers-reduced-motion: reduce) {
-      .quote-title-silhouette-svg {
+      .quote-title-silhouette {
         transform: none !important;
+        will-change: auto;
       }
     }
 
@@ -8587,6 +8589,7 @@ try {
         this._introFlowEnabled = false;
         this._introFlowScrollListener = null;
         this._quoteSilhouetteScrollListener = null;
+        this._silhouetteWindowScrollListener = null;
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
@@ -8905,11 +8908,7 @@ try {
           if (initialScreenId === 'screen-portal') {
             this.schedulePortalScrollHint();
           }
-          const quoteEarly = document.getElementById('screen-quote');
-          if (quoteEarly && !this._quoteSilhouetteScrollListener) {
-            this._quoteSilhouetteScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
-            quoteEarly.addEventListener('scroll', this._quoteSilhouetteScrollListener, { passive: true });
-          }
+          this.ensureQuoteSilhouetteSpinListeners();
           requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
           return;
         }
@@ -8937,16 +8936,27 @@ try {
           app.addEventListener('scroll', this._introFlowScrollListener, { passive: true });
         }
 
-        const quoteForSpin = document.getElementById('screen-quote');
-        if (quoteForSpin && !this._quoteSilhouetteScrollListener) {
-          this._quoteSilhouetteScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
-          quoteForSpin.addEventListener('scroll', this._quoteSilhouetteScrollListener, { passive: true });
-        }
+        this.ensureQuoteSilhouetteSpinListeners();
 
         this.scrollIntroTo(initialScreenId, 'auto');
         Utils.refreshPortalDateText();
         this.schedulePortalScrollHint();
         requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
+      }
+
+      ensureQuoteSilhouetteSpinListeners() {
+        const quoteForSpin = document.getElementById('screen-quote');
+        if (quoteForSpin && !this._quoteSilhouetteScrollListener) {
+          this._quoteSilhouetteScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
+          quoteForSpin.addEventListener('scroll', this._quoteSilhouetteScrollListener, { passive: true });
+        }
+        if (!this._silhouetteWindowScrollListener) {
+          this._silhouetteWindowScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
+          window.addEventListener('scroll', this._silhouetteWindowScrollListener, { passive: true });
+          if (window.visualViewport) {
+            window.visualViewport.addEventListener('scroll', this._silhouetteWindowScrollListener, { passive: true });
+          }
+        }
       }
 
       schedulePortalScrollHint() {
@@ -9019,8 +9029,15 @@ try {
           quoteSpinEl.removeEventListener('scroll', this._quoteSilhouetteScrollListener);
           this._quoteSilhouetteScrollListener = null;
         }
-        const spinSvg = document.querySelector('.quote-title-silhouette-svg');
-        if (spinSvg) spinSvg.style.transform = '';
+        if (this._silhouetteWindowScrollListener) {
+          window.removeEventListener('scroll', this._silhouetteWindowScrollListener);
+          if (window.visualViewport) {
+            window.visualViewport.removeEventListener('scroll', this._silhouetteWindowScrollListener);
+          }
+          this._silhouetteWindowScrollListener = null;
+        }
+        const spinWrap = document.querySelector('.quote-title-silhouette');
+        if (spinWrap) spinWrap.style.transform = '';
         const hint = document.getElementById('portalScrollHint');
         if (hint) {
           hint.classList.remove('portal-scroll-hint--visible');
@@ -9077,36 +9094,35 @@ try {
       }
 
       /**
-       * Intro quote: small title-outline SVG under the question rotates gently with scroll
-       * (main #app scroll toward color + inner scroll in #screen-quote).
+       * Intro quote: small title-outline under the question rotates gently with scroll.
+       * Uses viewport geometry (not offsetTop) so flex/scroll-snap layouts still get nonzero progress;
+       * also folds in inner #screen-quote scroll when the panel overflows.
        */
       updateQuoteTitleSilhouetteSpin() {
-        const svg = document.querySelector('.quote-title-silhouette-svg');
-        if (!svg) return;
+        const wrap = document.querySelector('.quote-title-silhouette');
+        if (!wrap) return;
         if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          svg.style.transform = '';
+          wrap.style.transform = '';
           return;
         }
         const quoteEl = document.getElementById('screen-quote');
         const app = document.getElementById('app');
-        const colorEl = document.getElementById('screen-color');
         if (!quoteEl || !app) return;
 
         const innerMax = quoteEl.scrollHeight - quoteEl.clientHeight;
         let innerT = innerMax > 10 ? quoteEl.scrollTop / innerMax : 0;
         innerT = Math.max(0, Math.min(1, innerT));
 
-        let outerT = 0;
-        if (colorEl) {
-          const quoteTop = quoteEl.offsetTop;
-          const span = Math.max(colorEl.offsetTop - quoteTop - app.clientHeight * 0.12, 96);
-          outerT = (app.scrollTop - quoteTop) / span;
-        }
+        const ar = app.getBoundingClientRect();
+        const qr = quoteEl.getBoundingClientRect();
+        const slipped = ar.top - qr.top;
+        const denom = Math.max(app.clientHeight * 0.42, 130);
+        let outerT = slipped / denom;
         outerT = Math.max(0, Math.min(1, outerT));
 
         const t = Math.max(outerT, innerT * 0.92);
         const deg = t * 36;
-        svg.style.transform = `rotate(${deg}deg)`;
+        wrap.style.transform = `rotate(${deg}deg)`;
       }
 
       setupScreenScrollNavigation() {
