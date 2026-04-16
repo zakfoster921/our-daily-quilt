@@ -384,7 +384,7 @@ try {
     /* Ensure quote-inner has proper positioning */
     .quote-inner {
       position: relative;
-      padding: 20px 30px;
+      padding: 24px;
       z-index: 2;
     }
     
@@ -978,7 +978,7 @@ try {
       */
       
       .quote-inner {
-        padding: 15px 25px;
+        padding: 18px;
       }
     }
     
@@ -1015,7 +1015,7 @@ try {
       */
       
       .quote-inner {
-        padding: 12px 20px;
+        padding: 14px;
       }
     }
 
@@ -11179,7 +11179,7 @@ try {
           <div class="admin-menu-content">
             ${statsDisplay}
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
-            <button onclick="app.handleAddColorFamilyBlocks()">Add 10 Color Family Blocks</button>
+            <button onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
             <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
@@ -12457,6 +12457,14 @@ try {
       }
 
       async handleAddColorFamilyBlocks() {
+        return this.handleAddColorFamilyBlocksByCount(10);
+      }
+
+      async handleAdd25ColorFamilyBlocks() {
+        return this.handleAddColorFamilyBlocksByCount(25);
+      }
+
+      async handleAddColorFamilyBlocksByCount(blockCount = 10) {
         try {
           // Use expanded Rumi colors palette (100 colors total)
           // 50 base colors + 50 variations for more diversity
@@ -12485,20 +12493,21 @@ try {
             "#ee6193", "#ee618f", "#cd283c", "#a31f35", "#ee6165"
           ];
           
-          // Shuffle and pick 10 random colors from 100 colors
+          // Shuffle and pick random colors from 100 colors
           const shuffled = [...expandedRumiColors].sort(() => 0.5 - Math.random());
-          const selectedColors = shuffled.slice(0, 10);
+          const normalizedCount = Math.max(1, Math.min(blockCount, expandedRumiColors.length));
+          const selectedColors = shuffled.slice(0, normalizedCount);
           
           
-          // Add 10 blocks with different Rumi colors
-          for (let i = 0; i < 10; i++) {
+          // Add blocks with different Rumi colors
+          for (let i = 0; i < normalizedCount; i++) {
             const result = this.quiltEngine.addColor(selectedColors[i]);
             
             if (result) {
               // Find the new block for animation
               let newBlockIndex = -1;
               if (result.newBlocks && result.newBlocks.length > 0) {
-                const newBlock = result.newBlocks.find(block => block.color === shades[i]);
+                const newBlock = result.newBlocks.find(block => block.color === selectedColors[i]);
                 if (newBlock) {
                   newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === newBlock.id);
                 }
@@ -12519,7 +12528,7 @@ try {
           // Update admin stats if menu is open
           this.updateAdminStats();
           
-          this.uiService.showToast(`Added 10 blocks`);
+          this.uiService.showToast(`Added ${normalizedCount} blocks`);
           
         } catch (error) {
           this.errorHandler.handleError(error, 'addColorFamilyBlocks');
