@@ -393,7 +393,7 @@ try {
       z-index: 1;
       font-size: clamp(1.2rem, 3vw, 1.5rem);
       margin: 2rem auto 0;
-      padding: 1.35rem 1.5rem 3.25rem;
+      padding: 1rem 1.25rem 2.5rem;
       text-align: center;
       max-width: min(24rem, 92vw);
       line-height: 1.35;
@@ -401,11 +401,12 @@ try {
       color: #404040;
     }
 
-    /* Organic line: stem from quote card → loop around prompt → arrow below */
+    /* Quote step: progressive focus (intro) — quote full, question softens then strengthens on scroll */
     #screen-quote .quote-card {
-      margin-bottom: 0;
+      margin-bottom: 0.5rem;
       position: relative;
-      z-index: 2;
+      z-index: 1;
+      transition: opacity 0.4s ease;
     }
 
     .quote-flow-lower {
@@ -420,36 +421,10 @@ try {
       margin-top: 0;
       padding: 0 0.25rem;
       box-sizing: border-box;
-      z-index: 1;
     }
 
-    /* Pull graphic up so stem meets the card bottom (margin removed) and can sit under the white card */
-    .quote-flow-line-svg {
-      position: absolute;
-      left: 50%;
-      top: -2rem;
-      height: calc(100% + 2rem);
-      bottom: auto;
-      width: min(100%, 26rem);
-      transform: translateX(-50%);
-      pointer-events: none;
-      z-index: 0;
-      overflow: visible;
-    }
-
-    .quote-flow-line-svg path {
-      fill: none;
-      stroke: rgba(64, 64, 64, 0.55);
-      stroke-width: 1.35;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      vector-effect: non-scaling-stroke;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .quote-flow-line-svg {
-        opacity: 0.65;
-      }
+    body.intro-flow-active #screen-quote .quote-prompt {
+      transition: opacity 0.45s ease, color 0.45s ease;
     }
 
     /* Intro quote step: card stays up top, question sits toward bottom of the panel. */
@@ -476,7 +451,7 @@ try {
     body.intro-flow-active #screen-quote .quote-prompt {
       margin-top: auto;
       margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
-      padding: 1.35rem 1.25rem 3.25rem;
+      padding: 1rem 1.25rem 2.5rem;
       opacity: 1;
       transform: none;
       transition: none;
@@ -2486,22 +2461,6 @@ try {
           </div>
         </div>
         <div class="quote-flow-lower">
-          <svg
-            class="quote-flow-line-svg"
-            viewBox="0 0 380 460"
-            preserveAspectRatio="xMidYMax meet"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <!-- Stem: top of viewBox aligns under card after negative offset; meets loop at (190,185) -->
-            <path d="M 190 0 C 192 58 186 118 190 185" />
-            <!-- Wide closed loop so full question line fits inside with margin -->
-            <path
-              d="M 190 185 C 72 185 16 238 22 302 C 28 366 102 408 190 406 C 282 408 356 366 362 302 C 368 238 312 185 190 185 Z"
-            />
-            <!-- Down-stroke + chevron from same y as loop bottom (406) so it reads attached -->
-            <path d="M 190 406 L 190 438 M 172 420 L 190 452 L 208 420" />
-          </svg>
           <p class="quote-prompt">What color does this call to mind?</p>
         </div>
       </div>
@@ -8919,6 +8878,7 @@ try {
           if (initialScreenId === 'screen-portal') {
             this.schedulePortalScrollHint();
           }
+          requestAnimationFrame(() => this.updateQuoteProgressiveFocus());
           return;
         }
         const app = document.getElementById('app');
@@ -8938,13 +8898,17 @@ try {
         });
 
         if (!this._introFlowScrollListener) {
-          this._introFlowScrollListener = () => this.syncIntroFlowActiveSection();
+          this._introFlowScrollListener = () => {
+            this.syncIntroFlowActiveSection();
+            this.updateQuoteProgressiveFocus();
+          };
           app.addEventListener('scroll', this._introFlowScrollListener, { passive: true });
         }
 
         this.scrollIntroTo(initialScreenId, 'auto');
         Utils.refreshPortalDateText();
         this.schedulePortalScrollHint();
+        requestAnimationFrame(() => this.updateQuoteProgressiveFocus());
       }
 
       schedulePortalScrollHint() {
@@ -9018,6 +8982,13 @@ try {
           hint.hidden = true;
           hint.setAttribute('aria-hidden', 'true');
         }
+        const qp = document.querySelector('#screen-quote .quote-prompt');
+        const qc = document.querySelector('#screen-quote .quote-card');
+        if (qp) {
+          qp.style.opacity = '';
+          qp.style.color = '';
+        }
+        if (qc) qc.style.opacity = '';
         this._introFlowEnabled = false;
         document.body.classList.remove('intro-flow-active');
       }
@@ -9029,6 +9000,7 @@ try {
         if (!app || !section) return;
         app.scrollTo({ top: section.offsetTop, behavior });
         this.syncIntroFlowActiveSection();
+        requestAnimationFrame(() => this.updateQuoteProgressiveFocus());
       }
 
       syncIntroFlowActiveSection() {
@@ -9076,6 +9048,56 @@ try {
             quotePromptEl.classList.remove('quote-prompt--visible');
           }
         }
+      }
+
+      /**
+       * Intro flow: quote card stays strong; question starts softer and gains opacity as the user
+       * scrolls downward through the quote panel (momentum toward color step).
+       */
+      updateQuoteProgressiveFocus() {
+        const quoteEl = document.getElementById('screen-quote');
+        const promptEl = quoteEl?.querySelector('.quote-prompt');
+        const cardEl = quoteEl?.querySelector('.quote-card');
+        const app = document.getElementById('app');
+        if (!quoteEl || !promptEl || !cardEl || !app) return;
+
+        const clear = () => {
+          promptEl.style.opacity = '';
+          promptEl.style.color = '';
+          cardEl.style.opacity = '';
+        };
+
+        if (!this.isIntroFlowEnabled()) {
+          clear();
+          return;
+        }
+
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          clear();
+          promptEl.style.opacity = '1';
+          return;
+        }
+
+        const nearest = this._lastIntroSnapSectionId;
+        if (nearest !== 'screen-quote') {
+          clear();
+          return;
+        }
+
+        const start = quoteEl.offsetTop;
+        const h = quoteEl.offsetHeight;
+        const st = app.scrollTop;
+        // 0 = just entered quote snap; 1 = scrolled toward next section
+        const denom = Math.max(h * 0.5, 1);
+        let t = (st - start) / denom;
+        t = Math.max(0, Math.min(1, t));
+
+        const promptOp = 0.66 + 0.34 * t;
+        const cardOp = 1 - 0.08 * t;
+        const promptRgb = Math.round(55 + 25 * (1 - t));
+        promptEl.style.opacity = String(promptOp);
+        cardEl.style.opacity = String(cardOp);
+        promptEl.style.color = `rgb(${promptRgb}, ${promptRgb}, ${promptRgb})`;
       }
 
       setupScreenScrollNavigation() {
