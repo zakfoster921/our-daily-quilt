@@ -434,6 +434,26 @@ try {
       padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
     }
+
+    body.intro-flow-active #screen-quote:not(.active) .quote-card {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    body.intro-flow-active #screen-quote.active .quote-card {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body.intro-flow-active #screen-quote .quote-card {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+      }
+    }
+
     body.intro-flow-active #screen-quote .quote-card {
       flex-shrink: 0;
       margin-top: clamp(1.25rem, 6vh, 3.5rem);
@@ -446,23 +466,21 @@ try {
       min-height: 11rem;
     }
 
-    @keyframes quote-prompt-enter {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
+    /* Prompt fade-in: two-step class + transition (keyframes + sticky were unreliable). */
+    body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter {
+      opacity: 0;
     }
 
-    body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--enter {
-      animation: quote-prompt-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter.is-prompt-enter-active {
+      opacity: 1;
+      transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     @media (prefers-reduced-motion: reduce) {
-      body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--enter {
-        animation: none !important;
+      body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter,
+      body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter.is-prompt-enter-active {
         opacity: 1 !important;
+        transition: none !important;
       }
     }
 
@@ -8583,6 +8601,8 @@ try {
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
+        this._quoteEnterScrollTimer = null;
+        this._quotePromptEnterAt = 0;
       }
       
       
@@ -8991,8 +9011,14 @@ try {
           this._introFlowScrollListener = null;
         }
         this.clearPortalScrollHintSchedule();
+        if (this._quoteEnterScrollTimer) {
+          clearTimeout(this._quoteEnterScrollTimer);
+          this._quoteEnterScrollTimer = null;
+        }
         const quotePromptEl = document.getElementById('quotePrompt');
-        if (quotePromptEl) quotePromptEl.classList.remove('quote-prompt--enter');
+        if (quotePromptEl) {
+          quotePromptEl.classList.remove('is-prompt-enter', 'is-prompt-enter-active');
+        }
         const hint = document.getElementById('portalScrollHint');
         if (hint) {
           hint.classList.remove('portal-scroll-hint--visible');
@@ -9010,6 +9036,19 @@ try {
         if (!app || !section) return;
         app.scrollTo({ top: section.offsetTop, behavior });
         this.syncIntroFlowActiveSection();
+        /* Smooth scroll hasn't moved scrollTop yet — re-sync and prompt enter after snap settles. */
+        if (this._quoteEnterScrollTimer) {
+          clearTimeout(this._quoteEnterScrollTimer);
+          this._quoteEnterScrollTimer = null;
+        }
+        if (screenId === 'screen-quote') {
+          const delay = behavior === 'smooth' ? 480 : 0;
+          this._quoteEnterScrollTimer = setTimeout(() => {
+            this._quoteEnterScrollTimer = null;
+            this.syncIntroFlowActiveSection();
+            this.triggerQuotePromptEnterAnimation();
+          }, delay);
+        }
       }
 
       syncIntroFlowActiveSection() {
@@ -9057,16 +9096,24 @@ try {
         if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
           return;
         }
-        promptEl.classList.remove('quote-prompt--enter');
+        const quoteScreen = document.getElementById('screen-quote');
+        if (!quoteScreen || !quoteScreen.classList.contains('active')) return;
+
+        const now = Date.now();
+        if (now - this._quotePromptEnterAt < 450) return;
+        this._quotePromptEnterAt = now;
+
+        promptEl.classList.remove('is-prompt-enter-active');
+        promptEl.classList.add('is-prompt-enter');
         void promptEl.offsetWidth;
-        promptEl.classList.add('quote-prompt--enter');
+        requestAnimationFrame(() => {
+          promptEl.classList.add('is-prompt-enter-active');
+        });
         const onEnd = (e) => {
-          const name = e.animationName || '';
-          if (!name.includes('quote-prompt-enter')) return;
-          promptEl.classList.remove('quote-prompt--enter');
-          promptEl.removeEventListener('animationend', onEnd);
+          if (e.propertyName !== 'opacity') return;
+          promptEl.classList.remove('is-prompt-enter', 'is-prompt-enter-active');
         };
-        promptEl.addEventListener('animationend', onEnd);
+        promptEl.addEventListener('transitionend', onEnd, { once: true });
       }
 
       setupScreenScrollNavigation() {
