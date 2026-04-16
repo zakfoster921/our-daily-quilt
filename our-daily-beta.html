@@ -437,16 +437,40 @@ try {
     body.intro-flow-active #screen-quote .quote-card {
       flex-shrink: 0;
       margin-top: clamp(1.25rem, 6vh, 3.5rem);
+      /* Scroll long copy inside the card so #screen-quote can use overflow:visible for app-level sticky prompt */
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      min-height: 0;
     }
     body.intro-flow-active #screen-quote .quote-flow-lower {
       min-height: 11rem;
+    }
+
+    @keyframes quote-prompt-enter {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+
+    body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--enter {
+      animation: quote-prompt-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--enter {
+        animation: none !important;
+        opacity: 1 !important;
+      }
     }
 
     body.intro-flow-active #screen-quote .quote-prompt {
       margin-top: auto;
       margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
       padding: 1rem 1.25rem 2.5rem;
-      /* Pins to lower area while user scrolls past the extra runway (intro quote → color). */
+      /* Sticky vs #app scroll: section must not be the scrollport (see overflow-y below). */
       position: sticky;
       bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
       z-index: 2;
@@ -546,11 +570,10 @@ try {
       transform: none !important;
     }
 
-    /* Let quote stack scroll inside the snap panel (mobile had overflow:hidden, which clipped the prompt). */
+    /* Long quote text scrolls in .quote-card; section stays overflow-y:visible so sticky prompt uses #app scrollport. */
     body.intro-flow-active #screen-quote {
       overflow-x: hidden !important;
-      overflow-y: auto !important;
-      -webkit-overflow-scrolling: touch;
+      overflow-y: visible !important;
       align-items: center !important;
       /* Taller than one viewport so #app scroll has a short “dwell” before color; question stays sticky below. */
       height: auto !important;
@@ -2458,7 +2481,7 @@ try {
           </div>
         </div>
         <div class="quote-flow-lower">
-          <p class="quote-prompt">What color does this call to mind?</p>
+          <p class="quote-prompt" id="quotePrompt">What color does this call to mind?</p>
         </div>
       </div>
     </section>
@@ -8968,6 +8991,8 @@ try {
           this._introFlowScrollListener = null;
         }
         this.clearPortalScrollHintSchedule();
+        const quotePromptEl = document.getElementById('quotePrompt');
+        if (quotePromptEl) quotePromptEl.classList.remove('quote-prompt--enter');
         const hint = document.getElementById('portalScrollHint');
         if (hint) {
           hint.classList.remove('portal-scroll-hint--visible');
@@ -9020,6 +9045,28 @@ try {
         ) {
           this.schedulePortalScrollHint();
         }
+
+        if (nextId === 'screen-quote' && prevSnap !== 'screen-quote') {
+          this.triggerQuotePromptEnterAnimation();
+        }
+      }
+
+      triggerQuotePromptEnterAnimation() {
+        const promptEl = document.getElementById('quotePrompt');
+        if (!promptEl) return;
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          return;
+        }
+        promptEl.classList.remove('quote-prompt--enter');
+        void promptEl.offsetWidth;
+        promptEl.classList.add('quote-prompt--enter');
+        const onEnd = (e) => {
+          const name = e.animationName || '';
+          if (!name.includes('quote-prompt-enter')) return;
+          promptEl.classList.remove('quote-prompt--enter');
+          promptEl.removeEventListener('animationend', onEnd);
+        };
+        promptEl.addEventListener('animationend', onEnd);
       }
 
       setupScreenScrollNavigation() {
