@@ -388,15 +388,61 @@ try {
       z-index: 2;
     }
     
-    .quote-prompt { 
-      font-size: clamp(1.2rem, 3vw, 1.5rem); 
-      margin: 2rem 0 0rem; 
+    .quote-prompt {
+      position: relative;
+      z-index: 1;
+      font-size: clamp(1.2rem, 3vw, 1.5rem);
+      margin: 2rem auto 0;
+      padding: 1.1rem 1.35rem 2.85rem;
       text-align: center;
       max-width: 24rem;
       line-height: 1.35;
       font-style: italic;
       color: #404040;
     }
+
+    /* Organic line: stem from quote card → loop around prompt → arrow below */
+    .quote-flow-lower {
+      position: relative;
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      width: 100%;
+      min-height: 10rem;
+      padding: 0 0.25rem;
+      box-sizing: border-box;
+    }
+
+    .quote-flow-line-svg {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: min(100%, 20rem);
+      height: 100%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      z-index: 0;
+      overflow: visible;
+    }
+
+    .quote-flow-line-svg path {
+      fill: none;
+      stroke: rgba(64, 64, 64, 0.55);
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .quote-flow-line-svg {
+        opacity: 0.65;
+      }
+    }
+
     /* Intro quote step: card stays up top, question sits toward bottom of the panel. */
     body.intro-flow-active #screen-quote .quote-content-wrapper {
       flex: 1 1 auto;
@@ -414,10 +460,14 @@ try {
       flex-shrink: 0;
       margin-top: clamp(1.25rem, 6vh, 3.5rem);
     }
+    body.intro-flow-active #screen-quote .quote-flow-lower {
+      min-height: 11rem;
+    }
+
     body.intro-flow-active #screen-quote .quote-prompt {
       margin-top: auto;
       margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
-      padding: 0 1rem;
+      padding: 1.1rem 1rem 2.85rem;
       opacity: 1;
       transform: none;
       transition: none;
@@ -764,7 +814,12 @@ try {
     }
     
     .quote-content-wrapper {
-      /* This wrapper gets centered as one unit */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
     }
     
     @media (max-width: 768px) {
@@ -2421,7 +2476,29 @@ try {
             <p class="quote-author" aria-live="polite"></p>
           </div>
         </div>
-        <p class="quote-prompt">What color does this call to mind?</p>
+        <div class="quote-flow-lower">
+          <svg
+            class="quote-flow-line-svg"
+            viewBox="0 0 300 320"
+            preserveAspectRatio="xMidYMax meet"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <!-- Wavy stem from below quote card -->
+            <path
+              d="M 150 2 C 148 38 153 74 150 108 C 147 128 152 148 150 168"
+            />
+            <!-- Loose hand-drawn oval around the question -->
+            <path
+              d="M 150 168 C 88 170 40 198 42 238 C 44 278 92 308 150 306 C 210 304 260 272 258 230 C 256 188 208 166 150 168"
+            />
+            <!-- Arrow below the question -->
+            <path
+              d="M 150 278 L 150 304 M 136 292 L 150 310 L 164 292"
+            />
+          </svg>
+          <p class="quote-prompt">What color does this call to mind?</p>
+        </div>
       </div>
     </section>
 
@@ -7528,7 +7605,8 @@ try {
           .replace(/\n{2,}/g, '<br><br>')
           .replace(/\n/g, '<br>');
         // (?<!\d) avoids splitting decimals like "3.14" when a space follows (rare in quotes).
-        return withManualBreaks.replace(/(?<!\d)([.!?])\s+(?=[A-Z0-9“"'])/g, '$1<br>');
+        // Double break so there is clear vertical space between sentences (matches reflection card).
+        return withManualBreaks.replace(/(?<!\d)([.!?])\s+(?=[A-Z0-9“"'])/g, '$1<br><br>');
       }
 
       // Check if quote is longer than 2 lines and apply appropriate styling
