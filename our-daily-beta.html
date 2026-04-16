@@ -401,12 +401,10 @@ try {
       color: #404040;
     }
 
-    /* Quote step: progressive focus (intro) — quote full, question softens then strengthens on scroll */
     #screen-quote .quote-card {
       margin-bottom: 0.5rem;
       position: relative;
       z-index: 1;
-      transition: opacity 0.4s ease;
     }
 
     .quote-flow-lower {
@@ -421,10 +419,6 @@ try {
       margin-top: 0;
       padding: 0 0.25rem;
       box-sizing: border-box;
-    }
-
-    body.intro-flow-active #screen-quote .quote-prompt {
-      transition: opacity 0.45s ease, color 0.45s ease;
     }
 
     /* Intro quote step: card stays up top, question sits toward bottom of the panel. */
@@ -452,19 +446,31 @@ try {
       margin-top: auto;
       margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
       padding: 1rem 1.25rem 2.5rem;
-      opacity: 1;
-      transform: none;
-      transition: none;
-      will-change: auto;
+    }
+
+    /* Small outline echo of portal title graphic (hand-cut square); rotation set in JS from scroll */
+    .quote-title-silhouette {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0.35rem auto 0;
+      padding: 0 0.5rem max(0.75rem, env(safe-area-inset-bottom, 0px));
+      color: rgba(64, 64, 64, 0.42);
+      pointer-events: none;
+      flex-shrink: 0;
+    }
+    .quote-title-silhouette-svg {
+      display: block;
+      width: clamp(44px, 11vw, 56px);
+      height: auto;
+      transform-origin: 50% 50%;
     }
     @media (prefers-reduced-motion: reduce) {
-      body.intro-flow-active #screen-quote .quote-prompt {
-        opacity: 1 !important;
+      .quote-title-silhouette-svg {
         transform: none !important;
-        transition: none !important;
       }
     }
-    
+
     .arrow-down {
       font-size: 2rem;
       text-align: center;
@@ -2462,6 +2468,26 @@ try {
         </div>
         <div class="quote-flow-lower">
           <p class="quote-prompt">What color does this call to mind?</p>
+          <div class="quote-title-silhouette" aria-hidden="true">
+            <svg
+              class="quote-title-silhouette-svg"
+              viewBox="0 0 100 100"
+              width="52"
+              height="52"
+              focusable="false"
+            >
+              <!-- Organic hand-cut tile silhouette (echo of portal-our-daily-quilt lockup) -->
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.25"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                vector-effect="non-scaling-stroke"
+                d="M 22 16 C 11 14 9 28 12 40 C 8 52 10 66 16 78 C 24 90 42 92 58 89 C 76 86 91 78 90 60 C 89 44 93 30 84 20 C 74 10 54 12 38 14 C 30 15 26 16 22 16 Z"
+              />
+            </svg>
+          </div>
         </div>
       </div>
     </section>
@@ -8560,7 +8586,7 @@ try {
         this._introScreenIds = new Set(['screen-portal', 'screen-quote', 'screen-color']);
         this._introFlowEnabled = false;
         this._introFlowScrollListener = null;
-        this._quoteScreenScrollListener = null;
+        this._quoteSilhouetteScrollListener = null;
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
@@ -8879,12 +8905,12 @@ try {
           if (initialScreenId === 'screen-portal') {
             this.schedulePortalScrollHint();
           }
-          const quoteScreenEarly = document.getElementById('screen-quote');
-          if (quoteScreenEarly && !this._quoteScreenScrollListener) {
-            this._quoteScreenScrollListener = () => this.updateQuoteProgressiveFocus();
-            quoteScreenEarly.addEventListener('scroll', this._quoteScreenScrollListener, { passive: true });
+          const quoteEarly = document.getElementById('screen-quote');
+          if (quoteEarly && !this._quoteSilhouetteScrollListener) {
+            this._quoteSilhouetteScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
+            quoteEarly.addEventListener('scroll', this._quoteSilhouetteScrollListener, { passive: true });
           }
-          requestAnimationFrame(() => this.updateQuoteProgressiveFocus());
+          requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
           return;
         }
         const app = document.getElementById('app');
@@ -8906,21 +8932,21 @@ try {
         if (!this._introFlowScrollListener) {
           this._introFlowScrollListener = () => {
             this.syncIntroFlowActiveSection();
-            this.updateQuoteProgressiveFocus();
+            this.updateQuoteTitleSilhouetteSpin();
           };
           app.addEventListener('scroll', this._introFlowScrollListener, { passive: true });
         }
 
-        const quoteScreenEl = document.getElementById('screen-quote');
-        if (quoteScreenEl && !this._quoteScreenScrollListener) {
-          this._quoteScreenScrollListener = () => this.updateQuoteProgressiveFocus();
-          quoteScreenEl.addEventListener('scroll', this._quoteScreenScrollListener, { passive: true });
+        const quoteForSpin = document.getElementById('screen-quote');
+        if (quoteForSpin && !this._quoteSilhouetteScrollListener) {
+          this._quoteSilhouetteScrollListener = () => this.updateQuoteTitleSilhouetteSpin();
+          quoteForSpin.addEventListener('scroll', this._quoteSilhouetteScrollListener, { passive: true });
         }
 
         this.scrollIntroTo(initialScreenId, 'auto');
         Utils.refreshPortalDateText();
         this.schedulePortalScrollHint();
-        requestAnimationFrame(() => this.updateQuoteProgressiveFocus());
+        requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
       }
 
       schedulePortalScrollHint() {
@@ -8987,25 +9013,20 @@ try {
           app.removeEventListener('scroll', this._introFlowScrollListener);
           this._introFlowScrollListener = null;
         }
-        const quoteScreenEl = document.getElementById('screen-quote');
-        if (quoteScreenEl && this._quoteScreenScrollListener) {
-          quoteScreenEl.removeEventListener('scroll', this._quoteScreenScrollListener);
-          this._quoteScreenScrollListener = null;
-        }
         this.clearPortalScrollHintSchedule();
+        const quoteSpinEl = document.getElementById('screen-quote');
+        if (quoteSpinEl && this._quoteSilhouetteScrollListener) {
+          quoteSpinEl.removeEventListener('scroll', this._quoteSilhouetteScrollListener);
+          this._quoteSilhouetteScrollListener = null;
+        }
+        const spinSvg = document.querySelector('.quote-title-silhouette-svg');
+        if (spinSvg) spinSvg.style.transform = '';
         const hint = document.getElementById('portalScrollHint');
         if (hint) {
           hint.classList.remove('portal-scroll-hint--visible');
           hint.hidden = true;
           hint.setAttribute('aria-hidden', 'true');
         }
-        const qp = document.querySelector('#screen-quote .quote-prompt');
-        const qc = document.querySelector('#screen-quote .quote-card');
-        if (qp) {
-          qp.style.opacity = '';
-          qp.style.color = '';
-        }
-        if (qc) qc.style.opacity = '';
         this._introFlowEnabled = false;
         document.body.classList.remove('intro-flow-active');
       }
@@ -9017,7 +9038,7 @@ try {
         if (!app || !section) return;
         app.scrollTo({ top: section.offsetTop, behavior });
         this.syncIntroFlowActiveSection();
-        requestAnimationFrame(() => this.updateQuoteProgressiveFocus());
+        requestAnimationFrame(() => this.updateQuoteTitleSilhouetteSpin());
       }
 
       syncIntroFlowActiveSection() {
@@ -9053,74 +9074,39 @@ try {
         ) {
           this.schedulePortalScrollHint();
         }
-
-        const quotePromptEl = document.querySelector('#screen-quote .quote-prompt');
-        if (quotePromptEl) {
-          if (nextId === 'screen-quote') {
-            quotePromptEl.classList.remove('quote-prompt--visible');
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => quotePromptEl.classList.add('quote-prompt--visible'));
-            });
-          } else {
-            quotePromptEl.classList.remove('quote-prompt--visible');
-          }
-        }
       }
 
       /**
-       * Intro flow: quote card stays strong; question starts softer and gains opacity as the user
-       * scrolls downward through the quote panel (momentum toward color step).
+       * Intro quote: small title-outline SVG under the question rotates gently with scroll
+       * (main #app scroll toward color + inner scroll in #screen-quote).
        */
-      updateQuoteProgressiveFocus() {
-        const quoteEl = document.getElementById('screen-quote');
-        const promptEl = quoteEl?.querySelector('.quote-prompt');
-        const cardEl = quoteEl?.querySelector('.quote-card');
-        const app = document.getElementById('app');
-        if (!quoteEl || !promptEl || !cardEl || !app) return;
-
-        const clear = () => {
-          promptEl.style.opacity = '';
-          promptEl.style.color = '';
-          cardEl.style.opacity = '';
-        };
-
-        if (!this.isIntroFlowEnabled()) {
-          clear();
-          return;
-        }
-
+      updateQuoteTitleSilhouetteSpin() {
+        const svg = document.querySelector('.quote-title-silhouette-svg');
+        if (!svg) return;
         if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          clear();
-          promptEl.style.opacity = '1';
+          svg.style.transform = '';
           return;
         }
+        const quoteEl = document.getElementById('screen-quote');
+        const app = document.getElementById('app');
+        const colorEl = document.getElementById('screen-color');
+        if (!quoteEl || !app) return;
 
-        const nearest = this._lastIntroSnapSectionId;
-        if (nearest !== 'screen-quote') {
-          clear();
-          return;
-        }
-
-        // #screen-quote scrolls internally (overflow-y: auto) — app scroll alone missed user movement.
         const innerMax = quoteEl.scrollHeight - quoteEl.clientHeight;
-        let t = 0;
-        if (innerMax > 12) {
-          t = quoteEl.scrollTop / innerMax;
-        } else {
-          const start = quoteEl.offsetTop;
-          const st = app.scrollTop;
-          const travel = Math.max(quoteEl.offsetHeight * 0.45, app.clientHeight * 0.25, 120);
-          t = (st - start) / travel;
-        }
-        t = Math.max(0, Math.min(1, t));
+        let innerT = innerMax > 10 ? quoteEl.scrollTop / innerMax : 0;
+        innerT = Math.max(0, Math.min(1, innerT));
 
-        // Stronger range so the shift reads clearly (soft → full).
-        const promptOp = 0.34 + 0.66 * t;
-        const cardOp = 1 - 0.14 * t;
-        const promptRgb = Math.round(118 - 54 * t);
-        promptEl.style.opacity = String(promptOp);
-        cardEl.style.opacity = String(cardOp);
-        promptEl.style.color = `rgb(${promptRgb}, ${promptRgb}, ${promptRgb})`;
+        let outerT = 0;
+        if (colorEl) {
+          const quoteTop = quoteEl.offsetTop;
+          const span = Math.max(colorEl.offsetTop - quoteTop - app.clientHeight * 0.12, 96);
+          outerT = (app.scrollTop - quoteTop) / span;
+        }
+        outerT = Math.max(0, Math.min(1, outerT));
+
+        const t = Math.max(outerT, innerT * 0.92);
+        const deg = t * 36;
+        svg.style.transform = `rotate(${deg}deg)`;
       }
 
       setupScreenScrollNavigation() {
