@@ -388,39 +388,15 @@ try {
       z-index: 2;
     }
     
-    .quote-prompt {
-      position: relative;
-      z-index: 1;
-      font-size: clamp(1.2rem, 3vw, 1.5rem);
-      margin: 2rem auto 0;
-      padding: 1rem 1.25rem 2.5rem;
+    .quote-prompt { 
+      font-size: clamp(1.2rem, 3vw, 1.5rem); 
+      margin: 2rem 0 0rem; 
       text-align: center;
-      max-width: min(24rem, 92vw);
+      max-width: 24rem;
       line-height: 1.35;
       font-style: italic;
       color: #404040;
     }
-
-    #screen-quote .quote-card {
-      margin-bottom: 0.5rem;
-      position: relative;
-      z-index: 1;
-    }
-
-    .quote-flow-lower {
-      position: relative;
-      flex: 1 1 auto;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-end;
-      width: 100%;
-      min-height: 10rem;
-      margin-top: 0;
-      padding: 0 0.25rem;
-      box-sizing: border-box;
-    }
-
     /* Intro quote step: card stays up top, question sits toward bottom of the panel. */
     body.intro-flow-active #screen-quote .quote-content-wrapper {
       flex: 1 1 auto;
@@ -434,71 +410,27 @@ try {
       padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
     }
-
-    body.intro-flow-active #screen-quote:not(.active) .quote-card {
-      opacity: 0;
-      transform: translateY(12px);
+    body.intro-flow-active #screen-quote .quote-card {
+      flex-shrink: 0;
+      margin-top: clamp(1.25rem, 6vh, 3.5rem);
     }
-
-    body.intro-flow-active #screen-quote.active .quote-card {
+    body.intro-flow-active #screen-quote .quote-prompt {
+      margin-top: auto;
+      margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+      padding: 0 1rem;
       opacity: 1;
-      transform: translateY(0);
-      transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+      transform: none;
+      transition: none;
+      will-change: auto;
     }
-
     @media (prefers-reduced-motion: reduce) {
-      body.intro-flow-active #screen-quote .quote-card {
+      body.intro-flow-active #screen-quote .quote-prompt {
         opacity: 1 !important;
         transform: none !important;
         transition: none !important;
       }
     }
-
-    body.intro-flow-active #screen-quote .quote-card {
-      flex-shrink: 0;
-      margin-top: clamp(1.25rem, 6vh, 3.5rem);
-      /* Scroll long copy inside the card so #screen-quote can use overflow:visible for app-level sticky prompt */
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      min-height: 0;
-    }
-    body.intro-flow-active #screen-quote .quote-flow-lower {
-      min-height: 11rem;
-    }
-
-    /* Prompt fade-in: two-step class + transition (keyframes + sticky were unreliable). */
-    body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter {
-      opacity: 0;
-    }
-
-    body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter.is-prompt-enter-active {
-      opacity: 1;
-      transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1);
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter,
-      body.intro-flow-active #screen-quote .quote-prompt.is-prompt-enter.is-prompt-enter-active {
-        opacity: 1 !important;
-        transition: none !important;
-      }
-    }
-
-    body.intro-flow-active #screen-quote .quote-prompt {
-      margin-top: auto;
-      margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
-      padding: 1rem 1.25rem 2.5rem;
-      /* Sticky vs #app scroll: section must not be the scrollport (see overflow-y below). */
-      position: sticky;
-      bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
-      z-index: 2;
-      align-self: center;
-      max-width: min(24rem, 92vw);
-      background: #f6f4f1;
-      box-decoration-break: clone;
-      -webkit-box-decoration-break: clone;
-    }
-
+    
     .arrow-down {
       font-size: 2rem;
       text-align: center;
@@ -588,16 +520,12 @@ try {
       transform: none !important;
     }
 
-    /* Long quote text scrolls in .quote-card; section stays overflow-y:visible so sticky prompt uses #app scrollport. */
+    /* Let quote stack scroll inside the snap panel (mobile had overflow:hidden, which clipped the prompt). */
     body.intro-flow-active #screen-quote {
       overflow-x: hidden !important;
-      overflow-y: visible !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch;
       align-items: center !important;
-      /* Taller than one viewport so #app scroll has a short “dwell” before color; question stays sticky below. */
-      height: auto !important;
-      min-height: 100dvh !important;
-      padding-bottom: clamp(22dvh, 28vh, 36dvh);
-      box-sizing: border-box;
     }
 
     /* Portal: center headline stack in remaining space; chevron stays at bottom (intro flow) */
@@ -836,12 +764,7 @@ try {
     }
     
     .quote-content-wrapper {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      width: 100%;
-      max-width: 100%;
-      box-sizing: border-box;
+      /* This wrapper gets centered as one unit */
     }
     
     @media (max-width: 768px) {
@@ -2498,9 +2421,7 @@ try {
             <p class="quote-author" aria-live="polite"></p>
           </div>
         </div>
-        <div class="quote-flow-lower">
-          <p class="quote-prompt" id="quotePrompt">What color does this call to mind?</p>
-        </div>
+        <p class="quote-prompt">What color does this call to mind?</p>
       </div>
     </section>
 
@@ -7607,8 +7528,7 @@ try {
           .replace(/\n{2,}/g, '<br><br>')
           .replace(/\n/g, '<br>');
         // (?<!\d) avoids splitting decimals like "3.14" when a space follows (rare in quotes).
-        // Double break so there is clear vertical space between sentences (matches reflection card).
-        return withManualBreaks.replace(/(?<!\d)([.!?])\s+(?=[A-Z0-9“"'])/g, '$1<br><br>');
+        return withManualBreaks.replace(/(?<!\d)([.!?])\s+(?=[A-Z0-9“"'])/g, '$1<br>');
       }
 
       // Check if quote is longer than 2 lines and apply appropriate styling
@@ -8601,8 +8521,6 @@ try {
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
-        this._quoteEnterScrollTimer = null;
-        this._quotePromptEnterAt = 0;
       }
       
       
@@ -9011,14 +8929,6 @@ try {
           this._introFlowScrollListener = null;
         }
         this.clearPortalScrollHintSchedule();
-        if (this._quoteEnterScrollTimer) {
-          clearTimeout(this._quoteEnterScrollTimer);
-          this._quoteEnterScrollTimer = null;
-        }
-        const quotePromptEl = document.getElementById('quotePrompt');
-        if (quotePromptEl) {
-          quotePromptEl.classList.remove('is-prompt-enter', 'is-prompt-enter-active');
-        }
         const hint = document.getElementById('portalScrollHint');
         if (hint) {
           hint.classList.remove('portal-scroll-hint--visible');
@@ -9036,19 +8946,6 @@ try {
         if (!app || !section) return;
         app.scrollTo({ top: section.offsetTop, behavior });
         this.syncIntroFlowActiveSection();
-        /* Smooth scroll hasn't moved scrollTop yet — re-sync and prompt enter after snap settles. */
-        if (this._quoteEnterScrollTimer) {
-          clearTimeout(this._quoteEnterScrollTimer);
-          this._quoteEnterScrollTimer = null;
-        }
-        if (screenId === 'screen-quote') {
-          const delay = behavior === 'smooth' ? 480 : 0;
-          this._quoteEnterScrollTimer = setTimeout(() => {
-            this._quoteEnterScrollTimer = null;
-            this.syncIntroFlowActiveSection();
-            this.triggerQuotePromptEnterAnimation();
-          }, delay);
-        }
       }
 
       syncIntroFlowActiveSection() {
@@ -9085,35 +8982,17 @@ try {
           this.schedulePortalScrollHint();
         }
 
-        if (nextId === 'screen-quote' && prevSnap !== 'screen-quote') {
-          this.triggerQuotePromptEnterAnimation();
+        const quotePromptEl = document.querySelector('#screen-quote .quote-prompt');
+        if (quotePromptEl) {
+          if (nextId === 'screen-quote') {
+            quotePromptEl.classList.remove('quote-prompt--visible');
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => quotePromptEl.classList.add('quote-prompt--visible'));
+            });
+          } else {
+            quotePromptEl.classList.remove('quote-prompt--visible');
+          }
         }
-      }
-
-      triggerQuotePromptEnterAnimation() {
-        const promptEl = document.getElementById('quotePrompt');
-        if (!promptEl) return;
-        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          return;
-        }
-        const quoteScreen = document.getElementById('screen-quote');
-        if (!quoteScreen || !quoteScreen.classList.contains('active')) return;
-
-        const now = Date.now();
-        if (now - this._quotePromptEnterAt < 450) return;
-        this._quotePromptEnterAt = now;
-
-        promptEl.classList.remove('is-prompt-enter-active');
-        promptEl.classList.add('is-prompt-enter');
-        void promptEl.offsetWidth;
-        requestAnimationFrame(() => {
-          promptEl.classList.add('is-prompt-enter-active');
-        });
-        const onEnd = (e) => {
-          if (e.propertyName !== 'opacity') return;
-          promptEl.classList.remove('is-prompt-enter', 'is-prompt-enter-active');
-        };
-        promptEl.addEventListener('transitionend', onEnd, { once: true });
       }
 
       setupScreenScrollNavigation() {
