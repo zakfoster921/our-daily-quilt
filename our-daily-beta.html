@@ -313,7 +313,7 @@ try {
       border: none;
       border-radius: 4px;
       padding: 2rem 1.2rem;
-      margin: 0.0rem auto 1.5rem;
+      margin: 0 auto clamp(2.5rem, 8vh, 4.5rem);
       background: #fff;
       width: 81%;
       max-width: 450px;
@@ -406,13 +406,109 @@ try {
     
     .quote-prompt { 
       font-size: clamp(1.2rem, 3vw, 1.5rem); 
-      margin: 2rem 0 0rem; 
+      margin: clamp(2rem, 5.5vh, 3.5rem) 0 0;
       text-align: center;
       max-width: 24rem;
       line-height: 1.35;
       font-style: italic;
       color: #404040;
+      opacity: 0;
+      transition: opacity 0.75s ease-out;
     }
+    .quote-prompt.quote-prompt--visible {
+      opacity: 1;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .quote-prompt {
+        transition: none !important;
+      }
+    }
+
+    @keyframes quoteWonkyPulse {
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.05);
+        opacity: 0.92;
+      }
+    }
+
+    /* Title-tile cue → color picker: white circle; pulse runs on inner disc so outer rotate stays intact. */
+    .quote-color-wonky-btn {
+      display: block;
+      margin: clamp(1.5rem, 3.5vh, 2.25rem) auto 0;
+      padding: 0;
+      width: 56px;
+      height: 56px;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      border-radius: 50%;
+      overflow: hidden;
+      box-shadow: none;
+      opacity: 0;
+      transform: translate3d(0, 10px, 0) rotate(-12deg) scale(0.86);
+      transition: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .quote-color-wonky-btn:focus-visible {
+      outline: 2px solid rgba(0, 0, 0, 0.38);
+      outline-offset: 4px;
+    }
+    .quote-color-wonky-btn__disc {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #fff;
+      pointer-events: none;
+      box-shadow: none;
+      border: none;
+    }
+    .quote-color-wonky-btn.quote-color-wonky-btn--visible {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) rotate(-5deg) scale(1);
+      transition:
+        opacity 1s cubic-bezier(0.37, 0, 0.32, 1),
+        transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+      transition-delay: 0.06s, 0.1s;
+    }
+    .quote-color-wonky-btn.quote-color-wonky-btn--visible:not(.quote-color-wonky-btn--pulse-off)
+      .quote-color-wonky-btn__disc {
+      animation: quoteWonkyPulse 2.75s ease-in-out infinite;
+      transform-origin: center center;
+    }
+    .quote-color-wonky-btn.quote-color-wonky-btn--visible.quote-color-wonky-btn--pulse-off
+      .quote-color-wonky-btn__disc {
+      animation: none;
+    }
+    /* Color screen: no entrance/pulse cycle */
+    .quote-color-wonky-btn.quote-color-wonky-btn--static.quote-color-wonky-btn--visible
+      .quote-color-wonky-btn__disc {
+      animation: none !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .quote-color-wonky-btn {
+        transition: none !important;
+        transform: rotate(-5deg) scale(1);
+      }
+      .quote-color-wonky-btn.quote-color-wonky-btn--visible {
+        transition: none !important;
+        transition-delay: 0s !important;
+      }
+      .quote-color-wonky-btn.quote-color-wonky-btn--visible:hover,
+      .quote-color-wonky-btn.quote-color-wonky-btn--visible:active {
+        transform: rotate(-5deg) scale(1);
+      }
+      .quote-color-wonky-btn__disc {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
+
     /* Intro quote step: card stays up top, question sits toward bottom of the panel. */
     body.intro-flow-active #screen-quote .quote-content-wrapper {
       flex: 1 1 auto;
@@ -429,19 +525,20 @@ try {
     body.intro-flow-active #screen-quote .quote-card {
       flex-shrink: 0;
       margin-top: clamp(1.25rem, 6vh, 3.5rem);
+      margin-bottom: clamp(1.75rem, 5vh, 3rem);
     }
     body.intro-flow-active #screen-quote .quote-prompt {
       margin-top: auto;
       margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
       padding: 0 1rem;
-      opacity: 1;
       transform: none;
-      transition: none;
       will-change: auto;
+    }
+    body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--visible {
+      opacity: 1;
     }
     @media (prefers-reduced-motion: reduce) {
       body.intro-flow-active #screen-quote .quote-prompt {
-        opacity: 1 !important;
         transform: none !important;
         transition: none !important;
       }
@@ -501,6 +598,38 @@ try {
     }
     .flow-exit-active {
       transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
+    }
+
+    /*
+      Portal → quote: one continuous crossfade (opacity only).
+      Blur / stagger / multi-property transitions were causing uneven frames; same duration + curve on both layers keeps motion regular.
+    */
+    .screen.flow-fade-exit {
+      opacity: 1 !important;
+      transform: none !important;
+      z-index: 1;
+    }
+    .screen.flow-fade-exit.flow-fade-exit-active {
+      opacity: 0 !important;
+      /* Calm handoff: long crossfade, very soft acceleration curve. */
+      transition: opacity 0.95s cubic-bezier(0.37, 0, 0.32, 1);
+    }
+    .screen.flow-fade-enter {
+      opacity: 0 !important;
+      transform: none !important;
+      z-index: 2;
+    }
+    .screen.flow-fade-enter.flow-fade-enter-active {
+      opacity: 1 !important;
+      transition: opacity 0.95s cubic-bezier(0.37, 0, 0.32, 1);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .screen.flow-fade-exit,
+      .screen.flow-fade-exit.flow-fade-exit-active,
+      .screen.flow-fade-enter,
+      .screen.flow-fade-enter.flow-fade-enter-active {
+        transition-duration: 0.01ms !important;
+      }
     }
 
     /* True continuous intro flow: portal -> quote -> color in one scroll container */
@@ -633,11 +762,24 @@ try {
       gap: 1.5rem;
     }
     
-    /* Center the add color button with the color picker */
+    /* Add color: same white circle cue as quote screen (no text) */
     #screen-color #addColorBtn {
-      margin: 1.5rem 0 0 0 !important;
-      width: 336px !important;
-      max-width: calc(100vw - 32px);
+      margin: clamp(1.25rem, 4vh, 2rem) auto 0 !important;
+      width: 56px !important;
+      height: 56px !important;
+      max-width: none !important;
+      min-height: 0 !important;
+      padding: 0 !important;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 50% !important;
+      transform: translate3d(0, 0, 0) rotate(-5deg) scale(1);
+      opacity: 1;
+    }
+    #screen-color #addColorBtn:hover,
+    #screen-color #addColorBtn:focus-visible {
+      box-shadow: none !important;
     }
     
     .css-color-wheel {
@@ -825,7 +967,8 @@ try {
         height: 224px !important;
       }
       #screen-color #addColorBtn {
-        width: 288px !important;
+        width: 56px !important;
+        height: 56px !important;
       }
     }
     
@@ -1235,9 +1378,10 @@ try {
     }
     body.dark-color-active #screen-color #addColorBtn:hover,
     body.dark-color-active #screen-color #addColorBtn:focus-visible {
-      background: #fff !important;
-      color: #1a1a1a !important;
+      background: transparent !important;
+      color: inherit;
       border: none !important;
+      box-shadow: none !important;
     }
     
     .btn:active {
@@ -1610,7 +1754,8 @@ try {
         height: 240px; 
       }
       #screen-color #addColorBtn {
-        width: 240px !important;
+        width: 56px !important;
+        height: 56px !important;
       }
       #colorPickerControls { flex-direction: column; gap: 10px; }
       
@@ -2453,7 +2598,7 @@ try {
     }
   </style>
 </head>
-<body class="intro-flow-active">
+<body>
 
   
   <main id="app">
@@ -2518,7 +2663,17 @@ try {
             <p class="quote-author" aria-live="polite"></p>
           </div>
         </div>
-        <p class="quote-prompt">What color does this quote<br>call to mind?</p>
+        <p class="quote-prompt" aria-hidden="true">What color does this quote<br>call to mind?</p>
+        <button
+          type="button"
+          class="quote-color-wonky-btn"
+          id="quoteColorWonkyBtn"
+          hidden
+          aria-hidden="true"
+          aria-label="Open the color picker for this quote"
+        >
+          <span class="quote-color-wonky-btn__disc" aria-hidden="true"></span>
+        </button>
       </div>
     </section>
 
@@ -2531,12 +2686,13 @@ try {
           <input type="range" id="valueSlider" min="25" max="90" value="50" aria-label="Adjust color brightness" />
         </div>
       </div>
-      <button class="btn stack-btn-like stack-btn-like--center" id="addColorBtn" aria-label="Add your color to the community quilt">
-        <span class="stack-btn-content">
-          <span class="stack-btn-left">
-            <span>Add your color</span>
-          </span>
-        </span>
+      <button
+        type="button"
+        id="addColorBtn"
+        class="quote-color-wonky-btn quote-color-wonky-btn--visible quote-color-wonky-btn--static"
+        aria-label="Add your color to the community quilt"
+      >
+        <span class="quote-color-wonky-btn__disc" aria-hidden="true"></span>
       </button>
     </section>
 
@@ -5034,6 +5190,8 @@ try {
 
       showScreen(screenId) {
         try {
+          window.app?.clearPortalToQuoteIntroTimer();
+          window.app?.clearQuotePromptSchedule();
           const introIds = window.app?.getIntroScreenIds?.() || new Set();
           const inIntro = introIds.has(screenId);
           const introEnabled = !!window.app?.isIntroFlowEnabled?.();
@@ -5061,62 +5219,84 @@ try {
               if (this._flowTransitioning) return;
               this._flowTransitioning = true;
 
-              const enteringClass =
-                nextOrder > prevOrder ? 'flow-enter-from-bottom' : 'flow-enter-from-top';
-              const exitingClass =
-                nextOrder > prevOrder ? 'flow-exit-to-top' : 'flow-exit-to-bottom';
-
-              target.style.display = 'flex';
-              target.classList.remove(
+              const flowClassCleanup = [
                 'flow-enter-from-bottom',
                 'flow-enter-from-top',
                 'flow-enter-active',
                 'flow-exit-to-top',
                 'flow-exit-to-bottom',
-                'flow-exit-active'
-              );
-              target.classList.add(enteringClass, 'active');
+                'flow-exit-active',
+                'flow-fade-enter',
+                'flow-fade-enter-active',
+                'flow-fade-exit',
+                'flow-fade-exit-active'
+              ];
+
+              const portalToQuoteFade =
+                previousId === 'screen-portal' && screenId === 'screen-quote';
+
+              const finishFlow = () => {
+                if (previousActive) {
+                  previousActive.classList.remove('active', ...flowClassCleanup);
+                  previousActive.style.display = 'none';
+                }
+                target.classList.remove(...flowClassCleanup);
+                this._flowTransitioning = false;
+                if (target.id === 'screen-quote') {
+                  window.app?.scheduleQuotePromptReveal?.(2800);
+                }
+              };
+
+              target.style.display = 'flex';
+              target.classList.remove(...flowClassCleanup);
+              if (portalToQuoteFade) {
+                target.classList.add('flow-fade-enter', 'active');
+              } else {
+                const enteringClass =
+                  nextOrder > prevOrder ? 'flow-enter-from-bottom' : 'flow-enter-from-top';
+                target.classList.add(enteringClass, 'active');
+              }
 
               if (previousActive) {
-                previousActive.classList.remove(
-                  'flow-enter-from-bottom',
-                  'flow-enter-from-top',
-                  'flow-enter-active',
-                  'flow-exit-to-top',
-                  'flow-exit-to-bottom',
-                  'flow-exit-active'
-                );
-                previousActive.classList.add(exitingClass, 'flow-exit-active');
+                previousActive.classList.remove(...flowClassCleanup);
+                if (portalToQuoteFade) {
+                  previousActive.classList.add('flow-fade-exit');
+                } else {
+                  const exitingClass =
+                    nextOrder > prevOrder ? 'flow-exit-to-top' : 'flow-exit-to-bottom';
+                  previousActive.classList.add(exitingClass, 'flow-exit-active');
+                }
               }
 
               target.offsetHeight;
-              requestAnimationFrame(() => {
-                target.classList.add('flow-enter-active');
-              });
+              if (portalToQuoteFade) {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    target.classList.add('flow-fade-enter-active');
+                    if (previousActive) previousActive.classList.add('flow-fade-exit-active');
 
-              setTimeout(() => {
-                if (previousActive) {
-                  previousActive.classList.remove(
-                    'active',
-                    'flow-enter-from-bottom',
-                    'flow-enter-from-top',
-                    'flow-enter-active',
-                    'flow-exit-to-top',
-                    'flow-exit-to-bottom',
-                    'flow-exit-active'
-                  );
-                  previousActive.style.display = 'none';
-                }
-                target.classList.remove(
-                  'flow-enter-from-bottom',
-                  'flow-enter-from-top',
-                  'flow-enter-active',
-                  'flow-exit-to-top',
-                  'flow-exit-to-bottom',
-                  'flow-exit-active'
-                );
-                this._flowTransitioning = false;
-              }, 380);
+                    let settled = false;
+                    const settle = () => {
+                      if (settled) return;
+                      settled = true;
+                      target.removeEventListener('transitionend', onTransEnd);
+                      if (fallbackId != null) clearTimeout(fallbackId);
+                      finishFlow();
+                    };
+                    const onTransEnd = (e) => {
+                      if (e.target !== target || e.propertyName !== 'opacity') return;
+                      settle();
+                    };
+                    target.addEventListener('transitionend', onTransEnd);
+                    const fallbackId = setTimeout(settle, 1200);
+                  });
+                });
+              } else {
+                requestAnimationFrame(() => {
+                  target.classList.add('flow-enter-active');
+                });
+                setTimeout(finishFlow, 380);
+              }
             } else {
               document.querySelectorAll(".screen").forEach(s => {
                 s.classList.remove("active");
@@ -5127,6 +5307,10 @@ try {
               target.classList.add("active");
 
               target.offsetHeight;
+            }
+
+            if (screenId === 'screen-quote' && !isFlowTransition) {
+              window.app?.scheduleQuotePromptReveal?.(2800);
             }
             
             // Set date immediately when portal screen is shown
@@ -8646,6 +8830,8 @@ try {
           'screen-quote': 1,
           'screen-color': 2
         };
+        // UIService.showScreen() reads this map; it lives on App but must be reachable from uiService.
+        this.uiService._flowScreenOrder = this._flowScreenOrder;
         this._flowTransitioning = false;
         this._introScreenIds = new Set(['screen-portal', 'screen-quote', 'screen-color']);
         this._introFlowEnabled = false;
@@ -8653,6 +8839,10 @@ try {
         this._portalScrollHintTimer = null;
         this._portalScrollHintOnScroll = null;
         this._lastIntroSnapSectionId = null;
+        this._portalToQuoteTimer = null;
+        this._blockPortalScrollNav = false;
+        this._quotePromptRevealTimer = null;
+        this._quoteColorWonkyTimer = null;
       }
       
       
@@ -8814,10 +9004,6 @@ try {
 
       async initialize() {
         try {
-          // Intro scroll layout must apply immediately; waiting until after Firebase/quilt load
-          // used to swap from absolute single-screen layout to the stacked 100dvh sections ~1–2s later (visible jump).
-          this.enableIntroFlow('screen-portal');
-          
           // Add a small delay to ensure Firebase is initialized
           await new Promise(resolve => setTimeout(resolve, 500));
           
@@ -8878,7 +9064,8 @@ try {
           
         } catch (error) {
           this.errorHandler.handleError(error, 'App initialization');
-          this.enableIntroFlow('screen-portal');
+          this.clearPortalToQuoteIntroTimer();
+          this.uiService?.showScreen?.('screen-portal');
         }
       }
 
@@ -8896,6 +9083,15 @@ try {
             this.uiService.showScreen(targetId);
           });
         });
+
+        const quoteColorWonkyBtn = document.getElementById('quoteColorWonkyBtn');
+        if (quoteColorWonkyBtn) {
+          quoteColorWonkyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            quoteColorWonkyBtn.classList.add('quote-color-wonky-btn--pulse-off');
+            this.uiService.showScreen('screen-color');
+          });
+        }
 
         // Add color button
         const addColorBtn = document.getElementById('addColorBtn');
@@ -9117,13 +9313,11 @@ try {
 
         const quotePromptEl = document.querySelector('#screen-quote .quote-prompt');
         if (quotePromptEl) {
-          if (nextId === 'screen-quote') {
+          if (nextId === 'screen-quote' && prevSnap !== 'screen-quote') {
+            this.scheduleQuotePromptReveal(2800);
+          } else if (nextId !== 'screen-quote') {
             quotePromptEl.classList.remove('quote-prompt--visible');
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => quotePromptEl.classList.add('quote-prompt--visible'));
-            });
-          } else {
-            quotePromptEl.classList.remove('quote-prompt--visible');
+            quotePromptEl.setAttribute('aria-hidden', 'true');
           }
         }
       }
@@ -9138,6 +9332,7 @@ try {
         const triggerNext = () => {
           const currentScreen = document.querySelector('.screen.active');
           if (!currentScreen) return;
+          if (currentScreen.id === 'screen-portal' && window.app?._blockPortalScrollNav) return;
           const now = Date.now();
           if (now - this._scrollNavLastTriggerAt < this._scrollNavCooldownMs) return;
           const next = nextByScreen[currentScreen.id];
@@ -11391,9 +11586,102 @@ try {
       }
 
       initializeUI() {
-        if (!this.isIntroFlowEnabled()) {
-          this.enableIntroFlow('screen-portal');
+        this.schedulePortalToQuoteIntroFade();
+      }
+
+      clearPortalToQuoteIntroTimer() {
+        if (this._portalToQuoteTimer) {
+          clearTimeout(this._portalToQuoteTimer);
+          this._portalToQuoteTimer = null;
         }
+        this._blockPortalScrollNav = false;
+      }
+
+      clearQuotePromptSchedule() {
+        if (this._quotePromptRevealTimer) {
+          clearTimeout(this._quotePromptRevealTimer);
+          this._quotePromptRevealTimer = null;
+        }
+        if (this._quoteColorWonkyTimer) {
+          clearTimeout(this._quoteColorWonkyTimer);
+          this._quoteColorWonkyTimer = null;
+        }
+        const el = document.querySelector('#screen-quote .quote-prompt');
+        if (el) {
+          el.classList.remove('quote-prompt--visible');
+          el.setAttribute('aria-hidden', 'true');
+        }
+        const wonky = document.getElementById('quoteColorWonkyBtn');
+        if (wonky) {
+          wonky.classList.remove(
+            'quote-color-wonky-btn--visible',
+            'quote-color-wonky-btn--pulse-off'
+          );
+          wonky.hidden = true;
+          wonky.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      /**
+       * After the quote screen is up: wait `readPauseMs` so the line can be read, then fade the prompt in.
+       */
+      scheduleQuotePromptReveal(readPauseMs = 2800) {
+        this.clearQuotePromptSchedule();
+        const el = document.querySelector('#screen-quote .quote-prompt');
+        if (!el) return;
+        const scheduleWonkyAfterPrompt = () => {
+          if (this._quoteColorWonkyTimer) {
+            clearTimeout(this._quoteColorWonkyTimer);
+            this._quoteColorWonkyTimer = null;
+          }
+          const wonkyWait =
+            window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 500 : 750 + 500;
+          this._quoteColorWonkyTimer = setTimeout(() => {
+            this._quoteColorWonkyTimer = null;
+            if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+            const btn = document.getElementById('quoteColorWonkyBtn');
+            if (!btn) return;
+            btn.classList.remove('quote-color-wonky-btn--pulse-off');
+            btn.hidden = false;
+            btn.setAttribute('aria-hidden', 'false');
+            requestAnimationFrame(() => btn.classList.add('quote-color-wonky-btn--visible'));
+          }, wonkyWait);
+        };
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+          el.classList.add('quote-prompt--visible');
+          el.setAttribute('aria-hidden', 'false');
+          scheduleWonkyAfterPrompt();
+          return;
+        }
+        const wait = Math.max(0, readPauseMs);
+        this._quotePromptRevealTimer = setTimeout(() => {
+          this._quotePromptRevealTimer = null;
+          if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+          el.classList.add('quote-prompt--visible');
+          el.setAttribute('aria-hidden', 'false');
+          scheduleWonkyAfterPrompt();
+        }, wait);
+      }
+
+      /**
+       * After load: ~0.65s hold on portal, then a slow crossfade to quote.
+       * Skips the intro scroll stack; respects prefers-reduced-motion.
+       */
+      schedulePortalToQuoteIntroFade() {
+        this.clearPortalToQuoteIntroTimer();
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+          this.uiService.showScreen('screen-quote');
+          return;
+        }
+        this._blockPortalScrollNav = true;
+        this._portalToQuoteTimer = setTimeout(() => {
+          this._portalToQuoteTimer = null;
+          this._blockPortalScrollNav = false;
+          const active = document.querySelector('.screen.active');
+          if (active && active.id === 'screen-portal') {
+            this.uiService.showScreen('screen-quote');
+          }
+        }, 650);
       }
 
       setupAutoTransition() {
