@@ -12343,7 +12343,7 @@ try {
             <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handlePushInstagramAssetsToFirestore()">Push IG images to Firestore (Zapier)</button>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
-            <button type="button" title="Shift+click to clear saved token and enter a new one" onclick="window.app &amp;&amp; window.app.handleManualNotionFirestoreSync(event)">🗂️ Sync Notion ↔ Firestore</button>
+            <button type="button" id="admin-notion-sync-btn" title="Shift+click to clear saved token and enter a new one">🗂️ Sync Notion ↔ Firestore</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
         `;
@@ -12393,6 +12393,14 @@ try {
         });
         
         document.body.appendChild(menu);
+
+        const notionSyncBtn = menu.querySelector('#admin-notion-sync-btn');
+        if (notionSyncBtn) {
+          notionSyncBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.handleManualNotionFirestoreSync(e);
+          });
+        }
       }
 
       // Helper method to get admin stats HTML
@@ -13762,28 +13770,28 @@ try {
       /**
        * Runs the same Notion ↔ Firestore jobs as GitHub Actions (quotes from Notion, then usage back to Notion).
        * Server: POST /api/sync-notion-firestore with header x-notion-sync-token (NOTION_SYNC_TOKEN or RESET_TOKEN on Railway).
-       * Token is stored in localStorage after the first successful sync (this browser only). Do not put the token in source code.
-       * Shift+click the admin button to clear the saved token and paste a new one.
+       * Token is stored in localStorage as soon as you submit the prompt (this browser only). Cleared on 401 or Shift+click.
        * @param {MouseEvent} [evt]
        */
       async handleManualNotionFirestoreSync(evt) {
         const STORAGE_KEY = 'ourDailyNotionSyncToken';
+        const toastErr = (msg) => this.uiService.showToast(msg, 12000);
         try {
           const baseUrl = (CONFIG.BACKEND && CONFIG.BACKEND.baseUrl) || '';
           if (!baseUrl) {
-            this.uiService.showToast('CONFIG.BACKEND.baseUrl is not set');
+            toastErr('CONFIG.BACKEND.baseUrl is not set');
             return;
           }
 
           if (evt && evt.shiftKey) {
             localStorage.removeItem(STORAGE_KEY);
-            this.uiService.showToast('Saved sync token cleared — paste a new one');
+            this.uiService.showToast('Saved sync token cleared — paste a new one', 5000);
           }
 
           let trimmed = (localStorage.getItem(STORAGE_KEY) || '').trim();
           if (!trimmed) {
             const token = window.prompt(
-              'Paste the server sync token (Railway: NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset). It will be saved in this browser after a successful sync. Cancel to abort.'
+              'Paste the server sync token (Railway: NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset). It is saved in this browser as soon as you confirm. Cancel to abort.'
             );
             if (token === null) {
               return;
@@ -13793,17 +13801,39 @@ try {
               this.uiService.showToast('Sync cancelled');
               return;
             }
+            try {
+              localStorage.setItem(STORAGE_KEY, trimmed);
+            } catch (storageErr) {
+              toastErr(
+                'Could not save token in this browser (private mode or storage blocked). Sync can still run this once.'
+              );
+              console.warn(storageErr);
+            }
           }
 
-          this.uiService.showToast('Running Notion ↔ Firestore sync…');
-          const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/sync-notion-firestore`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-notion-sync-token': trimmed
-            },
-            body: '{}'
-          });
+          const url = `${baseUrl.replace(/\/$/, '')}/api/sync-notion-firestore`;
+          this.uiService.showToast('Running Notion ↔ Firestore sync…', 8000);
+          console.log('Notion sync POST', url);
+
+          const controller = new AbortController();
+          const timeoutMs = 180000;
+          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+          let res;
+          try {
+            res = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-notion-sync-token': trimmed
+              },
+              body: '{}',
+              signal: controller.signal
+            });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+
           let data = {};
           try {
             data = await res.json();
@@ -13813,8 +13843,8 @@ try {
 
           if (res.status === 401) {
             localStorage.removeItem(STORAGE_KEY);
-            this.uiService.showToast('Sync failed: unauthorized — token cleared, try again');
-            console.error('Notion ↔ Firestore sync failed:', data);
+            toastErr('Sync failed: unauthorized — wrong token or not set on Railway. Saved token cleared.');
+            console.error('Notion ↔ Firestore sync 401:', data);
             return;
           }
 
@@ -13823,18 +13853,18 @@ try {
               (data && (data.error || data.step)) ||
               res.statusText ||
               `HTTP ${res.status}`;
-            this.uiService.showToast(`Sync failed: ${msg}`);
-            console.error('Notion ↔ Firestore sync failed:', data);
+            toastErr(`Sync failed: ${msg}`);
+            console.error('Notion ↔ Firestore sync failed:', url, res.status, data);
             return;
           }
 
           try {
             localStorage.setItem(STORAGE_KEY, trimmed);
           } catch (_) {
-            /* quota / private mode */
+            /* already saved after prompt; ignore */
           }
 
-          this.uiService.showToast('✅ Notion ↔ Firestore sync finished');
+          this.uiService.showToast('✅ Notion ↔ Firestore sync finished', 6000);
           if (data.stdout) {
             console.log('Notion sync stdout:\n', data.stdout);
           }
@@ -13842,7 +13872,19 @@ try {
             console.warn('Notion sync stderr:\n', data.stderr);
           }
         } catch (error) {
-          this.errorHandler.handleError(error, 'manualNotionFirestoreSync');
+          const isAbort = error && error.name === 'AbortError';
+          const detail = isAbort
+            ? 'Timed out after 3 minutes — check Railway logs and Notion API.'
+            : error && error.message
+              ? error.message
+              : String(error);
+          toastErr(`Notion sync: ${detail}`);
+          console.error('Notion ↔ Firestore sync exception:', error);
+          if (isAbort || (error && /Failed to fetch|NetworkError|Load failed/i.test(String(error.message)))) {
+            window.alert(
+              `Could not reach the sync server.\n\n${detail}\n\nURL tried: ${(CONFIG.BACKEND && CONFIG.BACKEND.baseUrl) || '(no base URL)'} — open DevTools → Network and confirm the POST is not blocked (CORS, ad blocker, or wrong host).`
+            );
+          }
         }
       }
 
