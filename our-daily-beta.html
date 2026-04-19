@@ -1717,26 +1717,6 @@ try {
         display: block !important;
         position: relative !important;
       }
-      
-
-      
-      #screen-quilt .square-counter {
-        background: transparent !important;
-        border: none !important;
-        margin: 0 0.5rem 0.5rem 0.5rem !important;
-        padding: 0.5rem !important;
-        border-radius: 6px !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-
-      }
-      
-
-      
-      #screen-quilt .counter-label {
-        font-size: 1rem !important;
-      }
-      
       #screen-quilt .btn {
         background: #fff !important;
         border: 2px solid #000 !important;
@@ -2755,11 +2735,13 @@ try {
       }
     }
 
-    /* Full-res Layout B story (1080×1920) scaled to fit; same asset as share flow. */
+    /* Full-res Layout B story (1080×1920); same asset as share flow; image band is full viewport width. */
     #screen-quilt .quilt-layout-b-preview-wrap {
       width: 100%;
+      max-width: 100vw;
       box-sizing: border-box;
-      padding: 1rem 1rem 1.35rem;
+      padding: 0.65rem 0 0;
+      margin: 0;
       background: #ebe8e3;
       border-top: 1px solid rgba(0, 0, 0, 0.08);
       flex-shrink: 0;
@@ -2774,7 +2756,8 @@ try {
     }
 
     #screen-quilt .quilt-layout-b-preview-label {
-      margin: 0 0 0.65rem;
+      margin: 0 0 0.5rem;
+      padding: 0 1rem;
       font-size: 0.72rem;
       font-weight: 600;
       letter-spacing: 0.08em;
@@ -2784,15 +2767,15 @@ try {
     }
 
     #screen-quilt .quilt-layout-b-preview-frame {
-      width: min(320px, 100%);
-      max-width: 100%;
-      margin: 0 auto;
+      width: 100%;
+      max-width: none;
+      margin: 0;
       aspect-ratio: 9 / 16;
-      border-radius: 12px;
+      border-radius: 0;
       overflow: hidden;
       background: #d8d4cf;
-      box-shadow: 0 10px 36px rgba(0, 0, 0, 0.14);
-      border: 1px solid rgba(0, 0, 0, 0.1);
+      box-shadow: none;
+      border: none;
     }
 
     #screen-quilt .quilt-layout-b-preview-img {
@@ -2804,7 +2787,8 @@ try {
     }
 
     #screen-quilt .quilt-layout-b-preview-hint {
-      margin: 0.55rem 0 0;
+      margin: 0;
+      padding: 0.55rem 1rem 1rem;
       font-size: 0.88rem;
       line-height: 1.35;
       color: rgba(0, 0, 0, 0.55);
@@ -3102,10 +3086,7 @@ try {
           </button>
         </div>
 
-        <div class="square-counter">
-          <span class="counter-label">Building today's quilt together: <span class="counter-number" id="squareCounter">1</span></span>
-        </div>
-        
+        <span id="squareCounter" hidden aria-hidden="true">1</span>
       </div>
 
       <div
@@ -5723,17 +5704,23 @@ try {
             if (screenId === 'screen-quilt') {
               const quoteService = window.app?.quoteService;
               if (quoteService) {
-                const todayQ = quoteService.getTodayQuote();
-                const quiltQuoteText = document.querySelector('.quilt-quote-text');
-                const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
-                const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
+                const paintQuiltQuote = () => {
+                  const todayQ = quoteService.getTodayQuote();
+                  const quiltQuoteText = document.querySelector('.quilt-quote-text');
+                  const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
+                  const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
 
-                if (quiltQuoteText) quiltQuoteText.innerHTML = quoteService.formatQuiltScreenPrimaryHtml(todayQ);
-                if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
+                  if (quiltQuoteText) quiltQuoteText.innerHTML = quoteService.formatQuiltScreenPrimaryHtml(todayQ);
+                  if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
 
-                if (quiltQuoteDisplay && quoteService.quiltScreenHasBodyContent(todayQ)) {
-                  quiltQuoteDisplay.classList.add('has-content');
-                }
+                  if (quiltQuoteDisplay && quoteService.quiltScreenHasBodyContent(todayQ)) {
+                    quiltQuoteDisplay.classList.add('has-content');
+                  }
+                };
+                void quoteService
+                  .hydratePinnedBlessingsForDateKeys([quoteService.getQuoteCalendarKeyNow()])
+                  .then(paintQuiltQuote)
+                  .catch(() => paintQuiltQuote());
               }
               window.app?.scheduleLayoutBStoryPreviewRefresh?.();
             }
@@ -8101,6 +8088,91 @@ try {
         return byEmb || null;
       }
 
+      _normFieldKeyLoose(s) {
+        return String(s || '')
+          .toLowerCase()
+          .replace(/[\s_-]/g, '');
+      }
+
+      _scalarTextField(val) {
+        if (val == null) return '';
+        if (typeof val === 'string') return val.trim();
+        if (typeof val === 'number' && Number.isFinite(val)) return String(val);
+        if (Array.isArray(val)) {
+          return val
+            .map((x) =>
+              x && typeof x === 'object' && typeof x.plain_text === 'string'
+                ? x.plain_text
+                : String(x ?? '')
+            )
+            .join('')
+            .trim();
+        }
+        if (typeof val === 'object') {
+          if (typeof val.plain_text === 'string') return val.plain_text.trim();
+          if (Array.isArray(val.rich_text)) {
+            return val.rich_text.map((x) => x?.plain_text || '').join('').trim();
+          }
+        }
+        return '';
+      }
+
+      /** Blessing text from a plain object (Firestore doc or quote row); any key whose name contains "blessing". */
+      _blessingScalarFromPlainObject(data) {
+        if (!data || typeof data !== 'object') return '';
+        for (const k of ['blessing', 'Blessing', 'BLESSING']) {
+          const s = this._scalarTextField(data[k]);
+          if (s) return s;
+        }
+        for (const k of Object.keys(data)) {
+          if (!this._normFieldKeyLoose(k).includes('blessing')) continue;
+          const s = this._scalarTextField(data[k]);
+          if (s) return s;
+        }
+        return '';
+      }
+
+      /**
+       * Per-day docs (`quotes/YYYY-MM-DD`, `dailyQuoteUsage/YYYY-MM-DD`) can carry blessing even when
+       * the Notion-synced catalog row was empty or keys differed — merge for quilt display.
+       */
+      async _mergeBlessingFromDailyFirestoreDocs(dateKey, quote) {
+        if (!quote || !dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return quote;
+        if (this._blessingScalarFromPlainObject(quote).trim()) return quote;
+        if (!window.db || !window.firestore) return quote;
+
+        const readBlessing = async (collectionId) => {
+          try {
+            const snap = await window.firestore.getDoc(
+              window.firestore.doc(window.db, collectionId, dateKey)
+            );
+            if (!snap.exists()) return '';
+            return this._blessingScalarFromPlainObject(snap.data() || {});
+          } catch (e) {
+            console.warn(`⚠️ blessing merge read ${collectionId}/${dateKey}:`, e?.message || e);
+            return '';
+          }
+        };
+
+        let extra = (await readBlessing('quotes')).trim();
+        if (!extra) extra = (await readBlessing('dailyQuoteUsage')).trim();
+        if (!extra) return quote;
+        return { ...quote, blessing: extra };
+      }
+
+      /** Re-fetch daily-doc blessing for pinned days (e.g. when opening quilt after Firestore updated). */
+      async hydratePinnedBlessingsForDateKeys(dateKeys) {
+        if (!dateKeys?.length) return;
+        await Promise.all(
+          dateKeys.map(async (dk) => {
+            const q = this._pinnedByDateKey[dk];
+            if (!q) return;
+            const merged = await this._mergeBlessingFromDailyFirestoreDocs(dk, q);
+            this._pinnedByDateKey[dk] = merged;
+          })
+        );
+      }
+
       async saveDayAssignment(dateKey, quote) {
         const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
         const payload = {
@@ -8137,8 +8209,9 @@ try {
         if (existing) {
           const refreshed = this._hydrateQuoteFromCatalog(existing);
           if (refreshed) {
-            this._pinnedByDateKey[dateKey] = refreshed;
-            return refreshed;
+            const merged = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, refreshed);
+            this._pinnedByDateKey[dateKey] = merged;
+            return merged;
           }
           delete this._pinnedByDateKey[dateKey];
         }
@@ -8162,7 +8235,10 @@ try {
           quote = this.quotes[qi >= 0 && qi < this.quotes.length ? qi : 0];
           if (quote) await this.saveDayAssignment(dateKey, quote);
         }
-        if (quote) this._pinnedByDateKey[dateKey] = quote;
+        if (quote) {
+          quote = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, quote);
+          this._pinnedByDateKey[dateKey] = quote;
+        }
         return quote;
       }
 
@@ -8175,8 +8251,9 @@ try {
 
       async setPinnedQuoteForCalendarKey(dateKey, quote) {
         if (!dateKey || !quote) return;
-        this._pinnedByDateKey[dateKey] = quote;
-        await this.saveDayAssignment(dateKey, quote);
+        const merged = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, quote);
+        this._pinnedByDateKey[dateKey] = merged;
+        await this.saveDayAssignment(dateKey, merged);
       }
 
       getTodayQuote() {
@@ -8469,14 +8546,9 @@ try {
         return author ? `${quote} \u2014 ${author}` : quote;
       }
 
-      /** Blessing string from a quote object (Firestore / Notion may use different casings). */
+      /** Blessing string from a quote object (Firestore / Notion may use different casings / keys). */
       quoteBlessingText(q) {
-        if (!q) return '';
-        const raw = q.blessing ?? q.Blessing;
-        if (raw == null) return '';
-        if (typeof raw === 'string') return raw.trim();
-        if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw);
-        return String(raw).trim();
+        return (this._blessingScalarFromPlainObject(q) || '').trim();
       }
 
       /** Quilt screen body: today's blessing (same typography slot as quote) or legacy quote — author. */
@@ -8570,13 +8642,7 @@ try {
                 : String(data.active || '').trim().toLowerCase() !== 'false';
             if (!active) return;
 
-            const blessingRaw = data.blessing ?? data.Blessing;
-            const blessingStr =
-              typeof blessingRaw === 'string'
-                ? blessingRaw.trim()
-                : blessingRaw != null && blessingRaw !== ''
-                  ? String(blessingRaw).trim()
-                  : '';
+            const blessingStr = this._blessingScalarFromPlainObject(data);
 
             firestoreQuotes.push({
               text,
