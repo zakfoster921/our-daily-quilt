@@ -2755,6 +2755,67 @@ try {
       }
     }
 
+    /* Full-res Layout B story (1080×1920) scaled to fit; same asset as share flow. */
+    #screen-quilt .quilt-layout-b-preview-wrap {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 1rem 1rem 1.35rem;
+      background: #ebe8e3;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+      flex-shrink: 0;
+    }
+
+    #screen-quilt .quilt-layout-b-preview-wrap--empty {
+      background: #f0ece8;
+    }
+
+    #screen-quilt .quilt-layout-b-preview-wrap--empty .quilt-layout-b-preview-frame {
+      display: none;
+    }
+
+    #screen-quilt .quilt-layout-b-preview-label {
+      margin: 0 0 0.65rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(0, 0, 0, 0.55);
+      text-align: center;
+    }
+
+    #screen-quilt .quilt-layout-b-preview-frame {
+      width: min(320px, 100%);
+      max-width: 100%;
+      margin: 0 auto;
+      aspect-ratio: 9 / 16;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #d8d4cf;
+      box-shadow: 0 10px 36px rgba(0, 0, 0, 0.14);
+      border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    #screen-quilt .quilt-layout-b-preview-img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+    }
+
+    #screen-quilt .quilt-layout-b-preview-hint {
+      margin: 0.55rem 0 0;
+      font-size: 0.88rem;
+      line-height: 1.35;
+      color: rgba(0, 0, 0, 0.55);
+      text-align: center;
+      min-height: 1.35em;
+    }
+
+    #screen-quilt .quilt-layout-b-preview-hint[hidden] {
+      display: none;
+    }
+
     /* Back-to-quilt buttons: match quilt stack button style with left chevron. */
     .back-to-quilt-btn {
       width: calc(100% - 20px) !important;
@@ -3046,7 +3107,27 @@ try {
         </div>
         
       </div>
-    </section>
+
+      <div
+        class="quilt-layout-b-preview-wrap"
+        id="quiltLayoutBPreviewWrap"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <p class="quilt-layout-b-preview-label">Story collage preview</p>
+        <div class="quilt-layout-b-preview-frame">
+          <img
+            id="quiltLayoutBPreviewImg"
+            class="quilt-layout-b-preview-img"
+            alt="Today's community quilt as the vertical story collage (same pixels as when you share)"
+            width="1080"
+            height="1920"
+            decoding="async"
+            hidden
+          />
+        </div>
+        <p class="quilt-layout-b-preview-hint" id="quiltLayoutBPreviewHint">Preparing preview…</p>
+      </div>
     </section>
 
     <!-- Archive Screen -->
@@ -5654,6 +5735,7 @@ try {
                   quiltQuoteDisplay.classList.add('has-content');
                 }
               }
+              window.app?.scheduleLayoutBStoryPreviewRefresh?.();
             }
 
             if (screenId === 'screen-reflection') {
@@ -8006,6 +8088,19 @@ try {
         return null;
       }
 
+      /** Re-attach a pinned quote object to the current catalog (blessing / fields sync from Notion). */
+      _hydrateQuoteFromCatalog(quote) {
+        if (!quote || !this.quotes?.length) return null;
+        const sid = String(quote.sourceId || '').trim();
+        if (sid) {
+          const byId = this.quotes.find((q) => String(q.sourceId || '').trim() === sid);
+          if (byId) return byId;
+        }
+        const emb = this._embeddedStableKey(quote);
+        const byEmb = this.quotes.find((q) => this._embeddedStableKey(q) === emb);
+        return byEmb || null;
+      }
+
       async saveDayAssignment(dateKey, quote) {
         const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
         const payload = {
@@ -8035,8 +8130,18 @@ try {
       }
 
       async resolveAndPinCalendarKey(dateKey) {
-        if (!dateKey || this._pinnedByDateKey[dateKey]) return this._pinnedByDateKey[dateKey];
+        if (!dateKey) return null;
         if (!this.quotes?.length) return null;
+
+        const existing = this._pinnedByDateKey[dateKey];
+        if (existing) {
+          const refreshed = this._hydrateQuoteFromCatalog(existing);
+          if (refreshed) {
+            this._pinnedByDateKey[dateKey] = refreshed;
+            return refreshed;
+          }
+          delete this._pinnedByDateKey[dateKey];
+        }
 
         let data = this._readLocalAssignment(dateKey);
         if (window.db && window.firestore) {
@@ -8089,7 +8194,12 @@ try {
         }
 
         const todayKey = this.getQuoteCalendarKeyNow();
-        if (this._pinnedByDateKey[todayKey]) return this._pinnedByDateKey[todayKey];
+        const pinnedToday = this._pinnedByDateKey[todayKey];
+        if (pinnedToday) {
+          const fresh = this._hydrateQuoteFromCatalog(pinnedToday);
+          if (fresh) this._pinnedByDateKey[todayKey] = fresh;
+          return fresh || pinnedToday;
+        }
 
         // Use UTC time for day calculation - quote changes at 7:00 AM UTC
         const now = new Date();
@@ -8123,7 +8233,12 @@ try {
 
       getQuoteForDate(dateString) {
         // dateString format: "2025-08-18" (YYYY-MM-DD)
-        if (dateString && this._pinnedByDateKey[dateString]) return this._pinnedByDateKey[dateString];
+        if (dateString && this._pinnedByDateKey[dateString]) {
+          const pinned = this._pinnedByDateKey[dateString];
+          const fresh = this._hydrateQuoteFromCatalog(pinned);
+          if (fresh) this._pinnedByDateKey[dateString] = fresh;
+          return fresh || pinned;
+        }
 
         // dateString format: "2025-08-18" - assumes UTC date
         const date = new Date(dateString);
@@ -8488,6 +8603,7 @@ try {
           });
 
           this.quotes = firestoreQuotes.map(({ sortOrder, ...rest }) => rest);
+          this.invalidatePinnedAssignments();
           console.log('✅ Loaded quotes from Firestore:', this.quotes.length, 'quotes');
 
           return true;
@@ -8500,6 +8616,7 @@ try {
             const savedQuotes = localStorage.getItem('ourDailyQuotes');
             if (savedQuotes) {
               this.quotes = JSON.parse(savedQuotes);
+              this.invalidatePinnedAssignments();
               console.log('📚 Loaded quotes from localStorage fallback:', this.quotes.length, 'quotes');
               return true;
             }
@@ -9390,6 +9507,11 @@ try {
         this._portalQuiltLoaded = false;
         /** Portal→quote intro fade is scheduled once when the join line first becomes visible. */
         this._portalToQuoteIntroScheduled = false;
+
+        /** Full-res Layout B story preview under quilt controls (1080×1920 blob URL). */
+        this._layoutBPreviewObjectUrl = null;
+        this._layoutBPreviewDebounceTimer = null;
+        this._layoutBPreviewGeneration = 0;
       }
       
       
@@ -12667,6 +12789,115 @@ try {
         //     console.log('Could not auto-load reveal image:', error);
         //   });
         // }
+
+        this.scheduleLayoutBStoryPreviewRefresh();
+      }
+
+      _revokeLayoutBPreviewObjectUrl() {
+        if (this._layoutBPreviewObjectUrl) {
+          try {
+            URL.revokeObjectURL(this._layoutBPreviewObjectUrl);
+          } catch (e) {
+            /* ignore */
+          }
+          this._layoutBPreviewObjectUrl = null;
+        }
+      }
+
+      scheduleLayoutBStoryPreviewRefresh() {
+        if (this.isDesktopRedirect) return;
+        if (this._layoutBPreviewDebounceTimer) {
+          clearTimeout(this._layoutBPreviewDebounceTimer);
+        }
+        this._layoutBPreviewDebounceTimer = setTimeout(() => {
+          this._layoutBPreviewDebounceTimer = null;
+          this.refreshLayoutBStoryPreview();
+        }, 600);
+      }
+
+      async refreshLayoutBStoryPreview() {
+        if (this.isDesktopRedirect) return;
+        const wrap = document.getElementById('quiltLayoutBPreviewWrap');
+        const img = document.getElementById('quiltLayoutBPreviewImg');
+        const hint = document.getElementById('quiltLayoutBPreviewHint');
+        if (!wrap || !img) return;
+
+        const blocks = this.quiltEngine?.blocks;
+        const blockCount = Array.isArray(blocks) ? blocks.length : 0;
+        if (blockCount <= 1) {
+          this._revokeLayoutBPreviewObjectUrl();
+          img.removeAttribute('src');
+          img.hidden = true;
+          wrap.setAttribute('aria-busy', 'false');
+          wrap.classList.add('quilt-layout-b-preview-wrap--empty');
+          if (hint) {
+            hint.hidden = false;
+            hint.textContent = "Add another color to see today's story collage preview.";
+          }
+          return;
+        }
+
+        wrap.classList.remove('quilt-layout-b-preview-wrap--empty');
+        const gen = ++this._layoutBPreviewGeneration;
+        wrap.setAttribute('aria-busy', 'true');
+        if (hint) {
+          hint.hidden = false;
+          hint.textContent = 'Updating preview…';
+        }
+
+        try {
+          const highResBlob = await this.getHighResQuiltBlobForShare();
+          if (gen !== this._layoutBPreviewGeneration) return;
+          const qt = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+          const qText = String(qt.text ?? qt.body ?? '').trim();
+          const qAuthor = String(qt.author ?? '').trim();
+          const dk = Utils.getTodayKey();
+          const lbBlob = await composeInstagramLayoutBFromQuiltBlob(
+            highResBlob,
+            qText,
+            qAuthor,
+            1080,
+            1920,
+            dk
+          );
+          if (gen !== this._layoutBPreviewGeneration) return;
+          const url = URL.createObjectURL(lbBlob);
+          this._revokeLayoutBPreviewObjectUrl();
+          this._layoutBPreviewObjectUrl = url;
+
+          const applyReady = () => {
+            if (gen !== this._layoutBPreviewGeneration) return;
+            wrap.setAttribute('aria-busy', 'false');
+            if (hint) {
+              hint.textContent = '';
+              hint.hidden = true;
+            }
+            img.hidden = false;
+          };
+
+          img.onload = () => applyReady();
+          img.onerror = () => {
+            if (gen !== this._layoutBPreviewGeneration) return;
+            wrap.setAttribute('aria-busy', 'false');
+            if (hint) {
+              hint.hidden = false;
+              hint.textContent = 'Preview could not be displayed.';
+            }
+            this.logger.warn('Layout B preview image failed to load');
+          };
+          img.src = url;
+          if (img.complete && img.naturalWidth > 0) {
+            applyReady();
+          }
+        } catch (error) {
+          if (gen !== this._layoutBPreviewGeneration) return;
+          this.logger.warn('Layout B story preview failed:', error);
+          wrap.setAttribute('aria-busy', 'false');
+          if (hint) {
+            hint.hidden = false;
+            hint.textContent = 'Preview unavailable.';
+          }
+        }
       }
 
       ensureQuiltFits() {
