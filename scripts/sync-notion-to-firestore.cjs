@@ -66,6 +66,98 @@ function getBoolean(prop, fallback = false) {
   return fallback;
 }
 
+/** Compare Notion property names ignoring case, spaces, underscores (e.g. what_if ↔ "What if"). */
+function normPropKey(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[\s_-]/g, '');
+}
+
+function findPropByBaseName(props, base) {
+  const target = normPropKey(base);
+  if (!props || !target) return null;
+  for (const key of Object.keys(props)) {
+    if (normPropKey(key) === target) return props[key];
+  }
+  return null;
+}
+
+function textFromNotionProp(prop) {
+  if (!prop) return '';
+  const fromRich = getRichText(prop) || getTitle(prop);
+  if (fromRich) return fromRich.trim();
+  if (prop.type === 'formula' && prop.formula) {
+    if (prop.formula.type === 'string') return String(prop.formula.string || '').trim();
+    if (prop.formula.type === 'number' && typeof prop.formula.number === 'number') {
+      return String(prop.formula.number);
+    }
+  }
+  if (prop.type === 'url' && prop.url) return String(prop.url).trim();
+  if (prop.type === 'number' && typeof prop.number === 'number') return String(prop.number);
+  return '';
+}
+
+/** Rich text / title / formula / rollup — anything that can surface readable text. */
+function textFromAnyNotionProp(prop) {
+  if (!prop) return '';
+  const direct = getRichText(prop) || getTitle(prop);
+  if (direct) return direct.trim();
+  const fromTp = textFromNotionProp(prop);
+  if (fromTp) return fromTp;
+  if (prop.type === 'rollup' && prop.rollup) {
+    const r = prop.rollup;
+    if (r.type === 'array' && Array.isArray(r.array)) {
+      const parts = r.array
+        .map((item) => textFromAnyNotionProp(item) || textFromNotionProp(item))
+        .filter(Boolean);
+      return parts.join(' ').trim();
+    }
+    if (r.type === 'number' && typeof r.number === 'number') return String(r.number);
+    if (r.type === 'date' && r.date?.start) return String(r.date.start).trim();
+  }
+  return '';
+}
+
+/** Notion columns named "Daily Blessing", rollups, etc. normalize to *blessing*. */
+function findBlessingFromProps(props) {
+  if (!props) return '';
+  const directKeys = [
+    'blessing',
+    'Blessing',
+    'BLESSING',
+    'Daily Blessing',
+    'Daily blessing',
+    'daily_blessing',
+    'DailyBlessing'
+  ];
+  for (const k of directKeys) {
+    if (props[k]) {
+      const t = textFromAnyNotionProp(props[k]);
+      if (t) return t;
+    }
+  }
+  const exact = findPropByBaseName(props, 'blessing');
+  if (exact) {
+    const t = textFromAnyNotionProp(exact);
+    if (t) return t;
+  }
+  for (const key of Object.keys(props)) {
+    if (!normPropKey(key).includes('blessing')) continue;
+    const t = textFromAnyNotionProp(props[key]);
+    if (t) return t;
+  }
+  return '';
+}
+
+/** Resolve text from known keys first, then any Notion column whose normalized name matches `base`. */
+function getMappedText(props, base, ...directKeys) {
+  for (const k of directKeys) {
+    const t = getRichText(props[k]) || getTitle(props[k]);
+    if (t) return t.trim();
+  }
+  return textFromNotionProp(findPropByBaseName(props, base));
+}
+
 function parseNotionRow(page) {
   const props = page?.properties || {};
   const text =
@@ -76,6 +168,8 @@ function parseNotionRow(page) {
   const author = getRichText(props.author) || getTitle(props.author);
   const reflectionPrompt =
     getRichText(props.reflection_prompt) || getTitle(props.reflection_prompt);
+  const whatIf = getMappedText(props, 'what_if', 'what_if', 'What if', 'What If');
+  const blessing = findBlessingFromProps(props);
   const notificationTitle =
     getRichText(props.notification_title) || getTitle(props.notification_title);
   const notificationText =
@@ -93,6 +187,8 @@ function parseNotionRow(page) {
       text,
       author,
       reflectionPrompt,
+      whatIf,
+      blessing,
       notificationTitle,
       notificationText,
       notificationEnabled,
@@ -149,10 +245,14 @@ function initFirestore() {
 
 async function run() {
   const dryRun = process.argv.includes('--dry-run');
+  const noDeleteOrphans = process.argv.includes('--no-delete-orphans');
   const notionToken = requireEnv('NOTION_TOKEN');
   const databaseId = requireEnv('NOTION_DATABASE_ID');
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   const db = initFirestore();
+
+  /** Every page id returned by the database query (including rows skipped by parse). */
+  const seenNotionIds = new Set();
 
   let cursor = null;
   let fetchedPages = 0;
@@ -167,6 +267,7 @@ async function run() {
     fetchedPages += results.length;
 
     for (const row of results) {
+      if (row && row.id) seenNotionIds.add(row.id);
       const parsed = parseNotionRow(row);
       if (!parsed) {
         skipCount += 1;
@@ -185,8 +286,43 @@ async function run() {
     cursor = payload.has_more ? payload.next_cursor : null;
   } while (cursor);
 
+  let orphanDeleteCount = 0;
+  if (!noDeleteOrphans) {
+    const notionDocsSnap = await db.collection(collectionName).where('source', '==', 'notion').get();
+    const orphanRefs = [];
+    notionDocsSnap.forEach((docSnap) => {
+      if (!seenNotionIds.has(docSnap.id)) orphanRefs.push(docSnap.ref);
+    });
+
+    if (orphanRefs.length) {
+      if (dryRun) {
+        orphanDeleteCount = orphanRefs.length;
+        console.log(
+          `[sync] dry-run: would delete ${orphanDeleteCount} Firestore quote(s) whose Notion page is no longer in the database`
+        );
+      } else {
+        const chunkSize = 450;
+        for (let i = 0; i < orphanRefs.length; i += chunkSize) {
+          const batch = db.batch();
+          for (const ref of orphanRefs.slice(i, i + chunkSize)) {
+            batch.delete(ref);
+          }
+          await batch.commit();
+        }
+        orphanDeleteCount = orphanRefs.length;
+        console.log(
+          `[sync] deleted ${orphanDeleteCount} orphan Firestore quote(s) (removed from Notion or no longer returned by the database)`
+        );
+      }
+    } else {
+      console.log('[sync] no orphan Notion quote docs to delete');
+    }
+  } else {
+    console.log('[sync] orphan delete skipped (--no-delete-orphans)');
+  }
+
   console.log(
-    `[sync] complete dryRun=${dryRun} fetched=${fetchedPages} writes=${writeCount} skipped=${skipCount} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} fetched=${fetchedPages} writes=${writeCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
   );
 }
 

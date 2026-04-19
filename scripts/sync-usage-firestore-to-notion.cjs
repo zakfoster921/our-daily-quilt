@@ -59,10 +59,25 @@ async function notionPatchPage(pageId, notionToken, payload) {
     },
     body: JSON.stringify(payload)
   });
+  const body = await res.text();
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Notion page patch failed (${res.status}) for ${pageId}: ${body}`);
+    const err = new Error(`Notion page patch failed (${res.status}) for ${pageId}: ${body}`);
+    err.notionStatus = res.status;
+    err.notionBody = body;
+    throw err;
   }
+}
+
+/** PATCH cannot update archived or deleted pages — skip instead of failing the whole job. */
+function isSkippableNotionUsagePatchError(err) {
+  const status = err && typeof err.notionStatus === 'number' ? err.notionStatus : 0;
+  const combined = `${err?.message || ''} ${err?.notionBody || ''}`.toLowerCase();
+  if (status === 404) return true;
+  if (combined.includes('archived') && combined.includes('unarchive')) return true;
+  if (combined.includes('is archived')) return true;
+  if (combined.includes('could not be found')) return true;
+  if (combined.includes('object_not_found')) return true;
+  return false;
 }
 
 async function notionGetDatabaseSchema(databaseId, notionToken) {
@@ -130,6 +145,7 @@ async function run() {
   }
 
   let updates = 0;
+  let skipped = 0;
   for (const q of notionDocs) {
     const u = usage.get(q.key);
     if (!u) continue;
@@ -141,12 +157,24 @@ async function run() {
 
     updates += 1;
     if (!dryRun) {
-      await notionPatchPage(q.sourceId, notionToken, { properties });
+      try {
+        await notionPatchPage(q.sourceId, notionToken, { properties });
+      } catch (e) {
+        if (isSkippableNotionUsagePatchError(e)) {
+          skipped += 1;
+          console.warn(
+            `[usage-sync] skip page ${q.sourceId} (archived, deleted, or not patchable): ${(e.message || '').slice(0, 220)}`
+          );
+          continue;
+        }
+        throw e;
+      }
     }
   }
 
+  const applied = dryRun ? updates : updates - skipped;
   console.log(
-    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} updated=${updates}`
+    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} patchTargets=${updates} skipped=${skipped}${dryRun ? '' : ` applied=${applied}`}`
   );
 }
 

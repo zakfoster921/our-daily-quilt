@@ -3095,7 +3095,7 @@ try {
         aria-live="polite"
         aria-busy="true"
       >
-        <p class="quilt-layout-b-preview-label">Story collage preview</p>
+        <p class="quilt-layout-b-preview-label">Share on Instagram</p>
         <div class="quilt-layout-b-preview-frame">
           <img
             id="quiltLayoutBPreviewImg"
@@ -8274,8 +8274,12 @@ try {
         const pinnedToday = this._pinnedByDateKey[todayKey];
         if (pinnedToday) {
           const fresh = this._hydrateQuoteFromCatalog(pinnedToday);
-          if (fresh) this._pinnedByDateKey[todayKey] = fresh;
-          return fresh || pinnedToday;
+          if (fresh) {
+            this._pinnedByDateKey[todayKey] = fresh;
+            return fresh;
+          }
+          // Catalog no longer contains this row (e.g. removed from Notion + synced); do not return stale text.
+          delete this._pinnedByDateKey[todayKey];
         }
 
         // Use UTC time for day calculation - quote changes at 7:00 AM UTC
@@ -8313,8 +8317,11 @@ try {
         if (dateString && this._pinnedByDateKey[dateString]) {
           const pinned = this._pinnedByDateKey[dateString];
           const fresh = this._hydrateQuoteFromCatalog(pinned);
-          if (fresh) this._pinnedByDateKey[dateString] = fresh;
-          return fresh || pinned;
+          if (fresh) {
+            this._pinnedByDateKey[dateString] = fresh;
+            return fresh;
+          }
+          delete this._pinnedByDateKey[dateString];
         }
 
         // dateString format: "2025-08-18" - assumes UTC date
