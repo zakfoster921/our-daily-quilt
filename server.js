@@ -616,10 +616,22 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     });
   }
 
-  if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
+  const notionEnvMissing = [];
+  if (!process.env.NOTION_TOKEN || String(process.env.NOTION_TOKEN).trim() === '') {
+    notionEnvMissing.push('NOTION_TOKEN');
+  }
+  if (!process.env.NOTION_DATABASE_ID || String(process.env.NOTION_DATABASE_ID).trim() === '') {
+    notionEnvMissing.push('NOTION_DATABASE_ID');
+  }
+  if (notionEnvMissing.length) {
+    console.error(
+      '[sync] Missing Railway env (same service as server.js):',
+      notionEnvMissing.join(', ')
+    );
     return res.status(500).json({
       success: false,
-      error: 'Server is missing NOTION_TOKEN or NOTION_DATABASE_ID'
+      error: `Add on Railway and redeploy: ${notionEnvMissing.join(', ')}`,
+      missing: notionEnvMissing
     });
   }
 
