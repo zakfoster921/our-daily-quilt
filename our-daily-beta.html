@@ -275,10 +275,21 @@ try {
       --portal-subtext-size: clamp(1.4rem, 3.5vw, 2rem);
     }
 
-    /* One beat: hide full headline (logo + date + join) until quilt hydrates — no join-only delay vs image/date */
-    .portal-header.portal-header--awaiting {
+    /* Hide only the join/counter line until quilt hydrates; logo + date paint immediately */
+    .portal-join-line-outer.portal-join-line-outer--awaiting {
       visibility: hidden;
       pointer-events: none;
+    }
+
+    @keyframes portalJoinCounterIn {
+      from {
+        opacity: 0;
+        transform: translateY(11px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
     
     .portal-header .title-line {
@@ -317,6 +328,20 @@ try {
       line-height: 1.2;
       min-height: clamp(3.25rem, 11vw, 5.5rem);
       min-height: calc(2.75 * 1lh + 0.5rem);
+      opacity: 0;
+      transform: translateY(11px);
+    }
+    .portal-join-line-outer.portal-join-line-outer--reveal {
+      animation: portalJoinCounterIn 1.35s ease-out forwards;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .portal-join-line-outer {
+        opacity: 1;
+        transform: none;
+      }
+      .portal-join-line-outer.portal-join-line-outer--reveal {
+        animation: none;
+      }
     }
     .portal-join-line {
       margin: 0;
@@ -361,30 +386,31 @@ try {
     .quote-card {
       border: none;
       border-radius: 4px;
-      padding: 2rem 1.2rem;
+      /* Uniform padding — match former left/right (1.2rem), not taller top/bottom. */
+      padding: 1.2rem;
       margin: 0 auto clamp(2.5rem, 8vh, 4.5rem);
       background: #fff;
       width: 81%;
       max-width: 450px;
       display: flex;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: stretch;
+      text-align: left;
       min-height: 120px;
-      /* border-box: max-height includes padding — a tight cap (e.g. 40vh) swallows extra vertical padding. */
-      max-height: min(72vh, 620px);
+      /* Grow with quote + author; page / quote screen scrolls — never clip inside the card. */
       overflow: visible;
       position: relative;
     }
     
-    .quote-line { 
+    .quote-line {
       font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
       font-size: inherit;
       font-style: italic;
       font-weight: 400;
       font-variant-ligatures: common-ligatures;
       line-height: inherit;
-      text-align: center;
+      text-align: left;
       color: #2e2e2e;
       min-width: 0;
     }
@@ -439,7 +465,7 @@ try {
     /* Ensure quote-inner has proper positioning */
     .quote-inner {
       position: relative;
-      padding: 32px 24px;
+      padding: 24px;
       z-index: 2;
       display: flex;
       flex-direction: column;
@@ -453,11 +479,21 @@ try {
       -webkit-font-smoothing: antialiased;
     }
     
-    .quote-prompt { 
-      font-size: clamp(1.2rem, 3vw, 1.5rem); 
-      margin: clamp(2rem, 5.5vh, 3.5rem) 0 0;
+    .quote-prompt {
+      /* Match portal join/counter column (max-width, padding, type rhythm) */
+      --portal-subtext-size: clamp(1.4rem, 3.5vw, 2rem);
+      font-size: var(--portal-subtext-size);
+      font-weight: 200;
+      letter-spacing: 0.01em;
+      margin-top: clamp(1rem, 3.5vh, 2rem);
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: clamp(0.75rem, 2.5vh, 1.5rem);
       text-align: center;
-      max-width: 24rem;
+      width: 100%;
+      max-width: min(26rem, 94vw);
+      padding: 0 1rem;
+      box-sizing: border-box;
       line-height: 1.35;
       font-style: italic;
       color: #404040;
@@ -473,15 +509,37 @@ try {
       }
     }
 
+    /* Inner-disc pulse (color / generic); scale only */
     @keyframes quoteWonkyPulse {
       0%,
       100% {
         transform: scale(1);
-        opacity: 1;
       }
       50% {
-        transform: scale(1.05);
-        opacity: 0.92;
+        transform: scale(1.07);
+      }
+    }
+
+    /* Quote screen: pulse whole control so dashed ring is never clipped; opacity stays 1 */
+    @keyframes quoteWonkyPulseQuoteBtn {
+      0%,
+      100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) rotate(-5deg) scale(1);
+      }
+      50% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) rotate(-5deg) scale(1.06);
+      }
+    }
+
+    /* Quote screen dashed ring (background on disc): slow continuous spin */
+    @keyframes quoteWonkyDashRingSpin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
       }
     }
 
@@ -522,13 +580,13 @@ try {
       opacity: 1;
       transform: translate3d(0, 0, 0) rotate(-5deg) scale(1);
       transition:
-        opacity 1s cubic-bezier(0.37, 0, 0.32, 1),
-        transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
-      transition-delay: 0.06s, 0.1s;
+        opacity 2.35s cubic-bezier(0.37, 0, 0.32, 1),
+        transform 2.75s cubic-bezier(0.22, 1, 0.36, 1);
+      transition-delay: 0.14s, 0.22s;
     }
     .quote-color-wonky-btn.quote-color-wonky-btn--visible:not(.quote-color-wonky-btn--pulse-off)
       .quote-color-wonky-btn__disc {
-      animation: quoteWonkyPulse 2.75s ease-in-out infinite;
+      animation: quoteWonkyPulse 6.5s ease-in-out infinite;
       transform-origin: center center;
     }
     .quote-color-wonky-btn.quote-color-wonky-btn--visible.quote-color-wonky-btn--pulse-off
@@ -557,32 +615,95 @@ try {
         transition: none !important;
         animation: none !important;
       }
+      #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible {
+        animation: none !important;
+      }
+      #screen-quote .quote-color-wonky-btn__disc {
+        opacity: 1 !important;
+        transition: none !important;
+      }
     }
 
-    /* Intro quote step: card stays up top, question sits toward bottom of the panel. */
+    /* Quote screen only: larger hollow cue — transparent fill, thin dashed ring; centered like prompt */
+    #screen-quote .quote-color-wonky-btn {
+      width: 105px;
+      height: 105px;
+      margin-top: 0;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 0;
+    }
+    #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible {
+      overflow: visible;
+    }
+    #screen-quote .quote-color-wonky-btn__disc {
+      background-color: transparent;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='48' fill='none' stroke='%23968c84' stroke-width='0.65' stroke-dasharray='4.2%208' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: 100% 100%;
+      border: none;
+      opacity: 0;
+      transition: opacity 2.35s cubic-bezier(0.37, 0, 0.32, 1);
+      transition-delay: 0.14s;
+    }
+    #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible .quote-color-wonky-btn__disc {
+      opacity: 1;
+    }
+
+    /* Quote CTA: pulse whole button so ring never clips; opacity stays 1 entire cycle */
+    #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible:not(.quote-color-wonky-btn--pulse-off) {
+      animation: quoteWonkyPulseQuoteBtn 6.5s ease-in-out infinite;
+      transition: none;
+    }
+    #screen-quote
+      #quoteColorWonkyBtn.quote-color-wonky-btn--visible:not(.quote-color-wonky-btn--pulse-off)
+      .quote-color-wonky-btn__disc {
+      animation: quoteWonkyDashRingSpin 44s linear infinite;
+      transform-origin: center center;
+    }
+    #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible.quote-color-wonky-btn--pulse-off {
+      animation: none;
+      transition:
+        opacity 2.35s cubic-bezier(0.37, 0, 0.32, 1),
+        transform 2.75s cubic-bezier(0.22, 1, 0.36, 1);
+      transition-delay: 0.14s, 0.22s;
+    }
+
+    /* Intro quote step: safe-area only on #screen-quote — wrapper uses margin auto so slack splits evenly. */
     body.intro-flow-active #screen-quote .quote-content-wrapper {
-      flex: 1 1 auto;
-      min-height: 0;
+      flex: none;
       width: 100%;
       max-width: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: flex-start;
-      padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+      gap: clamp(1.35rem, 4.5vh, 2.75rem);
+      margin-top: auto;
+      margin-bottom: auto;
+      padding-top: 0;
+      padding-bottom: 0;
+      padding-left: max(0px, env(safe-area-inset-left, 0px));
+      padding-right: max(0px, env(safe-area-inset-right, 0px));
       box-sizing: border-box;
     }
     body.intro-flow-active #screen-quote .quote-card {
       flex-shrink: 0;
-      margin-top: clamp(1.25rem, 6vh, 3.5rem);
-      margin-bottom: clamp(1.75rem, 5vh, 3rem);
+      margin-top: 0;
+      margin-bottom: 0;
     }
     body.intro-flow-active #screen-quote .quote-prompt {
-      margin-top: auto;
-      margin-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
-      padding: 0 1rem;
+      margin-top: 0;
+      margin-bottom: 0;
+      margin-left: auto;
+      margin-right: auto;
       transform: none;
       will-change: auto;
+    }
+    body.intro-flow-active #screen-quote .quote-color-wonky-btn {
+      margin-top: 0;
+      margin-bottom: 0;
     }
     body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--visible {
       opacity: 1;
@@ -662,7 +783,7 @@ try {
     .screen.flow-fade-exit.flow-fade-exit-active {
       opacity: 0 !important;
       /* Calm handoff: long crossfade, very soft acceleration curve. */
-      transition: opacity 0.95s cubic-bezier(0.37, 0, 0.32, 1);
+      transition: opacity 1.45s cubic-bezier(0.37, 0, 0.32, 1);
     }
     .screen.flow-fade-enter {
       opacity: 0 !important;
@@ -671,7 +792,7 @@ try {
     }
     .screen.flow-fade-enter.flow-fade-enter-active {
       opacity: 1 !important;
-      transition: opacity 0.95s cubic-bezier(0.37, 0, 0.32, 1);
+      transition: opacity 1.45s cubic-bezier(0.37, 0, 0.32, 1);
     }
     @media (prefers-reduced-motion: reduce) {
       .screen.flow-fade-exit,
@@ -721,6 +842,12 @@ try {
       overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
       align-items: center !important;
+      justify-content: flex-start !important;
+      padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+      padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+      padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+      box-sizing: border-box !important;
     }
 
     /* Portal: top-anchored stack so join line hydrate does not re-center / “zoom” the title */
@@ -833,6 +960,7 @@ try {
       box-shadow: none !important;
     }
     
+    /* Canvas-backed HSV disk (see JS): pixels match screen fill + slider model. */
     .css-color-wheel {
       width: 336px;
       height: 336px;
@@ -841,57 +969,10 @@ try {
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       transition: transform 0.2s ease;
       position: relative;
-      background: conic-gradient(
-        hsl(25, 100%, 50%),
-        hsl(40, 100%, 50%),
-        hsl(55, 100%, 50%),
-        hsl(70, 100%, 50%),
-        hsl(85, 100%, 50%),
-        hsl(100, 100%, 50%),
-        hsl(115, 100%, 50%),
-        hsl(130, 100%, 50%),
-        hsl(145, 100%, 50%),
-        hsl(160, 100%, 50%),
-        hsl(175, 100%, 50%),
-        hsl(190, 100%, 50%),
-        hsl(205, 100%, 50%),
-        hsl(220, 100%, 50%),
-        hsl(235, 100%, 50%),
-        hsl(250, 100%, 50%),
-        hsl(265, 100%, 50%),
-        hsl(280, 100%, 50%),
-        hsl(295, 100%, 50%),
-        hsl(310, 100%, 50%),
-        hsl(325, 100%, 50%),
-        hsl(340, 100%, 50%),
-        hsl(355, 100%, 50%),
-        hsl(10, 100%, 50%),
-        hsl(25, 100%, 50%)
-      );
-    }
-    
-    .css-color-wheel::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      background: radial-gradient(circle, white 0%, transparent 70%);
-      pointer-events: none;
-    }
-    
-    .css-color-wheel::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.25);
-      pointer-events: none;
+      display: block;
+      overflow: hidden;
+      touch-action: none;
+      background: #e0e0e0;
     }
     
     .css-color-wheel:hover {
@@ -924,7 +1005,8 @@ try {
     #valueSlider {
       width: 100%; cursor: pointer; appearance: none;
       height: 30px; border-radius: 15px;
-      background: linear-gradient(to right, hsl(0, 90%, 25%), hsl(0, 90%, 85%));
+      /* Track tint is set in JS from current hue/saturation (HSV). */
+      background: linear-gradient(to right, #404040, #e8e8e8);
       outline: none; border: none;
       -webkit-appearance: none;
       -moz-appearance: none;
@@ -975,16 +1057,44 @@ try {
     }
     
     #screen-quote {
-      justify-content: center;
-      padding-top: env(safe-area-inset-top, 0);
-      padding-bottom: env(safe-area-inset-bottom, 0);
-      /* Assume URL bar is always present for consistent centering */
-      min-height: calc(100vh - 120px);
-      height: calc(100vh - 120px);
+      /* Margin auto on .quote-content-wrapper splits free space equally (avoids safe-area doubled on wrapper). */
+      justify-content: flex-start;
+      align-items: center;
+      padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+      padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+      padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+      box-sizing: border-box;
+      /* Fill the screen from .screen.active; avoid 100vh−120 which mis-centers vs real mobile viewport. */
+      height: auto;
     }
-    
-    .quote-content-wrapper {
-      /* This wrapper gets centered as one unit */
+
+    #screen-quote .quote-content-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      flex: none;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: auto;
+      margin-bottom: auto;
+      padding-top: 0;
+      padding-bottom: 0;
+      padding-left: 1rem;
+      padding-right: 1rem;
+      gap: clamp(1.35rem, 4.5vh, 2.75rem);
+    }
+
+    /* Spacing between card / prompt / CTA comes from wrapper gap — drop card’s global bottom margin here. */
+    #screen-quote .quote-card {
+      margin-top: 0;
+      margin-bottom: 0;
+    }
+
+    #screen-quote .quote-prompt {
+      margin-top: 0;
+      margin-bottom: 0;
     }
     
     @media (max-width: 768px) {
@@ -1204,7 +1314,7 @@ try {
       */
       
       .quote-inner {
-        padding: 24px 18px;
+        padding: 18px;
       }
     }
     
@@ -1241,7 +1351,7 @@ try {
       */
       
       .quote-inner {
-        padding: 20px 14px;
+        padding: 14px;
       }
     }
 
@@ -1571,7 +1681,7 @@ try {
         box-sizing: border-box;
       }
       
-      .quote-card { width: 85%; padding: 2.25rem 1.5rem; }
+      .quote-card { width: 85%; padding: 1.5rem; }
       .css-color-wheel { 
         width: 288px; 
         height: 288px; 
@@ -1676,7 +1786,6 @@ try {
       }
       
       #screen-welcome,
-      #screen-quote,
       #screen-color {
         padding: 1rem !important;
         justify-content: center !important;
@@ -1693,6 +1802,31 @@ try {
         width: 100vw !important;
         box-sizing: border-box !important;
         /* Fallback for browsers that don't support dvh */
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+      }
+
+      /* Quote: flex-start + margin auto on wrapper; per-edge padding so 1rem !important doesn’t fight safe-area. */
+      #screen-quote {
+        padding-top: max(1rem, env(safe-area-inset-top, 0px)) !important;
+        padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+        padding-left: max(1rem, env(safe-area-inset-left, 0px)) !important;
+        padding-right: max(1rem, env(safe-area-inset-right, 0px)) !important;
+        justify-content: flex-start !important;
+        align-items: center !important;
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        box-sizing: border-box !important;
         height: 100vh !important;
         min-height: 100vh !important;
         max-height: 100vh !important;
@@ -1849,9 +1983,6 @@ try {
       #screen-portal,
       #screen-welcome,
       #screen-quote {
-        padding: 0.5rem !important;
-        padding-top: calc(0rem + env(safe-area-inset-top, 0)) !important;
-        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0)) !important;
         overflow: hidden !important;
         position: fixed !important;
         top: 0 !important;
@@ -1860,6 +1991,22 @@ try {
         bottom: 0 !important;
         width: 100vw !important;
         box-sizing: border-box !important;
+      }
+
+      #screen-portal,
+      #screen-welcome {
+        padding: 0.5rem !important;
+        padding-top: calc(0rem + env(safe-area-inset-top, 0)) !important;
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0)) !important;
+      }
+
+      /* Safe-area on screen only; wrapper centers with margin auto. */
+      #screen-quote {
+        padding-left: max(0.5rem, env(safe-area-inset-left, 0px)) !important;
+        padding-right: max(0.5rem, env(safe-area-inset-right, 0px)) !important;
+        padding-top: max(0.75rem, env(safe-area-inset-top, 0px)) !important;
+        padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)) !important;
+        justify-content: flex-start !important;
       }
 
       #screen-portal {
@@ -1886,13 +2033,21 @@ try {
         flex-direction: column !important;
       }
       
-      /* Screens that need precise centering */
+      /* Portal/welcome: legacy chrome offset. Quote: dynamic viewport so vertical center matches device. */
       #screen-portal,
-      #screen-welcome,
-      #screen-quote {
+      #screen-welcome {
         height: calc(100vh - 120px) !important;
         min-height: calc(100vh - 120px) !important;
         max-height: calc(100vh - 120px) !important;
+      }
+
+      #screen-quote {
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        min-height: 100svh !important;
+        min-height: 100dvh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
       }
       
       /* Screens that need full viewport */
@@ -1917,7 +2072,7 @@ try {
       #screen-color {
         margin-top: 0 !important;
         padding-top: 0 !important;
-        background-color: var(--current-color, #ffffff) !important;
+        background-color: var(--current-color, #f6f4f1) !important;
         /* make the color picker screen fill the whole viewport */
         min-height: 100dvh !important;   /* dynamic viewport height for mobile */
         min-height: 100svh !important;   /* small viewport height fallback */
@@ -1964,7 +2119,7 @@ try {
       }
       
       #screen-color.active {
-        background-color: var(--current-color, #ffffff) !important;
+        background-color: var(--current-color, #f6f4f1) !important;
         background-size: cover !important;
         background-position: center !important;
         background-repeat: no-repeat !important;
@@ -2682,11 +2837,7 @@ try {
     <!-- Portal Screen -->
     <section class="screen active" id="screen-portal" role="main" aria-label="Welcome screen">
       <div class="portal-main">
-        <div
-          class="portal-header portal-header--awaiting"
-          id="portalHeader"
-          aria-hidden="true"
-        >
+        <div class="portal-header" id="portalHeader">
                    <div class="title-container">
             <img
               class="portal-title-graphic"
@@ -2699,7 +2850,12 @@ try {
             />
           </div>
           <p class="date" id="date-text" aria-live="polite"></p>
-          <div class="portal-join-line-outer" id="portalJoinLineOuter" aria-live="polite" aria-hidden="true">
+          <div
+            class="portal-join-line-outer portal-join-line-outer--awaiting"
+            id="portalJoinLineOuter"
+            aria-live="polite"
+            aria-hidden="true"
+          >
             <p class="portal-join-line" id="portalJoinLine"></p>
           </div>
         </div>
@@ -2763,10 +2919,18 @@ try {
     <!-- Color Picker Screen -->
     <section class="screen" id="screen-color" role="main" aria-label="Color picker screen">
       <div class="color-picker-container">
-        <div class="css-color-wheel" id="colorWheelCanvas" role="button" tabindex="0" aria-label="Color wheel - click or drag to select hue"></div>
+        <canvas
+          class="css-color-wheel"
+          id="colorWheelCanvas"
+          width="336"
+          height="336"
+          role="button"
+          tabindex="0"
+          aria-label="Color wheel - click or drag to select hue"
+        ></canvas>
         <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
         <div id="colorPickerControls">
-          <input type="range" id="valueSlider" min="25" max="90" value="50" aria-label="Adjust color brightness" />
+          <input type="range" id="valueSlider" min="25" max="90" value="90" aria-label="Adjust color brightness" />
         </div>
       </div>
       <button
@@ -3043,7 +3207,7 @@ try {
       COLOR_PICKER: {
         wheelSize: 280,
         defaultHue: 36,
-        defaultLightness: 50,
+        defaultLightness: 90,
         saturation: 21.7
       },
       QUILT: {
@@ -5044,6 +5208,74 @@ try {
         return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
       }
 
+      /** HSV (0–360, 0–100, 0–100) → hex. Matches the wheel + slider model (hue from angle, S from radius, V from slider). */
+      static hsvToHex(h, s, v) {
+        h = ((h % 360) + 360) % 360;
+        s = Math.max(0, Math.min(100, s)) / 100;
+        v = Math.max(0, Math.min(100, v)) / 100;
+        if (s === 0) {
+          const g = Math.round(v * 255);
+          const hex = (n) => {
+            const x = n.toString(16);
+            return x.length === 1 ? '0' + x : x;
+          };
+          return `#${hex(g)}${hex(g)}${hex(g)}`;
+        }
+        const i = Math.floor(h / 60) % 6;
+        const f = h / 60 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (i) {
+          case 0: r = v; g = t; b = p; break;
+          case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = t; break;
+          case 3: r = p; g = q; b = v; break;
+          case 4: r = t; g = p; b = v; break;
+          default: r = v; g = p; b = q; break;
+        }
+        const toHex = (c) => {
+          const hex = Math.round(c * 255).toString(16);
+          return hex.length === 1 ? '0' + hex : hex;
+        };
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+      }
+
+      /**
+       * HSV (0–360, 0–100, 0–100) → RGB bytes into Uint8ClampedArray at index i (writes r,g,b only).
+       * Used by the canvas wheel to avoid per-pixel allocations.
+       */
+      static writeHsvRgbBytes(h, s, v, out, i) {
+        h = ((h % 360) + 360) % 360;
+        s = Math.max(0, Math.min(100, s)) / 100;
+        v = Math.max(0, Math.min(100, v)) / 100;
+        if (s === 0) {
+          const u = Math.round(v * 255);
+          out[i] = u;
+          out[i + 1] = u;
+          out[i + 2] = u;
+          return;
+        }
+        const seg = Math.floor(h / 60) % 6;
+        const f = h / 60 - seg;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (seg) {
+          case 0: r = v; g = t; b = p; break;
+          case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = t; break;
+          case 3: r = p; g = q; b = v; break;
+          case 4: r = t; g = p; b = v; break;
+          default: r = v; g = p; b = q; break;
+        }
+        out[i] = Math.round(r * 255);
+        out[i + 1] = Math.round(g * 255);
+        out[i + 2] = Math.round(b * 255);
+      }
+
       static validateHexColor(color) {
         const hexRegex = /^#[0-9A-F]{6}$/i;
         return hexRegex.test(color);
@@ -5374,7 +5606,7 @@ try {
                       settle();
                     };
                     target.addEventListener('transitionend', onTransEnd);
-                    const fallbackId = setTimeout(settle, 1200);
+                    const fallbackId = setTimeout(settle, 2100);
                   });
                 });
               } else {
@@ -5410,16 +5642,15 @@ try {
             if (screenId === 'screen-quilt') {
               const quoteService = window.app?.quoteService;
               if (quoteService) {
-                const { text, author } = quoteService.getTodayQuote();
+                const todayQ = quoteService.getTodayQuote();
                 const quiltQuoteText = document.querySelector('.quilt-quote-text');
                 const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
                 const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
-                
-                if (quiltQuoteText) quiltQuoteText.innerHTML = quoteService.formatQuiltQuoteWithAuthor(text, author);
+
+                if (quiltQuoteText) quiltQuoteText.innerHTML = quoteService.formatQuiltScreenPrimaryHtml(todayQ);
                 if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
-                
-                // Show the quote display when content is populated
-                if (quiltQuoteDisplay && text && author) {
+
+                if (quiltQuoteDisplay && quoteService.quiltScreenHasBodyContent(todayQ)) {
                   quiltQuoteDisplay.classList.add('has-content');
                 }
               }
@@ -5444,19 +5675,34 @@ try {
               
               // Keep warm neutral on first entry; only apply picker color after user interaction.
               setTimeout(() => {
-                if (!this.colorHasBeenSelected) {
+                const appRef = window.app;
+                if (!appRef?.colorHasBeenSelected) {
                   if (window.ODQ_onColorChange) {
                     window.ODQ_onColorChange('#f6f4f1', true);
                   }
                   return;
                 }
-                const currentColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+                const currentColor = Utils.hsvToHex(
+                  appRef.selectedHue,
+                  appRef.selectedSaturation,
+                  appRef.selectedLightness
+                );
                 if (currentColor && Utils.validateHexColor(currentColor)) {
                   if (window.ODQ_onColorChange) {
                     window.ODQ_onColorChange(currentColor);
                   }
                 }
               }, 100); // Small delay to let screen transition start
+
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  const a = window.app;
+                  if (a && typeof a.updateColorWheel === 'function') {
+                    a._hsvWheelCanvasKey = '';
+                    a.updateColorWheel();
+                  }
+                });
+              });
             } else {
               // Remove color mode class when leaving color picker
               document.body.classList.remove('color-mode-active');
@@ -7460,25 +7706,33 @@ try {
             try {
               const todayQuote = window.app?.quoteService?.getTodayQuote();
               if (todayQuote) {
+                const blessingSnap = String(todayQuote.blessing ?? todayQuote.Blessing ?? '').trim();
+                const whatIfSnap = String(todayQuote.whatIf ?? todayQuote.what_if ?? '').trim();
                 const quoteData = {
                   text: todayQuote.text,
                   author: todayQuote.author,
                   date: today,
                   lastUpdated: new Date().toISOString()
                 };
+                if (blessingSnap) quoteData.blessing = blessingSnap;
+                if (whatIfSnap) quoteData.whatIf = whatIfSnap;
+
                 const quoteRef = window.firestore.doc(window.db, 'quotes', today);
                 await window.firestore.setDoc(quoteRef, quoteData);
                 // Quote saved to Firestore
 
                 // Dedicated usage log for per-day quote usage sync back to Notion.
                 const usageRef = window.firestore.doc(window.db, 'dailyQuoteUsage', today);
-                await window.firestore.setDoc(usageRef, {
+                const usagePayload = {
                   text: todayQuote.text,
                   author: todayQuote.author,
                   sourceId: todayQuote.sourceId || null,
                   date: today,
                   lastUpdated: new Date().toISOString()
-                }, { merge: true });
+                };
+                if (blessingSnap) usagePayload.blessing = blessingSnap;
+                if (whatIfSnap) usagePayload.whatIf = whatIfSnap;
+                await window.firestore.setDoc(usageRef, usagePayload, { merge: true });
               }
             } catch (quoteError) {
               console.warn('⚠️ Could not save quote to Firestore:', quoteError);
@@ -7660,6 +7914,164 @@ try {
           { text: "We accomplish nothing if we say nothing. We accomplish nothing if we do nothing. And we accomplish nothing if we know nothing.", author: "Stacey Abrams" }
         ];
         this.shuffledIndexes = [2, 4, 0, 5, 3, 1, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 65, 67, 69, 71, 73, 75, 77, 79, 81, 83, 85, 87, 89, 91, 93, 95, 97, 99];
+        /** @type {Record<string, object>} dateKey YYYY-MM-DD (UTC, 7:00 UTC day roll) → quote object */
+        this._pinnedByDateKey = {};
+      }
+
+      static _dayIndexFromCalendarKey(dateKey) {
+        const parts = String(dateKey || '').split('-').map((n) => parseInt(n, 10));
+        if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return 0;
+        const [y, mo, d] = parts;
+        return Math.floor(Date.UTC(y, mo - 1, d, 12, 0, 0) / 86400000);
+      }
+
+      _embeddedStableKey(quote) {
+        const s = `${String(quote?.text || '')}\x00${String(quote?.author || '')}`;
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+        return `emb_${(h >>> 0).toString(16)}`;
+      }
+
+      getQuoteCalendarKeyNow() {
+        const now = new Date();
+        const adj = new Date(now);
+        if (now.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
+        const y = adj.getUTCFullYear();
+        const m = String(adj.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(adj.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+
+      getQuoteCalendarKeyUtc7FromAdjustedToday(dayOffset) {
+        const now = new Date();
+        const adj = new Date(now);
+        if (now.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
+        adj.setUTCDate(adj.getUTCDate() + (dayOffset | 0));
+        const y = adj.getUTCFullYear();
+        const m = String(adj.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(adj.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+
+      _readLocalAssignment(dateKey) {
+        try {
+          const raw = localStorage.getItem('ourDailyQuoteAssignments');
+          if (!raw) return null;
+          const map = JSON.parse(raw);
+          return map && typeof map === 'object' ? map[dateKey] || null : null;
+        } catch {
+          return null;
+        }
+      }
+
+      _writeLocalAssignment(dateKey, payload) {
+        try {
+          const raw = localStorage.getItem('ourDailyQuoteAssignments');
+          let map = {};
+          if (raw) {
+            try {
+              map = JSON.parse(raw);
+            } catch {
+              map = {};
+            }
+          }
+          if (!map || typeof map !== 'object') map = {};
+          map[dateKey] = payload;
+          localStorage.setItem('ourDailyQuoteAssignments', JSON.stringify(map));
+        } catch {
+          /* ignore */
+        }
+      }
+
+      _findQuoteFromAssignmentPayload(data) {
+        if (!data || !this.quotes?.length) return null;
+        const sid = data.sourceId != null && String(data.sourceId).trim() !== '' ? String(data.sourceId).trim() : '';
+        if (sid) {
+          const byId = this.quotes.find((q) => String(q.sourceId || '').trim() === sid);
+          if (byId) return byId;
+        }
+        const emb = data.embeddedStableKey != null ? String(data.embeddedStableKey).trim() : '';
+        if (emb) {
+          const byEmb = this.quotes.find((q) => this._embeddedStableKey(q) === emb);
+          if (byEmb) return byEmb;
+        }
+        const snapT = String(data.textSnapshot || '').trim();
+        const snapA = String(data.authorSnapshot || '').trim();
+        if (snapT) {
+          const byText = this.quotes.find(
+            (q) => String(q.text || '').trim().startsWith(snapT) || String(q.text || '').trim() === snapT
+          );
+          if (byText && (!snapA || String(byText.author || '').includes(snapA))) return byText;
+        }
+        return null;
+      }
+
+      async saveDayAssignment(dateKey, quote) {
+        const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
+        const payload = {
+          dateKey,
+          sourceId: sourceId || null,
+          embeddedStableKey: sourceId ? null : this._embeddedStableKey(quote),
+          textSnapshot: String(quote?.text || '').slice(0, 160),
+          authorSnapshot: String(quote?.author || '').slice(0, 120),
+          assignedAt: new Date().toISOString(),
+        };
+        this._writeLocalAssignment(dateKey, payload);
+        if (window.db && window.firestore) {
+          try {
+            await window.firestore.setDoc(
+              window.firestore.doc(window.db, 'dailyQuoteAssignments', dateKey),
+              payload,
+              { merge: true }
+            );
+          } catch (e) {
+            console.warn('⚠️ saveDayAssignment Firestore failed (local cache kept):', e);
+          }
+        }
+      }
+
+      invalidatePinnedAssignments() {
+        this._pinnedByDateKey = {};
+      }
+
+      async resolveAndPinCalendarKey(dateKey) {
+        if (!dateKey || this._pinnedByDateKey[dateKey]) return this._pinnedByDateKey[dateKey];
+        if (!this.quotes?.length) return null;
+
+        let data = this._readLocalAssignment(dateKey);
+        if (window.db && window.firestore) {
+          try {
+            const snap = await window.firestore.getDoc(
+              window.firestore.doc(window.db, 'dailyQuoteAssignments', dateKey)
+            );
+            if (snap.exists()) data = { ...(data || {}), ...(snap.data() || {}) };
+          } catch (e) {
+            console.warn('⚠️ resolveAndPinCalendarKey read failed:', e);
+          }
+        }
+
+        let quote = data ? this._findQuoteFromAssignmentPayload(data) : null;
+        if (!quote) {
+          const dayIndex = QuoteService._dayIndexFromCalendarKey(dateKey);
+          const qi = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
+          quote = this.quotes[qi >= 0 && qi < this.quotes.length ? qi : 0];
+          if (quote) await this.saveDayAssignment(dateKey, quote);
+        }
+        if (quote) this._pinnedByDateKey[dateKey] = quote;
+        return quote;
+      }
+
+      async primeQuoteAssignmentsNearTerm() {
+        if (!this.quotes?.length) return;
+        const keys = [];
+        for (let i = 0; i <= 7; i++) keys.push(this.getQuoteCalendarKeyUtc7FromAdjustedToday(i));
+        await Promise.all(keys.map((k) => this.resolveAndPinCalendarKey(k)));
+      }
+
+      async setPinnedQuoteForCalendarKey(dateKey, quote) {
+        if (!dateKey || !quote) return;
+        this._pinnedByDateKey[dateKey] = quote;
+        await this.saveDayAssignment(dateKey, quote);
       }
 
       getTodayQuote() {
@@ -7675,6 +8087,9 @@ try {
             author: 'Bryan Stevenson',
           };
         }
+
+        const todayKey = this.getQuoteCalendarKeyNow();
+        if (this._pinnedByDateKey[todayKey]) return this._pinnedByDateKey[todayKey];
 
         // Use UTC time for day calculation - quote changes at 7:00 AM UTC
         const now = new Date();
@@ -7707,6 +8122,9 @@ try {
       }
 
       getQuoteForDate(dateString) {
+        // dateString format: "2025-08-18" (YYYY-MM-DD)
+        if (dateString && this._pinnedByDateKey[dateString]) return this._pinnedByDateKey[dateString];
+
         // dateString format: "2025-08-18" - assumes UTC date
         const date = new Date(dateString);
         const dayIndex = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
@@ -7853,12 +8271,12 @@ try {
           const quiltQuoteText = document.querySelector('.quilt-quote-text');
           const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
           const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
-          
-          if (quiltQuoteText) quiltQuoteText.innerHTML = this.formatQuiltQuoteWithAuthor(text, author);
+          const todayQ = this.getTodayQuote();
+
+          if (quiltQuoteText) quiltQuoteText.innerHTML = this.formatQuiltScreenPrimaryHtml(todayQ);
           if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
-          
-          // Show the quote display when content is populated
-          if (quiltQuoteDisplay && text && author) {
+
+          if (quiltQuoteDisplay && this.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
           }
 
@@ -7934,6 +8352,30 @@ try {
         const author = this.formatQuoteLineForQuiltDisplay(quoteAuthor);
         if (!quote) return '';
         return author ? `${quote} \u2014 ${author}` : quote;
+      }
+
+      /** Blessing string from a quote object (Firestore / Notion may use different casings). */
+      quoteBlessingText(q) {
+        if (!q) return '';
+        const raw = q.blessing ?? q.Blessing;
+        if (raw == null) return '';
+        if (typeof raw === 'string') return raw.trim();
+        if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw);
+        return String(raw).trim();
+      }
+
+      /** Quilt screen body: today's blessing (same typography slot as quote) or legacy quote — author. */
+      formatQuiltScreenPrimaryHtml(q) {
+        if (!q) return '';
+        const blessing = this.quoteBlessingText(q);
+        if (blessing) return this.formatQuoteLineForQuiltDisplay(blessing);
+        return this.formatQuiltQuoteWithAuthor(q.text, q.author);
+      }
+
+      quiltScreenHasBodyContent(q) {
+        if (!q) return false;
+        if (this.quoteBlessingText(q)) return true;
+        return !!(String(q.text || '').trim() && String(q.author || '').trim());
       }
 
       // Check if quote is longer than 2 lines and apply appropriate styling
@@ -8013,10 +8455,20 @@ try {
                 : String(data.active || '').trim().toLowerCase() !== 'false';
             if (!active) return;
 
+            const blessingRaw = data.blessing ?? data.Blessing;
+            const blessingStr =
+              typeof blessingRaw === 'string'
+                ? blessingRaw.trim()
+                : blessingRaw != null && blessingRaw !== ''
+                  ? String(blessingRaw).trim()
+                  : '';
+
             firestoreQuotes.push({
               text,
               author,
               reflectionPrompt: String(data.reflectionPrompt || '').trim(),
+              whatIf: String(data.whatIf ?? data.what_if ?? '').trim(),
+              blessing: blessingStr,
               sourceId: String(data.sourceId || docSnap.id),
               sortOrder:
                 typeof data.sortOrder === 'number' && Number.isFinite(data.sortOrder)
@@ -8891,9 +9343,11 @@ try {
         // Color picker state
         this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
         this.selectedSaturation = CONFIG.COLOR_PICKER.saturation;
+        /* Picker uses HSV: this is value/brightness (0–100), not HSL lightness. */
         this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
         this.colorHasBeenSelected = false;
         this.isDragging = false;
+        this._hsvWheelCanvasKey = '';
 
         // Subtle scroll parallax state for quilt screen
         this.parallaxEnabled = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -8927,10 +9381,15 @@ try {
         this._lastIntroSnapSectionId = null;
         this._portalToQuoteTimer = null;
         this._blockPortalScrollNav = false;
+        this._portalJoinEntranceFallbackTimer = null;
+        /** Bumped in `loadQuilt` so stale `animationend` / fallback cannot arm the quote transition. */
+        this._portalJoinRevealGeneration = 0;
         this._quotePromptRevealTimer = null;
         this._quoteColorWonkyTimer = null;
         /** False until first `loadQuilt()` finishes — avoids wrong portal join copy before Firestore hydrates. */
         this._portalQuiltLoaded = false;
+        /** Portal→quote intro fade is scheduled once when the join line first becomes visible. */
+        this._portalToQuoteIntroScheduled = false;
       }
       
       
@@ -9117,30 +9576,27 @@ try {
           console.log('🔍 DEBUGGING: Quilt loaded, blocks count:', this.quiltEngine.blocks.length);
           this.updateSquareCounter();
 
-          // Load quote assignments from Firestore
-          console.log('🔄 Loading quote assignments from Firestore...');
-          await this.quoteService.regenerateShuffledIndexes();
-
-          this.renderer.initialize();
-          await this.renderQuilt();
-          this.updateSquareCounter();
-          
-          // Initialize UI after portal is shown
-          this.initializeUI();
-          
-          // Load quotes from Firestore
-          console.log('🔄 About to load quotes from Firestore...');
-          console.log('🔄 Firebase available:', !!window.firebaseApp);
-          console.log('🔄 Firestore available:', !!window.firestore);
-          console.log('🔄 DB available:', !!window.db);
-          
-          // Wait a bit for Firebase to be fully initialized
+          // Catalog must load before first quilt paint + shuffle (defaults have no blessing / wrong length).
           if (!window.db || !window.firestore) {
             console.log('🔄 Waiting for Firebase to initialize...');
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
-          
+          console.log('🔄 About to load quotes from Firestore...');
+          console.log('🔄 Firebase available:', !!window.firebaseApp);
+          console.log('🔄 Firestore available:', !!window.firestore);
+          console.log('🔄 DB available:', !!window.db);
           await this.quoteService.loadQuotesFromFirestore();
+
+          console.log('🔄 Loading quote assignments from Firestore...');
+          await this.quoteService.regenerateShuffledIndexes();
+
+          console.log('🔄 Pinning daily quotes by calendar key (stable when catalog size changes)...');
+          await this.quoteService.primeQuoteAssignmentsNearTerm();
+
+          this.renderer.initialize();
+          await this.renderQuilt();
+          this.updateSquareCounter();
+
           this.quoteService.displayQuote();
           console.log('🔄 Firestore enabled - quotes loaded from database');
           // Portal progression is user-driven via scroll/swipe gesture now.
@@ -9556,8 +10012,7 @@ try {
       updateColorWheel() {
         const valueSlider = document.getElementById('valueSlider');
         
-        const hslColor = `hsl(${this.selectedHue}, ${this.selectedSaturation}%, ${this.selectedLightness}%)`;
-        const hexColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+        const hexColor = Utils.hsvToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
         
         const colorScreen = document.getElementById('screen-color');
         if (colorScreen && this.colorHasBeenSelected) {
@@ -9579,10 +10034,65 @@ try {
         
         if (valueSlider) {
           valueSlider.value = String(Math.round(this.selectedLightness));
+          const vMin = parseInt(valueSlider.getAttribute('min') || '25', 10);
+          const vMax = parseInt(valueSlider.getAttribute('max') || '90', 10);
           valueSlider.style.background = `linear-gradient(to right,
-            hsl(${this.selectedHue}, ${this.selectedSaturation}%, 20%), 
-            hsl(${this.selectedHue}, ${this.selectedSaturation}%, 90%))`;
+            ${Utils.hsvToHex(this.selectedHue, this.selectedSaturation, vMin)},
+            ${Utils.hsvToHex(this.selectedHue, this.selectedSaturation, vMax)})`;
         }
+
+        const wEl = document.getElementById('colorWheelCanvas');
+        /* Wheel bitmap is always drawn at full V for readability; brightness is the slider + screen fill only. */
+        const wheelKey = wEl
+          ? `${Math.round(wEl.clientWidth)}x${Math.round(wEl.clientHeight)}|${Math.min(2, window.devicePixelRatio || 1)}`
+          : '';
+        if (wheelKey !== this._hsvWheelCanvasKey) {
+          this._renderHsvWheelCanvas();
+          this._hsvWheelCanvasKey = wheelKey;
+        }
+      }
+
+      /** HSV disk at V=100 so hue/saturation stay vivid; selected brightness comes from the slider only. */
+      _renderHsvWheelCanvas() {
+        const wheel = document.getElementById('colorWheelCanvas');
+        if (!wheel || wheel.tagName !== 'CANVAS') return;
+        const ctx = wheel.getContext('2d', { alpha: true });
+        const cssW = Math.max(1, wheel.clientWidth || 1);
+        const cssH = Math.max(1, wheel.clientHeight || 1);
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const W = Math.max(1, Math.round(cssW * dpr));
+        const H = Math.max(1, Math.round(cssH * dpr));
+        if (wheel.width !== W || wheel.height !== H) {
+          wheel.width = W;
+          wheel.height = H;
+        }
+        const R = Math.min(W, H) / 2 - 0.5;
+        const cx = W / 2;
+        const cy = H / 2;
+        const V = 100;
+        const img = ctx.createImageData(W, H);
+        const d = img.data;
+        for (let py = 0; py < H; py++) {
+          for (let px = 0; px < W; px++) {
+            const idx = (py * W + px) * 4;
+            const udx = (px + 0.5 - cx) / R;
+            const udy = (py + 0.5 - cy) / R;
+            const dist = Math.hypot(udx, udy);
+            if (dist > 1) {
+              d[idx] = 0;
+              d[idx + 1] = 0;
+              d[idx + 2] = 0;
+              d[idx + 3] = 0;
+              continue;
+            }
+            let Hdeg = Math.atan2(-udy, udx) * 180 / Math.PI;
+            if (Hdeg < 0) Hdeg += 360;
+            const S = dist * 100;
+            Utils.writeHsvRgbBytes(Hdeg, S, V, d, idx);
+            d[idx + 3] = 255;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
       }
 
       setHueFromCoords(x, y) {
@@ -9590,41 +10100,34 @@ try {
         const indicator = document.getElementById('colorIndicator');
         const valueSlider = document.getElementById('valueSlider');
         const rect = colorWheel.getBoundingClientRect();
+        const radiusPx = Math.min(rect.width, rect.height) / 2;
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
-        
-        const dx = x - centerX;
-        const dy = y - centerY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const radius = rect.width / 2;
 
-        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
-        if (angle < 0) angle += 360;
-        
-        const rawHue = Math.round((angle + 90) % 360);
-        this.selectedHue = rawHue;
-        
-        const baseSaturation = Math.min(100, (distance / radius) * 100);
-        this.selectedSaturation = Math.round(baseSaturation);
+        const udx = (x - centerX) / radiusPx;
+        const udy = (y - centerY) / radiusPx;
+        const distNorm = Math.hypot(udx, udy);
 
-        if (distance > radius) {
-          const clampedDistance = radius;
-          const clampedX = centerX + (dx / distance) * clampedDistance;
-          const clampedY = centerY + (dy / distance) * clampedDistance;
+        let angleDeg = Math.atan2(-udy, udx) * 180 / Math.PI;
+        if (angleDeg < 0) angleDeg += 360;
+        this.selectedHue = Math.round(angleDeg);
+        this.selectedSaturation = Math.round(Math.min(1, distNorm) * 100);
+
+        if (distNorm > 1) {
           this.selectedSaturation = 100;
-          
+          const inv = 1 / distNorm;
+          const cudx = udx * inv;
+          const cudy = udy * inv;
+          const clampedX = centerX + cudx * radiusPx;
+          const clampedY = centerY + cudy * radiusPx;
           if (indicator) {
-            const relativeX = clampedX - rect.left;
-            const relativeY = clampedY - rect.top;
-            indicator.style.left = `${relativeX}px`;
-            indicator.style.top = `${relativeY}px`;
+            indicator.style.left = `${clampedX - rect.left}px`;
+            indicator.style.top = `${clampedY - rect.top}px`;
           }
         } else {
           if (indicator) {
-            const relativeX = x - rect.left;
-            const relativeY = y - rect.top;
-            indicator.style.left = `${relativeX}px`;
-            indicator.style.top = `${relativeY}px`;
+            indicator.style.left = `${x - rect.left}px`;
+            indicator.style.top = `${y - rect.top}px`;
           }
         }
 
@@ -9681,6 +10184,11 @@ try {
             // Recalculate dimensions for new viewport size
             this.quiltEngine.recalculateDimensionsForCurrentViewport();
             this.renderQuilt();
+          }
+          const colorScreen = document.getElementById('screen-color');
+          if (colorScreen && colorScreen.classList.contains('active')) {
+            this._hsvWheelCanvasKey = '';
+            this.updateColorWheel();
           }
         }, 250); // 250ms debounce
       }
@@ -11080,6 +11588,8 @@ try {
           
           // Regenerate shuffled indexes to ensure they're valid for the new quotes array
           await this.quoteService.regenerateShuffledIndexes();
+          this.quoteService.invalidatePinnedAssignments();
+          await this.quoteService.primeQuoteAssignmentsNearTerm();
           
           this.uiService.showToast(`Quote ${index + 1} removed`);
           this.showQuoteManager(); // Refresh the manager
@@ -11140,6 +11650,8 @@ try {
           
           // Regenerate shuffled indexes to ensure they're valid for the new quotes array
           await this.quoteService.regenerateShuffledIndexes();
+          this.quoteService.invalidatePinnedAssignments();
+          await this.quoteService.primeQuoteAssignmentsNearTerm();
           
           // If we deleted today's quote, refresh the quote display on the quilt screen
           if (dayData.dayName === 'Today') {
@@ -11164,28 +11676,32 @@ try {
         });
         
         if (confirm(`Are you sure you want to skip this quote for ${dayData.dayName}?\n\n"${quote.text}"\n${quote.author}\n\nThis will keep the quote in your collection but assign a different quote for ${dayData.dayName}.`)) {
-          // Calculate the actual day index for this specific day
-          const today = new Date();
-          const utcHours = today.getUTCHours();
-          const adjustedToday = new Date(today);
-          if (utcHours < 7) {
-            adjustedToday.setUTCDate(adjustedToday.getUTCDate() - 1);
+          const dateKey = this.quoteService.getQuoteCalendarKeyUtc7FromAdjustedToday(dayData.dayIndex);
+          const dayIndexForShuffled = QuoteService._dayIndexFromCalendarKey(dateKey);
+
+          let newQuote = dayData.quote;
+          let tries = 0;
+          while (tries < 80 && this.quoteService.quotes.length > 1) {
+            const ni = Math.floor(Math.random() * this.quoteService.quotes.length);
+            const cand = this.quoteService.quotes[ni];
+            tries++;
+            const same =
+              cand === dayData.quote ||
+              (cand.sourceId &&
+                dayData.quote.sourceId &&
+                String(cand.sourceId) === String(dayData.quote.sourceId)) ||
+              (String(cand.text) === String(dayData.quote.text) && String(cand.author) === String(dayData.quote.author));
+            if (!same) {
+              newQuote = cand;
+              break;
+            }
           }
-          
-          const targetDate = new Date(adjustedToday);
-          targetDate.setDate(adjustedToday.getDate() + dayIndex);
-          const dayIndexForShuffled = Math.floor(targetDate.getTime() / (1000 * 60 * 60 * 24));
-          
-          // Find a different quote index for this day
-          let newQuoteIndex;
-          do {
-            newQuoteIndex = Math.floor(Math.random() * this.quoteService.quotes.length);
-          } while (newQuoteIndex === this.quoteService.shuffledIndexes[dayIndexForShuffled % this.quoteService.shuffledIndexes.length]);
-          
-          // Update just this day's assignment
-          this.quoteService.shuffledIndexes[dayIndexForShuffled % this.quoteService.shuffledIndexes.length] = newQuoteIndex;
-          
-          // Save the changes to Firestore
+
+          await this.quoteService.setPinnedQuoteForCalendarKey(dateKey, newQuote);
+          const newQuoteIndex = this.quoteService.quotes.indexOf(newQuote);
+          if (newQuoteIndex >= 0) {
+            this.quoteService.shuffledIndexes[dayIndexForShuffled % this.quoteService.shuffledIndexes.length] = newQuoteIndex;
+          }
           await this.quoteService.saveShuffledIndexes();
           
           // If we skipped today's quote, refresh the quote display on the quilt screen
@@ -11204,24 +11720,22 @@ try {
         const next7Days = this.getNext7DaysQuotes();
         const currentDay = next7Days[dayIndex];
         const previousDay = next7Days[dayIndex - 1];
-        
-        // Calculate the actual day indices for the shuffled array
-        const today = new Date();
-        const currentDate = new Date(today);
-        currentDate.setDate(today.getDate() + currentDay.dayIndex);
-        const previousDate = new Date(today);
-        previousDate.setDate(today.getDate() + previousDay.dayIndex);
-        
-        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
-        const previousDayIndex = Math.floor(previousDate.getTime() / (1000 * 60 * 60 * 24));
-        
-        // Swap the quotes in the shuffled indexes
+
+        const keyCurr = this.quoteService.getQuoteCalendarKeyUtc7FromAdjustedToday(currentDay.dayIndex);
+        const keyPrev = this.quoteService.getQuoteCalendarKeyUtc7FromAdjustedToday(previousDay.dayIndex);
+        const qCurr = currentDay.quote;
+        const qPrev = previousDay.quote;
+
+        await this.quoteService.setPinnedQuoteForCalendarKey(keyCurr, qPrev);
+        await this.quoteService.setPinnedQuoteForCalendarKey(keyPrev, qCurr);
+
+        const currentDayIndex = QuoteService._dayIndexFromCalendarKey(keyCurr);
+        const previousDayIndex = QuoteService._dayIndexFromCalendarKey(keyPrev);
         const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
+        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] =
           this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length];
         this.quoteService.shuffledIndexes[previousDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
-        
-        // Save the changes to Firestore
+
         await this.quoteService.saveShuffledIndexes();
         
         this.uiService.showToast(`Swapped quotes for ${previousDay.dayName} and ${currentDay.dayName}`);
@@ -11240,24 +11754,22 @@ try {
         const next7Days = this.getNext7DaysQuotes();
         const currentDay = next7Days[dayIndex];
         const nextDay = next7Days[dayIndex + 1];
-        
-        // Calculate the actual day indices for the shuffled array
-        const today = new Date();
-        const currentDate = new Date(today);
-        currentDate.setDate(today.getDate() + currentDay.dayIndex);
-        const nextDate = new Date(today);
-        nextDate.setDate(today.getDate() + nextDay.dayIndex);
-        
-        const currentDayIndex = Math.floor(currentDate.getTime() / (1000 * 60 * 60 * 24));
-        const nextDayIndex = Math.floor(nextDate.getTime() / (1000 * 60 * 60 * 24));
-        
-        // Swap the quotes in the shuffled indexes
+
+        const keyCurr = this.quoteService.getQuoteCalendarKeyUtc7FromAdjustedToday(currentDay.dayIndex);
+        const keyNext = this.quoteService.getQuoteCalendarKeyUtc7FromAdjustedToday(nextDay.dayIndex);
+        const qCurr = currentDay.quote;
+        const qNext = nextDay.quote;
+
+        await this.quoteService.setPinnedQuoteForCalendarKey(keyCurr, qNext);
+        await this.quoteService.setPinnedQuoteForCalendarKey(keyNext, qCurr);
+
+        const currentDayIndex = QuoteService._dayIndexFromCalendarKey(keyCurr);
+        const nextDayIndex = QuoteService._dayIndexFromCalendarKey(keyNext);
         const tempIndex = this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length];
-        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] = 
+        this.quoteService.shuffledIndexes[currentDayIndex % this.quoteService.shuffledIndexes.length] =
           this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length];
         this.quoteService.shuffledIndexes[nextDayIndex % this.quoteService.shuffledIndexes.length] = tempIndex;
-        
-        // Save the changes to Firestore
+
         await this.quoteService.saveShuffledIndexes();
         
         this.uiService.showToast(`Swapped quotes for ${currentDay.dayName} and ${nextDay.dayName}`);
@@ -11369,22 +11881,25 @@ try {
           
           console.log(`🔍 Day ${i}: ${futureDate.toDateString()} → ${dateString}`);
           
-          // Get the quote directly from the quotes array using shuffled indexes
+          const dateKeyUtc = this.quoteService.getQuoteCalendarKeyUtc7FromAdjustedToday(i);
+          const pinned = this.quoteService._pinnedByDateKey[dateKeyUtc];
+
           const dayIndex = Math.floor(futureDate.getTime() / (1000 * 60 * 60 * 24));
           const quoteIndex = this.quoteService.shuffledIndexes[dayIndex % this.quoteService.shuffledIndexes.length];
           
-          // Safety check: if quoteIndex is out of bounds, use a fallback index
           let finalQuoteIndex = quoteIndex;
           if (quoteIndex >= this.quoteService.quotes.length) {
             console.warn(`⚠️ QuoteIndex ${quoteIndex} out of bounds for ${this.quoteService.quotes.length} quotes. Using fallback index.`);
-            // Use modulo to get a valid index instead of regenerating the entire array
             finalQuoteIndex = quoteIndex % this.quoteService.quotes.length;
             console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${finalQuoteIndex} (fallback), quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}`);
           } else {
             console.log(`🔍 Day ${i}: dayIndex=${dayIndex}, quoteIndex=${quoteIndex}, quotes.length=${this.quoteService.quotes.length}, shuffledIndexes.length=${this.quoteService.shuffledIndexes.length}`);
           }
           
-          const quote = this.quoteService.quotes[finalQuoteIndex];
+          const quote = pinned || this.quoteService.quotes[finalQuoteIndex];
+          const originalIndex = pinned
+            ? this.quoteService.quotes.findIndex((q) => q === pinned || (q.sourceId && pinned.sourceId && q.sourceId === pinned.sourceId))
+            : finalQuoteIndex;
           console.log(`🔍 Day ${i}: final quote=`, quote);
           
           const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -11394,7 +11909,7 @@ try {
             date: `${month}/${day}`,
             dayName: dayName,
             quote: quote,
-            originalIndex: finalQuoteIndex,
+            originalIndex: originalIndex >= 0 ? originalIndex : finalQuoteIndex,
             dayIndex: i // Use the loop index (1-7) instead of the absolute day index
           });
         }
@@ -11505,6 +12020,9 @@ try {
           
           // Save to Firestore
           await this.saveQuotesToFirestore();
+          this.quoteService.invalidatePinnedAssignments();
+          await this.quoteService.primeQuoteAssignmentsNearTerm();
+          this.quoteService.displayQuote();
           this.uiService.showToast('✅ Quotes reset to defaults and saved to database');
         }
       }
@@ -11671,14 +12189,14 @@ try {
         }
       }
 
-      initializeUI() {
-        this.schedulePortalToQuoteIntroFade();
-      }
-
       clearPortalToQuoteIntroTimer() {
         if (this._portalToQuoteTimer) {
           clearTimeout(this._portalToQuoteTimer);
           this._portalToQuoteTimer = null;
+        }
+        if (this._portalJoinEntranceFallbackTimer) {
+          clearTimeout(this._portalJoinEntranceFallbackTimer);
+          this._portalJoinEntranceFallbackTimer = null;
         }
         this._blockPortalScrollNav = false;
       }
@@ -11750,16 +12268,18 @@ try {
       }
 
       /**
-       * After load: ~0.65s hold on portal, then a slow crossfade to quote.
+       * Hold `holdBeforeFadeMs` (default 1s) on portal from the moment this runs, then crossfade to quote.
+       * Call after the join line has settled (e.g. from `animationend`) so the full hold is reading time.
        * Skips the intro scroll stack; respects prefers-reduced-motion.
        */
-      schedulePortalToQuoteIntroFade() {
+      schedulePortalToQuoteIntroFade(holdBeforeFadeMs = 1000) {
         this.clearPortalToQuoteIntroTimer();
         if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
           this.uiService.showScreen('screen-quote');
           return;
         }
         this._blockPortalScrollNav = true;
+        const hold = Math.max(0, holdBeforeFadeMs);
         this._portalToQuoteTimer = setTimeout(() => {
           this._portalToQuoteTimer = null;
           this._blockPortalScrollNav = false;
@@ -11767,7 +12287,7 @@ try {
           if (active && active.id === 'screen-portal') {
             this.uiService.showScreen('screen-quote');
           }
-        }, 650);
+        }, hold);
       }
 
       setupAutoTransition() {
@@ -12065,13 +12585,16 @@ try {
 
       async loadQuilt() {
         this._portalQuiltLoaded = false;
-        const portalHead = document.getElementById('portalHeader');
-        if (portalHead) {
-          portalHead.classList.add('portal-header--awaiting');
-          portalHead.setAttribute('aria-hidden', 'true');
+        this._portalToQuoteIntroScheduled = false;
+        this._portalJoinRevealGeneration++;
+        if (this._portalJoinEntranceFallbackTimer) {
+          clearTimeout(this._portalJoinEntranceFallbackTimer);
+          this._portalJoinEntranceFallbackTimer = null;
         }
         const joinOuterPre = document.getElementById('portalJoinLineOuter');
         if (joinOuterPre) {
+          joinOuterPre.classList.remove('portal-join-line-outer--reveal');
+          joinOuterPre.classList.add('portal-join-line-outer--awaiting');
           joinOuterPre.setAttribute('aria-hidden', 'true');
         }
         try {
@@ -12168,36 +12691,6 @@ try {
         this.quiltScale = optimalScale;
       }
 
-      /**
-       * Show logo + date + join together: no CSS animation on portal copy; optional wait for title image decode.
-       */
-      _revealPortalHeaderIfAwaiting() {
-        const header = document.getElementById('portalHeader');
-        if (!header || !header.classList.contains('portal-header--awaiting')) {
-          return;
-        }
-        const img = document.querySelector('#screen-portal .portal-title-graphic');
-        const joinOuter = document.getElementById('portalJoinLineOuter');
-        const show = () => {
-          if (!header.classList.contains('portal-header--awaiting')) {
-            return;
-          }
-          header.classList.remove('portal-header--awaiting');
-          header.setAttribute('aria-hidden', 'false');
-          if (joinOuter) {
-            joinOuter.setAttribute('aria-hidden', 'false');
-          }
-        };
-        if (img && !img.complete) {
-          const once = () => requestAnimationFrame(show);
-          img.addEventListener('load', once, { once: true });
-          img.addEventListener('error', once, { once: true });
-          window.setTimeout(once, 8000);
-        } else {
-          requestAnimationFrame(show);
-        }
-      }
-
       updateSquareCounter() {
         const count = this.quiltEngine.blocks.length;
         const counterElement = document.getElementById('squareCounter');
@@ -12217,22 +12710,55 @@ try {
           } else {
             joinLine.textContent = "You're among the first today.";
           }
-          this._revealPortalHeaderIfAwaiting();
+          const wasAwaiting = joinOuter.classList.contains('portal-join-line-outer--awaiting');
+          if (wasAwaiting) {
+            joinOuter.classList.remove('portal-join-line-outer--awaiting');
+            joinOuter.setAttribute('aria-hidden', 'false');
+            void joinOuter.offsetWidth;
+            if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+              joinOuter.classList.add('portal-join-line-outer--reveal');
+            }
+          }
+          if (wasAwaiting && !this._portalToQuoteIntroScheduled) {
+            this._portalToQuoteIntroScheduled = true;
+            const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            if (reduceMotion) {
+              this.schedulePortalToQuoteIntroFade(1000);
+            } else {
+              const gen = this._portalJoinRevealGeneration;
+              let readPauseArmed = false;
+              const armReadPauseThenQuoteFade = () => {
+                if (readPauseArmed || gen !== this._portalJoinRevealGeneration) return;
+                if (document.querySelector('.screen.active')?.id !== 'screen-portal') return;
+                readPauseArmed = true;
+                if (this._portalJoinEntranceFallbackTimer) {
+                  clearTimeout(this._portalJoinEntranceFallbackTimer);
+                  this._portalJoinEntranceFallbackTimer = null;
+                }
+                this.schedulePortalToQuoteIntroFade(1000);
+              };
+              const onJoinRevealAnimEnd = (e) => {
+                if (e.target !== joinOuter) return;
+                armReadPauseThenQuoteFade();
+              };
+              joinOuter.addEventListener('animationend', onJoinRevealAnimEnd, { once: true });
+              this._portalJoinEntranceFallbackTimer = setTimeout(armReadPauseThenQuoteFade, 2000);
+            }
+          }
         }
       }
       
       populateQuiltQuote() {
         try {
-          const { text, author } = this.quoteService.getTodayQuote();
+          const todayQ = this.quoteService.getTodayQuote();
           const quiltQuoteText = document.querySelector('.quilt-quote-text');
           const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
           const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
-          
-          if (quiltQuoteText) quiltQuoteText.innerHTML = this.quoteService.formatQuiltQuoteWithAuthor(text, author);
+
+          if (quiltQuoteText) quiltQuoteText.innerHTML = this.quoteService.formatQuiltScreenPrimaryHtml(todayQ);
           if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
-          
-          // Show the quote display when content is populated
-          if (quiltQuoteDisplay && text && author) {
+
+          if (quiltQuoteDisplay && this.quoteService.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
           }
         } catch (error) {
@@ -12244,8 +12770,8 @@ try {
         try {
           console.log('🎨 handleAddColor called');
           
-          const selectedColor = Utils.hslToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
-          console.log('🎨 Selected color:', selectedColor, 'HSL:', this.selectedHue, this.selectedSaturation, this.selectedLightness);
+          const selectedColor = Utils.hsvToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
+          console.log('🎨 Selected color:', selectedColor, 'HSV(h,s,v%):', this.selectedHue, this.selectedSaturation, this.selectedLightness);
           
           // Debug logging
           // console.log('Color selection debug');
@@ -13557,6 +14083,9 @@ try {
     window.regenerateQuoteIndexes = async () => {
       console.log('🔄 Regenerating quote indexes to fix out-of-bounds errors...');
       await app.quoteService.regenerateShuffledIndexes();
+      app.quoteService.invalidatePinnedAssignments();
+      await app.quoteService.primeQuoteAssignmentsNearTerm();
+      app.quoteService.displayQuote?.();
       console.log('✅ Quote indexes regenerated successfully!');
     };
 
