@@ -1,6 +1,8 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const { createCanvas } = require('canvas');
+const { spawn } = require('child_process');
+const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -9,6 +11,56 @@ app.use(express.static('.'));
 
 // In-memory storage for generated images
 const imageStore = new Map();
+
+let notionSyncInProgress = false;
+
+function setNotionSyncCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-notion-sync-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+function tailOutput(text, maxLen) {
+  if (!text || text.length <= maxLen) return text || '';
+  return `…(truncated)\n${text.slice(-maxLen)}`;
+}
+
+/**
+ * Runs a .cjs script from /scripts with the same env as the server (Notion + Firestore vars).
+ * @param {string} relativeScript e.g. scripts/sync-notion-to-firestore.cjs
+ * @param {number} timeoutMs
+ */
+function runNodeScript(relativeScript, timeoutMs = 180000) {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(__dirname, relativeScript);
+    const child = spawn(process.execPath, [scriptPath], {
+      cwd: __dirname,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(new Error(`Script timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
+  });
+}
 
 async function fetchUrlAsImageDataString(url) {
   const res = await fetch(url);
@@ -531,6 +583,117 @@ app.post('/api/daily-reset', async (req, res) => {
       error: error.message || 'Daily reset failed',
       timestamp: getUtcIsoNow()
     });
+  }
+});
+
+app.options('/api/sync-notion-firestore', (req, res) => {
+  setNotionSyncCors(res);
+  return res.status(204).end();
+});
+
+/**
+ * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
+ * Auth: header x-notion-sync-token must match NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset.
+ * Requires NOTION_TOKEN, NOTION_DATABASE_ID, GOOGLE_APPLICATION_CREDENTIALS_JSON on the host.
+ */
+app.post('/api/sync-notion-firestore', async (req, res) => {
+  setNotionSyncCors(res);
+
+  const expectedToken =
+    process.env.NOTION_SYNC_TOKEN || process.env.RESET_TOKEN || '';
+  if (!expectedToken) {
+    return res.status(500).json({
+      success: false,
+      error: 'NOTION_SYNC_TOKEN or RESET_TOKEN must be set on the server'
+    });
+  }
+
+  const providedToken = req.header('x-notion-sync-token');
+  if (!providedToken || providedToken !== expectedToken) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized'
+    });
+  }
+
+  if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
+    return res.status(500).json({
+      success: false,
+      error: 'Server is missing NOTION_TOKEN or NOTION_DATABASE_ID'
+    });
+  }
+
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    return res.status(500).json({
+      success: false,
+      error: 'Server is missing GOOGLE_APPLICATION_CREDENTIALS_JSON'
+    });
+  }
+
+  if (notionSyncInProgress) {
+    return res.status(409).json({
+      success: false,
+      error: 'A sync is already running'
+    });
+  }
+
+  notionSyncInProgress = true;
+  const startedAt = getUtcIsoNow();
+  console.log('🔄 Manual Notion–Firestore sync started');
+
+  try {
+    const quotesResult = await runNodeScript('scripts/sync-notion-to-firestore.cjs');
+    if (quotesResult.code !== 0) {
+      return res.status(500).json({
+        success: false,
+        step: 'sync:quotes',
+        exitCode: quotesResult.code,
+        stdout: tailOutput(quotesResult.stdout, 12000),
+        stderr: tailOutput(quotesResult.stderr, 12000),
+        startedAt,
+        finishedAt: getUtcIsoNow()
+      });
+    }
+
+    const usageResult = await runNodeScript('scripts/sync-usage-firestore-to-notion.cjs');
+    if (usageResult.code !== 0) {
+      return res.status(500).json({
+        success: false,
+        step: 'sync:usage',
+        exitCode: usageResult.code,
+        stdout: tailOutput(usageResult.stdout, 12000),
+        stderr: tailOutput(usageResult.stderr, 12000),
+        note: 'Notion → Firestore (quotes) completed; Firestore → Notion (usage) failed.',
+        startedAt,
+        finishedAt: getUtcIsoNow()
+      });
+    }
+
+    return res.json({
+      success: true,
+      steps: ['sync:quotes', 'sync:usage'],
+      stdout: tailOutput(
+        `${quotesResult.stdout}\n---\n${usageResult.stdout}`,
+        16000
+      ),
+      stderr: tailOutput(
+        `${quotesResult.stderr}\n---\n${usageResult.stderr}`,
+        8000
+      ),
+      startedAt,
+      finishedAt: getUtcIsoNow()
+    });
+  } catch (error) {
+    console.error('❌ Manual Notion–Firestore sync failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Sync failed',
+      startedAt,
+      finishedAt: getUtcIsoNow()
+    });
+  } finally {
+    notionSyncInProgress = false;
+    console.log('🔄 Manual Notion–Firestore sync finished');
   }
 });
 

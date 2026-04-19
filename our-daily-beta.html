@@ -92,8 +92,17 @@ try {
         // frequent while dragging the picker = short debounce, not 1.2s delay
         if (metaUpdateTimer) clearTimeout(metaUpdateTimer);
         metaUpdateTimer = setTimeout(() => {
-          meta.setAttribute('content', hex);
           metaUpdateTimer = null;
+          // Picker uses debounced meta updates; if the user already left the color screen,
+          // applying a stale hex would leave iOS Safari chrome stuck on the old swatch.
+          const colorScreen = document.getElementById('screen-color');
+          if (
+            !document.body.classList.contains('color-mode-active') ||
+            !colorScreen?.classList.contains('active')
+          ) {
+            return;
+          }
+          meta.setAttribute('content', hex);
         }, 150);
       }
     }
@@ -2758,10 +2767,9 @@ try {
     #screen-quilt .quilt-layout-b-preview-label {
       margin: 0 0 0.5rem;
       padding: 0 1rem;
-      font-size: 0.72rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      letter-spacing: 0.02em;
       color: rgba(0, 0, 0, 0.55);
       text-align: center;
     }
@@ -3095,7 +3103,7 @@ try {
         aria-live="polite"
         aria-busy="true"
       >
-        <p class="quilt-layout-b-preview-label">Share on Instagram</p>
+        <p class="quilt-layout-b-preview-label">Long Tap to Share on Instagram</p>
         <div class="quilt-layout-b-preview-frame">
           <img
             id="quiltLayoutBPreviewImg"
@@ -3254,6 +3262,8 @@ try {
         quiltSize: 1000,
         animationDuration: 2000,
         toastDuration: 3000,
+        /** Delay before “What color…” prompt on quote screen (was 2800ms; −25%). */
+        quoteColorPromptReadPauseMs: 2100,
         debugMode: true
       },
       FIREBASE: {
@@ -3285,6 +3295,10 @@ try {
         MIN_SHAPE_SIZE: 40,
         COLOR_SIMILARITY_THRESHOLD: 35,
         LAB_COLOR_CACHE_SIZE: 1000
+      },
+      /** Railway Node server: manual Notion ↔ Firestore sync (`server.js` POST /api/sync-notion-firestore). */
+      BACKEND: {
+        baseUrl: 'https://our-daily-quilt-production.up.railway.app'
       }
     };
 
@@ -5535,6 +5549,8 @@ try {
     class UIService {
       constructor(logger) {
         this.logger = logger;
+        /** Cleared when leaving color screen so deferred theme work cannot run on the next screen. */
+        this._colorScreenEntryThemeTimer = null;
       }
 
       showToast(message, duration = CONFIG.APP.toastDuration, link = null) {
@@ -5623,7 +5639,7 @@ try {
                 target.classList.remove(...flowClassCleanup);
                 this._flowTransitioning = false;
                 if (target.id === 'screen-quote') {
-                  window.app?.scheduleQuotePromptReveal?.(2800);
+                  window.app?.scheduleQuotePromptReveal?.(CONFIG.APP.quoteColorPromptReadPauseMs);
                 }
               };
 
@@ -5690,7 +5706,7 @@ try {
             }
 
             if (screenId === 'screen-quote' && !isFlowTransition) {
-              window.app?.scheduleQuotePromptReveal?.(2800);
+              window.app?.scheduleQuotePromptReveal?.(CONFIG.APP.quoteColorPromptReadPauseMs);
             }
             
             // Set date immediately when portal screen is shown
@@ -5741,9 +5757,18 @@ try {
             if (screenId === 'screen-color') {
               // Add class to body for color mode
               document.body.classList.add('color-mode-active');
+
+              if (this._colorScreenEntryThemeTimer) {
+                clearTimeout(this._colorScreenEntryThemeTimer);
+                this._colorScreenEntryThemeTimer = null;
+              }
               
               // Keep warm neutral on first entry; only apply picker color after user interaction.
-              setTimeout(() => {
+              this._colorScreenEntryThemeTimer = setTimeout(() => {
+                this._colorScreenEntryThemeTimer = null;
+                const colorScreenEl = document.getElementById('screen-color');
+                if (!colorScreenEl?.classList.contains('active')) return;
+
                 const appRef = window.app;
                 if (!appRef?.colorHasBeenSelected) {
                   if (window.ODQ_onColorChange) {
@@ -5773,6 +5798,10 @@ try {
                 });
               });
             } else {
+              if (this._colorScreenEntryThemeTimer) {
+                clearTimeout(this._colorScreenEntryThemeTimer);
+                this._colorScreenEntryThemeTimer = null;
+              }
               // Remove color mode class when leaving color picker
               document.body.classList.remove('color-mode-active');
               
@@ -10051,7 +10080,7 @@ try {
         const quotePromptEl = document.querySelector('#screen-quote .quote-prompt');
         if (quotePromptEl) {
           if (nextId === 'screen-quote' && prevSnap !== 'screen-quote') {
-            this.scheduleQuotePromptReveal(2800);
+            this.scheduleQuotePromptReveal(CONFIG.APP.quoteColorPromptReadPauseMs);
           } else if (nextId !== 'screen-quote') {
             quotePromptEl.classList.remove('quote-prompt--visible');
             quotePromptEl.setAttribute('aria-hidden', 'true');
@@ -12314,6 +12343,7 @@ try {
             <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handlePushInstagramAssetsToFirestore()">Push IG images to Firestore (Zapier)</button>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
+            <button type="button" onclick="window.app &amp;&amp; window.app.handleManualNotionFirestoreSync()">🗂️ Sync Notion ↔ Firestore</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
           </div>
         `;
@@ -12422,43 +12452,34 @@ try {
       }
 
       /**
-       * After the quote screen is up: wait `readPauseMs` so the line can be read, then fade the prompt in.
+       * After the quote screen is up: wait `readPauseMs` so the line can be read, then show the
+       * “What color…” prompt and the color cue button together.
        */
-      scheduleQuotePromptReveal(readPauseMs = 2800) {
+      scheduleQuotePromptReveal(readPauseMs = CONFIG.APP.quoteColorPromptReadPauseMs) {
         this.clearQuotePromptSchedule();
         const el = document.querySelector('#screen-quote .quote-prompt');
         if (!el) return;
-        const scheduleWonkyAfterPrompt = () => {
-          if (this._quoteColorWonkyTimer) {
-            clearTimeout(this._quoteColorWonkyTimer);
-            this._quoteColorWonkyTimer = null;
-          }
-          const wonkyWait =
-            window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 500 : 750 + 500;
-          this._quoteColorWonkyTimer = setTimeout(() => {
-            this._quoteColorWonkyTimer = null;
-            if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
-            const btn = document.getElementById('quoteColorWonkyBtn');
-            if (!btn) return;
-            btn.classList.remove('quote-color-wonky-btn--pulse-off');
-            btn.hidden = false;
-            btn.setAttribute('aria-hidden', 'false');
-            requestAnimationFrame(() => btn.classList.add('quote-color-wonky-btn--visible'));
-          }, wonkyWait);
-        };
-        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+
+        const revealPromptAndColorCue = () => {
+          if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
           el.classList.add('quote-prompt--visible');
           el.setAttribute('aria-hidden', 'false');
-          scheduleWonkyAfterPrompt();
+          const btn = document.getElementById('quoteColorWonkyBtn');
+          if (!btn) return;
+          btn.classList.remove('quote-color-wonky-btn--pulse-off');
+          btn.hidden = false;
+          btn.setAttribute('aria-hidden', 'false');
+          requestAnimationFrame(() => btn.classList.add('quote-color-wonky-btn--visible'));
+        };
+
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+          revealPromptAndColorCue();
           return;
         }
         const wait = Math.max(0, readPauseMs);
         this._quotePromptRevealTimer = setTimeout(() => {
           this._quotePromptRevealTimer = null;
-          if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
-          el.classList.add('quote-prompt--visible');
-          el.setAttribute('aria-hidden', 'false');
-          scheduleWonkyAfterPrompt();
+          revealPromptAndColorCue();
         }, wait);
       }
 
@@ -13010,7 +13031,7 @@ try {
         if (joinLine && joinOuter) {
           const others = Math.max(0, count - 1);
           if (others > 0) {
-            joinLine.innerHTML = `You're joining <span class="portal-join-line__n">${others}</span> others today.`;
+            joinLine.innerHTML = `You're joining <span class="portal-join-line__n">${others}</span> others today`;
           } else {
             joinLine.textContent = "You're among the first today.";
           }
@@ -13735,6 +13756,67 @@ try {
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'saveToFirestore');
+        }
+      }
+
+      /**
+       * Runs the same Notion ↔ Firestore jobs as GitHub Actions (quotes from Notion, then usage back to Notion).
+       * Server: POST /api/sync-notion-firestore with header x-notion-sync-token (NOTION_SYNC_TOKEN or RESET_TOKEN on Railway).
+       */
+      async handleManualNotionFirestoreSync() {
+        try {
+          const baseUrl = (CONFIG.BACKEND && CONFIG.BACKEND.baseUrl) || '';
+          if (!baseUrl) {
+            this.uiService.showToast('CONFIG.BACKEND.baseUrl is not set');
+            return;
+          }
+          const token = window.prompt(
+            'Paste the server sync token (Railway: NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset). Cancel to abort.'
+          );
+          if (token === null) {
+            return;
+          }
+          const trimmed = String(token).trim();
+          if (!trimmed) {
+            this.uiService.showToast('Sync cancelled');
+            return;
+          }
+
+          this.uiService.showToast('Running Notion ↔ Firestore sync…');
+          const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/sync-notion-firestore`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-notion-sync-token': trimmed
+            },
+            body: '{}'
+          });
+          let data = {};
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = {};
+          }
+
+          if (!res.ok || !data.success) {
+            const msg =
+              (data && (data.error || data.step)) ||
+              res.statusText ||
+              `HTTP ${res.status}`;
+            this.uiService.showToast(`Sync failed: ${msg}`);
+            console.error('Notion ↔ Firestore sync failed:', data);
+            return;
+          }
+
+          this.uiService.showToast('✅ Notion ↔ Firestore sync finished');
+          if (data.stdout) {
+            console.log('Notion sync stdout:\n', data.stdout);
+          }
+          if (data.stderr) {
+            console.warn('Notion sync stderr:\n', data.stderr);
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'manualNotionFirestoreSync');
         }
       }
 
