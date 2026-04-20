@@ -12340,7 +12340,6 @@ try {
             <button onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
-            <button onclick="app.handleTestZapierWebhook()">🔗 Test Zapier Webhook</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handlePushInstagramAssetsToFirestore()">Push IG images to Firestore (Zapier)</button>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
             <button type="button" id="admin-notion-sync-btn" title="Shift+click to clear saved token and enter a new one">🗂️ Sync Notion ↔ Firestore</button>
@@ -13895,41 +13894,6 @@ try {
         }
       }
 
-      // Test Zapier webhook
-      async handleTestZapierWebhook() {
-        try {
-          if (!window.zapierWebhookAPI) {
-            this.uiService.showToast('Zapier webhook API not available');
-            return;
-          }
-
-          this.uiService.showToast('Testing Zapier webhook...');
-          
-          // Test the webhook
-          const result = await window.zapierWebhookAPI.generateInstagramImage();
-          
-          if (result.success) {
-            console.log('✅ Zapier webhook test successful:', result);
-            this.uiService.showToast(`✅ Webhook test successful! Generated image for ${result.blockCount} blocks`);
-            
-            // Show the response in console for debugging
-            console.log('📸 Zapier webhook response:', {
-              success: result.success,
-              date: result.date,
-              blockCount: result.blockCount,
-              captionLength: result.caption.length,
-              imageSize: result.image.length,
-              hasPostLayoutB: !!result.postImage
-            });
-          } else {
-            console.error('❌ Zapier webhook test failed:', result);
-            this.uiService.showToast(`❌ Webhook test failed: ${result.error}`);
-          }
-        } catch (error) {
-          this.errorHandler.handleError(error, 'testZapierWebhook');
-        }
-      }
-
       /**
        * Writes `instagram-images/{today}` to Firestore (classic 4:5 + layout B 4:5 when available).
        * Railway POST /api/generate-instagram reads this doc so Zapier can use imageUrl and postLayoutBImageUrl.
@@ -14027,8 +13991,7 @@ try {
 
       async handleAddColorFamilyBlocksByCount(blockCount = 10) {
         try {
-          // Use expanded Rumi colors palette (100 colors total)
-          // 50 base colors + 50 variations for more diversity
+          // Fallback only when the quilt has no valid colors to sample (empty / corrupt state).
           const expandedRumiColors = [
             // Original 50 colors
             "#ea9b9a", "#de6c61", "#df9368", "#d57d39", "#d8a746", 
@@ -14053,14 +14016,28 @@ try {
             "#d961ee", "#db61ee", "#de2cc0", "#ee61ca", "#fba2de",
             "#ee6193", "#ee618f", "#cd283c", "#a31f35", "#ee6165"
           ];
-          
-          // Shuffle and pick random colors from 100 colors
-          const shuffled = [...expandedRumiColors].sort(() => 0.5 - Math.random());
+
           const normalizedCount = Math.max(1, Math.min(blockCount, expandedRumiColors.length));
-          const selectedColors = shuffled.slice(0, normalizedCount);
-          
-          
-          // Add blocks with different Rumi colors
+
+          const blocks = this.quiltEngine?.blocks;
+          const quiltColorPool = Array.isArray(blocks)
+            ? blocks.map((b) => b && b.color).filter((c) => c && Utils.validateHexColor(c))
+            : [];
+
+          /** Frequency-weighted: colors that occupy more blocks are chosen more often. */
+          let selectedColors;
+          if (quiltColorPool.length > 0) {
+            selectedColors = [];
+            for (let i = 0; i < normalizedCount; i++) {
+              const hex = quiltColorPool[Math.floor(Math.random() * quiltColorPool.length)];
+              selectedColors.push(hex);
+            }
+          } else {
+            const shuffled = [...expandedRumiColors].sort(() => 0.5 - Math.random());
+            selectedColors = shuffled.slice(0, normalizedCount);
+          }
+
+          // Add blocks using sampled colors
           for (let i = 0; i < normalizedCount; i++) {
             const result = this.quiltEngine.addColor(selectedColors[i]);
             
