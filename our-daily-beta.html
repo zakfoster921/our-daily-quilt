@@ -3872,9 +3872,23 @@ try {
           console.log(`🎯 FALLBACK: No block selected, using random fallback from ${regularBlocks.length} regular blocks (protecting ${specialPatternBlocks.length} special pattern blocks)`);
           if (regularBlocks.length > 0) {
             selectedBlock = regularBlocks[Math.floor(Math.random() * regularBlocks.length)];
+          } else if (specialPatternBlocks.length > 0) {
+            // Never no-op on add: if only special blocks remain, split the largest available one.
+            const rankedSpecial = [...specialPatternBlocks].sort(
+              (a, b) => b.width * b.height - a.width * a.height
+            );
+            selectedBlock = rankedSpecial[0];
+            console.log(`🎯 FALLBACK: No regular blocks; using largest special block ${selectedBlock?.id || 'unknown'}`);
           } else {
-            console.log(`🎯 FALLBACK: No regular blocks available - cannot add color without breaking special patterns`);
-            return; // Don't add the color if it would break special patterns
+            const allBlocks = this.blocks
+              .filter((b) => b && b.width > 0 && b.height > 0)
+              .sort((a, b) => b.width * b.height - a.width * a.height);
+            selectedBlock = allBlocks[0];
+            if (!selectedBlock) {
+              console.log(`🎯 FALLBACK: No eligible blocks available`);
+              return;
+            }
+            console.log(`🎯 FALLBACK: Using largest remaining block ${selectedBlock.id}`);
           }
         }
         
@@ -5965,6 +5979,521 @@ try {
       }
     }
 
+    function getLayoutBStoryQuotePlan(ctx, options) {
+      const {
+        quoteText = '',
+        quoteAuthor = '',
+        layoutW,
+        layoutH,
+        dateKey,
+        usePostQuoteLayout = true
+      } = options || {};
+      const STORY_W = layoutW;
+      const STORY_H = layoutH;
+      const isPostLayout =
+        (layoutW === 1080 && layoutH === 1350) ||
+        Math.abs(layoutW / Math.max(1, layoutH) - 1080 / 1350) < 0.03;
+      const STRIP_MAX_W = STORY_W - (isPostLayout ? 52 : 100);
+      const PAPER_PAD_X = 26;
+      const PAPER_PAD_Y = 15;
+      const FONT_SERIF = 'Georgia, "Times New Roman", Times, serif';
+      const rngDateKey = dateKey || new Date().toISOString().split('T')[0];
+      let rngSeed = 2166136261;
+      for (let i = 0; i < rngDateKey.length; i++) {
+        rngSeed = Math.imul(rngSeed ^ rngDateKey.charCodeAt(i), 16777619);
+      }
+      const rnd = () => {
+        rngSeed |= 0;
+        rngSeed = (rngSeed + 0x6d2b79f5) | 0;
+        let t = Math.imul(rngSeed ^ (rngSeed >>> 15), 1 | rngSeed);
+        t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const splitIntoPhraseSegments = (text) => {
+        const t = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!t) return [];
+        const out = [];
+        const maxLen = 52;
+        const wordCount = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+        const phraseTarget = () => {
+          const a = rnd();
+          const b = rnd();
+          if (a < 0.22) return Math.round(28 + b * 12);
+          if (a < 0.45) return Math.round(40 + b * 14);
+          if (a < 0.78) return Math.round(48 + b * 12);
+          return Math.round(54 + b * 10);
+        };
+        const pushChunk = (s) => {
+          let rest = s.trim();
+          if (!rest) return;
+          while (rest.length > maxLen) {
+            const sliceHi = Math.max(30, Math.min(maxLen, phraseTarget()));
+            let cut = rest.lastIndexOf(' ', sliceHi);
+            if (cut < 14) {
+              cut = rest.indexOf(' ', 14);
+              if (cut === -1) cut = Math.min(sliceHi, rest.length - 1);
+            }
+            out.push(rest.slice(0, cut).trim());
+            rest = rest.slice(cut).trim();
+          }
+          if (rest) out.push(rest);
+        };
+        const splitFlat = (chunks, regex) =>
+          chunks.flatMap((c) => {
+            const bits = c.split(regex).map((x) => x.trim()).filter(Boolean);
+            return bits.length > 1 ? bits : [c];
+          });
+        const tryConceptualSplit = (chunk, target) => {
+          const len = chunk.length;
+          if (len < 20) return null;
+          const minI = Math.max(6, Math.floor(target * 0.2), Math.floor(len * 0.12));
+          const maxI = Math.min(len - 6, Math.ceil(target * 1.45), Math.ceil(len * 0.9));
+          if (minI >= maxI) return null;
+          const patterns = [
+            { re: /\s+(?:because|although|though|unless|until|whether|whenever|wherever)\s+/gi },
+            { re: /\s+(?:when|where|while|before|after|since)\s+/gi },
+            { re: /\s+(?:which|who|whom|whose)\s+/gi },
+            { re: /\s+(?:and|but|or|nor|yet)\s+/gi }
+          ];
+          const candidates = [];
+          for (const { re } of patterns) {
+            re.lastIndex = 0;
+            let m;
+            while ((m = re.exec(chunk)) !== null) {
+              const idx = m.index;
+              if (idx < minI || idx > maxI) continue;
+              const left = chunk.slice(0, idx).trim();
+              const right = chunk.slice(idx).trim();
+              if (left.length < 6 || right.length < 6) continue;
+              if (wordCount(left) < 2 || wordCount(right) < 2) continue;
+              const dist = Math.abs(idx - target);
+              const jitter = rnd() * 14;
+              candidates.push({ idx, score: dist + jitter });
+            }
+          }
+          if (!candidates.length) return null;
+          candidates.sort((a, b) => a.score - b.score);
+          const best = candidates[0].score;
+          const pool = candidates.filter((c) => c.score <= best + 16 + rnd() * 10);
+          const pick = pool[Math.floor(rnd() * pool.length)];
+          return [chunk.slice(0, pick.idx).trim(), chunk.slice(pick.idx).trim()];
+        };
+        const sentences =
+          t.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((s) => s.trim()).filter(Boolean) || [t];
+        for (const sentence of sentences) {
+          let chunks = [sentence];
+          chunks = splitFlat(chunks, /\s*;\s+/);
+          chunks = splitFlat(chunks, /\s+[—–]\s+/);
+          chunks = splitFlat(chunks, /:\s+/);
+          chunks = splitFlat(
+            chunks,
+            /,\s+(?=(?:and|but|or|nor|yet|so|because|although|though|while|if|as|when|where|which|who|that)\b)/i
+          );
+          chunks = splitFlat(chunks, /,\s+(?:then|so|yet|still|instead)\s+/i);
+          for (let chunk of chunks) {
+            chunk = chunk.trim();
+            if (!chunk) continue;
+            while (chunk.length > maxLen) {
+              const target = phraseTarget();
+              const commaScanEnd = Math.min(chunk.length - 1, Math.max(24, target));
+              let cut = -1;
+              for (let i = commaScanEnd; i > 12; i--) {
+                if (chunk[i] === ',') {
+                  cut = i;
+                  break;
+                }
+              }
+              if (cut === -1) {
+                for (let i = commaScanEnd; i > 12; i--) {
+                  if (chunk[i] === ';') {
+                    cut = i;
+                    break;
+                  }
+                }
+              }
+              if (cut > 0) {
+                out.push(chunk.slice(0, cut).trim());
+                chunk = chunk.slice(cut + 1).trim();
+                continue;
+              }
+              const conceptual = tryConceptualSplit(chunk, target);
+              if (conceptual) {
+                out.push(conceptual[0]);
+                chunk = conceptual[1];
+                continue;
+              }
+              break;
+            }
+            for (let guard = 0; guard < 10 && chunk.length >= 20; guard++) {
+              if (wordCount(chunk) < 5) break;
+              const conceptual = tryConceptualSplit(chunk, phraseTarget());
+              if (!conceptual) break;
+              const left = conceptual[0];
+              const right = conceptual[1];
+              if (left.length < 8 || right.length < 8) break;
+              if (wordCount(left) < 2 || wordCount(right) < 2) break;
+              out.push(left);
+              chunk = right;
+            }
+            pushChunk(chunk);
+          }
+        }
+        return out.length ? out : [t];
+      };
+      const wrapLines = (c, text, maxWidth) => {
+        const breakLongWord = (word) => {
+          const out = [];
+          let piece = '';
+          for (const ch of word) {
+            const next = piece + ch;
+            if (c.measureText(next).width <= maxWidth || piece === '') piece = next;
+            else {
+              out.push(piece);
+              piece = ch;
+            }
+          }
+          if (piece) out.push(piece);
+          return out;
+        };
+        const words = String(text || '').split(/\s+/).filter(Boolean);
+        const lines = [];
+        let line = '';
+        for (const word of words) {
+          const test = line ? `${line} ${word}` : word;
+          if (c.measureText(test).width <= maxWidth) {
+            line = test;
+          }
+          else {
+            if (line) lines.push(line);
+            if (c.measureText(word).width <= maxWidth) {
+              line = word;
+            } else {
+              const chunks = breakLongWord(word);
+              for (let cc = 0; cc < chunks.length - 1; cc++) lines.push(chunks[cc]);
+              line = chunks[chunks.length - 1] || '';
+            }
+          }
+        }
+        if (line) lines.push(line);
+        return lines;
+      };
+      const quoteWordCount = quoteText ? (String(quoteText).match(/\S+/g) || []).length : 0;
+      const isShortQuoteLayout = quoteWordCount > 0 && quoteWordCount <= 8;
+      const innerMaxW = STRIP_MAX_W - PAPER_PAD_X * 2;
+      const layoutQuoteAuthorGap = usePostQuoteLayout
+        ? (isShortQuoteLayout ? 72 : 58)
+        : (isShortQuoteLayout ? 78 : 64);
+      const stackVertPad = usePostQuoteLayout ? 19 : 14;
+      let bodyPx = Math.round(38 * 1.25);
+      if (isShortQuoteLayout) bodyPx += 18;
+      if (usePostQuoteLayout) bodyPx += 10;
+      const quoteFontPx = () => (isShortQuoteLayout ? bodyPx + 12 : bodyPx);
+      const authorFontPx = () =>
+        isShortQuoteLayout ? Math.max(23, Math.round(bodyPx * 0.7)) : bodyPx;
+      const segmentShortQuoteForLayout = (normalized) => {
+        const wc = (s) => (String(s).trim() ? String(s).trim().split(/\s+/).length : 0);
+        const tokens = normalized.match(/\S+/g) || [];
+        const n = tokens.length;
+        let segs = [];
+        if (/\s+[—–]\s+/.test(normalized) || /;\s+/.test(normalized)) {
+          segs = splitIntoPhraseSegments(normalized);
+        } else {
+          segs = [normalized];
+        }
+        if (segs.length === 1) {
+          const single = segs[0];
+          if (/,/.test(single)) {
+            const parts = single.split(/\s*,\s*/).map((s) => s.trim()).filter(Boolean);
+            if (parts.length > 1) segs = parts;
+          }
+        }
+        if (segs.length === 1 && n >= 4) {
+          const single = segs[0];
+          const m = single.match(/^(.+?)\s+\b(and|but|or|nor|yet)\s+(.+)$/i);
+          if (m && wc(m[1]) >= 2 && wc(m[3]) >= 1) segs = [m[1].trim(), `${m[2]} ${m[3]}`.trim()];
+        }
+        if (segs.length === 1 && n >= 6 && normalized.length >= 20) {
+          const poetic = splitIntoPhraseSegments(normalized);
+          if (poetic.length > 1) segs = poetic;
+        }
+        if (segs.length === 1 && n >= 3) {
+          const per = n <= 5 ? 2 : 3;
+          const out = [];
+          for (let i = 0; i < tokens.length; i += per) out.push(tokens.slice(i, i + per).join(' '));
+          if (out.length > 1) segs = out;
+        }
+        return segs.length ? segs : [normalized];
+      };
+      const segmentQuoteForLayout = (text) => {
+        const applyPoeticMicroSplit = (segments) => {
+          const segs = (segments || []).slice();
+          const allowPoeticSplit = isShortQuoteLayout || (quoteWordCount > 8 && quoteWordCount <= 18);
+          if (!allowPoeticSplit) return segs;
+          if (segs.length >= 3) return segs;
+          if (quoteWordCount < 5) return segs;
+          // Prefer splitting a compact final segment (e.g. "deepen the mystery.") before larger lead lines.
+          let pickIdx = -1;
+          for (let i = segs.length - 1; i >= 0; i--) {
+            const words = String(segs[i] || '').trim().split(/\s+/).filter(Boolean);
+            if (words.length >= 3 && words.length <= 6) {
+              pickIdx = i;
+              break;
+            }
+          }
+          if (pickIdx < 0) {
+            let bestWords = 0;
+            for (let i = 0; i < segs.length; i++) {
+              const words = String(segs[i] || '').trim().split(/\s+/).filter(Boolean);
+              if (words.length > bestWords) {
+                bestWords = words.length;
+                pickIdx = i;
+              }
+            }
+          }
+          const bestWords = pickIdx >= 0
+            ? String(segs[pickIdx] || '').trim().split(/\s+/).filter(Boolean).length
+            : 0;
+          if (pickIdx < 0 || bestWords < 3) return segs;
+          const words = String(segs[pickIdx] || '').trim().split(/\s+/).filter(Boolean);
+          let cutAt = -1;
+          if (words.length === 3) cutAt = 2; // e.g. "deepen the | mystery."
+          else if (words.length === 4) cutAt = 2;
+          else if (words.length === 5) cutAt = 3;
+          else if (words.length >= 6) cutAt = Math.max(2, Math.min(words.length - 2, Math.round(words.length * (0.52 + rnd() * 0.14))));
+          if (cutAt <= 0 || cutAt >= words.length) return segs;
+          const left = words.slice(0, cutAt).join(' ').trim();
+          const right = words.slice(cutAt).join(' ').trim();
+          if (!left || !right) return segs;
+          segs.splice(pickIdx, 1, left, right);
+          return segs;
+        };
+        const raw = String(text ?? '');
+        const paragraphs = raw
+          .split(/\r?\n/)
+          .map((p) => p.replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
+        if (!paragraphs.length) return [];
+        const runOne = (normalized) => {
+          if (!normalized) return [];
+          if (isShortQuoteLayout && normalized.length <= 130) return segmentShortQuoteForLayout(normalized);
+          return splitIntoPhraseSegments(normalized);
+        };
+        if (paragraphs.length === 1) return applyPoeticMicroSplit(runOne(paragraphs[0]));
+        const out = [];
+        for (const p of paragraphs) out.push(...runOne(p));
+        return applyPoeticMicroSplit(out);
+      };
+      /** @type {{ lines: string[], font: string, lh: number, w: number, h: number, role: string, rowGroup?: number, rowSlot?: number }[]} */
+      let stripSpecs = [];
+      const buildStripSpecs = () => {
+        const specs = [];
+        let nextRowPairGroup = 1;
+        const measureStrip = (lines, font, lineLead, role, rowMeta = null) => {
+          ctx.font = font;
+          let tw = 0;
+          for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
+          const fs = parseInt(/(\d+)px/.exec(font)[1], 10);
+          const lh = fs * lineLead;
+          const w = Math.min(STRIP_MAX_W, Math.ceil(tw + PAPER_PAD_X * 2 + 6));
+          const h = Math.ceil(lines.length * lh + PAPER_PAD_Y * 2);
+          const o = { lines, font, lh, w, h, role };
+          if (rowMeta) Object.assign(o, rowMeta);
+          specs.push(o);
+        };
+        const tryPairQuoteLine = (ln, font, lineSalt) => {
+          if (!ln) return null;
+          const words = ln.trim().split(/\s+/).filter(Boolean);
+          if (words.length < 3) return null;
+          ctx.font = font;
+          const fullW = ctx.measureText(ln).width;
+          if (fullW < innerMaxW * 0.22 && words.length < 5) return null;
+          const lim = innerMaxW;
+          let best = null;
+          for (let k = 1; k <= words.length - 1; k++) {
+            const left = words.slice(0, k).join(' ');
+            const right = words.slice(k).join(' ');
+            const wL = ctx.measureText(left).width;
+            const wR = ctx.measureText(right).width;
+            if (wL > lim || wR > lim) continue;
+            if (wL < 14 || wR < 14) continue;
+            const imbalance = Math.abs(wL - wR);
+            if (!best || imbalance < best.imbalance) best = { left, right, imbalance };
+          }
+          if (!best) return null;
+          const dch = rngDateKey.charCodeAt(lineSalt % rngDateKey.length);
+          const pick = (((lineSalt * 1103515245 + 12345) ^ dch * 31) >>> 0) % 100 < 48;
+          return pick ? [best.left, best.right] : null;
+        };
+        const segments = segmentQuoteForLayout(quoteText);
+        const qPx = quoteFontPx();
+        const bodyFont = `400 ${qPx}px ${FONT_SERIF}`;
+        ctx.font = bodyFont;
+        let quoteLineSalt = 0;
+        for (const seg of segments) {
+          const lines = wrapLines(ctx, seg, innerMaxW);
+          for (const ln of lines) {
+            const pair = tryPairQuoteLine(ln, bodyFont, quoteLineSalt++);
+            if (pair) {
+              const gid = nextRowPairGroup++;
+              measureStrip([pair[0]], bodyFont, 1.38, 'quote', { rowGroup: gid, rowSlot: 0 });
+              measureStrip([pair[1]], bodyFont, 1.38, 'quote', { rowGroup: gid, rowSlot: 1 });
+            } else {
+              measureStrip([ln], bodyFont, 1.38, 'quote');
+            }
+          }
+        }
+        if (quoteAuthor) {
+          const aPx = authorFontPx();
+          const authorFont = `italic 400 ${aPx}px ${FONT_SERIF}`;
+          ctx.font = authorFont;
+          const authorLines = wrapLines(ctx, quoteAuthor, innerMaxW);
+          for (const ln of authorLines) measureStrip([ln], authorFont, 1.38, 'author');
+        }
+        return specs;
+      };
+      const stackContentSpan = (specs) => {
+        let h = 0;
+        let i = 0;
+        while (i < specs.length) {
+          const spec = specs[i];
+          if (i > 0 && spec.role === 'author' && specs[i - 1].role === 'quote') h += layoutQuoteAuthorGap;
+          if (
+            spec.rowGroup != null &&
+            spec.rowSlot === 0 &&
+            specs[i + 1]?.rowGroup === spec.rowGroup &&
+            specs[i + 1].rowSlot === 1
+          ) {
+            h += Math.max(spec.h, specs[i + 1].h) + stackVertPad;
+            i += 2;
+          } else {
+            h += spec.h + stackVertPad;
+            i += 1;
+          }
+        }
+        return h;
+      };
+      const stripEdgeMargin = 40;
+      const staggerStripCenterX = (spec) => {
+        const roll = rnd();
+        const minCx = spec.w / 2 + stripEdgeMargin;
+        const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+        let cx;
+        if (roll < 0.34) cx = stripEdgeMargin + spec.w / 2 + rnd() * 95;
+        else if (roll < 0.67) cx = STORY_W / 2 + (rnd() - 0.5) * (STORY_W * 0.3);
+        else cx = STORY_W - stripEdgeMargin - spec.w / 2 - rnd() * 95;
+        return Math.max(minCx, Math.min(maxCx, cx));
+      };
+      const shortQuoteStripCenterX = (spec) => {
+        const minCx = spec.w / 2 + stripEdgeMargin;
+        const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+        const cx = STORY_W / 2 + (rnd() - 0.5) * 76;
+        return Math.max(minCx, Math.min(maxCx, cx));
+      };
+      const authorStripCenterX = (spec) => {
+        const minCx = STORY_W / 2 + spec.w / 2 + stripEdgeMargin;
+        const maxCx = STORY_W - spec.w / 2 - stripEdgeMargin;
+        if (minCx >= maxCx) {
+          return Math.max(
+            spec.w / 2 + stripEdgeMargin,
+            Math.min(STORY_W - spec.w / 2 - stripEdgeMargin, STORY_W * 0.75)
+          );
+        }
+        return minCx + rnd() * (maxCx - minCx);
+      };
+      const stripTopFrac = isPostLayout
+        ? (isShortQuoteLayout ? 0.028 : 0.04)
+        : (isShortQuoteLayout ? 0.09 : 0.12);
+      const stripBudget = usePostQuoteLayout ? STORY_H * 0.97 : STORY_H - 32;
+      const minBodyPx = usePostQuoteLayout ? 22 : 24;
+      const shrinkIters = usePostQuoteLayout ? 24 : 18;
+      for (let s = 0; s < shrinkIters; s++) {
+        stripSpecs = buildStripSpecs();
+        const stackH = STORY_H * stripTopFrac + stackContentSpan(stripSpecs);
+        if (stackH <= stripBudget || bodyPx <= minBodyPx) break;
+        bodyPx -= 2;
+      }
+      const contentSpan = stackContentSpan(stripSpecs);
+      const vPadTop = isPostLayout ? 20 : 28;
+      const vPadBottom = isPostLayout ? 22 : 118;
+      const maxCenteredSpan = STORY_H - vPadTop - vPadBottom;
+      const centerJitter = (rnd() - 0.5) * (isPostLayout ? 72 : 96);
+      let cursorY;
+      if (contentSpan > maxCenteredSpan) cursorY = STORY_H * stripTopFrac;
+      else {
+        cursorY = (STORY_H - contentSpan) / 2 + centerJitter;
+        cursorY = Math.max(vPadTop, Math.min(cursorY, STORY_H - contentSpan - vPadBottom));
+      }
+      const strips = [];
+      for (let i = 0; i < stripSpecs.length; ) {
+        if (i > 0 && stripSpecs[i].role === 'author' && stripSpecs[i - 1].role === 'quote') {
+          cursorY += layoutQuoteAuthorGap;
+        }
+        const spec = stripSpecs[i];
+        const gap = usePostQuoteLayout ? (15 + rnd() * 18) : (11 + rnd() * 12);
+        if (
+          spec.rowGroup != null &&
+          spec.rowSlot === 0 &&
+          stripSpecs[i + 1]?.rowGroup === spec.rowGroup &&
+          stripSpecs[i + 1].rowSlot === 1
+        ) {
+          const a = spec;
+          const b = stripSpecs[i + 1];
+          const pairHGap = 8 + rnd() * 14;
+          const totalWfix = a.w + pairHGap + b.w;
+          const topOfRow = cursorY;
+          const rowH = Math.max(a.h, b.h);
+          const pseudo = { w: totalWfix, role: 'quote' };
+          let rowCenterX;
+          if (isShortQuoteLayout) rowCenterX = shortQuoteStripCenterX(pseudo);
+          else rowCenterX = staggerStripCenterX(pseudo);
+          const half = totalWfix / 2;
+          const minC = stripEdgeMargin + half;
+          const maxC = STORY_W - stripEdgeMargin - half;
+          rowCenterX = Math.max(minC, Math.min(maxC, rowCenterX));
+          const leftCx = rowCenterX - half + a.w / 2;
+          const rightCx = rowCenterX - half + a.w + pairHGap + b.w / 2;
+          strips.push({
+            ...a,
+            x: leftCx,
+            y: topOfRow + a.h / 2,
+            padX: PAPER_PAD_X,
+            angle: (rnd() - 0.5) * 0.055,
+            seed: `${a.role}_${i}`
+          });
+          strips.push({
+            ...b,
+            x: rightCx,
+            y: topOfRow + b.h / 2,
+            padX: PAPER_PAD_X,
+            angle: (rnd() - 0.5) * 0.055,
+            seed: `${b.role}_${i + 1}`
+          });
+          cursorY = topOfRow + rowH + gap;
+          i += 2;
+          continue;
+        }
+        let cx;
+        if (spec.role === 'author') cx = authorStripCenterX(spec);
+        else if (spec.role === 'quote' && isShortQuoteLayout) cx = shortQuoteStripCenterX(spec);
+        else cx = staggerStripCenterX(spec);
+        const cy = cursorY + spec.h / 2;
+        cursorY += spec.h + gap;
+        strips.push({
+          ...spec,
+          x: cx,
+          y: cy,
+          padX: PAPER_PAD_X,
+          angle: (rnd() - 0.5) * 0.055,
+          seed: `${spec.role}_${i}`
+        });
+        i += 1;
+      }
+      return strips;
+    }
+
+    // Back-compat alias while call sites migrate.
+    const buildLayoutBQuoteStripPlan = getLayoutBStoryQuotePlan;
+
     /**
      * Instagram layout B: full-bleed quilt, paper quote strips; story (9:16) adds a corner title strip.
      * @param {Blob} highResBlob
@@ -5983,6 +6512,8 @@ try {
               (layoutW === 1080 && layoutH === 1350) ||
               Math.abs(layoutW / Math.max(1, layoutH) - 1080 / 1350) < 0.03;
             const STRIP_MAX_W = STORY_W - (isPostLayout ? 52 : 100);
+            /** Use post-style quote strip composition for both post and story. */
+            const usePostQuoteLayout = true;
             const PAPER_PAD_X = 26;
             const PAPER_PAD_Y = 15;
             const PAPER_FILL = '#ebe8e3';
@@ -6563,24 +7094,24 @@ try {
                 ctx.fillRect(0, 0, STORY_W, STORY_H);
 
                 const innerMaxW = STRIP_MAX_W - PAPER_PAD_X * 2;
-                const layoutQuoteAuthorGap = isPostLayout
+                const layoutQuoteAuthorGap = usePostQuoteLayout
                   ? (isShortQuoteLayout ? 72 : 58)
                   : (isShortQuoteLayout ? 78 : 64);
                 let bodyPx = Math.round(38 * 1.25);
                 if (isShortQuoteLayout) {
                   bodyPx += 18;
                 }
-                if (isPostLayout) {
+                if (usePostQuoteLayout) {
                   bodyPx += 10;
                 }
                 /** Short quotes: quote strips render larger; attribution stays smaller so it does not dominate. */
                 const quoteFontPx = () => (isShortQuoteLayout ? bodyPx + 12 : bodyPx);
                 const authorFontPx = () =>
                   isShortQuoteLayout ? Math.max(23, Math.round(bodyPx * 0.7)) : bodyPx;
-                const stripTopFrac = isPostLayout
+                const stripTopFrac = usePostQuoteLayout
                   ? (isShortQuoteLayout ? 0.028 : 0.04)
                   : (isShortQuoteLayout ? 0.09 : 0.12);
-                const stackVertPad = isPostLayout ? 19 : 14;
+                const stackVertPad = usePostQuoteLayout ? 19 : 14;
                 /** @type {{ lines: string[], font: string, lh: number, w: number, h: number, role: string, rowGroup?: number, rowSlot?: number }[]} */
                 let stripSpecs = [];
 
@@ -6831,76 +7362,21 @@ try {
                   ctx.restore();
                 };
 
-                const stripBudget = isPostLayout ? STORY_H * 0.97 : STORY_H - 32;
-                const minBodyPx = isPostLayout ? 22 : 24;
-                const shrinkIters = isPostLayout ? 24 : 18;
-                for (let s = 0; s < shrinkIters; s++) {
-                  stripSpecs = buildStripSpecs();
-                  if (stackHeight(stripSpecs) <= stripBudget || bodyPx <= minBodyPx) break;
-                  bodyPx -= 2;
+                const quoteStripPlan = getLayoutBStoryQuotePlan(ctx, {
+                  quoteText,
+                  quoteAuthor,
+                  layoutW: STORY_W,
+                  layoutH: STORY_H,
+                  dateKey: rngDateKey,
+                  usePostQuoteLayout
+                });
+                for (const spec of quoteStripPlan) {
+                  drawStripContent(spec, spec.x, spec.y, spec.angle);
                 }
-
-                const contentSpan = stackContentSpan(stripSpecs);
-                const vPadTop = isPostLayout ? 20 : 28;
-                const vPadBottom = isPostLayout ? 22 : 118;
-                const maxCenteredSpan = STORY_H - vPadTop - vPadBottom;
-                const centerJitter = (rnd() - 0.5) * (isPostLayout ? 72 : 96);
-                let cursorY;
-                if (contentSpan > maxCenteredSpan) {
-                  cursorY = STORY_H * stripTopFrac;
-                } else {
-                  cursorY = (STORY_H - contentSpan) / 2 + centerJitter;
-                  cursorY = Math.max(
-                    vPadTop,
-                    Math.min(cursorY, STORY_H - contentSpan - vPadBottom)
-                  );
-                }
-
-                for (let i = 0; i < stripSpecs.length; ) {
-                  if (i > 0 && stripSpecs[i].role === 'author' && stripSpecs[i - 1].role === 'quote') {
-                    cursorY += layoutQuoteAuthorGap;
-                  }
-                  const spec = stripSpecs[i];
-                  const gap = isPostLayout ? (15 + rnd() * 18) : (11 + rnd() * 12);
-                  if (
-                    spec.rowGroup != null &&
-                    spec.rowSlot === 0 &&
-                    stripSpecs[i + 1]?.rowGroup === spec.rowGroup &&
-                    stripSpecs[i + 1].rowSlot === 1
-                  ) {
-                    const a = spec;
-                    const b = stripSpecs[i + 1];
-                    const pairHGap = 8 + rnd() * 14;
-                    const totalWfix = a.w + pairHGap + b.w;
-                    const topOfRow = cursorY;
-                    const rowH = Math.max(a.h, b.h);
-                    const pseudo = { w: totalWfix, role: 'quote' };
-                    let rowCenterX;
-                    if (isShortQuoteLayout) rowCenterX = shortQuoteStripCenterX(pseudo);
-                    else rowCenterX = staggerStripCenterX(pseudo);
-                    const half = totalWfix / 2;
-                    const minC = stripEdgeMargin + half;
-                    const maxC = STORY_W - stripEdgeMargin - half;
-                    rowCenterX = Math.max(minC, Math.min(maxC, rowCenterX));
-                    const leftCx = rowCenterX - half + a.w / 2;
-                    const rightCx = rowCenterX - half + a.w + pairHGap + b.w / 2;
-                    const jitterA0 = (rnd() - 0.5) * 0.055;
-                    const jitterA1 = (rnd() - 0.5) * 0.055;
-                    drawStripContent(a, leftCx, topOfRow + a.h / 2, jitterA0);
-                    drawStripContent(b, rightCx, topOfRow + b.h / 2, jitterA1);
-                    cursorY = topOfRow + rowH + gap;
-                    i += 2;
-                    continue;
-                  }
-                  const jitterA = (rnd() - 0.5) * 0.055;
-                  let cx;
-                  if (spec.role === 'author') cx = authorStripCenterX(spec);
-                  else if (spec.role === 'quote' && isShortQuoteLayout) cx = shortQuoteStripCenterX(spec);
-                  else cx = staggerStripCenterX(spec);
-                  const cy = cursorY + spec.h / 2;
-                  cursorY += spec.h + gap;
-                  drawStripContent(spec, cx, cy, jitterA);
-                  i += 1;
+                const quoteFontFromPlan = quoteStripPlan.find((s) => s.role === 'quote')?.font || '';
+                const parsedBodyPx = parseInt(/(\d+)px/.exec(quoteFontFromPlan || '')?.[1] || '0', 10);
+                if (Number.isFinite(parsedBodyPx) && parsedBodyPx > 0) {
+                  bodyPx = parsedBodyPx;
                 }
 
                 if (!isPostLayout) {
@@ -12593,6 +13069,7 @@ try {
             <button onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Family Blocks</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
+            <button onclick="app.handleTestInstagramStoryImage()">📱 Create IG story (Layout B 9:16)</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handleAdminSyntheticQuiltReel()">🎬 Synthetic reel: split build (WebM ~8s)</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handlePushInstagramAssetsToFirestore()">Push IG images to Firestore (Zapier)</button>
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
@@ -13998,12 +14475,17 @@ try {
 
           this.uiService.showToast('Recording reel — keep this tab focused');
 
+          const qt = this.quoteService?.getTodayQuote?.() || { text: '', body: '', author: '' };
+          const reelDateKey = Utils.getTodayKey();
           const { blob, mode } = await this._buildSyntheticQuiltReelWebm(blocks, {
             width: 1080,
             height: 1920,
             durationSec: 8,
             fps: 30,
-            bg: '#f6f4f1'
+            bg: '#f6f4f1',
+            quoteText: String(qt.text ?? qt.body ?? '').trim(),
+            quoteAuthor: String(qt.author ?? '').trim(),
+            dateKey: reelDateKey
           });
 
           if (!blob || blob.size < 200) {
@@ -14298,6 +14780,9 @@ try {
         const durationSec = opts.durationSec;
         const fps = opts.fps;
         const bg = opts.bg || '#f6f4f1';
+        const quoteText = String(opts.quoteText || '').trim();
+        const quoteAuthor = String(opts.quoteAuthor || '').trim();
+        const quoteDateKey = String(opts.dateKey || Utils.getTodayKey()).trim();
         const pad = 0;
 
         let minX = Infinity;
@@ -14360,6 +14845,9 @@ try {
           throw new Error('No drawable blocks for reel');
         }
         const smoothstep = (t) => t * t * (3 - 2 * t);
+        const FONT_BODY = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        const FONT_AUTHOR = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        const QUOTE_LINE_LEAD = 1.12;
 
         const canvas = document.createElement('canvas');
         canvas.width = W;
@@ -14642,6 +15130,135 @@ try {
           ctx.restore();
         };
 
+        const wrapTextLines = (ctx, text, maxWidth) => {
+          const words = String(text || '').split(/\s+/).filter(Boolean);
+          const lines = [];
+          let line = '';
+          for (const word of words) {
+            const candidate = line ? `${line} ${word}` : word;
+            if (!line || ctx.measureText(candidate).width <= maxWidth) {
+              line = candidate;
+            } else {
+              lines.push(line);
+              line = word;
+            }
+          }
+          if (line) lines.push(line);
+          return lines;
+        };
+        const stripEaseOut = (t) => 1 - Math.pow(1 - t, 3);
+        const stripHash = (s) => hash01(`strip|${s}`);
+        const buildHandCutStripPath = (ctx, w, h, seed) => {
+          const hw = w / 2;
+          const hh = h / 2;
+          const amp = Math.max(1.4, Math.min(4.2, Math.min(w, h) * 0.05));
+          const n = (k) => (stripHash(`${seed}|${k}`) - 0.5) * 2 * amp;
+          const pts = [
+            { x: -hw + n('c1x'), y: -hh + n('c1y') },
+            { x: hw + n('c2x'), y: -hh + n('c2y') },
+            { x: hw + n('c3x'), y: hh + n('c3y') },
+            { x: -hw + n('c4x'), y: hh + n('c4y') }
+          ];
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 0; i < 4; i++) {
+            const a = pts[i];
+            const b = pts[(i + 1) % 4];
+            const mx = (a.x + b.x) / 2 + n(`m${i}x`);
+            const my = (a.y + b.y) / 2 + n(`m${i}y`);
+            ctx.quadraticCurveTo(mx, my, b.x, b.y);
+          }
+          ctx.closePath();
+        };
+        const drawPaperStrip = (ctx, strip, alpha = 1) => {
+          ctx.save();
+          ctx.translate(strip.x, strip.y);
+          ctx.rotate(strip.angle);
+          ctx.globalAlpha = alpha;
+          ctx.shadowColor = 'rgba(0,0,0,0.14)';
+          ctx.shadowBlur = 12;
+          ctx.shadowOffsetX = 1.5;
+          ctx.shadowOffsetY = 2.5;
+          buildHandCutStripPath(ctx, strip.w, strip.h, strip.seed);
+          ctx.fillStyle = '#ebe8e3';
+          ctx.fill();
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          ctx.fillStyle = '#3f3a35';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.font = strip.font;
+          const tx = -strip.w / 2 + strip.padX;
+          const lines = Array.isArray(strip.lines) && strip.lines.length ? strip.lines : [strip.text];
+          const lh = Number(strip.lh) > 0 ? Number(strip.lh) : 0;
+          if (lines.length > 1 && lh > 0) {
+            const totalTextH = (lines.length - 1) * lh;
+            let ty = -totalTextH / 2;
+            for (const ln of lines) {
+              ctx.fillText(ln, tx, ty);
+              ty += lh;
+            }
+          } else {
+            ctx.fillText(lines[0] || '', tx, 1);
+          }
+          ctx.restore();
+        };
+        let cachedStripPlan = null;
+        const getQuoteStripPlan = (ctx) => {
+          if (cachedStripPlan) return cachedStripPlan;
+          if (!quoteText && !quoteAuthor) {
+            cachedStripPlan = [];
+            return cachedStripPlan;
+          }
+          const strips = getLayoutBStoryQuotePlan(ctx, {
+            quoteText,
+            quoteAuthor,
+            layoutW: W,
+            layoutH: H,
+            dateKey: quoteDateKey,
+            usePostQuoteLayout: true
+          }).map((s, i) => ({
+            ...s,
+            text: (s.lines || []).join(' ').trim(),
+            fromSide: s.role === 'author' ? 1 : ((i % 2 === 0) ? -1 : 1),
+            start: i * 0.07,
+            end: 0.24 + i * 0.13
+          }));
+          cachedStripPlan = strips;
+          return cachedStripPlan;
+        };
+        const drawQuoteOverlay = (ctx, revealProgress) => {
+          const strips = getQuoteStripPlan(ctx);
+          if (!strips.length) return;
+          const rp = Math.max(0, Math.min(1, revealProgress));
+          for (const s of strips) {
+            const localRaw = Math.max(0, Math.min(1, (rp - s.start) / Math.max(0.001, s.end - s.start)));
+            if (localRaw <= 0.001) continue;
+            // Choppy stop-motion entrance: step-quantized movement + per-step jitter.
+            const steps = 8;
+            const stepIdx = Math.max(0, Math.min(steps, Math.floor(localRaw * steps)));
+            const stepT = stepIdx / steps;
+            const e = stripEaseOut(stepT);
+            const offscreenX = s.fromSide < 0 ? -s.w * 0.9 : W + s.w * 0.9;
+            const crawlAmpX = (1 - e) * (W * 0.045);
+            const crawlAmpY = (1 - e) * (H * 0.017);
+            const zigSign = stepIdx % 2 === 0 ? -1 : 1;
+            const jitterX = (stripHash(`${s.seed}|sx|${stepIdx}`) - 0.5) * W * 0.014 * (1 - e);
+            const jitterY = (stripHash(`${s.seed}|sy|${stepIdx}`) - 0.5) * H * 0.011 * (1 - e);
+            const seesaw = Math.sin(stepIdx * 1.15 + stripHash(`${s.seed}|phase`) * Math.PI * 2);
+            const crabX = (1 - e) * W * 0.014 * seesaw;
+            const x = offscreenX + (s.x - offscreenX) * e + crawlAmpX * zigSign + jitterX + crabX;
+            const y = s.y + crawlAmpY * zigSign * 0.8 + jitterY;
+            const swing = (1 - e) * 0.09 * seesaw + (1 - e) * 0.035 * zigSign;
+            const angle = s.angle + swing;
+            const alpha = 1; // no fade; stop-motion movement only
+            const drawStrip = { ...s, x, y, angle };
+            drawPaperStrip(ctx, drawStrip, alpha);
+          }
+        };
+
         const drawFrameBlockItems = (drawItems, tSec = 0) => {
           const ctx = canvas.getContext('2d');
           ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -14802,6 +15419,7 @@ try {
         const drawFrame = (tSec) => {
           if (!replayPlan && !mergePlan) {
             drawFrameFade(tSec);
+            drawQuoteOverlay(canvas.getContext('2d'), Math.max(0, Math.min(1, tSec / durationSec)));
             return;
           }
           const uRaw = Math.max(0, Math.min(1, tSec / durationSec));
@@ -14818,11 +15436,15 @@ try {
             const progress = Math.max(0, Math.min(K, heldProgress));
             const items = buildReplayTransitionItems(replayPlan.events, progress);
             drawFrameBlockItems(items, tSec);
+            const quoteProgress = K > 0 ? Math.max(0, Math.min(1, heldProgress / K)) : uMap;
+            drawQuoteOverlay(canvas.getContext('2d'), quoteProgress);
             return;
           }
           const k = Math.min(K, Math.max(0, Math.ceil(heldProgress - 1e-9)));
           const drawBlocks = this._quiltBlocksAfterSplitSteps(mergePlan.root, mergePlan.mergeHistory, k);
           drawFrameBlockItems((drawBlocks || []).map((b) => ({ block: b, alpha: 1, scale: 1 })), tSec);
+          const quoteProgress = K > 0 ? Math.max(0, Math.min(1, heldProgress / K)) : uMap;
+          drawQuoteOverlay(canvas.getContext('2d'), quoteProgress);
         };
 
         drawFrame(0);
@@ -14931,6 +15553,48 @@ try {
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testInstagramImage');
+        }
+      }
+
+      // Test Instagram image: story 9:16 Layout B (downloads directly like post button)
+      async handleTestInstagramStoryImage() {
+        try {
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            return;
+          }
+
+          const todayKey = Utils.getTodayKey();
+          const quote = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+          const qText = String(quote.text ?? quote.body ?? '').trim();
+          const qAuthor = String(quote.author ?? '').trim();
+          const highResBlob = await this.getHighResQuiltBlobForShare();
+          const outBlob = await composeInstagramLayoutBFromQuiltBlob(
+            highResBlob,
+            qText,
+            qAuthor,
+            1080,
+            1920,
+            todayKey
+          );
+          if (!outBlob) {
+            this.logger.warn('Failed to generate Layout B story image');
+            return;
+          }
+
+          const url = URL.createObjectURL(outBlob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `instagram-layout-b-story-${todayKey}.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          await this.saveQuilt();
+          this.uiService.showToast('Image saved to your camera roll');
+          this.logger.log('✅ Instagram Layout B story image generated and downloaded');
+        } catch (error) {
+          this.errorHandler.handleError(error, 'testInstagramStoryImage');
         }
       }
 
