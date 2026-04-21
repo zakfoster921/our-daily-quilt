@@ -1,48 +1,117 @@
 # Runs at 06:30 UTC, before Daily Quilt Reset (07:00 UTC in daily-reset.yml).
-# Calls Railway to snapshot the current app-day quilt from Firestore → classic PNG + 8s static MP4 for Zapier.
-# Requires the same secrets as daily reset: RESET_URL must include /api/daily-reset (URL is rewritten to /api/nightly-instagram-snapshot).
+# Uses Playwright to load the live app, run synthetic split reel generation (SSR), upload WebM,
+# trigger Railway transcode to MP4, and verify /api/generate-instagram exposes reelMp4Url.
+# Requires RESET_URL secret (ending in /api/daily-reset) so we can derive APP_URL/API_BASE_URL.
 
-name: Nightly Instagram snapshot
+name: Nightly SSR reel automation
 
 on:
   schedule:
     - cron: "30 6 * * *"
   workflow_dispatch:
+    inputs:
+      date_key:
+        description: "Optional app-date override (YYYY-MM-DD)"
+        required: false
 
 jobs:
-  nightly-instagram-snapshot:
+  nightly-ssr-reel:
     runs-on: ubuntu-latest
     steps:
-      - name: POST /api/nightly-instagram-snapshot
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: our-daily-improved/package-lock.json
+
+      - name: Install dependencies
+        working-directory: our-daily-improved
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: our-daily-improved
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate synthetic split reel for Zapier
+        id: ssr
+        continue-on-error: true
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          DATE_KEY: ${{ inputs.date_key || '' }}
+          SSR_MAX_ATTEMPTS: "2"
+          SSR_ARTIFACTS_DIR: "tmp/ssr-artifacts"
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RESET_URL:-}" ]; then
+            echo "Missing RESET_URL secret"
+            exit 1
+          fi
+
+          API_BASE_URL="${RESET_URL%/api/daily-reset}"
+          APP_URL="${API_BASE_URL}/our-daily-beta.html"
+          echo "API_BASE_URL=${API_BASE_URL}"
+          echo "APP_URL=${APP_URL}"
+
+          cd our-daily-improved
+          APP_URL="$APP_URL" API_BASE_URL="$API_BASE_URL" DATE_KEY="${DATE_KEY:-}" \
+            SSR_MAX_ATTEMPTS="${SSR_MAX_ATTEMPTS}" SSR_ARTIFACTS_DIR="${SSR_ARTIFACTS_DIR}" \
+            npm run ssr:reel
+
+      - name: Upload SSR failure artifacts
+        if: steps.ssr.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-ssr-failure-artifacts
+          path: our-daily-improved/tmp/ssr-artifacts
+          if-no-files-found: ignore
+
+      - name: Fallback to static nightly reel snapshot
+        if: steps.ssr.outcome == 'failure'
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
           RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
+          DATE_KEY: ${{ inputs.date_key || '' }}
         run: |
           set -euo pipefail
 
           if [ -z "${RESET_URL:-}" ] || [ -z "${RESET_TOKEN:-}" ]; then
-            echo "Missing RESET_URL or RESET_TOKEN secret"
+            echo "Missing RESET_URL or RESET_TOKEN secret for fallback"
             exit 1
           fi
 
           SNAPSHOT_URL="${RESET_URL/daily-reset/nightly-instagram-snapshot}"
-          echo "POST $SNAPSHOT_URL"
+          echo "Fallback POST ${SNAPSHOT_URL}"
+
+          date_payload='{}'
+          if [ -n "${DATE_KEY:-}" ]; then
+            date_payload="{\"date\":\"${DATE_KEY}\"}"
+          fi
 
           http_code=$(curl -sS -o response.json -w "%{http_code}" \
             -X POST "$SNAPSHOT_URL" \
             -H "Content-Type: application/json" \
             -H "x-reset-token: $RESET_TOKEN" \
-            --data '{"source":"github-actions"}')
+            --data "${date_payload}")
 
           echo "HTTP $http_code"
           cat response.json
 
           if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 299 ]; then
-            echo "Snapshot request failed"
+            echo "Fallback snapshot request failed"
             exit 1
           fi
 
           if ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' response.json; then
-            echo "Snapshot returned success=false (e.g. insufficient_blocks or no_quilt_doc)"
+            echo "Fallback snapshot returned success=false"
             exit 1
           fi
+
+      - name: SSR fallback result
+        if: steps.ssr.outcome == 'failure'
+        run: |
+          echo "SSR failed; fallback executed successfully."
