@@ -43,6 +43,10 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
   const page = await context.newPage();
   try {
     await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    // Wait for app initialization path that loads quilt from Firestore/local data.
+    await page.waitForFunction(() => !!window.app && window.app._portalQuiltLoaded === true, undefined, {
+      timeout: 180000
+    });
     await page.waitForFunction(
       () =>
         !!window.app &&
@@ -60,7 +64,19 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
         }
         const app = window.app;
-        const blocks = app.quiltEngine?.blocks || [];
+        let blocks = app.quiltEngine?.blocks || [];
+        // CI/headless can race: app exists with default 1 block before async quilt hydrate completes.
+        if ((!Array.isArray(blocks) || blocks.length <= 1) && typeof app.loadQuilt === 'function') {
+          try {
+            await app.loadQuilt();
+            if (typeof app.renderQuilt === 'function') {
+              app.renderQuilt();
+            }
+          } catch (_) {
+            /* keep original state if reload fails */
+          }
+          blocks = app.quiltEngine?.blocks || [];
+        }
         if (!Array.isArray(blocks) || blocks.length <= 1) {
           throw new Error(`Need >1 block, found ${blocks.length || 0}`);
         }
