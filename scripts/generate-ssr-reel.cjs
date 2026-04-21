@@ -32,7 +32,15 @@ async function writeFailureArtifacts(page, attempt, outDir) {
 
 async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 2200 } });
+  const context = await browser.newContext({
+    viewport: { width: 430, height: 932 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+  });
+  const page = await context.newPage();
   try {
     await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction(
@@ -41,6 +49,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
         !!window.app.quiltEngine &&
         Array.isArray(window.app.quiltEngine.blocks) &&
         window.app.quiltEngine.blocks.length > 0,
+      undefined,
       { timeout: 180000 }
     );
 
@@ -145,6 +154,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
     await writeFailureArtifacts(page, attempt, outDir);
     throw err;
   } finally {
+    await context.close();
     await browser.close();
   }
 }
