@@ -91,6 +91,15 @@ function resolveFirebaseStorageBucket(serviceAccount) {
   if (fromEnv && String(fromEnv).trim()) {
     return String(fromEnv).trim();
   }
+  const fromServiceAccount =
+    serviceAccount &&
+    typeof serviceAccount.storage_bucket === 'string' &&
+    serviceAccount.storage_bucket.trim()
+      ? serviceAccount.storage_bucket.trim()
+      : '';
+  if (fromServiceAccount) {
+    return fromServiceAccount;
+  }
   const pid =
     (serviceAccount && serviceAccount.project_id) ||
     process.env.FIREBASE_PROJECT_ID ||
