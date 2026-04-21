@@ -56,7 +56,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
     const result = await page.evaluate(
       async ({ dateKey, apiBase }) => {
         if (!window.app) throw new Error('window.app not ready');
-        if (!window.Utils || typeof window.Utils.writeInstagramImagesDocForZapier !== 'function') {
+        if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
         }
         const app = window.app;
@@ -100,7 +100,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
           throw new Error('SSR reel blob too small');
         }
 
-        const doc = await window.Utils.writeInstagramImagesDocForZapier({
+        const doc = await Utils.writeInstagramImagesDocForZapier({
           dateKey,
           instagramImage,
           postLayoutBImageData,
