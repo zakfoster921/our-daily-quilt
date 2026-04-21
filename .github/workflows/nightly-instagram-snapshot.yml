@@ -1,0 +1,48 @@
+# Runs at 06:30 UTC, before Daily Quilt Reset (07:00 UTC in daily-reset.yml).
+# Calls Railway to snapshot the current app-day quilt from Firestore → classic PNG + 8s static MP4 for Zapier.
+# Requires the same secrets as daily reset: RESET_URL must include /api/daily-reset (URL is rewritten to /api/nightly-instagram-snapshot).
+
+name: Nightly Instagram snapshot
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  nightly-instagram-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/nightly-instagram-snapshot
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RESET_URL:-}" ] || [ -z "${RESET_TOKEN:-}" ]; then
+            echo "Missing RESET_URL or RESET_TOKEN secret"
+            exit 1
+          fi
+
+          SNAPSHOT_URL="${RESET_URL/daily-reset/nightly-instagram-snapshot}"
+          echo "POST $SNAPSHOT_URL"
+
+          http_code=$(curl -sS -o response.json -w "%{http_code}" \
+            -X POST "$SNAPSHOT_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-reset-token: $RESET_TOKEN" \
+            --data '{"source":"github-actions"}')
+
+          echo "HTTP $http_code"
+          cat response.json
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 299 ]; then
+            echo "Snapshot request failed"
+            exit 1
+          fi
+
+          if ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' response.json; then
+            echo "Snapshot returned success=false (e.g. insufficient_blocks or no_quilt_doc)"
+            exit 1
+          fi

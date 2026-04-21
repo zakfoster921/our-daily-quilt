@@ -3,6 +3,16 @@ const admin = require('firebase-admin');
 const { createCanvas } = require('canvas');
 const { spawn } = require('child_process');
 const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs').promises;
+const os = require('os');
+
+let ffmpegStaticPath = null;
+try {
+  ffmpegStaticPath = require('@ffmpeg-installer/ffmpeg').path;
+} catch (e) {
+  console.warn('⚠️ FFmpeg installer unavailable:', e.message);
+}
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -76,27 +86,336 @@ async function fetchUrlAsImageDataString(url) {
   return `data:image/png;base64,${b64}`;
 }
 
+function resolveFirebaseStorageBucket(serviceAccount) {
+  const fromEnv = process.env.FIREBASE_STORAGE_BUCKET;
+  if (fromEnv && String(fromEnv).trim()) {
+    return String(fromEnv).trim();
+  }
+  const pid =
+    (serviceAccount && serviceAccount.project_id) ||
+    process.env.FIREBASE_PROJECT_ID ||
+    null;
+  if (pid && pid !== 'your-project-id') {
+    return `${pid}.appspot.com`;
+  }
+  return undefined;
+}
+
 // Initialize Firebase Admin (you'll need to add your service account key)
 let db;
 try {
   // Use environment variable for service account
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
     const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-    admin.initializeApp({
+    const init = {
       credential: admin.credential.cert(serviceAccount)
-    });
+    };
+    const bucket = resolveFirebaseStorageBucket(serviceAccount);
+    if (bucket) init.storageBucket = bucket;
+    admin.initializeApp(init);
   } else {
     // Fallback to application default
-    admin.initializeApp({
+    const init = {
       credential: admin.credential.applicationDefault(),
       projectId: process.env.FIREBASE_PROJECT_ID || 'your-project-id'
-    });
+    };
+    const bucket = resolveFirebaseStorageBucket(null);
+    if (bucket) init.storageBucket = bucket;
+    admin.initializeApp(init);
   }
   db = admin.firestore();
   console.log('✅ Firebase Admin initialized');
 } catch (error) {
   console.log('⚠️ Firebase Admin not initialized - will use fallback mode');
   console.error('Firebase error:', error.message);
+}
+
+function getFfmpegBinaryPath() {
+  return process.env.FFMPEG_PATH || ffmpegStaticPath || 'ffmpeg';
+}
+
+function setInstagramApiCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+function buildFirebaseDownloadUrl(bucketName, objectPath, downloadToken) {
+  const enc = encodeURIComponent(objectPath);
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${enc}?alt=media&token=${downloadToken}`;
+}
+
+function parsePngDataUrlToBuffer(dataUrl) {
+  const m = String(dataUrl).match(/^data:image\/png;base64,(.+)$/i);
+  if (!m) {
+    throw new Error('Expected PNG data URL from canvas');
+  }
+  return Buffer.from(m[1], 'base64');
+}
+
+async function firebaseSaveDownloadableFile(destination, buffer, contentType) {
+  const bucket = admin.storage().bucket();
+  const bucketName = bucket.name;
+  const token = crypto.randomUUID();
+  const file = bucket.file(destination);
+  await file.save(buffer, {
+    resumable: false,
+    metadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000',
+      metadata: {
+        firebaseStorageDownloadTokens: token
+      }
+    }
+  });
+  return { publicUrl: buildFirebaseDownloadUrl(bucketName, destination, token), bucketName };
+}
+
+function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
+  return new Promise((resolve, reject) => {
+    const vf =
+      'format=yuv420p,scale=1080:1920:force_original_aspect_ratio=decrease,' +
+      'pad=1080:1920:(ow-iw)/2:(oh-ih)/2';
+    const args = [
+      '-y',
+      '-loop',
+      '1',
+      '-t',
+      String(durationSec),
+      '-i',
+      pngPath,
+      '-vf',
+      vf,
+      '-c:v',
+      'libx264',
+      '-profile:v',
+      'high',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      '-an',
+      outPath
+    ];
+    const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve(stderr);
+      else reject(new Error(`ffmpeg exited ${code}: ${tailOutput(stderr, 4000)}`));
+    });
+  });
+}
+
+/** If an app-uploaded synthetic reel exists, nightly should refresh classic PNG only — not replace reel MP4. */
+function shouldProtectInstagramReelFromNightlyOverwrite(pre) {
+  if (!pre || typeof pre !== 'object') return false;
+  if (pre.reelWebmStorageUrl || pre.reelUrl) return true;
+  const src = pre.reelSource;
+  if (src && src !== 'nightly_static_mp4') return true;
+  return false;
+}
+
+/**
+ * Reads quilt + quote from Firestore, renders classic 4:5 PNG (same helper as server IG image),
+ * uploads classic; optionally an 8s H.264 MP4 (static frame, 9:16) when no app reel is present.
+ * Intended ~6:30 UTC before /api/daily-reset at 7:00 UTC. Unattended Zapier path when nobody opens the app.
+ */
+async function runNightlyInstagramSnapshot(options = {}) {
+  if (!db) {
+    throw new Error('Firestore not initialized');
+  }
+  const dateKey =
+    options.date && /^\d{4}-\d{2}-\d{2}$/.test(options.date) ? options.date : getAppDateKey();
+
+  const quiltSnap = await db.collection('quilts').doc(dateKey).get();
+  if (!quiltSnap.exists) {
+    return { success: false, date: dateKey, reason: 'no_quilt_doc' };
+  }
+  const quiltData = quiltSnap.data() || {};
+  const blocks = quiltData.blocks;
+  if (!Array.isArray(blocks) || blocks.length <= 1) {
+    return { success: false, date: dateKey, reason: 'insufficient_blocks' };
+  }
+
+  const quoteSnap = await db.collection('quotes').doc(dateKey).get();
+  const qd = quoteSnap.exists ? quoteSnap.data() : {};
+  const quoteLine = `${qd.text || 'Every day is a new beginning.'} — ${qd.author || ''}`.trim();
+
+  const pngDataUrl = await generateInstagramImageFromQuilt(blocks, quoteLine);
+  const pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
+
+  const docRef = db.collection('instagram-images').doc(dateKey);
+  const preSnap = await docRef.get();
+  const pre = preSnap.exists ? preSnap.data() : {};
+  const protectReel = shouldProtectInstagramReelFromNightlyOverwrite(pre);
+
+  const ffmpegPath = getFfmpegBinaryPath();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ig-night-'));
+  const pngPath = path.join(tmpDir, 'classic.png');
+  const mp4Path = path.join(tmpDir, 'reel-nightly.mp4');
+
+  try {
+    await fs.writeFile(pngPath, pngBuf);
+    const { publicUrl: imageStorageUrl } = await firebaseSaveDownloadableFile(
+      `instagram-zapier/${dateKey}/classic.png`,
+      pngBuf,
+      'image/png'
+    );
+
+    const mergePayload = {
+      date: dateKey,
+      lastUpdated: new Date().toISOString(),
+      lastNightlyInstagramSnapshotAt: new Date().toISOString(),
+      imageStorageUrl,
+      classicUrl: imageStorageUrl
+    };
+
+    let reelMp4Url = null;
+    if (!protectReel) {
+      await runFfmpegPngLoopToMp4(ffmpegPath, pngPath, mp4Path, 8);
+      const mp4Buf = await fs.readFile(mp4Path);
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `instagram-zapier/${dateKey}/reel-nightly.mp4`,
+        mp4Buf,
+        'video/mp4'
+      );
+      reelMp4Url = publicUrl;
+      mergePayload.reelMp4StorageUrl = reelMp4Url;
+      mergePayload.reelMp4Url = reelMp4Url;
+      mergePayload.reelSource = 'nightly_static_mp4';
+      mergePayload.reelNote =
+        'MP4 is an 8s static hold of the classic 4:5 card (GitHub + Railway). The split synthetic reel only exists if recorded from the app (not required for Zapier).';
+    } else {
+      mergePayload.reelNote =
+        'Nightly refreshed classic image only; left existing app/synthetic reel URLs unchanged.';
+    }
+
+    await docRef.set(mergePayload, { merge: true });
+
+    console.log(
+      protectReel
+        ? `✅ Nightly Instagram snapshot for ${dateKey} (classic only; reel preserved)`
+        : `✅ Nightly Instagram snapshot for ${dateKey} (classic + static reel MP4)`
+    );
+    return {
+      success: true,
+      date: dateKey,
+      imageStorageUrl,
+      reelMp4Url,
+      reelPreserved: protectReel
+    };
+  } finally {
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    } catch (_) {
+      /* */
+    }
+  }
+}
+
+function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-y',
+      '-i',
+      inputPath,
+      '-c:v',
+      'libx264',
+      '-profile:v',
+      'high',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
+      '-an',
+      outputPath
+    ];
+    const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve(stderr);
+      else reject(new Error(`ffmpeg exited ${code}: ${tailOutput(stderr, 4000)}`));
+    });
+  });
+}
+
+/**
+ * Downloads the WebM from Firestore, transcodes to H.264 MP4 (no audio), uploads next to it, merges URLs into the doc.
+ * @param {string} dateKey YYYY-MM-DD
+ */
+async function transcodeInstagramReelWebmToMp4(dateKey) {
+  if (!db) {
+    throw new Error('Firestore not initialized');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    throw new Error('Invalid date key');
+  }
+
+  const docRef = db.collection('instagram-images').doc(dateKey);
+  const snap = await docRef.get();
+  if (!snap.exists) {
+    throw new Error(`No instagram-images doc for ${dateKey}`);
+  }
+  const data = snap.data() || {};
+  const webmUrl =
+    data.reelWebmStorageUrl ||
+    data.reelUrl ||
+    null;
+  const existingMp4 = data.reelMp4StorageUrl || data.reelMp4Url || null;
+  if (existingMp4) {
+    return { success: true, cached: true, reelMp4Url: existingMp4, date: dateKey };
+  }
+  if (!webmUrl) {
+    return { success: false, skipped: true, reason: 'no_reel_webm', date: dateKey };
+  }
+
+  const ffmpegPath = getFfmpegBinaryPath();
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ig-reel-'));
+  const inPath = path.join(tmpDir, 'in.webm');
+  const outPath = path.join(tmpDir, 'out.mp4');
+
+  try {
+    const res = await fetch(webmUrl);
+    if (!res.ok) {
+      throw new Error(`Failed to download reel WebM (${res.status})`);
+    }
+    const webmBuf = Buffer.from(await res.arrayBuffer());
+    await fs.writeFile(inPath, webmBuf);
+
+    await runFfmpegWebmToMp4(ffmpegPath, inPath, outPath);
+
+    const mp4Buf = await fs.readFile(outPath);
+    const dest = `instagram-zapier/${dateKey}/reel.mp4`;
+    const { publicUrl: reelMp4Url } = await firebaseSaveDownloadableFile(dest, mp4Buf, 'video/mp4');
+    await docRef.set(
+      {
+        reelMp4StorageUrl: reelMp4Url,
+        reelMp4Url: reelMp4Url,
+        reelSource: 'app_synthetic_mp4',
+        lastReelTranscodeAt: new Date().toISOString()
+      },
+      { merge: true }
+    );
+
+    console.log(`✅ Transcoded reel to MP4 for ${dateKey}`);
+    return { success: true, cached: false, reelMp4Url, date: dateKey };
+  } finally {
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    } catch (_) {
+      /* */
+    }
+  }
 }
 
 // Generate Instagram image from quilt data (server-side)
@@ -354,6 +673,8 @@ async function getTodayInstagramImage(options = {}) {
     const storageClassicUrl = raw.imageStorageUrl || raw.classicUrl || null;
     const storageLayoutBUrl =
       raw.postLayoutBImageStorageUrl || raw.layoutBUrl || null;
+    const storageReelWebmUrl = raw.reelWebmStorageUrl || raw.reelUrl || null;
+    const storageReelMp4Url = raw.reelMp4StorageUrl || raw.reelMp4Url || null;
 
     let imageDataField = raw.imageData || null;
     let postLayoutBField = raw.postLayoutBImageData || null;
@@ -395,6 +716,8 @@ async function getTodayInstagramImage(options = {}) {
       postLayoutBImageData: postLayoutBField || null,
       storageClassicUrl,
       storageLayoutBUrl,
+      storageReelWebmUrl,
+      storageReelMp4Url,
       quote: quote,
       date: dateUsed
     };
@@ -442,10 +765,19 @@ app.post('/api/generate-instagram', async (req, res) => {
     }
 
     const hasLayoutB = !!postLayoutBImageUrl;
+    const reelWebmUrl = imageData.storageReelWebmUrl || '';
+    const reelMp4Url = imageData.storageReelMp4Url || '';
+    /** Instagram Reels accept MP4 (H.264); WebM is a fallback until /api/transcode-instagram-reel runs. */
+    const reelVideoUrl = reelMp4Url || reelWebmUrl || '';
+    const hasReelWebm = !!reelWebmUrl;
+    const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-3-storage-passthrough';
+    const apiVersion = 'instagram-api-4-reel-mp4';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
+    const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
+    const mediaUrls = [...imageUrls];
+    if (reelVideoUrl) mediaUrls.push(reelVideoUrl);
     const result = {
       apiVersion,
       success: true,
@@ -453,16 +785,27 @@ app.post('/api/generate-instagram', async (req, res) => {
       postLayoutBImageUrl: postLayoutBImageUrl || '',
       classicImageUrl: imageUrl,
       layoutBImageUrl: postLayoutBImageUrl || '',
-      imageUrls: hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl],
+      imageUrls,
+      reelWebmUrl,
+      reelMp4Url,
+      reelVideoUrl,
+      hasReelWebm,
+      hasReelMp4,
+      reelNeedsTranscode: hasReelWebm && !hasReelMp4,
+      mediaUrls,
       caption: imageData.quote,
       date: imageData.date,
       captionLength: imageData.quote.length,
       hasPostLayoutB: hasLayoutB,
       note:
-        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. If your Zap uses Firestore directly, map postLayoutBImageStorageUrl (not postLayoutBImageUrl).'
+        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. reelVideoUrl = IG-ready MP4 when present, else WebM. After pushing assets, the app calls POST /api/transcode-instagram-reel to produce reelMp4Url.'
     };
     
-    console.log('✅ Instagram assets from Firestore:', hasLayoutB ? 'classic + layout B URLs' : 'classic URL only');
+    console.log(
+      '✅ Instagram assets from Firestore:',
+      hasLayoutB ? 'classic + layout B URLs' : 'classic URL only',
+      hasReelWebm || hasReelMp4 ? `+ reel (${hasReelMp4 ? 'MP4' : 'WebM only'})` : ''
+    );
     res.json(result);
     
   } catch (error) {
@@ -581,6 +924,57 @@ app.post('/api/daily-reset', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'Daily reset failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+/**
+ * GitHub Actions (cron 6:30 UTC): snapshot quilt → classic PNG + 8s static MP4 for Zapier, before daily reset at 7:00 UTC.
+ * Auth: same x-reset-token as /api/daily-reset.
+ */
+app.post('/api/nightly-instagram-snapshot', async (req, res) => {
+  try {
+    const expectedToken = process.env.RESET_TOKEN;
+    if (!expectedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'RESET_TOKEN is not configured on server'
+      });
+    }
+
+    const providedToken = req.header('x-reset-token');
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized'
+      });
+    }
+
+    const bodyDate =
+      req.body && typeof req.body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date.trim())
+        ? req.body.date.trim()
+        : null;
+
+    const result = await runNightlyInstagramSnapshot(bodyDate ? { date: bodyDate } : {});
+    const ok = result && result.success;
+    if (!ok) {
+      return res.status(200).json({
+        ...result,
+        success: false,
+        timestamp: getUtcIsoNow()
+      });
+    }
+    return res.json({
+      ...result,
+      success: true,
+      timestamp: getUtcIsoNow()
+    });
+  } catch (error) {
+    console.error('❌ Nightly Instagram snapshot failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Snapshot failed',
       timestamp: getUtcIsoNow()
     });
   }
@@ -709,9 +1103,60 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
   }
 });
 
+app.options('/api/transcode-instagram-reel', (req, res) => {
+  setInstagramApiCors(res);
+  return res.status(204).end();
+});
+
+/**
+ * WebM → H.264 MP4 for Instagram Reels. Call after the client uploads reel.webm (e.g. right after Push IG assets).
+ * Body: { "date": "YYYY-MM-DD" } optional — defaults to app-day key used by generate-instagram.
+ */
+app.post('/api/transcode-instagram-reel', async (req, res) => {
+  setInstagramApiCors(res);
+  try {
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Firestore not initialized'
+      });
+    }
+    const bodyDate =
+      req.body && typeof req.body.date === 'string' ? req.body.date.trim() : '';
+    const dateKey =
+      bodyDate && /^\d{4}-\d{2}-\d{2}$/.test(bodyDate) ? bodyDate : getAppDateKey();
+
+    const out = await transcodeInstagramReelWebmToMp4(dateKey);
+    if (out.skipped && out.reason === 'no_reel_webm') {
+      return res.status(200).json({
+        success: true,
+        skipped: true,
+        reason: out.reason,
+        date: dateKey,
+        message: 'No reelWebmStorageUrl on doc — push IG assets with reel from the app first.'
+      });
+    }
+    return res.json({
+      success: true,
+      date: out.date,
+      cached: !!out.cached,
+      reelMp4Url: out.reelMp4Url || ''
+    });
+  } catch (error) {
+    console.error('❌ transcode-instagram-reel:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Transcode failed',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚂 Instagram Quilt Generator (Firestore) running on port ${PORT}`);
   console.log(`📸 Instagram endpoint: http://localhost:${PORT}/api/generate-instagram`);
+  console.log(`🎬 Reel transcode: http://localhost:${PORT}/api/transcode-instagram-reel`);
+  console.log(`🌙 Nightly Zapier snapshot: http://localhost:${PORT}/api/nightly-instagram-snapshot`);
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test-instagram`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
