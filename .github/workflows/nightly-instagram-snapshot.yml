@@ -19,21 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: our-daily-improved/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: our-daily-improved
         run: npm ci
 
       - name: Install Playwright Chromium
-        working-directory: our-daily-improved
         run: npx playwright install --with-deps chromium
 
       - name: Generate synthetic split reel for Zapier
@@ -57,7 +55,6 @@ jobs:
           echo "API_BASE_URL=${API_BASE_URL}"
           echo "APP_URL=${APP_URL}"
 
-          cd our-daily-improved
           APP_URL="$APP_URL" API_BASE_URL="$API_BASE_URL" DATE_KEY="${DATE_KEY:-}" \
             SSR_MAX_ATTEMPTS="${SSR_MAX_ATTEMPTS}" SSR_ARTIFACTS_DIR="${SSR_ARTIFACTS_DIR}" \
             npm run ssr:reel
@@ -67,7 +64,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nightly-ssr-failure-artifacts
-          path: our-daily-improved/tmp/ssr-artifacts
+          path: tmp/ssr-artifacts
           if-no-files-found: ignore
 
       - name: Fallback to static nightly reel snapshot
