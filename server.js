@@ -680,6 +680,27 @@ function hasLayoutBInRaw(raw) {
 }
 
 /**
+ * Matches `QuoteService.saveDayAssignment` → `dailyQuoteAssignments/{dateKey}`.
+ * Prefer this over `quotes/{dateKey}` for Zapier captions: the app’s “today” quote comes from assignments + catalog,
+ * while `quotes/` is mostly Notion UUID rows; a date-shaped `quotes/YYYY-MM-DD` doc is often stale or wrong.
+ */
+async function captionFromDailyQuoteAssignments(dateKey) {
+  if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return '';
+  try {
+    const snap = await db.collection('dailyQuoteAssignments').doc(dateKey).get();
+    if (!snap.exists) return '';
+    const a = snap.data() || {};
+    const t = String(a.textSnapshot || '').trim();
+    const au = String(a.authorSnapshot || '').trim();
+    if (t && au) return `${t} — ${au}`;
+    if (t) return t;
+  } catch (e) {
+    console.warn(`⚠️ dailyQuoteAssignments/${dateKey}:`, e.message);
+  }
+  return '';
+}
+
+/**
  * @param {{ date?: string }} [options] - optional YYYY-MM-DD (e.g. from Zapier body) to force which "app day" to use
  */
 async function getTodayInstagramImage(options = {}) {
@@ -777,13 +798,35 @@ async function getTodayInstagramImage(options = {}) {
         quote = inline;
         console.log(`✅ Using instagram-images inline caption for ${dateUsed}`);
       } else {
-        const quoteDoc = await db.collection('quotes').doc(dateUsed).get();
-        if (quoteDoc.exists) {
-          const quoteData = quoteDoc.data();
-          quote = `${quoteData.text} — ${quoteData.author}`;
-          console.log(`✅ Found quote for ${dateUsed}: "${quote}"`);
+        const stamp =
+          typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date.trim())
+            ? raw.date.trim()
+            : null;
+        const captionKeys = [...new Set([dateUsed, stamp].filter(Boolean))];
+        let fromAssignment = '';
+        for (const dk of captionKeys) {
+          fromAssignment = await captionFromDailyQuoteAssignments(dk);
+          if (fromAssignment) break;
+        }
+        if (fromAssignment) {
+          quote = fromAssignment;
+          console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
         } else {
-          console.log(`📝 No quote found for ${dateUsed}, using default`);
+          for (const dk of captionKeys) {
+            const quoteDoc = await db.collection('quotes').doc(dk).get();
+            if (!quoteDoc.exists) continue;
+            const quoteData = quoteDoc.data() || {};
+            const text = String(quoteData.text || '').trim();
+            const author = String(quoteData.author || '').trim();
+            if (text) {
+              quote = author ? `${text} — ${author}` : text;
+              console.log(`✅ Caption from quotes/{${dk}}`);
+              break;
+            }
+          }
+          if (quote === "Every day is a new beginning.") {
+            console.log(`📝 No caption for ${captionKeys.join(', ')}, using default`);
+          }
         }
       }
     } catch (quoteError) {
@@ -851,7 +894,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-8-zapier-caption-inline';
+    const apiVersion = 'instagram-api-9-caption-assignment';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
