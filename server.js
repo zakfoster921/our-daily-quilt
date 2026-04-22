@@ -787,30 +787,35 @@ async function getTodayInstagramImage(options = {}) {
       throw new Error(`Instagram doc for ${dateUsed} has no imageData or imageStorageUrl`);
     }
 
-    // Caption: prefer text baked with the same upload as images/reel (avoids app-day vs quotes/{date} drift).
+    // Caption order: (1) dailyQuoteAssignments — canonical pin for that calendar key; (2) zapierCaption — can go stale
+    // on merge if user later swaps quote in-app; (3) quotes/{date} — often wrong vs catalog. See captionSource in JSON.
     let quote = "Every day is a new beginning.";
+    let captionSource = 'default';
     try {
-      const inline =
-        (typeof raw.zapierCaption === 'string' && raw.zapierCaption.trim()) ||
-        (typeof raw.caption === 'string' && raw.caption.trim()) ||
-        '';
-      if (inline) {
-        quote = inline;
-        console.log(`✅ Using instagram-images inline caption for ${dateUsed}`);
+      const stamp =
+        typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date.trim())
+          ? raw.date.trim()
+          : null;
+      const captionKeys = [...new Set([dateUsed, stamp].filter(Boolean))];
+
+      let fromAssignment = '';
+      for (const dk of captionKeys) {
+        fromAssignment = await captionFromDailyQuoteAssignments(dk);
+        if (fromAssignment) break;
+      }
+      if (fromAssignment) {
+        quote = fromAssignment;
+        captionSource = 'dailyQuoteAssignments';
+        console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
       } else {
-        const stamp =
-          typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date.trim())
-            ? raw.date.trim()
-            : null;
-        const captionKeys = [...new Set([dateUsed, stamp].filter(Boolean))];
-        let fromAssignment = '';
-        for (const dk of captionKeys) {
-          fromAssignment = await captionFromDailyQuoteAssignments(dk);
-          if (fromAssignment) break;
-        }
-        if (fromAssignment) {
-          quote = fromAssignment;
-          console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
+        const inline =
+          (typeof raw.zapierCaption === 'string' && raw.zapierCaption.trim()) ||
+          (typeof raw.caption === 'string' && raw.caption.trim()) ||
+          '';
+        if (inline) {
+          quote = inline;
+          captionSource = 'zapierCaption';
+          console.log(`✅ Using instagram-images inline caption for ${dateUsed}`);
         } else {
           for (const dk of captionKeys) {
             const quoteDoc = await db.collection('quotes').doc(dk).get();
@@ -820,11 +825,12 @@ async function getTodayInstagramImage(options = {}) {
             const author = String(quoteData.author || '').trim();
             if (text) {
               quote = author ? `${text} — ${author}` : text;
+              captionSource = 'quotes';
               console.log(`✅ Caption from quotes/{${dk}}`);
               break;
             }
           }
-          if (quote === "Every day is a new beginning.") {
+          if (captionSource === 'default') {
             console.log(`📝 No caption for ${captionKeys.join(', ')}, using default`);
           }
         }
@@ -832,7 +838,7 @@ async function getTodayInstagramImage(options = {}) {
     } catch (quoteError) {
       console.warn(`⚠️ Could not fetch quote for ${dateUsed}:`, quoteError.message);
     }
-    
+
     return {
       imageData: imageDataField,
       postLayoutBImageData: postLayoutBField || null,
@@ -841,6 +847,7 @@ async function getTodayInstagramImage(options = {}) {
       storageReelWebmUrl,
       storageReelMp4Url,
       quote: quote,
+      captionSource,
       date: dateUsed
     };
   } catch (error) { 
@@ -894,7 +901,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-9-caption-assignment';
+    const apiVersion = 'instagram-api-10-caption-order';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
@@ -916,6 +923,7 @@ app.post('/api/generate-instagram', async (req, res) => {
       reelNeedsTranscode: hasReelWebm && !hasReelMp4,
       mediaUrls,
       caption: imageData.quote,
+      captionSource: imageData.captionSource || 'default',
       date: imageData.date,
       captionLength: imageData.quote.length,
       hasPostLayoutB: hasLayoutB,
