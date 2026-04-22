@@ -421,8 +421,9 @@ function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
 /**
  * Downloads the WebM from Firestore, transcodes to H.264 MP4 + AAC (bed music or silent), uploads next to it, merges URLs into the doc.
  * @param {string} dateKey YYYY-MM-DD
+ * @param {{ force?: boolean }} [options]
  */
-async function transcodeInstagramReelWebmToMp4(dateKey) {
+async function transcodeInstagramReelWebmToMp4(dateKey, options = {}) {
   if (!db) {
     throw new Error('Firestore not initialized');
   }
@@ -441,7 +442,8 @@ async function transcodeInstagramReelWebmToMp4(dateKey) {
     data.reelUrl ||
     null;
   const existingMp4 = data.reelMp4StorageUrl || data.reelMp4Url || null;
-  if (existingMp4) {
+  const force = !!options.force;
+  if (existingMp4 && !force) {
     return { success: true, cached: true, reelMp4Url: existingMp4, date: dateKey };
   }
   if (!webmUrl) {
@@ -1241,7 +1243,7 @@ app.options('/api/transcode-instagram-reel', (req, res) => {
 
 /**
  * WebM → H.264 MP4 for Instagram Reels. Call after the client uploads reel.webm (e.g. right after Push IG assets).
- * Body: { "date": "YYYY-MM-DD" } optional — defaults to app-day key used by generate-instagram.
+ * Body: { "date": "YYYY-MM-DD", "force": true } optional — defaults to app-day key used by generate-instagram.
  */
 app.post('/api/transcode-instagram-reel', async (req, res) => {
   setInstagramApiCors(res);
@@ -1254,10 +1256,18 @@ app.post('/api/transcode-instagram-reel', async (req, res) => {
     }
     const bodyDate =
       req.body && typeof req.body.date === 'string' ? req.body.date.trim() : '';
+    const force =
+      !!(
+        req.body &&
+        (req.body.force === true ||
+          req.body.force === 1 ||
+          req.body.force === '1' ||
+          req.body.force === 'true')
+      );
     const dateKey =
       bodyDate && /^\d{4}-\d{2}-\d{2}$/.test(bodyDate) ? bodyDate : getAppDateKey();
 
-    const out = await transcodeInstagramReelWebmToMp4(dateKey);
+    const out = await transcodeInstagramReelWebmToMp4(dateKey, { force });
     if (out.skipped && out.reason === 'no_reel_webm') {
       return res.status(200).json({
         success: true,
@@ -1271,6 +1281,7 @@ app.post('/api/transcode-instagram-reel', async (req, res) => {
       success: true,
       date: out.date,
       cached: !!out.cached,
+      forced: force,
       reelMp4Url: out.reelMp4Url || ''
     });
   } catch (error) {

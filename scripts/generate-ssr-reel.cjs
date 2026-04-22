@@ -143,7 +143,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
         const tr = await fetch(`${apiBase}/api/transcode-instagram-reel`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date: dateKey })
+          body: JSON.stringify({ date: dateKey, force: true })
         });
         const trJson = await tr.json().catch(() => ({}));
         if (!tr.ok || !trJson.success) {
