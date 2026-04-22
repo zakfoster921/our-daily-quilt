@@ -5794,7 +5794,7 @@ try {
         return run;
       }
 
-      /** Same string Zapier/IG should use as caption — must match what was drawn on PNG + reel (`getTodayQuote()`). */
+      /** Same string Zapier/IG should use as caption — must match PNG + reel (`getQuoteResolvedForInstagramDateKey`). */
       static formatZapierCaptionFromQuote(q) {
         if (!q || typeof q !== 'object') return '';
         const t = String(q.text ?? q.body ?? '').trim();
@@ -8693,7 +8693,11 @@ try {
                   console.warn('ArchiveService.generateInstagramImage not available');
                   return;
                 }
-                const todayQuote = window.app?.quoteService?.getTodayQuote() || null;
+                const qs = window.app?.quoteService;
+                const todayQuote =
+                  (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function'
+                    ? await qs.getQuoteResolvedForInstagramDateKey(igDateKey)
+                    : qs?.getTodayQuote()) || null;
                 const instagramImage = await arch.generateInstagramImage(igBlocks);
                 let postLayoutBImageData = null;
                 if (arch.generateInstagramPostLayoutBImage) {
@@ -9110,6 +9114,28 @@ try {
           this._pinnedByDateKey[dateKey] = quote;
         }
         return quote;
+      }
+
+      /**
+       * Quote for a specific quilt / instagram-storage day (YYYY-MM-DD): same resolution as
+       * `dailyQuoteAssignments/{dateKey}` and `/api/generate-instagram` caption priority.
+       * Do not use `getTodayQuote()` for Zapier assets when `dateKey` is explicit — it keys off “now”, not that day.
+       */
+      async getQuoteResolvedForInstagramDateKey(dateKey) {
+        const dk = String(dateKey || '').trim();
+        if (!dk || !/^\d{4}-\d{2}-\d{2}$/.test(dk)) {
+          return this.getTodayQuote();
+        }
+        if (!this.quotes?.length) {
+          return this.getTodayQuote();
+        }
+        try {
+          const pinned = await this.resolveAndPinCalendarKey(dk);
+          if (pinned) return pinned;
+        } catch (e) {
+          console.warn('getQuoteResolvedForInstagramDateKey:', e?.message || e);
+        }
+        return this.getQuoteForDate(dk) || this.getTodayQuote();
       }
 
       async primeQuoteAssignmentsNearTerm() {
@@ -16283,7 +16309,10 @@ try {
             return;
           }
           const today = Utils.getTodayKey();
-          const todayQuote = this.quoteService?.getTodayQuote() || null;
+          const todayQuote =
+            (this.quoteService && typeof this.quoteService.getQuoteResolvedForInstagramDateKey === 'function'
+              ? await this.quoteService.getQuoteResolvedForInstagramDateKey(today)
+              : this.quoteService?.getTodayQuote()) || null;
           this.uiService.showToast('Generating and uploading Instagram assets…');
           const instagramImage = await arch.generateInstagramImage(blocks);
           let postLayoutBImageData = null;
@@ -16315,7 +16344,10 @@ try {
               if (await Utils.shouldSkipZapierReelCapture(today)) return;
               if (typeof MediaRecorder === 'undefined') return;
               try {
-                const qt = this.quoteService?.getTodayQuote?.() || { text: '', body: '', author: '' };
+                const qt =
+                  todayQuote ||
+                  this.quoteService?.getTodayQuote?.() ||
+                  { text: '', body: '', author: '' };
                 const { blob } = await this._buildSyntheticQuiltReelWebm(blocks, {
                   width: 1080,
                   height: 1920,
@@ -16339,7 +16371,9 @@ try {
                 instagramImage: null,
                 postLayoutBImageData: null,
                 reelWebmBlob,
-                zapierCaption: Utils.formatZapierCaptionFromQuote(qt)
+                zapierCaption: Utils.formatZapierCaptionFromQuote(
+                  todayQuote || this.quoteService?.getTodayQuote?.()
+                )
               });
               Utils.markSyncedZapierReelForDate(today);
               const baseUrl =

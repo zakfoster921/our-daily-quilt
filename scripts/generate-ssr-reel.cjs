@@ -91,7 +91,17 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
           throw new Error('ArchiveService.generateInstagramImage missing');
         }
 
-        const quote = app.quoteService?.getTodayQuote?.() || { text: '', body: '', author: '' };
+        const qs = app.quoteService;
+        let quote = { text: '', body: '', author: '' };
+        if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+          quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || quote;
+        } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
+          quote = (await qs.resolveAndPinCalendarKey(dateKey)) || quote;
+        } else if (qs && typeof qs.getQuoteForDate === 'function') {
+          quote = qs.getQuoteForDate(dateKey) || quote;
+        } else if (qs && typeof qs.getTodayQuote === 'function') {
+          quote = qs.getTodayQuote() || quote;
+        }
         const instagramImage = await arch.generateInstagramImage(blocks);
         let postLayoutBImageData = null;
         if (arch.generateInstagramPostLayoutBImage) {
