@@ -205,15 +205,20 @@ function reelBedAudioInputArgs(musicPath) {
   return ['-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100'];
 }
 
+/** Matches `_buildSyntheticQuiltReelWebm` (fps: 30). Canvas WebM often has broken PTS → half-speed / doubled-duration MP4 without CFR remap. */
+const REEL_SYNTHETIC_TARGET_FPS = 30;
+
 function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
   return new Promise((resolve, reject) => {
     const musicPath = resolveReelBedMusicPath();
     const vf =
       'format=yuv420p,scale=1080:1920:force_original_aspect_ratio=decrease,' +
       'pad=1080:1920:(ow-iw)/2:(oh-ih)/2';
-    /** Video from PNG + AAC bed (music or silent); `-shortest` trims audio to video duration */
+    /** `-framerate` before `-i` fixes image2 default (~25fps) vs wall `t=` mismatches; audio trimmed with `-shortest` */
     const args = [
       '-y',
+      '-framerate',
+      String(REEL_SYNTHETIC_TARGET_FPS),
       '-loop',
       '1',
       '-t',
@@ -233,6 +238,8 @@ function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
       'high',
       '-pix_fmt',
       'yuv420p',
+      '-r',
+      String(REEL_SYNTHETIC_TARGET_FPS),
       '-movflags',
       '+faststart',
       '-c:a',
@@ -365,6 +372,9 @@ async function runNightlyInstagramSnapshot(options = {}) {
 function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     const musicPath = resolveReelBedMusicPath();
+    const fps = REEL_SYNTHETIC_TARGET_FPS;
+    /** Remap PTS from frame index so VP8/VP9 WebM from Chrome MediaRecorder keeps wall-clock 8s at 30fps */
+    const vf = `setpts=N/(${fps}*TB)`;
     /** H.264 + AAC (looped bed MP3 or silent); Instagram ingest often rejects video-only MP4s */
     const args = [
       '-y',
@@ -375,12 +385,16 @@ function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
       '0:v:0',
       '-map',
       '1:a:0',
+      '-vf',
+      vf,
       '-c:v',
       'libx264',
       '-profile:v',
       'high',
       '-pix_fmt',
       'yuv420p',
+      '-r',
+      String(fps),
       '-movflags',
       '+faststart',
       '-c:a',
@@ -827,7 +841,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-6-reel-bed-music';
+    const apiVersion = 'instagram-api-7-reel-cfr-timing';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
