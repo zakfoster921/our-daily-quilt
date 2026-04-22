@@ -5794,6 +5794,15 @@ try {
         return run;
       }
 
+      /** Same string Zapier/IG should use as caption — must match what was drawn on PNG + reel (`getTodayQuote()`). */
+      static formatZapierCaptionFromQuote(q) {
+        if (!q || typeof q !== 'object') return '';
+        const t = String(q.text ?? q.body ?? '').trim();
+        const a = String(q.author ?? '').trim();
+        if (t && a) return `${t} — ${a}`;
+        return t || a || '';
+      }
+
       /**
        * Uploads PNGs (and optional synthetic reel WebM) to Firebase Storage and writes `instagram-images/{dateKey}` with URLs only
        * (Firestore field limit ~1 MiB — inline base64 exceeds that for layout B).
@@ -5803,7 +5812,8 @@ try {
         dateKey,
         instagramImage,
         postLayoutBImageData,
-        reelWebmBlob = null
+        reelWebmBlob = null,
+        zapierCaption = ''
       }) {
         if (!window.db || !window.firestore) {
           throw new Error('Firestore not ready');
@@ -5859,6 +5869,10 @@ try {
           docPayload.reelWebmUrl = reelWebmStorageUrl;
           docPayload.reelUrl = reelWebmStorageUrl;
           docPayload.reelSource = 'app_synthetic_webm';
+        }
+        const cap = typeof zapierCaption === 'string' ? zapierCaption.trim() : '';
+        if (cap) {
+          docPayload.zapierCaption = cap;
         }
         const imageRef = window.firestore.doc(window.db, 'instagram-images', dateKey);
         await window.firestore.setDoc(imageRef, docPayload, { merge: true });
@@ -8694,7 +8708,8 @@ try {
                     await Utils.writeInstagramImagesDocForZapier({
                       dateKey: igDateKey,
                       instagramImage,
-                      postLayoutBImageData
+                      postLayoutBImageData,
+                      zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote)
                     });
                   } else {
                     console.warn('Skipping Instagram Firestore doc: app / Storage init not available');
@@ -16287,7 +16302,8 @@ try {
           const docPayload = await Utils.writeInstagramImagesDocForZapier({
             dateKey: today,
             instagramImage,
-            postLayoutBImageData
+            postLayoutBImageData,
+            zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote)
           });
 
           const reelLockedSkip = await Utils.shouldSkipZapierReelCapture(today);
@@ -16322,7 +16338,8 @@ try {
                 dateKey: today,
                 instagramImage: null,
                 postLayoutBImageData: null,
-                reelWebmBlob
+                reelWebmBlob,
+                zapierCaption: Utils.formatZapierCaptionFromQuote(qt)
               });
               Utils.markSyncedZapierReelForDate(today);
               const baseUrl =

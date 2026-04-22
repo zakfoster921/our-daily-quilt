@@ -116,11 +116,17 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
           throw new Error('SSR reel blob too small');
         }
 
+        const zapierCaption =
+          typeof Utils.formatZapierCaptionFromQuote === 'function'
+            ? Utils.formatZapierCaptionFromQuote(quote)
+            : `${String(quote.text ?? quote.body ?? '').trim()} — ${String(quote.author ?? '').trim()}`.trim();
+
         const doc = await Utils.writeInstagramImagesDocForZapier({
           dateKey,
           instagramImage,
           postLayoutBImageData,
-          reelWebmBlob: blob
+          reelWebmBlob: blob,
+          zapierCaption
         });
 
         const tr = await fetch(`${apiBase}/api/transcode-instagram-reel`, {

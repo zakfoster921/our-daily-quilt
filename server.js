@@ -323,7 +323,8 @@ async function runNightlyInstagramSnapshot(options = {}) {
       lastUpdated: new Date().toISOString(),
       lastNightlyInstagramSnapshotAt: new Date().toISOString(),
       imageStorageUrl,
-      classicUrl: imageStorageUrl
+      classicUrl: imageStorageUrl,
+      zapierCaption: quoteLine
     };
 
     let reelMp4Url = null;
@@ -765,16 +766,25 @@ async function getTodayInstagramImage(options = {}) {
       throw new Error(`Instagram doc for ${dateUsed} has no imageData or imageStorageUrl`);
     }
 
-    // Try to get the quote for the same date
+    // Caption: prefer text baked with the same upload as images/reel (avoids app-day vs quotes/{date} drift).
     let quote = "Every day is a new beginning.";
     try {
-      const quoteDoc = await db.collection('quotes').doc(dateUsed).get();
-      if (quoteDoc.exists) {
-        const quoteData = quoteDoc.data();
-        quote = `${quoteData.text} — ${quoteData.author}`;
-        console.log(`✅ Found quote for ${dateUsed}: "${quote}"`);
+      const inline =
+        (typeof raw.zapierCaption === 'string' && raw.zapierCaption.trim()) ||
+        (typeof raw.caption === 'string' && raw.caption.trim()) ||
+        '';
+      if (inline) {
+        quote = inline;
+        console.log(`✅ Using instagram-images inline caption for ${dateUsed}`);
       } else {
-        console.log(`📝 No quote found for ${dateUsed}, using default`);
+        const quoteDoc = await db.collection('quotes').doc(dateUsed).get();
+        if (quoteDoc.exists) {
+          const quoteData = quoteDoc.data();
+          quote = `${quoteData.text} — ${quoteData.author}`;
+          console.log(`✅ Found quote for ${dateUsed}: "${quote}"`);
+        } else {
+          console.log(`📝 No quote found for ${dateUsed}, using default`);
+        }
       }
     } catch (quoteError) {
       console.warn(`⚠️ Could not fetch quote for ${dateUsed}:`, quoteError.message);
@@ -841,7 +851,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-7-reel-cfr-timing';
+    const apiVersion = 'instagram-api-8-zapier-caption-inline';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
