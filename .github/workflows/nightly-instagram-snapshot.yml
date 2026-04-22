@@ -37,12 +37,41 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Resolve target date key
+        id: resolve_date
+        env:
+          INPUT_DATE_KEY: ${{ inputs.date_key || '' }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_DATE_KEY:-}" ]; then
+            EFFECTIVE_DATE_KEY="${INPUT_DATE_KEY}"
+            echo "Using manual date_key override: ${EFFECTIVE_DATE_KEY}"
+          else
+            EFFECTIVE_DATE_KEY="$(node -e "
+              const d = new Date();
+              const adj = new Date(d);
+              if (d.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
+              // Last completed app day = one day before current app day.
+              adj.setUTCDate(adj.getUTCDate() - 1);
+              const y = adj.getUTCFullYear();
+              const m = String(adj.getUTCMonth() + 1).padStart(2, '0');
+              const day = String(adj.getUTCDate()).padStart(2, '0');
+              process.stdout.write(`${y}-${m}-${day}`);
+            ")"
+            echo "No date_key provided; using last completed app day: ${EFFECTIVE_DATE_KEY}"
+          fi
+          if ! echo "${EFFECTIVE_DATE_KEY}" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            echo "Invalid resolved date key: ${EFFECTIVE_DATE_KEY}"
+            exit 1
+          fi
+          echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
+
       - name: Generate synthetic split reel for Zapier
         id: ssr
         continue-on-error: true
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
-          DATE_KEY: ${{ inputs.date_key || '' }}
+          DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
           SSR_MAX_ATTEMPTS: "2"
           SSR_ARTIFACTS_DIR: "tmp/ssr-artifacts"
         run: |
@@ -75,7 +104,7 @@ jobs:
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
           RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
-          DATE_KEY: ${{ inputs.date_key || '' }}
+          DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
         run: |
           set -euo pipefail
 

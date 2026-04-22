@@ -3203,6 +3203,26 @@ try {
             </span>
           </button>
         </div>
+        <div class="button-group">
+          <button type="button" id="showPersonalQuiltBtn" class="btn" aria-label="Toggle my personal quilt view">
+            <span class="stack-btn-content">
+              <span class="stack-btn-left">
+                <span class="stack-btn-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15"></path>
+                    <path d="M7.5 4.5v15M12 4.5v15M16.5 4.5v15"></path>
+                  </svg>
+                </span>
+                <span id="personalQuiltBtnLabel">View my personal quilt</span>
+              </span>
+              <span class="stack-btn-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                  <path d="M9 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </span>
+          </button>
+        </div>
 
         <button class="reflection-cta" data-next="screen-reflection" aria-label="Reflect on this idea">
           <span class="reflection-cta-left">
@@ -10832,6 +10852,9 @@ try {
         this._layoutBPreviewObjectUrl = null;
         this._layoutBPreviewDebounceTimer = null;
         this._layoutBPreviewGeneration = 0;
+        /** Device-local "personal quilt" mode (derived from this user's historical color picks). */
+        this._isPersonalQuiltMode = false;
+        this._personalQuiltState = null;
       }
       
       
@@ -11099,6 +11122,12 @@ try {
         if (showMyPieceBtn) {
           showMyPieceBtn.addEventListener('click', this.handleShowMyPiece.bind(this));
         }
+
+        const showPersonalQuiltBtn = document.getElementById('showPersonalQuiltBtn');
+        if (showPersonalQuiltBtn) {
+          showPersonalQuiltBtn.addEventListener('click', this.handleTogglePersonalQuilt.bind(this));
+        }
+        this.updatePersonalQuiltToggleButton();
 
 
 
@@ -14138,7 +14167,15 @@ try {
         this.ensureQuiltFits();
         
         const state = this.quiltEngine.getState();
-        this.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
+        if (this._isPersonalQuiltMode && this._personalQuiltState?.blocks?.length) {
+          this.renderer.renderBlocks(
+            this._personalQuiltState.blocks,
+            this._personalQuiltState.blocks,
+            this._personalQuiltState.submissionCount || 0
+          );
+        } else {
+          this.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
+        }
         this.updateSquareCounter();
         
         // Ensure quote is displayed on quilt screen
@@ -14287,7 +14324,10 @@ try {
       }
 
       updateSquareCounter() {
-        const count = this.quiltEngine.blocks.length;
+        const count =
+          this._isPersonalQuiltMode && Array.isArray(this._personalQuiltState?.blocks)
+            ? this._personalQuiltState.blocks.length
+            : this.quiltEngine.blocks.length;
         const counterElement = document.getElementById('squareCounter');
         if (counterElement) {
           console.log('🔢 Counter update - blocks.length:', count);
@@ -14345,10 +14385,24 @@ try {
       
       populateQuiltQuote() {
         try {
-          const todayQ = this.quoteService.getTodayQuote();
           const quiltQuoteText = document.querySelector('.quilt-quote-text');
           const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
           const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
+          if (this._isPersonalQuiltMode) {
+            const personalLine = 'Your personal quilt, built from colors you chose over time.';
+            if (quiltQuoteText) {
+              if (typeof this.quoteService?.formatQuoteLineForQuiltDisplay === 'function') {
+                quiltQuoteText.innerHTML = this.quoteService.formatQuoteLineForQuiltDisplay(personalLine);
+              } else {
+                quiltQuoteText.textContent = personalLine;
+              }
+            }
+            if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
+            if (quiltQuoteDisplay) quiltQuoteDisplay.classList.add('has-content');
+            return;
+          }
+
+          const todayQ = this.quoteService.getTodayQuote();
 
           if (quiltQuoteText) quiltQuoteText.innerHTML = this.quoteService.formatQuiltScreenPrimaryHtml(todayQ);
           if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
@@ -14364,6 +14418,11 @@ try {
       async handleAddColor() {
         try {
           console.log('🎨 handleAddColor called');
+          if (this._isPersonalQuiltMode) {
+            this._isPersonalQuiltMode = false;
+            this._personalQuiltState = null;
+            this.updatePersonalQuiltToggleButton();
+          }
           
           const selectedColor = Utils.hsvToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
           console.log('🎨 Selected color:', selectedColor, 'HSV(h,s,v%):', this.selectedHue, this.selectedSaturation, this.selectedLightness);
@@ -16882,6 +16941,71 @@ try {
 
       handleShowMyPiece() {
         this.handleShowMyBlock();
+      }
+
+      updatePersonalQuiltToggleButton() {
+        const btn = document.getElementById('showPersonalQuiltBtn');
+        const label = document.getElementById('personalQuiltBtnLabel');
+        if (!btn || !label) return;
+        if (this._isPersonalQuiltMode) {
+          label.textContent = 'Back to community quilt';
+          btn.setAttribute('aria-label', 'Back to community quilt');
+        } else {
+          label.textContent = 'View my personal quilt';
+          btn.setAttribute('aria-label', 'View my personal quilt');
+        }
+      }
+
+      getDevicePersonalColorHistory() {
+        const contributions = this.quiltEngine.getUserContributions();
+        const submissions = Array.isArray(contributions?.submissions) ? contributions.submissions : [];
+        const ids = new Set(
+          [this.currentUserId, this.quiltEngine?.deviceId]
+            .map((v) => (v == null ? '' : String(v).trim()))
+            .filter(Boolean)
+        );
+        return submissions
+          .filter((c) => c && ids.has(String(c.userId || '').trim()))
+          .map((c) => String(c.color || '').trim())
+          .filter((hex) => Utils.validateHexColor(hex));
+      }
+
+      buildPersonalQuiltStateFromDeviceHistory() {
+        const colors = this.getDevicePersonalColorHistory();
+        if (!colors.length) return null;
+        const tempUserId = this.currentUserId || this.quiltEngine?.deviceId || null;
+        const personalEngine = new SimpleQuiltEngine(tempUserId);
+        personalEngine.initialize();
+        // Personal quilt should be deterministic from local history only; don't mutate shared contribution storage.
+        personalEngine.recordUserContribution = () => {};
+        for (const hex of colors) {
+          personalEngine.addColor(hex);
+        }
+        return {
+          blocks: personalEngine.blocks.map((b) => ({ ...b })),
+          submissionCount: personalEngine.submissionCount,
+          colorCount: colors.length
+        };
+      }
+
+      async handleTogglePersonalQuilt() {
+        if (this._isPersonalQuiltMode) {
+          this._isPersonalQuiltMode = false;
+          this._personalQuiltState = null;
+          this.updatePersonalQuiltToggleButton();
+          await this.renderQuilt();
+          return;
+        }
+
+        const personal = this.buildPersonalQuiltStateFromDeviceHistory();
+        if (!personal || !Array.isArray(personal.blocks) || personal.blocks.length <= 1) {
+          return;
+        }
+
+        this._isPersonalQuiltMode = true;
+        this._personalQuiltState = personal;
+        this.updatePersonalQuiltToggleButton();
+        await this.renderQuilt();
       }
 
       handleTestDifferentUser() {
