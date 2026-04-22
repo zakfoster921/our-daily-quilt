@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const os = require('os');
 
 let ffmpegStaticPath = null;
@@ -181,11 +182,36 @@ async function firebaseSaveDownloadableFile(destination, buffer, contentType) {
   return { publicUrl: buildFirebaseDownloadUrl(bucketName, destination, token), bucketName };
 }
 
+/**
+ * Optional bed track for reel MP4s (bundled Freepik asset or REEL_BED_MUSIC_PATH).
+ * @returns {string|null} absolute path, or null → FFmpeg uses silent AAC via anullsrc
+ */
+function resolveReelBedMusicPath() {
+  const fromEnv = process.env.REEL_BED_MUSIC_PATH;
+  if (fromEnv && typeof fromEnv === 'string') {
+    const p = fromEnv.trim();
+    if (p && fsSync.existsSync(p)) return path.resolve(p);
+  }
+  const bundled = path.join(__dirname, 'assets', 'audio', 'freepik-stonecutters.mp3');
+  if (fsSync.existsSync(bundled)) return bundled;
+  return null;
+}
+
+/** FFmpeg args for input index 1: looped MP3 or silent stereo bed */
+function reelBedAudioInputArgs(musicPath) {
+  if (musicPath) {
+    return ['-stream_loop', '-1', '-i', musicPath];
+  }
+  return ['-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100'];
+}
+
 function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
   return new Promise((resolve, reject) => {
+    const musicPath = resolveReelBedMusicPath();
     const vf =
       'format=yuv420p,scale=1080:1920:force_original_aspect_ratio=decrease,' +
       'pad=1080:1920:(ow-iw)/2:(oh-ih)/2';
+    /** Video from PNG + AAC bed (music or silent); `-shortest` trims audio to video duration */
     const args = [
       '-y',
       '-loop',
@@ -194,6 +220,11 @@ function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
       String(durationSec),
       '-i',
       pngPath,
+      ...reelBedAudioInputArgs(musicPath),
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
       '-vf',
       vf,
       '-c:v',
@@ -204,7 +235,11 @@ function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
       'yuv420p',
       '-movflags',
       '+faststart',
-      '-an',
+      '-c:a',
+      'aac',
+      '-b:a',
+      musicPath ? '192k' : '96k',
+      '-shortest',
       outPath
     ];
     const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -298,7 +333,7 @@ async function runNightlyInstagramSnapshot(options = {}) {
       mergePayload.reelMp4Url = reelMp4Url;
       mergePayload.reelSource = 'nightly_static_mp4';
       mergePayload.reelNote =
-        'MP4 is an 8s static hold of the classic 4:5 card (GitHub + Railway). The split synthetic reel only exists if recorded from the app (not required for Zapier).';
+        'MP4 is an 8s static hold of the classic 4:5 card (GitHub + Railway) with bundled bed music when assets/audio is present. The split synthetic reel only exists if recorded from the app (not required for Zapier).';
     } else {
       mergePayload.reelNote =
         'Nightly refreshed classic image only; left existing app/synthetic reel URLs unchanged.';
@@ -329,10 +364,17 @@ async function runNightlyInstagramSnapshot(options = {}) {
 
 function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
   return new Promise((resolve, reject) => {
+    const musicPath = resolveReelBedMusicPath();
+    /** H.264 + AAC (looped bed MP3 or silent); Instagram ingest often rejects video-only MP4s */
     const args = [
       '-y',
       '-i',
       inputPath,
+      ...reelBedAudioInputArgs(musicPath),
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
       '-c:v',
       'libx264',
       '-profile:v',
@@ -341,7 +383,11 @@ function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
       'yuv420p',
       '-movflags',
       '+faststart',
-      '-an',
+      '-c:a',
+      'aac',
+      '-b:a',
+      musicPath ? '192k' : '96k',
+      '-shortest',
       outputPath
     ];
     const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -358,7 +404,7 @@ function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
 }
 
 /**
- * Downloads the WebM from Firestore, transcodes to H.264 MP4 (no audio), uploads next to it, merges URLs into the doc.
+ * Downloads the WebM from Firestore, transcodes to H.264 MP4 + AAC (bed music or silent), uploads next to it, merges URLs into the doc.
  * @param {string} dateKey YYYY-MM-DD
  */
 async function transcodeInstagramReelWebmToMp4(dateKey) {
@@ -781,7 +827,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-4-reel-mp4';
+    const apiVersion = 'instagram-api-6-reel-bed-music';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
