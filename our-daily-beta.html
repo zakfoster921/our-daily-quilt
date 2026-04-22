@@ -5428,10 +5428,34 @@ try {
           userId: this.deviceId, // Add user ID to track who contributed
           timestamp: new Date().toISOString()
         };
-        
-        const stored = JSON.parse(localStorage.getItem('quiltContributions') || '{"submissions": []}');
+
+        const read = (key) => {
+          try {
+            const raw = localStorage.getItem(key);
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed && Array.isArray(parsed.submissions)) return parsed;
+          } catch (_) {
+            /* */
+          }
+          return { submissions: [] };
+        };
+        const write = (key, payload) => {
+          try {
+            localStorage.setItem(key, JSON.stringify(payload));
+          } catch (_) {
+            /* */
+          }
+        };
+
+        // Session/day-local store (existing behavior; reset daily by app logic)
+        const stored = read('quiltContributions');
         stored.submissions.push(contribution);
-        localStorage.setItem('quiltContributions', JSON.stringify(stored));
+        write('quiltContributions', stored);
+
+        // Lifetime store for device personal quilt (NOT cleared by reset handlers).
+        const lifetime = read('quiltContributionsLifetime');
+        lifetime.submissions.push(contribution);
+        write('quiltContributionsLifetime', lifetime);
       }
       
       findUserPieces() {
@@ -5450,7 +5474,24 @@ try {
       
       getUserContributions() {
         const stored = localStorage.getItem('quiltContributions');
-        return stored ? JSON.parse(stored) : { submissions: [] };
+        try {
+          const parsed = stored ? JSON.parse(stored) : null;
+          if (parsed && Array.isArray(parsed.submissions)) return parsed;
+        } catch (_) {
+          /* */
+        }
+        return { submissions: [] };
+      }
+
+      getLifetimeUserContributions() {
+        const stored = localStorage.getItem('quiltContributionsLifetime');
+        try {
+          const parsed = stored ? JSON.parse(stored) : null;
+          if (parsed && Array.isArray(parsed.submissions)) return parsed;
+        } catch (_) {
+          /* */
+        }
+        return { submissions: [] };
       }
       
       getState() {
@@ -7388,16 +7429,24 @@ try {
 
                 const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
                 const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
-                // Past true “cover” so the PNG’s light margin crops out; tweak if neutral still shows.
-                const COVER_ZOOM = isPostLayout ? 1.04 : 1.1;
-                const coverScale = Math.max(STORY_W / iw, STORY_H / ih) * COVER_ZOOM;
-                const cw = Math.round(iw * coverScale);
-                const ch = Math.round(ih * coverScale);
+                // Layout B quilt treatment: duplicate stack like synthetic reel, with mirrored second quilt beneath first.
+                const COVER_ZOOM = isPostLayout ? 1.04 : 1.08;
+                const stackScale = Math.max(STORY_W / iw, STORY_H / (2 * ih)) * COVER_ZOOM;
+                const cw = Math.round(iw * stackScale);
+                const ch = Math.round(ih * stackScale);
                 const qx = Math.round((STORY_W - cw) / 2);
-                const qy = Math.round((STORY_H - ch) / 2);
+                const topY = Math.round((STORY_H - 2 * ch) / 2);
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(quiltImg, qx, qy, cw, ch);
+                // Top quilt (normal orientation)
+                ctx.drawImage(quiltImg, qx, topY, cw, ch);
+                // Bottom quilt (mirrored horizontally + vertically)
+                const bottomY = topY + ch;
+                ctx.save();
+                ctx.translate(qx + cw, bottomY + ch);
+                ctx.scale(-1, -1);
+                ctx.drawImage(quiltImg, 0, 0, cw, ch);
+                ctx.restore();
                 ctx.fillStyle = isPostLayout ? 'rgba(0,0,0,0.133)' : 'rgba(0,0,0,0.1)';
                 ctx.fillRect(0, 0, STORY_W, STORY_H);
 
@@ -9148,6 +9197,28 @@ try {
         }
         if (!this.quotes?.length) {
           return this.getTodayQuote();
+        }
+        // Canonical source for a specific calendar day: quotes/{dateKey}.
+        // This avoids stale dailyQuoteAssignments producing the wrong caption/reel text.
+        if (window.db && window.firestore) {
+          try {
+            const snap = await window.firestore.getDoc(
+              window.firestore.doc(window.db, 'quotes', dk)
+            );
+            if (snap.exists()) {
+              const data = snap.data() || {};
+              const text = String(data.text || '').trim();
+              const author = String(data.author || '').trim();
+              const blessing = this._blessingScalarFromPlainObject(data).trim();
+              if (text) {
+                const canonical = blessing ? { text, author, blessing } : { text, author };
+                this._pinnedByDateKey[dk] = canonical;
+                return canonical;
+              }
+            }
+          } catch (e) {
+            console.warn('getQuoteResolvedForInstagramDateKey quotes doc read failed:', e?.message || e);
+          }
         }
         try {
           const pinned = await this.resolveAndPinCalendarKey(dk);
@@ -16957,7 +17028,7 @@ try {
       }
 
       getDevicePersonalColorHistory() {
-        const contributions = this.quiltEngine.getUserContributions();
+        const contributions = this.quiltEngine.getLifetimeUserContributions();
         const submissions = Array.isArray(contributions?.submissions) ? contributions.submissions : [];
         const ids = new Set(
           [this.currentUserId, this.quiltEngine?.deviceId]

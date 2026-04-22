@@ -94,12 +94,13 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
         const qs = app.quoteService;
         let quote = { text: '', body: '', author: '' };
         // SSR should be date-driven for workflow runs (yesterday key), not pinned "today" state.
-        if (qs && typeof qs.getQuoteForDate === 'function') {
-          quote = qs.getQuoteForDate(dateKey) || quote;
-        } else if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+        // Prefer the same resolved quote path used by IG asset generation for this date key.
+        if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
           quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || quote;
         } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
           quote = (await qs.resolveAndPinCalendarKey(dateKey)) || quote;
+        } else if (qs && typeof qs.getQuoteForDate === 'function') {
+          quote = qs.getQuoteForDate(dateKey) || quote;
         } else if (qs && typeof qs.getTodayQuote === 'function') {
           quote = qs.getTodayQuote() || quote;
         }
