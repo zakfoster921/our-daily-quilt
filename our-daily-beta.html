@@ -15441,6 +15441,8 @@ try {
         const quoteAuthor = String(opts.quoteAuthor || '').trim();
         const quoteDateKey = String(opts.dateKey || Utils.getTodayKey()).trim();
         const pad = 0;
+        /** Fills sub-pixel / organic-path gaps so cracks never read as transparent holes. */
+        const WARM_QUILT_MATTE = '#f6f4f1';
 
         let minX = Infinity;
         let minY = Infinity;
@@ -15883,7 +15885,7 @@ try {
             start: i * 0.07,
             end: 0.24 + i * 0.13
           }));
-          cachedStripPlan = strips;
+          cachedStripPlan = normalizeQuoteStripTiming(strips);
           return cachedStripPlan;
         };
         const drawQuoteOverlay = (ctx, revealProgress) => {
@@ -15916,13 +15918,60 @@ try {
           }
         };
 
-        const drawFrameBlockItems = (drawItems, tSec = 0) => {
+        const drawQuiltCopyMatteUnderBlocks = (ctx) => {
+          ctx.save();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = WARM_QUILT_MATTE;
+          ctx.fillRect(0, 0, bw, bh);
+          ctx.restore();
+        };
+
+        const drawFrameBlockItems = (drawItems, tSec = 0, options = {}) => {
+          const {
+            clear = true,
+            applyGrain = true,
+            globalAlpha = 1,
+            zoom = 1,
+            rotationDeg = 0,
+            translateX = 0,
+            translateY = 0,
+            clipRect = null,
+            matteColor = ''
+          } = options || {};
           const ctx = canvas.getContext('2d');
           ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.fillStyle = bg;
-          ctx.fillRect(0, 0, W, H);
-          const drift = getCameraDrift(tSec);
+          if (clear) {
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, W, H);
+          }
           ctx.save();
+          if (clipRect && typeof clipRect === 'object') {
+            const cx = Number(clipRect.x || 0);
+            const cy = Number(clipRect.y || 0);
+            const cw = Math.max(0, Number(clipRect.w || 0));
+            const ch = Math.max(0, Number(clipRect.h || 0));
+            if (cw > 0 && ch > 0) {
+              ctx.beginPath();
+              ctx.rect(cx, cy, cw, ch);
+              ctx.clip();
+            }
+          }
+          const drift = getCameraDrift(tSec);
+          ctx.globalAlpha = Math.max(0, Math.min(1, Number(globalAlpha) || 0));
+          if (Math.abs(Number(translateX) || 0) > 1e-5 || Math.abs(Number(translateY) || 0) > 1e-5) {
+            ctx.translate(Number(translateX) || 0, Number(translateY) || 0);
+          }
+          if (Math.abs((Number(rotationDeg) || 0)) > 1e-5 || Math.abs((Number(zoom) || 1) - 1) > 1e-5) {
+            ctx.translate(W / 2, H / 2);
+            ctx.rotate(((Number(rotationDeg) || 0) * Math.PI) / 180);
+            ctx.scale(Number(zoom) || 1, Number(zoom) || 1);
+            ctx.translate(-W / 2, -H / 2);
+          }
+          if (typeof matteColor === 'string' && matteColor.trim()) {
+            // Extra canvas backing during sheet slide/rotate (in addition to per-copy quilt matte).
+            ctx.fillStyle = matteColor.trim();
+            ctx.fillRect(-W * 0.35, -H * 0.35, W * 1.7, H * 1.7);
+          }
           ctx.translate(drift.x, drift.y);
           for (let copyIdx = 0; copyIdx < copyPlacements.length; copyIdx++) {
             const placement = copyPlacements[copyIdx];
@@ -15934,6 +15983,7 @@ try {
               ctx.translate(bw, bh);
               ctx.scale(-1, -1);
             }
+            drawQuiltCopyMatteUnderBlocks(ctx);
             for (const item of drawItems) {
               const b = item.block;
               const col = /^#[0-9A-Fa-f]{6}$/.test(String(b.color || '').trim())
@@ -15943,12 +15993,26 @@ try {
               ctx.globalAlpha = Math.max(0, Math.min(1, Number(item.alpha ?? 1)));
               const sc = Math.max(0.01, Number(item.scale ?? 1));
               const watercolor = Math.max(0, Math.min(1, Number(item.watercolor ?? 1)));
-              if (Math.abs(sc - 1) > 1e-4) {
+              const offsetX = Number(item.offsetX || 0);
+              const offsetY = Number(item.offsetY || 0);
+              const itemRotationDeg = Number(item.rotationDeg || 0);
+              const needsTransform =
+                Math.abs(sc - 1) > 1e-4 ||
+                Math.abs(offsetX) > 1e-4 ||
+                Math.abs(offsetY) > 1e-4 ||
+                Math.abs(itemRotationDeg) > 1e-4;
+              if (needsTransform) {
                 const cx = b.x - minX + b.width / 2;
                 const cy = b.y - minY + b.height / 2;
                 ctx.save();
                 ctx.translate(cx, cy);
+                if (Math.abs(itemRotationDeg) > 1e-4) {
+                  ctx.rotate((itemRotationDeg * Math.PI) / 180);
+                }
                 ctx.scale(sc, sc);
+                if (Math.abs(offsetX) > 1e-4 || Math.abs(offsetY) > 1e-4) {
+                  ctx.translate(offsetX, offsetY);
+                }
                 ctx.translate(-cx, -cy);
                 drawOrganicBlock(ctx, b, copyIdx);
                 applyWatercolorWash(ctx, b, col, copyIdx, watercolor);
@@ -15961,7 +16025,9 @@ try {
             ctx.restore();
           }
           ctx.restore();
-          applyFilmGrain(ctx, tSec);
+          if (applyGrain) {
+            applyFilmGrain(ctx, tSec);
+          }
         };
         const drawFrameBlocks = (drawBlocks) =>
           drawFrameBlockItems((drawBlocks || []).map((b) => ({ block: b, alpha: 1, scale: 1 })));
@@ -16008,29 +16074,31 @@ try {
           ctx.save();
           ctx.translate(drift.x, drift.y);
           const u = Math.max(0, Math.min(1, tSec / durationSec));
-          for (let i = 0; i < n; i++) {
-            const b = sorted[i];
-            const col = /^#[0-9A-Fa-f]{6}$/.test(String(b.color || '').trim())
-              ? b.color
-              : '#c8c4bf';
-            const wave = u * (n + 10) + 0.35 - i * 0.95;
-            const p = Math.max(0, Math.min(1, wave));
-            const e = smoothstep(p);
-            if (e <= 0.001) continue;
+          for (let copyIdx = 0; copyIdx < copyPlacements.length; copyIdx++) {
+            const placement = copyPlacements[copyIdx];
+            ctx.save();
+            ctx.translate(0, placement.yPx);
+            ctx.scale(scale, scale);
+            if (placement.mirrored) {
+              // Mirror top/bottom copies both vertically and horizontally.
+              ctx.translate(bw, bh);
+              ctx.scale(-1, -1);
+            }
+            drawQuiltCopyMatteUnderBlocks(ctx);
+            for (let i = 0; i < n; i++) {
+              const b = sorted[i];
+              const col = /^#[0-9A-Fa-f]{6}$/.test(String(b.color || '').trim())
+                ? b.color
+                : '#c8c4bf';
+              const wave = u * (n + 10) + 0.35 - i * 0.95;
+              const p = Math.max(0, Math.min(1, wave));
+              const e = smoothstep(p);
+              if (e <= 0.001) continue;
 
-            const cx = b.x - minX + b.width / 2;
-            const cy = b.y - minY + b.height / 2;
-            for (let copyIdx = 0; copyIdx < copyPlacements.length; copyIdx++) {
-              const placement = copyPlacements[copyIdx];
+              const cx = b.x - minX + b.width / 2;
+              const cy = b.y - minY + b.height / 2;
               ctx.save();
               ctx.globalAlpha = e;
-              ctx.translate(0, placement.yPx);
-              ctx.scale(scale, scale);
-              if (placement.mirrored) {
-                // Mirror top/bottom copies both vertically and horizontally.
-                ctx.translate(bw, bh);
-                ctx.scale(-1, -1);
-              }
               ctx.translate(cx, cy);
               const sc = 0.82 + 0.18 * e;
               ctx.scale(sc, sc);
@@ -16039,6 +16107,7 @@ try {
               drawOrganicBlock(ctx, b, copyIdx);
               ctx.restore();
             }
+            ctx.restore();
           }
           ctx.restore();
           applyFilmGrain(ctx, tSec);
@@ -16073,13 +16142,100 @@ try {
         };
 
         const K = replayPlan ? replayPlan.events.length : mergePlan ? mergePlan.mergeHistory.length : 0;
+        // Cover behavior: start on a clean final quilt frame (no text), then run build animation.
+        const COVER_HOLD_SEC = Math.min(0.95, Math.max(0.55, durationSec * 0.12));
+        const COVER_HOLD_RATIO =
+          durationSec > 0 ? Math.max(0, Math.min(0.4, COVER_HOLD_SEC / durationSec)) : 0;
+        // Handcrafted transition: cover gently pushes/tilts while dissolving into split animation start.
+        const COVER_TRANSITION_SEC = Math.min(1.05, Math.max(0.62, durationSec * 0.13));
+        const COVER_TRANSITION_RATIO =
+          durationSec > 0
+            ? Math.max(
+                0.12,
+                Math.min(0.42, COVER_TRANSITION_SEC / Math.max(0.001, durationSec * (1 - COVER_HOLD_RATIO)))
+              )
+            : 0.16;
+        // Reserve tail time so quote strips finish settling before the reel ends.
+        const QUOTE_SETTLE_TAIL = 0.22;
+        const getFinalReelItems = () => {
+          if (replayPlan) {
+            const finalBlocks = this._replayQuiltStateAfterColorEvents(replayPlan.events, K);
+            return (finalBlocks || []).map((b) => ({ block: b, alpha: 1, scale: 1 }));
+          }
+          if (mergePlan) {
+            const finalBlocks = this._quiltBlocksAfterSplitSteps(mergePlan.root, mergePlan.mergeHistory, K);
+            return (finalBlocks || []).map((b) => ({ block: b, alpha: 1, scale: 1 }));
+          }
+          return sorted.map((b) => ({ block: b, alpha: 1, scale: 1 }));
+        };
+        const drawCoverSheetSlideOverlay = (progress, tSec, transitionEase) => {
+          const p = Math.max(0, Math.min(1, progress));
+          // Deliberate stop-motion beats (hand-moved), not fluid jitter.
+          const beatTable = [0, 0.08, 0.2, 0.36, 0.56, 0.78, 1];
+          const eased = smoothstep(p);
+          let beatIdx = 0;
+          for (let i = 0; i < beatTable.length; i++) {
+            if (eased >= beatTable[i]) beatIdx = i;
+          }
+          const stepped = beatTable[beatIdx];
+          const move = smoothstep(stepped);
+          const exitY = H + 90;
+          const slideX = W * 0.1; // slight diagonal so it feels hand-slid away
+          const nudgeX = [0, 3, -2, 4, -1, 2, 0][beatIdx] || 0;
+          const nudgeY = [0, -1, 2, -2, 1, 0, 0][beatIdx] || 0;
+          const wobble = [0, -0.18, 0.12, -0.1, 0.08, -0.04, 0][beatIdx] || 0;
+          drawFrameBlockItems(getFinalReelItems(), tSec, {
+            clear: false,
+            applyGrain: false,
+            globalAlpha: 1,
+            zoom: 1 + 0.02 * transitionEase,
+            rotationDeg: 0.35 * transitionEase + wobble,
+            translateX: slideX * move + nudgeX,
+            translateY: exitY * move + nudgeY,
+            matteColor: WARM_QUILT_MATTE
+          });
+        };
+        const settleQuoteProgress = (baseProgress) => {
+          const q = Math.max(0, Math.min(1, Number(baseProgress) || 0));
+          const cutoff = Math.max(0.55, 1 - QUOTE_SETTLE_TAIL);
+          return Math.max(0, Math.min(1, q / Math.max(0.001, cutoff)));
+        };
+        const normalizeQuoteStripTiming = (strips) => {
+          if (!Array.isArray(strips) || strips.length === 0) return strips || [];
+          const maxEnd = strips.reduce((m, s) => Math.max(m, Number(s?.end) || 0), 0);
+          const targetMaxEnd = 0.9;
+          if (maxEnd <= targetMaxEnd + 1e-6) return strips;
+          const k = targetMaxEnd / Math.max(0.001, maxEnd);
+          return strips.map((s) => ({
+            ...s,
+            start: (Number(s.start) || 0) * k,
+            end: (Number(s.end) || 0) * k
+          }));
+        };
         const drawFrame = (tSec) => {
-          if (!replayPlan && !mergePlan) {
-            drawFrameFade(tSec);
-            drawQuoteOverlay(canvas.getContext('2d'), Math.max(0, Math.min(1, tSec / durationSec)));
+          const tClamped = Math.max(0, Math.min(durationSec, tSec));
+          const normalizedTime = durationSec > 0 ? tClamped / durationSec : 1;
+          if (normalizedTime <= COVER_HOLD_RATIO) {
+            // Opening cover frame: final quilt background only (no quote strips yet).
+            drawFrameBlockItems(getFinalReelItems(), tClamped);
             return;
           }
-          const uRaw = Math.max(0, Math.min(1, tSec / durationSec));
+          const activeNorm = Math.max(
+            0,
+            Math.min(1, (normalizedTime - COVER_HOLD_RATIO) / Math.max(0.001, 1 - COVER_HOLD_RATIO))
+          );
+          const transitionRaw = Math.max(0, Math.min(1, activeNorm / Math.max(0.001, COVER_TRANSITION_RATIO)));
+          const transitionEase = smoothstep(transitionRaw);
+          const inCoverTransition = transitionRaw < 0.999;
+          if (!replayPlan && !mergePlan) {
+            drawFrameFade(activeNorm * durationSec);
+            drawQuoteOverlay(canvas.getContext('2d'), inCoverTransition ? 0 : activeNorm);
+            if (inCoverTransition) {
+              drawCoverSheetSlideOverlay(transitionRaw, tClamped, transitionEase);
+            }
+            return;
+          }
+          const uRaw = activeNorm;
           // Slightly slower opening, then recover to current overall timing.
           const introCut = 0.22;
           const introProgress = 0.15;
@@ -16092,16 +16248,32 @@ try {
           if (replayPlan) {
             const progress = Math.max(0, Math.min(K, heldProgress));
             const items = buildReplayTransitionItems(replayPlan.events, progress);
-            drawFrameBlockItems(items, tSec);
-            const quoteProgress = K > 0 ? Math.max(0, Math.min(1, heldProgress / K)) : uMap;
+            drawFrameBlockItems(items, tClamped);
+            const baseQuoteProgress = inCoverTransition
+              ? 0
+              : K > 0
+                ? Math.max(0, Math.min(1, heldProgress / K))
+                : uMap;
+            const quoteProgress = settleQuoteProgress(baseQuoteProgress);
             drawQuoteOverlay(canvas.getContext('2d'), quoteProgress);
+            if (inCoverTransition) {
+              drawCoverSheetSlideOverlay(transitionRaw, tClamped, transitionEase);
+            }
             return;
           }
           const k = Math.min(K, Math.max(0, Math.ceil(heldProgress - 1e-9)));
           const drawBlocks = this._quiltBlocksAfterSplitSteps(mergePlan.root, mergePlan.mergeHistory, k);
-          drawFrameBlockItems((drawBlocks || []).map((b) => ({ block: b, alpha: 1, scale: 1 })), tSec);
-          const quoteProgress = K > 0 ? Math.max(0, Math.min(1, heldProgress / K)) : uMap;
+          drawFrameBlockItems((drawBlocks || []).map((b) => ({ block: b, alpha: 1, scale: 1 })), tClamped);
+          const baseQuoteProgress = inCoverTransition
+            ? 0
+            : K > 0
+              ? Math.max(0, Math.min(1, heldProgress / K))
+              : uMap;
+          const quoteProgress = settleQuoteProgress(baseQuoteProgress);
           drawQuoteOverlay(canvas.getContext('2d'), quoteProgress);
+          if (inCoverTransition) {
+            drawCoverSheetSlideOverlay(transitionRaw, tClamped, transitionEase);
+          }
         };
 
         drawFrame(0);
