@@ -207,6 +207,8 @@ function reelBedAudioInputArgs(musicPath) {
 
 /** Matches `_buildSyntheticQuiltReelWebm` (fps: 30). Canvas WebM often has broken PTS → half-speed / doubled-duration MP4 without CFR remap. */
 const REEL_SYNTHETIC_TARGET_FPS = 30;
+/** Server-side safety hold so reel.mp4 always starts on frame 1, even if browser-side cover timing regresses. */
+const REEL_MP4_FIRST_FRAME_HOLD_SEC = 0.3;
 
 function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
   return new Promise((resolve, reject) => {
@@ -375,7 +377,7 @@ function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
     const musicPath = resolveReelBedMusicPath();
     const fps = REEL_SYNTHETIC_TARGET_FPS;
     /** Remap PTS from frame index so VP8/VP9 WebM from Chrome MediaRecorder keeps wall-clock 8s at 30fps */
-    const vf = `setpts=N/(${fps}*TB)`;
+    const vf = `setpts=N/(${fps}*TB),tpad=start_mode=clone:start_duration=${REEL_MP4_FIRST_FRAME_HOLD_SEC}`;
     /** H.264 + AAC (looped bed MP3 or silent); Instagram ingest often rejects video-only MP4s */
     const args = [
       '-y',

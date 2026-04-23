@@ -6508,6 +6508,37 @@ try {
       }
 
       /**
+       * Stable quilt fingerprint (order-insensitive) so image/reel writes can be verified as same source quilt.
+       * Uses integer-snapped geometry + color and a fast deterministic hash.
+       */
+      static computeQuiltFingerprint(blocks) {
+        if (!Array.isArray(blocks) || blocks.length === 0) return '';
+        const normalized = blocks
+          .filter((b) => b && typeof b.x === 'number' && b.width > 0 && b.height > 0)
+          .map((b) => ({
+            x: Math.round(b.x),
+            y: Math.round(b.y),
+            w: Math.round(b.width),
+            h: Math.round(b.height),
+            c: String(b.color || '').trim().toLowerCase()
+          }))
+          .sort((a, b) =>
+            a.x - b.x || a.y - b.y || a.w - b.w || a.h - b.h || a.c.localeCompare(b.c)
+          );
+        if (!normalized.length) return '';
+        const canonical = normalized
+          .map((b) => `${b.x},${b.y},${b.w},${b.h},${b.c}`)
+          .join('|');
+        // 32-bit FNV-1a (hex) with length prefix for quick mismatch checks.
+        let h = 0x811c9dc5;
+        for (let i = 0; i < canonical.length; i++) {
+          h ^= canonical.charCodeAt(i);
+          h = Math.imul(h, 0x01000193) >>> 0;
+        }
+        return `qfp-v1-${normalized.length}-${h.toString(16).padStart(8, '0')}`;
+      }
+
+      /**
        * Uploads PNGs (and optional synthetic reel WebM) to Firebase Storage and writes `instagram-images/{dateKey}` with URLs only
        * (Firestore field limit ~1 MiB — inline base64 exceeds that for layout B).
        * Uses merge so reel / MP4 URLs from a prior step are not wiped when updating images only.
@@ -6517,7 +6548,8 @@ try {
         instagramImage,
         postLayoutBImageData,
         reelWebmBlob = null,
-        zapierCaption = ''
+        zapierCaption = '',
+        quiltFingerprint = ''
       }) {
         if (!window.db || !window.firestore) {
           throw new Error('Firestore not ready');
@@ -6537,6 +6569,40 @@ try {
         );
         const storage = window.firebaseStorage;
         const basePath = `instagram-zapier/${dateKey}`;
+        const isImageWrite = !!(instagramImage || postLayoutBImageData);
+        const isReelWrite = !!(reelWebmBlob && reelWebmBlob.size > 0);
+        const qfp = typeof quiltFingerprint === 'string' ? quiltFingerprint.trim() : '';
+        const imageRef = window.firestore.doc(window.db, 'instagram-images', dateKey);
+        const existingSnap = await window.firestore.getDoc(imageRef);
+        const existing = existingSnap.exists() ? existingSnap.data() || {} : {};
+        const existingImageQfp = String(
+          existing.imageQuiltFingerprint || existing.quiltFingerprint || ''
+        ).trim();
+        const existingReelQfp = String(
+          existing.reelQuiltFingerprint || existing.quiltFingerprint || ''
+        ).trim();
+        const hasExistingReel = !!(
+          existing.reelWebmStorageUrl ||
+          existing.reelWebmUrl ||
+          existing.reelMp4StorageUrl ||
+          existing.reelMp4Url ||
+          existing.reelUrl
+        );
+        if (qfp && isImageWrite && !isReelWrite && hasExistingReel && !existingReelQfp) {
+          throw new Error(
+            `Refusing image-only update for ${dateKey}: existing reel has no quiltFingerprint. Regenerate reel once to seed fingerprint metadata.`
+          );
+        }
+        if (qfp && isImageWrite && !isReelWrite && hasExistingReel && existingReelQfp && existingReelQfp !== qfp) {
+          throw new Error(
+            `Refusing image-only update for ${dateKey}: quiltFingerprint mismatch with existing reel (${existingReelQfp} ≠ ${qfp}). Regenerate reel in same run.`
+          );
+        }
+        if (qfp && isReelWrite && !isImageWrite && existingImageQfp && existingImageQfp !== qfp) {
+          throw new Error(
+            `Refusing reel-only update for ${dateKey}: quiltFingerprint mismatch with existing images (${existingImageQfp} ≠ ${qfp}). Regenerate images in same run.`
+          );
+        }
         let imageStorageUrl = null;
         let postLayoutBImageStorageUrl = null;
         let reelWebmStorageUrl = null;
@@ -6574,11 +6640,19 @@ try {
           docPayload.reelUrl = reelWebmStorageUrl;
           docPayload.reelSource = 'app_synthetic_webm';
         }
+        if (qfp) {
+          docPayload.quiltFingerprint = qfp;
+          if (isImageWrite) {
+            docPayload.imageQuiltFingerprint = qfp;
+          }
+          if (isReelWrite) {
+            docPayload.reelQuiltFingerprint = qfp;
+          }
+        }
         const cap = typeof zapierCaption === 'string' ? zapierCaption.trim() : '';
         if (cap) {
           docPayload.zapierCaption = cap;
         }
-        const imageRef = window.firestore.doc(window.db, 'instagram-images', dateKey);
         await window.firestore.setDoc(imageRef, docPayload, { merge: true });
         return docPayload;
       }
@@ -9587,11 +9661,13 @@ try {
                 }
                 if (instagramImage || postLayoutBImageData) {
                   if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
+                    const igFingerprint = Utils.computeQuiltFingerprint(igBlocks);
                     await Utils.writeInstagramImagesDocForZapier({
                       dateKey: igDateKey,
                       instagramImage,
                       postLayoutBImageData,
-                      zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote)
+                      zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
+                      quiltFingerprint: igFingerprint
                     });
                   } else {
                     console.warn('Skipping Instagram Firestore doc: app / Storage init not available');
@@ -17534,6 +17610,7 @@ try {
             return;
           }
           const today = Utils.getTodayKey();
+          const quiltFingerprint = Utils.computeQuiltFingerprint(blocks);
           const todayQuote =
             (this.quoteService && typeof this.quoteService.getQuoteResolvedForInstagramDateKey === 'function'
               ? await this.quoteService.getQuoteResolvedForInstagramDateKey(today)
@@ -17557,7 +17634,8 @@ try {
             dateKey: today,
             instagramImage,
             postLayoutBImageData,
-            zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote)
+            zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
+            quiltFingerprint
           });
 
           const reelLockedSkip = await Utils.shouldSkipZapierReelCapture(today);
@@ -17598,7 +17676,8 @@ try {
                 reelWebmBlob,
                 zapierCaption: Utils.formatZapierCaptionFromQuote(
                   todayQuote || this.quoteService?.getTodayQuote?.()
-                )
+                ),
+                quiltFingerprint
               });
               Utils.markSyncedZapierReelForDate(today);
               const baseUrl =

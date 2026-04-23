@@ -65,6 +65,27 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
         }
         const app = window.app;
         let blocks = app.quiltEngine?.blocks || [];
+        /**
+         * For SSR we must render the requested calendar date, not whatever quilt happens to be
+         * currently loaded in app state. Prefer Firestore `quilts/{dateKey}` when available.
+         */
+        const getFirestoreBlocksForDateKey = async (dk) => {
+          try {
+            if (!window.db || !window.firestore || typeof window.firestore.getDoc !== 'function') return null;
+            const qRef = window.firestore.doc(window.db, 'quilts', dk);
+            const qSnap = await window.firestore.getDoc(qRef);
+            if (!qSnap.exists()) return null;
+            const data = qSnap.data() || {};
+            const dayBlocks = Array.isArray(data.blocks) ? data.blocks : [];
+            return dayBlocks.length ? dayBlocks : null;
+          } catch (_) {
+            return null;
+          }
+        };
+        const dateBlocks = await getFirestoreBlocksForDateKey(dateKey);
+        if (Array.isArray(dateBlocks) && dateBlocks.length > 0) {
+          blocks = dateBlocks;
+        }
         // CI/headless can race: app exists with default 1 block before async quilt hydrate completes.
         if ((!Array.isArray(blocks) || blocks.length <= 1) && typeof app.loadQuilt === 'function') {
           try {
@@ -77,8 +98,17 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
           }
           blocks = app.quiltEngine?.blocks || [];
         }
+        // One more date-forced read after loadQuilt, because loadQuilt always keys by "today".
         if (!Array.isArray(blocks) || blocks.length <= 1) {
-          throw new Error(`Need >1 block, found ${blocks.length || 0}`);
+          const dateBlocksRetry = await getFirestoreBlocksForDateKey(dateKey);
+          if (Array.isArray(dateBlocksRetry) && dateBlocksRetry.length > 0) {
+            blocks = dateBlocksRetry;
+          }
+        }
+        if (!Array.isArray(blocks) || blocks.length <= 1) {
+          throw new Error(
+            `Need >1 block for ${dateKey}, found ${blocks.length || 0}. Missing/empty quilts/${dateKey} in Firestore.`
+          );
         }
         if (typeof app._buildSyntheticQuiltReelWebm !== 'function') {
           throw new Error('SSR reel builder missing');
@@ -132,13 +162,18 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
           typeof Utils.formatZapierCaptionFromQuote === 'function'
             ? Utils.formatZapierCaptionFromQuote(quote)
             : `${String(quote.text ?? quote.body ?? '').trim()} — ${String(quote.author ?? '').trim()}`.trim();
+        const quiltFingerprint =
+          typeof Utils.computeQuiltFingerprint === 'function'
+            ? Utils.computeQuiltFingerprint(blocks)
+            : '';
 
         const doc = await Utils.writeInstagramImagesDocForZapier({
           dateKey,
           instagramImage,
           postLayoutBImageData,
           reelWebmBlob: blob,
-          zapierCaption
+          zapierCaption,
+          quiltFingerprint
         });
 
         const tr = await fetch(`${apiBase}/api/transcode-instagram-reel`, {
