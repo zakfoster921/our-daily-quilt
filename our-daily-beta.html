@@ -296,9 +296,9 @@ try {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.28em;
+      gap: 0.38em;
       margin: 0;
-      padding: 0;
+      padding: 0 0.2em;
       text-align: center;
       font-weight: 700;
       font-size: inherit;
@@ -309,18 +309,25 @@ try {
 
     .portal-join-line--split {
       display: flex;
-      flex-wrap: wrap;
-      align-items: baseline;
+      flex-wrap: nowrap;
+      align-items: center;
       justify-content: center;
       column-gap: 0.32em;
-      row-gap: 0.2em;
+      white-space: nowrap;
     }
 
+    /*
+      Fixed-width middle: only wide enough for the number strip + a little air.
+      (Older 6em+ caps hugged 9rem and read as a huge gap between lead and trail.)
+    */
     .portal-join-line__middle {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: clamp(2.25rem, 10vw, 4.5rem);
+      flex: 0 0 auto;
+      box-sizing: border-box;
+      width: clamp(2.5rem, 2.85em, 5.5rem);
+      min-height: 1.85em;
     }
 
     .portal-join-line--solo {
@@ -426,9 +433,10 @@ try {
       align-items: center;
       justify-content: center;
       vertical-align: 0.08em;
-      margin: 0 0.14em;
+      margin: 0;
       padding: 0.2em 0.48em 0.26em;
       box-sizing: border-box;
+      max-width: 100%;
       background: #ffffff;
       color: #3f3a35;
       box-shadow: 0 2px 7px rgba(0, 0, 0, 0.14);
@@ -438,6 +446,7 @@ try {
       font-size: 1.12em;
       line-height: 1;
       letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
       white-space: nowrap;
       transform: rotate(-2.75deg);
       transform-origin: center center;
@@ -930,6 +939,37 @@ try {
     body.intro-flow-active #screen-quote .quote-prompt.quote-prompt--visible {
       opacity: 1;
     }
+
+    /* First quote in intro: match portal returning greeting (sans, weight 200, scaled subtext). */
+    body.intro-flow-active #screen-quote .quote-inner {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: calc(var(--portal-subtext-size) * 1.16);
+      font-weight: 200;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    body.intro-flow-active #screen-quote .quote-line {
+      font-family: inherit;
+      font-size: inherit;
+      font-style: normal;
+      font-weight: 200;
+      font-variant-ligatures: normal;
+      letter-spacing: inherit;
+      line-height: inherit;
+      color: rgba(0, 0, 0, 0.78);
+    }
+
+    body.intro-flow-active #screen-quote .quote-author {
+      font-family: inherit;
+      font-size: calc(var(--portal-subtext-size) * 1.16);
+      font-style: normal;
+      font-weight: 200;
+      letter-spacing: inherit;
+      line-height: 1.2;
+      color: rgba(0, 0, 0, 0.78);
+    }
+
     @media (prefers-reduced-motion: reduce) {
       body.intro-flow-active #screen-quote .quote-prompt {
         transform: none !important;
@@ -1320,6 +1360,7 @@ try {
     
     #screen-quote {
       /* Flex host so wrapper fills viewport; inner grid centers quote in top fr, bottom-fruits prompt + CTA. */
+      --portal-subtext-size: clamp(1.4rem, 3.5vw, 2rem);
       display: flex;
       flex-direction: column;
       align-items: stretch;
@@ -1460,6 +1501,10 @@ try {
       min-height: 100vh;
       padding: 2rem 1rem;
     }
+
+    #screen-welcome .btn {
+      text-transform: none;
+    }
     
     .welcome-header h1 {
       font-size: 2.5rem;
@@ -1512,15 +1557,17 @@ try {
       padding: max(1rem, env(safe-area-inset-top, 0px)) 1.25rem max(1rem, env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
     }
+    /* Same rhythm as `.portal-mode--returning .portal-greeting` + `.portal-greeting` stack. */
     .name-thanks-line {
       margin: 0;
       max-width: min(94vw, 28rem);
       text-align: center;
-      font-family: inherit;
+      font-family: system-ui, -apple-system, sans-serif;
       font-weight: 200;
-      font-size: var(--portal-subtext-size);
-      color: #000;
-      line-height: 1.4;
+      font-size: calc(var(--portal-subtext-size) * 1.16);
+      letter-spacing: 0;
+      color: rgba(0, 0, 0, 0.78);
+      line-height: 1.2;
     }
     .first-name-screen-inner {
       width: 100%;
@@ -3006,6 +3053,34 @@ try {
       margin-bottom: 0.5rem;
     }
 
+    .about-maker-more {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #333;
+      margin: 0 0 1rem;
+    }
+
+    .about-maker-more a {
+      color: #111;
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .about-maker-more a:hover,
+    .about-maker-more a:focus-visible {
+      color: #000;
+    }
+
+    .about-maker-photo {
+      display: block;
+      width: min(72vw, 320px);
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+
     /* ===== REFLECTION CTA + SCREEN ===== */
     .reflection-cta {
       display: flex;
@@ -3106,6 +3181,33 @@ try {
       width: 100%;
       max-width: 680px;
       text-align: left;
+    }
+
+    /* Hero pencil: same paths as quilt `.reflection-cta-icon`, scaled like a screen title. */
+    .reflection-screen-title {
+      margin: 0 auto 1.65rem;
+      padding: 0;
+      text-align: center;
+      font: inherit;
+      font-weight: 700;
+      line-height: 0;
+    }
+
+    .reflection-screen-title-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #1a1a1a;
+    }
+
+    .reflection-screen-title-icon svg {
+      width: clamp(3.5rem, 12vw, 5.35rem);
+      height: clamp(3.5rem, 12vw, 5.35rem);
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .reflection-body {
@@ -3299,7 +3401,8 @@ try {
     #screen-quilt .quilt-story-actions {
       width: 100%;
       box-sizing: border-box;
-      padding: 0.35rem 0 max(0.85rem, env(safe-area-inset-bottom, 0px));
+      margin-top: clamp(0.85rem, 2.2vh, 1.35rem);
+      padding: 0 0 max(0.85rem, env(safe-area-inset-bottom, 0px));
     }
 
     #screen-quilt .quilt-story-actions .button-group:last-of-type {
@@ -3474,13 +3577,13 @@ try {
           <p class="welcome-screen-fade-in step-arrow-1" style="text-align: center; margin: 0.5rem 0;">↓</p>
           <p class="welcome-screen-fade-in step-2" style="text-align: center;">Add your color</p>
           <p class="welcome-screen-fade-in step-arrow-2" style="text-align: center; margin: 0.5rem 0;">↓</p>
-          <p class="welcome-screen-fade-in step-4" style="text-align: center; line-height: 1.2;">Discover what we can do together</p>
+          <p class="welcome-screen-fade-in step-4" style="text-align: center; line-height: 1.2;">Build today&rsquo;s quilt</p>
         </div>
       </div>
       
       <div style="margin-top: 2rem;"></div>
       
-      <button type="button" class="btn welcome-screen-fade-in" data-next="screen-first-quote-bridge" aria-label="Continue to your first quote">CONTINUE</button>
+      <button type="button" class="btn welcome-screen-fade-in" data-next="screen-first-quote-bridge" aria-label="Continue to your first quote">Ready?</button>
     </section>
 
     <!-- Brief bridge after How it works before the quote (first visit) -->
@@ -3749,19 +3852,29 @@ try {
           decoding="async"
           aria-hidden="true"
         />
-        <p class="about-description" style="text-align: center;"><strong>Our Daily Quilt</strong> explores how gathering creates beauty we can't achieve alone.</p>
-        
+        <p class="about-description">
+          Sometime today, people in the middle of their own lives will read the same words and choose a color that feels true. Those colors become a quilt. Then it&rsquo;s gone. Tomorrow we start again.
+        </p>
 
-        
-        <div class="about-section">
-          <h3>What we're exploring</h3>
-          <ul>
-            <li>What can we accomplish when we each contribute to a common cause?</li>
-            <li>How much variety can a system absorb while maintaining coherence?</li>
-            <li>How do we balance individual expression with group harmony?</li>
-          </ul>
+        <div class="about-section about-maker">
+          <h3>About the maker</h3>
+          <p>
+            I&rsquo;m Zak. I made this because I wanted a place where strangers could make something beautiful together &mdash; and because I believe in pausing long enough to let something good land. One thought. One color. It can change the texture of a day.
+          </p>
+          <p class="about-maker-more">
+            Learn more at <a href="https://zakfoster.com" target="_blank" rel="noopener noreferrer">zakfoster.com</a>
+          </p>
+          <img
+            class="about-maker-photo"
+            src="assets/zak-about-maker.png"
+            alt="Zak"
+            width="720"
+            height="900"
+            loading="lazy"
+            decoding="async"
+          />
         </div>
-        
+
         <button class="btn back-to-quilt-btn" data-next="screen-quilt" aria-label="Back to current quilt">
           <span class="stack-btn-content">
             <span class="stack-btn-chevron" aria-hidden="true">
@@ -3778,10 +3891,18 @@ try {
     <!-- Reflection Prompt Screen -->
     <section class="screen" id="screen-reflection" role="main" aria-label="Reflection prompt screen">
       <div class="reflection-container">
+        <h1 class="reflection-screen-title" aria-label="Reflect">
+          <span class="reflection-screen-title-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M4.5 19.5l4.2-1.1L19 8.1a1.4 1.4 0 0 0 0-2l-1.1-1.1a1.4 1.4 0 0 0-2 0L5.6 15.3l-1.1 4.2Z" />
+              <path d="M13.8 7.2l3 3" />
+            </svg>
+          </span>
+        </h1>
         <div class="reflection-prompt-card">
           <p class="reflection-body">[this will come from a question we'll later insert in code that corresponds to each day's quote. question will change daily.]</p>
         </div>
-        <p class="reflection-guidance">This prompt is designed to help you go deeper with today's ideas. There are many ways to structure this reflection.<br><br>Free-writing can be generative. Some people choose a certain number of pages to write, some people set a timer. You can hand-write in a journal or you can type it up. Choose whichever path that feels most helpful to you.</p>
+        <p class="reflection-guidance">Here's a question to sit with quietly or free-write in a journal — set a timer, fill some pages, write by hand or type.</p>
         <button class="btn back-to-quilt-btn" data-next="screen-quilt" aria-label="Back to current quilt">
           <span class="stack-btn-content">
             <span class="stack-btn-chevron" aria-hidden="true">
