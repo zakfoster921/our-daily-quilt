@@ -30,7 +30,15 @@ async function writeFailureArtifacts(page, attempt, outDir) {
   }
 }
 
-async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strictQuote }) {
+async function runSsrAttempt({
+  appUrl,
+  apiBase,
+  dateKey,
+  attempt,
+  outDir,
+  strictQuote,
+  requireSplitMode
+}) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: { width: 430, height: 932 },
@@ -183,7 +191,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strict
           );
         }
 
-        const { blob } = await app._buildSyntheticQuiltReelWebm(blocks, {
+        const { blob, mode } = await app._buildSyntheticQuiltReelWebm(blocks, {
           width: 1080,
           height: 1920,
           durationSec: 8,
@@ -195,6 +203,9 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strict
         });
         if (!blob || blob.size < 200) {
           throw new Error('SSR reel blob too small');
+        }
+        if (requireSplitMode && mode !== 'split') {
+          throw new Error(`SSR reel mode must be "split", got "${mode}"`);
         }
 
         const zapierCaption =
@@ -229,6 +240,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strict
 
         return {
           dateKey,
+          reelMode: mode,
           quoteText: String(quote.text ?? quote.body ?? '').trim(),
           quoteAuthor: String(quote.author ?? '').trim(),
           reelWebmUploaded: !!doc.reelWebmStorageUrl,
@@ -256,6 +268,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strict
       success: true,
       date: dateKey,
       attempt,
+      reelMode: result.reelMode,
       quoteText: result.quoteText,
       quoteAuthor: result.quoteAuthor,
       reelWebmUploaded: result.reelWebmUploaded,
@@ -281,6 +294,7 @@ async function main() {
     new URL(appUrl).origin;
   const dateKey = process.env.DATE_KEY || getAppDateKey();
   const strictQuote = String(process.env.SSR_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
+  const requireSplitMode = String(process.env.SSR_REQUIRE_SPLIT_MODE || 'true').toLowerCase() !== 'false';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);
   }
@@ -289,6 +303,7 @@ async function main() {
   console.log(`[ssr] app=${appUrl}`);
   console.log(`[ssr] api=${apiBase}`);
   console.log(`[ssr] strictQuote=${strictQuote}`);
+  console.log(`[ssr] requireSplitMode=${requireSplitMode}`);
 
   const outDir = process.env.SSR_ARTIFACTS_DIR || path.join(process.cwd(), 'tmp', 'ssr-artifacts');
   const maxAttempts = Number(process.env.SSR_MAX_ATTEMPTS || '2');
@@ -296,7 +311,15 @@ async function main() {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       console.log(`[ssr] attempt ${attempt}/${maxAttempts}`);
-      const result = await runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strictQuote });
+      const result = await runSsrAttempt({
+        appUrl,
+        apiBase,
+        dateKey,
+        attempt,
+        outDir,
+        strictQuote,
+        requireSplitMode
+      });
       console.log(JSON.stringify(result, null, 2));
       return;
     } catch (err) {
