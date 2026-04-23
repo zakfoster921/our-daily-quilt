@@ -30,7 +30,7 @@ async function writeFailureArtifacts(page, attempt, outDir) {
   }
 }
 
-async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
+async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strictQuote }) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: { width: 430, height: 932 },
@@ -58,7 +58,7 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
     );
 
     const result = await page.evaluate(
-      async ({ dateKey, apiBase }) => {
+      async ({ dateKey, apiBase, strictQuote }) => {
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
@@ -123,16 +123,55 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
 
         const qs = app.quoteService;
         let quote = { text: '', body: '', author: '' };
-        // SSR should be date-driven for workflow runs (yesterday key), not pinned "today" state.
-        // Prefer the same resolved quote path used by IG asset generation for this date key.
-        if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
-          quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || quote;
-        } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
-          quote = (await qs.resolveAndPinCalendarKey(dateKey)) || quote;
-        } else if (qs && typeof qs.getQuoteForDate === 'function') {
-          quote = qs.getQuoteForDate(dateKey) || quote;
-        } else if (qs && typeof qs.getTodayQuote === 'function') {
-          quote = qs.getTodayQuote() || quote;
+        /**
+         * Canonical quote source for SSR date runs: Firestore `quotes/{dateKey}`.
+         * If missing and strict mode is on, fail fast instead of silently falling back to shuffled/today.
+         */
+        const getCanonicalQuoteForDateKey = async (dk) => {
+          try {
+            if (!window.db || !window.firestore || typeof window.firestore.getDoc !== 'function') return null;
+            const qRef = window.firestore.doc(window.db, 'quotes', dk);
+            const qSnap = await window.firestore.getDoc(qRef);
+            if (!qSnap.exists()) return null;
+            const data = qSnap.data() || {};
+            const text = String(data.text || '').trim();
+            const author = String(data.author || '').trim();
+            if (!text) return null;
+            const blessing = String(data.blessing ?? data.Blessing ?? '').trim();
+            const whatIf = String(data.whatIf ?? data.what_if ?? '').trim();
+            const out = { text, author };
+            if (blessing) out.blessing = blessing;
+            if (whatIf) out.whatIf = whatIf;
+            return out;
+          } catch (_) {
+            return null;
+          }
+        };
+        const canonicalQuote = await getCanonicalQuoteForDateKey(dateKey);
+        if (canonicalQuote) {
+          quote = canonicalQuote;
+        } else {
+          // SSR should be date-driven for workflow runs (yesterday key), not pinned "today" state.
+          if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+            quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || quote;
+          } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
+            quote = (await qs.resolveAndPinCalendarKey(dateKey)) || quote;
+          } else if (qs && typeof qs.getQuoteForDate === 'function') {
+            quote = qs.getQuoteForDate(dateKey) || quote;
+          } else if (qs && typeof qs.getTodayQuote === 'function') {
+            quote = qs.getTodayQuote() || quote;
+          }
+          const qt = String(quote.text ?? quote.body ?? '').trim();
+          if (strictQuote && !qt) {
+            throw new Error(
+              `Missing canonical quote for ${dateKey}: quotes/${dateKey} not found (or empty text).`
+            );
+          }
+        }
+        if (strictQuote && !canonicalQuote) {
+          throw new Error(
+            `Refusing fallback quote for ${dateKey}: quotes/${dateKey} missing. Sync or write canonical quote first.`
+          );
         }
         const instagramImage = await arch.generateInstagramImage(blocks);
         let postLayoutBImageData = null;
@@ -190,11 +229,13 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
 
         return {
           dateKey,
+          quoteText: String(quote.text ?? quote.body ?? '').trim(),
+          quoteAuthor: String(quote.author ?? '').trim(),
           reelWebmUploaded: !!doc.reelWebmStorageUrl,
           reelMp4Url: trJson.reelMp4Url || ''
         };
       },
-      { dateKey, apiBase }
+      { dateKey, apiBase, strictQuote }
     );
 
     const verifyRes = await fetch(`${apiBase}/api/generate-instagram`, {
@@ -215,6 +256,8 @@ async function runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir }) {
       success: true,
       date: dateKey,
       attempt,
+      quoteText: result.quoteText,
+      quoteAuthor: result.quoteAuthor,
       reelWebmUploaded: result.reelWebmUploaded,
       reelMp4Url: verify.reelMp4Url,
       reelVideoUrl: verify.reelVideoUrl
@@ -237,6 +280,7 @@ async function main() {
     (process.env.API_BASE_URL && String(process.env.API_BASE_URL).replace(/\/$/, '')) ||
     new URL(appUrl).origin;
   const dateKey = process.env.DATE_KEY || getAppDateKey();
+  const strictQuote = String(process.env.SSR_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);
   }
@@ -244,6 +288,7 @@ async function main() {
   console.log(`[ssr] dateKey=${dateKey}`);
   console.log(`[ssr] app=${appUrl}`);
   console.log(`[ssr] api=${apiBase}`);
+  console.log(`[ssr] strictQuote=${strictQuote}`);
 
   const outDir = process.env.SSR_ARTIFACTS_DIR || path.join(process.cwd(), 'tmp', 'ssr-artifacts');
   const maxAttempts = Number(process.env.SSR_MAX_ATTEMPTS || '2');
@@ -251,7 +296,7 @@ async function main() {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       console.log(`[ssr] attempt ${attempt}/${maxAttempts}`);
-      const result = await runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir });
+      const result = await runSsrAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strictQuote });
       console.log(JSON.stringify(result, null, 2));
       return;
     } catch (err) {
