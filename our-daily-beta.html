@@ -436,6 +436,7 @@ try {
       margin: 0;
       padding: 0.2em 0.48em 0.26em;
       box-sizing: border-box;
+      min-width: 4ch;
       max-width: 100%;
       background: #ffffff;
       color: #3f3a35;
@@ -6503,8 +6504,11 @@ try {
         if (!q || typeof q !== 'object') return '';
         const t = String(q.text ?? q.body ?? '').trim();
         const a = String(q.author ?? '').trim();
-        if (t && a) return `${t} — ${a}`;
-        return t || a || '';
+        const wi = String(q.whatIf ?? q.what_if ?? '').trim();
+        const core = t && a ? `${t} — ${a}` : t || a || '';
+        if (!wi) return core;
+        if (!core) return wi;
+        return `${core}\n\nWhat if: ${wi}`;
       }
 
       /**
@@ -15389,10 +15393,14 @@ try {
           this._isPersonalQuiltMode && Array.isArray(this._personalQuiltState?.blocks)
             ? this._personalQuiltState.blocks.length
             : this.quiltEngine.blocks.length;
+        const formatCounterCount = (value) => {
+          const safe = Math.max(0, Number(value) || 0);
+          return safe >= 1000 ? String(safe) : String(safe).padStart(3, '0');
+        };
         const counterElement = document.getElementById('squareCounter');
         if (counterElement) {
           console.log('🔢 Counter update - blocks.length:', count);
-          counterElement.textContent = String(count);
+          counterElement.textContent = formatCounterCount(count);
         }
         if (!this._portalQuiltLoaded) {
           return;
@@ -15415,7 +15423,7 @@ try {
               mid = document.getElementById('portalJoinMiddle');
             }
             if (mid) {
-              mid.innerHTML = `<span class="portal-join-line__n">${others}</span>`;
+              mid.innerHTML = `<span class="portal-join-line__n">${formatCounterCount(others)}</span>`;
               mid.removeAttribute('aria-hidden');
             }
           } else {

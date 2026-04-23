@@ -182,11 +182,77 @@ async function firebaseSaveDownloadableFile(destination, buffer, contentType) {
   return { publicUrl: buildFirebaseDownloadUrl(bucketName, destination, token), bucketName };
 }
 
+function normalizeMoodLabel(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ');
+}
+
+function resolveMoodAliasKey(moodKey) {
+  const key = normalizeMoodLabel(moodKey);
+  if (!key) return '';
+  const aliasMap = {
+    calm: 'contemplative',
+    reflective: 'contemplative',
+    reflection: 'contemplative',
+    gentle: 'nurturing',
+    nurturing: 'nurturing',
+    uplift: 'empowering',
+    uplifting: 'empowering',
+    powerful: 'empowering',
+    bold: 'mobilizing',
+    urgent: 'mobilizing',
+    energetic: 'mobilizing',
+    expansive: 'expansive',
+    contemplative: 'contemplative',
+    empowering: 'empowering',
+    mobilizing: 'mobilizing'
+  };
+  return aliasMap[key] || key;
+}
+
 /**
- * Optional bed track for reel MP4s (bundled Freepik asset or REEL_BED_MUSIC_PATH).
+ * JSON map of mood label -> absolute audio file path.
+ * Example:
+ * REEL_BED_MUSIC_PATHS_JSON={"calm":"/abs/calm.mp3","joyful":"/abs/joyful.mp3","default":"/abs/default.mp3"}
+ */
+function getMoodMusicPathMap() {
+  const raw = String(process.env.REEL_BED_MUSIC_PATHS_JSON || '').trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [key, maybePath] of Object.entries(parsed)) {
+      const moodKey = normalizeMoodLabel(key);
+      const p = String(maybePath || '').trim();
+      if (!moodKey || !p) continue;
+      if (!fsSync.existsSync(p)) {
+        console.warn(`⚠️ Mood track path missing for "${key}": ${p}`);
+        continue;
+      }
+      out[moodKey] = path.resolve(p);
+    }
+    return out;
+  } catch (e) {
+    console.warn('⚠️ REEL_BED_MUSIC_PATHS_JSON is not valid JSON:', e.message);
+    return {};
+  }
+}
+
+/**
+ * Optional bed track for reel MP4s.
+ * Priority: mood map env -> single REEL_BED_MUSIC_PATH -> bundled asset.
  * @returns {string|null} absolute path, or null → FFmpeg uses silent AAC via anullsrc
  */
-function resolveReelBedMusicPath() {
+function resolveReelBedMusicPath(moodLabel = '') {
+  const moodKey = normalizeMoodLabel(moodLabel);
+  const moodAliasKey = resolveMoodAliasKey(moodKey);
+  const moodMap = getMoodMusicPathMap();
+  if (moodAliasKey && moodMap[moodAliasKey]) return moodMap[moodAliasKey];
+  if (moodKey && moodMap[moodKey]) return moodMap[moodKey];
+  if (moodMap.default) return moodMap.default;
   const fromEnv = process.env.REEL_BED_MUSIC_PATH;
   if (fromEnv && typeof fromEnv === 'string') {
     const p = fromEnv.trim();
@@ -210,9 +276,9 @@ const REEL_SYNTHETIC_TARGET_FPS = 30;
 /** Server-side safety hold so reel.mp4 always starts on frame 1, even if browser-side cover timing regresses. */
 const REEL_MP4_FIRST_FRAME_HOLD_SEC = 0.3;
 
-function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8) {
+function runFfmpegPngLoopToMp4(ffmpegPath, pngPath, outPath, durationSec = 8, moodLabel = '') {
   return new Promise((resolve, reject) => {
-    const musicPath = resolveReelBedMusicPath();
+    const musicPath = resolveReelBedMusicPath(moodLabel);
     const vf =
       'format=yuv420p,scale=1080:1920:force_original_aspect_ratio=decrease,' +
       'pad=1080:1920:(ow-iw)/2:(oh-ih)/2';
@@ -297,7 +363,8 @@ async function runNightlyInstagramSnapshot(options = {}) {
 
   const quoteSnap = await db.collection('quotes').doc(dateKey).get();
   const qd = quoteSnap.exists ? quoteSnap.data() : {};
-  const quoteLine = `${qd.text || 'Every day is a new beginning.'} — ${qd.author || ''}`.trim();
+  const quoteLine = formatZapierCaptionFromQuoteData(qd) || 'Every day is a new beginning.';
+  const quoteMood = String(qd?.mood || '').trim();
 
   const pngDataUrl = await generateInstagramImageFromQuilt(blocks, quoteLine);
   const pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
@@ -331,7 +398,7 @@ async function runNightlyInstagramSnapshot(options = {}) {
 
     let reelMp4Url = null;
     if (!protectReel) {
-      await runFfmpegPngLoopToMp4(ffmpegPath, pngPath, mp4Path, 8);
+      await runFfmpegPngLoopToMp4(ffmpegPath, pngPath, mp4Path, 8, quoteMood);
       const mp4Buf = await fs.readFile(mp4Path);
       const { publicUrl } = await firebaseSaveDownloadableFile(
         `instagram-zapier/${dateKey}/reel-nightly.mp4`,
@@ -342,6 +409,7 @@ async function runNightlyInstagramSnapshot(options = {}) {
       mergePayload.reelMp4StorageUrl = reelMp4Url;
       mergePayload.reelMp4Url = reelMp4Url;
       mergePayload.reelSource = 'nightly_static_mp4';
+      mergePayload.reelMood = quoteMood;
       mergePayload.reelNote =
         'MP4 is an 8s static hold of the classic 4:5 card (GitHub + Railway) with bundled bed music when assets/audio is present. The split synthetic reel only exists if recorded from the app (not required for Zapier).';
     } else {
@@ -372,9 +440,9 @@ async function runNightlyInstagramSnapshot(options = {}) {
   }
 }
 
-function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath) {
+function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath, moodLabel = '') {
   return new Promise((resolve, reject) => {
-    const musicPath = resolveReelBedMusicPath();
+    const musicPath = resolveReelBedMusicPath(moodLabel);
     const fps = REEL_SYNTHETIC_TARGET_FPS;
     /** Remap PTS from frame index so VP8/VP9 WebM from Chrome MediaRecorder keeps wall-clock 8s at 30fps */
     const vf = `setpts=N/(${fps}*TB),tpad=start_mode=clone:start_duration=${REEL_MP4_FIRST_FRAME_HOLD_SEC}`;
@@ -453,6 +521,9 @@ async function transcodeInstagramReelWebmToMp4(dateKey, options = {}) {
   }
 
   const ffmpegPath = getFfmpegBinaryPath();
+  const quoteSnap = await db.collection('quotes').doc(dateKey).get();
+  const quoteData = quoteSnap.exists ? quoteSnap.data() || {} : {};
+  const quoteMood = String(quoteData.mood || '').trim();
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ig-reel-'));
   const inPath = path.join(tmpDir, 'in.webm');
@@ -466,7 +537,7 @@ async function transcodeInstagramReelWebmToMp4(dateKey, options = {}) {
     const webmBuf = Buffer.from(await res.arrayBuffer());
     await fs.writeFile(inPath, webmBuf);
 
-    await runFfmpegWebmToMp4(ffmpegPath, inPath, outPath);
+    await runFfmpegWebmToMp4(ffmpegPath, inPath, outPath, quoteMood);
 
     const mp4Buf = await fs.readFile(outPath);
     const dest = `instagram-zapier/${dateKey}/reel.mp4`;
@@ -476,12 +547,13 @@ async function transcodeInstagramReelWebmToMp4(dateKey, options = {}) {
         reelMp4StorageUrl: reelMp4Url,
         reelMp4Url: reelMp4Url,
         reelSource: 'app_synthetic_mp4',
+        reelMood: quoteMood,
         lastReelTranscodeAt: new Date().toISOString()
       },
       { merge: true }
     );
 
-    console.log(`✅ Transcoded reel to MP4 for ${dateKey}`);
+    console.log(`✅ Transcoded reel to MP4 for ${dateKey}${quoteMood ? ` (mood: ${quoteMood})` : ''}`);
     return { success: true, cached: false, reelMp4Url, date: dateKey };
   } finally {
     try {
@@ -591,6 +663,16 @@ function addDaysToDateKey(dateKey, delta) {
 
 function getUtcIsoNow() {
   return new Date().toISOString();
+}
+
+function formatZapierCaptionFromQuoteData(quoteData = {}) {
+  const text = String(quoteData.text ?? quoteData.body ?? '').trim();
+  const author = String(quoteData.author ?? '').trim();
+  const whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim();
+  const core = text && author ? `${text} — ${author}` : text || author || '';
+  if (!whatIf) return core;
+  if (!core) return whatIf;
+  return `${core}\n\nWhat if: ${whatIf}`;
 }
 
 async function runDailyResetForDate(dateKey, source = 'unknown') {
@@ -826,10 +908,9 @@ async function getTodayInstagramImage(options = {}) {
             const quoteDoc = await db.collection('quotes').doc(dk).get();
             if (!quoteDoc.exists) continue;
             const quoteData = quoteDoc.data() || {};
-            const text = String(quoteData.text || '').trim();
-            const author = String(quoteData.author || '').trim();
-            if (text) {
-              quote = author ? `${text} — ${author}` : text;
+            const caption = formatZapierCaptionFromQuoteData(quoteData);
+            if (caption) {
+              quote = caption;
               captionSource = 'quotes';
               console.log(`✅ Caption from quotes/{${dk}}`);
               break;

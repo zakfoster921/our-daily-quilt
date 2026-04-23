@@ -41,7 +41,8 @@ npm run sync:quotes
 - `quote_text` -> `text`
 - `author` -> `author`
 - `reflection_prompt` -> `reflectionPrompt`
-- `what_if` -> `whatIf`
+- `what_if` -> `whatIf` and `what_if`
+- `mood` -> `mood`
 - `blessing` -> `blessing`
 - `notification_title` -> `notificationTitle`
 - `notification_text` -> `notificationText`

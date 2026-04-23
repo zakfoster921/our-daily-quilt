@@ -169,6 +169,7 @@ function parseNotionRow(page) {
   const reflectionPrompt =
     getRichText(props.reflection_prompt) || getTitle(props.reflection_prompt);
   const whatIf = getMappedText(props, 'what_if', 'what_if', 'What if', 'What If');
+  const mood = getMappedText(props, 'mood', 'mood', 'Mood');
   const blessing = findBlessingFromProps(props);
   const notificationTitle =
     getRichText(props.notification_title) || getTitle(props.notification_title);
@@ -188,6 +189,8 @@ function parseNotionRow(page) {
       author,
       reflectionPrompt,
       whatIf,
+      what_if: whatIf,
+      mood,
       blessing,
       notificationTitle,
       notificationText,
