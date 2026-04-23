@@ -3020,6 +3020,36 @@ try {
       text-align: left;
     }
 
+    .about-description-line--then,
+    .about-description-line--tomorrow {
+      display: block;
+      margin-top: 0.7em;
+      opacity: 0;
+    }
+
+    #screen-about.active .about-description-line--then {
+      animation: aboutLineFadeIn 0.5s ease forwards;
+      animation-delay: 2s;
+    }
+
+    #screen-about.active .about-description-line--tomorrow {
+      animation: aboutLineFadeIn 0.5s ease forwards;
+      animation-delay: 2.5s;
+    }
+
+    @keyframes aboutLineFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .about-description-line--then,
+      .about-description-line--tomorrow {
+        opacity: 1;
+        animation: none !important;
+      }
+    }
+
     .about-description strong {
       font-weight: 700;
       color: #111;
@@ -3242,7 +3272,7 @@ try {
       border: none;
       border-radius: 4px;
       padding: 1.2rem;
-      margin: 0 auto 2.2rem;
+      margin: 0 auto 6.6rem;
       background: #fff;
       width: 81%;
       max-width: 450px;
@@ -3874,17 +3904,17 @@ try {
         <p class="about-description">
           Sometime today, people in the middle of their own lives will read the same words and choose a color that feels true.
           Those colors become a quilt.
-          <span style="display: block; margin-top: 0.7em;">Then it&rsquo;s gone.</span>
-          <span style="display: block; margin-top: 0.7em;">Tomorrow we start again.</span>
+          <span class="about-description-line--then">Then it&rsquo;s gone.</span>
+          <span class="about-description-line--tomorrow">Tomorrow we start again.</span>
         </p>
 
         <div class="about-section about-maker">
           <h3>About the maker</h3>
           <p>
-            I&rsquo;m Zak. I made this because I wanted a place where people could make something beautiful together &mdash; and because I believe in pausing long enough to let something good land.
+            I&rsquo;m Zak. I made this because I wanted a place where people could make something beautiful together when we pause long enough to let something good land.
           </p>
           <p class="about-maker-more">
-            Learn more at <a href="https://zakfoster.com" target="_blank" rel="noopener noreferrer">zak.foster.com</a>
+            Learn more at <a href="https://zakfoster.com" target="_blank" rel="noopener noreferrer">zakfoster.com</a>
           </p>
           <img
             class="about-maker-photo"
@@ -4656,6 +4686,49 @@ try {
           });
         }
         
+        return {
+          originalBlock: selectedBlock,
+          newBlocks: splitResult,
+          submissionIndex: this.submissionCount
+        };
+      }
+
+      /** Force-split a specific block using the provided color (admin utility). */
+      splitSpecificBlock(selectedBlock, newColor) {
+        if (!selectedBlock || !selectedBlock.id) {
+          console.error('splitSpecificBlock: missing target block');
+          return false;
+        }
+        if (!newColor || typeof newColor !== 'string' || !newColor.match(/^#[0-9A-Fa-f]{6}$/)) {
+          console.error('splitSpecificBlock: invalid color', newColor);
+          return false;
+        }
+        const blockIndex = this.blocks.findIndex((b) => b && b.id === selectedBlock.id);
+        if (blockIndex === -1) {
+          console.error('splitSpecificBlock: target block not found in quilt', selectedBlock.id);
+          return false;
+        }
+
+        const parentSnapshot = this._serializeBlockForReplay(selectedBlock);
+        this.submissionCount++;
+
+        const splitResult = this.splitBlock(selectedBlock, newColor);
+        this.blocks.splice(blockIndex, 1, ...splitResult);
+
+        if (splitResult.length >= 2) {
+          this.recordUserContribution(splitResult[1].id, newColor, this.submissionCount);
+        } else if (splitResult.length === 1) {
+          this.recordUserContribution(splitResult[0].id, newColor, this.submissionCount);
+        }
+
+        this.colorReplayEvents.push({
+          seq: this.submissionCount,
+          iso: new Date().toISOString(),
+          newHex: newColor,
+          parent: parentSnapshot,
+          children: splitResult.map((c) => this._serializeBlockForReplay(c))
+        });
+
         return {
           originalBlock: selectedBlock,
           newBlocks: splitResult,
@@ -14662,7 +14735,8 @@ try {
           <div class="admin-menu-content">
             ${statsDisplay}
             <button onclick="app.handleTestAddBlock()">Add Random Block</button>
-            <button onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Family Blocks</button>
+            <button onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Variations</button>
+            <button onclick="app.handleSplitLargestBlockWithPopularColor()">Split Largest Block (Popular Color)</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
             <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
             <button onclick="app.handleTestInstagramStoryImage()">📱 Create IG story (Layout B 9:16)</button>
@@ -17825,11 +17899,23 @@ try {
 
           /** Frequency-weighted: colors that occupy more blocks are chosen more often. */
           let selectedColors;
+          const createSubtleVariant = (hex) => {
+            const hsl = this.hexToHsl(hex);
+            const direction = Math.random() < 0.5 ? -1 : 1;
+            const deltaL = direction * (0.06 + Math.random() * 0.06); // ±6-12% lightness
+            let newLightness = hsl.l + deltaL;
+            newLightness = Math.max(0.12, Math.min(0.9, newLightness));
+            // Keep saturation close to original so variation reads as same color family.
+            let newSaturation = hsl.s + (Math.random() - 0.5) * 0.08; // ±4%
+            newSaturation = Math.max(0.08, Math.min(1, newSaturation));
+            return Utils.hslToHex(hsl.h, newSaturation * 100, newLightness * 100);
+          };
+
           if (quiltColorPool.length > 0) {
             selectedColors = [];
             for (let i = 0; i < normalizedCount; i++) {
               const hex = quiltColorPool[Math.floor(Math.random() * quiltColorPool.length)];
-              selectedColors.push(hex);
+              selectedColors.push(createSubtleVariant(hex));
             }
           } else {
             const shuffled = [...expandedRumiColors].sort(() => 0.5 - Math.random());
@@ -17865,10 +17951,68 @@ try {
           // Update admin stats if menu is open
           this.updateAdminStats();
           
-          this.uiService.showToast(`Added ${normalizedCount} blocks`);
+          this.uiService.showToast(`Added ${normalizedCount} subtle color variations`);
           
         } catch (error) {
           this.errorHandler.handleError(error, 'addColorFamilyBlocks');
+        }
+      }
+
+      async handleSplitLargestBlockWithPopularColor() {
+        try {
+          const blocks = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks : [];
+          if (!blocks.length) {
+            this.uiService.showToast('No quilt blocks available to split');
+            return;
+          }
+          const largest = [...blocks]
+            .filter((b) => b && b.width > 0 && b.height > 0)
+            .sort((a, b) => b.width * b.height - a.width * a.height)[0];
+          if (!largest) {
+            this.uiService.showToast('No eligible block found');
+            return;
+          }
+
+          const counts = new Map();
+          for (const b of blocks) {
+            const c = b && typeof b.color === 'string' ? b.color : '';
+            if (!c || !Utils.validateHexColor(c)) continue;
+            counts.set(c, (counts.get(c) || 0) + 1);
+          }
+          let ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+          if (!ranked.length) {
+            this.uiService.showToast('No valid quilt colors to sample');
+            return;
+          }
+
+          // Prefer a popular color that is not identical to the block's current color.
+          let popularHex = (ranked.find(([hex]) => hex !== largest.color) || ranked[0])[0];
+          if (popularHex === largest.color) {
+            // If every block has same color, create a subtle variation so split remains visible.
+            const hsl = this.hexToHsl(popularHex);
+            const delta = Math.random() < 0.5 ? -0.08 : 0.08;
+            const newL = Math.max(0.12, Math.min(0.9, hsl.l + delta));
+            popularHex = Utils.hslToHex(hsl.h, hsl.s * 100, newL * 100);
+          }
+
+          const split = this.quiltEngine.splitSpecificBlock(largest, popularHex);
+          if (!split) {
+            this.uiService.showToast('Could not split largest block');
+            return;
+          }
+
+          if (split.newBlocks && split.newBlocks.length > 0) {
+            const newest = split.newBlocks[split.newBlocks.length - 1];
+            const newBlockIndex = this.quiltEngine.blocks.findIndex((b) => b.id === newest.id);
+            if (newBlockIndex !== -1) this.renderer.setLastAddedIndex(newBlockIndex);
+          }
+
+          this.renderQuilt();
+          await this.saveQuilt();
+          this.updateAdminStats();
+          this.uiService.showToast('Split largest block with a popular quilt color');
+        } catch (error) {
+          this.errorHandler.handleError(error, 'splitLargestBlockWithPopularColor');
         }
       }
 
