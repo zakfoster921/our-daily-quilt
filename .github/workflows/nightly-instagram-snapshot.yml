@@ -67,8 +67,8 @@ jobs:
           echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
 
       # Playwright loads the live app, records WebM, uploads + transcodes to reel.mp4 (animated).
-      # If this fails, we still POST /api/nightly-instagram-snapshot (static reel-nightly.mp4) so Zapier has *something*.
-      # SSR_REQUIRE_SPLIT_MODE=false: accept "fade"/"replay" reels so fewer nights fall back to static-only.
+      # On failure: no static fallback (Firebase left unchanged for this run); job fails at end (GitHub email).
+      # SSR_REQUIRE_SPLIT_MODE=false: accept "fade"/"replay" reels, not only "split".
       - name: Generate synthetic reel for Zapier (SSR)
         id: ssr
         continue-on-error: true
@@ -103,50 +103,9 @@ jobs:
           path: tmp/ssr-artifacts
           if-no-files-found: ignore
 
-      - name: Fallback to static nightly reel snapshot
-        if: steps.ssr.outcome == 'failure'
-        env:
-          RESET_URL: ${{ secrets.RESET_URL }}
-          RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
-          DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${RESET_URL:-}" ] || [ -z "${RESET_TOKEN:-}" ]; then
-            echo "Missing RESET_URL or RESET_TOKEN secret for fallback"
-            exit 1
-          fi
-
-          SNAPSHOT_URL="${RESET_URL/daily-reset/nightly-instagram-snapshot}"
-          echo "Fallback POST ${SNAPSHOT_URL}"
-
-          date_payload='{}'
-          if [ -n "${DATE_KEY:-}" ]; then
-            date_payload="{\"date\":\"${DATE_KEY}\"}"
-          fi
-
-          http_code=$(curl -sS -o response.json -w "%{http_code}" \
-            -X POST "$SNAPSHOT_URL" \
-            -H "Content-Type: application/json" \
-            -H "x-reset-token: $RESET_TOKEN" \
-            --data "${date_payload}")
-
-          echo "HTTP $http_code"
-          cat response.json
-
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 299 ]; then
-            echo "Fallback snapshot request failed"
-            exit 1
-          fi
-
-          if ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' response.json; then
-            echo "Fallback snapshot returned success=false"
-            exit 1
-          fi
-
-      - name: Fail workflow if static fallback was used (alerting)
+      - name: Fail when SSR reel did not complete
         if: steps.ssr.outcome == 'failure'
         run: |
           DK="${{ steps.resolve_date.outputs.date_key }}"
-          echo "::error::SSR reel failed for ${DK}. Railway wrote reel-nightly.mp4 (8s still) only — Zap/IG will look like a frozen card. Download artifact nightly-ssr-failure-artifacts and check Action logs. To re-run: workflow_dispatch with date_key=${DK}."
+          echo "::error::SSR reel failed for ${DK}. No static snapshot was posted. Fix the failure, then re-run this workflow (workflow_dispatch) with date_key=${DK} if needed. Download artifact nightly-ssr-failure-artifacts for Playwright output."
           exit 1
