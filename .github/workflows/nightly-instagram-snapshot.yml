@@ -66,15 +66,18 @@ jobs:
           fi
           echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate synthetic split reel for Zapier
+      # Playwright loads the live app, records WebM, uploads + transcodes to reel.mp4 (animated).
+      # If this fails, we still POST /api/nightly-instagram-snapshot (static reel-nightly.mp4) so Zapier has *something*.
+      # SSR_REQUIRE_SPLIT_MODE=false: accept "fade"/"replay" reels so fewer nights fall back to static-only.
+      - name: Generate synthetic reel for Zapier (SSR)
         id: ssr
         continue-on-error: true
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
           DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
-          SSR_MAX_ATTEMPTS: "2"
+          SSR_MAX_ATTEMPTS: "3"
           SSR_ARTIFACTS_DIR: "tmp/ssr-artifacts"
-          SSR_REQUIRE_SPLIT_MODE: "true"
+          SSR_REQUIRE_SPLIT_MODE: "false"
         run: |
           set -euo pipefail
 
@@ -141,7 +144,9 @@ jobs:
             exit 1
           fi
 
-      - name: SSR fallback result
+      - name: Fail workflow if static fallback was used (alerting)
         if: steps.ssr.outcome == 'failure'
         run: |
-          echo "SSR failed; fallback executed successfully."
+          DK="${{ steps.resolve_date.outputs.date_key }}"
+          echo "::error::SSR reel failed for ${DK}. Railway wrote reel-nightly.mp4 (8s still) only — Zap/IG will look like a frozen card. Download artifact nightly-ssr-failure-artifacts and check Action logs. To re-run: workflow_dispatch with date_key=${DK}."
+          exit 1
