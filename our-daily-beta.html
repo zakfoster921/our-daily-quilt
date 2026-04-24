@@ -296,9 +296,9 @@ try {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.38em;
+      gap: 0.2em;
       margin: 0;
-      padding: 0 0.2em;
+      padding: 0 0.08em;
       text-align: center;
       font-weight: 700;
       font-size: inherit;
@@ -557,6 +557,8 @@ try {
 
     .portal-mode--returning .portal-greeting-mount {
       margin-top: clamp(1.35rem, 4.5vh, 2.25rem);
+      width: min(69vw, 300px);
+      max-width: min(69vw, 300px);
     }
 
     #screen-portal .portal-greeting-strip-card.quote-card {
@@ -574,6 +576,11 @@ try {
       margin-top: clamp(0.75rem, 2.5vh, 1.35rem);
     }
 
+    #screen-portal.portal-mode--returning .portal-top-cluster {
+      padding-bottom: calc(3.1rem + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+    }
+
     .portal-screen-footer {
       flex-shrink: 0;
       width: 100%;
@@ -584,8 +591,17 @@ try {
       justify-content: flex-end;
       padding: 0.85rem 0 max(1rem, env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
-      border-top: 1px solid rgba(46, 46, 46, 0.1);
+      border-top: none;
       background: linear-gradient(to bottom, rgba(246, 244, 241, 0), rgba(0, 0, 0, 0.02));
+    }
+
+    #screen-portal.portal-mode--returning .portal-screen-footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      margin-top: 0;
+      padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 1.2rem);
     }
 
     .portal-date-slot-footer {
@@ -2554,6 +2570,13 @@ try {
         height: calc(100vh - 120px) !important;
         min-height: calc(100vh - 120px) !important;
         max-height: calc(100vh - 120px) !important;
+      }
+
+      /* Returning portal must use full viewport so footer/date can sit on true bottom edge. */
+      #screen-portal.portal-mode--returning {
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        max-height: 100dvh !important;
       }
 
       #screen-quote.active {
@@ -8449,20 +8472,30 @@ try {
 
                 const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
                 const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
-                // Layout B quilt treatment: duplicate stack like synthetic reel, with mirrored second quilt beneath first.
+                // Layout B quilt treatment: two stacked quilts; lower stack mirrored on both axes.
+                // Each half uses independent cover-fit + clipping to avoid central banding.
                 const COVER_ZOOM = isPostLayout ? 1.04 : 1.08;
-                const stackScale = Math.max(STORY_W / iw, STORY_H / (2 * ih)) * COVER_ZOOM;
-                const cw = Math.round(iw * stackScale);
-                const ch = Math.round(ih * stackScale);
+                const halfH = Math.ceil(STORY_H / 2);
+                const halfScale = Math.max(STORY_W / iw, halfH / ih) * COVER_ZOOM;
+                const cw = Math.round(iw * halfScale);
+                const ch = Math.round(ih * halfScale);
                 const qx = Math.round((STORY_W - cw) / 2);
-                const topY = Math.round((STORY_H - 2 * ch) / 2);
+                const topY = Math.round((halfH - ch) / 2);
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
-                // Top quilt (normal orientation)
-                ctx.drawImage(quiltImg, qx, topY, cw, ch);
-                // Bottom quilt (mirrored horizontally + vertically)
-                const bottomY = topY + ch;
+                // Top half clip.
                 ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, 0, STORY_W, halfH);
+                ctx.clip();
+                ctx.drawImage(quiltImg, qx, topY, cw, ch);
+                ctx.restore();
+                // Bottom half clip + mirrored draw.
+                const bottomY = halfH + Math.round((halfH - ch) / 2);
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, halfH, STORY_W, STORY_H - halfH);
+                ctx.clip();
                 ctx.translate(qx + cw, bottomY + ch);
                 ctx.scale(-1, -1);
                 ctx.drawImage(quiltImg, 0, 0, cw, ch);
@@ -10487,14 +10520,114 @@ try {
         stage.style.transform = '';
         const planW = 1080;
         const planH = 1920;
-        const strips = getLayoutBStoryQuotePlan(document.createElement('canvas').getContext('2d'), {
-          quoteText: String(text || '').trim(),
-          quoteAuthor: String(author || '').trim(),
-          layoutW: planW,
-          layoutH: planH,
-          dateKey: Utils.getTodayKey(),
-          usePostQuoteLayout: true
-        });
+        let strips;
+        if (options.portalGreeting) {
+          // Keep returning portal greeting on one strip/line.
+          const greetingText = String(text || '').trim().replace(/\s+/g, ' ');
+          const measureCanvas = document.createElement('canvas');
+          const measureCtx = measureCanvas.getContext('2d');
+          const portalGreetingScale = 1.1;
+          const portalGreetingMinPx = 25;
+          const greetingFontPx = Math.round(74 * portalGreetingScale);
+          const greetingLh = Math.round(greetingFontPx * 1.2);
+          measureCtx.font = `400 ${greetingFontPx}px Georgia, "Times New Roman", Times, serif`;
+          const greetingCardCS = window.getComputedStyle(quoteCard);
+          const greetingCardPadX =
+            (parseFloat(greetingCardCS.paddingLeft) || 0) + (parseFloat(greetingCardCS.paddingRight) || 0);
+          const greetingStageW = Math.max(220, (quoteCard.clientWidth || 0) - greetingCardPadX);
+          const maxSingleLinePx = Math.max(150, greetingStageW - 24);
+          let greetingLines = [greetingText];
+          const measured = Math.ceil(measureCtx.measureText(greetingText || ' ').width);
+          if (measured > maxSingleLinePx) {
+            const words = greetingText.split(/\s+/).filter(Boolean);
+            // Prefer moving only the name to line 2 when possible.
+            const commaIdx = greetingText.lastIndexOf(',');
+            const trySetSplit = (left, right) => {
+              const l = String(left || '').trim();
+              const r = String(right || '').trim();
+              if (!l || !r) return false;
+              const wLeft = measureCtx.measureText(l).width;
+              const wRight = measureCtx.measureText(r).width;
+              if (wLeft <= maxSingleLinePx && wRight <= maxSingleLinePx) {
+                greetingLines = [l, r];
+                return true;
+              }
+              return false;
+            };
+
+            let didSplit = false;
+            if (commaIdx > 0 && commaIdx < greetingText.length - 1) {
+              const lead = greetingText.slice(0, commaIdx).trim();
+              const tail = greetingText.slice(commaIdx + 1).trim();
+              // Prefer name-on-second-line split whenever a comma form exists.
+              greetingLines = [lead, tail];
+              didSplit = true;
+            }
+
+            // Fallback: move only final token (likely name) to line 2.
+            if (!didSplit && words.length > 1) {
+              const lead = words.slice(0, -1).join(' ');
+              const tail = words[words.length - 1];
+              greetingLines = [lead, tail];
+              didSplit = true;
+            }
+
+            // For 3+ words, also prefer [all-but-last-two] / [last-two] before broader balancing.
+            if (!didSplit && words.length >= 3) {
+              const lead = words.slice(0, -2).join(' ');
+              const tail = words.slice(-2).join(' ');
+              didSplit = trySetSplit(lead, tail);
+            }
+
+            // Final fallback: balanced two-line split.
+            if (!didSplit && words.length > 1) {
+              let best = null;
+              for (let i = 1; i < words.length; i++) {
+                const left = words.slice(0, i).join(' ');
+                const right = words.slice(i).join(' ');
+                const wLeft = measureCtx.measureText(left).width;
+                const wRight = measureCtx.measureText(right).width;
+                const widest = Math.max(wLeft, wRight);
+                const balance = Math.abs(wLeft - wRight);
+                const overflowPenalty = Math.max(0, widest - maxSingleLinePx) * 8;
+                const score = balance + overflowPenalty;
+                if (!best || score < best.score) {
+                  best = { left, right, score };
+                }
+              }
+              if (best) greetingLines = [best.left, best.right];
+            }
+          }
+          const lineWidths = greetingLines.map((ln) =>
+            Math.ceil(measureCtx.measureText(ln || ' ').width)
+          );
+          const stripFont = `400 ${greetingFontPx}px Georgia, "Times New Roman", Times, serif`;
+          const stripH = Math.max(94, Math.round((greetingLh + 34) * portalGreetingScale));
+          const lineGap = Math.round(12 * portalGreetingScale);
+          const clusterH =
+            greetingLines.length * stripH + Math.max(0, greetingLines.length - 1) * lineGap;
+          const clusterTopY = planH / 2 - clusterH / 2;
+          strips = greetingLines.map((line, idx) => ({
+            lines: [line],
+            role: 'quote',
+            font: stripFont,
+            lh: greetingLh,
+            w: Math.min(980, Math.max(260, Math.round((lineWidths[idx] + 78) * portalGreetingScale))),
+            h: stripH,
+            x: planW / 2,
+            y: Math.round(clusterTopY + idx * (stripH + lineGap) + stripH / 2),
+            angle: idx % 2 === 0 ? -0.015 : 0.01
+          }));
+        } else {
+          strips = getLayoutBStoryQuotePlan(document.createElement('canvas').getContext('2d'), {
+            quoteText: String(text || '').trim(),
+            quoteAuthor: String(author || '').trim(),
+            layoutW: planW,
+            layoutH: planH,
+            dateKey: Utils.getTodayKey(),
+            usePostQuoteLayout: true
+          });
+        }
         const padX = 10;
         const padY = 10;
         const minLeft = Math.min(...strips.map((s) => Number(s.x || 0) - Number(s.w || 0) / 2));
@@ -10522,8 +10655,9 @@ try {
           const joinOuter = document.querySelector('#screen-portal .portal-join-line-outer');
           const counterPxRaw = joinOuter ? parseFloat(window.getComputedStyle(joinOuter).fontSize) : NaN;
           const counterPx = Number.isFinite(counterPxRaw) && counterPxRaw > 0 ? counterPxRaw : 16;
-          /* Half of the prior 2× join-line cap: strips read at roughly the join line size. */
-          const targetMaxFont = counterPx * 1;
+          const portalGreetingMinPx = 25;
+          /* Portal greeting renders at ~25px unless constrained by narrower layouts. */
+          const targetMaxFont = 25;
           let maxStripFont = 0;
           for (const s of strips) {
             const fontPxMatch = /(\d+)px/.exec(String(s.font || ''));
@@ -10554,10 +10688,11 @@ try {
           const hPx = Math.max(20, Number(s.h || 20) * yScale);
           const lhPx = Math.max(1, Number(s.lh || 0) * yScale);
           const fontPxMatch = /(\d+)px/.exec(String(s.font || ''));
+          const minStripFontPx = options.portalGreeting ? 25 : 10;
           let fontPx = fontPxMatch
-            ? Math.max(10, parseInt(fontPxMatch[1], 10) * yScale)
-            : Math.max(10, 16 * yScale);
-          fontPx = Math.max(10, Math.round(fontPx));
+            ? Math.max(minStripFontPx, parseInt(fontPxMatch[1], 10) * yScale)
+            : Math.max(minStripFontPx, 16 * yScale);
+          fontPx = Math.max(minStripFontPx, Math.round(fontPx));
           const rotDeg = (Number(s.angle || 0) * 180) / Math.PI;
           el.style.width = `${wPx}px`;
           el.style.height = `${hPx}px`;
@@ -10646,11 +10781,13 @@ try {
         if (!card || !portal || typeof getLayoutBStoryQuotePlan !== 'function') return;
         if (portal.classList.contains('portal-mode--first-visit')) {
           card.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => n.remove());
+          this._portalGreetingRenderKey = '';
           return;
         }
         const t = String(greetingLine || '').trim();
         if (!t) {
           card.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => n.remove());
+          this._portalGreetingRenderKey = '';
           return;
         }
         card.classList.add('layoutb-preview-card');
@@ -10658,11 +10795,15 @@ try {
           if (!document.getElementById('screen-portal')?.classList.contains('portal-mode--returning')) {
             return;
           }
-          if ((card.clientWidth || 0) <= 80) {
+          const cardW = Math.round(card.clientWidth || 0);
+          if (cardW <= 80) {
             this.schedulePortalGreetingLayoutRefresh();
             return;
           }
+          const renderKey = `${t}__${cardW}`;
+          if (this._portalGreetingRenderKey === renderKey) return;
           this._mountLayoutBQuoteStrips(card, t, '', { portalGreeting: true, preferFullWidthScale: false });
+          this._portalGreetingRenderKey = renderKey;
         };
         requestAnimationFrame(paint);
       }
@@ -10681,9 +10822,14 @@ try {
             const line = Utils.getPortalGreetingDisplayLine();
             if (!line) {
               card.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => n.remove());
+              this._portalGreetingRenderKey = '';
               return;
             }
+            const cardW = Math.round(card.clientWidth || 0);
+            const renderKey = `${line}__${cardW}`;
+            if (this._portalGreetingRenderKey === renderKey) return;
             this._mountLayoutBQuoteStrips(card, line, '', { portalGreeting: true, preferFullWidthScale: false });
+            this._portalGreetingRenderKey = renderKey;
           } catch (e) {
             /* ignore */
           }
@@ -15624,8 +15770,12 @@ try {
         if (joinLine && joinOuter) {
           const others = Math.max(0, count - 1);
           if (others > 0) {
-            joinLine.className = 'portal-join-line portal-join-line--plain';
-            joinLine.textContent = `You're joining ${others} others today`;
+            // Keep identical 3-part structure before/after load to avoid line reflow jump.
+            joinLine.className = 'portal-join-line portal-join-line--split';
+            joinLine.innerHTML =
+              `<span class="portal-join-line__lead">You're joining</span>` +
+              `<span class="portal-join-line__middle"><span class="portal-join-line__n">${others}</span></span>` +
+              `<span class="portal-join-line__trail">others today</span>`;
           } else {
             joinLine.className = 'portal-join-line portal-join-line--solo';
             joinLine.textContent = "You're among the first today.";
@@ -18776,7 +18926,6 @@ try {
       if (app && typeof app.initialize === 'function') {
         await app.initialize();
       }
-
       Utils.refreshPortalDateText();
 
       // Lock screen orientation to portrait
