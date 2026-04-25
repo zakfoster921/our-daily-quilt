@@ -66,7 +66,7 @@ async function runSsrAttempt({
     );
 
     const result = await page.evaluate(
-      async ({ dateKey, apiBase, strictQuote }) => {
+      async ({ dateKey, apiBase, strictQuote, requireSplitMode }) => {
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
@@ -247,7 +247,7 @@ async function runSsrAttempt({
           reelMp4Url: trJson.reelMp4Url || ''
         };
       },
-      { dateKey, apiBase, strictQuote }
+      { dateKey, apiBase, strictQuote, requireSplitMode }
     );
 
     const verifyRes = await fetch(`${apiBase}/api/generate-instagram`, {
