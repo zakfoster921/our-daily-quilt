@@ -770,7 +770,8 @@ try {
     }
 
     #screen-reflection .quote-layoutb-strip {
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.075);
+      background: #eae7e1;
+      box-shadow: 0 1px 3px rgba(62, 48, 38, 0.07);
     }
     
     .quote-prompt {
@@ -3059,7 +3060,7 @@ try {
 
     #screen-about.about-lines-revealed .about-description-line--tomorrow {
       animation: aboutLineFadeIn 0.5s ease forwards;
-      animation-delay: 1s;
+      animation-delay: 0.5s;
     }
 
     @keyframes aboutLineFadeIn {
@@ -3352,6 +3353,14 @@ try {
       line-height: 1.38;
       color: #333;
       text-align: left;
+    }
+
+    #screen-reflection .reflection-guidance.reflection-quote-again-line {
+      width: 100%;
+      max-width: none;
+      margin: 0 0 0.85rem 0;
+      text-align: left;
+      align-self: flex-start;
     }
 
     /* Match quilt stack buttons to reflection CTA style */
@@ -4016,6 +4025,9 @@ try {
             </div>
           </div>
           <div class="reflection-quote-stack reflection-quote-stack--hidden">
+            <p class="reflection-guidance reflection-quote-again-line">
+              Here's the quote again if it helps
+            </p>
             <div
               class="quote-card layoutb-preview-card reflection-quote-layoutb-card"
               id="reflection-quote-layoutb-card"
@@ -9743,7 +9755,8 @@ try {
         };
       }
 
-      async saveQuilt(blocks, contributorCount, colorReplayEvents = []) {
+      // Optional saveOptions.resetSource 'admin' | 'daily' → sets lastResetAt / lastResetSource on quilts/{date}.
+      async saveQuilt(blocks, contributorCount, colorReplayEvents = [], saveOptions = null) {
         try {
           const quiltData = {
             blocks: blocks,
@@ -9752,6 +9765,12 @@ try {
             date: Utils.getTodayKey(),
             colorReplayEvents: Array.isArray(colorReplayEvents) ? colorReplayEvents : []
           };
+          const src = saveOptions && saveOptions.resetSource;
+          if (src === 'admin' || src === 'daily') {
+            const iso = new Date().toISOString();
+            quiltData.lastResetAt = iso;
+            quiltData.lastResetSource = src;
+          }
           
           // Check Firestore availability
           if (!window.db || !window.firestore) {
@@ -9762,7 +9781,7 @@ try {
             // Save to Firestore
             const today = Utils.getTodayKey();
             const quiltRef = window.firestore.doc(window.db, 'quilts', today);
-            await window.firestore.setDoc(quiltRef, quiltData);
+            await window.firestore.setDoc(quiltRef, quiltData, { merge: true });
             // Quilt saved to Firestore
             
             // Also save today's quote to Firestore
@@ -9858,13 +9877,20 @@ try {
           
           // Fallback to localStorage only
           try {
-            localStorage.setItem('ourDailyQuilt', JSON.stringify({
+            const fallbackPayload = {
               blocks: blocks,
               contributorCount: contributorCount,
               lastUpdated: new Date().toISOString(),
               date: Utils.getTodayKey(),
               colorReplayEvents: Array.isArray(colorReplayEvents) ? colorReplayEvents : []
-            }));
+            };
+            const fsrc = saveOptions && saveOptions.resetSource;
+            if (fsrc === 'admin' || fsrc === 'daily') {
+              const iso = new Date().toISOString();
+              fallbackPayload.lastResetAt = iso;
+              fallbackPayload.lastResetSource = fsrc;
+            }
+            localStorage.setItem('ourDailyQuilt', JSON.stringify(fallbackPayload));
             this.logger.log('💾 Saved quilt to localStorage (fallback)');
             return true;
           } catch (localError) {
@@ -15289,7 +15315,7 @@ try {
           this.logger.log('🔄 Quilt engine reinitialized');
           
           // Save empty quilt data to clear any existing data
-          await this.dataService.saveQuilt([], 1, []);
+          await this.dataService.saveQuilt([], 1, [], { resetSource: 'daily' });
           this.logger.log('🔄 Empty quilt data saved to clear previous day');
           
           // Clear any cached localStorage data to ensure fresh start
@@ -15837,6 +15863,10 @@ try {
         return window.Capacitor?.Plugins?.FirebaseMessaging || null;
       }
 
+      getLocalNotificationsPlugin() {
+        return window.Capacitor?.Plugins?.LocalNotifications || null;
+      }
+
       getPushPlatform() {
         try {
           if (window.Capacitor && typeof window.Capacitor.getPlatform === 'function') {
@@ -15900,9 +15930,49 @@ try {
         return true;
       }
 
+      async enableLocalDailyQuoteNotification({ showSuccess = true } = {}) {
+        const localNotifications = this.getLocalNotificationsPlugin();
+        if (!localNotifications) {
+          throw new Error('Local Notifications plugin unavailable');
+        }
+
+        const checked = await localNotifications.checkPermissions();
+        let display = checked && checked.display;
+        if (display !== 'granted') {
+          const requested = await localNotifications.requestPermissions();
+          display = requested && requested.display;
+        }
+        if (display !== 'granted') {
+          localStorage.setItem('ourDailyLocalDailyQuoteEnabled', '0');
+          this.uiService.showToast('Notifications are off. You can enable them later in iPhone Settings.');
+          return false;
+        }
+
+        await localNotifications.cancel({ notifications: [{ id: 9212026 }] });
+        await localNotifications.schedule({
+          notifications: [
+            {
+              id: 9212026,
+              title: 'Our Daily is ready',
+              body: 'A new quote is waiting for you.',
+              schedule: {
+                on: { hour: 9, minute: 0 },
+                repeats: true
+              },
+              extra: { type: 'daily_quote_local' }
+            }
+          ]
+        });
+        localStorage.setItem('ourDailyLocalDailyQuoteEnabled', '1');
+        if (showSuccess) {
+          this.uiService.showToast('Daily reminders are on.');
+        }
+        return true;
+      }
+
       async maybePromptForDailyQuoteNotifications() {
         if (localStorage.getItem('ourDailyPushDailyQuotePrompted') === '1') return;
-        if (!this.getFirebaseMessagingPlugin()) return;
+        if (!this.getFirebaseMessagingPlugin() && !this.getLocalNotificationsPlugin()) return;
 
         localStorage.setItem('ourDailyPushDailyQuotePrompted', '1');
         const ok = window.confirm('Would you like one gentle daily quote notification from Our Daily?');
@@ -15915,7 +15985,12 @@ try {
           await this.enableDailyQuotePushNotifications();
         } catch (error) {
           this.logger.warn('Daily quote push opt-in failed:', error);
-          this.uiService.showToast('Could not enable notifications yet.');
+          try {
+            await this.enableLocalDailyQuoteNotification();
+          } catch (localError) {
+            this.logger.warn('Local daily quote reminder fallback failed:', localError);
+            this.uiService.showToast('Could not enable notifications yet.');
+          }
         }
       }
 
@@ -15927,17 +16002,21 @@ try {
 
       setupPushNotificationListeners() {
         const messaging = this.getFirebaseMessagingPlugin();
-        if (!messaging || this._pushNotificationListenersReady) return;
+        const localNotifications = this.getLocalNotificationsPlugin();
+        if ((!messaging && !localNotifications) || this._pushNotificationListenersReady) return;
         this._pushNotificationListenersReady = true;
 
-        messaging.addListener('tokenReceived', async (event) => {
+        messaging?.addListener('tokenReceived', async (event) => {
           try {
             await this.registerDailyQuotePushToken(event?.token);
           } catch (error) {
             this.logger.warn('Push token refresh registration failed:', error);
           }
         });
-        messaging.addListener('notificationActionPerformed', () => {
+        messaging?.addListener('notificationActionPerformed', () => {
+          this.uiService.showScreen('screen-quote');
+        });
+        localNotifications?.addListener('localNotificationActionPerformed', () => {
           this.uiService.showScreen('screen-quote');
         });
       }
@@ -18822,7 +18901,7 @@ try {
             console.log('🔄 RESET: Quilt engine initialized, blocks after reset:', this.quiltEngine.blocks.length);
             
             // Clear saved data
-            await this.dataService.saveQuilt([], 1, []);
+            await this.dataService.saveQuilt([], 1, [], { resetSource: 'admin' });
             console.log('🔄 RESET: Data saved to database');
             
             // Clear user contributions for this session
