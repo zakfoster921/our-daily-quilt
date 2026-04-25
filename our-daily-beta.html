@@ -12232,6 +12232,7 @@ try {
         this.parallaxTicking = false;
         this.parallaxAnchorScrollTop = 0;
         this.parallaxScrollListener = null;
+        this.quiltNotificationPromptListener = null;
 
         // Gesture-based screen flow: portal -> quote -> color
         this._scrollNavTouchStartY = null;
@@ -13112,14 +13113,27 @@ try {
       }
 
       setupQuiltParallax() {
-        if (!this.parallaxEnabled) return;
-
         const app = document.getElementById('app');
         const quiltScreen = document.getElementById('screen-quilt');
         const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
         this.parallaxScrollListener = this.handleParallaxScroll.bind(this);
+        this.quiltNotificationPromptListener = this.handleQuiltNotificationPromptInteraction.bind(this);
 
         // Listen on likely scroll containers for consistency across devices/layouts
+        const addQuiltInteractionListeners = (target) => {
+          if (!target) return;
+          target.addEventListener('scroll', this.quiltNotificationPromptListener, { passive: true });
+          target.addEventListener('wheel', this.quiltNotificationPromptListener, { passive: true });
+          target.addEventListener('touchmove', this.quiltNotificationPromptListener, { passive: true });
+        };
+
+        addQuiltInteractionListeners(window);
+        addQuiltInteractionListeners(app);
+        addQuiltInteractionListeners(quiltScreen);
+        addQuiltInteractionListeners(quiltButtonPanel);
+
+        if (!this.parallaxEnabled) return;
+
         window.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
         if (app) {
           app.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
@@ -13141,6 +13155,17 @@ try {
             this.parallaxTargetShift = 0;
             this.requestParallaxFrame();
           }
+        });
+      }
+
+      handleQuiltNotificationPromptInteraction() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        if (!quiltScreen || !quiltScreen.classList.contains('active')) return;
+        if (this._dailyQuotePromptedFromQuiltScroll) return;
+
+        this._dailyQuotePromptedFromQuiltScroll = true;
+        this.maybePromptForDailyQuoteNotifications().catch((error) => {
+          this.logger.warn('Daily quote push prompt failed:', error);
         });
       }
 
@@ -13171,12 +13196,6 @@ try {
         }
 
         const scrollDelta = this.getCurrentQuiltScrollPosition() - this.parallaxAnchorScrollTop;
-        if (Math.abs(scrollDelta) > 12 && !this._dailyQuotePromptedFromQuiltScroll) {
-          this._dailyQuotePromptedFromQuiltScroll = true;
-          this.maybePromptForDailyQuoteNotifications().catch((error) => {
-            this.logger.warn('Daily quote push prompt failed:', error);
-          });
-        }
         const rawShift = scrollDelta * this.parallaxBaseRate;
         this.parallaxTargetShift = Math.max(-this.parallaxMaxShift, Math.min(this.parallaxMaxShift, rawShift));
         this.requestParallaxFrame();
@@ -15977,10 +15996,11 @@ try {
       }
 
       async maybePromptForDailyQuoteNotifications() {
-        if (localStorage.getItem('ourDailyPushDailyQuotePrompted') === '1') return;
+        if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') === '1') return;
+        if (localStorage.getItem('ourDailyPushDailyQuotePrompted_v2') === '1') return;
         if (!this.getFirebaseMessagingPlugin() && !this.getLocalNotificationsPlugin()) return;
 
-        localStorage.setItem('ourDailyPushDailyQuotePrompted', '1');
+        localStorage.setItem('ourDailyPushDailyQuotePrompted_v2', '1');
         const ok = window.confirm("Don't miss a quote or a quilt!");
         if (!ok) {
           localStorage.setItem('ourDailyPushDailyQuoteEnabled', '0');
