@@ -13171,6 +13171,12 @@ try {
         }
 
         const scrollDelta = this.getCurrentQuiltScrollPosition() - this.parallaxAnchorScrollTop;
+        if (Math.abs(scrollDelta) > 12 && !this._dailyQuotePromptedFromQuiltScroll) {
+          this._dailyQuotePromptedFromQuiltScroll = true;
+          this.maybePromptForDailyQuoteNotifications().catch((error) => {
+            this.logger.warn('Daily quote push prompt failed:', error);
+          });
+        }
         const rawShift = scrollDelta * this.parallaxBaseRate;
         this.parallaxTargetShift = Math.max(-this.parallaxMaxShift, Math.min(this.parallaxMaxShift, rawShift));
         this.requestParallaxFrame();
@@ -15975,7 +15981,7 @@ try {
         if (!this.getFirebaseMessagingPlugin() && !this.getLocalNotificationsPlugin()) return;
 
         localStorage.setItem('ourDailyPushDailyQuotePrompted', '1');
-        const ok = window.confirm('Would you like one gentle daily quote notification from Our Daily?');
+        const ok = window.confirm("Don't miss a quote or a quilt!");
         if (!ok) {
           localStorage.setItem('ourDailyPushDailyQuoteEnabled', '0');
           return;
@@ -16081,9 +16087,6 @@ try {
             this.renderQuilt();
             
             this.uiService.showScreen('screen-quilt');
-            this.maybePromptForDailyQuoteNotifications().catch((error) => {
-              this.logger.warn('Daily quote push prompt failed:', error);
-            });
           }
           
         } catch (error) {
