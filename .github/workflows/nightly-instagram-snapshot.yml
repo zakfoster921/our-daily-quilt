@@ -1,0 +1,111 @@
+# Runs at 06:30 UTC, before Daily Quilt Reset (07:00 UTC in daily-reset.yml).
+# Uses Playwright to load the live app, run synthetic split reel generation (SSR), upload WebM,
+# trigger Railway transcode to MP4, and verify /api/generate-instagram exposes reelMp4Url.
+# Requires RESET_URL secret (ending in /api/daily-reset) so we can derive APP_URL/API_BASE_URL.
+
+name: Nightly SSR reel automation
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+    inputs:
+      date_key:
+        description: "Optional app-date override (YYYY-MM-DD)"
+        required: false
+
+jobs:
+  nightly-ssr-reel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Resolve target date key
+        id: resolve_date
+        env:
+          INPUT_DATE_KEY: ${{ inputs.date_key || '' }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_DATE_KEY:-}" ]; then
+            EFFECTIVE_DATE_KEY="${INPUT_DATE_KEY}"
+            echo "Using manual date_key override: ${EFFECTIVE_DATE_KEY}"
+          else
+            EFFECTIVE_DATE_KEY="$(node -e '
+              const d = new Date();
+              const adj = new Date(d);
+              if (d.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
+              // Always snapshot the last fully completed quilt day (one day behind current app day).
+              adj.setUTCDate(adj.getUTCDate() - 1);
+              const y = adj.getUTCFullYear();
+              const m = String(adj.getUTCMonth() + 1).padStart(2, "0");
+              const day = String(adj.getUTCDate()).padStart(2, "0");
+              process.stdout.write(`${y}-${m}-${day}`);
+            ')"
+            echo "No date_key provided; using last completed quilt day: ${EFFECTIVE_DATE_KEY}"
+          fi
+          if ! echo "${EFFECTIVE_DATE_KEY}" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            echo "Invalid resolved date key: ${EFFECTIVE_DATE_KEY}"
+            exit 1
+          fi
+          echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
+
+      # Playwright loads the live app, records WebM, uploads + transcodes to reel.mp4 (animated).
+      # On failure: no static fallback (Firebase left unchanged for this run); job fails at end (GitHub email).
+      # SSR_REQUIRE_SPLIT_MODE=false: accept "fade"/"replay" reels, not only "split".
+      - name: Generate synthetic reel for Zapier (SSR)
+        id: ssr
+        continue-on-error: true
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
+          SSR_MAX_ATTEMPTS: "3"
+          SSR_ARTIFACTS_DIR: "tmp/ssr-artifacts"
+          SSR_REQUIRE_SPLIT_MODE: "false"
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RESET_URL:-}" ]; then
+            echo "Missing RESET_URL secret"
+            exit 1
+          fi
+
+          API_BASE_URL="${RESET_URL%/api/daily-reset}"
+          APP_URL="${API_BASE_URL}/our-daily-beta.html"
+          echo "API_BASE_URL=${API_BASE_URL}"
+          echo "APP_URL=${APP_URL}"
+
+          APP_URL="$APP_URL" API_BASE_URL="$API_BASE_URL" DATE_KEY="${DATE_KEY:-}" \
+            SSR_MAX_ATTEMPTS="${SSR_MAX_ATTEMPTS}" SSR_ARTIFACTS_DIR="${SSR_ARTIFACTS_DIR}" SSR_REQUIRE_SPLIT_MODE="${SSR_REQUIRE_SPLIT_MODE}" \
+            npm run ssr:reel
+
+      - name: Upload SSR failure artifacts
+        if: steps.ssr.outcome == 'failure'
+        uses: actions/upload-artifact@v5
+        with:
+          name: nightly-ssr-failure-artifacts
+          path: tmp/ssr-artifacts
+          if-no-files-found: ignore
+
+      - name: Fail when SSR reel did not complete
+        if: steps.ssr.outcome == 'failure'
+        run: |
+          DK="${{ steps.resolve_date.outputs.date_key }}"
+          echo "::error::SSR reel failed for ${DK}. No static snapshot was posted. Fix the failure, then re-run this workflow (workflow_dispatch) with date_key=${DK} if needed. Download artifact nightly-ssr-failure-artifacts for Playwright output."
+          exit 1
