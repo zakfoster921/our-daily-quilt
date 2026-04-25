@@ -12436,6 +12436,11 @@ try {
           console.log('🔄 DB available:', !!window.db);
           await this.quoteService.loadQuotesFromFirestore();
 
+          this.setupPushNotificationListeners();
+          this.refreshDailyQuotePushRegistration().catch((error) => {
+            this.logger.warn('Daily quote push refresh skipped:', error);
+          });
+
           console.log('🔄 Loading quote assignments from Firestore...');
           await this.quoteService.regenerateShuffledIndexes();
 
@@ -15828,6 +15833,115 @@ try {
         }
       }
 
+      getFirebaseMessagingPlugin() {
+        return window.Capacitor?.Plugins?.FirebaseMessaging || null;
+      }
+
+      getPushPlatform() {
+        try {
+          if (window.Capacitor && typeof window.Capacitor.getPlatform === 'function') {
+            return window.Capacitor.getPlatform();
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ? 'ios' : 'web';
+      }
+
+      async registerDailyQuotePushToken(token) {
+        const t = String(token || '').trim();
+        if (!t) throw new Error('Missing push token');
+        const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
+        if (!baseUrl) throw new Error('CONFIG.BACKEND.baseUrl is not set');
+
+        const res = await fetch(`${baseUrl}/api/push/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: t,
+            platform: this.getPushPlatform(),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+            deviceId: this.currentUserId || this.quiltEngine?.deviceId || '',
+            notificationTypes: ['daily_quote'],
+            enabled: true
+          })
+        });
+        if (!res.ok) {
+          throw new Error(`Push registration failed (${res.status})`);
+        }
+        localStorage.setItem('ourDailyPushDailyQuoteEnabled', '1');
+        localStorage.setItem('ourDailyPushTokenRegisteredAt', new Date().toISOString());
+      }
+
+      async enableDailyQuotePushNotifications({ showSuccess = true } = {}) {
+        const messaging = this.getFirebaseMessagingPlugin();
+        if (!messaging) {
+          throw new Error('Firebase Messaging plugin unavailable');
+        }
+
+        const checked = await messaging.checkPermissions();
+        let receive = checked && checked.receive;
+        if (receive !== 'granted') {
+          const requested = await messaging.requestPermissions();
+          receive = requested && requested.receive;
+        }
+        if (receive !== 'granted') {
+          localStorage.setItem('ourDailyPushDailyQuoteEnabled', '0');
+          this.uiService.showToast('Notifications are off. You can enable them later in iPhone Settings.');
+          return false;
+        }
+
+        const tokenResult = await messaging.getToken();
+        const token = tokenResult && tokenResult.token;
+        await this.registerDailyQuotePushToken(token);
+        if (showSuccess) {
+          this.uiService.showToast('Daily quote notifications are on.');
+        }
+        return true;
+      }
+
+      async maybePromptForDailyQuoteNotifications() {
+        if (localStorage.getItem('ourDailyPushDailyQuotePrompted') === '1') return;
+        if (!this.getFirebaseMessagingPlugin()) return;
+
+        localStorage.setItem('ourDailyPushDailyQuotePrompted', '1');
+        const ok = window.confirm('Would you like one gentle daily quote notification from Our Daily?');
+        if (!ok) {
+          localStorage.setItem('ourDailyPushDailyQuoteEnabled', '0');
+          return;
+        }
+
+        try {
+          await this.enableDailyQuotePushNotifications();
+        } catch (error) {
+          this.logger.warn('Daily quote push opt-in failed:', error);
+          this.uiService.showToast('Could not enable notifications yet.');
+        }
+      }
+
+      async refreshDailyQuotePushRegistration() {
+        if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') !== '1') return;
+        if (!this.getFirebaseMessagingPlugin()) return;
+        await this.enableDailyQuotePushNotifications({ showSuccess: false });
+      }
+
+      setupPushNotificationListeners() {
+        const messaging = this.getFirebaseMessagingPlugin();
+        if (!messaging || this._pushNotificationListenersReady) return;
+        this._pushNotificationListenersReady = true;
+
+        messaging.addListener('tokenReceived', async (event) => {
+          try {
+            await this.registerDailyQuotePushToken(event?.token);
+          } catch (error) {
+            this.logger.warn('Push token refresh registration failed:', error);
+          }
+        });
+        messaging.addListener('notificationActionPerformed', () => {
+          this.uiService.showScreen('screen-quote');
+        });
+      }
+
       async handleAddColor() {
         try {
           console.log('🎨 handleAddColor called');
@@ -15888,6 +16002,9 @@ try {
             this.renderQuilt();
             
             this.uiService.showScreen('screen-quilt');
+            this.maybePromptForDailyQuoteNotifications().catch((error) => {
+              this.logger.warn('Daily quote push prompt failed:', error);
+            });
           }
           
         } catch (error) {

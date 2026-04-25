@@ -151,6 +151,13 @@ function setInstagramApiCors(res) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
+function setPushApiCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
 function buildFirebaseDownloadUrl(bucketName, objectPath, downloadToken) {
   const enc = encodeURIComponent(objectPath);
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${enc}?alt=media&token=${downloadToken}`;
@@ -786,6 +793,137 @@ async function captionFromDailyQuoteAssignments(dateKey) {
   return '';
 }
 
+function getPushTokenDocId(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function isInvalidPushTokenError(error) {
+  const code = String(error?.error?.code || error?.code || '');
+  return [
+    'messaging/invalid-registration-token',
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-argument'
+  ].includes(code);
+}
+
+function truncatePushBody(text, maxLen = 178) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLen) return clean;
+  return `${clean.slice(0, maxLen - 1).trimEnd()}…`;
+}
+
+async function getDailyQuotePushText(dateKey) {
+  const assigned = await captionFromDailyQuoteAssignments(dateKey);
+  if (assigned) return assigned;
+
+  try {
+    const quoteSnap = await db.collection('quotes').doc(dateKey).get();
+    if (quoteSnap.exists) {
+      const caption = formatZapierCaptionFromQuoteData(quoteSnap.data() || {});
+      if (caption) return caption;
+    }
+  } catch (e) {
+    console.warn(`⚠️ push quote fallback quotes/${dateKey}:`, e.message);
+  }
+  return 'A new quote is waiting in Our Daily.';
+}
+
+async function collectDailyQuotePushTokens() {
+  const snap = await db
+    .collection('pushTokens')
+    .where('enabled', '==', true)
+    .where('notificationTypes', 'array-contains', 'daily_quote')
+    .get();
+
+  const tokens = [];
+  snap.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    const token = String(data.token || '').trim();
+    if (token) tokens.push({ id: docSnap.id, token });
+  });
+  return tokens;
+}
+
+async function sendDailyQuotePushNotifications(dateKey = getAppDateKey()) {
+  if (!db) throw new Error('Firestore not initialized');
+  const recipients = await collectDailyQuotePushTokens();
+  if (!recipients.length) {
+    return { success: true, date: dateKey, sent: 0, failed: 0, pruned: 0 };
+  }
+
+  const quoteText = await getDailyQuotePushText(dateKey);
+  const body = truncatePushBody(quoteText);
+  let sent = 0;
+  let failed = 0;
+  let pruned = 0;
+
+  for (let i = 0; i < recipients.length; i += 500) {
+    const chunk = recipients.slice(i, i + 500);
+    const response = await admin.messaging().sendMulticast({
+      tokens: chunk.map((r) => r.token),
+      notification: {
+        title: 'Today’s Our Daily quote is ready',
+        body
+      },
+      data: {
+        type: 'daily_quote',
+        date: dateKey
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default'
+          }
+        }
+      }
+    });
+
+    sent += response.successCount || 0;
+    failed += response.failureCount || 0;
+
+    await Promise.all(
+      (response.responses || []).map(async (r, idx) => {
+        if (r.success) return;
+        const recipient = chunk[idx];
+        if (!recipient) return;
+        if (isInvalidPushTokenError(r.error)) {
+          pruned += 1;
+          await db.collection('pushTokens').doc(recipient.id).set(
+            {
+              enabled: false,
+              disabledAt: getUtcIsoNow(),
+              disabledReason: String(r.error?.code || 'invalid-token')
+            },
+            { merge: true }
+          );
+        } else {
+          await db.collection('pushTokens').doc(recipient.id).set(
+            {
+              lastErrorAt: getUtcIsoNow(),
+              lastError: String(r.error?.code || r.error?.message || 'unknown')
+            },
+            { merge: true }
+          );
+        }
+      })
+    );
+  }
+
+  await db.collection('ops').doc(`daily-quote-push-${dateKey}`).set(
+    {
+      date: dateKey,
+      sent,
+      failed,
+      pruned,
+      quotePreview: body,
+      completedAt: getUtcIsoNow()
+    },
+    { merge: true }
+  );
+
+  return { success: true, date: dateKey, sent, failed, pruned };
+}
+
 /**
  * @param {{ date?: string }} [options] - optional YYYY-MM-DD (e.g. from Zapier body) to force which "app day" to use
  */
@@ -1096,6 +1234,92 @@ app.get('/api/health', (req, res) => {
     version: '1.0.0',
     firestoreReady: !!db
   });
+});
+
+app.options('/api/push/register', (req, res) => {
+  setPushApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/push/register', async (req, res) => {
+  setPushApiCors(res);
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const token = String(req.body?.token || '').trim();
+    if (!token || token.length < 20) {
+      return res.status(400).json({ success: false, error: 'Valid push token is required' });
+    }
+
+    const tokenId = getPushTokenDocId(token);
+    const notificationTypes = Array.isArray(req.body?.notificationTypes)
+      ? req.body.notificationTypes.map((v) => String(v).trim()).filter(Boolean)
+      : ['daily_quote'];
+
+    await db.collection('pushTokens').doc(tokenId).set(
+      {
+        token,
+        platform: String(req.body?.platform || 'unknown').trim(),
+        timezone: String(req.body?.timezone || '').trim(),
+        deviceId: String(req.body?.deviceId || '').trim(),
+        notificationTypes: notificationTypes.includes('daily_quote') ? notificationTypes : ['daily_quote'],
+        enabled: req.body?.enabled !== false,
+        updatedAt: getUtcIsoNow(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    return res.json({ success: true, tokenId });
+  } catch (error) {
+    console.error('❌ Push token registration failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Push token registration failed'
+    });
+  }
+});
+
+app.options('/api/push/daily-quote', (req, res) => {
+  setPushApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/push/daily-quote', async (req, res) => {
+  setPushApiCors(res);
+  try {
+    const expectedToken = process.env.RESET_TOKEN;
+    if (!expectedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'RESET_TOKEN is not configured on server'
+      });
+    }
+
+    const providedToken = req.header('x-reset-token');
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized'
+      });
+    }
+
+    const bodyDate =
+      req.body && typeof req.body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date.trim())
+        ? req.body.date.trim()
+        : null;
+    const result = await sendDailyQuotePushNotifications(bodyDate || getAppDateKey());
+    return res.json(result);
+  } catch (error) {
+    console.error('❌ Daily quote push failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Daily quote push failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
 });
 
 app.get('/api/simple-test', (req, res) => {
