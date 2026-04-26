@@ -54,6 +54,14 @@ function pickScheduledDate(dateKeys, todayKey) {
   return upcoming || sorted[sorted.length - 1];
 }
 
+/** Notion page ids sometimes differ by dashes/casing across systems — normalize for map keys. */
+function normalizeNotionPageId(id) {
+  return String(id || '')
+    .replace(/-/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
 
@@ -173,7 +181,9 @@ async function run() {
   const assignmentCollection =
     process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
   const assignmentSnap = await db.collection(assignmentCollection).get();
-  const scheduledBySourceId = new Map(); // sourceId -> [dateKey]
+  const scheduledBySourceId = new Map(); // raw sourceId -> [dateKey] (legacy)
+  const scheduledBySourceNorm = new Map(); // normalized id -> [dateKey]
+  const sourceIdNormToRaw = new Map(); // normalized -> first-seen raw id for Notion PATCH
   const scheduledByKey = new Map(); // quoteKey(text, author) -> [dateKey]
   for (const doc of assignmentSnap.docs) {
     if (!isDateDocId(doc.id)) continue;
@@ -184,6 +194,14 @@ async function run() {
       const arr = scheduledBySourceId.get(sourceId) || [];
       arr.push(dateKey);
       scheduledBySourceId.set(sourceId, arr);
+
+      const norm = normalizeNotionPageId(sourceId);
+      if (norm) {
+        if (!sourceIdNormToRaw.has(norm)) sourceIdNormToRaw.set(norm, sourceId);
+        const arrN = scheduledBySourceNorm.get(norm) || [];
+        arrN.push(dateKey);
+        scheduledBySourceNorm.set(norm, arrN);
+      }
     }
     const key = quoteKey(d.textSnapshot, d.authorSnapshot);
     if (key && key !== '|||') {
@@ -198,6 +216,8 @@ async function run() {
 
   let updates = 0;
   let skipped = 0;
+  const patchedNormIds = new Set();
+
   for (const q of notionDocs) {
     const u = usage.get(q.key);
 
@@ -205,9 +225,14 @@ async function run() {
     if (u && hasTimesUsed) properties.times_used = { number: u.count };
     if (u && hasLastUsedDate) properties.last_used_date = { date: { start: u.lastDate } };
     if (hasDateScheduled) {
-      const bySource = scheduledBySourceId.get(q.sourceId) || [];
+      const normQ = normalizeNotionPageId(q.sourceId);
+      const bySourceNorm = scheduledBySourceNorm.get(normQ) || [];
+      const bySourceRaw = scheduledBySourceId.get(q.sourceId) || [];
       const byTextAuthor = scheduledByKey.get(q.key) || [];
-      const scheduledDate = pickScheduledDate([...bySource, ...byTextAuthor], todayKey);
+      const scheduledDate = pickScheduledDate(
+        [...bySourceNorm, ...bySourceRaw, ...byTextAuthor],
+        todayKey
+      );
       properties[dateScheduledProp] = { date: scheduledDate ? { start: scheduledDate } : null };
     }
     // Do not require dailyQuoteUsage rows: many quotes are scheduled but not yet "used",
@@ -218,6 +243,7 @@ async function run() {
     if (!dryRun) {
       try {
         await notionPatchPage(q.sourceId, notionToken, { properties });
+        patchedNormIds.add(normalizeNotionPageId(q.sourceId));
       } catch (e) {
         if (isSkippableNotionUsagePatchError(e)) {
           skipped += 1;
@@ -228,12 +254,48 @@ async function run() {
         }
         throw e;
       }
+    } else {
+      patchedNormIds.add(normalizeNotionPageId(q.sourceId));
+    }
+  }
+
+  // Assignments include every scheduled quote; Firestore `quotes` may omit some rows (parse skips, etc.).
+  // Patch remaining Notion pages by assignment sourceId so date_scheduled still lands for the full schedule.
+  let dateOnlyPatches = 0;
+  let dateOnlySkipped = 0;
+  if (hasDateScheduled && scheduledBySourceNorm.size) {
+    for (const [norm, dateKeys] of scheduledBySourceNorm) {
+      if (patchedNormIds.has(norm)) continue;
+      const rawPageId = sourceIdNormToRaw.get(norm);
+      if (!rawPageId) continue;
+
+      const scheduledDate = pickScheduledDate(dateKeys, todayKey);
+      const properties = {
+        [dateScheduledProp]: { date: scheduledDate ? { start: scheduledDate } : null }
+      };
+
+      dateOnlyPatches += 1;
+      if (!dryRun) {
+        try {
+          await notionPatchPage(rawPageId, notionToken, { properties });
+        } catch (e) {
+          if (isSkippableNotionUsagePatchError(e)) {
+            dateOnlySkipped += 1;
+            console.warn(
+              `[usage-sync] skip orphan schedule page ${rawPageId}: ${(e.message || '').slice(0, 220)}`
+            );
+            continue;
+          }
+          throw e;
+        }
+      }
     }
   }
 
   const applied = dryRun ? updates : updates - skipped;
+  const appliedDateOnly = dryRun ? dateOnlyPatches : dateOnlyPatches - dateOnlySkipped;
   console.log(
-    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} patchTargets=${updates} skipped=${skipped}${dryRun ? '' : ` applied=${applied}`}`
+    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} assignmentSourceIds=${scheduledBySourceNorm.size} patchTargets=${updates} skipped=${skipped}${dryRun ? '' : ` applied=${applied}`} dateOnlyPatches=${dateOnlyPatches}${dryRun ? '' : ` dateOnlyApplied=${appliedDateOnly}`} dateOnlySkipped=${dateOnlySkipped}`
   );
 }
 
