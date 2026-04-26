@@ -688,6 +688,16 @@ function extractWhatIfFromCaption(caption = '') {
   return match ? String(match[1] || '').trim() : '';
 }
 
+function getIgCaptionFromQuoteData(quoteData = {}) {
+  return String(
+    quoteData.igCaption ??
+    quoteData.ig_caption ??
+    quoteData.instagramCaption ??
+    quoteData.instagram_caption ??
+    ''
+  ).trim();
+}
+
 async function runDailyResetForDate(dateKey, source = 'unknown') {
   if (!db) {
     throw new Error('Firestore not initialized');
@@ -1032,6 +1042,7 @@ async function getTodayInstagramImage(options = {}) {
     let quote = "Every day is a new beginning.";
     let whatIf = '';
     let captionSource = 'default';
+    let igCaption = '';
     try {
       const stamp =
         typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date.trim())
@@ -1046,6 +1057,7 @@ async function getTodayInstagramImage(options = {}) {
       if (inline) {
         quote = inline;
         whatIf = extractWhatIfFromCaption(inline);
+        igCaption = String(raw.igCaption ?? raw.ig_caption ?? '').trim();
         captionSource = 'zapierCaption';
         console.log(`✅ Caption from instagram-images zapierCaption (${dateUsed})`);
       } else {
@@ -1068,6 +1080,7 @@ async function getTodayInstagramImage(options = {}) {
             if (caption) {
               quote = caption;
               whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim() || extractWhatIfFromCaption(caption);
+              igCaption = getIgCaptionFromQuoteData(quoteData);
               captionSource = 'quotes';
               console.log(`✅ Caption from quotes/{${dk}}`);
               break;
@@ -1090,6 +1103,7 @@ async function getTodayInstagramImage(options = {}) {
       storageReelMp4Url,
       quote: quote,
       whatIf,
+      igCaption,
       captionSource,
       date: dateUsed
     };
@@ -1144,7 +1158,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-13-caption-plus-whatif';
+    const apiVersion = 'instagram-api-14-caption-whatif-igcaption';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
@@ -1167,6 +1181,7 @@ app.post('/api/generate-instagram', async (req, res) => {
       mediaUrls,
       caption: imageData.quote,
       whatIf: imageData.whatIf || '',
+      igCaption: imageData.igCaption || '',
       captionSource: imageData.captionSource || 'default',
       date: imageData.date,
       captionLength: imageData.quote.length,
