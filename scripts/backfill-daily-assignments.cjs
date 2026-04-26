@@ -135,12 +135,30 @@ async function main() {
   let batch = db.batch();
   let ops = 0;
   let writes = 0;
+  let quoteWrites = 0;
+  const updatedAt = new Date().toISOString();
   for (const row of scheduled) {
     const ref = db.collection(assignmentsCollection).doc(row.dateKey);
     batch.set(ref, row.payload, { merge: true });
     ops += 1;
     writes += 1;
-    if (ops >= 400) {
+
+    const sid = String(row.payload.sourceId || '').trim();
+    if (sid) {
+      batch.set(
+        db.collection(quotesCollection).doc(sid),
+        {
+          dateScheduled: row.dateKey,
+          date_scheduled: row.dateKey,
+          scheduleUpdatedAt: updatedAt
+        },
+        { merge: true }
+      );
+      ops += 1;
+      quoteWrites += 1;
+    }
+
+    if (ops >= 450) {
       await batch.commit();
       batch = db.batch();
       ops = 0;
@@ -149,7 +167,7 @@ async function main() {
   if (ops > 0) await batch.commit();
 
   console.log(
-    `[backfill] wrote ${writes} assignment docs to ${assignmentsCollection} (start=${opts.start}, cadence=${opts.cadence})`
+    `[backfill] wrote ${writes} assignment docs + ${quoteWrites} quote date fields (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, cadence=${opts.cadence})`
   );
 
   if (opts.syncNotion) {

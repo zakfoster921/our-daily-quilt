@@ -32,6 +32,11 @@ function isDateDocId(id) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(id || '').trim());
 }
 
+function dateScheduledFromQuoteData(data) {
+  const raw = String((data && (data.dateScheduled ?? data.date_scheduled)) || '').trim();
+  return isDateDocId(raw) ? raw : '';
+}
+
 function normPropKey(s) {
   return String(s || '')
     .toLowerCase()
@@ -160,7 +165,8 @@ async function run() {
     const sourceId = data.sourceId || doc.id;
     if (!text || !author || !sourceId) continue;
     const key = quoteKey(text, author);
-    const rec = { sourceId, text, author, key };
+    const dateScheduled = dateScheduledFromQuoteData(data);
+    const rec = { sourceId, text, author, key, dateScheduled };
     notionDocs.push(rec);
     byKey.set(key, rec);
   }
@@ -225,14 +231,17 @@ async function run() {
     if (u && hasTimesUsed) properties.times_used = { number: u.count };
     if (u && hasLastUsedDate) properties.last_used_date = { date: { start: u.lastDate } };
     if (hasDateScheduled) {
-      const normQ = normalizeNotionPageId(q.sourceId);
-      const bySourceNorm = scheduledBySourceNorm.get(normQ) || [];
-      const bySourceRaw = scheduledBySourceId.get(q.sourceId) || [];
-      const byTextAuthor = scheduledByKey.get(q.key) || [];
-      const scheduledDate = pickScheduledDate(
-        [...bySourceNorm, ...bySourceRaw, ...byTextAuthor],
-        todayKey
-      );
+      let scheduledDate = q.dateScheduled && isDateDocId(q.dateScheduled) ? q.dateScheduled : '';
+      if (!scheduledDate) {
+        const normQ = normalizeNotionPageId(q.sourceId);
+        const bySourceNorm = scheduledBySourceNorm.get(normQ) || [];
+        const bySourceRaw = scheduledBySourceId.get(q.sourceId) || [];
+        const byTextAuthor = scheduledByKey.get(q.key) || [];
+        scheduledDate = pickScheduledDate(
+          [...bySourceNorm, ...bySourceRaw, ...byTextAuthor],
+          todayKey
+        );
+      }
       properties[dateScheduledProp] = { date: scheduledDate ? { start: scheduledDate } : null };
     }
     // Do not require dailyQuoteUsage rows: many quotes are scheduled but not yet "used",

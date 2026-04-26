@@ -743,7 +743,8 @@ async function assignAllNotionQuotesToDates({
     throw new Error('cadenceDays must be an integer >= 1');
   }
 
-  const quotesSnap = await db.collection('quotes').get();
+  const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const quotesSnap = await db.collection(quotesCollection).get();
   const rows = [];
   quotesSnap.forEach((docSnap) => {
     const q = docSnap.data() || {};
@@ -790,11 +791,29 @@ async function assignAllNotionQuotesToDates({
 
   let batch = db.batch();
   let batchCount = 0;
+  let quoteDateWrites = 0;
   for (const item of assignments) {
     const ref = db.collection(assignmentsCollection).doc(item.dateKey);
     batch.set(ref, item.payload, { merge: true });
     batchCount += 1;
-    if (batchCount >= 400) {
+
+    const sid = String(item.payload.sourceId || '').trim();
+    if (sid) {
+      const qref = db.collection(quotesCollection).doc(sid);
+      batch.set(
+        qref,
+        {
+          dateScheduled: item.dateKey,
+          date_scheduled: item.dateKey,
+          scheduleUpdatedAt: getUtcIsoNow()
+        },
+        { merge: true }
+      );
+      batchCount += 1;
+      quoteDateWrites += 1;
+    }
+
+    if (batchCount >= 450) {
       await batch.commit();
       batch = db.batch();
       batchCount = 0;
@@ -804,6 +823,7 @@ async function assignAllNotionQuotesToDates({
 
   return {
     scheduled: assignments.length,
+    quoteDateWrites,
     firstDate: assignments[0]?.dateKey || null,
     lastDate: assignments[assignments.length - 1]?.dateKey || null
   };
