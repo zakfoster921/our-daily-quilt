@@ -698,6 +698,28 @@ function getIgCaptionFromQuoteData(quoteData = {}) {
   ).trim();
 }
 
+async function getQuoteDataForDateKey(dateKey) {
+  if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '').trim())) return null;
+  try {
+    const assignmentSnap = await db.collection('dailyQuoteAssignments').doc(dateKey).get();
+    if (assignmentSnap.exists) {
+      const assignment = assignmentSnap.data() || {};
+      const sourceId = String(assignment.sourceId || '').trim();
+      if (sourceId) {
+        const bySource = await db.collection('quotes').doc(sourceId).get();
+        if (bySource.exists) return bySource.data() || null;
+      }
+    }
+
+    // Legacy fallback if a date-shaped quote doc exists.
+    const byDate = await db.collection('quotes').doc(dateKey).get();
+    if (byDate.exists) return byDate.data() || null;
+  } catch (e) {
+    console.warn(`⚠️ getQuoteDataForDateKey(${dateKey}) failed:`, e.message);
+  }
+  return null;
+}
+
 async function runDailyResetForDate(dateKey, source = 'unknown') {
   if (!db) {
     throw new Error('Firestore not initialized');
@@ -1073,9 +1095,8 @@ async function getTodayInstagramImage(options = {}) {
           console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
         } else {
           for (const dk of captionKeys) {
-            const quoteDoc = await db.collection('quotes').doc(dk).get();
-            if (!quoteDoc.exists) continue;
-            const quoteData = quoteDoc.data() || {};
+            const quoteData = await getQuoteDataForDateKey(dk);
+            if (!quoteData) continue;
             const caption = formatZapierCaptionFromQuoteData(quoteData);
             if (caption) {
               quote = caption;
@@ -1089,6 +1110,22 @@ async function getTodayInstagramImage(options = {}) {
           if (captionSource === 'default') {
             console.log(`📝 No caption for ${captionKeys.join(', ')}, using default`);
           }
+        }
+      }
+
+      // Backfill standalone fields from quote docs when caption source lacks them
+      // (common when inline zapierCaption is present but whatIf/igCaption were not stored on instagram-images).
+      if (!whatIf || !igCaption) {
+        for (const dk of captionKeys) {
+          const quoteData = await getQuoteDataForDateKey(dk);
+          if (!quoteData) continue;
+          if (!whatIf) {
+            whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim();
+          }
+          if (!igCaption) {
+            igCaption = getIgCaptionFromQuoteData(quoteData);
+          }
+          if (whatIf && igCaption) break;
         }
       }
     } catch (quoteError) {
