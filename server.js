@@ -1724,7 +1724,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
   }
 });
 
-app.post('/api/assign-quote-schedule', async (req, res) => {
+async function handleAssignQuoteSchedule(req, res) {
   const expectedToken = process.env.RESET_TOKEN;
   if (!expectedToken) {
     return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
@@ -1735,14 +1735,20 @@ app.post('/api/assign-quote-schedule', async (req, res) => {
   }
 
   try {
-    const startDate =
-      req.body && typeof req.body.startDate === 'string' ? req.body.startDate.trim() : '';
-    const cadenceRaw = req.body?.cadenceDays;
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const q = req.query || {};
+    const startDate = String(
+      (typeof body.startDate === 'string' ? body.startDate : '') ||
+        (typeof q.startDate === 'string' ? q.startDate : '') ||
+        ''
+    ).trim();
+    const cadenceRaw = body.cadenceDays ?? q.cadenceDays ?? '1';
     const cadenceDays = Number.isInteger(cadenceRaw) ? cadenceRaw : Number.parseInt(String(cadenceRaw || '1'), 10);
-    const assignmentsCollection =
-      req.body && typeof req.body.collection === 'string' && req.body.collection.trim()
-        ? req.body.collection.trim()
-        : 'dailyQuoteAssignments';
+    const assignmentsCollection = String(
+      (typeof body.collection === 'string' ? body.collection : '') ||
+        (typeof q.collection === 'string' ? q.collection : '') ||
+        'dailyQuoteAssignments'
+    ).trim();
 
     const out = await assignAllNotionQuotesToDates({
       startDate,
@@ -1766,7 +1772,11 @@ app.post('/api/assign-quote-schedule', async (req, res) => {
       timestamp: getUtcIsoNow()
     });
   }
-});
+}
+
+/** GET avoids fragile JSON bodies (smart quotes, line breaks) that break body-parser. */
+app.get('/api/assign-quote-schedule', handleAssignQuoteSchedule);
+app.post('/api/assign-quote-schedule', handleAssignQuoteSchedule);
 
 app.options('/api/transcode-instagram-reel', (req, res) => {
   setInstagramApiCors(res);
