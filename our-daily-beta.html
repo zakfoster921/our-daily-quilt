@@ -4531,6 +4531,16 @@ try {
       /** Railway Node server: manual Notion ↔ Firestore sync (`server.js` POST /api/sync-notion-firestore). */
       BACKEND: {
         baseUrl: 'https://our-daily-quilt-production.up.railway.app'
+      },
+      COLOR_MILESTONES: {
+        10: "Ten colors. I was hoping you'd stick around ! ♡",
+        25: "25 colors ! You're becoming a regular ! ♡",
+        50: "Fifty days of color ♡ You're a real part of how this thing works",
+        100: "100 colors added ! Three months of showing up, one color at a time ♡ Thank you",
+        250: "You just shared your 250th color ! ♡ You've been here through a lot of quilts",
+        365: "A full year of colors ! ♡ We're basically family at this point",
+        500: "You've had a hand in 500 quilts ♡ And you made every one of them better",
+        1000: "1000 colors. Four digits. You're an absolute legend ♡ Thank you for being here !"
       }
     };
 
@@ -16698,6 +16708,88 @@ try {
         await this.enableDailyQuotePushNotifications({ showSuccess: false });
       }
 
+      getColorMilestoneMessage(count) {
+        const milestones = CONFIG.COLOR_MILESTONES || {};
+        return milestones[String(count)] || milestones[count] || '';
+      }
+
+      getLifetimeColorSubmissionCountForCurrentDevice() {
+        const userId = this.quiltEngine?.deviceId || this.currentUserId || Utils.getOrCreateUserId();
+        const lifetime = this.quiltEngine?.getLifetimeUserContributions?.();
+        const submissions = Array.isArray(lifetime?.submissions) ? lifetime.submissions : [];
+        return submissions.filter((submission) => !submission?.userId || submission.userId === userId).length;
+      }
+
+      readColorMilestoneState() {
+        try {
+          const raw = localStorage.getItem('ourDailyColorMilestoneNotifications');
+          const parsed = raw ? JSON.parse(raw) : null;
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (_) {
+          return {};
+        }
+      }
+
+      writeColorMilestoneState(state) {
+        try {
+          localStorage.setItem('ourDailyColorMilestoneNotifications', JSON.stringify(state || {}));
+        } catch (_) {
+          /* ignore local notification-state failures */
+        }
+      }
+
+      async maybeCreateColorMilestoneNotification(color) {
+        const count = this.getLifetimeColorSubmissionCountForCurrentDevice();
+        const message = this.getColorMilestoneMessage(count);
+        if (!message) return null;
+
+        const userId = this.quiltEngine?.deviceId || this.currentUserId || Utils.getOrCreateUserId();
+        const storageKey = `${userId}:${count}`;
+        const state = this.readColorMilestoneState();
+        if (state[storageKey]) return null;
+
+        const now = new Date().toISOString();
+        const payload = {
+          userId,
+          deviceId: userId,
+          milestone: count,
+          color,
+          title: 'OUR DAILY QUILT',
+          body: message,
+          message,
+          status: 'pending_push',
+          deliveryReady: false,
+          createdAt: now,
+          appDateKey: Utils.getTodayKey(),
+          source: 'color_milestone'
+        };
+
+        state[storageKey] = {
+          milestone: count,
+          message,
+          color,
+          createdAt: now,
+          status: payload.status
+        };
+        this.writeColorMilestoneState(state);
+
+        if (window.db && window.firestore) {
+          try {
+            const docId = `${userId}_${count}`.replace(/[^A-Za-z0-9_-]/g, '_');
+            await window.firestore.setDoc(
+              window.firestore.doc(window.db, 'colorMilestoneNotifications', docId),
+              payload,
+              { merge: true }
+            );
+          } catch (error) {
+            this.logger.warn('Color milestone notification saved locally only:', error);
+          }
+        }
+
+        this.uiService.showToast(message);
+        return payload;
+      }
+
       setupPushNotificationListeners() {
         const messaging = this.getFirebaseMessagingPlugin();
         const localNotifications = this.getLocalNotificationsPlugin();
@@ -16779,6 +16871,9 @@ try {
             this.renderQuilt();
             
             this.uiService.showScreen('screen-quilt');
+            this.maybeCreateColorMilestoneNotification(selectedColor).catch((error) => {
+              this.logger.warn('Color milestone notification check failed:', error);
+            });
           }
           
         } catch (error) {
