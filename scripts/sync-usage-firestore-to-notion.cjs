@@ -200,17 +200,18 @@ async function run() {
   let skipped = 0;
   for (const q of notionDocs) {
     const u = usage.get(q.key);
-    if (!u) continue;
 
     const properties = {};
-    if (hasTimesUsed) properties.times_used = { number: u.count };
-    if (hasLastUsedDate) properties.last_used_date = { date: { start: u.lastDate } };
+    if (u && hasTimesUsed) properties.times_used = { number: u.count };
+    if (u && hasLastUsedDate) properties.last_used_date = { date: { start: u.lastDate } };
     if (hasDateScheduled) {
       const bySource = scheduledBySourceId.get(q.sourceId) || [];
       const byTextAuthor = scheduledByKey.get(q.key) || [];
       const scheduledDate = pickScheduledDate([...bySource, ...byTextAuthor], todayKey);
       properties[dateScheduledProp] = { date: scheduledDate ? { start: scheduledDate } : null };
     }
+    // Do not require dailyQuoteUsage rows: many quotes are scheduled but not yet "used",
+    // and they still need date_scheduled written to Notion.
     if (!Object.keys(properties).length) continue;
 
     updates += 1;
