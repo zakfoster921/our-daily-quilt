@@ -24,10 +24,18 @@ function addDays(dateKey, deltaDays) {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
 }
 
+/** Same app-day rule as the client/server: before 7:00 UTC still belongs to the prior quote day. */
+function getAppDateKey(d = new Date()) {
+  const adjusted = new Date(d);
+  if (d.getUTCHours() < 7) adjusted.setUTCDate(adjusted.getUTCDate() - 1);
+  return `${adjusted.getUTCFullYear()}-${String(adjusted.getUTCMonth() + 1).padStart(2, '0')}-${String(adjusted.getUTCDate()).padStart(2, '0')}`;
+}
+
 function parseArgs(argv) {
   const args = {
     start: '',
     cadence: 1,
+    window: 7,
     dryRun: false,
     syncNotion: false
   };
@@ -37,13 +45,46 @@ function parseArgs(argv) {
     else if (a === '--sync-notion') args.syncNotion = true;
     else if (a.startsWith('--start=')) args.start = a.slice('--start='.length);
     else if (a.startsWith('--cadence=')) args.cadence = Number(a.slice('--cadence='.length));
+    else if (a.startsWith('--window=')) args.window = Number(a.slice('--window='.length));
   }
-  if (!args.start) throw new Error('Missing --start=YYYY-MM-DD');
+  if (!args.start) throw new Error('Missing --start=YYYY-MM-DD or --start=tomorrow');
+  if (String(args.start).trim().toLowerCase() === 'tomorrow') {
+    args.start = addDays(getAppDateKey(), 1);
+  }
   args.start = requireDateArg(args.start, '--start');
   if (!Number.isInteger(args.cadence) || args.cadence < 1) {
     throw new Error('--cadence must be an integer >= 1');
   }
+  if (!Number.isInteger(args.window) || args.window < 1) {
+    throw new Error('--window must be an integer >= 1');
+  }
   return args;
+}
+
+function isDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+}
+
+function assignmentPayloadForQuote(q, dateKey, assignedBy) {
+  return {
+    dateKey,
+    sourceId: q.sourceId || null,
+    embeddedStableKey: null,
+    textSnapshot: q.text.slice(0, 160),
+    authorSnapshot: q.author.slice(0, 120),
+    whatIfSnapshot: q.whatIf.slice(0, 240),
+    igCaptionSnapshot: q.igCaption.slice(0, 400),
+    assignedAt: new Date().toISOString(),
+    assignedBy
+  };
+}
+
+function commitBatchIfNeeded(db, state, threshold = 450) {
+  if (state.ops < threshold) return Promise.resolve();
+  const batch = state.batch;
+  state.batch = db.batch();
+  state.ops = 0;
+  return batch.commit();
 }
 
 function initFirestore() {
@@ -75,12 +116,21 @@ async function main() {
   const db = initFirestore();
   const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const windowDates = Array.from({ length: opts.window }, (_, idx) => addDays(opts.start, idx * opts.cadence));
+  const windowEnd = windowDates[windowDates.length - 1];
 
   const snap = await db.collection(quotesCollection).get();
   const notionQuotes = [];
   snap.forEach((docSnap) => {
     const d = docSnap.data() || {};
     if (d.source !== 'notion') return;
+    const approved =
+      typeof d.approved === 'boolean'
+        ? d.approved
+        : typeof d.active === 'boolean'
+          ? d.active
+          : String(d.approved ?? d.active ?? '').trim().toLowerCase() !== 'false';
+    if (!approved) return;
     const text = String(d.text || '').trim();
     const author = String(d.author || '').trim();
     if (!text || !author) return;
@@ -90,11 +140,26 @@ async function main() {
       text,
       author,
       whatIf: String(d.whatIf ?? d.what_if ?? '').trim(),
-      igCaption: String(d.igCaption ?? d.ig_caption ?? '').trim()
+      igCaption: String(d.igCaption ?? d.ig_caption ?? '').trim(),
+      submittedAt: String(d.submittedAt || '').trim(),
+      submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
+      dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim()
     });
   });
 
   notionQuotes.sort((a, b) => {
+    const aSubmittedPriority =
+      a.submittedVia.toLowerCase() === 'app' &&
+      (!/^\d{4}-\d{2}-\d{2}$/.test(a.dateScheduled) || a.dateScheduled >= opts.start);
+    const bSubmittedPriority =
+      b.submittedVia.toLowerCase() === 'app' &&
+      (!/^\d{4}-\d{2}-\d{2}$/.test(b.dateScheduled) || b.dateScheduled >= opts.start);
+    if (aSubmittedPriority !== bSubmittedPriority) return aSubmittedPriority ? -1 : 1;
+    if (aSubmittedPriority && bSubmittedPriority) {
+      const at = a.submittedAt || '';
+      const bt = b.submittedAt || '';
+      if (at !== bt) return at.localeCompare(bt);
+    }
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     if (a.text !== b.text) return a.text.localeCompare(b.text);
     if (a.author !== b.author) return a.author.localeCompare(b.author);
@@ -105,47 +170,106 @@ async function main() {
     throw new Error('No Notion-backed quotes found in Firestore');
   }
 
-  const scheduled = notionQuotes.map((q, idx) => {
-    const dateKey = addDays(opts.start, idx * opts.cadence);
-    return {
-      dateKey,
-      payload: {
+  const quoteBySourceId = new Map(notionQuotes.map((q) => [q.sourceId, q]));
+  const assignmentsSnap = await db.collection(assignmentsCollection).get();
+  const futureAssignments = [];
+  assignmentsSnap.forEach((docSnap) => {
+    if (!isDateKey(docSnap.id) || docSnap.id < opts.start) return;
+    futureAssignments.push({ dateKey: docSnap.id, data: docSnap.data() || {} });
+  });
+  futureAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  const dateToExistingSourceId = new Map();
+  for (const row of futureAssignments) {
+    if (row.dateKey > windowEnd) continue;
+    const sourceId = String(row.data.sourceId || '').trim();
+    if (sourceId && quoteBySourceId.has(sourceId)) {
+      dateToExistingSourceId.set(row.dateKey, sourceId);
+    }
+  }
+
+  const windowSourceIds = windowDates.map((dateKey) => dateToExistingSourceId.get(dateKey) || null);
+  const originalWindowSourceIds = new Set(windowSourceIds.filter(Boolean));
+
+  const submittedToInsert = notionQuotes.filter((q) => {
+    if (q.submittedVia.toLowerCase() !== 'app') return false;
+    if (originalWindowSourceIds.has(q.sourceId)) return false;
+    if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
+    return true;
+  });
+
+  let insertAt = 0;
+  for (const q of submittedToInsert) {
+    if (windowSourceIds.includes(q.sourceId)) continue;
+    windowSourceIds.splice(insertAt, 0, q.sourceId);
+    insertAt += 1;
+    windowSourceIds.length = opts.window;
+  }
+
+  const usedSourceIds = new Set(windowSourceIds.filter(Boolean));
+  const fillQueue = notionQuotes.filter((q) => {
+    if (usedSourceIds.has(q.sourceId)) return false;
+    if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
+    return true;
+  });
+  let fillIdx = 0;
+  for (let i = 0; i < windowSourceIds.length; i += 1) {
+    if (windowSourceIds[i]) continue;
+    const next = fillQueue[fillIdx++];
+    if (!next) break;
+    windowSourceIds[i] = next.sourceId;
+    usedSourceIds.add(next.sourceId);
+  }
+
+  const scheduled = windowDates
+    .map((dateKey, idx) => {
+      const sourceId = windowSourceIds[idx];
+      const quote = sourceId ? quoteBySourceId.get(sourceId) : null;
+      if (!quote) return null;
+      return {
         dateKey,
-        sourceId: q.sourceId || null,
-        embeddedStableKey: null,
-        textSnapshot: q.text.slice(0, 160),
-        authorSnapshot: q.author.slice(0, 120),
-        whatIfSnapshot: q.whatIf.slice(0, 240),
-        igCaptionSnapshot: q.igCaption.slice(0, 400),
-        assignedAt: new Date().toISOString(),
-        assignedBy: 'backfill-daily-assignments'
-      }
-    };
+        quote,
+        payload: assignmentPayloadForQuote(quote, dateKey, 'rolling-7-day-scheduler')
+      };
+    })
+    .filter(Boolean);
+
+  const scheduledSourceIdToDate = new Map(scheduled.map((row) => [row.quote.sourceId, row.dateKey]));
+  const staleFutureAssignments = futureAssignments.filter((row) => row.dateKey > windowEnd);
+  const clearDateQuotes = notionQuotes.filter((q) => {
+    if (scheduledSourceIdToDate.has(q.sourceId)) return false;
+    return isDateKey(q.dateScheduled) && q.dateScheduled >= opts.start;
   });
 
   if (opts.dryRun) {
-    console.log(`[backfill] dry-run quotes=${scheduled.length} start=${opts.start} cadence=${opts.cadence}`);
-    console.log('[backfill] first 5 assignments:');
-    scheduled.slice(0, 5).forEach((row) => {
+    console.log(
+      `[backfill] dry-run rolling window scheduled=${scheduled.length}/${opts.window} start=${opts.start} windowEnd=${windowEnd} cadence=${opts.cadence}`
+    );
+    console.log(
+      `[backfill] app submissions inserted=${submittedToInsert.length} staleFutureAssignments=${staleFutureAssignments.length} clearQuoteDates=${clearDateQuotes.length}`
+    );
+    console.log('[backfill] assignments:');
+    scheduled.forEach((row) => {
       console.log(`  ${row.dateKey} -> ${row.payload.textSnapshot} — ${row.payload.authorSnapshot}`);
     });
     return;
   }
 
-  let batch = db.batch();
-  let ops = 0;
+  const batchState = { batch: db.batch(), ops: 0 };
   let writes = 0;
   let quoteWrites = 0;
+  let deletes = 0;
+  let clearedQuoteDates = 0;
   const updatedAt = new Date().toISOString();
   for (const row of scheduled) {
     const ref = db.collection(assignmentsCollection).doc(row.dateKey);
-    batch.set(ref, row.payload, { merge: true });
-    ops += 1;
+    batchState.batch.set(ref, row.payload, { merge: true });
+    batchState.ops += 1;
     writes += 1;
 
-    const sid = String(row.payload.sourceId || '').trim();
+    const sid = String(row.quote.sourceId || '').trim();
     if (sid) {
-      batch.set(
+      batchState.batch.set(
         db.collection(quotesCollection).doc(sid),
         {
           dateScheduled: row.dateKey,
@@ -154,20 +278,40 @@ async function main() {
         },
         { merge: true }
       );
-      ops += 1;
+      batchState.ops += 1;
       quoteWrites += 1;
     }
 
-    if (ops >= 450) {
-      await batch.commit();
-      batch = db.batch();
-      ops = 0;
-    }
+    await commitBatchIfNeeded(db, batchState);
   }
-  if (ops > 0) await batch.commit();
+
+  for (const row of staleFutureAssignments) {
+    batchState.batch.delete(db.collection(assignmentsCollection).doc(row.dateKey));
+    batchState.ops += 1;
+    deletes += 1;
+    await commitBatchIfNeeded(db, batchState);
+  }
+
+  const deleteField = admin.firestore.FieldValue.delete();
+  for (const q of clearDateQuotes) {
+    batchState.batch.set(
+      db.collection(quotesCollection).doc(q.sourceId),
+      {
+        dateScheduled: deleteField,
+        date_scheduled: deleteField,
+        scheduleUpdatedAt: updatedAt
+      },
+      { merge: true }
+    );
+    batchState.ops += 1;
+    clearedQuoteDates += 1;
+    await commitBatchIfNeeded(db, batchState);
+  }
+
+  if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[backfill] wrote ${writes} assignment docs + ${quoteWrites} quote date fields (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, cadence=${opts.cadence})`
+    `[backfill] rolling window wrote ${writes} assignments + ${quoteWrites} quote date fields, deleted ${deletes} stale assignments, cleared ${clearedQuoteDates} quote dates (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window}, cadence=${opts.cadence})`
   );
 
   if (opts.syncNotion) {

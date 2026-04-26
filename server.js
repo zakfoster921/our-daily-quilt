@@ -41,12 +41,17 @@ function tailOutput(text, maxLen) {
 /**
  * Runs a .cjs script from /scripts with the same env as the server (Notion + Firestore vars).
  * @param {string} relativeScript e.g. scripts/sync-notion-to-firestore.cjs
- * @param {number} timeoutMs
+ * @param {string[]} [args]
+ * @param {number} [timeoutMs]
  */
-function runNodeScript(relativeScript, timeoutMs = 180000) {
+function runNodeScript(relativeScript, args = [], timeoutMs = 180000) {
+  if (typeof args === 'number') {
+    timeoutMs = args;
+    args = [];
+  }
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, relativeScript);
-    const child = spawn(process.execPath, [scriptPath], {
+    const child = spawn(process.execPath, [scriptPath, ...args], {
       cwd: __dirname,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -1679,6 +1684,25 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
       });
     }
 
+    const scheduleStartDate = addDaysToDateKey(getAppDateKey(), 1);
+    const scheduleResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
+      `--start=${scheduleStartDate}`,
+      '--cadence=1',
+      '--window=7'
+    ]);
+    if (scheduleResult.code !== 0) {
+      return res.status(500).json({
+        success: false,
+        step: 'schedule:quotes',
+        exitCode: scheduleResult.code,
+        stdout: tailOutput(scheduleResult.stdout, 12000),
+        stderr: tailOutput(scheduleResult.stderr, 12000),
+        note: 'Notion → Firestore (quotes) completed; schedule rebuild failed before date_scheduled sync.',
+        startedAt,
+        finishedAt: getUtcIsoNow()
+      });
+    }
+
     const usageResult = await runNodeScript('scripts/sync-usage-firestore-to-notion.cjs');
     if (usageResult.code !== 0) {
       return res.status(500).json({
@@ -1687,7 +1711,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: usageResult.code,
         stdout: tailOutput(usageResult.stdout, 12000),
         stderr: tailOutput(usageResult.stderr, 12000),
-        note: 'Notion → Firestore (quotes) completed; Firestore → Notion (usage) failed.',
+        note: 'Notion → Firestore (quotes) and schedule rebuild completed; Firestore → Notion (usage/date_scheduled) failed.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -1695,13 +1719,14 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
 
     return res.json({
       success: true,
-      steps: ['sync:quotes', 'sync:usage'],
+      steps: ['sync:quotes', 'schedule:quotes', 'sync:usage'],
+      scheduleStartDate,
       stdout: tailOutput(
-        `${quotesResult.stdout}\n---\n${usageResult.stdout}`,
+        `${quotesResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
         16000
       ),
       stderr: tailOutput(
-        `${quotesResult.stderr}\n---\n${usageResult.stderr}`,
+        `${quotesResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
         8000
       ),
       startedAt,
