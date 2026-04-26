@@ -672,6 +672,16 @@ function getUtcIsoNow() {
   return new Date().toISOString();
 }
 
+function addDaysToDate(dateKey, delta) {
+  const [yy, mm, dd] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(yy, mm - 1, dd));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  const y = dt.getUTCFullYear();
+  const mo = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${da}`;
+}
+
 function formatZapierCaptionFromQuoteData(quoteData = {}) {
   const text = String(quoteData.text ?? quoteData.body ?? '').trim();
   const author = String(quoteData.author ?? '').trim();
@@ -718,6 +728,85 @@ async function getQuoteDataForDateKey(dateKey) {
     console.warn(`⚠️ getQuoteDataForDateKey(${dateKey}) failed:`, e.message);
   }
   return null;
+}
+
+async function assignAllNotionQuotesToDates({
+  startDate,
+  cadenceDays = 1,
+  assignmentsCollection = 'dailyQuoteAssignments'
+}) {
+  if (!db) throw new Error('Firestore not initialized');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '').trim())) {
+    throw new Error('startDate must be YYYY-MM-DD');
+  }
+  if (!Number.isInteger(cadenceDays) || cadenceDays < 1) {
+    throw new Error('cadenceDays must be an integer >= 1');
+  }
+
+  const quotesSnap = await db.collection('quotes').get();
+  const rows = [];
+  quotesSnap.forEach((docSnap) => {
+    const q = docSnap.data() || {};
+    if (q.source !== 'notion') return;
+    const text = String(q.text || '').trim();
+    const author = String(q.author || '').trim();
+    if (!text || !author) return;
+    rows.push({
+      sourceId: String(q.sourceId || docSnap.id).trim(),
+      sortOrder: Number.isFinite(q.sortOrder) ? q.sortOrder : Number.MAX_SAFE_INTEGER,
+      text,
+      author,
+      whatIf: String(q.whatIf ?? q.what_if ?? '').trim(),
+      igCaption: getIgCaptionFromQuoteData(q)
+    });
+  });
+
+  rows.sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    if (a.text !== b.text) return a.text.localeCompare(b.text);
+    if (a.author !== b.author) return a.author.localeCompare(b.author);
+    return a.sourceId.localeCompare(b.sourceId);
+  });
+
+  if (!rows.length) throw new Error('No Notion quotes found in Firestore');
+
+  const assignments = rows.map((row, idx) => {
+    const dateKey = addDaysToDate(startDate, idx * cadenceDays);
+    return {
+      dateKey,
+      payload: {
+        dateKey,
+        sourceId: row.sourceId || null,
+        embeddedStableKey: null,
+        textSnapshot: row.text.slice(0, 160),
+        authorSnapshot: row.author.slice(0, 120),
+        whatIfSnapshot: row.whatIf.slice(0, 240),
+        igCaptionSnapshot: row.igCaption.slice(0, 400),
+        assignedAt: getUtcIsoNow(),
+        assignedBy: 'api:assign-quote-schedule'
+      }
+    };
+  });
+
+  let batch = db.batch();
+  let batchCount = 0;
+  for (const item of assignments) {
+    const ref = db.collection(assignmentsCollection).doc(item.dateKey);
+    batch.set(ref, item.payload, { merge: true });
+    batchCount += 1;
+    if (batchCount >= 400) {
+      await batch.commit();
+      batch = db.batch();
+      batchCount = 0;
+    }
+  }
+  if (batchCount > 0) await batch.commit();
+
+  return {
+    scheduled: assignments.length,
+    firstDate: assignments[0]?.dateKey || null,
+    lastDate: assignments[assignments.length - 1]?.dateKey || null
+  };
 }
 
 async function runDailyResetForDate(dateKey, source = 'unknown') {
@@ -1612,6 +1701,50 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
   } finally {
     notionSyncInProgress = false;
     console.log('🔄 Manual Notion–Firestore sync finished');
+  }
+});
+
+app.post('/api/assign-quote-schedule', async (req, res) => {
+  const expectedToken = process.env.RESET_TOKEN;
+  if (!expectedToken) {
+    return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+  }
+  const providedToken = req.header('x-reset-token');
+  if (!providedToken || providedToken !== expectedToken) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  try {
+    const startDate =
+      req.body && typeof req.body.startDate === 'string' ? req.body.startDate.trim() : '';
+    const cadenceRaw = req.body?.cadenceDays;
+    const cadenceDays = Number.isInteger(cadenceRaw) ? cadenceRaw : Number.parseInt(String(cadenceRaw || '1'), 10);
+    const assignmentsCollection =
+      req.body && typeof req.body.collection === 'string' && req.body.collection.trim()
+        ? req.body.collection.trim()
+        : 'dailyQuoteAssignments';
+
+    const out = await assignAllNotionQuotesToDates({
+      startDate,
+      cadenceDays,
+      assignmentsCollection
+    });
+
+    return res.json({
+      success: true,
+      startDate,
+      cadenceDays,
+      assignmentsCollection,
+      ...out,
+      note: 'Run /api/sync-notion-firestore after this to update Notion date_scheduled'
+    });
+  } catch (error) {
+    console.error('❌ assign-quote-schedule failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'assign-quote-schedule failed',
+      timestamp: getUtcIsoNow()
+    });
   }
 });
 
