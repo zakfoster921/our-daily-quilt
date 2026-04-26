@@ -8953,34 +8953,43 @@ try {
 
                 const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
                 const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
-                // Layout B quilt treatment: two stacked quilts; lower stack mirrored on both axes.
-                // Each half uses independent cover-fit + clipping to avoid central banding.
-                const COVER_ZOOM = isPostLayout ? 1.04 : 1.08;
-                const halfH = Math.ceil(STORY_H / 2);
-                const halfScale = Math.max(STORY_W / iw, halfH / ih) * COVER_ZOOM;
-                const cw = Math.round(iw * halfScale);
-                const ch = Math.round(ih * halfScale);
-                const qx = Math.round((STORY_W - cw) / 2);
-                const topY = Math.round((halfH - ch) / 2);
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
-                // Top half clip.
-                ctx.save();
-                ctx.beginPath();
-                ctx.rect(0, 0, STORY_W, halfH);
-                ctx.clip();
-                ctx.drawImage(quiltImg, qx, topY, cw, ch);
-                ctx.restore();
-                // Bottom half clip + mirrored draw.
-                const bottomY = halfH + Math.round((halfH - ch) / 2);
-                ctx.save();
-                ctx.beginPath();
-                ctx.rect(0, halfH, STORY_W, STORY_H - halfH);
-                ctx.clip();
-                ctx.translate(qx + cw, bottomY + ch);
-                ctx.scale(-1, -1);
-                ctx.drawImage(quiltImg, 0, 0, cw, ch);
-                ctx.restore();
+                if (isPostLayout) {
+                  const postScale = Math.max(STORY_W / iw, STORY_H / ih) * 1.04;
+                  const dw = Math.round(iw * postScale);
+                  const dh = Math.round(ih * postScale);
+                  const dx = Math.round((STORY_W - dw) / 2);
+                  const dy = Math.round((STORY_H - dh) / 2);
+                  ctx.drawImage(quiltImg, dx, dy, dw, dh);
+                } else {
+                  // Story Layout B: two stacked quilts; lower stack mirrored on both axes.
+                  // Each half uses independent cover-fit + clipping to avoid central banding.
+                  const COVER_ZOOM = 1.08;
+                  const halfH = Math.ceil(STORY_H / 2);
+                  const halfScale = Math.max(STORY_W / iw, halfH / ih) * COVER_ZOOM;
+                  const cw = Math.round(iw * halfScale);
+                  const ch = Math.round(ih * halfScale);
+                  const qx = Math.round((STORY_W - cw) / 2);
+                  const topY = Math.round((halfH - ch) / 2);
+                  // Top half clip.
+                  ctx.save();
+                  ctx.beginPath();
+                  ctx.rect(0, 0, STORY_W, halfH);
+                  ctx.clip();
+                  ctx.drawImage(quiltImg, qx, topY, cw, ch);
+                  ctx.restore();
+                  // Bottom half clip + mirrored draw.
+                  const bottomY = halfH + Math.round((halfH - ch) / 2);
+                  ctx.save();
+                  ctx.beginPath();
+                  ctx.rect(0, halfH, STORY_W, STORY_H - halfH);
+                  ctx.clip();
+                  ctx.translate(qx + cw, bottomY + ch);
+                  ctx.scale(-1, -1);
+                  ctx.drawImage(quiltImg, 0, 0, cw, ch);
+                  ctx.restore();
+                }
                 ctx.fillStyle = isPostLayout ? 'rgba(0,0,0,0.133)' : 'rgba(0,0,0,0.1)';
                 ctx.fillRect(0, 0, STORY_W, STORY_H);
 
