@@ -2,15 +2,29 @@ import UIKit
 import Capacitor
 import FirebaseCore
 
+/// Exposes delegate methods to the Objective‑C runtime for Firebase / GoogleUtilities swizzling (`I-SWZ001014`).
 @UIApplicationMain
+@objcMembers
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    override init() {
+        super.init()
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
+    }
+
+    /// Runs before `didFinishLaunching` so Firebase Messaging / other native hooks see a configured default app.
+    func application(_ application: UIApplication, willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
+        return true
+    }
+
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         return true
     }
 

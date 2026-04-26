@@ -2,6 +2,33 @@
 <!DOCTYPE html>
 <html lang="en">
 <script>
+(function () {
+  if (typeof window === 'undefined' || typeof performance === 'undefined' || !performance.now) return;
+  window.__ODQ_PERF = { marks: {} };
+  window.odqPerfMark = function (label) {
+    var ms = Math.round(performance.now());
+    window.__ODQ_PERF.marks[label] = ms;
+    console.log('[ODQ perf]', label, ms + 'ms since navigation start');
+  };
+  window.odqPerfSummary = function () {
+    var m = window.__ODQ_PERF.marks;
+    var rows = Object.keys(m)
+      .sort(function (a, b) { return m[a] - m[b]; })
+      .map(function (k) { return { mark: k, msSinceNav: m[k] }; });
+    console.table(rows);
+    return m;
+  };
+  window.odqPerfMark('first-html-script');
+  document.addEventListener('readystatechange', function odqPerfRS() {
+    if (document.readyState === 'interactive') window.odqPerfMark('dom-interactive');
+    if (document.readyState === 'complete') {
+      window.odqPerfMark('dom-complete');
+      document.removeEventListener('readystatechange', odqPerfRS);
+    }
+  });
+})();
+</script>
+<script>
 // Squarespace Editor Error Prevention
 try {
   // Prevent common errors that break Squarespace editor
@@ -13,15 +40,48 @@ try {
       originalError.apply(console, args);
     };
     
-    // Prevent unhandled promise rejections
+    function odqIsCapacitorNative() {
+      try {
+        if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
+          return window.Capacitor.isNativePlatform() === true;
+        }
+        var href = window.location && String(window.location.href);
+        return href && href.indexOf('capacitor://') === 0;
+      } catch (_) {
+        return false;
+      }
+    }
+    function odqDescribeGlobalError(event) {
+      try {
+        var err = event && event.error;
+        if (err != null) {
+          if (typeof err === 'string') return err;
+          if (err.stack) return String(err.stack);
+          return String(err);
+        }
+        return [event && event.message, event && event.filename, event && event.lineno, event && event.colno]
+          .filter(Boolean)
+          .join(' ');
+      } catch (_) {
+        return 'unknown';
+      }
+    }
+    // Prevent unhandled promise rejections (Squarespace editor); on Capacitor log fully and do not swallow.
     window.addEventListener('unhandledrejection', function(event) {
+      if (odqIsCapacitorNative()) {
+        console.warn('Unhandled promise rejection:', event.reason);
+        return;
+      }
       console.warn('Prevented unhandled promise rejection:', event.reason);
       event.preventDefault();
     });
-    
-    // Prevent other global errors
     window.addEventListener('error', function(event) {
-      console.warn('Prevented global error:', event.error);
+      var desc = odqDescribeGlobalError(event);
+      if (odqIsCapacitorNative()) {
+        console.warn('Global error:', desc || '(no details)');
+        return;
+      }
+      console.warn('Prevented global error:', desc || event.error);
       event.preventDefault();
     });
   }
@@ -32,6 +92,8 @@ try {
 </script>
 <head>
   <meta charset="UTF-8" />
+  <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
+  <style>html,body{background-color:#f6f4f1}</style>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f6f4f1" />
   <meta name="color-scheme" content="light" />
@@ -2431,6 +2493,27 @@ try {
         box-sizing: border-box !important;
 
       }
+
+      /* Streamed opening: quilt screen shows a calm shell until idle `renderQuilt()` completes. */
+      #screen-quilt .quilt-container.odq-quilt-shell--pending {
+        min-height: min(52vh, 420px);
+        background: linear-gradient(165deg, #f6f4f1 0%, #e8e4dc 42%, #f6f4f1 100%);
+        background-size: 160% 160%;
+        animation: odq-quilt-shell-shimmer 2s ease-in-out infinite;
+      }
+      #screen-quilt .quilt-container.odq-quilt-shell--pending #quilt {
+        opacity: 0.08;
+      }
+      @keyframes odq-quilt-shell-shimmer {
+        0%, 100% { background-position: 0% 35%; }
+        50% { background-position: 100% 65%; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #screen-quilt .quilt-container.odq-quilt-shell--pending {
+          animation: none;
+          background: #ebe7e0;
+        }
+      }
       
       #screen-welcome,
       #screen-first-name,
@@ -4309,6 +4392,7 @@ try {
         
         // Dispatch event to notify that Firebase is ready
         document.dispatchEvent(new CustomEvent('firebaseReady'));
+        if (window.odqPerfMark) window.odqPerfMark('firebase-js-ready');
       } catch (error) {
         console.warn('⚠️ Firebase initialization failed:', error);
       }
@@ -4667,6 +4751,8 @@ try {
         // Sort by size (largest first) to prioritize splitting the biggest blocks
         splittableBlocks.sort((a, b) => (b.width * b.height) - (a.width * a.height));
         
+        let selectedBlock;
+        
         // Always split existing blocks - never add new blocks at edges
         if (splittableBlocks.length === 0) {
           // If no blocks meet the minimum size, just use all blocks
@@ -4686,7 +4772,6 @@ try {
           block.patternType === 'regular' || 
           (!block.patternType && !block.id.includes('_pattern_') && !block.originalPatternId)
         );
-        let selectedBlock;
         
         // First priority: Check if we should split a special pattern block
         if (specialPatternBlocks.length > 0) {
@@ -7120,6 +7205,7 @@ try {
 
       showScreen(screenId) {
         try {
+          if (screenId === 'screen-quote' && window.odqPerfMark) window.odqPerfMark('show-screen-quote');
           window.app?.clearPortalToQuoteIntroTimer();
           window.app?.clearNameThanksAdvanceTimer?.();
           window.app?.clearFirstQuoteBridgeTimer?.();
@@ -9874,7 +9960,7 @@ try {
             const timeout = setTimeout(() => {
               document.removeEventListener('firebaseReady', onFirebaseReady);
               resolve();
-            }, 5000); // 5 second timeout
+            }, 1200); // keep launch responsive; continue with fallback if Firebase is slow
             
             const onFirebaseReady = () => {
               clearTimeout(timeout);
@@ -9887,11 +9973,11 @@ try {
           
           // Fallback: wait with polling
           let attempts = 0;
-          while (!window.db && attempts < 200) { // Increased from 100 to 200 attempts (20 seconds)
+          while (!window.db && attempts < 8) {
             await new Promise(resolve => setTimeout(resolve, 100));
             attempts++;
-            if (attempts % 20 === 0) {
-              console.log(`🔄 DataService: Still waiting for Firebase... (attempt ${attempts}/200)`);
+            if (attempts % 4 === 0) {
+              console.log(`🔄 DataService: Still waiting for Firebase... (attempt ${attempts}/8)`);
             }
           }
           
@@ -9914,24 +10000,7 @@ try {
             // Try Firestore first
             const today = Utils.getTodayKey();
             this.logger.log('🔍 Looking for quilt in Firestore with date key:', today);
-            
-            // Also check what other dates exist in Firestore
-            try {
-              const quiltsRef = window.firestore.collection(this.db, 'quilts');
-              const querySnapshot = await window.firestore.getDocs(quiltsRef);
-              const availableDates = [];
-              querySnapshot.forEach(doc => {
-                const data = doc.data();
-                availableDates.push({
-                  date: doc.id,
-                  blocks: data.blocks?.length || 0,
-                  contributorCount: data.contributorCount || 1
-                });
-              });
-            } catch (listError) {
-              this.logger.warn('⚠️ Could not list Firestore documents:', listError);
-            }
-              
+            // Single-doc read only — listing the whole `quilts` collection was very slow at startup.
             const quiltRef = window.firestore.doc(this.db, 'quilts', today);
             const quiltSnap = await window.firestore.getDoc(quiltRef);
             
@@ -10419,12 +10488,14 @@ try {
 
       async saveDayAssignment(dateKey, quote) {
         const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
+        const whatIfSnapshot = String(quote?.whatIf ?? quote?.what_if ?? '').trim();
         const payload = {
           dateKey,
           sourceId: sourceId || null,
           embeddedStableKey: sourceId ? null : this._embeddedStableKey(quote),
           textSnapshot: String(quote?.text || '').slice(0, 160),
           authorSnapshot: String(quote?.author || '').slice(0, 120),
+          whatIfSnapshot: whatIfSnapshot.slice(0, 240),
           assignedAt: new Date().toISOString(),
         };
         this._writeLocalAssignment(dateKey, payload);
@@ -12481,6 +12552,8 @@ try {
         this._portalQuiltLoaded = false;
         /** Portal→quote intro fade is scheduled once when the join line first becomes visible. */
         this._portalToQuoteIntroScheduled = false;
+        /** True while startup has queued an idle `renderQuilt()` (streamed opening). */
+        this._deferredQuiltRenderQueued = false;
         this._nameThanksAdvanceTimer = null;
         this._firstQuoteBridgeTimer = null;
 
@@ -12652,16 +12725,19 @@ try {
 
       async initialize() {
         try {
+          if (window.odqPerfMark) window.odqPerfMark('init-start');
+          // Paint first screen immediately; heavy async work can continue in background.
+          this.uiService?.showScreen?.('screen-portal');
           this.setupEventListeners();
           
           // Wait for Firebase to be ready before initializing DataService
           console.log('🔄 Waiting for Firebase to initialize...');
           let attempts = 0;
-          while (!window.db && attempts < 100) { // Increased from 50 to 100 attempts
+          while (!window.db && attempts < 8) {
             await new Promise(resolve => setTimeout(resolve, 100));
             attempts++;
-            if (attempts % 20 === 0) {
-              console.log(`🔄 Still waiting for Firebase... (attempt ${attempts}/100)`);
+            if (attempts % 4 === 0) {
+              console.log(`🔄 Still waiting for Firebase... (attempt ${attempts}/8)`);
             }
           }
           
@@ -12671,19 +12747,20 @@ try {
           this.quiltEngine.initialize();
           console.log('🔍 DEBUGGING: About to load quilt...');
           await this.loadQuilt();
+          if (window.odqPerfMark) window.odqPerfMark('after-load-quilt');
           console.log('🔍 DEBUGGING: Quilt loaded, blocks count:', this.quiltEngine.blocks.length);
           this.updateSquareCounter();
 
           // Catalog must load before first quilt paint + shuffle (defaults have no blessing / wrong length).
           if (!window.db || !window.firestore) {
-            console.log('🔄 Waiting for Firebase to initialize...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('🔄 Firebase not ready yet; continuing with fast fallback path');
           }
           console.log('🔄 About to load quotes from Firestore...');
           console.log('🔄 Firebase available:', !!window.firebaseApp);
           console.log('🔄 Firestore available:', !!window.firestore);
           console.log('🔄 DB available:', !!window.db);
           await this.quoteService.loadQuotesFromFirestore();
+          if (window.odqPerfMark) window.odqPerfMark('after-quotes-loaded');
 
           this.setupPushNotificationListeners();
           this.refreshDailyQuotePushRegistration().catch((error) => {
@@ -12699,8 +12776,14 @@ try {
           this.quoteService.displayQuote();
 
           this.renderer.initialize();
-          await this.renderQuilt();
-          this.updateSquareCounter();
+          const fastReturningToday = this._shouldFastPathReturningSameDayQuote();
+          if (fastReturningToday) {
+            this.clearPortalToQuoteIntroTimer();
+            if (window.odqPerfMark) window.odqPerfMark('fast-path-quote-visible');
+            this.uiService.showScreen('screen-quote');
+          }
+          /* Full mosaic draws in idle time for every cohort — streams the opening. */
+          this._scheduleDeferredQuiltRenderForIdle();
           console.log('🔄 Firestore enabled - quotes loaded from database');
           // Portal progression is user-driven via scroll/swipe gesture now.
           this.setupDailyReset(); // ENABLED - automatic daily archive and reset
@@ -15527,8 +15610,67 @@ try {
         }, delay);
       }
 
+      /**
+       * Queue full `renderQuilt()` for browser idle time so portal/quote can paint first (all users).
+       * Shows a soft shell on `#screen-quilt` until the mosaic is ready.
+       */
+      _scheduleDeferredQuiltRenderForIdle() {
+        if (this._deferredQuiltRenderQueued) return;
+        this._deferredQuiltRenderQueued = true;
+        if (window.odqPerfMark) window.odqPerfMark('quilt-render-idle-queued');
+        const qc = document.querySelector('#screen-quilt .quilt-container');
+        if (qc) qc.classList.add('odq-quilt-shell--pending');
+
+        const run = async () => {
+          try {
+            await this.renderQuilt();
+            if (window.odqPerfMark) window.odqPerfMark('after-render-quilt');
+            this.updateSquareCounter();
+          } catch (err) {
+            this.logger.warn('Deferred renderQuilt failed:', err);
+          } finally {
+            if (qc) qc.classList.remove('odq-quilt-shell--pending');
+            this._deferredQuiltRenderQueued = false;
+          }
+        };
+
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(() => {
+            void run();
+          }, { timeout: 2500 });
+        } else {
+          setTimeout(() => {
+            void run();
+          }, 1);
+        }
+      }
+
+      /**
+       * Same-day returners who will land on quote: skip blocking on full portal SVG during init.
+       * Mirrors visit logic in `autoTransitionFromPortal` (must stay in sync).
+       */
+      _shouldFastPathReturningSameDayQuote() {
+        try {
+          if (typeof this.isIntroFlowEnabled === 'function' && this.isIntroFlowEnabled()) return false;
+          const hasVisitedBefore = localStorage.getItem('ourDailyHasVisited');
+          if (!hasVisitedBefore) return false;
+          if (typeof Utils !== 'undefined' && typeof Utils.needsFirstNamePrompt === 'function' && Utils.needsFirstNamePrompt()) {
+            return false;
+          }
+          const lastVisitDate = localStorage.getItem('ourDailyLastVisitDate');
+          const now = new Date();
+          const chicagoTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+          const currentDate = chicagoTime.toDateString();
+          const isNewDay = lastVisitDate !== currentDate;
+          return !isNewDay;
+        } catch (_) {
+          return false;
+        }
+      }
+
       async autoTransitionFromPortal() {
         try {
+          if (window.odqPerfMark) window.odqPerfMark('auto-transition-start');
           console.log('🔄 Starting auto-transition from portal...');
           
           const hasVisitedBefore = localStorage.getItem('ourDailyHasVisited');
@@ -16082,8 +16224,8 @@ try {
           }
           if (wasAwaiting && !this._portalToQuoteIntroScheduled) {
             this._portalToQuoteIntroScheduled = true;
-            /* ~1.35s former motion + 1s read pause; reduced-motion path still ignores hold inside scheduler. */
-            this.schedulePortalToQuoteIntroFade(2350);
+            /* Short read pause so join line can land before auto-advance; reduced-motion path ignores hold inside scheduler. */
+            this.schedulePortalToQuoteIntroFade(800);
           }
         }
       }
@@ -19368,6 +19510,7 @@ try {
     
     // ===== INITIALIZATION =====
     document.addEventListener('DOMContentLoaded', async () => {
+      if (window.odqPerfMark) window.odqPerfMark('dom-content-loaded');
       const app = new SimplifiedQuiltAppV2();
       window.app = app;
       // Expose utility class for headless automation scripts (SSR workflow).
@@ -19377,9 +19520,16 @@ try {
       // Before async initialize (Firebase, quilt) so the portal date is never a stale placeholder.
       Utils.refreshPortalDateText();
 
-      // Only initialize if not redirected to desktop
+      // Only initialize if not redirected to desktop — do not block first paint on Firebase/quilt.
       if (app && typeof app.initialize === 'function') {
-        await app.initialize();
+        if (window.odqPerfMark) window.odqPerfMark('init-scheduled');
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            app.initialize().catch((error) => {
+              console.warn('App initialization failed:', error);
+            });
+          }, 0);
+        });
       }
       Utils.refreshPortalDateText();
 

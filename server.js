@@ -682,6 +682,12 @@ function formatZapierCaptionFromQuoteData(quoteData = {}) {
   return `${core}\n\nWhat if: ${whatIf}`;
 }
 
+function extractWhatIfFromCaption(caption = '') {
+  const text = String(caption || '');
+  const match = text.match(/(?:^|\n)\s*What if:\s*([\s\S]*)$/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
 async function runDailyResetForDate(dateKey, source = 'unknown') {
   if (!db) {
     throw new Error('Firestore not initialized');
@@ -785,8 +791,17 @@ async function captionFromDailyQuoteAssignments(dateKey) {
     const a = snap.data() || {};
     const t = String(a.textSnapshot || '').trim();
     const au = String(a.authorSnapshot || '').trim();
-    if (t && au) return `${t} — ${au}`;
-    if (t) return t;
+    const wi = String(
+      a.whatIfSnapshot ??
+      a.what_ifSnapshot ??
+      a.whatIf ??
+      a.what_if ??
+      ''
+    ).trim();
+    const core = t && au ? `${t} — ${au}` : t || au || '';
+    if (!wi) return core;
+    if (!core) return wi;
+    return `${core}\n\nWhat if: ${wi}`;
   } catch (e) {
     console.warn(`⚠️ dailyQuoteAssignments/${dateKey}:`, e.message);
   }
@@ -1015,6 +1030,7 @@ async function getTodayInstagramImage(options = {}) {
     // to read dailyQuoteAssignments; server admin can, which previously caused caption ≠ pixels). (2) dailyQuoteAssignments.
     // (3) quotes/{date}. See captionSource in JSON.
     let quote = "Every day is a new beginning.";
+    let whatIf = '';
     let captionSource = 'default';
     try {
       const stamp =
@@ -1029,6 +1045,7 @@ async function getTodayInstagramImage(options = {}) {
         '';
       if (inline) {
         quote = inline;
+        whatIf = extractWhatIfFromCaption(inline);
         captionSource = 'zapierCaption';
         console.log(`✅ Caption from instagram-images zapierCaption (${dateUsed})`);
       } else {
@@ -1039,6 +1056,7 @@ async function getTodayInstagramImage(options = {}) {
         }
         if (fromAssignment) {
           quote = fromAssignment;
+          whatIf = extractWhatIfFromCaption(fromAssignment);
           captionSource = 'dailyQuoteAssignments';
           console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
         } else {
@@ -1049,6 +1067,7 @@ async function getTodayInstagramImage(options = {}) {
             const caption = formatZapierCaptionFromQuoteData(quoteData);
             if (caption) {
               quote = caption;
+              whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim() || extractWhatIfFromCaption(caption);
               captionSource = 'quotes';
               console.log(`✅ Caption from quotes/{${dk}}`);
               break;
@@ -1070,6 +1089,7 @@ async function getTodayInstagramImage(options = {}) {
       storageReelWebmUrl,
       storageReelMp4Url,
       quote: quote,
+      whatIf,
       captionSource,
       date: dateUsed
     };
@@ -1124,7 +1144,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-12-caption-zapier-first';
+    const apiVersion = 'instagram-api-13-caption-plus-whatif';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
@@ -1146,6 +1166,7 @@ app.post('/api/generate-instagram', async (req, res) => {
       reelNeedsTranscode: hasReelWebm && !hasReelMp4,
       mediaUrls,
       caption: imageData.quote,
+      whatIf: imageData.whatIf || '',
       captionSource: imageData.captionSource || 'default',
       date: imageData.date,
       captionLength: imageData.quote.length,
