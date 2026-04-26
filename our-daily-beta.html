@@ -1196,7 +1196,7 @@ try {
     }
     .screen.flow-fade-exit.flow-fade-exit-active {
       opacity: 0 !important;
-      transition: opacity 0.5s cubic-bezier(0.4, 0, 0.85, 0.95);
+      transition: opacity 1s cubic-bezier(0.4, 0, 0.85, 0.95);
     }
     .screen.flow-fade-enter {
       opacity: 0 !important;
@@ -1205,7 +1205,7 @@ try {
     }
     .screen.flow-fade-enter.flow-fade-enter-active {
       opacity: 1 !important;
-      transition: opacity 0.78s cubic-bezier(0.18, 0.82, 0.22, 1);
+      transition: opacity 1.28s cubic-bezier(0.18, 0.82, 0.22, 1);
       transition-delay: 0.1s;
     }
     @media (prefers-reduced-motion: reduce) {
@@ -2419,7 +2419,7 @@ try {
         align-items: center !important;
         justify-content: center !important;
         overflow: visible !important;
-        margin: 20px !important;
+        margin: max(36px, calc(var(--odq-safe-top) + 12px)) 20px 20px !important;
         padding: 0 !important;
 
         box-sizing: border-box !important;
@@ -3871,6 +3871,10 @@ try {
       margin-bottom: 0;
     }
 
+    #screen-quilt #shareBtnCompleted.quilt-share-hidden {
+      display: none !important;
+    }
+
     /* Back-to-quilt buttons: match quilt stack button style with left chevron. */
     .back-to-quilt-btn {
       width: calc(100% - 20px) !important;
@@ -4128,6 +4132,23 @@ try {
           <p class="quilt-quote-author"></p>
         </div>
 
+        <button class="reflection-cta" data-next="screen-reflection" aria-label="Reflect on this idea">
+          <span class="reflection-cta-left">
+            <span class="reflection-cta-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" focusable="false">
+                <path d="M4.5 19.5l4.2-1.1L19 8.1a1.4 1.4 0 0 0 0-2l-1.1-1.1a1.4 1.4 0 0 0-2 0L5.6 15.3l-1.1 4.2Z"/>
+                <path d="M13.8 7.2l3 3"/>
+              </svg>
+            </span>
+            <span class="reflection-cta-label">Reflect on this idea</span>
+          </span>
+          <span class="reflection-cta-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M9 5l7 7-7 7" />
+            </svg>
+          </span>
+        </button>
+
         <div class="button-group">
           <button class="btn" data-next="screen-quote-submission" aria-label="Submit a quote recommendation">
             <span class="stack-btn-content">
@@ -4190,23 +4211,6 @@ try {
           </button>
         </div>
 
-        <button class="reflection-cta" data-next="screen-reflection" aria-label="Reflect on this idea">
-          <span class="reflection-cta-left">
-            <span class="reflection-cta-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="img" focusable="false">
-                <path d="M4.5 19.5l4.2-1.1L19 8.1a1.4 1.4 0 0 0 0-2l-1.1-1.1a1.4 1.4 0 0 0-2 0L5.6 15.3l-1.1 4.2Z"/>
-                <path d="M13.8 7.2l3 3"/>
-              </svg>
-            </span>
-            <span class="reflection-cta-label">Reflect on this idea</span>
-          </span>
-          <span class="reflection-cta-chevron" aria-hidden="true">
-            <svg viewBox="0 0 24 24" role="img" focusable="false">
-              <path d="M9 5l7 7-7 7" />
-            </svg>
-          </span>
-        </button>
-
         <span id="squareCounter" hidden aria-hidden="true">1</span>
       </div>
 
@@ -4252,7 +4256,7 @@ try {
             </button>
           </div>
           <div class="button-group">
-            <button id="shareBtnCompleted" class="btn" aria-label="Share OUR DAILY QUILT">
+            <button id="shareBtnCompleted" class="btn quilt-share-hidden" aria-label="Share OUR DAILY QUILT temporarily hidden" hidden>
               <span class="stack-btn-content">
                 <span class="stack-btn-left">
                   <span class="stack-btn-icon" aria-hidden="true">
@@ -7530,7 +7534,7 @@ try {
                       settle();
                     };
                     target.addEventListener('transitionend', onTransEnd);
-                    const fallbackId = setTimeout(settle, 1300);
+                    const fallbackId = setTimeout(settle, 1800);
                   });
                 });
               } else {
@@ -13043,8 +13047,13 @@ try {
           const fastReturningToday = this._shouldFastPathReturningSameDayQuote();
           if (fastReturningToday) {
             this.clearPortalToQuoteIntroTimer();
-            if (window.odqPerfMark) window.odqPerfMark('fast-path-quote-visible');
-            this.uiService.showScreen('screen-quote');
+            this._blockPortalScrollNav = true;
+            this._portalToQuoteTimer = setTimeout(() => {
+              this._portalToQuoteTimer = null;
+              this._blockPortalScrollNav = false;
+              if (window.odqPerfMark) window.odqPerfMark('fast-path-quote-visible');
+              this.uiService.showScreen('screen-quote');
+            }, 500);
           }
           /* Full mosaic draws in idle time for every cohort — streams the opening. */
           this._scheduleDeferredQuiltRenderForIdle();
@@ -16624,7 +16633,7 @@ try {
           if (wasAwaiting && !this._portalToQuoteIntroScheduled) {
             this._portalToQuoteIntroScheduled = true;
             /* Short read pause so join line can land before auto-advance; reduced-motion path ignores hold inside scheduler. */
-            this.schedulePortalToQuoteIntroFade(800);
+            this.schedulePortalToQuoteIntroFade(1300);
           }
         }
       }
