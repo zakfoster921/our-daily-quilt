@@ -9478,6 +9478,19 @@ try {
         }
       }
 
+      hasRenderedQuiltSvgForBlocks(quiltSVG, blocks) {
+        if (!quiltSVG || !Array.isArray(blocks) || blocks.length === 0) return false;
+        const renderedIds = Array.from(quiltSVG.querySelectorAll('[data-block-id]'))
+          .map((node) => node.getAttribute('data-block-id'))
+          .filter(Boolean);
+        const expectedIds = blocks.map((block) => block?.id).filter(Boolean);
+        if (expectedIds.length === blocks.length) {
+          const renderedSet = new Set(renderedIds);
+          return expectedIds.every((id) => renderedSet.has(id));
+        }
+        return renderedIds.length >= blocks.length;
+      }
+
       /** High-res PNG blob from the live quilt SVG (same path as layout B story share). */
       async rasterizeQuiltSvgToPngBlob(quiltSVG) {
         return new Promise((resolve, reject) => {
@@ -9636,12 +9649,14 @@ try {
           const dk = dateKey || Utils.getTodayKey();
           let highResBlob = null;
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
-          if (quiltSVG) {
+          if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
               highResBlob = await this.rasterizeQuiltSvgToPngBlob(quiltSVG);
             } catch (e) {
               this.logger.warn('SVG raster failed, falling back to blocks:', e);
             }
+          } else if (quiltSVG) {
+            this.logger.warn('Live quilt SVG is not ready for layout B post image; using block data');
           }
           if (!highResBlob) {
             highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
