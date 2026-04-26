@@ -32,6 +32,28 @@ function isDateDocId(id) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(id || '').trim());
 }
 
+function normPropKey(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[\s_-]/g, '');
+}
+
+function findSchemaPropName(properties, base) {
+  const target = normPropKey(base);
+  for (const key of Object.keys(properties || {})) {
+    if (normPropKey(key) === target) return key;
+  }
+  return '';
+}
+
+function pickScheduledDate(dateKeys, todayKey) {
+  if (!Array.isArray(dateKeys) || dateKeys.length === 0) return null;
+  const sorted = [...new Set(dateKeys.filter(isDateDocId))].sort();
+  if (!sorted.length) return null;
+  const upcoming = sorted.find((d) => d >= todayKey);
+  return upcoming || sorted[sorted.length - 1];
+}
+
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
 
@@ -108,9 +130,13 @@ async function run() {
   const notionSchema = await notionGetDatabaseSchema(notionDatabaseId, notionToken);
   const hasTimesUsed = !!notionSchema.times_used;
   const hasLastUsedDate = !!notionSchema.last_used_date;
-  if (!hasTimesUsed && !hasLastUsedDate) {
+  const dateScheduledProp =
+    findSchemaPropName(notionSchema, 'date_scheduled') ||
+    findSchemaPropName(notionSchema, 'datescheduled');
+  const hasDateScheduled = !!dateScheduledProp;
+  if (!hasTimesUsed && !hasLastUsedDate && !hasDateScheduled) {
     throw new Error(
-      "Notion DB needs at least one of these properties: 'times_used' (number), 'last_used_date' (date)"
+      "Notion DB needs at least one of these properties: 'times_used' (number), 'last_used_date' (date), 'date_scheduled' (date)"
     );
   }
 
@@ -144,6 +170,32 @@ async function run() {
     usage.set(key, existing);
   }
 
+  const assignmentCollection =
+    process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const assignmentSnap = await db.collection(assignmentCollection).get();
+  const scheduledBySourceId = new Map(); // sourceId -> [dateKey]
+  const scheduledByKey = new Map(); // quoteKey(text, author) -> [dateKey]
+  for (const doc of assignmentSnap.docs) {
+    if (!isDateDocId(doc.id)) continue;
+    const dateKey = doc.id;
+    const d = doc.data() || {};
+    const sourceId = String(d.sourceId || '').trim();
+    if (sourceId) {
+      const arr = scheduledBySourceId.get(sourceId) || [];
+      arr.push(dateKey);
+      scheduledBySourceId.set(sourceId, arr);
+    }
+    const key = quoteKey(d.textSnapshot, d.authorSnapshot);
+    if (key && key !== '|||') {
+      const arr = scheduledByKey.get(key) || [];
+      arr.push(dateKey);
+      scheduledByKey.set(key, arr);
+    }
+  }
+
+  const now = new Date();
+  const todayKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+
   let updates = 0;
   let skipped = 0;
   for (const q of notionDocs) {
@@ -153,6 +205,12 @@ async function run() {
     const properties = {};
     if (hasTimesUsed) properties.times_used = { number: u.count };
     if (hasLastUsedDate) properties.last_used_date = { date: { start: u.lastDate } };
+    if (hasDateScheduled) {
+      const bySource = scheduledBySourceId.get(q.sourceId) || [];
+      const byTextAuthor = scheduledByKey.get(q.key) || [];
+      const scheduledDate = pickScheduledDate([...bySource, ...byTextAuthor], todayKey);
+      properties[dateScheduledProp] = { date: scheduledDate ? { start: scheduledDate } : null };
+    }
     if (!Object.keys(properties).length) continue;
 
     updates += 1;
