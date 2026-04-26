@@ -685,6 +685,32 @@ function getUtcIsoNow() {
   return new Date().toISOString();
 }
 
+function normalizeSubmittedQuoteText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .replace(/["“”„‟«»]/g, '')
+    .trim();
+}
+
+function normalizeSubmittedAuthorName(value) {
+  const raw = String(value || '')
+    .replace(/^[\s—–-]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return '';
+  return raw.replace(/(^|[\s\-'.])([A-Za-zÀ-ÖØ-öø-ÿ])([A-Za-zÀ-ÖØ-öø-ÿ]*)/g, (match, prefix, first, rest) => {
+    const normalizedRest =
+      rest && (rest === rest.toLowerCase() || rest === rest.toUpperCase())
+        ? rest.toLowerCase()
+        : rest;
+    return `${prefix}${first.toLocaleUpperCase()}${normalizedRest}`;
+  });
+}
+
 function addDaysToDate(dateKey, delta) {
   const [yy, mm, dd] = dateKey.split('-').map(Number);
   const dt = new Date(Date.UTC(yy, mm - 1, dd));
@@ -776,10 +802,8 @@ function buildSubmittedQuoteNotionProperties(schema, submission) {
   properties[titleName] = { title: [{ text: { content: submission.text } }] };
   const authorName = findNotionPropName(schema, 'author');
   setNotionProperty(properties, schema, authorName, notionTextPropertyValue(schema[authorName], submission.author));
-  const activeName = findNotionPropName(schema, 'active');
-  setNotionProperty(properties, schema, activeName, notionBooleanPropertyValue(schema[activeName], false));
-  const approvalName = findNotionPropName(schema, 'approval_status', 'approvalStatus', 'status');
-  setNotionProperty(properties, schema, approvalName, notionTextPropertyValue(schema[approvalName], 'Pending'));
+  const approvedName = findNotionPropName(schema, 'approved', 'active');
+  setNotionProperty(properties, schema, approvedName, notionBooleanPropertyValue(schema[approvedName], false));
   const submittedByName = findNotionPropName(schema, 'submitted_by', 'submittedBy');
   setNotionProperty(properties, schema, submittedByName, notionTextPropertyValue(schema[submittedByName], submission.submitterName));
   const submittedViaName = findNotionPropName(schema, 'submitted_via', 'submittedVia', 'source');
@@ -803,7 +827,7 @@ async function createPendingSubmittedQuote({ text, author, submitterName, userId
   const notionPageId = String(notionPage?.id || '').trim();
   if (!notionPageId) throw new Error('Notion did not return a page id');
   await db.collection(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').doc(notionPageId).set({
-    text, quote: text, author, active: false, approvalStatus: 'pending', source: 'notion', sourceId: notionPageId,
+    text, quote: text, author, approved: false, active: false, source: 'notion', sourceId: notionPageId,
     submittedBy: submitterName, submittedAt, submittedVia: 'app', submittedUserId: userId || null,
     appDateKey: appDateKey || null, currentQuoteText: currentQuoteText || '', currentQuoteAuthor: currentQuoteAuthor || '',
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -1470,8 +1494,8 @@ app.post('/api/quote-submission', async (req, res) => {
   setQuoteSubmissionCors(res);
   try {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const text = String(body.text || body.quote || '').trim().slice(0, 900);
-    const author = String(body.author || '').trim().slice(0, 160);
+    const text = normalizeSubmittedQuoteText(body.text || body.quote).slice(0, 900);
+    const author = normalizeSubmittedAuthorName(body.author).slice(0, 160);
     const submitterName = String(body.submitterName || body.submittedBy || '').trim().slice(0, 80);
     const userId = String(body.userId || '').trim().slice(0, 120);
     const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || '').trim())

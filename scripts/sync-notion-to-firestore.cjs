@@ -172,13 +172,22 @@ function parseNotionRow(page) {
   const igCaption = getMappedText(props, 'ig_caption', 'ig_caption', 'IG Caption', 'Ig Caption');
   const mood = getMappedText(props, 'mood', 'mood', 'Mood');
   const blessing = findBlessingFromProps(props);
+  const submittedBy = getMappedText(
+    props,
+    'submitted_by',
+    'submitted_by',
+    'submittedBy',
+    'Submitted by',
+    'Submitted By'
+  );
   const notificationTitle =
     getRichText(props.notification_title) || getTitle(props.notification_title);
   const notificationText =
     getRichText(props.notification_text) || getTitle(props.notification_text);
   const theme = getSelect(props.theme) || getRichText(props.theme) || getTitle(props.theme);
   const sortOrder = getNumber(props.sort_order, 0);
-  const active = getBoolean(props.active, true);
+  const approvedProp = props.approved || props.Approved || props.active || props.Active;
+  const approved = getBoolean(approvedProp, true);
   const notificationEnabled = getBoolean(props.notification_enabled, true);
 
   if (!text || !author) return null;
@@ -195,10 +204,13 @@ function parseNotionRow(page) {
       ig_caption: igCaption,
       mood,
       blessing,
+      submittedBy,
+      submitted_by: submittedBy,
       notificationTitle,
       notificationText,
       notificationEnabled,
-      active,
+      approved,
+      active: approved,
       sortOrder,
       theme,
       source: 'notion',

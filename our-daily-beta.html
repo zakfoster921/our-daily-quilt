@@ -1522,6 +1522,7 @@ try {
       flex: 0 1 auto;
       max-height: min(58dvh, calc(100dvh - 15rem));
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       overflow-x: hidden;
@@ -1562,6 +1563,24 @@ try {
       /* Inner is display:none; stage is appended inside the card — drop default min-height so no empty shell. */
       min-height: 0;
       align-items: center;
+    }
+
+    #screen-quote .quote-submitter-thanks {
+      flex-shrink: 0;
+      margin: 0 0 clamp(0.5rem, 1.4vh, 0.8rem);
+      padding: 0 1rem;
+      box-sizing: border-box;
+      max-width: min(100%, 820px);
+      text-align: center;
+      font-weight: 300;
+      font-size: calc(var(--portal-subtext-size) * 0.65);
+      line-height: 1.35;
+      letter-spacing: 0.02em;
+      color: rgba(0, 0, 0, 0.42);
+    }
+
+    #screen-quote .quote-submitter-thanks[hidden] {
+      display: none !important;
     }
 
     #screen-quote .quote-prompt {
@@ -3466,15 +3485,17 @@ try {
       flex-direction: column;
       align-items: center;
       justify-content: flex-start;
-      padding: max(clamp(2.75rem, 9vh, 4.5rem), var(--odq-safe-top)) max(1rem, var(--odq-safe-right)) max(2rem, var(--odq-safe-bottom)) max(1rem, var(--odq-safe-left));
+      padding: max(1.25rem, calc(var(--odq-safe-top) + 1rem)) max(1.25rem, calc(var(--odq-safe-right) + 1rem)) max(1.5rem, calc(var(--odq-safe-bottom) + 1rem)) max(1.25rem, calc(var(--odq-safe-left) + 1rem)) !important;
       min-height: 100vh;
       background-color: #f6f4f1;
       overflow-y: auto;
+      box-sizing: border-box;
     }
 
     .quote-submission-container {
       max-width: 600px;
       width: 100%;
+      box-sizing: border-box;
       text-align: left;
     }
 
@@ -3486,13 +3507,6 @@ try {
       margin: 0 0 1rem;
       color: #2c2622;
       letter-spacing: -0.04em;
-    }
-
-    .quote-submission-intro {
-      font-size: 1.12rem;
-      line-height: 1.55;
-      color: #3f3a35;
-      margin: 0 0 1.5rem;
     }
 
     .quote-submission-form {
@@ -4044,6 +4058,7 @@ try {
       <div class="quote-content-wrapper">
         <div class="quote-vspace quote-vspace--above" aria-hidden="true"></div>
         <div class="quote-stage">
+          <p class="quote-submitter-thanks" id="quoteSubmitterThanks" hidden></p>
           <div class="quote-card">
             <div class="quote-inner">
               <p class="quote-line" aria-live="polite"></p>
@@ -4053,7 +4068,7 @@ try {
         </div>
         <div class="quote-vspace quote-vspace--between" aria-hidden="true"></div>
         <div class="quote-action-cluster" role="group" aria-label="Color prompt">
-          <p class="quote-prompt" aria-hidden="true">What color comes to mind right now?</p>
+          <p class="quote-prompt" aria-hidden="true">What color comes to mind?</p>
           <button
             type="button"
             class="quote-color-wonky-btn"
@@ -4316,17 +4331,30 @@ try {
     <section class="screen" id="screen-quote-submission" role="main" aria-label="Submit a quote">
       <div class="quote-submission-container">
         <h1 class="quote-submission-title">Submit a quote</h1>
-        <p class="quote-submission-intro">
-          Recommend words for a future OUR DAILY QUILT. Submissions go into a review queue before anything is added to the daily rotation.
-        </p>
         <form class="quote-submission-form" id="quoteSubmissionForm">
           <div class="quote-submission-field">
             <label for="quoteSubmissionText">Quote</label>
-            <textarea id="quoteSubmissionText" name="quote" required maxlength="900" enterkeyhint="next"></textarea>
+            <textarea
+              id="quoteSubmissionText"
+              name="quote"
+              required
+              maxlength="900"
+              enterkeyhint="next"
+              spellcheck="true"
+            ></textarea>
           </div>
           <div class="quote-submission-field">
             <label for="quoteSubmissionAuthor">Author</label>
-            <input type="text" id="quoteSubmissionAuthor" name="author" required maxlength="160" autocomplete="off" enterkeyhint="next" />
+            <input
+              type="text"
+              id="quoteSubmissionAuthor"
+              name="author"
+              required
+              maxlength="160"
+              autocomplete="off"
+              enterkeyhint="next"
+              spellcheck="true"
+            />
           </div>
           <div class="quote-submission-field">
             <label for="quoteSubmissionName">Your name</label>
@@ -10627,6 +10655,29 @@ try {
         return '';
       }
 
+      quoteSubmitterName(q) {
+        if (!q || typeof q !== 'object') return '';
+        const directKeys = [
+          'submittedBy',
+          'submitted_by',
+          'submitterName',
+          'submittedByName',
+          'submitted_by_name',
+          'recommendedBy',
+          'recommended_by'
+        ];
+        for (const key of directKeys) {
+          const name = this._scalarTextField(q[key]).trim();
+          if (name) return name;
+        }
+        return '';
+      }
+
+      formatSubmitterThanksLine(q) {
+        const name = this.quoteSubmitterName(q);
+        return name ? `Today’s quote shared by ${name} ♡` : '';
+      }
+
       /** Blessing text from a plain object (Firestore doc or quote row); any key whose name contains "blessing". */
       _blessingScalarFromPlainObject(data) {
         if (!data || typeof data !== 'object') return '';
@@ -11358,6 +11409,7 @@ try {
           const quoteAuthor = document.querySelector('.quote-author');
           const quoteInner = document.querySelector('#screen-quote .quote-inner');
           const quoteCard = document.querySelector('#screen-quote .quote-card');
+          const quoteSubmitterThanks = document.getElementById('quoteSubmitterThanks');
           
           // Reset fade-in elements to hidden state when quote is displayed
           const fadeElements = document.querySelectorAll('.quote-screen-fade-in');
@@ -11417,6 +11469,12 @@ try {
             } else {
               quoteAuthor.classList.remove('long-quote');
             }
+          }
+
+          if (quoteSubmitterThanks) {
+            const thanksLine = this.formatSubmitterThanksLine(activeQuote);
+            quoteSubmitterThanks.textContent = thanksLine;
+            quoteSubmitterThanks.hidden = !thanksLine;
           }
           
           // Also populate the quote display on the quilt screen
@@ -11635,11 +11693,13 @@ try {
             const author = String(data.author || '').trim();
             if (!text || !author) return;
 
-            const active =
-              typeof data.active === 'boolean'
-                ? data.active
-                : String(data.active || '').trim().toLowerCase() !== 'false';
-            if (!active) return;
+            const approved =
+              typeof data.approved === 'boolean'
+                ? data.approved
+                : typeof data.active === 'boolean'
+                  ? data.active
+                  : String(data.approved ?? data.active ?? '').trim().toLowerCase() !== 'false';
+            if (!approved) return;
 
             const blessingStr = this._blessingScalarFromPlainObject(data);
 
@@ -11649,6 +11709,13 @@ try {
               reflectionPrompt: String(data.reflectionPrompt || '').trim(),
               whatIf: String(data.whatIf ?? data.what_if ?? '').trim(),
               blessing: blessingStr,
+              submittedBy: this._scalarTextField(
+                data.submittedBy ??
+                  data.submitted_by ??
+                  data.submitterName ??
+                  data.submittedByName ??
+                  data.submitted_by_name
+              ),
               sourceId: String(data.sourceId || docSnap.id),
               sortOrder:
                 typeof data.sortOrder === 'number' && Number.isFinite(data.sortOrder)
@@ -13179,6 +13246,32 @@ try {
         }
       }
 
+      normalizeSubmittedQuoteText(value) {
+        return String(value || '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n')
+          .map((line) => line.replace(/\s+/g, ' ').trim())
+          .filter(Boolean)
+          .join('\n')
+          .replace(/["“”„‟«»]/g, '')
+          .trim();
+      }
+
+      normalizeSubmittedAuthorName(value) {
+        const raw = String(value || '')
+          .replace(/^[\s—–-]+/, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!raw) return '';
+        return raw.replace(/(^|[\s\-'.])([A-Za-zÀ-ÖØ-öø-ÿ])([A-Za-zÀ-ÖØ-öø-ÿ]*)/g, (match, prefix, first, rest) => {
+          const normalizedRest =
+            rest && (rest === rest.toLowerCase() || rest === rest.toUpperCase())
+              ? rest.toLowerCase()
+              : rest;
+          return `${prefix}${first.toLocaleUpperCase()}${normalizedRest}`;
+        });
+      }
+
       async handleQuoteSubmission(event) {
         event.preventDefault();
 
@@ -13189,14 +13282,16 @@ try {
         const submitBtn = document.getElementById('quoteSubmissionSubmitBtn');
         const status = document.getElementById('quoteSubmissionStatus');
 
-        const quoteText = String(quoteInput?.value || '').trim();
-        const author = String(authorInput?.value || '').trim();
+        const quoteText = this.normalizeSubmittedQuoteText(quoteInput?.value);
+        const author = this.normalizeSubmittedAuthorName(authorInput?.value);
         const submitterName = String(nameInput?.value || '').trim();
 
         if (!quoteText || !author) {
           if (status) status.textContent = 'Please add both the quote and author.';
           return;
         }
+        if (quoteInput) quoteInput.value = quoteText;
+        if (authorInput) authorInput.value = author;
 
         const todayQuote = this.quoteService?.getTodayQuote?.() || null;
         const payload = {
