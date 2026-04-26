@@ -16,6 +16,7 @@ try {
 }
 const app = express();
 const PORT = process.env.PORT || 3000;
+const NOTION_API_VERSION = '2022-06-28';
 
 app.use(express.json());
 app.use(express.static('.'));
@@ -155,6 +156,13 @@ function setPushApiCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+function setQuoteSubmissionCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -682,6 +690,122 @@ function addDaysToDate(dateKey, delta) {
   return `${y}-${mo}-${da}`;
 }
 
+function normNotionPropKey(s) {
+  return String(s || '').toLowerCase().replace(/[\s_-]/g, '');
+}
+
+function findNotionPropName(properties, ...candidates) {
+  const entries = Object.entries(properties || {});
+  for (const candidate of candidates) {
+    const target = normNotionPropKey(candidate);
+    const found = entries.find(([name]) => normNotionPropKey(name) === target);
+    if (found) return found[0];
+  }
+  return '';
+}
+
+function getNotionTitlePropName(properties) {
+  const preferred = findNotionPropName(properties, 'quote_text', 'Name');
+  if (preferred && properties[preferred]?.type === 'title') return preferred;
+  const titleEntry = Object.entries(properties || {}).find(([, prop]) => prop?.type === 'title');
+  return titleEntry ? titleEntry[0] : '';
+}
+
+async function notionFetchJson(pathname, options = {}) {
+  const notionToken = String(process.env.NOTION_TOKEN || '').trim();
+  if (!notionToken) throw new Error('NOTION_TOKEN is not configured on server');
+  const res = await fetch(`https://api.notion.com/v1${pathname}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${notionToken}`,
+      'Notion-Version': NOTION_API_VERSION,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch (_) { json = null; }
+  if (!res.ok) throw new Error(`Notion API error ${res.status}: ${text || res.statusText}`);
+  return json;
+}
+
+async function notionGetDatabaseProperties(databaseId) {
+  const json = await notionFetchJson(`/databases/${databaseId}`, { method: 'GET' });
+  return json?.properties || {};
+}
+
+function notionTextPropertyValue(prop, value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  switch (prop?.type) {
+    case 'title': return { title: [{ text: { content: text } }] };
+    case 'rich_text': return { rich_text: [{ text: { content: text } }] };
+    case 'url': return { url: text };
+    case 'email': return { email: text };
+    case 'phone_number': return { phone_number: text };
+    case 'select': return { select: { name: text } };
+    case 'status': return { status: { name: text } };
+    case 'date': return /^\d{4}-\d{2}-\d{2}/.test(text) ? { date: { start: text.slice(0, 10) } } : null;
+    default: return null;
+  }
+}
+
+function notionBooleanPropertyValue(prop, value) {
+  if (prop?.type === 'checkbox') return { checkbox: !!value };
+  if (prop?.type === 'select') return { select: { name: value ? 'true' : 'false' } };
+  if (prop?.type === 'status') return { status: { name: value ? 'Active' : 'Pending' } };
+  if (prop?.type === 'rich_text') return { rich_text: [{ text: { content: value ? 'true' : 'false' } }] };
+  return null;
+}
+
+function setNotionProperty(propertiesPayload, schema, name, value) {
+  if (!name || !schema?.[name] || value == null) return;
+  propertiesPayload[name] = value;
+}
+
+function buildSubmittedQuoteNotionProperties(schema, submission) {
+  const properties = {};
+  const titleName = getNotionTitlePropName(schema);
+  if (!titleName) throw new Error('Notion database needs a title property for quote text');
+  properties[titleName] = { title: [{ text: { content: submission.text } }] };
+  const authorName = findNotionPropName(schema, 'author');
+  setNotionProperty(properties, schema, authorName, notionTextPropertyValue(schema[authorName], submission.author));
+  const activeName = findNotionPropName(schema, 'active');
+  setNotionProperty(properties, schema, activeName, notionBooleanPropertyValue(schema[activeName], false));
+  const approvalName = findNotionPropName(schema, 'approval_status', 'approvalStatus', 'status');
+  setNotionProperty(properties, schema, approvalName, notionTextPropertyValue(schema[approvalName], 'Pending'));
+  const submittedByName = findNotionPropName(schema, 'submitted_by', 'submittedBy');
+  setNotionProperty(properties, schema, submittedByName, notionTextPropertyValue(schema[submittedByName], submission.submitterName));
+  const submittedViaName = findNotionPropName(schema, 'submitted_via', 'submittedVia', 'source');
+  setNotionProperty(properties, schema, submittedViaName, notionTextPropertyValue(schema[submittedViaName], 'App'));
+  const submittedAtName = findNotionPropName(schema, 'submitted_at', 'submittedAt');
+  setNotionProperty(properties, schema, submittedAtName, notionTextPropertyValue(schema[submittedAtName], submission.submittedAt));
+  return properties;
+}
+
+async function createPendingSubmittedQuote({ text, author, submitterName, userId, appDateKey, currentQuoteText, currentQuoteAuthor }) {
+  if (!db) throw new Error('Firestore not initialized');
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!databaseId) throw new Error('NOTION_DATABASE_ID is not configured on server');
+  const submittedAt = getUtcIsoNow();
+  const submission = { text, author, submitterName, userId, appDateKey, currentQuoteText, currentQuoteAuthor, submittedAt };
+  const schema = await notionGetDatabaseProperties(databaseId);
+  const notionPage = await notionFetchJson('/pages', {
+    method: 'POST',
+    body: JSON.stringify({ parent: { database_id: databaseId }, properties: buildSubmittedQuoteNotionProperties(schema, submission) })
+  });
+  const notionPageId = String(notionPage?.id || '').trim();
+  if (!notionPageId) throw new Error('Notion did not return a page id');
+  await db.collection(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').doc(notionPageId).set({
+    text, quote: text, author, active: false, approvalStatus: 'pending', source: 'notion', sourceId: notionPageId,
+    submittedBy: submitterName, submittedAt, submittedVia: 'app', submittedUserId: userId || null,
+    appDateKey: appDateKey || null, currentQuoteText: currentQuoteText || '', currentQuoteAuthor: currentQuoteAuthor || '',
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  return { notionPageId, quoteId: notionPageId, submittedAt };
+}
+
 function formatZapierCaptionFromQuoteData(quoteData = {}) {
   const text = String(quoteData.text ?? quoteData.body ?? '').trim();
   const author = String(quoteData.author ?? '').trim();
@@ -690,143 +814,6 @@ function formatZapierCaptionFromQuoteData(quoteData = {}) {
   if (!whatIf) return core;
   if (!core) return whatIf;
   return `${core}\n\nWhat if: ${whatIf}`;
-}
-
-function extractWhatIfFromCaption(caption = '') {
-  const text = String(caption || '');
-  const match = text.match(/(?:^|\n)\s*What if:\s*([\s\S]*)$/i);
-  return match ? String(match[1] || '').trim() : '';
-}
-
-function getIgCaptionFromQuoteData(quoteData = {}) {
-  return String(
-    quoteData.igCaption ??
-    quoteData.ig_caption ??
-    quoteData.instagramCaption ??
-    quoteData.instagram_caption ??
-    ''
-  ).trim();
-}
-
-async function getQuoteDataForDateKey(dateKey) {
-  if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '').trim())) return null;
-  try {
-    const assignmentSnap = await db.collection('dailyQuoteAssignments').doc(dateKey).get();
-    if (assignmentSnap.exists) {
-      const assignment = assignmentSnap.data() || {};
-      const sourceId = String(assignment.sourceId || '').trim();
-      if (sourceId) {
-        const bySource = await db.collection('quotes').doc(sourceId).get();
-        if (bySource.exists) return bySource.data() || null;
-      }
-    }
-
-    // Legacy fallback if a date-shaped quote doc exists.
-    const byDate = await db.collection('quotes').doc(dateKey).get();
-    if (byDate.exists) return byDate.data() || null;
-  } catch (e) {
-    console.warn(`⚠️ getQuoteDataForDateKey(${dateKey}) failed:`, e.message);
-  }
-  return null;
-}
-
-async function assignAllNotionQuotesToDates({
-  startDate,
-  cadenceDays = 1,
-  assignmentsCollection = 'dailyQuoteAssignments'
-}) {
-  if (!db) throw new Error('Firestore not initialized');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '').trim())) {
-    throw new Error('startDate must be YYYY-MM-DD');
-  }
-  if (!Number.isInteger(cadenceDays) || cadenceDays < 1) {
-    throw new Error('cadenceDays must be an integer >= 1');
-  }
-
-  const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
-  const quotesSnap = await db.collection(quotesCollection).get();
-  const rows = [];
-  quotesSnap.forEach((docSnap) => {
-    const q = docSnap.data() || {};
-    if (q.source !== 'notion') return;
-    const text = String(q.text || '').trim();
-    const author = String(q.author || '').trim();
-    if (!text || !author) return;
-    rows.push({
-      sourceId: String(q.sourceId || docSnap.id).trim(),
-      sortOrder: Number.isFinite(q.sortOrder) ? q.sortOrder : Number.MAX_SAFE_INTEGER,
-      text,
-      author,
-      whatIf: String(q.whatIf ?? q.what_if ?? '').trim(),
-      igCaption: getIgCaptionFromQuoteData(q)
-    });
-  });
-
-  rows.sort((a, b) => {
-    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-    if (a.text !== b.text) return a.text.localeCompare(b.text);
-    if (a.author !== b.author) return a.author.localeCompare(b.author);
-    return a.sourceId.localeCompare(b.sourceId);
-  });
-
-  if (!rows.length) throw new Error('No Notion quotes found in Firestore');
-
-  const assignments = rows.map((row, idx) => {
-    const dateKey = addDaysToDate(startDate, idx * cadenceDays);
-    return {
-      dateKey,
-      payload: {
-        dateKey,
-        sourceId: row.sourceId || null,
-        embeddedStableKey: null,
-        textSnapshot: row.text.slice(0, 160),
-        authorSnapshot: row.author.slice(0, 120),
-        whatIfSnapshot: row.whatIf.slice(0, 240),
-        igCaptionSnapshot: row.igCaption.slice(0, 400),
-        assignedAt: getUtcIsoNow(),
-        assignedBy: 'api:assign-quote-schedule'
-      }
-    };
-  });
-
-  let batch = db.batch();
-  let batchCount = 0;
-  let quoteDateWrites = 0;
-  for (const item of assignments) {
-    const ref = db.collection(assignmentsCollection).doc(item.dateKey);
-    batch.set(ref, item.payload, { merge: true });
-    batchCount += 1;
-
-    const sid = String(item.payload.sourceId || '').trim();
-    if (sid) {
-      const qref = db.collection(quotesCollection).doc(sid);
-      batch.set(
-        qref,
-        {
-          dateScheduled: item.dateKey,
-          date_scheduled: item.dateKey,
-          scheduleUpdatedAt: getUtcIsoNow()
-        },
-        { merge: true }
-      );
-      batchCount += 1;
-      quoteDateWrites += 1;
-    }
-
-    if (batchCount >= 450) {
-      await batch.commit();
-      batch = db.batch();
-      batchCount = 0;
-    }
-  }
-  if (batchCount > 0) await batch.commit();
-
-  return {
-    scheduled: assignments.length,
-    quoteDateWrites,
-    firstDate: assignments[0]?.dateKey || null,
-    lastDate: assignments[assignments.length - 1]?.dateKey || null
-  };
 }
 
 async function runDailyResetForDate(dateKey, source = 'unknown') {
@@ -932,17 +919,8 @@ async function captionFromDailyQuoteAssignments(dateKey) {
     const a = snap.data() || {};
     const t = String(a.textSnapshot || '').trim();
     const au = String(a.authorSnapshot || '').trim();
-    const wi = String(
-      a.whatIfSnapshot ??
-      a.what_ifSnapshot ??
-      a.whatIf ??
-      a.what_if ??
-      ''
-    ).trim();
-    const core = t && au ? `${t} — ${au}` : t || au || '';
-    if (!wi) return core;
-    if (!core) return wi;
-    return `${core}\n\nWhat if: ${wi}`;
+    if (t && au) return `${t} — ${au}`;
+    if (t) return t;
   } catch (e) {
     console.warn(`⚠️ dailyQuoteAssignments/${dateKey}:`, e.message);
   }
@@ -1171,9 +1149,7 @@ async function getTodayInstagramImage(options = {}) {
     // to read dailyQuoteAssignments; server admin can, which previously caused caption ≠ pixels). (2) dailyQuoteAssignments.
     // (3) quotes/{date}. See captionSource in JSON.
     let quote = "Every day is a new beginning.";
-    let whatIf = '';
     let captionSource = 'default';
-    let igCaption = '';
     try {
       const stamp =
         typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date.trim())
@@ -1187,8 +1163,6 @@ async function getTodayInstagramImage(options = {}) {
         '';
       if (inline) {
         quote = inline;
-        whatIf = extractWhatIfFromCaption(inline);
-        igCaption = String(raw.igCaption ?? raw.ig_caption ?? '').trim();
         captionSource = 'zapierCaption';
         console.log(`✅ Caption from instagram-images zapierCaption (${dateUsed})`);
       } else {
@@ -1199,18 +1173,16 @@ async function getTodayInstagramImage(options = {}) {
         }
         if (fromAssignment) {
           quote = fromAssignment;
-          whatIf = extractWhatIfFromCaption(fromAssignment);
           captionSource = 'dailyQuoteAssignments';
           console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
         } else {
           for (const dk of captionKeys) {
-            const quoteData = await getQuoteDataForDateKey(dk);
-            if (!quoteData) continue;
+            const quoteDoc = await db.collection('quotes').doc(dk).get();
+            if (!quoteDoc.exists) continue;
+            const quoteData = quoteDoc.data() || {};
             const caption = formatZapierCaptionFromQuoteData(quoteData);
             if (caption) {
               quote = caption;
-              whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim() || extractWhatIfFromCaption(caption);
-              igCaption = getIgCaptionFromQuoteData(quoteData);
               captionSource = 'quotes';
               console.log(`✅ Caption from quotes/{${dk}}`);
               break;
@@ -1221,25 +1193,10 @@ async function getTodayInstagramImage(options = {}) {
           }
         }
       }
-
-      // Backfill standalone fields from quote docs when caption source lacks them
-      // (common when inline zapierCaption is present but whatIf/igCaption were not stored on instagram-images).
-      if (!whatIf || !igCaption) {
-        for (const dk of captionKeys) {
-          const quoteData = await getQuoteDataForDateKey(dk);
-          if (!quoteData) continue;
-          if (!whatIf) {
-            whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim();
-          }
-          if (!igCaption) {
-            igCaption = getIgCaptionFromQuoteData(quoteData);
-          }
-          if (whatIf && igCaption) break;
-        }
-      }
     } catch (quoteError) {
       console.warn(`⚠️ Could not fetch quote for ${dateUsed}:`, quoteError.message);
     }
+
     return {
       imageData: imageDataField,
       postLayoutBImageData: postLayoutBField || null,
@@ -1248,8 +1205,6 @@ async function getTodayInstagramImage(options = {}) {
       storageReelWebmUrl,
       storageReelMp4Url,
       quote: quote,
-      whatIf,
-      igCaption,
       captionSource,
       date: dateUsed
     };
@@ -1304,7 +1259,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-14-caption-whatif-igcaption';
+    const apiVersion = 'instagram-api-12-caption-zapier-first';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
@@ -1326,8 +1281,6 @@ app.post('/api/generate-instagram', async (req, res) => {
       reelNeedsTranscode: hasReelWebm && !hasReelMp4,
       mediaUrls,
       caption: imageData.quote,
-      whatIf: imageData.whatIf || '',
-      igCaption: imageData.igCaption || '',
       captionSource: imageData.captionSource || 'default',
       date: imageData.date,
       captionLength: imageData.quote.length,
@@ -1498,6 +1451,50 @@ app.post('/api/push/daily-quote', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'Daily quote push failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/quote-submission', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quote-submission', async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const text = String(body.text || body.quote || '').trim().slice(0, 900);
+    const author = String(body.author || '').trim().slice(0, 160);
+    const submitterName = String(body.submitterName || body.submittedBy || '').trim().slice(0, 80);
+    const userId = String(body.userId || '').trim().slice(0, 120);
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || '').trim())
+      ? String(body.appDateKey).trim()
+      : getAppDateKey();
+    const currentQuoteText = String(body.currentQuoteText || '').trim().slice(0, 220);
+    const currentQuoteAuthor = String(body.currentQuoteAuthor || '').trim().slice(0, 160);
+
+    if (!text || !author) {
+      return res.status(400).json({ success: false, error: 'Quote text and author are required' });
+    }
+
+    const result = await createPendingSubmittedQuote({
+      text,
+      author,
+      submitterName,
+      userId,
+      appDateKey,
+      currentQuoteText,
+      currentQuoteAuthor
+    });
+
+    return res.json({ success: true, ...result, status: 'pending' });
+  } catch (error) {
+    console.error('❌ Quote submission failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Quote submission failed',
       timestamp: getUtcIsoNow()
     });
   }
@@ -1723,60 +1720,6 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     console.log('🔄 Manual Notion–Firestore sync finished');
   }
 });
-
-async function handleAssignQuoteSchedule(req, res) {
-  const expectedToken = process.env.RESET_TOKEN;
-  if (!expectedToken) {
-    return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
-  }
-  const providedToken = req.header('x-reset-token');
-  if (!providedToken || providedToken !== expectedToken) {
-    return res.status(401).json({ success: false, error: 'Unauthorized' });
-  }
-
-  try {
-    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const q = req.query || {};
-    const startDate = String(
-      (typeof body.startDate === 'string' ? body.startDate : '') ||
-        (typeof q.startDate === 'string' ? q.startDate : '') ||
-        ''
-    ).trim();
-    const cadenceRaw = body.cadenceDays ?? q.cadenceDays ?? '1';
-    const cadenceDays = Number.isInteger(cadenceRaw) ? cadenceRaw : Number.parseInt(String(cadenceRaw || '1'), 10);
-    const assignmentsCollection = String(
-      (typeof body.collection === 'string' ? body.collection : '') ||
-        (typeof q.collection === 'string' ? q.collection : '') ||
-        'dailyQuoteAssignments'
-    ).trim();
-
-    const out = await assignAllNotionQuotesToDates({
-      startDate,
-      cadenceDays,
-      assignmentsCollection
-    });
-
-    return res.json({
-      success: true,
-      startDate,
-      cadenceDays,
-      assignmentsCollection,
-      ...out,
-      note: 'Run /api/sync-notion-firestore after this to update Notion date_scheduled'
-    });
-  } catch (error) {
-    console.error('❌ assign-quote-schedule failed:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'assign-quote-schedule failed',
-      timestamp: getUtcIsoNow()
-    });
-  }
-}
-
-/** GET avoids fragile JSON bodies (smart quotes, line breaks) that break body-parser. */
-app.get('/api/assign-quote-schedule', handleAssignQuoteSchedule);
-app.post('/api/assign-quote-schedule', handleAssignQuoteSchedule);
 
 app.options('/api/transcode-instagram-reel', (req, res) => {
   setInstagramApiCors(res);
