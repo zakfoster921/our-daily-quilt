@@ -1196,9 +1196,9 @@ async function getTodayInstagramImage(options = {}) {
       throw new Error(`Instagram doc for ${dateUsed} has no imageData or imageStorageUrl`);
     }
 
-    // Caption order: (1) zapierCaption — written with the same upload as Storage pixels/reel (client may not be able
-    // to read dailyQuoteAssignments; server admin can, which previously caused caption ≠ pixels). (2) dailyQuoteAssignments.
-    // (3) quotes/{date}. See captionSource in JSON.
+    // Caption order: (1) assigned Notion quote ig_caption via dailyQuoteAssignments.sourceId.
+    // (2) stored instagram-images caption fields, for legacy/static snapshot docs.
+    // (3) date-shaped quote doc fallback. See captionSource in JSON.
     let quote = "Every day is a new beginning.";
     let captionSource = 'default';
     try {
@@ -1208,24 +1208,26 @@ async function getTodayInstagramImage(options = {}) {
           : null;
       const captionKeys = [...new Set([dateUsed, stamp].filter(Boolean))];
 
-      const inline =
-        (typeof raw.zapierCaption === 'string' && raw.zapierCaption.trim()) ||
-        (typeof raw.caption === 'string' && raw.caption.trim()) ||
-        '';
-      if (inline) {
-        quote = inline;
-        captionSource = 'zapierCaption';
-        console.log(`✅ Caption from instagram-images zapierCaption (${dateUsed})`);
+      let fromAssignment = '';
+      for (const dk of captionKeys) {
+        fromAssignment = await captionFromDailyQuoteAssignments(dk);
+        if (fromAssignment) break;
+      }
+      if (fromAssignment) {
+        quote = fromAssignment;
+        captionSource = 'dailyQuoteAssignments';
+        console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
       } else {
-        let fromAssignment = '';
-        for (const dk of captionKeys) {
-          fromAssignment = await captionFromDailyQuoteAssignments(dk);
-          if (fromAssignment) break;
-        }
-        if (fromAssignment) {
-          quote = fromAssignment;
-          captionSource = 'dailyQuoteAssignments';
-          console.log(`✅ Caption from dailyQuoteAssignments (${captionKeys.join(' → ')})`);
+        const inline =
+          (typeof raw.zapierCaption === 'string' && raw.zapierCaption.trim()) ||
+          (typeof raw.igCaption === 'string' && raw.igCaption.trim()) ||
+          (typeof raw.ig_caption === 'string' && raw.ig_caption.trim()) ||
+          (typeof raw.caption === 'string' && raw.caption.trim()) ||
+          '';
+        if (inline) {
+          quote = inline;
+          captionSource = 'instagram-images';
+          console.log(`✅ Caption from instagram-images inline caption (${dateUsed})`);
         } else {
           for (const dk of captionKeys) {
             const quoteDoc = await db.collection('quotes').doc(dk).get();
