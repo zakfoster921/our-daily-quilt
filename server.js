@@ -836,6 +836,14 @@ async function createPendingSubmittedQuote({ text, author, submitterName, userId
 }
 
 function formatZapierCaptionFromQuoteData(quoteData = {}) {
+  const igCaption = String(
+    quoteData.zapierCaption ??
+      quoteData.igCaption ??
+      quoteData.ig_caption ??
+      ''
+  ).trim();
+  if (igCaption) return igCaption;
+
   const text = String(quoteData.text ?? quoteData.body ?? '').trim();
   const author = String(quoteData.author ?? '').trim();
   const whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim();
@@ -946,6 +954,20 @@ async function captionFromDailyQuoteAssignments(dateKey) {
     const snap = await db.collection('dailyQuoteAssignments').doc(dateKey).get();
     if (!snap.exists) return '';
     const a = snap.data() || {};
+    const sourceId = String(a.sourceId || '').trim();
+    if (sourceId) {
+      try {
+        const quoteSnap = await db.collection('quotes').doc(sourceId).get();
+        if (quoteSnap.exists) {
+          const caption = formatZapierCaptionFromQuoteData(quoteSnap.data() || {});
+          if (caption) return caption;
+        }
+      } catch (e) {
+        console.warn(`⚠️ quotes/${sourceId} caption lookup:`, e.message);
+      }
+    }
+    const assignmentCaption = formatZapierCaptionFromQuoteData(a);
+    if (assignmentCaption) return assignmentCaption;
     const t = String(a.textSnapshot || '').trim();
     const au = String(a.authorSnapshot || '').trim();
     if (t && au) return `${t} — ${au}`;
@@ -1288,7 +1310,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-12-caption-zapier-first';
+    const apiVersion = 'instagram-api-13-ig-caption-alias';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
@@ -1310,6 +1332,8 @@ app.post('/api/generate-instagram', async (req, res) => {
       reelNeedsTranscode: hasReelWebm && !hasReelMp4,
       mediaUrls,
       caption: imageData.quote,
+      ig_caption: imageData.quote,
+      igCaption: imageData.quote,
       captionSource: imageData.captionSource || 'default',
       date: imageData.date,
       captionLength: imageData.quote.length,
