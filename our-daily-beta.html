@@ -245,9 +245,18 @@ try {
         padding: 0;
         box-sizing: border-box;
         position: relative;
+        touch-action: none;
 
       }
-      
+
+      .quilt-container.quilt-container--zoomed {
+        cursor: grab;
+      }
+
+      .quilt-container.quilt-container--zooming {
+        cursor: grabbing;
+      }
+
       /* Subtle warm glow overlay */
       .quilt-container::before {
         content: '';
@@ -806,12 +815,14 @@ try {
     }
 
     #screen-quote .quote-layoutb-stage,
+    #screen-quilt .quote-layoutb-stage,
     #screen-reflection .quote-layoutb-stage,
     #screen-portal .quote-layoutb-stage {
       opacity: 0;
       transition: opacity 0.75s ease-out;
     }
     #screen-quote .quote-layoutb-stage.quote-layoutb-stage--revealed,
+    #screen-quilt .quote-layoutb-stage.quote-layoutb-stage--revealed,
     #screen-reflection .quote-layoutb-stage.quote-layoutb-stage--revealed,
     #screen-portal .quote-layoutb-stage.quote-layoutb-stage--revealed {
       opacity: 1;
@@ -1822,6 +1833,9 @@ try {
       display: block;
       margin: 0;
       padding: 0;
+      touch-action: none;
+      transform: translate3d(0, var(--quilt-base-shift, 0px), 0) !important;
+      will-change: transform;
     }
     
 
@@ -2082,6 +2096,97 @@ try {
       margin-left: 0;
       margin-right: 0;
       margin-bottom: 0;
+    }
+    .dedication-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100003;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .dedication-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 12, 10, 0.55);
+    }
+    .dedication-modal-panel {
+      position: relative;
+      max-width: 440px;
+      width: 100%;
+      background: #f6f4f1;
+      border-radius: 12px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+      padding: 20px 16px 16px;
+      box-sizing: border-box;
+    }
+    .dedication-modal-title {
+      margin: 0 0 8px;
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-size: 1.15rem;
+      font-style: italic;
+      font-weight: 400;
+      text-align: center;
+      color: #29231f;
+    }
+    .dedication-modal-copy {
+      margin: 0 0 14px;
+      text-align: center;
+      color: #4a4038;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .dedication-message-input {
+      display: block;
+      width: 100%;
+      min-height: 112px;
+      resize: vertical;
+      box-sizing: border-box;
+      border: 1px solid rgba(0, 0, 0, 0.22);
+      border-radius: 8px;
+      background: #fff;
+      color: #29231f;
+      padding: 12px;
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-size: 1rem;
+      font-style: italic;
+      line-height: 1.45;
+    }
+    .dedication-modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .dedication-modal-panel.is-building .dedication-message-input {
+      opacity: 0.72;
+    }
+    .dedication-modal-panel.is-building [data-dedication-close="1"] {
+      pointer-events: none;
+      opacity: 0.55;
+    }
+    .dedication-busy-dot {
+      display: inline-block;
+      width: 0.8em;
+      height: 0.8em;
+      margin-right: 0.55em;
+      border: 2px solid rgba(0, 0, 0, 0.18);
+      border-top-color: rgba(0, 0, 0, 0.72);
+      border-radius: 999px;
+      vertical-align: -0.1em;
+      animation: dedicationBusySpin 0.8s linear infinite;
+    }
+    @keyframes dedicationBusySpin {
+      to { transform: rotate(360deg); }
+    }
+    .dedication-status {
+      margin: 10px 2px 0;
+      min-height: 1.2em;
+      color: #4a4038;
+      font-size: 0.88rem;
+      text-align: center;
     }
 
     /* Push notification opt-in (custom dialog — softer than native confirm) */
@@ -2422,15 +2527,18 @@ try {
       .quilt-container {
         width: calc(100% - 40px) !important;
         max-width: calc(100vw - 40px) !important;
-        height: auto !important;
+        height: var(--quilt-fixed-height) !important;
         min-height: 200px !important;
-        position: relative !important;
+        position: fixed !important;
+        top: var(--quilt-fixed-top) !important;
+        left: 20px !important;
+        right: 20px !important;
         flex-shrink: 0 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         overflow: visible !important;
-        margin: max(36px, calc(var(--odq-safe-top) + 12px)) 20px 20px !important;
+        margin: 0 !important;
         padding: 0 !important;
 
         box-sizing: border-box !important;
@@ -2438,6 +2546,39 @@ try {
         visibility: visible !important;
         opacity: 1 !important;
         z-index: 1 !important;
+      }
+
+      #screen-quilt > :not(.quilt-container):not(.quilt-fixed-quote-strips) {
+        position: relative !important;
+        z-index: 10 !important;
+      }
+
+      #screen-quilt .quilt-fixed-quote-strips {
+        position: fixed !important;
+        top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 22px) !important;
+        left: max(24px, calc(var(--odq-safe-left) + 18px)) !important;
+        right: max(24px, calc(var(--odq-safe-right) + 18px)) !important;
+        z-index: 2 !important;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+      }
+
+      #screen-quilt .quilt-fixed-quote-strips.has-content {
+        opacity: 1;
+      }
+
+      #screen-quilt .quilt-fixed-quote-card.quote-card {
+        width: min(76vw, 340px);
+        max-width: min(76vw, 340px);
+        margin: 0 auto;
+        padding: 0;
+        min-height: 0;
+        background: transparent;
+        align-items: center;
+        overflow: visible;
       }
       
       #quilt { 
@@ -2500,6 +2641,8 @@ try {
       }
       
       #screen-quilt {
+        --quilt-fixed-top: max(36px, calc(var(--odq-safe-top) + 12px));
+        --quilt-fixed-height: min(52vh, 420px);
         /* Do not zero out safe-area; parent .screen also insets — keep horizontal flush for quilt art */
         padding-top: 0 !important;
         padding-bottom: 0 !important;
@@ -2678,11 +2821,12 @@ try {
         position: relative !important;
         background: #f6f4f1 !important;
         padding: 1rem !important;
-        margin-top: 0 !important;
+        margin-top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 20px) !important;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
         width: 100% !important;
         z-index: 10 !important;
         height: auto !important;
+        overflow: visible !important;
 
         min-height: auto !important;
         top: auto !important;
@@ -2744,6 +2888,18 @@ try {
         overflow: hidden !important;
         height: 100vh !important;
         width: 100vw !important;
+      }
+
+      #screen-quilt,
+      #screen-quilt.active {
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        position: fixed !important;
+        inset: 0 !important;
       }
       
       .portal-header h1 { font-size: 2rem; }
@@ -3611,10 +3767,24 @@ try {
       align-items: center;
       justify-content: flex-start;
       padding: max(1.25rem, calc(var(--odq-safe-top) + 1rem)) max(1.25rem, calc(var(--odq-safe-right) + 1rem)) max(1.5rem, calc(var(--odq-safe-bottom) + 1rem)) max(1.25rem, calc(var(--odq-safe-left) + 1rem)) !important;
-      min-height: 100vh;
+      min-height: 0;
       background-color: #f6f4f1;
       overflow-y: auto;
       box-sizing: border-box;
+    }
+
+    #screen-quote-submission.active {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100dvh !important;
+      min-height: 0 !important;
+      max-height: 100dvh !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
     }
 
     .quote-submission-container {
@@ -3622,6 +3792,9 @@ try {
       width: 100%;
       box-sizing: border-box;
       text-align: left;
+      min-height: calc(100dvh - max(1.25rem, calc(var(--odq-safe-top) + 1rem)) - max(1.5rem, calc(var(--odq-safe-bottom) + 1rem)));
+      display: flex;
+      flex-direction: column;
     }
 
     .quote-submission-title {
@@ -3736,7 +3909,10 @@ try {
     html.odq-reflection-active #app,
     html.odq-about-active,
     html.odq-about-active body,
-    html.odq-about-active #app {
+    html.odq-about-active #app,
+    html.odq-quote-submission-active,
+    html.odq-quote-submission-active body,
+    html.odq-quote-submission-active #app {
       height: 100dvh !important;
       min-height: 100dvh !important;
       max-height: 100dvh !important;
@@ -3745,12 +3921,15 @@ try {
     html.odq-reflection-active,
     html.odq-reflection-active body,
     html.odq-about-active,
-    html.odq-about-active body {
+    html.odq-about-active body,
+    html.odq-quote-submission-active,
+    html.odq-quote-submission-active body {
       overflow: hidden !important;
     }
 
     html.odq-reflection-active #app,
-    html.odq-about-active #app {
+    html.odq-about-active #app,
+    html.odq-quote-submission-active #app {
       overflow: hidden !important;
     }
 
@@ -3875,8 +4054,8 @@ try {
     #screen-quilt .button-group .btn {
       width: calc(100% - 20px) !important;
       margin: 0 10px 12px !important;
-      padding: 16px 14px !important;
-      min-height: 68px !important;
+      padding: 13px 12px !important;
+      min-height: 54px !important;
       border: none !important;
       border-radius: 4px !important;
       background: #fff !important;
@@ -3938,12 +4117,17 @@ try {
       stroke-linecap: round;
       stroke-linejoin: round;
     }
+    #screen-quilt #dedicateBlockBtn {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+    }
     
     @media (max-width: 768px) {
       #screen-quilt .button-group .btn {
         width: calc(100% - 40px) !important;
         margin: 0 20px 12px !important;
-        min-height: 70px !important;
+        min-height: 56px !important;
       }
 
       .about-title {
@@ -3955,7 +4139,24 @@ try {
       #screen-quilt .button-group .btn {
         width: calc(100% - 50px) !important;
         margin: 0 25px 12px !important;
-        min-height: 72px !important;
+        min-height: 58px !important;
+      }
+    }
+
+    #screen-quilt .reflection-cta {
+      padding: 13px 12px !important;
+      min-height: 54px !important;
+    }
+
+    @media (max-width: 768px) {
+      #screen-quilt .reflection-cta {
+        min-height: 56px !important;
+      }
+    }
+
+    @media (max-width: 480px) {
+      #screen-quilt .reflection-cta {
+        min-height: 58px !important;
       }
     }
 
@@ -3964,11 +4165,13 @@ try {
       width: 100%;
       max-width: 100vw;
       box-sizing: border-box;
-      padding: 0.65rem 0 0;
+        padding: 1rem 0 0;
       margin: 0;
       background: #ebe8e3;
       border-top: 1px solid rgba(0, 0, 0, 0.08);
       flex-shrink: 0;
+        position: relative;
+        z-index: 0;
     }
 
     #screen-quilt .quilt-layout-b-preview-wrap--empty {
@@ -4026,12 +4229,80 @@ try {
     #screen-quilt .quilt-story-actions {
       width: 100%;
       box-sizing: border-box;
-      margin-top: clamp(0.85rem, 2.2vh, 1.35rem);
+      margin-top: clamp(0.35rem, 1vh, 0.65rem);
       padding: 0 0 max(0.85rem, env(safe-area-inset-bottom, 0px));
     }
 
     #screen-quilt .quilt-story-actions .button-group:last-of-type {
       margin-bottom: 0;
+    }
+
+    #screen-quilt .quilt-fixed-peek {
+      height: max(
+        calc(100dvh + 24px),
+        calc(
+          var(--quilt-fixed-top, max(36px, calc(var(--odq-safe-top) + 12px))) +
+          var(--quilt-fixed-height, min(52vh, 420px)) +
+          20px
+        )
+      );
+      min-height: 280px;
+      background: transparent;
+      pointer-events: auto;
+      flex-shrink: 0;
+    }
+
+    #screen-quilt .quilt-instagram-icon-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      margin: 0.35rem auto 0.2rem;
+      color: rgba(0, 0, 0, 0.58);
+      text-decoration: none;
+      border-radius: 999px;
+    }
+
+    #screen-quilt .quilt-instagram-icon-link:focus-visible,
+    #screen-quilt .quilt-instagram-icon-link:hover {
+      color: rgba(0, 0, 0, 0.82);
+      outline: none;
+    }
+
+    #screen-quilt .quilt-instagram-icon-link svg {
+      width: 28px;
+      height: 28px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    #screen-quilt .quilt-reset-footer {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.85rem 0 max(1rem, env(safe-area-inset-bottom, 0px));
+      display: flex;
+      justify-content: center;
+      background: #f6f4f1;
+    }
+
+    #screen-quilt .quilt-reset-countdown {
+      margin: 0;
+      padding: 0 1rem;
+      box-sizing: border-box;
+      text-align: center;
+      font-weight: 300;
+      font-size: calc(clamp(1.4rem, 3.5vw, 2rem) * 0.75);
+      color: rgba(0, 0, 0, 0.42);
+      line-height: 1.35;
+      letter-spacing: 0.02em;
+    }
+
+    #quiltResetCountdownValue {
+      font-variant-numeric: tabular-nums;
     }
 
     #screen-quilt #shareBtnCompleted.quilt-share-hidden {
@@ -4119,6 +4390,9 @@ try {
     }
 
     #screen-reflection .back-to-quilt-btn {
+      margin-top: auto !important;
+    }
+    #screen-quote-submission .back-to-quilt-btn {
       margin-top: auto !important;
     }
     #screen-reflection .back-to-quilt-btn:hover,
@@ -4318,9 +4592,33 @@ try {
       <div class="quilt-container">
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OUR DAILY QUILT — community quilt with colorful blocks"></svg>
       </div>
+      <div class="quilt-fixed-quote-strips" aria-hidden="true">
+        <div class="quote-card layoutb-preview-card quilt-fixed-quote-card"></div>
+      </div>
 
       <!-- Button container - side panel on desktop -->
       <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: none;">
+
+        <div class="button-group" hidden aria-hidden="true">
+          <button type="button" id="dedicateBlockBtn" class="btn" hidden aria-hidden="true" aria-label="Dedicate this block to someone">
+            <span class="stack-btn-content">
+              <span class="stack-btn-left">
+                <span class="stack-btn-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M12 21s-7.5-4.5-7.5-10.2A4.2 4.2 0 0 1 12 8.2a4.2 4.2 0 0 1 7.5 2.6C19.5 16.5 12 21 12 21Z"></path>
+                    <path d="M12 8.2v12"></path>
+                  </svg>
+                </span>
+                <span>Dedicate this block</span>
+              </span>
+              <span class="stack-btn-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                  <path d="M9 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </span>
+          </button>
+        </div>
         
         <!-- Quote display at top of button container -->
         <div class="quilt-quote-display" style="margin-bottom: 20px;">
@@ -4346,6 +4644,48 @@ try {
         </button>
 
         <div class="button-group">
+          <button type="button" id="showMyBlockBtn" class="btn" aria-label="Show me my block on the quilt">
+            <span class="stack-btn-content">
+              <span class="stack-btn-left">
+                <span class="stack-btn-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path>
+                    <circle cx="12" cy="12" r="4.5"></circle>
+                  </svg>
+                </span>
+                <span>Show me my block</span>
+              </span>
+              <span class="stack-btn-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                  <path d="M9 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </span>
+          </button>
+        </div>
+
+        <div class="button-group">
+          <button type="button" id="showPersonalQuiltBtn" class="btn" aria-label="Toggle my personal quilt view">
+            <span class="stack-btn-content">
+              <span class="stack-btn-left">
+                <span class="stack-btn-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15"></path>
+                    <path d="M7.5 4.5v15M12 4.5v15M16.5 4.5v15"></path>
+                  </svg>
+                </span>
+                <span id="personalQuiltBtnLabel">View my colors over time</span>
+              </span>
+              <span class="stack-btn-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                  <path d="M9 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </span>
+          </button>
+        </div>
+
+        <div class="button-group">
           <button class="btn" data-next="screen-quote-submission" aria-label="Submit a quote recommendation">
             <span class="stack-btn-content">
               <span class="stack-btn-left">
@@ -4367,16 +4707,17 @@ try {
         </div>
 
         <div class="button-group">
-          <button type="button" id="showMyBlockBtn" class="btn" aria-label="Show me my block on the quilt">
+          <button class="btn" data-next="screen-about" aria-label="About this project">
             <span class="stack-btn-content">
               <span class="stack-btn-left">
                 <span class="stack-btn-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" role="img" focusable="false">
-                    <path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path>
-                    <circle cx="12" cy="12" r="4.5"></circle>
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M9.8 9.2a2.2 2.2 0 1 1 3.56 1.74c-.95.7-1.36 1.2-1.36 2.26"></path>
+                    <circle cx="12" cy="16.8" r="0.9"></circle>
                   </svg>
                 </span>
-                <span>Show me my block</span>
+                <span>About OUR DAILY QUILT</span>
               </span>
               <span class="stack-btn-chevron" aria-hidden="true">
                 <svg viewBox="0 0 24 24" role="img" focusable="false">
@@ -4385,26 +4726,19 @@ try {
               </span>
             </span>
           </button>
-        </div>
-        <div class="button-group">
-          <button type="button" id="showPersonalQuiltBtn" class="btn" aria-label="Toggle my personal quilt view">
-            <span class="stack-btn-content">
-              <span class="stack-btn-left">
-                <span class="stack-btn-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" role="img" focusable="false">
-                    <path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15"></path>
-                    <path d="M7.5 4.5v15M12 4.5v15M16.5 4.5v15"></path>
-                  </svg>
-                </span>
-                <span id="personalQuiltBtnLabel">View my personal quilt</span>
-              </span>
-              <span class="stack-btn-chevron" aria-hidden="true">
-                <svg viewBox="0 0 24 24" role="img" focusable="false">
-                  <path d="M9 5l7 7-7 7"></path>
-                </svg>
-              </span>
-            </span>
-          </button>
+          <a
+            class="quilt-instagram-icon-link"
+            href="https://www.instagram.com/ourdailyquilt/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Follow OUR DAILY QUILT on Instagram"
+          >
+            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
+              <circle cx="12" cy="12" r="4.1"></circle>
+              <circle cx="17.2" cy="6.8" r="0.9"></circle>
+            </svg>
+          </a>
         </div>
 
         <span id="squareCounter" hidden aria-hidden="true">1</span>
@@ -4430,8 +4764,8 @@ try {
         </div>
         <p class="quilt-layout-b-preview-hint" id="quiltLayoutBPreviewHint">Preparing preview…</p>
         <div class="quilt-story-actions" aria-label="Share and info">
-          <div class="button-group">
-            <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="Follow on Instagram">
+          <div class="button-group" hidden aria-hidden="true">
+            <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="Follow on Instagram" hidden aria-hidden="true">
               <span class="stack-btn-content">
                 <span class="stack-btn-left">
                   <span class="stack-btn-icon" aria-hidden="true">
@@ -4471,28 +4805,15 @@ try {
                 </span>
               </span>
             </button>
-            <button class="btn" data-next="screen-about" aria-label="About this project">
-              <span class="stack-btn-content">
-                <span class="stack-btn-left">
-                  <span class="stack-btn-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" role="img" focusable="false">
-                      <circle cx="12" cy="12" r="9"></circle>
-                      <path d="M9.8 9.2a2.2 2.2 0 1 1 3.56 1.74c-.95.7-1.36 1.2-1.36 2.26"></path>
-                      <circle cx="12" cy="16.8" r="0.9"></circle>
-                    </svg>
-                  </span>
-                  <span>About OUR DAILY QUILT</span>
-                </span>
-                <span class="stack-btn-chevron" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" role="img" focusable="false">
-                    <path d="M9 5l7 7-7 7"></path>
-                  </svg>
-                </span>
-              </span>
-            </button>
           </div>
         </div>
       </div>
+      <div class="quilt-fixed-peek" aria-hidden="true"></div>
+      <footer class="quilt-reset-footer">
+        <p class="quilt-reset-countdown" id="quiltResetCountdown" aria-live="polite">
+          This quilt resets in <span id="quiltResetCountdownValue">--</span>
+        </p>
+      </footer>
     </section>
 
     <!-- Archive Screen -->
@@ -7693,6 +8014,8 @@ try {
           document.body?.classList?.toggle('odq-reflection-active', screenId === 'screen-reflection');
           document.documentElement?.classList?.toggle('odq-about-active', screenId === 'screen-about');
           document.body?.classList?.toggle('odq-about-active', screenId === 'screen-about');
+          document.documentElement?.classList?.toggle('odq-quote-submission-active', screenId === 'screen-quote-submission');
+          document.body?.classList?.toggle('odq-quote-submission-active', screenId === 'screen-quote-submission');
 
           const previousActive = document.querySelector('.screen.active');
           const previousId = previousActive ? previousActive.id : null;
@@ -7984,6 +8307,7 @@ try {
                   if (quiltQuoteDisplay && quoteService.quiltScreenHasBodyContent(todayQ)) {
                     quiltQuoteDisplay.classList.add('has-content');
                   }
+                  quoteService.populateFixedQuiltQuoteStrips(todayQ);
                 };
                 void quoteService
                   .hydratePinnedBlessingsForDateKeys([quoteService.getQuoteCalendarKeyNow()])
@@ -8166,6 +8490,22 @@ try {
       }
     }
 
+    const ODQ_CANVAS_SERIF_FONT = '\'Libre Baskerville\', Georgia, "Times New Roman", Times, serif';
+
+    async function ensureOdqCanvasFontsReady() {
+      try {
+        if (typeof document === 'undefined' || !document.fonts) return;
+        await Promise.allSettled([
+          document.fonts.load('400 48px "Libre Baskerville"'),
+          document.fonts.load('italic 400 48px "Libre Baskerville"'),
+          document.fonts.load('700 48px "Libre Baskerville"'),
+          document.fonts.ready
+        ]);
+      } catch (_) {
+        /* Canvas exports can still fall back to the system serif stack. */
+      }
+    }
+
     function getLayoutBStoryQuotePlan(ctx, options) {
       const {
         quoteText = '',
@@ -8174,7 +8514,9 @@ try {
         layoutH,
         dateKey,
         usePostQuoteLayout = true,
-        enlargeShortQuotes = true
+        enlargeShortQuotes = true,
+        avoidRects = [],
+        stripBoundsRect = null
       } = options || {};
       const STORY_W = layoutW;
       const STORY_H = layoutH;
@@ -8184,7 +8526,21 @@ try {
       const STRIP_MAX_W = STORY_W - (isPostLayout ? 52 : 100);
       const PAPER_PAD_X = 26;
       const PAPER_PAD_Y = 15;
-      const FONT_SERIF = 'Georgia, "Times New Roman", Times, serif';
+      const FONT_SERIF = ODQ_CANVAS_SERIF_FONT;
+      const stripBounds = stripBoundsRect &&
+        Number.isFinite(Number(stripBoundsRect.x)) &&
+        Number.isFinite(Number(stripBoundsRect.y)) &&
+        Number.isFinite(Number(stripBoundsRect.width)) &&
+        Number.isFinite(Number(stripBoundsRect.height)) &&
+        Number(stripBoundsRect.width) > 0 &&
+        Number(stripBoundsRect.height) > 0
+          ? {
+              left: Number(stripBoundsRect.x),
+              top: Number(stripBoundsRect.y),
+              right: Number(stripBoundsRect.x) + Number(stripBoundsRect.width),
+              bottom: Number(stripBoundsRect.y) + Number(stripBoundsRect.height)
+            }
+          : null;
       const rngDateKey = dateKey || new Date().toISOString().split('T')[0];
       let rngSeed = 2166136261;
       for (let i = 0; i < rngDateKey.length; i++) {
@@ -8370,9 +8726,9 @@ try {
       const useShortQuoteLayout = isShortQuoteLayout && enlargeShortQuotes;
       const innerMaxW = STRIP_MAX_W - PAPER_PAD_X * 2;
       const layoutQuoteAuthorGap = usePostQuoteLayout
-        ? (useShortQuoteLayout ? 72 : 58)
+        ? (stripBounds ? (useShortQuoteLayout ? 46 : 34) : (useShortQuoteLayout ? 72 : 58))
         : (useShortQuoteLayout ? 78 : 64);
-      const stackVertPad = usePostQuoteLayout ? 19 : 14;
+      const stackVertPad = stripBounds ? 10 : (usePostQuoteLayout ? 19 : 14);
       let bodyPx = Math.round(38 * 1.25);
       if (useShortQuoteLayout) bodyPx += 18;
       if (usePostQuoteLayout) bodyPx += 10;
@@ -8592,12 +8948,14 @@ try {
       const stripTopFrac = isPostLayout
         ? (useShortQuoteLayout ? 0.028 : 0.04)
         : (useShortQuoteLayout ? 0.09 : 0.12);
-      const stripBudget = usePostQuoteLayout ? STORY_H * 0.97 : STORY_H - 32;
-      const minBodyPx = usePostQuoteLayout ? 22 : 24;
-      const shrinkIters = usePostQuoteLayout ? 24 : 18;
+      const stripBudget = stripBounds
+        ? Math.max(120, stripBounds.bottom - stripBounds.top - 20)
+        : (usePostQuoteLayout ? STORY_H * 0.97 : STORY_H - 32);
+      const minBodyPx = stripBounds ? 18 : (usePostQuoteLayout ? 22 : 24);
+      const shrinkIters = stripBounds ? 34 : (usePostQuoteLayout ? 24 : 18);
       for (let s = 0; s < shrinkIters; s++) {
         stripSpecs = buildStripSpecs();
-        const stackH = STORY_H * stripTopFrac + stackContentSpan(stripSpecs);
+        const stackH = stripBounds ? stackContentSpan(stripSpecs) : STORY_H * stripTopFrac + stackContentSpan(stripSpecs);
         if (stackH <= stripBudget || bodyPx <= minBodyPx) break;
         bodyPx -= 2;
       }
@@ -8607,7 +8965,12 @@ try {
       const maxCenteredSpan = STORY_H - vPadTop - vPadBottom;
       const centerJitter = (rnd() - 0.5) * (isPostLayout ? 72 : 96);
       let cursorY;
-      if (contentSpan > maxCenteredSpan) cursorY = STORY_H * stripTopFrac;
+      if (stripBounds) {
+        const boundedTop = stripBounds.top + 10;
+        const boundedBottom = stripBounds.bottom - 10;
+        const boundedAvail = Math.max(1, boundedBottom - boundedTop);
+        cursorY = boundedTop + Math.max(0, (boundedAvail - contentSpan) / 2);
+      } else if (contentSpan > maxCenteredSpan) cursorY = STORY_H * stripTopFrac;
       else {
         cursorY = (STORY_H - contentSpan) / 2 + centerJitter;
         cursorY = Math.max(vPadTop, Math.min(cursorY, STORY_H - contentSpan - vPadBottom));
@@ -8677,6 +9040,103 @@ try {
         });
         i += 1;
       }
+      const normalizedAvoidRects = (Array.isArray(avoidRects) ? avoidRects : [])
+        .map((r) => ({
+          x: Number(r?.x),
+          y: Number(r?.y),
+          width: Number(r?.width),
+          height: Number(r?.height),
+          pad: Number(r?.pad || 0)
+        }))
+        .filter((r) =>
+          Number.isFinite(r.x) &&
+          Number.isFinite(r.y) &&
+          Number.isFinite(r.width) &&
+          Number.isFinite(r.height) &&
+          r.width > 0 &&
+          r.height > 0
+        );
+      if (normalizedAvoidRects.length) {
+        const expanded = normalizedAvoidRects.map((r) => ({
+          left: r.x - r.pad,
+          top: r.y - r.pad,
+          right: r.x + r.width + r.pad,
+          bottom: r.y + r.height + r.pad
+        }));
+        const stripRect = (spec, cx = spec.x, cy = spec.y) => ({
+          left: cx - spec.w / 2 - 12,
+          top: cy - spec.h / 2 - 12,
+          right: cx + spec.w / 2 + 12,
+          bottom: cy + spec.h / 2 + 12
+        });
+        const overlapArea = (a, b) => {
+          const w = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+          const h = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+          return w * h;
+        };
+        const placedRects = [];
+        let readingFloorY = 8;
+        const scoreCandidate = (spec, cx, cy) => {
+          const r = stripRect(spec, cx, cy);
+          let overlap = 0;
+          for (const avoid of expanded) overlap += overlapArea(r, avoid);
+          let stripOverlap = 0;
+          for (const placed of placedRects) stripOverlap += overlapArea(r, placed);
+          const orderPenalty = Math.max(0, readingFloorY - r.top);
+          const edgePenalty =
+            Math.max(0, (stripBounds?.left ?? stripEdgeMargin) - r.left) +
+            Math.max(0, r.right - (stripBounds?.right ?? (STORY_W - stripEdgeMargin))) +
+            Math.max(0, (stripBounds?.top ?? 8) - r.top) +
+            Math.max(0, r.bottom - (stripBounds?.bottom ?? (STORY_H - 8)));
+          return (
+            overlap * 1000 +
+            stripOverlap * 1200 +
+            orderPenalty * 2000 +
+            edgePenalty * 100 +
+            Math.hypot(cx - spec.x, cy - spec.y)
+          );
+        };
+        for (const spec of strips) {
+          const candidates = [{ x: spec.x, y: spec.y }];
+          for (const avoid of expanded) {
+            const sideY = avoid.top + (avoid.bottom - avoid.top) / 2;
+            candidates.push(
+              { x: spec.x, y: avoid.top - spec.h / 2 - 18 },
+              { x: spec.x, y: avoid.bottom + spec.h / 2 + 18 },
+              { x: avoid.left - spec.w / 2 - 18, y: spec.y },
+              { x: avoid.right + spec.w / 2 + 18, y: spec.y },
+              { x: avoid.left - spec.w / 2 - 18, y: sideY },
+              { x: avoid.right + spec.w / 2 + 18, y: sideY }
+            );
+          }
+          const boundsLeft = stripBounds?.left ?? stripEdgeMargin;
+          const boundsRight = stripBounds?.right ?? (STORY_W - stripEdgeMargin);
+          const boundsTop = stripBounds?.top ?? 8;
+          const boundsBottom = stripBounds?.bottom ?? (STORY_H - 8);
+          const minX = boundsLeft + spec.w / 2;
+          const maxX = boundsRight - spec.w / 2;
+          const minY = Math.max(boundsTop + spec.h / 2, readingFloorY + spec.h / 2);
+          const maxY = boundsBottom - spec.h / 2;
+          const clamped = candidates.map((c) => ({
+            x: minX <= maxX ? Math.max(minX, Math.min(maxX, c.x)) : Math.max(spec.w / 2, Math.min(STORY_W - spec.w / 2, (boundsLeft + boundsRight) / 2)),
+            y: minY <= maxY ? Math.max(minY, Math.min(maxY, c.y)) : Math.max(spec.h / 2, Math.min(STORY_H - spec.h / 2, maxY))
+          }));
+          let best = clamped[0];
+          let bestScore = scoreCandidate(spec, best.x, best.y);
+          for (const c of clamped.slice(1)) {
+            const score = scoreCandidate(spec, c.x, c.y);
+            if (score < bestScore) {
+              best = c;
+              bestScore = score;
+            }
+          }
+          spec.x = best.x;
+          spec.y = best.y;
+          const placedRect = stripRect(spec, spec.x, spec.y);
+          placedRects.push(placedRect);
+          readingFloorY = placedRect.bottom + 18;
+        }
+      }
       return strips;
     }
 
@@ -8692,7 +9152,8 @@ try {
      * @param {number} layoutH 1920 = story, 1350 = 4:5 post
      * @param {string} [dateKey]
      */
-    async function composeInstagramLayoutBFromQuiltBlob(highResBlob, quoteText, quoteAuthor, layoutW, layoutH, dateKey) {
+    async function composeInstagramLayoutBFromQuiltBlob(highResBlob, quoteText, quoteAuthor, layoutW, layoutH, dateKey, options = {}) {
+      await ensureOdqCanvasFontsReady();
       return new Promise((resolve, reject) => {
             const STORY_W = layoutW;
             const STORY_H = layoutH;
@@ -8706,7 +9167,10 @@ try {
             const PAPER_PAD_X = 26;
             const PAPER_PAD_Y = 15;
             const PAPER_FILL = '#ebe8e3';
-            const FONT_SERIF = 'Georgia, "Times New Roman", Times, serif';
+            const FONT_SERIF = ODQ_CANVAS_SERIF_FONT;
+            const dedicationMessage = String(options?.dedicationMessage || '').trim().slice(0, 180);
+            const focusBlockRect = options?.focusBlockRect || null;
+            const focusSourceViewBox = options?.focusSourceViewBox || null;
 
             const rngDateKey = dateKey || new Date().toISOString().split('T')[0];
             let rngSeed = 2166136261;
@@ -9184,6 +9648,75 @@ try {
               g.restore();
             };
 
+            const drawDedicatedBlockRing = (g, rect) => {
+              if (!rect || rect.width <= 0 || rect.height <= 0) return;
+              const pad = Math.max(16, Math.min(44, Math.min(rect.width, rect.height) * 0.22));
+              const cx = rect.x + rect.width / 2;
+              const cy = rect.y + rect.height / 2;
+              const w = rect.width + pad * 2;
+              const h = rect.height + pad * 2;
+              const drawLoop = (inflate, alpha, stroke, lineWidth) => {
+                g.save();
+                g.translate(cx, cy);
+                g.rotate((rnd() - 0.5) * 0.09);
+                g.strokeStyle = stroke;
+                g.globalAlpha = alpha;
+                g.lineWidth = lineWidth;
+                g.lineCap = 'round';
+                g.lineJoin = 'round';
+                const hw = w / 2 + inflate;
+                const hh = h / 2 + inflate;
+                const wob = Math.max(3, Math.min(11, Math.min(w, h) * 0.035));
+                g.beginPath();
+                g.moveTo(-hw + rnd() * wob, -hh + (rnd() - 0.5) * wob);
+                g.bezierCurveTo(-hw * 0.35, -hh - wob, hw * 0.35, -hh + wob, hw + (rnd() - 0.5) * wob, -hh + rnd() * wob);
+                g.bezierCurveTo(hw + wob, -hh * 0.35, hw - wob, hh * 0.35, hw + (rnd() - 0.5) * wob, hh + (rnd() - 0.5) * wob);
+                g.bezierCurveTo(hw * 0.35, hh + wob, -hw * 0.35, hh - wob, -hw + rnd() * wob, hh + (rnd() - 0.5) * wob);
+                g.bezierCurveTo(-hw - wob, hh * 0.35, -hw + wob, -hh * 0.35, -hw + rnd() * wob, -hh + (rnd() - 0.5) * wob);
+                g.closePath();
+                g.stroke();
+                g.restore();
+              };
+              drawLoop(5, 0.82, '#f8f1e8', Math.max(5, Math.min(12, Math.min(w, h) * 0.045)));
+              drawLoop(0, 0.72, '#3a2f28', Math.max(2.2, Math.min(5, Math.min(w, h) * 0.018)));
+            };
+
+            const measureDedicationMessageBox = (g, message) => {
+              if (!message || !isPostLayout) return null;
+              const maxW = STORY_W - 140;
+              let fontPx = 36;
+              let lines = [];
+              for (let attempt = 0; attempt < 10; attempt++) {
+                g.font = `italic 400 ${fontPx}px ${FONT_SERIF}`;
+                lines = wrapLines(g, message, maxW);
+                if (lines.length <= 3 || fontPx <= 26) break;
+                fontPx -= 2;
+              }
+              lines = lines.slice(0, 3);
+              const lineH = fontPx * 1.34;
+              const boxW = Math.min(maxW, Math.max(360, Math.ceil(Math.max(1, ...lines.map((ln) => {
+                g.font = `italic 400 ${fontPx}px ${FONT_SERIF}`;
+                return g.measureText(ln).width;
+              })))));
+              const boxH = Math.ceil(lines.length * lineH);
+              return { x: (STORY_W - boxW) / 2, y: 0, width: boxW, height: boxH, lines, fontPx, lineH };
+            };
+
+            const drawDedicationMessageBox = (g, box) => {
+              if (!box || !box.lines?.length) return;
+              g.save();
+              g.textAlign = 'center';
+              g.textBaseline = 'middle';
+              g.fillStyle = '#504740';
+              g.font = `italic 400 ${box.fontPx}px ${FONT_SERIF}`;
+              let y = box.y + box.height / 2 - ((box.lines.length - 1) * box.lineH) / 2;
+              for (const ln of box.lines) {
+                g.fillText(ln, box.x + box.width / 2, y);
+                y += box.lineH;
+              }
+              g.restore();
+            };
+
             loadQuiltImage()
               .then((quiltImg) => {
                 const quoteWordCount = quoteText ? (quoteText.match(/\S+/g) || []).length : 0;
@@ -9266,18 +9799,65 @@ try {
                 const ctx = canvas.getContext('2d');
                 canvas.width = STORY_W;
                 canvas.height = STORY_H;
+                ctx.fillStyle = '#f6f4f1';
+                ctx.fillRect(0, 0, STORY_W, STORY_H);
 
                 const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
                 const ih = Math.max(1, quiltImg.naturalHeight || quiltImg.height);
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
+                let focusCanvasRect = null;
+                let quiltCanvasRect = null;
+                const dedicationBox = measureDedicationMessageBox(ctx, dedicationMessage);
                 if (isPostLayout) {
-                  const postScale = Math.max(STORY_W / iw, STORY_H / ih) * 1.04;
-                  const dw = Math.round(iw * postScale);
-                  const dh = Math.round(ih * postScale);
-                  const dx = Math.round((STORY_W - dw) / 2);
-                  const dy = Math.round((STORY_H - dh) / 2);
+                  let postScale;
+                  let dx;
+                  let dy;
+                  let dw;
+                  let dh;
+                  if (dedicationBox) {
+                    const marginX = 58;
+                    const marginTop = 46;
+                    const marginBottom = 46;
+                    const messageGap = 34;
+                    const maxQuiltW = STORY_W - marginX * 2;
+                    const maxQuiltH = STORY_H - marginTop - marginBottom - messageGap - dedicationBox.height;
+                    postScale = Math.min(maxQuiltW / iw, maxQuiltH / ih) * 0.985;
+                    dw = Math.round(iw * postScale);
+                    dh = Math.round(ih * postScale);
+                    dx = Math.round((STORY_W - dw) / 2);
+                    dy = Math.round(marginTop + Math.max(0, (maxQuiltH - dh) / 2));
+                    dedicationBox.y = Math.round(dy + dh + messageGap);
+                  } else {
+                    postScale = Math.max(STORY_W / iw, STORY_H / ih) * 1.04;
+                    dw = Math.round(iw * postScale);
+                    dh = Math.round(ih * postScale);
+                    dx = Math.round((STORY_W - dw) / 2);
+                    dy = Math.round((STORY_H - dh) / 2);
+                  }
                   ctx.drawImage(quiltImg, dx, dy, dw, dh);
+                  quiltCanvasRect = { x: dx, y: dy, width: dw, height: dh };
+                  if (
+                    focusBlockRect &&
+                    focusSourceViewBox &&
+                    Number.isFinite(focusSourceViewBox.width) &&
+                    Number.isFinite(focusSourceViewBox.height) &&
+                    focusSourceViewBox.width > 0 &&
+                    focusSourceViewBox.height > 0
+                  ) {
+                    const bx = (Number(focusBlockRect.x) - Number(focusSourceViewBox.x || 0)) / focusSourceViewBox.width;
+                    const by = (Number(focusBlockRect.y) - Number(focusSourceViewBox.y || 0)) / focusSourceViewBox.height;
+                    const bw = Number(focusBlockRect.width) / focusSourceViewBox.width;
+                    const bh = Number(focusBlockRect.height) / focusSourceViewBox.height;
+                    if ([bx, by, bw, bh].every(Number.isFinite)) {
+                      focusCanvasRect = {
+                        x: dx + bx * dw,
+                        y: dy + by * dh,
+                        width: bw * dw,
+                        height: bh * dh
+                      };
+                    }
+                  }
                 } else {
                   // Story Layout B: two stacked quilts; lower stack mirrored on both axes.
                   // Each half uses independent cover-fit + clipping to avoid central banding.
@@ -9584,8 +10164,21 @@ try {
                   layoutW: STORY_W,
                   layoutH: STORY_H,
                   dateKey: rngDateKey,
-                  usePostQuoteLayout
+                  usePostQuoteLayout,
+                  stripBoundsRect: dedicationBox && quiltCanvasRect
+                    ? {
+                        x: quiltCanvasRect.x + 18,
+                        y: quiltCanvasRect.y + 18,
+                        width: quiltCanvasRect.width - 36,
+                        height: quiltCanvasRect.height - 18
+                      }
+                    : null,
+                  avoidRects: [
+                    focusCanvasRect ? { ...focusCanvasRect, pad: 84 } : null,
+                    dedicationBox ? { x: dedicationBox.x, y: dedicationBox.y, width: dedicationBox.width, height: dedicationBox.height, pad: 18 } : null
+                  ].filter(Boolean)
                 });
+                drawDedicatedBlockRing(ctx, focusCanvasRect);
                 for (const spec of quoteStripPlan) {
                   drawStripContent(spec, spec.x, spec.y, spec.angle);
                 }
@@ -9618,6 +10211,7 @@ try {
                   const cxStrip = cxTitle - titleSpec.w / 2;
                   drawStripContent(titleSpec, cxStrip, cyStrip, (rnd() - 0.5) * 0.045, 'title-invert');
                 }
+                drawDedicationMessageBox(ctx, dedicationBox);
 
                 applyLayoutBMagazinePrintFinish(ctx, STORY_W, STORY_H);
 
@@ -9749,12 +10343,14 @@ try {
            */
           let quiltBlob = null;
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
-          if (quiltSVG) {
+          if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
               quiltBlob = await this.rasterizeQuiltSvgToPngBlob(quiltSVG);
             } catch (e) {
               this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
             }
+          } else if (quiltSVG) {
+            this.logger.warn('Live quilt SVG is not ready for classic Instagram image; using block data');
           }
           if (!quiltBlob) {
             quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
@@ -11387,6 +11983,29 @@ try {
         };
       }
 
+      populateFixedQuiltQuoteStrips(activeQuote = this.getTodayQuote()) {
+        const wrap = document.querySelector('.quilt-fixed-quote-strips');
+        const card = document.querySelector('#screen-quilt .quilt-fixed-quote-card');
+        if (!wrap || !card || typeof this._mountLayoutBQuoteStrips !== 'function') return;
+
+        const text = String(activeQuote?.text ?? activeQuote?.body ?? '').trim();
+        const author = String(activeQuote?.author ?? '').trim();
+        card.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => n.remove());
+        wrap.classList.toggle('has-content', !!text);
+        if (!text) return;
+
+        const paint = () => {
+          if ((card.clientWidth || 0) < 80) {
+            requestAnimationFrame(paint);
+            return;
+          }
+          this._mountLayoutBQuoteStrips(card, text, author, {
+            scaleMultiplier: 0.82
+          });
+        };
+        requestAnimationFrame(paint);
+      }
+
       /**
        * Rebuild Layout B strip stage using current wrapper width. Call after #screen-quote is visible —
        * displayQuote() runs at init while the screen is display:none, so clientWidth was wrong until now.
@@ -11859,6 +12478,7 @@ try {
           if (quiltQuoteDisplay && this.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
           }
+          this.populateFixedQuiltQuoteStrips(todayQ);
 
           this.populateReflectionPromptCard();
 
@@ -12293,6 +12913,9 @@ try {
         // No global flip - individual blocks will be flipped when touched
 
         // No complex filters - we'll use a simple approach for sharp edges
+        const parallaxLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        parallaxLayer.setAttribute('id', 'quiltParallaxLayer');
+        this.quiltSVG.appendChild(parallaxLayer);
         
         // Function to create inward feathering shadow filter for each block
         const createInwardShadowFilter = (blockColor, blockId) => {
@@ -12571,6 +13194,11 @@ try {
             block.id || `special_${i}`
             );
             const specialGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            specialGroup.classList.add('quilt-parallax-block');
+            specialGroup.dataset.baseTransform = '';
+            specialGroup.dataset.parallaxPhase = String(i);
+            specialGroup.dataset.parallaxCx = String(block.x + safeWidth / 2);
+            specialGroup.dataset.parallaxCy = String(block.y + safeHeight / 2);
             specialGroup.appendChild(handCutPolygon);
             if (watercolorOverlay) specialGroup.appendChild(watercolorOverlay);
 
@@ -12584,7 +13212,7 @@ try {
               }, { once: true });
             }
             
-            this.quiltSVG.appendChild(specialGroup);
+            parallaxLayer.appendChild(specialGroup);
             return; // Skip the rest of the block rendering logic
           }
           
@@ -12696,7 +13324,13 @@ try {
             block.id || `regular_${i}`
           );
           const blockGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-          blockGroup.setAttribute('transform', `rotate(${jitterRotation} ${centerX} ${centerY})`);
+          const baseTransform = `rotate(${jitterRotation} ${centerX} ${centerY})`;
+          blockGroup.classList.add('quilt-parallax-block');
+          blockGroup.dataset.baseTransform = baseTransform;
+          blockGroup.dataset.parallaxPhase = String(i);
+          blockGroup.dataset.parallaxCx = String(centerX);
+          blockGroup.dataset.parallaxCy = String(centerY);
+          blockGroup.setAttribute('transform', baseTransform);
           blockGroup.appendChild(handCutPolygon);
           if (watercolorOverlay) blockGroup.appendChild(watercolorOverlay);
 
@@ -12710,7 +13344,7 @@ try {
             }, { once: true });
           }
           
-          this.quiltSVG.appendChild(blockGroup);
+          parallaxLayer.appendChild(blockGroup);
         });
         
         // Show newly added blocks (only when there are new blocks)
@@ -13193,12 +13827,16 @@ try {
         this.parallaxBaseRate = 0.06;
         this.parallaxOverlayMultiplier = 1.5;
         this.parallaxMaxShift = 12;
-        this.parallaxSmoothing = 0.08;
+        this.parallaxSmoothing = 0.1;
         this.parallaxCurrentShift = 0;
         this.parallaxTargetShift = 0;
         this.parallaxTicking = false;
         this.parallaxAnchorScrollTop = 0;
         this.parallaxScrollListener = null;
+        this.parallaxInteractionListener = null;
+        this.parallaxTouchStartListener = null;
+        this.parallaxLastTouchY = null;
+        this.parallaxAppliedSvgShift = 0;
         this.quiltNotificationPromptListener = null;
         /** Scroll position when quilt screen became active; notification prompt waits for scroll past threshold. */
         this._notificationPromptScrollBaseline = null;
@@ -13237,9 +13875,34 @@ try {
         this._layoutBPreviewObjectUrl = null;
         this._layoutBPreviewDebounceTimer = null;
         this._layoutBPreviewGeneration = 0;
+        this._quiltResetCountdownTimer = null;
         /** Device-local "personal quilt" mode (derived from this user's historical color picks). */
         this._isPersonalQuiltMode = false;
         this._personalQuiltState = null;
+        this.quiltZoomState = {
+          baseViewBox: null,
+          viewBox: null,
+          minZoom: 1,
+          maxZoom: 6,
+          isPinching: false,
+          isPanning: false,
+          moved: false,
+          startDistance: 0,
+          startZoom: 1,
+          startViewBox: null,
+          startSvgPoint: null,
+          startCenter: null,
+          panStartClient: null,
+          panStartViewBox: null,
+          touchStartedAt: 0,
+          touchStartClient: null,
+          lastTapAt: 0,
+          gestureStartClient: null,
+          activeFromQuilt: false
+        };
+        /** Latest block this device contributed, used by the dedication image flow. */
+        this._latestDedicatedBlockId = localStorage.getItem('ourDailyLatestDedicatedBlockId') || '';
+        this._dedicationKeyEsc = null;
       }
 
       checkDeviceAndRedirect() {
@@ -13458,8 +14121,8 @@ try {
             this._portalToQuoteTimer = setTimeout(() => {
               this._portalToQuoteTimer = null;
               this._blockPortalScrollNav = false;
-              if (window.odqPerfMark) window.odqPerfMark('fast-path-quote-visible');
-              this.uiService.showScreen('screen-quote');
+              if (window.odqPerfMark) window.odqPerfMark('fast-path-quilt-visible');
+              this.uiService.showScreen('screen-quilt');
             }, 500);
           }
           /* Full mosaic draws in idle time for every cohort — streams the opening. */
@@ -13467,6 +14130,7 @@ try {
           console.log('🔄 Firestore enabled - quotes loaded from database');
           // Portal progression is user-driven via scroll/swipe gesture now.
           this.setupDailyReset(); // ENABLED - automatic daily archive and reset
+          this.setupQuiltResetCountdown();
           
           // Don't set up flip handlers here - they'll be set up when quilt screen is shown
           
@@ -13594,9 +14258,24 @@ try {
           showMyPieceBtn.addEventListener('click', this.handleShowMyPiece.bind(this));
         }
 
+        const dedicateBlockBtn = document.getElementById('dedicateBlockBtn');
+        if (dedicateBlockBtn) {
+          dedicateBlockBtn.addEventListener('click', this.handleDedicateBlock.bind(this));
+          dedicateBlockBtn.dataset.dedicationListenerAttached = '1';
+        }
+
         const showPersonalQuiltBtn = document.getElementById('showPersonalQuiltBtn');
         if (showPersonalQuiltBtn) {
           showPersonalQuiltBtn.addEventListener('click', this.handleTogglePersonalQuilt.bind(this));
+        }
+        if (dedicateBlockBtn) {
+          const dedicateGroup = dedicateBlockBtn.closest('.button-group');
+          if (dedicateGroup) {
+            dedicateGroup.hidden = true;
+            dedicateGroup.setAttribute('aria-hidden', 'true');
+          }
+          dedicateBlockBtn.hidden = true;
+          dedicateBlockBtn.setAttribute('aria-hidden', 'true');
         }
         this.updatePersonalQuiltToggleButton();
 
@@ -13628,6 +14307,9 @@ try {
 
         // Subtle quilt parallax setup
         this.setupQuiltParallax();
+
+        // Pinch and pan for inspecting quilt details
+        this.setupQuiltZoom();
         
         // Setup long-press admin access on title
         this.setupLongPressAdminAccess();
@@ -14232,6 +14914,443 @@ try {
         }, 250); // 250ms debounce
       }
 
+      setupQuiltZoom() {
+        const container = document.querySelector('#screen-quilt .quilt-container');
+        if (!container) return;
+
+        const touchOptions = { passive: false, capture: true };
+        window.addEventListener('touchstart', this.handleQuiltZoomTouchStart.bind(this), touchOptions);
+        window.addEventListener('touchmove', this.handleQuiltZoomTouchMove.bind(this), touchOptions);
+        window.addEventListener('touchend', this.handleQuiltZoomTouchEnd.bind(this), touchOptions);
+        window.addEventListener('touchcancel', this.handleQuiltZoomTouchCancel.bind(this), { passive: true, capture: true });
+        window.addEventListener('gesturestart', this.handleQuiltZoomGestureStart.bind(this), touchOptions);
+        window.addEventListener('gesturechange', this.handleQuiltZoomGestureChange.bind(this), touchOptions);
+        window.addEventListener('gestureend', this.handleQuiltZoomGestureEnd.bind(this), touchOptions);
+        container.addEventListener('dblclick', (event) => {
+          event.preventDefault();
+          this.toggleQuiltZoomAt(event.clientX, event.clientY);
+        });
+      }
+
+      syncQuiltZoomAfterRender() {
+        const quiltSVG = document.getElementById('quilt');
+        const renderedViewBox = this.parseQuiltViewBox(quiltSVG?.getAttribute('viewBox'));
+        if (!quiltSVG || !renderedViewBox) return;
+
+        this.quiltZoomState.baseViewBox = renderedViewBox;
+        const preservedViewBox = this.quiltZoomState.viewBox;
+        const preservedZoom = preservedViewBox ? this.getQuiltZoom(preservedViewBox) : 1;
+
+        if (preservedViewBox && preservedZoom > 1.001) {
+          this.applyQuiltViewBox(preservedViewBox);
+        } else {
+          this.resetQuiltZoom();
+        }
+      }
+
+      parseQuiltViewBox(value) {
+        if (!value) return null;
+        const parts = String(value).trim().split(/[\s,]+/).map(Number);
+        if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) return null;
+        const [x, y, width, height] = parts;
+        if (width <= 0 || height <= 0) return null;
+        return { x, y, width, height };
+      }
+
+      formatQuiltViewBox(viewBox) {
+        return `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`;
+      }
+
+      getCurrentQuiltViewBox() {
+        const quiltSVG = document.getElementById('quilt');
+        return this.parseQuiltViewBox(quiltSVG?.getAttribute('viewBox'));
+      }
+
+      getQuiltZoom(viewBox = null) {
+        const base = this.quiltZoomState.baseViewBox;
+        const current = viewBox || this.getCurrentQuiltViewBox();
+        if (!base || !current || current.width <= 0) return 1;
+        return base.width / current.width;
+      }
+
+      clampQuiltZoom(value) {
+        const minZoom = this.quiltZoomState.minZoom;
+        const maxZoom = this.quiltZoomState.maxZoom;
+        return Math.min(maxZoom, Math.max(minZoom, value || minZoom));
+      }
+
+      clampQuiltViewBox(viewBox) {
+        const base = this.quiltZoomState.baseViewBox;
+        if (!base || !viewBox) return viewBox;
+        const width = Math.min(base.width, Math.max(base.width / this.quiltZoomState.maxZoom, viewBox.width));
+        const height = Math.min(base.height, Math.max(base.height / this.quiltZoomState.maxZoom, viewBox.height));
+        const maxX = base.x + base.width - width;
+        const maxY = base.y + base.height - height;
+        const x = Math.min(maxX, Math.max(base.x, viewBox.x));
+        const y = Math.min(maxY, Math.max(base.y, viewBox.y));
+        return { x, y, width, height };
+      }
+
+      applyQuiltViewBox(viewBox) {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG || !viewBox) return;
+        const clamped = this.clampQuiltViewBox(viewBox);
+        const zoom = this.getQuiltZoom(clamped);
+        quiltSVG.setAttribute('viewBox', this.formatQuiltViewBox(this.getParallaxAdjustedViewBox(clamped)));
+        this.quiltZoomState.viewBox = zoom > 1.001 ? clamped : null;
+        this.updateQuiltZoomClass(zoom > 1.001);
+      }
+
+      resetQuiltZoom() {
+        const quiltSVG = document.getElementById('quilt');
+        const base = this.quiltZoomState.baseViewBox;
+        if (quiltSVG && base) {
+          quiltSVG.setAttribute('viewBox', this.formatQuiltViewBox(this.getParallaxAdjustedViewBox(base)));
+        }
+        this.quiltZoomState.viewBox = null;
+        this.updateQuiltZoomClass(false);
+      }
+
+      getParallaxBaseViewBox() {
+        return this.quiltZoomState?.viewBox || this.quiltZoomState?.baseViewBox || this.getCurrentQuiltViewBox();
+      }
+
+      getParallaxAdjustedViewBox(viewBox) {
+        if (!viewBox) return viewBox;
+        const shift = Number(this.parallaxAppliedSvgShift || 0);
+        if (!Number.isFinite(shift) || Math.abs(shift) < 0.001) return viewBox;
+        return { ...viewBox, y: viewBox.y + shift };
+      }
+
+      updateQuiltZoomClass(isZoomed) {
+        const container = document.querySelector('#screen-quilt .quilt-container');
+        if (!container) return;
+        container.classList.toggle('quilt-container--zoomed', !!isZoomed);
+        container.classList.toggle('quilt-container--zooming', !!(this.quiltZoomState.isPinching || this.quiltZoomState.isPanning));
+      }
+
+      getQuiltSvgPointForClient(clientX, clientY, viewBox = null) {
+        const quiltSVG = document.getElementById('quilt');
+        const currentViewBox = viewBox || this.getCurrentQuiltViewBox();
+        if (!quiltSVG || !currentViewBox) return null;
+        const rect = quiltSVG.getBoundingClientRect();
+        const scale = Math.min(rect.width / currentViewBox.width, rect.height / currentViewBox.height);
+        if (!Number.isFinite(scale) || scale <= 0) return null;
+        const renderedWidth = currentViewBox.width * scale;
+        const renderedHeight = currentViewBox.height * scale;
+        const offsetX = (rect.width - renderedWidth) / 2;
+        const offsetY = (rect.height - renderedHeight) / 2;
+        return {
+          x: currentViewBox.x + ((clientX - rect.left - offsetX) / scale),
+          y: currentViewBox.y + ((clientY - rect.top - offsetY) / scale)
+        };
+      }
+
+      getQuiltViewBoxForAnchor(anchor, clientPoint, width, height) {
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltSVG || !anchor || !clientPoint) return null;
+        const rect = quiltSVG.getBoundingClientRect();
+        const scale = Math.min(rect.width / width, rect.height / height);
+        if (!Number.isFinite(scale) || scale <= 0) return null;
+        const renderedWidth = width * scale;
+        const renderedHeight = height * scale;
+        const offsetX = (rect.width - renderedWidth) / 2;
+        const offsetY = (rect.height - renderedHeight) / 2;
+        return {
+          x: anchor.x - ((clientPoint.x - rect.left - offsetX) / scale),
+          y: anchor.y - ((clientPoint.y - rect.top - offsetY) / scale),
+          width,
+          height
+        };
+      }
+
+      getTouchDistance(touchA, touchB) {
+        return Math.hypot(touchA.clientX - touchB.clientX, touchA.clientY - touchB.clientY);
+      }
+
+      getTouchCenter(touchA, touchB) {
+        return {
+          x: (touchA.clientX + touchB.clientX) / 2,
+          y: (touchA.clientY + touchB.clientY) / 2
+        };
+      }
+
+      getQuiltContainerCenterClientPoint() {
+        const rect = this.getQuiltInteractionRect();
+        if (!rect) {
+          return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        }
+        return {
+          x: rect.left + (rect.width / 2),
+          y: rect.top + (rect.height / 2)
+        };
+      }
+
+      getQuiltInteractionRect() {
+        const quiltSVG = document.getElementById('quilt');
+        const quiltRect = quiltSVG?.getBoundingClientRect();
+        if (quiltRect && quiltRect.width > 0 && quiltRect.height > 0) {
+          return quiltRect;
+        }
+
+        const container = document.querySelector('#screen-quilt .quilt-container');
+        const containerRect = container?.getBoundingClientRect();
+        if (containerRect && containerRect.width > 0 && containerRect.height > 0) {
+          return containerRect;
+        }
+
+        const quiltScreen = document.getElementById('screen-quilt');
+        const screenRect = quiltScreen?.getBoundingClientRect();
+        if (screenRect && screenRect.width > 0 && screenRect.height > 0) {
+          const panel = document.querySelector('#screen-quilt .button-container');
+          const panelRect = panel?.getBoundingClientRect();
+          const bottom = panelRect && panelRect.top > screenRect.top ? panelRect.top : screenRect.bottom;
+          return {
+            left: screenRect.left,
+            right: screenRect.right,
+            top: screenRect.top,
+            bottom,
+            width: screenRect.width,
+            height: Math.max(0, bottom - screenRect.top)
+          };
+        }
+
+        return null;
+      }
+
+      isClientPointInsideQuilt(clientX, clientY) {
+        const rect = this.getQuiltInteractionRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+        return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+      }
+
+      areTouchesInsideQuilt(touches) {
+        if (!touches || touches.length === 0) return false;
+        return Array.from(touches).every((touch) => this.isClientPointInsideQuilt(touch.clientX, touch.clientY));
+      }
+
+      isQuiltZoomAvailable() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltSVG = document.getElementById('quilt');
+        if (!quiltScreen || !quiltSVG) return false;
+        const screenRect = quiltScreen.getBoundingClientRect();
+        const screenVisible =
+          quiltScreen.classList.contains('active') ||
+          (screenRect.width > 0 && screenRect.height > 0 && screenRect.bottom > 0 && screenRect.top < window.innerHeight);
+        if (!screenVisible) return false;
+        if (!this.quiltZoomState.baseViewBox) {
+          this.quiltZoomState.baseViewBox = this.getCurrentQuiltViewBox();
+        }
+        return !!this.quiltZoomState.baseViewBox;
+      }
+
+      zoomQuiltAtClientPoint(clientX, clientY, zoom) {
+        if (!this.isQuiltZoomAvailable()) return;
+        const base = this.quiltZoomState.baseViewBox;
+        const current = this.getCurrentQuiltViewBox();
+        const anchor = this.getQuiltSvgPointForClient(clientX, clientY, current);
+        if (!base || !anchor) return;
+        const nextZoom = this.clampQuiltZoom(zoom);
+        const width = base.width / nextZoom;
+        const height = base.height / nextZoom;
+        const viewBox = this.getQuiltViewBoxForAnchor(anchor, { x: clientX, y: clientY }, width, height);
+        this.applyQuiltViewBox(viewBox);
+      }
+
+      toggleQuiltZoomAt(clientX, clientY) {
+        if (!this.isQuiltZoomAvailable()) return;
+        const currentZoom = this.getQuiltZoom();
+        if (currentZoom > 1.25) {
+          this.resetQuiltZoom();
+        } else {
+          this.zoomQuiltAtClientPoint(clientX, clientY, 2.5);
+        }
+      }
+
+      handleQuiltZoomTouchStart(event) {
+        if (!this.isQuiltZoomAvailable()) return;
+        const touches = event.touches;
+        if (!touches || touches.length === 0) return;
+        const state = this.quiltZoomState;
+
+        if (touches.length === 1) {
+          state.activeFromQuilt = this.areTouchesInsideQuilt(touches);
+        } else if (touches.length >= 2) {
+          state.activeFromQuilt = state.activeFromQuilt || this.areTouchesInsideQuilt(touches);
+        }
+        if (!state.activeFromQuilt) return;
+
+        if (touches.length === 2) {
+          event.preventDefault();
+          event.stopPropagation();
+          const center = this.getTouchCenter(touches[0], touches[1]);
+          const startViewBox = this.getCurrentQuiltViewBox();
+          state.isPinching = true;
+          state.isPanning = false;
+          state.moved = true;
+          state.startDistance = this.getTouchDistance(touches[0], touches[1]);
+          state.startZoom = this.getQuiltZoom(startViewBox);
+          state.startViewBox = startViewBox;
+          state.startCenter = center;
+          state.startSvgPoint = this.getQuiltSvgPointForClient(center.x, center.y, startViewBox);
+          this.updateQuiltZoomClass(true);
+          return;
+        }
+
+        const touch = touches[0];
+        state.touchStartedAt = Date.now();
+        state.touchStartClient = { x: touch.clientX, y: touch.clientY };
+        state.moved = false;
+
+        if (this.getQuiltZoom() > 1.001) {
+          state.isPanning = true;
+          state.panStartClient = { x: touch.clientX, y: touch.clientY };
+          state.panStartViewBox = this.getCurrentQuiltViewBox();
+          this.updateQuiltZoomClass(true);
+        }
+      }
+
+      handleQuiltZoomTouchMove(event) {
+        if (!this.isQuiltZoomAvailable()) return;
+        const touches = event.touches;
+        const state = this.quiltZoomState;
+        if (!touches || touches.length === 0) return;
+        if (!state.activeFromQuilt) return;
+
+        if (touches.length === 2 && state.isPinching) {
+          event.preventDefault();
+          event.stopPropagation();
+          const base = state.baseViewBox;
+          const distance = this.getTouchDistance(touches[0], touches[1]);
+          const center = this.getTouchCenter(touches[0], touches[1]);
+          const ratio = state.startDistance > 0 ? distance / state.startDistance : 1;
+          const nextZoom = this.clampQuiltZoom(state.startZoom * ratio);
+          const width = base.width / nextZoom;
+          const height = base.height / nextZoom;
+          const viewBox = this.getQuiltViewBoxForAnchor(state.startSvgPoint, center, width, height);
+          this.applyQuiltViewBox(viewBox);
+          return;
+        }
+
+        if (touches.length === 1 && state.isPanning && state.panStartClient && state.panStartViewBox) {
+          const touch = touches[0];
+          const dx = touch.clientX - state.panStartClient.x;
+          const dy = touch.clientY - state.panStartClient.y;
+          if (Math.hypot(dx, dy) < 3) return;
+          event.preventDefault();
+          event.stopPropagation();
+          state.moved = true;
+
+          const quiltSVG = document.getElementById('quilt');
+          const rect = quiltSVG?.getBoundingClientRect();
+          if (!rect) return;
+          const scale = Math.min(rect.width / state.panStartViewBox.width, rect.height / state.panStartViewBox.height);
+          if (!Number.isFinite(scale) || scale <= 0) return;
+          this.applyQuiltViewBox({
+            ...state.panStartViewBox,
+            x: state.panStartViewBox.x - (dx / scale),
+            y: state.panStartViewBox.y - (dy / scale)
+          });
+        }
+      }
+
+      handleQuiltZoomTouchEnd(event) {
+        const state = this.quiltZoomState;
+        const wasPinching = state.isPinching;
+        const wasPanning = state.isPanning && state.moved;
+        const remainingTouches = event.touches?.length || 0;
+
+        if (remainingTouches >= 2) return;
+        state.isPinching = false;
+        state.isPanning = false;
+        this.updateQuiltZoomClass(this.getQuiltZoom() > 1.001);
+        if (remainingTouches === 0) {
+          state.activeFromQuilt = false;
+        }
+
+        if (remainingTouches > 0 || wasPinching || wasPanning) return;
+
+        const touch = event.changedTouches?.[0];
+        const start = state.touchStartClient;
+        if (!touch || !start) return;
+        const elapsed = Date.now() - state.touchStartedAt;
+        const movement = Math.hypot(touch.clientX - start.x, touch.clientY - start.y);
+        if (elapsed > 280 || movement > 12) return;
+
+        const now = Date.now();
+        if (now - state.lastTapAt < 320) {
+          event.preventDefault();
+          event.stopPropagation();
+          state.lastTapAt = 0;
+          this.toggleQuiltZoomAt(touch.clientX, touch.clientY);
+        } else {
+          state.lastTapAt = now;
+        }
+      }
+
+      handleQuiltZoomGestureStart(event) {
+        if (!this.isQuiltZoomAvailable()) return;
+        const fallbackPoint = this.getQuiltContainerCenterClientPoint();
+        event.preventDefault();
+        event.stopPropagation();
+        const state = this.quiltZoomState;
+        const clientPoint = {
+          x: Number.isFinite(event.clientX) && event.clientX > 0 ? event.clientX : fallbackPoint.x,
+          y: Number.isFinite(event.clientY) && event.clientY > 0 ? event.clientY : fallbackPoint.y
+        };
+        if (!this.isClientPointInsideQuilt(clientPoint.x, clientPoint.y)) return;
+        const startViewBox = this.getCurrentQuiltViewBox();
+        state.isPinching = true;
+        state.isPanning = false;
+        state.moved = true;
+        state.activeFromQuilt = true;
+        state.startZoom = this.getQuiltZoom(startViewBox);
+        state.startViewBox = startViewBox;
+        state.startSvgPoint = this.getQuiltSvgPointForClient(clientPoint.x, clientPoint.y, startViewBox);
+        state.gestureStartClient = clientPoint;
+        this.updateQuiltZoomClass(true);
+      }
+
+      handleQuiltZoomGestureChange(event) {
+        const state = this.quiltZoomState;
+        if (!this.isQuiltZoomAvailable() || !state.activeFromQuilt || !state.isPinching || !state.startSvgPoint) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const base = state.baseViewBox;
+        const clientPoint = {
+          x: Number.isFinite(event.clientX) && event.clientX > 0 ? event.clientX : state.gestureStartClient?.x,
+          y: Number.isFinite(event.clientY) && event.clientY > 0 ? event.clientY : state.gestureStartClient?.y
+        };
+        if (!base || !Number.isFinite(clientPoint.x) || !Number.isFinite(clientPoint.y)) return;
+        const nextZoom = this.clampQuiltZoom(state.startZoom * (Number(event.scale) || 1));
+        const width = base.width / nextZoom;
+        const height = base.height / nextZoom;
+        const viewBox = this.getQuiltViewBoxForAnchor(state.startSvgPoint, clientPoint, width, height);
+        this.applyQuiltViewBox(viewBox);
+      }
+
+      handleQuiltZoomGestureEnd(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const state = this.quiltZoomState;
+        state.isPinching = false;
+        state.isPanning = false;
+        state.moved = false;
+        state.gestureStartClient = null;
+        state.activeFromQuilt = false;
+        this.updateQuiltZoomClass(this.getQuiltZoom() > 1.001);
+      }
+
+      handleQuiltZoomTouchCancel() {
+        const state = this.quiltZoomState;
+        state.isPinching = false;
+        state.isPanning = false;
+        state.moved = false;
+        state.gestureStartClient = null;
+        state.activeFromQuilt = false;
+        this.updateQuiltZoomClass(this.getQuiltZoom() > 1.001);
+      }
+
       setupQuiltParallax() {
         const app = document.getElementById('app');
         const quiltScreen = document.getElementById('screen-quilt');
@@ -14255,6 +15374,23 @@ try {
         if (!this.parallaxEnabled) return;
 
         window.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
+        this.parallaxInteractionListener = this.handleParallaxInteraction.bind(this);
+        this.parallaxTouchStartListener = (event) => {
+          const quiltScreen = document.getElementById('screen-quilt');
+          if (!quiltScreen || !quiltScreen.classList.contains('active')) return;
+          const touch = event.touches && event.touches[0];
+          this.parallaxLastTouchY = touch ? touch.clientY : null;
+        };
+        const addParallaxInteractionListeners = (target) => {
+          if (!target) return;
+          target.addEventListener('wheel', this.parallaxInteractionListener, { passive: true });
+          target.addEventListener('touchstart', this.parallaxTouchStartListener, { passive: true });
+          target.addEventListener('touchmove', this.parallaxInteractionListener, { passive: true });
+        };
+        addParallaxInteractionListeners(window);
+        addParallaxInteractionListeners(app);
+        addParallaxInteractionListeners(quiltScreen);
+        addParallaxInteractionListeners(quiltButtonPanel);
         if (app) {
           app.addEventListener('scroll', this.parallaxScrollListener, { passive: true });
         }
@@ -14278,6 +15414,39 @@ try {
             this.requestParallaxFrame();
           }
         });
+      }
+
+      handleParallaxInteraction(event) {
+        if (!this.parallaxEnabled) return;
+
+        const quiltScreen = document.getElementById('screen-quilt');
+        const isQuiltActive = quiltScreen && quiltScreen.classList.contains('active');
+        if (!isQuiltActive) {
+          this.parallaxTargetShift = 0;
+          this.requestParallaxFrame();
+          return;
+        }
+
+        let interactionDelta = 0;
+        if (event && event.type === 'wheel') {
+          interactionDelta = Number(event.deltaY) || 0;
+        } else if (event && event.type === 'touchmove') {
+          const touch = event.touches && event.touches[0];
+          if (touch && Number.isFinite(this.parallaxLastTouchY)) {
+            interactionDelta = this.parallaxLastTouchY - touch.clientY;
+          }
+          this.parallaxLastTouchY = touch ? touch.clientY : null;
+        }
+
+        if (Math.abs(interactionDelta) > 0.5) {
+          const scrollDelta = this.getCurrentQuiltScrollPosition() - this.parallaxAnchorScrollTop;
+          const interactionShift = interactionDelta * this.parallaxBaseRate * 0.7;
+          const rawShift = scrollDelta * this.parallaxBaseRate + interactionShift;
+          this.parallaxTargetShift = Math.max(-this.parallaxMaxShift, Math.min(this.parallaxMaxShift, rawShift));
+          this.requestParallaxFrame();
+        }
+
+        requestAnimationFrame(() => this.handleParallaxScroll());
       }
 
       handleQuiltNotificationPromptInteraction() {
@@ -14354,6 +15523,50 @@ try {
 
         document.documentElement.style.setProperty('--quilt-base-shift', `${baseShift}px`);
         document.documentElement.style.setProperty('--quilt-overlay-shift', `${overlayShift}px`);
+        const layer = document.getElementById('quiltParallaxLayer');
+        if (layer) layer.removeAttribute('transform');
+        const quiltSvg = document.getElementById('quilt');
+        const baseViewBox = this.getParallaxBaseViewBox();
+        const rect = quiltSvg?.getBoundingClientRect();
+        const scale = baseViewBox && rect && rect.width > 0 && rect.height > 0
+          ? Math.min(rect.width / baseViewBox.width, rect.height / baseViewBox.height)
+          : 1;
+        const visualShiftPx = Math.max(-3.2, Math.min(3.2, this.parallaxCurrentShift * 0.42));
+        const svgShift = scale > 0 ? visualShiftPx / scale : visualShiftPx;
+        this.parallaxAppliedSvgShift = Math.abs(this.parallaxCurrentShift) < 0.01 ? 0 : svgShift;
+        const blocks = Array.from(document.querySelectorAll('#quilt .quilt-parallax-block'));
+        const scrollSignal =
+          (this.getCurrentQuiltScrollPosition() - this.parallaxAnchorScrollTop) +
+          this.parallaxCurrentShift * 24;
+        const stopMotionSignal = Math.round(scrollSignal / 9) * 9;
+        const jitterIntensity = Math.min(1, Math.max(0.35, Math.abs(this.parallaxCurrentShift) / 1.1));
+        blocks.forEach((node, idx) => {
+          const originalTransform = node.dataset.baseTransform || '';
+          if (Math.abs(this.parallaxAppliedSvgShift) < 0.001 || jitterIntensity <= 0.001) {
+            node.setAttribute('transform', originalTransform);
+            return;
+          }
+          const phase = Number(node.dataset.parallaxPhase || idx);
+          const phaseA = (phase + 1) * 1.973;
+          const phaseB = (phase + 1) * 2.417;
+          const phaseC = (phase + 1) * 1.331;
+          const noiseX = Math.sin(stopMotionSignal * 0.032 + phaseA);
+          const noiseY = Math.cos(stopMotionSignal * 0.041 + phaseB);
+          const noiseR = Math.sin(stopMotionSignal * 0.052 + phaseC);
+          const maxJitterSvg = Math.abs(this.parallaxAppliedSvgShift) * 0.05 * jitterIntensity;
+          const offsetX = noiseX * maxJitterSvg;
+          const offsetY = noiseY * maxJitterSvg;
+          const cx = Number(node.dataset.parallaxCx);
+          const cy = Number(node.dataset.parallaxCy);
+          const rot = noiseR * (0.48 + (phase % 5) * 0.045) * jitterIntensity;
+          const jitterTransforms = [
+            `translate(${offsetX.toFixed(3)}, ${offsetY.toFixed(3)})`
+          ];
+          if (Number.isFinite(cx) && Number.isFinite(cy)) {
+            jitterTransforms.push(`rotate(${rot.toFixed(3)} ${cx.toFixed(3)} ${cy.toFixed(3)})`);
+          }
+          node.setAttribute('transform', [...jitterTransforms, originalTransform].filter(Boolean).join(' '));
+        });
 
         if (Math.abs(this.parallaxTargetShift - this.parallaxCurrentShift) > 0.01) {
           requestAnimationFrame(() => this.applyQuiltParallaxFrame());
@@ -16461,7 +17674,7 @@ try {
       }
 
       /**
-       * Same-day returners who will land on quote: skip blocking on full portal SVG during init.
+       * Same-day returners now land on the quilt after a brief portal view.
        * Mirrors visit logic in `autoTransitionFromPortal` (must stay in sync).
        */
       _shouldFastPathReturningSameDayQuote() {
@@ -16511,8 +17724,8 @@ try {
             localStorage.setItem('ourDailyLastVisitDate', currentDate);
             this.uiService.showScreen('screen-quote');
           } else {
-            console.log('🔄 Returning user on same day - showing quote screen directly');
-            this.uiService.showScreen('screen-quote');
+            console.log('🔄 Returning user on same day - showing quilt screen directly');
+            this.uiService.showScreen('screen-quilt');
           }
         } catch (error) {
           this.logger.error('❌ Auto transition failed:', error);
@@ -16629,6 +17842,41 @@ try {
         
         // Schedule the first cycle
         scheduleDailyCycle();
+      }
+
+      getNextQuiltResetTime(from = new Date()) {
+        const nextReset = new Date(from);
+        nextReset.setUTCHours(7, 0, 0, 0);
+        if (from >= nextReset) {
+          nextReset.setUTCDate(nextReset.getUTCDate() + 1);
+        }
+        return nextReset;
+      }
+
+      formatQuiltResetCountdown(ms) {
+        const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+        if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+        return `${seconds}s`;
+      }
+
+      updateQuiltResetCountdown() {
+        const value = document.getElementById('quiltResetCountdownValue');
+        if (!value) return;
+        const now = new Date();
+        const nextReset = this.getNextQuiltResetTime(now);
+        value.textContent = this.formatQuiltResetCountdown(nextReset.getTime() - now.getTime());
+      }
+
+      setupQuiltResetCountdown() {
+        this.updateQuiltResetCountdown();
+        if (this._quiltResetCountdownTimer) {
+          clearInterval(this._quiltResetCountdownTimer);
+        }
+        this._quiltResetCountdownTimer = setInterval(() => this.updateQuiltResetCountdown(), 1000);
       }
 
       async performDailyArchive() {
@@ -16858,6 +18106,7 @@ try {
         } else {
           this.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
         }
+        this.syncQuiltZoomAfterRender();
         this.updateSquareCounter();
         
         // Ensure quote is displayed on quilt screen
@@ -17060,15 +18309,20 @@ try {
           const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
           if (this._isPersonalQuiltMode) {
             const personalLine = 'Your personal quilt, built from colors you chose over time.';
+            const personalHtml =
+              typeof this.quoteService?.formatQuoteLineForQuiltDisplay === 'function'
+                ? this.quoteService.formatQuoteLineForQuiltDisplay(personalLine)
+                : personalLine;
             if (quiltQuoteText) {
               if (typeof this.quoteService?.formatQuoteLineForQuiltDisplay === 'function') {
-                quiltQuoteText.innerHTML = this.quoteService.formatQuoteLineForQuiltDisplay(personalLine);
+                quiltQuoteText.innerHTML = personalHtml;
               } else {
                 quiltQuoteText.textContent = personalLine;
               }
             }
             if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
             if (quiltQuoteDisplay) quiltQuoteDisplay.classList.add('has-content');
+            this.quoteService?.populateFixedQuiltQuoteStrips?.();
             return;
           }
 
@@ -17080,6 +18334,7 @@ try {
           if (quiltQuoteDisplay && this.quoteService.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
           }
+          this.quoteService.populateFixedQuiltQuoteStrips(todayQ);
         } catch (error) {
           this.logger.warn('Failed to populate quilt quote:', error);
         }
@@ -17369,13 +18624,19 @@ try {
               const newBlock = result.newBlocks.find(block => block.color === selectedColor);
               if (newBlock) {
                 newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === newBlock.id);
+                this._latestDedicatedBlockId = newBlock.id || '';
               } else {
                 // Fallback: if no exact color match, use the first new block
                 newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === result.newBlocks[0].id);
+                this._latestDedicatedBlockId = result.newBlocks[0]?.id || '';
               }
             } else if (result.id) {
               // If it's a single new block
               newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === result.id);
+              this._latestDedicatedBlockId = result.id || '';
+            }
+            if (this._latestDedicatedBlockId) {
+              localStorage.setItem('ourDailyLatestDedicatedBlockId', this._latestDedicatedBlockId);
             }
             
             // Set the last added index for animation
@@ -17405,7 +18666,19 @@ try {
         if (!quiltSVG) {
           throw new Error('Quilt SVG not found');
         }
-        let blob = await this.archiveService.rasterizeQuiltSvgToPngBlob(quiltSVG).catch(() => null);
+        const zoomedViewBox = quiltSVG.getAttribute('viewBox');
+        const fullViewBox = this.quiltZoomState?.baseViewBox;
+        if (fullViewBox) {
+          quiltSVG.setAttribute('viewBox', this.formatQuiltViewBox(fullViewBox));
+        }
+        let blob = null;
+        try {
+          blob = await this.archiveService.rasterizeQuiltSvgToPngBlob(quiltSVG).catch(() => null);
+        } finally {
+          if (zoomedViewBox) {
+            quiltSVG.setAttribute('viewBox', zoomedViewBox);
+          }
+        }
         if (!blob) {
           blob = await this.archiveService.generateQuiltRasterBlobFromBlocks(this.quiltEngine.blocks);
         }
@@ -17869,6 +19142,74 @@ try {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         this.uiService.showToast('Image saved to your camera roll');
+      }
+
+      async createDedicationPostBlob(blockId, message) {
+        const focusOptions = this.getDedicationFocusOptions(blockId);
+        if (!focusOptions) {
+          throw new Error('Could not find the block to dedicate');
+        }
+        const highResBlob = await this.getHighResQuiltBlobForShare();
+        const qt = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
+        const qText = String(qt.text ?? qt.body ?? '').trim();
+        const qAuthor = String(qt.author ?? '').trim();
+        return composeInstagramLayoutBFromQuiltBlob(
+          highResBlob,
+          qText,
+          qAuthor,
+          1080,
+          1350,
+          Utils.getTodayKey(),
+          {
+            ...focusOptions,
+            dedicationMessage: message
+          }
+        );
+      }
+
+      async handleDedicationSubmit(blockId) {
+        const input = document.getElementById('dedicationMessageInput');
+        const status = document.getElementById('dedicationStatus');
+        const btn = document.getElementById('dedicationShareBtn');
+        const panel = document.querySelector('#dedicationModal .dedication-modal-panel');
+        const originalBtnHtml = btn?.innerHTML || '';
+        const message = String(input?.value || '').replace(/\s+/g, ' ').trim();
+        if (!message) {
+          if (status) status.textContent = 'Add a short message first.';
+          return;
+        }
+        if (input) input.readOnly = true;
+        if (panel) panel.classList.add('is-building');
+        if (btn) {
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+          btn.innerHTML = '<span class="stack-btn-content"><span><span class="dedication-busy-dot" aria-hidden="true"></span>Creating image...</span></span>';
+        }
+        if (status) status.textContent = 'Creating your dedication image...';
+        try {
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const blob = await this.createDedicationPostBlob(blockId, message);
+          if (status) status.textContent = 'Opening share options...';
+          const dateStr = new Date().toISOString().split('T')[0];
+          await this.shareBlobWithSystem(
+            blob,
+            `our-daily-quilt-dedication-${dateStr}.png`,
+            'OUR DAILY QUILT - Dedication',
+            "A block from today's OUR DAILY QUILT."
+          );
+          this.closeDedicationModal();
+        } catch (error) {
+          this.errorHandler.handleError(error, 'dedicationShare');
+          if (status) status.textContent = 'Could not create the dedication image. Please try again.';
+        } finally {
+          if (input) input.readOnly = false;
+          if (panel) panel.classList.remove('is-building');
+          if (btn) {
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+            if (originalBtnHtml) btn.innerHTML = originalBtnHtml;
+          }
+        }
       }
 
       async handleShareStoryExperimental() {
@@ -20006,6 +21347,125 @@ try {
         return null;
       }
 
+      getDedicatedBlockId() {
+        const latest = String(this._latestDedicatedBlockId || localStorage.getItem('ourDailyLatestDedicatedBlockId') || '').trim();
+        if (latest && this.quiltEngine.blocks.some((b) => b.id === latest)) {
+          return latest;
+        }
+        return this.getMySpotlightBlockId();
+      }
+
+      getDedicationFocusOptions(blockId) {
+        const block = this.quiltEngine.blocks.find((b) => b.id === blockId);
+        if (!block) return null;
+        const quiltSVG = document.getElementById('quilt');
+        let viewBox = null;
+        const rawViewBox = (quiltSVG?.getAttribute('viewBox') || '').trim();
+        if (rawViewBox) {
+          const parts = rawViewBox.split(/\s+/).map(Number);
+          if (parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0) {
+            viewBox = { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
+          }
+        }
+        if (!viewBox) {
+          const blocks = this.quiltEngine.blocks || [];
+          const minX = Math.min(...blocks.map((b) => b.x));
+          const minY = Math.min(...blocks.map((b) => b.y));
+          const maxX = Math.max(...blocks.map((b) => b.x + b.width));
+          const maxY = Math.max(...blocks.map((b) => b.y + b.height));
+          const padding = 20;
+          viewBox = {
+            x: minX - padding,
+            y: minY - padding,
+            width: maxX - minX + padding * 2,
+            height: maxY - minY + padding * 2
+          };
+        }
+        return {
+          focusBlockRect: {
+            x: Number(block.x),
+            y: Number(block.y),
+            width: Number(block.width),
+            height: Number(block.height)
+          },
+          focusSourceViewBox: viewBox
+        };
+      }
+
+      closeDedicationModal() {
+        const el = document.getElementById('dedicationModal');
+        if (el) el.remove();
+        if (this._dedicationKeyEsc) {
+          document.removeEventListener('keydown', this._dedicationKeyEsc);
+          this._dedicationKeyEsc = null;
+        }
+      }
+
+      showDedicationModal(blockId) {
+        this.closeDedicationModal();
+        const wrap = document.createElement('div');
+        wrap.id = 'dedicationModal';
+        wrap.className = 'dedication-modal';
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        wrap.setAttribute('aria-label', 'Dedicate this block');
+        wrap.innerHTML = `
+          <div class="dedication-modal-backdrop" data-dedication-close="1"></div>
+          <form class="dedication-modal-panel" id="dedicationForm">
+            <h2 class="dedication-modal-title">Dedicate this block</h2>
+            <p class="dedication-modal-copy">Write a short note to bake into the image with your block.</p>
+            <label class="first-name-label" for="dedicationMessageInput">Dedication message</label>
+            <textarea
+              id="dedicationMessageInput"
+              class="dedication-message-input"
+              maxlength="180"
+              required
+              spellcheck="true"
+              placeholder="For someone who helped me see today's color."
+            ></textarea>
+            <div class="dedication-modal-actions">
+              <button type="submit" class="btn stack-btn-like stack-btn-like--center" id="dedicationShareBtn">
+                <span class="stack-btn-content"><span>Create dedication image</span></span>
+              </button>
+              <button type="button" class="btn stack-btn-like stack-btn-like--back" data-dedication-close="1" aria-label="Back to quilt">
+                <span class="stack-btn-content">
+                  <span class="stack-btn-chevron" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M15 5l-7 7 7 7"></path>
+                    </svg>
+                  </span>
+                  <span>Back to quilt</span>
+                </span>
+              </button>
+            </div>
+            <p class="dedication-status" id="dedicationStatus" role="status" aria-live="polite"></p>
+          </form>
+        `;
+        wrap.addEventListener('click', (e) => {
+          if (e.target?.dataset?.dedicationClose === '1') this.closeDedicationModal();
+        });
+        const form = wrap.querySelector('#dedicationForm');
+        form?.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await this.handleDedicationSubmit(blockId);
+        });
+        this._dedicationKeyEsc = (e) => {
+          if (e.key === 'Escape') this.closeDedicationModal();
+        };
+        document.addEventListener('keydown', this._dedicationKeyEsc);
+        document.body.appendChild(wrap);
+        setTimeout(() => wrap.querySelector('#dedicationMessageInput')?.focus(), 60);
+      }
+
+      handleDedicateBlock() {
+        const blockId = this.getDedicatedBlockId();
+        if (!blockId) {
+          this.uiService.showToast('Add your color first, then you can dedicate your block.');
+          return;
+        }
+        this.showDedicationModal(blockId);
+      }
+
       handleShowMyBlock() {
         const blockId = this.getMySpotlightBlockId();
         if (!blockId) {
@@ -20121,6 +21581,25 @@ try {
         this.handleShowMyBlock();
       }
 
+      ensureDedicateBlockButton() {
+        // Temporarily disabled; keep the dedication code path intact so it can be restored later.
+        const dedicateBtn = document.getElementById('dedicateBlockBtn');
+        let dedicateGroup = dedicateBtn ? dedicateBtn.closest('.button-group') : null;
+        if (dedicateGroup) {
+          dedicateGroup.hidden = true;
+          dedicateGroup.style.display = 'none';
+          dedicateGroup.setAttribute('aria-hidden', 'true');
+        }
+        if (dedicateBtn) {
+          dedicateBtn.hidden = true;
+          dedicateBtn.style.display = 'none';
+          dedicateBtn.style.visibility = 'hidden';
+          dedicateBtn.style.opacity = '0';
+          dedicateBtn.setAttribute('aria-hidden', 'true');
+        }
+        return null;
+      }
+
       updatePersonalQuiltToggleButton() {
         const btn = document.getElementById('showPersonalQuiltBtn');
         const label = document.getElementById('personalQuiltBtnLabel');
@@ -20129,9 +21608,10 @@ try {
           label.textContent = 'Back to OUR DAILY QUILT';
           btn.setAttribute('aria-label', 'Back to OUR DAILY QUILT');
         } else {
-          label.textContent = 'View my personal quilt';
-          btn.setAttribute('aria-label', 'View my personal quilt');
+          label.textContent = 'View my colors over time';
+          btn.setAttribute('aria-label', 'View my colors over time');
         }
+        this.ensureDedicateBlockButton();
       }
 
       getDevicePersonalColorHistory() {
