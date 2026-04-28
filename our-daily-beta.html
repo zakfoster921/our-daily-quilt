@@ -2581,9 +2581,14 @@ try {
         visibility: visible !important;
         opacity: 1 !important;
         z-index: 1 !important;
+        /* pan-y: swipe on quilt scrolls #screen-quilt; pinch-zoom works with existing zoom handlers. */
+        touch-action: pan-y pinch-zoom !important;
       }
 
-      #screen-quilt > :not(.quilt-container):not(.quilt-fixed-quote-strips):not(.quilt-reset-footer) {
+      #screen-quilt .quilt-container svg,
+      #screen-quilt #quilt {
+        touch-action: pan-y pinch-zoom !important;
+      }
         position: relative !important;
         z-index: 10 !important;
       }
@@ -2594,33 +2599,15 @@ try {
         bottom: auto !important;
         left: max(24px, calc(var(--odq-safe-left) + 18px)) !important;
         right: max(24px, calc(var(--odq-safe-right) + 18px)) !important;
-        z-index: 12 !important;
+        /* Below .button-container + .quilt-layout-b-preview-wrap (z-index 10) so scroll lifts the sheet and reveals names. */
+        z-index: 4 !important;
         display: flex;
         justify-content: center;
         align-items: flex-start;
         pointer-events: none;
-        opacity: 0;
-        visibility: hidden;
-        transform: translateY(-12px);
-        transition: opacity 0.32s ease, transform 0.32s ease, visibility 0.32s;
-      }
-
-      #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors.has-content {
-        opacity: 0;
-        visibility: hidden;
-        transform: translateY(-12px);
-      }
-
-      #screen-quilt.quilt-scroll--contributors-revealed .quilt-fixed-quote-strips.quilt-fixed-contributors.has-content {
         opacity: 1;
         visibility: visible;
-        transform: translateY(0);
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors {
-          transition: none;
-        }
+        transform: none;
       }
 
       #screen-quilt .quilt-reset-footer {
@@ -2633,6 +2620,8 @@ try {
         padding: 0.85rem 0 max(1rem, env(safe-area-inset-bottom, 0px)) !important;
         background-color: #f6f4f1 !important;
         box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.06) !important;
+        /* Non-interactive; lets vertical drags reach #screen-quilt so users can scroll up from the bottom. */
+        pointer-events: none !important;
       }
 
       #screen-quilt .quilt-contributor-panel {
@@ -2674,7 +2663,8 @@ try {
         font: inherit;
         text-align: center;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        /* Allow parent #screen-quilt to scroll once list hits top/bottom (contain traps gestures). */
+        overscroll-behavior-y: auto;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
         touch-action: pan-y;
@@ -2961,6 +2951,7 @@ try {
         margin-top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 20px) !important;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
         width: 100% !important;
+        /* Sheet above fixed contributors (z-index 4); scrolling reveals the strip underneath. */
         z-index: 10 !important;
         height: auto !important;
         overflow: visible !important;
@@ -4306,7 +4297,8 @@ try {
       border-top: 1px solid rgba(0, 0, 0, 0.08);
       flex-shrink: 0;
         position: relative;
-        z-index: 0;
+        /* Same stacking sheet as .button-container — covers fixed contributors until scrolled past. */
+        z-index: 10;
     }
 
     #screen-quilt .quilt-layout-b-preview-wrap--empty {
@@ -4383,8 +4375,11 @@ try {
       );
       min-height: 280px;
       background: transparent;
-      pointer-events: auto;
+      /* Below fixed contributors so scrolling the spacer does not steal touches from the name list. */
+      pointer-events: none;
       flex-shrink: 0;
+      position: relative;
+      z-index: 2;
     }
 
     #screen-quilt .quilt-footer-icon-row {
@@ -14324,8 +14319,6 @@ try {
         this.quiltNotificationPromptListener = null;
         /** Scroll position when quilt screen became active; notification prompt waits for scroll past threshold. */
         this._notificationPromptScrollBaseline = null;
-        this._contributorsRevealRaf = null;
-        this._boundScheduleContributorsReveal = this.scheduleQuiltContributorsRevealCheck.bind(this);
 
         // Gesture-based screen flow: portal -> quote -> color
         this._scrollNavTouchStartY = null;
@@ -15869,51 +15862,6 @@ try {
         this.updateQuiltZoomClass(this.getQuiltZoom() > 1.001);
       }
 
-      scheduleQuiltContributorsRevealCheck() {
-        if (this._contributorsRevealRaf) return;
-        this._contributorsRevealRaf = requestAnimationFrame(() => {
-          this._contributorsRevealRaf = null;
-          this.updateQuiltContributorsRevealFromScroll();
-        });
-      }
-
-      /**
-       * Contributor strip sits in a fixed band just under the quilt; it stays hidden until the user
-       * has scrolled past the Layout B story preview (so names don’t stack over quote/buttons).
-       */
-      updateQuiltContributorsRevealFromScroll() {
-        const screen = document.getElementById('screen-quilt');
-        if (!screen) return;
-        if (!screen.classList.contains('active')) {
-          screen.classList.remove('quilt-scroll--contributors-revealed');
-          return;
-        }
-        const strip = screen.querySelector('.quilt-fixed-contributors');
-        if (!strip || !strip.classList.contains('has-content')) {
-          screen.classList.remove('quilt-scroll--contributors-revealed');
-          return;
-        }
-        const preview = document.getElementById('quiltLayoutBPreviewWrap');
-        const vh = window.visualViewport?.height ?? window.innerHeight;
-        const quiltEl = screen.querySelector('.quilt-container');
-        const quiltBottom = quiltEl ? quiltEl.getBoundingClientRect().bottom : 0;
-        let revealed = false;
-        if (
-          preview &&
-          preview.offsetParent !== null &&
-          !preview.classList.contains('quilt-layout-b-preview-wrap--empty') &&
-          preview.getBoundingClientRect().height > 24
-        ) {
-          const rect = preview.getBoundingClientRect();
-          /* Names sit in a fixed strip directly under the quilt; show only after the story preview
-             has scrolled up past that band (not while quote/buttons overlap that region). */
-          revealed = rect.bottom <= quiltBottom + 36;
-        } else {
-          revealed = screen.scrollTop > 120;
-        }
-        screen.classList.toggle('quilt-scroll--contributors-revealed', revealed);
-      }
-
       setupQuiltParallax() {
         const app = document.getElementById('app');
         const quiltScreen = document.getElementById('screen-quilt');
@@ -15931,17 +15879,6 @@ try {
         addQuiltInteractionListeners(app);
         addQuiltInteractionListeners(quiltScreen);
         addQuiltInteractionListeners(quiltButtonPanel);
-
-        window.addEventListener('scroll', this._boundScheduleContributorsReveal, { passive: true });
-        if (quiltScreen) {
-          quiltScreen.addEventListener('scroll', this._boundScheduleContributorsReveal, { passive: true });
-        }
-        if (quiltButtonPanel) {
-          quiltButtonPanel.addEventListener('scroll', this._boundScheduleContributorsReveal, { passive: true });
-        }
-        if (window.visualViewport) {
-          window.visualViewport.addEventListener('resize', this._boundScheduleContributorsReveal, { passive: true });
-        }
 
         if (!this.parallaxEnabled) return;
 
@@ -15981,7 +15918,6 @@ try {
             this._dailyQuotePromptedFromQuiltScroll = false;
             this.parallaxTargetShift = 0;
             this.handleParallaxScroll();
-            this.scheduleQuiltContributorsRevealCheck();
           } else {
             this.parallaxTargetShift = 0;
             this.requestParallaxFrame();
@@ -18826,7 +18762,6 @@ try {
           list.appendChild(item);
         });
         wrap.classList.toggle('has-content', contributors.length > 0);
-        this.scheduleQuiltContributorsRevealCheck();
       }
 
       prepareSettingsScreen() {
@@ -19038,7 +18973,6 @@ try {
             hint.hidden = false;
             hint.textContent = "Add another color to see today's story collage preview.";
           }
-          this.scheduleQuiltContributorsRevealCheck();
           return;
         }
 
@@ -19078,7 +19012,6 @@ try {
               hint.hidden = true;
             }
             img.hidden = false;
-            this.scheduleQuiltContributorsRevealCheck();
           };
 
           img.onload = () => applyReady();
@@ -19090,7 +19023,6 @@ try {
               hint.textContent = 'Preview could not be displayed.';
             }
             this.logger.warn('Layout B preview image failed to load');
-            this.scheduleQuiltContributorsRevealCheck();
           };
           img.src = url;
           if (img.complete && img.naturalWidth > 0) {
@@ -19104,7 +19036,6 @@ try {
             hint.hidden = false;
             hint.textContent = 'Preview unavailable.';
           }
-          this.scheduleQuiltContributorsRevealCheck();
         }
       }
 
