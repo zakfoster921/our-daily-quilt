@@ -1734,11 +1734,11 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
       });
     }
 
-    const scheduleStartDate = addDaysToDateKey(getAppDateKey(), 1);
+    const scheduleStartDate = getAppDateKey();
     const scheduleResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=7'
+      '--window=8'
     ]);
     if (scheduleResult.code !== 0) {
       return res.status(500).json({

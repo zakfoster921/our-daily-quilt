@@ -47,8 +47,10 @@ function parseArgs(argv) {
     else if (a.startsWith('--cadence=')) args.cadence = Number(a.slice('--cadence='.length));
     else if (a.startsWith('--window=')) args.window = Number(a.slice('--window='.length));
   }
-  if (!args.start) throw new Error('Missing --start=YYYY-MM-DD or --start=tomorrow');
-  if (String(args.start).trim().toLowerCase() === 'tomorrow') {
+  if (!args.start) throw new Error('Missing --start=YYYY-MM-DD, --start=today, or --start=tomorrow');
+  if (String(args.start).trim().toLowerCase() === 'today') {
+    args.start = getAppDateKey();
+  } else if (String(args.start).trim().toLowerCase() === 'tomorrow') {
     args.start = addDays(getAppDateKey(), 1);
   }
   args.start = requireDateArg(args.start, '--start');
@@ -76,6 +78,23 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     igCaptionSnapshot: q.igCaption.slice(0, 400),
     assignedAt: new Date().toISOString(),
     assignedBy
+  };
+}
+
+function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
+  return {
+    dateKey,
+    text: q.text,
+    quote: q.text,
+    author: q.author,
+    sourceId: q.sourceId || null,
+    whatIf: q.whatIf || '',
+    what_if: q.whatIf || '',
+    igCaption: q.igCaption || '',
+    ig_caption: q.igCaption || '',
+    assignedBy,
+    assignedAt: updatedAt,
+    updatedAt
   };
 }
 
@@ -179,16 +198,28 @@ async function main() {
   });
   futureAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
+  const explicitDateToSourceId = new Map();
+  for (const q of notionQuotes) {
+    if (!isDateKey(q.dateScheduled)) continue;
+    if (q.dateScheduled < opts.start || q.dateScheduled > windowEnd) continue;
+    if (!explicitDateToSourceId.has(q.dateScheduled)) {
+      explicitDateToSourceId.set(q.dateScheduled, q.sourceId);
+    }
+  }
+
   const dateToExistingSourceId = new Map();
   for (const row of futureAssignments) {
     if (row.dateKey > windowEnd) continue;
+    if (explicitDateToSourceId.has(row.dateKey)) continue;
     const sourceId = String(row.data.sourceId || '').trim();
     if (sourceId && quoteBySourceId.has(sourceId)) {
       dateToExistingSourceId.set(row.dateKey, sourceId);
     }
   }
 
-  const windowSourceIds = windowDates.map((dateKey) => dateToExistingSourceId.get(dateKey) || null);
+  const windowSourceIds = windowDates.map(
+    (dateKey) => explicitDateToSourceId.get(dateKey) || dateToExistingSourceId.get(dateKey) || null
+  );
   const originalWindowSourceIds = new Set(windowSourceIds.filter(Boolean));
 
   const submittedToInsert = notionQuotes.filter((q) => {
@@ -246,7 +277,7 @@ async function main() {
       `[backfill] dry-run rolling window scheduled=${scheduled.length}/${opts.window} start=${opts.start} windowEnd=${windowEnd} cadence=${opts.cadence}`
     );
     console.log(
-      `[backfill] app submissions inserted=${submittedToInsert.length} staleFutureAssignments=${staleFutureAssignments.length} clearQuoteDates=${clearDateQuotes.length}`
+      `[backfill] exact Notion dates=${explicitDateToSourceId.size} app submissions inserted=${submittedToInsert.length} staleFutureAssignments=${staleFutureAssignments.length} clearQuoteDates=${clearDateQuotes.length}`
     );
     console.log('[backfill] assignments:');
     scheduled.forEach((row) => {
@@ -266,6 +297,13 @@ async function main() {
     batchState.batch.set(ref, row.payload, { merge: true });
     batchState.ops += 1;
     writes += 1;
+
+    batchState.batch.set(
+      db.collection(quotesCollection).doc(row.dateKey),
+      dailyQuotePayloadForQuote(row.quote, row.dateKey, row.payload.assignedBy, updatedAt),
+      { merge: true }
+    );
+    batchState.ops += 1;
 
     const sid = String(row.quote.sourceId || '').trim();
     if (sid) {
