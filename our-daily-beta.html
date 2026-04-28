@@ -2583,34 +2583,62 @@ try {
         z-index: 1 !important;
       }
 
-      #screen-quilt > :not(.quilt-container):not(.quilt-fixed-quote-strips) {
+      #screen-quilt > :not(.quilt-container):not(.quilt-fixed-quote-strips):not(.quilt-reset-footer) {
         position: relative !important;
         z-index: 10 !important;
       }
 
-      #screen-quilt .quilt-fixed-quote-strips {
+      #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors {
         position: fixed !important;
         top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 22px) !important;
+        bottom: auto !important;
         left: max(24px, calc(var(--odq-safe-left) + 18px)) !important;
         right: max(24px, calc(var(--odq-safe-right) + 18px)) !important;
-        z-index: 2 !important;
+        z-index: 12 !important;
         display: flex;
         justify-content: center;
+        align-items: flex-start;
         pointer-events: none;
         opacity: 0;
-        transition: opacity 0.25s ease;
+        visibility: hidden;
+        transform: translateY(-12px);
+        transition: opacity 0.32s ease, transform 0.32s ease, visibility 0.32s;
       }
 
-      #screen-quilt .quilt-fixed-quote-strips.has-content {
+      #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors.has-content {
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-12px);
+      }
+
+      #screen-quilt.quilt-scroll--contributors-revealed .quilt-fixed-quote-strips.quilt-fixed-contributors.has-content {
         opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
       }
 
-      #screen-quilt .quilt-fixed-contributors {
-        pointer-events: none;
+      @media (prefers-reduced-motion: reduce) {
+        #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors {
+          transition: none;
+        }
+      }
+
+      #screen-quilt .quilt-reset-footer {
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 13 !important;
+        margin: 0 !important;
+        padding: 0.85rem 0 max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+        background-color: #f6f4f1 !important;
+        box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.06) !important;
       }
 
       #screen-quilt .quilt-contributor-panel {
-        width: min(82vw, 360px);
+        pointer-events: auto;
+        width: min(88vw, 380px);
+        max-height: var(--quilt-contributors-panel-max);
         margin: 0 auto;
         display: flex;
         flex-direction: column;
@@ -2623,6 +2651,7 @@ try {
         line-height: 1.35;
         letter-spacing: 0.02em;
         text-align: center;
+        overflow: hidden;
       }
 
       #screen-quilt .quilt-contributor-title {
@@ -2634,19 +2663,42 @@ try {
       #screen-quilt .quilt-contributor-list {
         margin: 0 auto;
         width: 100%;
+        min-height: 0;
+        flex: 1 1 auto;
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         column-gap: 0.75rem;
-        row-gap: 0.28rem;
+        row-gap: 0.5rem;
+        padding: 0.2rem 0.1rem 0.85rem;
+        align-items: start;
         font: inherit;
         text-align: center;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        touch-action: pan-y;
+      }
+
+      @media (max-width: 420px) {
+        #screen-quilt .quilt-contributor-list {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          column-gap: 0.5rem;
+        }
+      }
+
+      #screen-quilt .quilt-contributor-list::-webkit-scrollbar {
+        display: none;
       }
 
       #screen-quilt .quilt-contributor-name {
         min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        display: block;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        hyphens: auto;
+        line-height: 1.3;
+        padding: 0.04em 0;
       }
 
       #screen-quilt .quilt-contributor-list:empty {
@@ -2726,9 +2778,10 @@ try {
       #screen-quilt {
         --quilt-fixed-top: max(36px, calc(var(--odq-safe-top) + 12px));
         --quilt-fixed-height: min(52vh, 420px);
+        --quilt-contributors-panel-max: min(42vh, 19rem);
         /* Do not zero out safe-area; parent .screen also insets — keep horizontal flush for quilt art */
         padding-top: 0 !important;
-        padding-bottom: 0 !important;
+        padding-bottom: calc(3.75rem + env(safe-area-inset-bottom, 0px)) !important;
         padding-left: 0 !important;
         padding-right: 0 !important;
         margin: 0 !important;
@@ -2916,9 +2969,7 @@ try {
         top: auto !important;
         right: auto !important;
       }
-      
 
-      
       #screen-portal .button-container,
       #screen-welcome .button-container,
       #screen-quote .button-container,
@@ -4388,7 +4439,8 @@ try {
       padding: 0.85rem 0 max(1rem, env(safe-area-inset-bottom, 0px));
       display: flex;
       justify-content: center;
-      background: #f6f4f1;
+      background-color: #f6f4f1;
+      box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.06);
     }
 
     #screen-quilt .quilt-reset-countdown {
@@ -11609,6 +11661,7 @@ try {
                     return false;
                   }
                   if (
+                    !options?.adminMutation &&
                     existingCount === nextCount &&
                     existingCount > 0 &&
                     existingFingerprint &&
@@ -11633,48 +11686,51 @@ try {
              * Instagram + Zapier stills (classic + layout B) after quilt/quote writes.
              * Reel for Zapier: GitHub → Railway POST /api/nightly-instagram-snapshot at 6:30 UTC (full-day quilt),
              * or record from the app via “Push IG images…” (animated WebM → MP4).
+             * Admin-panel quilt edits skip this path so bulk testing does not run heavy canvas work every save.
              */
-            const igBlocks = quiltData.blocks;
-            const igDateKey = today;
-            void (async () => {
-              try {
-                const arch = window.app?.archiveService;
-                if (!arch?.generateInstagramImage) {
-                  console.warn('ArchiveService.generateInstagramImage not available');
-                  return;
-                }
-                const qs = window.app?.quoteService;
-                const todayQuote =
-                  (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function'
-                    ? await qs.getQuoteResolvedForInstagramDateKey(igDateKey)
-                    : qs?.getTodayQuote()) || null;
-                const instagramImage = await arch.generateInstagramImage(igBlocks);
-                let postLayoutBImageData = null;
-                if (arch.generateInstagramPostLayoutBImage) {
-                  postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(
-                    igBlocks,
-                    todayQuote,
-                    igDateKey
-                  );
-                }
-                if (instagramImage || postLayoutBImageData) {
-                  if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
-                    const igFingerprint = Utils.computeQuiltFingerprint(igBlocks);
-                    await Utils.writeInstagramImagesDocForZapier({
-                      dateKey: igDateKey,
-                      instagramImage,
-                      postLayoutBImageData,
-                      zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
-                      quiltFingerprint: igFingerprint
-                    });
-                  } else {
-                    console.warn('Skipping Instagram Firestore doc: app / Storage init not available');
+            if (!options?.adminMutation) {
+              const igBlocks = quiltData.blocks;
+              const igDateKey = today;
+              void (async () => {
+                try {
+                  const arch = window.app?.archiveService;
+                  if (!arch?.generateInstagramImage) {
+                    console.warn('ArchiveService.generateInstagramImage not available');
+                    return;
                   }
+                  const qs = window.app?.quoteService;
+                  const todayQuote =
+                    (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function'
+                      ? await qs.getQuoteResolvedForInstagramDateKey(igDateKey)
+                      : qs?.getTodayQuote()) || null;
+                  const instagramImage = await arch.generateInstagramImage(igBlocks);
+                  let postLayoutBImageData = null;
+                  if (arch.generateInstagramPostLayoutBImage) {
+                    postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(
+                      igBlocks,
+                      todayQuote,
+                      igDateKey
+                    );
+                  }
+                  if (instagramImage || postLayoutBImageData) {
+                    if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
+                      const igFingerprint = Utils.computeQuiltFingerprint(igBlocks);
+                      await Utils.writeInstagramImagesDocForZapier({
+                        dateKey: igDateKey,
+                        instagramImage,
+                        postLayoutBImageData,
+                        zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
+                        quiltFingerprint: igFingerprint
+                      });
+                    } else {
+                      console.warn('Skipping Instagram Firestore doc: app / Storage init not available');
+                    }
+                  }
+                } catch (imageError) {
+                  console.warn('Could not save Instagram image to Firestore:', imageError);
                 }
-              } catch (imageError) {
-                console.warn('Could not save Instagram image to Firestore:', imageError);
-              }
-            })();
+              })();
+            }
           }
           
           // Also save to localStorage as backup (including explicit empty reset state).
@@ -14236,6 +14292,7 @@ try {
         this.currentUserId = Utils.getOrCreateUserId();
         this.quiltScale = 1;
         this.dailyContributors = [];
+        this.adminQuiltMutationQueue = Promise.resolve();
         
         // Check for secret admin URL parameter
         this.checkSecretAdminAccess();
@@ -14267,6 +14324,8 @@ try {
         this.quiltNotificationPromptListener = null;
         /** Scroll position when quilt screen became active; notification prompt waits for scroll past threshold. */
         this._notificationPromptScrollBaseline = null;
+        this._contributorsRevealRaf = null;
+        this._boundScheduleContributorsReveal = this.scheduleQuiltContributorsRevealCheck.bind(this);
 
         // Gesture-based screen flow: portal -> quote -> color
         this._scrollNavTouchStartY = null;
@@ -15810,14 +15869,57 @@ try {
         this.updateQuiltZoomClass(this.getQuiltZoom() > 1.001);
       }
 
+      scheduleQuiltContributorsRevealCheck() {
+        if (this._contributorsRevealRaf) return;
+        this._contributorsRevealRaf = requestAnimationFrame(() => {
+          this._contributorsRevealRaf = null;
+          this.updateQuiltContributorsRevealFromScroll();
+        });
+      }
+
+      /**
+       * Contributor strip sits in a fixed band just under the quilt; it stays hidden until the user
+       * has scrolled past the Layout B story preview (so names don’t stack over quote/buttons).
+       */
+      updateQuiltContributorsRevealFromScroll() {
+        const screen = document.getElementById('screen-quilt');
+        if (!screen) return;
+        if (!screen.classList.contains('active')) {
+          screen.classList.remove('quilt-scroll--contributors-revealed');
+          return;
+        }
+        const strip = screen.querySelector('.quilt-fixed-contributors');
+        if (!strip || !strip.classList.contains('has-content')) {
+          screen.classList.remove('quilt-scroll--contributors-revealed');
+          return;
+        }
+        const preview = document.getElementById('quiltLayoutBPreviewWrap');
+        const vh = window.visualViewport?.height ?? window.innerHeight;
+        const quiltEl = screen.querySelector('.quilt-container');
+        const quiltBottom = quiltEl ? quiltEl.getBoundingClientRect().bottom : 0;
+        let revealed = false;
+        if (
+          preview &&
+          preview.offsetParent !== null &&
+          !preview.classList.contains('quilt-layout-b-preview-wrap--empty') &&
+          preview.getBoundingClientRect().height > 24
+        ) {
+          const rect = preview.getBoundingClientRect();
+          /* Names sit in a fixed strip directly under the quilt; show only after the story preview
+             has scrolled up past that band (not while quote/buttons overlap that region). */
+          revealed = rect.bottom <= quiltBottom + 36;
+        } else {
+          revealed = screen.scrollTop > 120;
+        }
+        screen.classList.toggle('quilt-scroll--contributors-revealed', revealed);
+      }
+
       setupQuiltParallax() {
         const app = document.getElementById('app');
         const quiltScreen = document.getElementById('screen-quilt');
         const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
         this.parallaxScrollListener = this.handleParallaxScroll.bind(this);
         this.quiltNotificationPromptListener = this.handleQuiltNotificationPromptInteraction.bind(this);
-
-        // Listen on likely scroll containers for consistency across devices/layouts
         const addQuiltInteractionListeners = (target) => {
           if (!target) return;
           target.addEventListener('scroll', this.quiltNotificationPromptListener, { passive: true });
@@ -15829,6 +15931,17 @@ try {
         addQuiltInteractionListeners(app);
         addQuiltInteractionListeners(quiltScreen);
         addQuiltInteractionListeners(quiltButtonPanel);
+
+        window.addEventListener('scroll', this._boundScheduleContributorsReveal, { passive: true });
+        if (quiltScreen) {
+          quiltScreen.addEventListener('scroll', this._boundScheduleContributorsReveal, { passive: true });
+        }
+        if (quiltButtonPanel) {
+          quiltButtonPanel.addEventListener('scroll', this._boundScheduleContributorsReveal, { passive: true });
+        }
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', this._boundScheduleContributorsReveal, { passive: true });
+        }
 
         if (!this.parallaxEnabled) return;
 
@@ -15868,6 +15981,7 @@ try {
             this._dailyQuotePromptedFromQuiltScroll = false;
             this.parallaxTargetShift = 0;
             this.handleParallaxScroll();
+            this.scheduleQuiltContributorsRevealCheck();
           } else {
             this.parallaxTargetShift = 0;
             this.requestParallaxFrame();
@@ -17867,23 +17981,26 @@ try {
       }
 
       showAdminMenu() {
+        // Prevent stacked panels: each open used to append another .admin-menu. A later save disables
+        // buttons on ALL panels; closing the top one leaves older panels with disabled buttons forever.
+        document.querySelectorAll('.admin-menu').forEach((el) => el.remove());
+
         const menu = document.createElement('div');
         menu.className = 'admin-menu';
         
         // Create stats display with ID for easy updates
         const statsDisplay = `
-          <div id="admin-stats-display" style="background: #f0f0f0; padding: 10px; border-radius: 4px; margin-bottom: 10px; text-align: center; font-weight: bold;">
+          <div id="admin-stats-display" style="background: #f0f0f0; padding: 10px; border-radius: 4px; margin-top: 10px; text-align: center; font-weight: bold; flex: 1 0 100%;">
             ${this.getAdminStatsHTML()}
           </div>
         `;
         
         menu.innerHTML = `
           <div class="admin-menu-content">
-            ${statsDisplay}
-            <button onclick="app.handleTestAddBlock()">Add Random Block</button>
-            <button onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Variations</button>
-            <button onclick="app.handleSplitLargestBlockWithPopularColor()">Split Largest Block (Popular Color)</button>
-            <button onclick="app.handleResetQuilt()">Reset Quilt</button>
+            <button data-admin-quilt-action="true" onclick="app.handleTestAddBlock()">Add Random Block</button>
+            <button data-admin-quilt-action="true" onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Variations</button>
+            <button data-admin-quilt-action="true" onclick="app.handleSplitLargestBlockWithPopularColor()">Split Largest Block (Popular Color)</button>
+            <button data-admin-quilt-action="true" onclick="app.handleResetQuilt()">Reset Quilt</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handleRunAsFirstTimeUser()">Run as First-Time User</button>
             <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
             <button onclick="app.handleTestInstagramStoryImage()">📱 Create IG story (Layout B 9:16)</button>
@@ -17892,6 +18009,7 @@ try {
             <button onclick="app.showQuoteManager()">Manage Quotes</button>
             <button type="button" id="admin-notion-sync-btn" title="Shift+click to clear saved token and enter a new one">🗂️ Sync Notion ↔ Firestore</button>
             <button onclick="this.parentElement.parentElement.remove()">Close</button>
+            ${statsDisplay}
           </div>
         `;
         
@@ -18621,6 +18739,12 @@ try {
           }
           normalized.push(entry);
         });
+        normalized.sort((a, b) => {
+          const ta = Date.parse(String(a.firstContributedAt || '')) || 0;
+          const tb = Date.parse(String(b.firstContributedAt || '')) || 0;
+          if (tb !== ta) return tb - ta;
+          return String(b.userId || '').localeCompare(String(a.userId || ''));
+        });
         return normalized;
       }
 
@@ -18649,6 +18773,37 @@ try {
         this.renderQuiltContributorList();
       }
 
+      getAdminSampleContributorName(index = 0) {
+        const names = [
+          'Ada', 'Amina', 'Birdie', 'Camille', 'Cleo', 'Dara', 'Elio', 'Ezra',
+          'Fern', 'Gus', 'Hana', 'Iris', 'June', 'Kai', 'Lena', 'Mara',
+          'Milo', 'Nia', 'Noah', 'Owen', 'Paz', 'Quinn', 'Rafa', 'Sage',
+          'Theo', 'Uma', 'Vera', 'Wren', 'Yara', 'Zoe'
+        ];
+        const displayOrder = [
+          10, 2, 23, 5, 17, 8, 25, 1, 20, 14,
+          27, 4, 12, 19, 6, 28, 9, 22, 15, 0,
+          24, 7, 21, 13, 29, 3, 18, 11, 26, 16
+        ];
+        return names[displayOrder[Math.abs(index) % displayOrder.length]];
+      }
+
+      recordAdminGeneratedContributor(count = 1) {
+        const next = this.normalizeDailyContributors(this.dailyContributors);
+        const base = next.filter((entry) => String(entry.userId || '').startsWith('admin-sample-')).length;
+        const normalizedCount = Math.max(1, Number(count) || 1);
+        for (let i = 0; i < normalizedCount; i++) {
+          const seq = base + i;
+          next.push({
+            userId: `admin-sample-${Date.now()}-${seq}`,
+            name: this.getAdminSampleContributorName(seq),
+            firstContributedAt: new Date().toISOString()
+          });
+        }
+        this.dailyContributors = this.normalizeDailyContributors(next);
+        this.renderQuiltContributorList();
+      }
+
       renderQuiltContributorList() {
         const wrap = document.querySelector('#screen-quilt .quilt-fixed-contributors');
         const list = document.getElementById('quiltContributorList');
@@ -18671,6 +18826,7 @@ try {
           list.appendChild(item);
         });
         wrap.classList.toggle('has-content', contributors.length > 0);
+        this.scheduleQuiltContributorsRevealCheck();
       }
 
       prepareSettingsScreen() {
@@ -18720,7 +18876,7 @@ try {
         this.uiService.showScreen('screen-quilt');
       }
 
-      async saveQuilt() {
+      async saveQuilt(saveOptions = null) {
         try {
           const blocks = this.quiltEngine.blocks.map(block => ({
             id: block.id,
@@ -18735,12 +18891,62 @@ try {
             blocks,
             this.quiltEngine.submissionCount,
             this.quiltEngine.getColorReplayEvents(),
-            this.dailyContributors
+            this.dailyContributors,
+            saveOptions
           );
         } catch (error) {
           this.errorHandler.handleError(error, 'saveQuilt');
           throw error;
         }
+      }
+
+      setAdminQuiltActionButtonsDisabled(disabled) {
+        const buttons = document.querySelectorAll('.admin-menu [data-admin-quilt-action="true"]');
+        buttons.forEach((button) => {
+          button.disabled = disabled;
+          button.style.opacity = disabled ? '0.55' : '1';
+          button.style.cursor = disabled ? 'wait' : 'pointer';
+        });
+      }
+
+      runAdminQuiltMutation(label, action) {
+        const ADMIN_ACTION_TIMEOUT_MS = 45000;
+        const run = this.adminQuiltMutationQueue
+          .catch(() => {})
+          .then(async () => {
+            this.setAdminQuiltActionButtonsDisabled(true);
+            try {
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(
+                  () => reject(new Error(`${label} timed out after ${ADMIN_ACTION_TIMEOUT_MS}ms`)),
+                  ADMIN_ACTION_TIMEOUT_MS
+                );
+              });
+              return await Promise.race([action(), timeoutPromise]);
+            } catch (e) {
+              this.uiService.showToast(
+                `${label} stalled or failed — buttons unlocked; check network or try again.`
+              );
+              throw e;
+            } finally {
+              this.setAdminQuiltActionButtonsDisabled(false);
+            }
+          });
+        this.adminQuiltMutationQueue = run.catch((error) => {
+          this.logger.warn(`Admin quilt action failed: ${label}`, error);
+        });
+        return run;
+      }
+
+      async saveAdminQuiltMutation(label) {
+        const saved = await this.saveQuilt({ adminMutation: true });
+        if (!saved) {
+          this.uiService.showToast(`${label} was not saved. Reloading latest quilt.`);
+          await this.loadQuilt();
+          this.updateAdminStats();
+          throw new Error(`${label} failed to save`);
+        }
+        return true;
       }
 
       async refreshSharedQuiltBeforeContribution() {
@@ -18832,6 +19038,7 @@ try {
             hint.hidden = false;
             hint.textContent = "Add another color to see today's story collage preview.";
           }
+          this.scheduleQuiltContributorsRevealCheck();
           return;
         }
 
@@ -18871,6 +19078,7 @@ try {
               hint.hidden = true;
             }
             img.hidden = false;
+            this.scheduleQuiltContributorsRevealCheck();
           };
 
           img.onload = () => applyReady();
@@ -18882,6 +19090,7 @@ try {
               hint.textContent = 'Preview could not be displayed.';
             }
             this.logger.warn('Layout B preview image failed to load');
+            this.scheduleQuiltContributorsRevealCheck();
           };
           img.src = url;
           if (img.complete && img.naturalWidth > 0) {
@@ -18895,6 +19104,7 @@ try {
             hint.hidden = false;
             hint.textContent = 'Preview unavailable.';
           }
+          this.scheduleQuiltContributorsRevealCheck();
         }
       }
 
@@ -19927,9 +20137,10 @@ try {
       }
 
       async handleTestAddBlock() {
-        // 50 Representative colors from the Rumi palette
-        // Selected to maintain proportional distribution and maximize variety
-        const expandedRumiColors = [
+        return this.runAdminQuiltMutation('Add Random Block', async () => {
+          // 50 Representative colors from the Rumi palette
+          // Selected to maintain proportional distribution and maximize variety
+          const expandedRumiColors = [
           // Original 50 colors
           "#ea9b9a", "#de6c61", "#df9368", "#d57d39", "#d8a746", 
           "#caa22b", "#f6eed5", "#decd61", "#dbcc57", "#ded561",
@@ -19979,17 +20190,21 @@ try {
               this.renderer.setLastAddedIndex(newBlockIndex);
             }
             
+            this.recordAdminGeneratedContributor();
             this.renderQuilt();
-            await this.saveQuilt();
+            await this.saveAdminQuiltMutation('Add Random Block');
             
             // Update admin stats if menu is open
             this.updateAdminStats();
             
             this.uiService.showToast(`Added test block: ${randomColor}`);
+          } else {
+            this.uiService.showToast('Could not add block — no splittable area (quilt may be too fragmented).');
           }
         } catch (error) {
           this.errorHandler.handleError(error, 'testAddBlock');
         }
+        });
       }
 
       /**
@@ -21646,11 +21861,11 @@ try {
       }
 
       async handleAddColorFamilyBlocks() {
-        return this.handleAddColorFamilyBlocksByCount(10);
+        return this.runAdminQuiltMutation('Add Color Variations', () => this.handleAddColorFamilyBlocksByCount(10));
       }
 
       async handleAdd25ColorFamilyBlocks() {
-        return this.handleAddColorFamilyBlocksByCount(25);
+        return this.runAdminQuiltMutation('Add 25 Color Variations', () => this.handleAddColorFamilyBlocksByCount(25));
       }
 
       async handleAddColorFamilyBlocksByCount(blockCount = 10) {
@@ -21714,10 +21929,12 @@ try {
           }
 
           // Add blocks using sampled colors
+          let successfulAdds = 0;
           for (let i = 0; i < normalizedCount; i++) {
             const result = this.quiltEngine.addColor(selectedColors[i]);
             
             if (result) {
+              successfulAdds++;
               // Find the new block for animation
               let newBlockIndex = -1;
               if (result.newBlocks && result.newBlocks.length > 0) {
@@ -21733,11 +21950,17 @@ try {
               if (newBlockIndex !== -1) {
                 this.renderer.setLastAddedIndex(newBlockIndex);
               }
+              this.recordAdminGeneratedContributor();
+
+              if (successfulAdds % 5 === 0) {
+                this.renderQuilt();
+                await this.saveAdminQuiltMutation('Add Color Variations');
+              }
             }
           }
           
           this.renderQuilt();
-          await this.saveQuilt();
+          await this.saveAdminQuiltMutation('Add Color Variations');
           
           // Update admin stats if menu is open
           this.updateAdminStats();
@@ -21750,6 +21973,7 @@ try {
       }
 
       async handleSplitLargestBlockWithPopularColor() {
+        return this.runAdminQuiltMutation('Split Largest Block', async () => {
         try {
           const blocks = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks : [];
           if (!blocks.length) {
@@ -21798,13 +22022,15 @@ try {
             if (newBlockIndex !== -1) this.renderer.setLastAddedIndex(newBlockIndex);
           }
 
+          this.recordAdminGeneratedContributor();
           this.renderQuilt();
-          await this.saveQuilt();
+          await this.saveAdminQuiltMutation('Split Largest Block');
           this.updateAdminStats();
           this.uiService.showToast('Split largest block with a popular quilt color');
         } catch (error) {
           this.errorHandler.handleError(error, 'splitLargestBlockWithPopularColor');
         }
+        });
       }
 
       analyzeColorFamilies() {
@@ -22367,6 +22593,7 @@ try {
       }
 
       async handleResetQuilt() {
+        return this.runAdminQuiltMutation('Reset Quilt', async () => {
         // Show confirmation dialog
         const confirmed = confirm('Are you sure you want to reset the quilt? This will clear all blocks and start fresh. This action cannot be undone.');
         
@@ -22381,7 +22608,8 @@ try {
             console.log('🔄 RESET: Quilt engine initialized, blocks after reset:', this.quiltEngine.blocks.length);
             
             // Clear saved data
-            await this.dataService.saveQuilt([], 1, [], { resetSource: 'admin' });
+            const saved = await this.dataService.saveQuilt([], 1, [], { resetSource: 'admin' });
+            if (!saved) throw new Error('Admin reset failed to save');
             console.log('🔄 RESET: Data saved to database');
             
             // Clear user contributions for this session
@@ -22407,6 +22635,7 @@ try {
             this.uiService.showToast('Failed to reset quilt. Please try again.');
           }
         }
+        });
       }
 
 
