@@ -584,6 +584,168 @@ async function transcodeInstagramReelWebmToMp4(dateKey, options = {}) {
   }
 }
 
+/** Match client Utils.getHstRenderTriangles for server-side raster. */
+function getHstRenderTriangles(block) {
+  if (!block || block.patternType !== 'special' || block.specialPatternType !== 'hst') {
+    return [];
+  }
+  if (Array.isArray(block.hstTriangles) && block.hstTriangles.length) {
+    return block.hstTriangles.map((t) => ({
+      color: t.color,
+      points: (t.points || []).map((p) => {
+        if (Array.isArray(p)) return [Number(p[0]), Number(p[1])];
+        if (p && typeof p === 'object') return [Number(p.x), Number(p.y)];
+        return [0, 0];
+      })
+    }));
+  }
+  const w = Number(block.width);
+  const h = Number(block.height);
+  const c1 = typeof block.color === 'string' ? block.color : '#c8c4bf';
+  const c2 = typeof block.hstColorB === 'string' ? block.hstColorB : c1;
+  const diag = block.hstDiagonal === 'ne-sw' ? 'ne-sw' : 'nw-se';
+  if (diag === 'nw-se') {
+    return [
+      { color: c1, points: [[0, 0], [0, h], [w, h]] },
+      { color: c2, points: [[0, 0], [w, 0], [w, h]] }
+    ];
+  }
+  return [
+    { color: c1, points: [[0, 0], [w, 0], [0, h]] },
+    { color: c2, points: [[w, 0], [w, h], [0, h]] }
+  ];
+}
+
+function hashHstOrganicSeed(block) {
+  const s = [
+    String(block.id ?? ''),
+    String(block.x ?? 0),
+    String(block.y ?? 0),
+    String(block.width ?? 0),
+    String(block.height ?? 0),
+    String(block.hstDiagonal ?? ''),
+    String(block.hstColorB ?? '')
+  ].join('|');
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Match client Utils.getHstOrganicRenderTriangles (legacy HST only). */
+function getHstOrganicRenderTriangles(block, jitterMultiplier = 1) {
+  const exact = getHstRenderTriangles(block);
+  if (!exact || exact.length !== 2) return exact || [];
+  if (Array.isArray(block.hstTriangles) && block.hstTriangles.length) {
+    return exact;
+  }
+  const w = Number(block.width);
+  const h = Number(block.height);
+  if (!(w > 0 && h > 0)) return exact;
+  const jm = jitterMultiplier == null || Number.isNaN(Number(jitterMultiplier)) ? 1 : Number(jitterMultiplier);
+  const rng = mulberry32(hashHstOrganicSeed(block));
+  const diag = block.hstDiagonal === 'ne-sw' ? 'ne-sw' : 'nw-se';
+  const blockArea = w * h;
+  const areaFactor = Math.sqrt(blockArea) / 100;
+  let sizeAdjustedVariation;
+  if (areaFactor < 2) {
+    sizeAdjustedVariation = Math.min(4, Math.max(1, areaFactor * 2));
+  } else {
+    sizeAdjustedVariation = Math.min(6, 4 + (areaFactor - 2) * 1);
+  }
+  const handCutVariation = sizeAdjustedVariation * jm;
+  const diagVar = handCutVariation * 0.62;
+  const segments =
+    areaFactor < 2
+      ? Math.max(2, Math.min(3, Math.floor(areaFactor * 1.2) + 1))
+      : Math.max(3, Math.min(5, Math.floor(3 + (areaFactor - 2) * 0.4)));
+  const len = Math.hypot(w, h);
+
+  if (diag === 'nw-se') {
+    const px = -h / len;
+    const py = w / len;
+    const wobble = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const bx = t * w;
+      const by = t * h;
+      if (i === 0 || i === segments) {
+        wobble.push([bx, by]);
+      } else {
+        const off = (rng() - 0.5) * 2 * diagVar;
+        wobble.push([bx + px * off, by + py * off]);
+      }
+    }
+    const midRev = wobble.slice(1, -1).reverse();
+    const tri1pts = [[0, h], [w, h], ...midRev, [0, 0]];
+    const tri2pts = [[0, 0], [w, 0], [w, h], ...midRev];
+    return [
+      { color: exact[0].color, points: tri1pts },
+      { color: exact[1].color, points: tri2pts }
+    ];
+  }
+
+  const px = -h / len;
+  const py = -w / len;
+  const wobble = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const bx = w * (1 - t);
+    const by = h * t;
+    if (i === 0 || i === segments) {
+      wobble.push([bx, by]);
+    } else {
+      const off = (rng() - 0.5) * 2 * diagVar;
+      wobble.push([bx + px * off, by + py * off]);
+    }
+  }
+  const mid = wobble.slice(1, -1);
+  const midRev = mid.slice().reverse();
+  const tri1pts = [[0, 0], [w, 0], ...mid, [0, h]];
+  const tri2pts = [[w, 0], [w, h], [0, h], ...midRev];
+  return [
+    { color: exact[0].color, points: tri1pts },
+    { color: exact[1].color, points: tri2pts }
+  ];
+}
+
+/** Half-square triangle blocks (must match client geometry in our-daily-beta.html). */
+function drawQuiltBlockToCtx(ctx, block, x, y, width, height) {
+  const isHst = block.patternType === 'special' && block.specialPatternType === 'hst';
+  if (!isHst) {
+    ctx.fillStyle = block.color || '#6c757d';
+    ctx.fillRect(x, y, width, height);
+    return;
+  }
+  const tris = getHstOrganicRenderTriangles(block, 1);
+  const bw = Math.max(1e-6, Number(block.width));
+  const bh = Math.max(1e-6, Number(block.height));
+  for (const t of tris) {
+    const pts = t.points || [];
+    if (pts.length < 3) continue;
+    ctx.fillStyle = t.color || block.color || '#6c757d';
+    ctx.beginPath();
+    ctx.moveTo(x + (pts[0][0] / bw) * width, y + (pts[0][1] / bh) * height);
+    for (let k = 1; k < pts.length; k++) {
+      ctx.lineTo(x + (pts[k][0] / bw) * width, y + (pts[k][1] / bh) * height);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 // Generate Instagram image from quilt data (server-side)
 async function generateInstagramImageFromQuilt(blocks, quote) {
   const canvas = createCanvas(1080, 1350); // 4:5 ratio for Instagram
@@ -616,10 +778,7 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
     const y = startY + block.y;
     const width = block.width;
     const height = block.height;
-    
-    // Draw block
-    ctx.fillStyle = block.color || '#6c757d';
-    ctx.fillRect(x, y, width, height);
+    drawQuiltBlockToCtx(ctx, block, x, y, width, height);
   });
   
   // Add quote at bottom
