@@ -51,6 +51,10 @@ function getNumber(prop, fallback = 0) {
   return prop.number;
 }
 
+function getDateStart(prop) {
+  return prop?.date?.start ? String(prop.date.start).trim() : '';
+}
+
 function getSelect(prop) {
   return prop?.select?.name || '';
 }
@@ -116,6 +120,62 @@ function textFromAnyNotionProp(prop) {
     if (r.type === 'date' && r.date?.start) return String(r.date.start).trim();
   }
   return '';
+}
+
+function plainValueFromNotionProp(prop) {
+  if (!prop || typeof prop !== 'object') return null;
+  const text = textFromAnyNotionProp(prop);
+  if (text) return text;
+  switch (prop.type) {
+    case 'checkbox':
+      return !!prop.checkbox;
+    case 'date':
+      return prop.date ? { start: prop.date.start || null, end: prop.date.end || null } : null;
+    case 'email':
+      return prop.email || '';
+    case 'files':
+      return Array.isArray(prop.files)
+        ? prop.files.map((f) => ({
+            name: f.name || '',
+            url: f.file?.url || f.external?.url || ''
+          }))
+        : [];
+    case 'multi_select':
+      return Array.isArray(prop.multi_select) ? prop.multi_select.map((s) => s.name).filter(Boolean) : [];
+    case 'number':
+      return typeof prop.number === 'number' ? prop.number : null;
+    case 'people':
+      return Array.isArray(prop.people)
+        ? prop.people.map((p) => ({ id: p.id || '', name: p.name || '' }))
+        : [];
+    case 'phone_number':
+      return prop.phone_number || '';
+    case 'relation':
+      return Array.isArray(prop.relation) ? prop.relation.map((r) => r.id).filter(Boolean) : [];
+    case 'select':
+      return prop.select?.name || '';
+    case 'status':
+      return prop.status?.name || '';
+    case 'unique_id':
+      return prop.unique_id
+        ? `${prop.unique_id.prefix || ''}${prop.unique_id.number ?? ''}`.trim()
+        : '';
+    case 'url':
+      return prop.url || '';
+    default:
+      return null;
+  }
+}
+
+function notionPropertiesSnapshot(props) {
+  const out = {};
+  for (const [name, prop] of Object.entries(props || {})) {
+    out[name] = {
+      type: prop?.type || 'unknown',
+      value: plainValueFromNotionProp(prop)
+    };
+  }
+  return out;
 }
 
 /** Notion columns named "Daily Blessing", rollups, etc. normalize to *blessing*. */
@@ -186,6 +246,28 @@ function parseNotionRow(page) {
     getRichText(props.notification_text) || getTitle(props.notification_text);
   const theme = getSelect(props.theme) || getRichText(props.theme) || getTitle(props.theme);
   const sortOrder = getNumber(props.sort_order, 0);
+  const dateScheduled = getDateStart(props.date_scheduled);
+  const submittedAt = getDateStart(props.submitted_at);
+  const submittedVia = getMappedText(
+    props,
+    'submitted_via',
+    'submitted_via',
+    'submittedVia',
+    'Submitted via',
+    'Submitted Via'
+  );
+  const itemNo = typeof props.item_no?.number === 'number' ? props.item_no.number : null;
+  const lastUsedDate = getDateStart(props.last_used_date);
+  const reviewed = getCheckbox(props['reviewed?'], false);
+  const sourceNotes = getSelect(props.source_notes) || getRichText(props.source_notes) || getTitle(props.source_notes);
+  const status = getSelect(props.status) || getRichText(props.status) || getTitle(props.status);
+  const timesUsed = typeof props.times_used?.number === 'number' ? props.times_used.number : null;
+  const notionUniqueId = props.ID?.unique_id
+    ? `${props.ID.unique_id.prefix || ''}${props.ID.unique_id.number ?? ''}`.trim()
+    : '';
+  const githubPullRequestIds = Array.isArray(props['GitHub Pull Requests']?.relation)
+    ? props['GitHub Pull Requests'].relation.map((r) => r.id).filter(Boolean)
+    : [];
   const approvedProp = props.approved || props.Approved || props.active || props.Active;
   const approved = getBoolean(approvedProp, true);
   const notificationEnabled = getBoolean(props.notification_enabled, true);
@@ -212,9 +294,29 @@ function parseNotionRow(page) {
       approved,
       active: approved,
       sortOrder,
+      dateScheduled,
+      date_scheduled: dateScheduled,
+      itemNo,
+      item_no: itemNo,
+      lastUsedDate,
+      last_used_date: lastUsedDate,
+      reviewed,
+      reviewed_: reviewed,
+      sourceNotes,
+      source_notes: sourceNotes,
+      status,
+      submittedAt,
+      submitted_at: submittedAt,
+      submittedVia,
+      submitted_via: submittedVia,
+      timesUsed,
+      times_used: timesUsed,
+      notionUniqueId,
+      githubPullRequestIds,
       theme,
       source: 'notion',
       sourceId: page.id,
+      notionProperties: notionPropertiesSnapshot(props),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }
   };

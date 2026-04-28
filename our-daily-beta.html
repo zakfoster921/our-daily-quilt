@@ -17884,6 +17884,7 @@ try {
             <button onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Variations</button>
             <button onclick="app.handleSplitLargestBlockWithPopularColor()">Split Largest Block (Popular Color)</button>
             <button onclick="app.handleResetQuilt()">Reset Quilt</button>
+            <button type="button" onclick="window.app &amp;&amp; window.app.handleRunAsFirstTimeUser()">Run as First-Time User</button>
             <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
             <button onclick="app.handleTestInstagramStoryImage()">📱 Create IG story (Layout B 9:16)</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handleAdminSyntheticQuiltReel()">🎬 Synthetic reel: split build (WebM ~8s)</button>
@@ -18175,6 +18176,32 @@ try {
         } catch (_) {
           /* */
         }
+      }
+
+      resetFirstTimeUserState() {
+        try {
+          localStorage.removeItem('ourDailyHasVisited');
+          localStorage.removeItem('ourDailyLastVisitDate');
+          localStorage.removeItem('ourDailyQuoteSeenDate');
+          localStorage.removeItem('ourDailyFriendTermQueue');
+          localStorage.removeItem('ourDailyFriendTermPending');
+          localStorage.removeItem(Utils.USER_FIRST_NAME_KEY || 'ourDailyUserFirstName');
+          localStorage.removeItem(Utils.FIRST_NAME_SKIPPED_KEY || 'ourDailyFirstNameSkipped');
+        } catch (error) {
+          this.logger?.warn?.('Could not clear first-time user state:', error);
+        }
+      }
+
+      handleRunAsFirstTimeUser() {
+        const ok = confirm(
+          'Run the first-time sequence again? This clears only local onboarding/name state on this device. It will not reset the quilt.'
+        );
+        if (!ok) return;
+        this.resetFirstTimeUserState();
+        this.uiService.showToast('First-time sequence reset');
+        setTimeout(() => {
+          window.location.reload();
+        }, 350);
       }
 
       _shouldFastPathReturningSameDayQuote() {
@@ -22868,21 +22895,25 @@ try {
     /** Dev / QA: always on `window` as soon as this script parses (not tied to DOMContentLoaded). */
     window.resetOurDailyFirstVisit = function resetOurDailyFirstVisit() {
       try {
-        localStorage.removeItem('ourDailyHasVisited');
-        localStorage.removeItem('ourDailyLastVisitDate');
-        localStorage.removeItem('ourDailyQuoteSeenDate');
-        localStorage.removeItem('ourDailyFriendTermQueue');
-        localStorage.removeItem('ourDailyFriendTermPending');
-        const nameKey =
-          typeof Utils !== 'undefined' && Utils.USER_FIRST_NAME_KEY
-            ? Utils.USER_FIRST_NAME_KEY
-            : 'ourDailyUserFirstName';
-        const skipKey =
-          typeof Utils !== 'undefined' && Utils.FIRST_NAME_SKIPPED_KEY
-            ? Utils.FIRST_NAME_SKIPPED_KEY
-            : 'ourDailyFirstNameSkipped';
-        localStorage.removeItem(nameKey);
-        localStorage.removeItem(skipKey);
+        if (window.app && typeof window.app.resetFirstTimeUserState === 'function') {
+          window.app.resetFirstTimeUserState();
+        } else {
+          localStorage.removeItem('ourDailyHasVisited');
+          localStorage.removeItem('ourDailyLastVisitDate');
+          localStorage.removeItem('ourDailyQuoteSeenDate');
+          localStorage.removeItem('ourDailyFriendTermQueue');
+          localStorage.removeItem('ourDailyFriendTermPending');
+          const nameKey =
+            typeof Utils !== 'undefined' && Utils.USER_FIRST_NAME_KEY
+              ? Utils.USER_FIRST_NAME_KEY
+              : 'ourDailyUserFirstName';
+          const skipKey =
+            typeof Utils !== 'undefined' && Utils.FIRST_NAME_SKIPPED_KEY
+              ? Utils.FIRST_NAME_SKIPPED_KEY
+              : 'ourDailyFirstNameSkipped';
+          localStorage.removeItem(nameKey);
+          localStorage.removeItem(skipKey);
+        }
       } catch (e) {
         console.warn(e);
       }
