@@ -51,6 +51,13 @@ try {
         return false;
       }
     }
+    try {
+      if (odqIsCapacitorNative()) {
+        document.documentElement.classList.add('odq-capacitor-native');
+      }
+    } catch (_) {
+      /* ignore */
+    }
     function odqDescribeGlobalError(event) {
       try {
         var err = event && event.error;
@@ -246,7 +253,8 @@ try {
         box-sizing: border-box;
         position: relative;
         touch-action: none;
-
+        /* Isolate stacking so canvas mix-blend composes reliably (WKWebView / device Safari). */
+        isolation: isolate;
       }
 
       .quilt-container.quilt-container--zoomed {
@@ -257,7 +265,7 @@ try {
         cursor: grabbing;
       }
 
-      /* Subtle warm glow overlay */
+      /* Subtle warm glow — keep below film grain layer (z-index); iOS WKWebView can hide canvas blend otherwise. */
       .quilt-container::before {
         content: '';
         position: absolute;
@@ -276,6 +284,30 @@ try {
         z-index: 2;
         transform: translate3d(0, var(--quilt-overlay-shift, 0px), 0);
         will-change: transform;
+      }
+
+      /* Same procedural film grain as synthetic reels (`Utils.applyFilmGrain`). Multiply blends with `#quilt`. */
+      #quiltFilmGrainOverlay {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 4;
+        display: block;
+        mix-blend-mode: multiply;
+        opacity: 0.72;
+        will-change: transform;
+        /* Promote composite layer — helps WKWebView draw blended canvas pixels on device builds. */
+        transform: translate3d(0, var(--quilt-base-shift, 0px), 0) translateZ(0);
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+      }
+
+      html.odq-capacitor-native #quiltFilmGrainOverlay {
+        /* WKWebView can fail to composite blended canvas layers on device; native draws transparent texture pixels directly. */
+        mix-blend-mode: normal;
+        opacity: 0.82;
       }
     
     /* Base SVG styling - will be overridden by media queries */
@@ -2589,9 +2621,6 @@ try {
       #screen-quilt #quilt {
         touch-action: pan-y pinch-zoom !important;
       }
-        position: relative !important;
-        z-index: 10 !important;
-      }
 
       #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors {
         position: fixed !important;
@@ -2611,21 +2640,16 @@ try {
       }
 
       #screen-quilt .quilt-reset-footer {
-        position: fixed !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        z-index: 13 !important;
+        position: static !important;
         margin: 0 !important;
-        padding: 0.85rem 0 max(1rem, env(safe-area-inset-bottom, 0px)) !important;
-        background-color: #f6f4f1 !important;
-        box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.06) !important;
-        /* Non-interactive; lets vertical drags reach #screen-quilt so users can scroll up from the bottom. */
+        padding: 0.12rem 0 0 !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
         pointer-events: none !important;
       }
 
       #screen-quilt .quilt-contributor-panel {
-        pointer-events: auto;
+        pointer-events: none;
         width: min(88vw, 380px);
         max-height: var(--quilt-contributors-panel-max);
         margin: 0 auto;
@@ -2650,6 +2674,7 @@ try {
       }
 
       #screen-quilt .quilt-contributor-list {
+        pointer-events: auto;
         margin: 0 auto;
         width: 100%;
         min-height: 0;
@@ -3236,6 +3261,12 @@ try {
       75% { 
         transform: rotate(0.5deg); 
       }
+    }
+
+    #quilt .quilt-parallax-block {
+      filter:
+        drop-shadow(0.8px 1.05px 0.55px rgba(45, 36, 29, 0.15))
+        drop-shadow(-0.3px -0.3px 0 rgba(255, 255, 255, 0.11));
     }
 
     /* "Show me my block" — stronger depth + warm edge glow while the piece is forward. */
@@ -4431,11 +4462,12 @@ try {
     #screen-quilt .quilt-reset-footer {
       width: 100%;
       box-sizing: border-box;
-      padding: 0.85rem 0 max(1rem, env(safe-area-inset-bottom, 0px));
+      padding: 0.12rem 0 0;
       display: flex;
       justify-content: center;
-      background-color: #f6f4f1;
-      box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.06);
+      background-color: transparent;
+      box-shadow: none;
+      pointer-events: none;
     }
 
     #screen-quilt .quilt-reset-countdown {
@@ -4742,11 +4774,17 @@ try {
       <!-- Quilt container - full viewport -->
       <div class="quilt-container">
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OUR DAILY QUILT — community quilt with colorful blocks"></svg>
+        <canvas id="quiltFilmGrainOverlay" width="1" height="1" aria-hidden="true"></canvas>
       </div>
       <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
         <div class="quilt-contributor-panel">
           <p class="quilt-contributor-title">TODAY'S CONTRIBUTORS</p>
           <div class="quilt-contributor-list" id="quiltContributorList" role="list"></div>
+          <footer class="quilt-reset-footer">
+            <p class="quilt-reset-countdown" id="quiltResetCountdown" aria-live="polite">
+              This quilt resets in <span id="quiltResetCountdownValue">--</span>
+            </p>
+          </footer>
         </div>
       </div>
 
@@ -4976,11 +5014,6 @@ try {
         </div>
       </div>
       <div class="quilt-fixed-peek" aria-hidden="true"></div>
-      <footer class="quilt-reset-footer">
-        <p class="quilt-reset-countdown" id="quiltResetCountdown" aria-live="polite">
-          This quilt resets in <span id="quiltResetCountdownValue">--</span>
-        </p>
-      </footer>
     </section>
 
     <!-- Settings Screen -->
@@ -5305,12 +5338,14 @@ try {
       APP: {
         name: 'OUR DAILY QUILT',
         version: '3.0.0-beta',
-        defaultColor: '#f7b733',
+        /** First Rumi-palette swatch: fresh quilt + picker default (see `hexToHsv` / daily snap). */
+        defaultColor: '#ea9b9a',
         quiltSize: 1000,
         animationDuration: 2000,
         toastDuration: 3000,
         /** Delay before “What color…” prompt on quote screen. */
         quoteColorPromptReadPauseMs: 1500,
+        buildId: '2026-04-29-client-write-hardening',
         debugMode: true
       },
       FIREBASE: {
@@ -5630,6 +5665,38 @@ try {
       /** Diagonal HST works for any rectangle; cap is UX-only. Portrait strips often exceed 1.35:1. */
       static HST_ELIGIBLE_MIN_SHORT = 72;
       static HST_ELIGIBLE_MAX_ASPECT = 2.75;
+      static INSET_CIRCLE_MIN_SHORT = 76;
+      static INSET_CIRCLE_MAX_ASPECT = 2.6;
+      static INSET_CIRCLE_MIN_AREA = 12000;
+      static INSET_CIRCLE_MIN_HALF = 40;
+      /** Disk diameter as a fraction of the shorter side (0.9 → ~sample 90% width disk). */
+      static INSET_CIRCLE_DIAMETER_FRAC = 0.9;
+      /** Field vs new-color similarity: stricter on large cells, looser as pieces shrink (see `_insetCircleMaxSimilarityForSplit`). */
+      static INSET_SPLIT_SIM_SIDE_LO = 48;
+      static INSET_SPLIT_SIM_SIDE_HI = 220;
+      static INSET_SPLIT_SIM_STRICT = 0.7;
+      static INSET_SPLIT_SIM_LOOSE = 0.988;
+
+      /** World-space circle params saved on descendants of an inset-circle split. */
+      static hasPersistedInsetCircleGeometry(block) {
+        if (!block) return false;
+        const cx = Number(block.insetCx);
+        const cy = Number(block.insetCy);
+        const r = Number(block.insetR);
+        return Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(r) && r > 0;
+      }
+
+      /**
+       * If inset geometry exists but labels were stripped (e.g. nested-pattern strip),
+       * restore so render/split use clip-to-rect inset again.
+       */
+      static ensureInsetClassificationFromGeometry(block) {
+        if (!SimpleQuiltEngine.hasPersistedInsetCircleGeometry(block)) return false;
+        if (block.patternType === 'special' && block.specialPatternType === 'insetCircle') return false;
+        block.patternType = 'special';
+        block.specialPatternType = 'insetCircle';
+        return true;
+      }
 
       constructor(userId = null) {
         this.blocks = [];
@@ -5691,6 +5758,19 @@ try {
         if (Array.isArray(block.hstTriangles) && block.hstTriangles.length) {
           o.hstTriangles = Utils.hstTrianglesForFirestore(block.hstTriangles);
         }
+        if (typeof block.insetTier === 'number') o.insetTier = block.insetTier;
+        if (block.insetFrozen === true) o.insetFrozen = true;
+        if (typeof block.insetInnerColor === 'string') o.insetInnerColor = block.insetInnerColor;
+        if (typeof block.insetCx === 'number') o.insetCx = block.insetCx;
+        if (typeof block.insetCy === 'number') o.insetCy = block.insetCy;
+        if (typeof block.insetR === 'number') o.insetR = block.insetR;
+        if (typeof block.insetMask === 'string') o.insetMask = block.insetMask;
+        if (block.insetFirstCutVertical === true || block.insetFirstCutVertical === false) {
+          o.insetFirstCutVertical = block.insetFirstCutVertical;
+        }
+        if (block.insetNextCutVertical === true || block.insetNextCutVertical === false) {
+          o.insetNextCutVertical = block.insetNextCutVertical;
+        }
         if (block.contributorId) o.contributorId = block.contributorId;
         if (typeof block.submissionIndex === 'number') o.submissionIndex = block.submissionIndex;
         return o;
@@ -5709,6 +5789,77 @@ try {
         });
       }
 
+      _stripStripesFromSplitChildren(block1, block2, parent) {
+        if (!parent || parent.specialPatternType !== 'stripes') return;
+        [block1, block2].forEach((b) => {
+          if (!b) return;
+          if (SimpleQuiltEngine.hasPersistedInsetCircleGeometry(b)) {
+            SimpleQuiltEngine.ensureInsetClassificationFromGeometry(b);
+            return;
+          }
+          delete b.patternType;
+          delete b.specialPatternType;
+          delete b.originalPatternId;
+        });
+      }
+
+      /**
+       * Second inset-shard field: near parent fabric `color`, nudged ~15–28% toward the picker so corners
+       * gain tonal variation without reading like a unrelated half (unlike plain `performRegularSplit`).
+       */
+      _insetAdjacentFieldColor(parentBg, pickerHex) {
+        const bgRaw = typeof parentBg === 'string' && /^#[0-9a-f]{6}$/i.test(parentBg.trim())
+          ? parentBg.trim()
+          : '#c8c4bf';
+        const hint =
+          typeof pickerHex === 'string' && /^#[0-9a-f]{6}$/i.test(String(pickerHex).trim())
+            ? String(pickerHex).trim()
+            : bgRaw;
+        const a = this.hexToHsl(bgRaw);
+        const b = this.hexToHsl(hint);
+        const t = 0.14 + Math.random() * 0.14;
+        let hOut;
+        let sOut;
+        let lOut;
+        const parentWeak = !(a.s > 3) || Number.isNaN(a.s);
+        if (parentWeak) {
+          lOut = Math.max(10, Math.min(90, a.l + (b.l - a.l) * t));
+          hOut = a.h;
+          sOut = Math.max(0, Math.min(100, a.s + (b.s - a.s) * t * 0.6));
+        } else {
+          const dh = ((b.h - a.h + 540) % 360) - 180;
+          hOut = ((a.h + dh * t) % 360 + 360) % 360;
+          sOut = Math.max(0, Math.min(100, a.s + (b.s - a.s) * t));
+          lOut = Math.max(10, Math.min(90, a.l + (b.l - a.l) * t));
+        }
+        let out = Utils.hslToHex(hOut, sOut, lOut);
+        if (typeof out !== 'string' || out.toLowerCase() === bgRaw.toLowerCase()) {
+          const nudge = Math.random() < 0.5 ? this.lightenColorHsl(a, 0.045) : this.darkenColorHsl(a, 0.045);
+          out = Utils.hslToHex(nudge.h, nudge.s, nudge.l);
+        }
+        return out;
+      }
+
+      /**
+       * Regular split uses raw `newColor` on block2's field; inset uses tonal field split + picker-driven inner disk.
+       */
+      _applyInsetCircleRegularSplitChildren(parent, block1, block2, newColor) {
+        if (!parent || parent.specialPatternType !== 'insetCircle' || !block1 || !block2) return;
+        const bg = typeof parent.color === 'string' ? parent.color : '#c8c4bf';
+        const inner1 =
+          typeof parent.insetInnerColor === 'string' && parent.insetInnerColor.startsWith('#')
+            ? parent.insetInnerColor
+            : bg;
+        const inner2 = this._ensureDistinctHstPartner(inner1, newColor);
+        const tierNext = (parent.insetTier ?? 0) + 1;
+        block1.color = bg;
+        block2.color = this._insetAdjacentFieldColor(bg, newColor);
+        block1.insetInnerColor = inner1;
+        block2.insetInnerColor = inner2;
+        block1.insetTier = tierNext;
+        block2.insetTier = tierNext;
+      }
+
       _blockMeetsHstGeometry(block) {
         if (!block || block.width <= 0 || block.height <= 0) return false;
         const minS = SimpleQuiltEngine.HST_ELIGIBLE_MIN_SHORT;
@@ -5717,6 +5868,49 @@ try {
         const hstLong = Math.max(block.width, block.height);
         const hstAr = hstLong / Math.max(1, hstShort);
         return hstShort >= minS && hstAr <= maxAr;
+      }
+
+      _blockMeetsInsetCircleGeometry(block) {
+        if (!block || block.width <= 0 || block.height <= 0) return false;
+        const blockArea = block.width * block.height;
+        const insetShort = Math.min(block.width, block.height);
+        const insetLong = Math.max(block.width, block.height);
+        const insetAr = insetLong / Math.max(1, insetShort);
+        return (
+          insetShort >= SimpleQuiltEngine.INSET_CIRCLE_MIN_SHORT &&
+          insetAr <= SimpleQuiltEngine.INSET_CIRCLE_MAX_ASPECT &&
+          blockArea >= SimpleQuiltEngine.INSET_CIRCLE_MIN_AREA
+        );
+      }
+
+      /**
+       * Max allowed color similarity (field vs incoming) to keep an inset split.
+       * Large min-side → lower cap (need more contrast); small pieces → allow near-matching colors.
+       */
+      _insetCircleMaxSimilarityForSplit(minSide) {
+        const lo = SimpleQuiltEngine.INSET_SPLIT_SIM_SIDE_LO;
+        const hi = SimpleQuiltEngine.INSET_SPLIT_SIM_SIDE_HI;
+        const a = SimpleQuiltEngine.INSET_SPLIT_SIM_STRICT;
+        const b = SimpleQuiltEngine.INSET_SPLIT_SIM_LOOSE;
+        const s = Math.max(lo, Math.min(hi, minSide));
+        const u = (hi - s) / (hi - lo);
+        return a + (b - a) * u;
+      }
+
+      /** Next axis for inset split: vertical line vs horizontal. Prefers `insetNextCutVertical`; infers legacy blocks. */
+      _resolveInsetNextCutVertical(block) {
+        if (typeof block.insetNextCutVertical === 'boolean') {
+          return block.insetNextCutVertical;
+        }
+        const tier = block.insetTier ?? 0;
+        if (tier <= 0) {
+          return Math.random() < 0.5;
+        }
+        if (block.insetFirstCutVertical !== true && block.insetFirstCutVertical !== false) {
+          return Math.random() < 0.5;
+        }
+        const fv = block.insetFirstCutVertical === true;
+        return fv === (tier % 2 === 0);
       }
 
       _isRegularQuiltCellForHstRoll(block) {
@@ -5870,7 +6064,8 @@ try {
           // Check if new color is very similar to any special pattern colors
           const hasSimilarColor = specialPatternBlocks.some(block => {
             const similarity = this.getColorSimilarity(block.color, newColor);
-            return similarity > 0.88; // Strict similar (88%+ similar) - OKLab-based pattern preservation threshold
+            const minSide = Math.min(block.width, block.height);
+            return similarity > this._hstSplitColorMatchMinSimilarity(minSide);
           });
           
           if (hasSimilarColor) {
@@ -6055,8 +6250,8 @@ try {
           }
         }
         
-        // ~1 in 10 color selections → forced HST (when geometry + special-pattern budget allow).
-        const HST_FORCED_CHANCE = 1 / 10;
+        // ~1 in 15 color selections → forced HST (when geometry + special-pattern budget allow).
+        const HST_FORCED_CHANCE = 1 / 15;
         if (
           !selectedToPreserveSpecialPattern &&
           selectedBlock &&
@@ -6067,7 +6262,19 @@ try {
         ) {
           delete selectedBlock._shouldCreateSpecialPattern;
           selectedBlock._forceHalfSquareTriangle = true;
-          console.log('🎯 HST ROLL: Forced half-square triangle (1/10 rule)');
+          console.log('🎯 HST ROLL: Forced half-square triangle (1/15 rule)');
+        } else if (
+          !selectedToPreserveSpecialPattern &&
+          selectedBlock &&
+          !selectedBlock._forceHalfSquareTriangle &&
+          this._isRegularQuiltCellForHstRoll(selectedBlock) &&
+          this._blockMeetsInsetCircleGeometry(selectedBlock) &&
+          this._anotherSpecialAllowedThisTurnBeforeSplit() &&
+          Math.random() < 1 / 10
+        ) {
+          delete selectedBlock._shouldCreateSpecialPattern;
+          selectedBlock._forceInsetCircle = true;
+          console.log('🎯 INSET ROLL: Forced inset circle (1/10 rule)');
         }
         
         const parentSnapshot = this._serializeBlockForReplay(selectedBlock);
@@ -6212,7 +6419,11 @@ try {
           console.log(`🔧 REGULAR SPLIT: Block ${block.id} split into 2 blocks: ${block1.id}, ${block2.id}`);
           console.log(`🔧 BLOCK1: x=${block1.x}, y=${block1.y}, w=${block1.width}, h=${block1.height}, color=${block1.color}`);
           console.log(`🔧 BLOCK2: x=${block2.x}, y=${block2.y}, w=${block2.width}, h=${block2.height}, color=${block2.color}`);
+          this._applyInsetCircleRegularSplitChildren(block, block1, block2, newColor);
           this._stripHstFromSplitChildren(block1, block2, block);
+          this._stripStripesFromSplitChildren(block1, block2, block);
+          SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block1);
+          SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block2);
           return [block1, block2];
         } else {
           // More balanced split: 40-60% instead of 30-70%
@@ -6261,12 +6472,42 @@ try {
           console.log(`🔧 REGULAR SPLIT: Block ${block.id} split into 2 blocks: ${block1.id}, ${block2.id}`);
           console.log(`🔧 BLOCK1: x=${block1.x}, y=${block1.y}, w=${block1.width}, h=${block1.height}, color=${block1.color}`);
           console.log(`🔧 BLOCK2: x=${block2.x}, y=${block2.y}, w=${block2.width}, h=${block2.height}, color=${block2.color}`);
+          this._applyInsetCircleRegularSplitChildren(block, block1, block2, newColor);
           this._stripHstFromSplitChildren(block1, block2, block);
+          this._stripStripesFromSplitChildren(block1, block2, block);
+          SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block1);
+          SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block2);
           return [block1, block2];
         }
       }
+
+      /**
+       * Same intent as {@link performRegularSplit}: ~40–60% cuts (not strict halves) when there is room,
+       * so HST rectangles vary in width/height like the rest of the quilt.
+       */
+      _hstAsymmetricParts(totalSpan, minPart = 40) {
+        const t = Number(totalSpan);
+        const m = Math.max(1, Number(minPart) || 40);
+        if (!Number.isFinite(t) || t <= 0) {
+          const half = t / 2;
+          return [half, t - half];
+        }
+        if (t + 1e-9 < 2 * m) {
+          const half = t / 2;
+          return [half, t - half];
+        }
+        const splitRatio = 0.4 + Math.random() * 0.2;
+        let first = t * splitRatio;
+        if (first < m) first = m;
+        if (t - first < m) first = t - m;
+        if (first <= 0 || first >= t) {
+          first = t / 2;
+        }
+        return [first, t - first];
+      }
       
       splitBlock(block, newColor) {
+        SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
         // Debug: Track special pattern flag state
         if (block._shouldCreateSpecialPattern) {
           console.log(`🎯 SPLIT: Block ${block.id} has special pattern flag - creating special pattern`);
@@ -6275,8 +6516,12 @@ try {
         // Never create special patterns on the first split - let the quilt develop naturally
         if (this.submissionCount <= 1) {
           delete block._forceHalfSquareTriangle;
+          delete block._forceInsetCircle;
           if (block.patternType === 'special' && block.specialPatternType === 'hst') {
             return this.splitHalfSquareTriangle(block, newColor);
+          }
+          if (block.patternType === 'special' && block.specialPatternType === 'insetCircle') {
+            return this.splitInsetCircle(block, newColor);
           }
           return this.performRegularSplit(block, newColor);
         }
@@ -6285,6 +6530,17 @@ try {
           delete block._forceHalfSquareTriangle;
           console.log(`🎯 SPLIT: Forced HST for block ${block.id}`);
           return this.createHalfSquareTriangle(block, newColor);
+        }
+
+        if (block._forceInsetCircle) {
+          delete block._forceInsetCircle;
+          console.log(`🎯 SPLIT: Forced inset circle for block ${block.id}`);
+          return this.createInsetCircle(block, newColor);
+        }
+
+        if (block.patternType === 'special' && block.specialPatternType === 'insetCircle') {
+          delete block._shouldCreateSpecialPattern;
+          return this.splitInsetCircle(block, newColor);
         }
         
         if (block.patternType === 'special' && block.specialPatternType === 'hst') {
@@ -6298,7 +6554,8 @@ try {
         if (isSpecialPatternBlock) {
           // For existing special pattern blocks, require VERY SIMILAR colors to preserve pattern
           const colorSimilarity = this.getColorSimilarity(block.color, newColor);
-          if (colorSimilarity > 0.88) {
+          const minSide = Math.min(block.width, block.height);
+          if (colorSimilarity > this._hstSplitColorMatchMinSimilarity(minSide)) {
             console.log(`🎯 NO NESTED PATTERNS: Special pattern block ${block.id} has similar color (${colorSimilarity.toFixed(3)}) - using regular split to prevent nested patterns`);
             return this.performRegularSplit(block, newColor);
           }
@@ -6347,6 +6604,8 @@ try {
             return this.createCrossPattern(block, newColor);
           case 'hst':
             return this.createHalfSquareTriangle(block, newColor);
+          case 'insetCircle':
+            return this.createInsetCircle(block, newColor);
           // Future patterns can be added here:
           // case 'dots':
           //   return this.createDotsPattern(block, newColor);
@@ -6416,6 +6675,13 @@ try {
         if (hstShort >= hstMin && hstAr <= hstMaxAr) {
           availablePatterns.push('hst');
         }
+
+        const insetShort = Math.min(block.width, block.height);
+        const insetLong = Math.max(block.width, block.height);
+        const insetAr = insetLong / Math.max(1, insetShort);
+        if (this._blockMeetsInsetCircleGeometry(block)) {
+          availablePatterns.push('insetCircle');
+        }
         
         return availablePatterns;
       }
@@ -6424,8 +6690,18 @@ try {
         if (availablePatterns.length === 1) {
           return availablePatterns[0];
         }
-        const randomIndex = Math.floor(Math.random() * availablePatterns.length);
-        return availablePatterns[randomIndex];
+        const weights = availablePatterns.map((p) => {
+          if (p === 'insetCircle') return 5;
+          if (p === 'hst') return 2;
+          return 1;
+        });
+        const total = weights.reduce((a, b) => a + b, 0);
+        let r = Math.random() * total;
+        for (let i = 0; i < availablePatterns.length; i++) {
+          r -= weights[i];
+          if (r <= 0) return availablePatterns[i];
+        }
+        return availablePatterns[availablePatterns.length - 1];
       }
       
       /**
@@ -6453,6 +6729,150 @@ try {
           originalPatternId: block.originalPatternId || block.id
         };
         return [hst];
+      }
+
+      /**
+       * Centered wonky circle inset: `color` = square field, `insetInnerColor` = disk.
+       * Splits indefinitely on alternating axes (clip disk to each child rect). Similar field/new color
+       * only allowed as the cell gets smaller (`_insetCircleMaxSimilarityForSplit`).
+       */
+      createInsetCircle(block, newColor) {
+        const inner = this._ensureDistinctHstPartner(block.color, newColor);
+        const w = Number(block.width);
+        const h = Number(block.height);
+        const cx = block.x + w / 2;
+        const cy = block.y + h / 2;
+        const r = (Math.min(w, h) * SimpleQuiltEngine.INSET_CIRCLE_DIAMETER_FRAC) / 2;
+        return [
+          {
+            id: block.id,
+            x: block.x,
+            y: block.y,
+            width: w,
+            height: h,
+            color: block.color,
+            insetTier: 0,
+            insetNextCutVertical: Math.random() < 0.5,
+            insetInnerColor: inner,
+            insetCx: cx,
+            insetCy: cy,
+            insetR: r,
+            patternType: 'special',
+            specialPatternType: 'insetCircle',
+            contributorId: block.contributorId || this.deviceId,
+            submissionIndex: this.submissionCount,
+            originalPatternId: block.originalPatternId || block.id
+          }
+        ];
+      }
+
+      splitInsetCircle(block, newColor) {
+        const w = Number(block.width);
+        const h = Number(block.height);
+        const minSide = Math.min(w, h);
+        const maxSim = this._insetCircleMaxSimilarityForSplit(minSide);
+        if (this.getColorSimilarity(block.color, newColor) > maxSim) {
+          return this.performRegularSplit(block, newColor);
+        }
+        const minHalf = SimpleQuiltEngine.INSET_CIRCLE_MIN_HALF;
+        const bg = typeof block.color === 'string' ? block.color : '#c8c4bf';
+        const cx = Number(block.insetCx);
+        const cy = Number(block.insetCy);
+        const r = Number(block.insetR);
+        const originalPatternId = block.originalPatternId || (block.patternType === 'special' ? block.id : undefined);
+        const tierNext = (block.insetTier ?? 0) + 1;
+        const mk = (partial) => {
+          const pc = partial && typeof partial.color === 'string' ? partial.color : null;
+          const o = {
+            ...block,
+            ...partial,
+            patternType: 'special',
+            specialPatternType: 'insetCircle',
+            originalPatternId,
+            color: pc != null ? pc : bg,
+            insetCx: cx,
+            insetCy: cy,
+            insetR: r,
+            insetTier: tierNext
+          };
+          delete o._shouldCreateSpecialPattern;
+          delete o._forceHalfSquareTriangle;
+          delete o._forceInsetCircle;
+          delete o.insetMask;
+          delete o.insetFrozen;
+          delete o.insetFirstCutVertical;
+          return o;
+        };
+
+        const useVertical = this._resolveInsetNextCutVertical(block);
+        const nextAxisVertical = !useVertical;
+
+        const field2 = this._insetAdjacentFieldColor(bg, newColor);
+
+        if (useVertical) {
+          const w1 = w / 2;
+          const w2 = w - w1;
+          if (w1 < minHalf || w2 < minHalf) return this.performRegularSplit(block, newColor);
+          const inner1 = block.insetInnerColor;
+          const inner2 = this._ensureDistinctHstPartner(inner1, newColor);
+          return [
+            mk({
+              id: block.id + '_1',
+              x: block.x,
+              y: block.y,
+              width: w1,
+              height: h,
+              color: bg,
+              insetNextCutVertical: nextAxisVertical,
+              insetInnerColor: inner1,
+              contributorId: block.contributorId,
+              submissionIndex: block.submissionIndex
+            }),
+            mk({
+              id: block.id + '_2',
+              x: block.x + w1,
+              y: block.y,
+              width: w2,
+              height: h,
+              color: field2,
+              insetNextCutVertical: nextAxisVertical,
+              insetInnerColor: inner2,
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount
+            })
+          ];
+        }
+        const h1 = h / 2;
+        const h2 = h - h1;
+        if (h1 < minHalf || h2 < minHalf) return this.performRegularSplit(block, newColor);
+        const inner1 = block.insetInnerColor;
+        const inner2 = this._ensureDistinctHstPartner(inner1, newColor);
+        return [
+          mk({
+            id: block.id + '_1',
+            x: block.x,
+            y: block.y,
+            width: w,
+            height: h1,
+            color: bg,
+            insetNextCutVertical: nextAxisVertical,
+            insetInnerColor: inner1,
+            contributorId: block.contributorId,
+            submissionIndex: block.submissionIndex
+          }),
+          mk({
+            id: block.id + '_2',
+            x: block.x,
+            y: block.y + h1,
+            width: w,
+            height: h2,
+            color: field2,
+            insetNextCutVertical: nextAxisVertical,
+            insetInnerColor: inner2,
+            contributorId: this.deviceId,
+            submissionIndex: this.submissionCount
+          })
+        ];
       }
 
       _hstLegacyLocalTriangles(block) {
@@ -6623,6 +7043,34 @@ try {
       }
 
       /**
+       * Minimum getColorSimilarity score to treat two colors as the same HST "accent" when splitting.
+       * Larger blocks → lower floor (wider perceptual range counts as a match); smaller → stricter.
+       */
+      _hstSplitColorMatchMinSimilarity(minSide) {
+        const lo = SimpleQuiltEngine.HST_ELIGIBLE_MIN_SHORT;
+        const hi = 280;
+        const strict = 0.92;
+        const relaxed = 0.78;
+        const s = Math.max(1, Number(minSide) || 1);
+        if (s <= lo) return strict;
+        const t = Math.min(1, (s - lo) / (hi - lo));
+        return strict + t * (relaxed - strict);
+      }
+
+      /**
+       * Whether a triangle color should be treated as the parent's HST accent for split recoloring
+       * (OKLab when valid hex; falls back to exact hex match).
+       */
+      _colorsMatchForHstAccent(triColor, accentHex, parentMinSide) {
+        if (this._hexSame(triColor, accentHex)) return true;
+        const a = typeof triColor === 'string' ? triColor.trim() : '';
+        const b = typeof accentHex === 'string' ? accentHex.trim() : '';
+        if (!/^#[0-9A-Fa-f]{6}$/.test(a) || !/^#[0-9A-Fa-f]{6}$/.test(b)) return false;
+        const floor = this._hstSplitColorMatchMinSimilarity(parentMinSide);
+        return this.getColorSimilarity(a, b) > floor;
+      }
+
+      /**
        * Second HST triangle color: match regular splits—use the pick when it differs by hex.
        * Only when hex matches (invalid pick / fallback) apply a soft lightness nudge so the seam stays visible.
        */
@@ -6685,6 +7133,7 @@ try {
         const h = Number(block.height);
         const minHalf = 40;
         const accent = this._secondaryHstColor(block);
+        const parentMinSide = Math.min(w, h);
         const world = this._hstColoredTrianglesWorld(block);
         const originalPatternId = block.originalPatternId || (block.patternType === 'special' ? block.id : undefined);
 
@@ -6705,8 +7154,7 @@ try {
         };
 
         if (w > h) {
-          const w1 = w / 2;
-          const w2 = w - w1;
+          const [w1, w2] = this._hstAsymmetricParts(w, minHalf);
           if (w1 < minHalf || w2 < minHalf) {
             return this.performRegularSplit(block, newColor);
           }
@@ -6716,7 +7164,7 @@ try {
           const t2 = this._worldTrisClippedToRect(world, r2.x, r2.y, r2.w, r2.h);
           const loc1 = this._localColoredTrisFromWorld(t1, r1.x, r1.y);
           const loc2 = this._localColoredTrisFromWorld(t2, r2.x, r2.y).map((t) => ({
-            color: this._hexSame(t.color, accent) ? newColor : t.color,
+            color: this._colorsMatchForHstAccent(t.color, accent, parentMinSide) ? newColor : t.color,
             points: t.points
           }));
           if (loc1.length === 0 || loc2.length === 0) {
@@ -6746,8 +7194,7 @@ try {
           ];
         }
 
-        const h1 = h / 2;
-        const h2 = h - h1;
+        const [h1, h2] = this._hstAsymmetricParts(h, minHalf);
         if (h1 < minHalf || h2 < minHalf) {
           return this.performRegularSplit(block, newColor);
         }
@@ -6757,7 +7204,7 @@ try {
         const t2 = this._worldTrisClippedToRect(world, r2.x, r2.y, r2.w, r2.h);
         const loc1 = this._localColoredTrisFromWorld(t1, r1.x, r1.y);
         const loc2 = this._localColoredTrisFromWorld(t2, r2.x, r2.y).map((t) => ({
-          color: this._hexSame(t.color, accent) ? newColor : t.color,
+          color: this._colorsMatchForHstAccent(t.color, accent, parentMinSide) ? newColor : t.color,
           points: t.points
         }));
         if (loc1.length === 0 || loc2.length === 0) {
@@ -6818,8 +7265,7 @@ try {
           return o;
         };
         if (w > h) {
-          const w1 = w / 2;
-          const w2 = w - w1;
+          const [w1, w2] = this._hstAsymmetricParts(w, minHalf);
           if (w1 < minHalf || w2 < minHalf) {
             return this.performRegularSplit(block, newColor);
           }
@@ -6848,8 +7294,7 @@ try {
             })
           ];
         }
-        const h1 = h / 2;
-        const h2 = h - h1;
+        const [h1, h2] = this._hstAsymmetricParts(h, minHalf);
         if (h1 < minHalf || h2 < minHalf) {
           return this.performRegularSplit(block, newColor);
         }
@@ -8096,6 +8541,39 @@ try {
         return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
       }
 
+      /** Hex (#RRGGBB) → HSV (hue 0–360, s/v 0–100) for aligning default swatch with the wheel. */
+      static hexToHsv(hex) {
+        const normalized = String(hex || '').trim();
+        const m = /^#?([0-9a-f]{6})$/i.exec(normalized);
+        if (!m) {
+          return {
+            h: CONFIG.COLOR_PICKER.defaultHue,
+            s: CONFIG.COLOR_PICKER.saturation,
+            v: CONFIG.COLOR_PICKER.defaultLightness
+          };
+        }
+        const n = parseInt(m[1], 16);
+        const r = ((n >> 16) & 255) / 255;
+        const g = ((n >> 8) & 255) / 255;
+        const b = (n & 255) / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const d = max - min;
+        let h = 0;
+        if (d > 1e-10) {
+          if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+          else if (max === g) h = ((b - r) / d + 2) / 6;
+          else h = ((r - g) / d + 4) / 6;
+        }
+        const s = max < 1e-10 ? 0 : (d / max) * 100;
+        const v = max * 100;
+        return {
+          h: (h * 360 + 360) % 360,
+          s,
+          v
+        };
+      }
+
       /** HSV (0–360, 0–100, 0–100) → hex. Matches the wheel + slider model (hue from angle, S from radius, V from slider). */
       static hsvToHex(h, s, v) {
         h = ((h % 360) + 360) % 360;
@@ -8176,6 +8654,42 @@ try {
           localStorage.setItem('ourDailyUserId', userId);
         }
         return userId;
+      }
+
+      static getOrCreateAppInstanceId() {
+        let id = localStorage.getItem('ourDailyAppInstanceId');
+        if (!id) {
+          id = `app_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+          localStorage.setItem('ourDailyAppInstanceId', id);
+        }
+        return id;
+      }
+
+      static getClientPlatformLabel() {
+        try {
+          if (typeof odqIsCapacitorNative === 'function' && odqIsCapacitorNative()) {
+            return 'capacitor-ios';
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        const href = String(window.location?.href || '');
+        if (href.startsWith('file:')) return 'local-file';
+        if (href.startsWith('capacitor:')) return 'capacitor-ios';
+        return 'web';
+      }
+
+      static buildWriteProvenance(reason = 'unknown') {
+        return {
+          clientBuild: `${CONFIG.APP.version}:${CONFIG.APP.buildId}`,
+          writeReason: String(reason || 'unknown').slice(0, 80),
+          appInstanceId: Utils.getOrCreateAppInstanceId(),
+          userId: Utils.getOrCreateUserId(),
+          platform: Utils.getClientPlatformLabel(),
+          href: String(window.location?.href || '').slice(0, 180),
+          userAgent: String(navigator.userAgent || '').slice(0, 220),
+          writtenAt: new Date().toISOString()
+        };
       }
 
       static USER_FIRST_NAME_KEY = 'ourDailyUserFirstName';
@@ -8810,7 +9324,8 @@ try {
           sizeAdjustedVariation = Math.min(6, 4 + (areaFactor - 2) * 1);
         }
         const handCutVariation = sizeAdjustedVariation * jm;
-        const diagVar = handCutVariation * 0.62;
+        /** Slightly stronger seam wobble vs grid uniformity (paired with asymmetric HST splits). */
+        const diagVar = handCutVariation * 0.82;
         const segments =
           areaFactor < 2
             ? Math.max(2, Math.min(3, Math.floor(areaFactor * 1.2) + 1))
@@ -8895,6 +9410,683 @@ try {
       }
 
       /**
+       * Hash for stable organic jitter: depends only on the shared world circle so every shard
+       * clipped from splits uses the SAME wobbly curve (ids/dims/shard position must not reshape it).
+       */
+      static _insetCircleJitterSeed(block) {
+        const cx = Number(block && block.insetCx);
+        const cy = Number(block && block.insetCy);
+        const r = Number(block && block.insetR);
+        let s =
+          Number.isFinite(cx) &&
+          Number.isFinite(cy) &&
+          Number.isFinite(r) &&
+          r > 0
+            ? `winset:${Math.round(cx * 4096)}|${Math.round(cy * 4096)}|${Math.round(r * 4096)}`
+            : [
+                String((block && block.id) ?? ''),
+                String((block && block.insetTier) ?? 0),
+                String(block && block.width),
+                String(block && block.height)
+              ].join('|');
+        let h = 2166136261;
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+      }
+
+      static _insetDedupePolyVerts(pts, eps) {
+        const out = [];
+        for (const q of pts || []) {
+          if (!q || q.length < 2) continue;
+          if (
+            !out.length ||
+            Math.hypot(q[0] - out[out.length - 1][0], q[1] - out[out.length - 1][1]) > eps
+          ) {
+            out.push([q[0], q[1]]);
+          }
+        }
+        if (
+          out.length > 1 &&
+          Math.hypot(out[0][0] - out[out.length - 1][0], out[0][1] - out[out.length - 1][1]) <= eps
+        ) {
+          out.pop();
+        }
+        return out;
+      }
+
+      static _insetClipSegVertical(x0, A, B) {
+        const [x1, y1] = A;
+        const [x2, y2] = B;
+        const d = x2 - x1;
+        if (Math.abs(d) < 1e-12) return null;
+        const t = (x0 - x1) / d;
+        if (t < -1e-6 || t > 1 + 1e-6) return null;
+        return [x0, y1 + t * (y2 - y1)];
+      }
+
+      static _insetClipSegHorizontal(y0, A, B) {
+        const [x1, y1] = A;
+        const [x2, y2] = B;
+        const d = y2 - y1;
+        if (Math.abs(d) < 1e-12) return null;
+        const t = (y0 - y1) / d;
+        if (t < -1e-6 || t > 1 + 1e-6) return null;
+        return [x1 + t * (x2 - x1), y0];
+      }
+
+      static _insetClipHalfPlane(poly, insideFn, intersectFn) {
+        const eps = 1e-9;
+        const out = [];
+        if (!poly || poly.length < 2) return out;
+        const n = poly.length;
+        for (let i = 0; i < n; i++) {
+          const prev = poly[(i + n - 1) % n];
+          const curr = poly[i];
+          const prevIn = insideFn(prev);
+          const currIn = insideFn(curr);
+          if (currIn) {
+            if (!prevIn) {
+              const is = intersectFn(prev, curr);
+              if (is) out.push(is);
+            }
+            out.push([curr[0], curr[1]]);
+          } else if (prevIn) {
+            const is = intersectFn(prev, curr);
+            if (is) out.push(is);
+          }
+        }
+        return Utils._insetDedupePolyVerts(out, eps);
+      }
+
+      /** Convex subject polygon clipped to axis-aligned rectangle [rx,rx+rw]×[ry,ry+rh]. */
+      static clipConvexPolygonToRect(polyRaw, rx, ry, rw, rh) {
+        const eps = 1e-9;
+        const minX = rx;
+        const maxX = rx + rw;
+        const minY = ry;
+        const maxY = ry + rh;
+        let poly = (polyRaw || []).map((p) => [Number(p[0]), Number(p[1])]);
+        poly = Utils._insetClipHalfPlane(
+          poly,
+          (pt) => pt[0] >= minX - eps,
+          (A, B) => Utils._insetClipSegVertical(minX, A, B)
+        );
+        poly = Utils._insetClipHalfPlane(
+          poly,
+          (pt) => pt[0] <= maxX + eps,
+          (A, B) => Utils._insetClipSegVertical(maxX, A, B)
+        );
+        poly = Utils._insetClipHalfPlane(
+          poly,
+          (pt) => pt[1] >= minY - eps,
+          (A, B) => Utils._insetClipSegHorizontal(minY, A, B)
+        );
+        poly = Utils._insetClipHalfPlane(
+          poly,
+          (pt) => pt[1] <= maxY + eps,
+          (A, B) => Utils._insetClipSegHorizontal(maxY, A, B)
+        );
+        return poly;
+      }
+
+      /**
+       * Local (block) coords: organic disk clipped to [0,w]×[0,h] (any depth of axis splits).
+       */
+      static insetCircleOrganicSectorPointsLocal(block, jitterMultiplier = 1) {
+        const bw = Math.max(1, Number(block.width));
+        const bh = Math.max(1, Number(block.height));
+        let lcx = Number(block.insetCx) - Number(block.x);
+        let lcy = Number(block.insetCy) - Number(block.y);
+        let r = Number(block.insetR);
+        if (
+          !Number.isFinite(lcx) ||
+          !Number.isFinite(lcy) ||
+          !Number.isFinite(r) ||
+          r <= 0
+        ) {
+          lcx = bw / 2;
+          lcy = bh / 2;
+          r = (Math.min(bw, bh) * 0.9) / 2;
+        }
+        const jm = jitterMultiplier == null ? 1 : Number(jitterMultiplier);
+        /** Scale wobble by shared circle radius, not shard area — keeps seam with adjacent shards. */
+        const arcJitter = Math.min(6, Math.max(0.85, r / 48)) * jm * 0.5;
+        const rng = Utils._mulberry32(Utils._insetCircleJitterSeed(block));
+        const steps = 52;
+        const pts = [];
+        for (let i = 0; i < steps; i++) {
+          const t = i / steps;
+          const ang = t * Math.PI * 2;
+          const off = i > 0 && i < steps - 1 ? (rng() - 0.5) * 2 * arcJitter : 0;
+          const rr = r + off;
+          pts.push([lcx + Math.cos(ang) * rr, lcy + Math.sin(ang) * rr]);
+        }
+        const clipped = Utils.clipConvexPolygonToRect(pts, 0, 0, bw, bh);
+        if (!clipped || clipped.length < 3) {
+          const exact = [];
+          for (let j = 0; j < steps; j++) {
+            const ang = (j / steps) * Math.PI * 2;
+            exact.push([lcx + Math.cos(ang) * r, lcy + Math.sin(ang) * r]);
+          }
+          const clipped2 = Utils.clipConvexPolygonToRect(exact, 0, 0, bw, bh);
+          if (!clipped2 || clipped2.length < 3) {
+            return { kind: 'none', points: [] };
+          }
+          return { kind: 'loop', points: clipped2 };
+        }
+        return { kind: 'loop', points: clipped };
+      }
+
+      /**
+       * Raster draw: `dest` mapped from block local coords (0…w, 0…h).
+       */
+      static fillInsetCircleBlockCanvasCtx(ctx, block, destX, destY, destW, destH) {
+        if (!ctx || !block) return;
+        const bw = Math.max(1e-6, Number(block.width));
+        const bh = Math.max(1e-6, Number(block.height));
+        const bgHex =
+          /^#[0-9a-f]{6}$/i.test(String(block.color || '').trim()) ? String(block.color).trim() : '#c8c4bf';
+        ctx.fillStyle = bgHex;
+        ctx.fillRect(destX, destY, destW, destH);
+
+        /** Field watercolor: symmetrical center of raster cell (clips to rect). */
+        const fieldSpan = Math.max(destW, destH);
+        const fieldCx = destX + destW / 2;
+        const fieldCy = destY + destH / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(destX, destY, destW, destH);
+        ctx.clip();
+        Utils.canvasWatercolorWashAxisAlignedRect(
+          ctx,
+          destX,
+          destY,
+          destW,
+          destH,
+          bgHex,
+          `${block.id || 'bl'}|inRasterField`,
+          { radial: { cx: fieldCx, cy: fieldCy, span: fieldSpan }, skipClip: true }
+        );
+        ctx.restore();
+
+        const innerRaw = typeof block.insetInnerColor === 'string' ? block.insetInnerColor : block.color;
+        const innerHex =
+          /^#[0-9a-f]{6}$/i.test(String(innerRaw || '').trim()) ? String(innerRaw).trim() : bgHex;
+
+        const spec = Utils.insetCircleOrganicSectorPointsLocal(block, 1);
+        if (spec.kind === 'none' || !(spec.points && spec.points.length >= 3)) {
+          return;
+        }
+        const map = (p) => [
+          destX + (Number(p[0]) / bw) * destW,
+          destY + (Number(p[1]) / bh) * destH
+        ];
+        const pts = spec.points.map(map);
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.closePath();
+        ctx.fillStyle = innerHex;
+        ctx.fill();
+
+        const ir = Utils.polygonRadialAnchorFromPoints(pts);
+        if (!ir || !(ir.span > 0)) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.closePath();
+        ctx.clip();
+        Utils.canvasWatercolorWashAxisAlignedRect(
+          ctx,
+          destX,
+          destY,
+          destW,
+          destH,
+          innerHex,
+          `${block.id || 'bl'}|inRasterDisk`,
+          { radial: { cx: ir.cx, cy: ir.cy, span: ir.span }, skipClip: true }
+        );
+        ctx.restore();
+      }
+
+      /**
+       * Centroid + bbox span for any simple polygon verts (half-square triangles, hand-cut rects, clipped inset disks — same coords as draw).
+       */
+      static polygonRadialAnchorFromPoints(points) {
+        const pts = points || [];
+        if (!Array.isArray(pts) || pts.length < 3) return null;
+        let sx = 0;
+        let sy = 0;
+        let mix = Infinity;
+        let miy = Infinity;
+        let mxx = -Infinity;
+        let myy = -Infinity;
+        for (const q of pts) {
+          const x = Number(q[0]);
+          const y = Number(q[1]);
+          sx += x;
+          sy += y;
+          if (Number.isFinite(x)) {
+            mix = Math.min(mix, x);
+            mxx = Math.max(mxx, x);
+          }
+          if (Number.isFinite(y)) {
+            miy = Math.min(miy, y);
+            myy = Math.max(myy, y);
+          }
+        }
+        const n = pts.length;
+        const span = Math.max(mxx - mix, myy - miy, 1e-6);
+        return { cx: sx / n, cy: sy / n, span };
+      }
+
+      /** @deprecated Prefer {@link polygonRadialAnchorFromPoints} — same centroid math (HST triangles). */
+      static hstOrganicTriangleRadialAnchorLocal(points) {
+        return Utils.polygonRadialAnchorFromPoints(points);
+      }
+
+      /** Parse SVG `<polygon points="x,y x,y …">` into `[ [x,y], … ]`. */
+      static parseSvgPolygonPointsAttr(attr) {
+        if (!attr || typeof attr !== 'string') return null;
+        const raw = String(attr)
+          .trim()
+          .split(/[\s,]+/)
+          .filter(Boolean);
+        const verts = [];
+        for (let i = 0; i + 1 < raw.length; i += 2) {
+          const x = Number.parseFloat(raw[i]);
+          const y = Number.parseFloat(raw[i + 1]);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          verts.push([x, y]);
+        }
+        return verts.length >= 3 ? verts : null;
+      }
+
+      /**
+       * Mirrors reel/svg watercolor: radial lighten + subtler edge darken in **current canvas space**.
+       * Pass `washOptions.radial` with `{ cx, cy, span }` (absolute coords) so HST wedges use centroid, not square center.
+       * `washOptions.skipClip`: gradients only; caller clipped (e.g. triangle path).
+       */
+      static canvasWatercolorWashAxisAlignedRect(
+        ctx,
+        rectLeft,
+        rectTop,
+        rectW,
+        rectH,
+        colorHex,
+        seedKey = '',
+        washOptions = null
+      ) {
+        const rad = washOptions && washOptions.radial;
+        const skipClip = !!(washOptions && washOptions.skipClip);
+        const uw = Math.abs(rectW);
+        const uh = Math.abs(rectH);
+        const hasRadial =
+          !!(rad &&
+          typeof rad.cx === 'number' &&
+          typeof rad.cy === 'number' &&
+          typeof rad.span === 'number' &&
+          rad.span > 0);
+        const baseSpan = hasRadial ? rad.span : Math.max(uw, uh);
+        if (!ctx || baseSpan <= 0) return;
+        if (!skipClip && (!Number.isFinite(uw) || !Number.isFinite(uh) || uw <= 0 || uh <= 0)) return;
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(colorHex || '').trim());
+        const rr = m ? parseInt(m[1].slice(0, 2), 16) : 200;
+        const rg = m ? parseInt(m[1].slice(2, 4), 16) : 196;
+        const rb = m ? parseInt(m[1].slice(4, 6), 16) : 191;
+        const ss = `${seedKey}|wc`;
+        let hh = 2166136261 >>> 0;
+        for (let i = 0; i < `${ss}|cx`.length; i++) {
+          hh ^= `${ss}|cx`.charCodeAt(i);
+          hh = Math.imul(hh, 16777619);
+        }
+        const ucx = (hh >>> 0) / 4294967295;
+        let h2 = 2166136261 >>> 0;
+        for (let i = 0; i < `${ss}|cy`.length; i++) {
+          h2 ^= `${ss}|cy`.charCodeAt(i);
+          h2 = Math.imul(h2, 16777619);
+        }
+        const ucy = (h2 >>> 0) / 4294967295;
+        const luminance = 0.299 * rr + 0.587 * rg + 0.114 * rb;
+        let wdf = 1;
+        if (luminance <= 72) wdf = 0.5;
+        else if (luminance <= 96) wdf = 0.66;
+        else if (luminance <= 124) wdf = 0.82;
+        const minDim = Math.min(Math.abs(rectW), Math.abs(rectH));
+        const sz = minDim <= 44 ? 0.45 : minDim <= 72 ? 0.7 : 1;
+        const t0 = sz * wdf;
+        const t = Math.max(0, Math.min(1, t0));
+        if (t <= 0.001) return;
+
+        let darkBoost = 0;
+        if (luminance <= 72) darkBoost = 1;
+        else if (luminance <= 96) darkBoost = 0.65;
+
+        const gSpan = Math.max(baseSpan, 1e-6);
+        const gMin = Math.min(Math.min(uw, uh), gSpan);
+
+        let cx;
+        let cy;
+        if (hasRadial) {
+          const jitterScale = Math.min(gSpan * 0.22, Math.max(rectW, rectH, gSpan) * 0.12);
+          cx = rad.cx + (ucx - 0.5) * 2 * jitterScale;
+          cy = rad.cy + (ucy - 0.5) * 2 * jitterScale;
+        } else {
+          cx = rectLeft + rectW * (0.38 + ucx * 0.24);
+          cy = rectTop + rectH * (0.38 + ucy * 0.24);
+        }
+
+        ctx.save();
+        if (!skipClip) {
+          ctx.beginPath();
+          ctx.rect(rectLeft, rectTop, rectW, rectH);
+          ctx.clip();
+        }
+        ctx.globalCompositeOperation = 'screen';
+        const cGrad = ctx.createRadialGradient(
+          cx,
+          cy,
+          gMin * 0.08,
+          cx,
+          cy,
+          gSpan * 0.72
+        );
+        cGrad.addColorStop(0, `rgba(255,255,255,${Math.min(0.92, 0.16 * t).toFixed(3)})`);
+        cGrad.addColorStop(0.55, `rgba(255,255,255,${Math.min(0.45, 0.05 * t).toFixed(3)})`);
+        cGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = cGrad;
+        ctx.fillRect(rectLeft - 2, rectTop - 2, uw + 4, uh + 4);
+        ctx.globalCompositeOperation = 'multiply';
+        const eGrad = ctx.createRadialGradient(cx, cy, gMin * 0.18, cx, cy, gSpan * 0.92);
+        eGrad.addColorStop(0, `rgba(${rr},${rg},${rb},0)`);
+        eGrad.addColorStop(0.65, `rgba(${rr},${rg},${rb},${Math.min(0.35, 0.03 * t).toFixed(3)})`);
+        eGrad.addColorStop(1, `rgba(${rr},${rg},${rb},${Math.min(0.75, 0.19 * t).toFixed(3)})`);
+        ctx.fillStyle = eGrad;
+        ctx.fillRect(rectLeft - 2, rectTop - 2, uw + 4, uh + 4);
+        if (darkBoost > 0.001) {
+          const dGrad = ctx.createRadialGradient(cx, cy, gMin * 0.2, cx, cy, gSpan * 0.96);
+          dGrad.addColorStop(0, 'rgba(0,0,0,0)');
+          dGrad.addColorStop(0.74, `rgba(0,0,0,${Math.min(0.4, 0.012 * darkBoost * t).toFixed(3)})`);
+          dGrad.addColorStop(1, `rgba(0,0,0,${Math.min(0.55, 0.085 * darkBoost * t).toFixed(3)})`);
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.fillStyle = dGrad;
+          ctx.fillRect(rectLeft - 2, rectTop - 2, uw + 4, uh + 4);
+        }
+        ctx.restore();
+      }
+
+      /**
+       * Local points shifted by `originX`/`originY` (e.g. jittered block top-left for SVG).
+       */
+      static insetCircleSectorPointsWorld(block, originX, originY) {
+        const spec = Utils.insetCircleOrganicSectorPointsLocal(block);
+        const ox = Number(originX) || 0;
+        const oy = Number(originY) || 0;
+        if (spec.kind === 'none' || !(spec.points && spec.points.length >= 3)) {
+          return { kind: 'none', points: [] };
+        }
+        const map = (p) => [ox + Number(p[0]), oy + Number(p[1])];
+        return { kind: 'loop', points: spec.points.map(map) };
+      }
+
+      /** Memoized canvases identical to synthetic reel grain tiles. */
+      static _odqFilmGrainTileCache = null;
+
+      /** @returns {{grainTile: HTMLCanvasElement, screenNoiseTile: HTMLCanvasElement, paperTile: HTMLCanvasElement, halftoneTile: HTMLCanvasElement}} */
+      static getFilmGrainTileCanvases() {
+        if (Utils._odqFilmGrainTileCache) return Utils._odqFilmGrainTileCache;
+        const grainTile = document.createElement('canvas');
+        grainTile.width = 240;
+        grainTile.height = 240;
+        {
+          const gctx = grainTile.getContext('2d');
+          const img = gctx.createImageData(grainTile.width, grainTile.height);
+          for (let i = 0; i < img.data.length; i += 4) {
+            const v = Math.floor(Math.random() * 256);
+            img.data[i] = v;
+            img.data[i + 1] = v;
+            img.data[i + 2] = v;
+            img.data[i + 3] = 255;
+          }
+          gctx.putImageData(img, 0, 0);
+        }
+        const screenNoiseTile = document.createElement('canvas');
+        screenNoiseTile.width = 180;
+        screenNoiseTile.height = 180;
+        {
+          const sctx = screenNoiseTile.getContext('2d');
+          const img = sctx.createImageData(screenNoiseTile.width, screenNoiseTile.height);
+          for (let i = 0; i < img.data.length; i += 4) {
+            const light = Math.random() > 0.5;
+            img.data[i] = light ? 255 : 0;
+            img.data[i + 1] = light ? 255 : 0;
+            img.data[i + 2] = light ? 255 : 0;
+            img.data[i + 3] = 5 + Math.floor(Math.random() * 8);
+          }
+          sctx.putImageData(img, 0, 0);
+        }
+        const paperTile = document.createElement('canvas');
+        paperTile.width = 320;
+        paperTile.height = 320;
+        {
+          const pctx = paperTile.getContext('2d');
+          pctx.fillStyle = '#f4f1ea';
+          pctx.fillRect(0, 0, paperTile.width, paperTile.height);
+          for (let i = 0; i < 950; i++) {
+            const x = Math.random() * paperTile.width;
+            const y = Math.random() * paperTile.height;
+            const r = 0.35 + Math.random() * 1.8;
+            const a = 0.015 + Math.random() * 0.03;
+            pctx.beginPath();
+            pctx.fillStyle = `rgba(115, 102, 90, ${a.toFixed(3)})`;
+            pctx.arc(x, y, r, 0, Math.PI * 2);
+            pctx.fill();
+          }
+        }
+        const halftoneTile = document.createElement('canvas');
+        halftoneTile.width = 180;
+        halftoneTile.height = 180;
+        {
+          const hctx = halftoneTile.getContext('2d');
+          hctx.clearRect(0, 0, halftoneTile.width, halftoneTile.height);
+          const step = 12;
+          for (let y = 0; y < halftoneTile.height + step; y += step) {
+            for (let x = 0; x < halftoneTile.width + step; x += step) {
+              const rr = 0.8 + Math.random() * 0.9;
+              hctx.beginPath();
+              hctx.fillStyle = 'rgba(70, 62, 55, 0.14)';
+              hctx.arc(x, y, rr, 0, Math.PI * 2);
+              hctx.fill();
+            }
+          }
+        }
+        Utils._odqFilmGrainTileCache = { grainTile, screenNoiseTile, paperTile, halftoneTile };
+        return Utils._odqFilmGrainTileCache;
+      }
+
+      /**
+       * Matte / paper / halftone / grain composite matching synthetic reels (`createSyntheticQuiltMp4`).
+       * @param {CanvasRenderingContext2D} ctx Destination bitmap sized to `(W,H)` coordinate space (see DPR scaling at call site).
+       * @param {number} W Logical width (px)
+       * @param {number} H Logical height (px)
+       * @param {number} tSec Time offsets for seeded tile drift (seconds); use `0` for quilt overlay — static offsets.
+       * @param {{ vignette?: boolean }} [opts] Set `vignette: false` for UI overlays (avoids edge darkening outside the quilt).
+       */
+      static applyFilmGrain(ctx, W, H, tSec = 0, opts = null) {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        const includeVignette = o.vignette !== false;
+        const textureOnly = o.textureOnly === true;
+        const ww = Math.max(1, Number(W));
+        const hh = Math.max(1, Number(H));
+        const sec = typeof tSec === 'number' && Number.isFinite(tSec) ? tSec : 0;
+        const { grainTile, screenNoiseTile, paperTile, halftoneTile } = Utils.getFilmGrainTileCanvases();
+
+        if (textureOnly) {
+          const noiseOffX = Math.floor((sec * 13) % screenNoiseTile.width);
+          const noiseOffY = Math.floor((sec * 9) % screenNoiseTile.height);
+          ctx.save();
+          ctx.globalAlpha = 0.42;
+          ctx.globalCompositeOperation = 'source-over';
+          for (let y = -screenNoiseTile.height; y < hh + screenNoiseTile.height; y += screenNoiseTile.height) {
+            for (let x = -screenNoiseTile.width; x < ww + screenNoiseTile.width; x += screenNoiseTile.width) {
+              ctx.drawImage(screenNoiseTile, x - noiseOffX, y - noiseOffY);
+            }
+          }
+          ctx.restore();
+          return;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        /* First pass must not use `multiply` on a transparent destination — WebKit/WKWebView
+           keeps the buffer fully transparent and the whole overlay disappears (desktop often still shows grain). */
+        ctx.globalCompositeOperation = 'source-over';
+        const wash = ctx.createLinearGradient(0, 0, 0, hh);
+        wash.addColorStop(0, '#f1ece3');
+        wash.addColorStop(0.5, '#f4efe7');
+        wash.addColorStop(1, '#eee6db');
+        ctx.fillStyle = wash;
+        ctx.fillRect(0, 0, ww, hh);
+        ctx.restore();
+
+        const paperOffX = Math.floor((sec * 3) % paperTile.width);
+        const paperOffY = Math.floor((sec * 2) % paperTile.height);
+        ctx.save();
+        ctx.globalAlpha = 0.09;
+        ctx.globalCompositeOperation = 'multiply';
+        for (let y = -paperTile.height; y < hh + paperTile.height; y += paperTile.height) {
+          for (let x = -paperTile.width; x < ww + paperTile.width; x += paperTile.width) {
+            ctx.drawImage(paperTile, x - paperOffX, y - paperOffY);
+          }
+        }
+        ctx.restore();
+
+        const halfOffX = Math.floor((sec * 7) % halftoneTile.width);
+        const halfOffY = Math.floor((sec * 5) % halftoneTile.height);
+        ctx.save();
+        ctx.globalAlpha = 0.045;
+        ctx.globalCompositeOperation = 'multiply';
+        for (let y = -halftoneTile.height; y < hh + halftoneTile.height; y += halftoneTile.height) {
+          for (let x = -halftoneTile.width; x < ww + halftoneTile.width; x += halftoneTile.width) {
+            ctx.drawImage(halftoneTile, x - halfOffX, y - halfOffY);
+          }
+        }
+        ctx.restore();
+
+        const offX = Math.floor((sec * 18) % grainTile.width);
+        const offY = Math.floor((sec * 11) % grainTile.height);
+        ctx.save();
+        ctx.globalAlpha = 0.04;
+        ctx.globalCompositeOperation = 'soft-light';
+        for (let y = -grainTile.height; y < hh + grainTile.height; y += grainTile.height) {
+          for (let x = -grainTile.width; x < ww + grainTile.width; x += grainTile.width) {
+            ctx.drawImage(grainTile, x - offX, y - offY);
+          }
+        }
+        ctx.restore();
+
+        if (includeVignette) {
+          ctx.save();
+          const vignette = ctx.createRadialGradient(
+            ww * 0.5,
+            hh * 0.5,
+            Math.min(ww, hh) * 0.2,
+            ww * 0.5,
+            hh * 0.5,
+            Math.max(ww, hh) * 0.72
+          );
+          vignette.addColorStop(0, 'rgba(0,0,0,0)');
+          vignette.addColorStop(1, 'rgba(36,28,20,0.12)');
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.fillStyle = vignette;
+          ctx.fillRect(0, 0, ww, hh);
+          ctx.restore();
+        }
+      }
+
+      /**
+       * Canvas clip region matching visible block polygons on `#quilt` (fills with `data-block-id`).
+       * Keeps grain / wash off letterboxed SVG margins — pairs with `{ vignette: false }`.
+       * Uses `getScreenCTM()` into `#quiltFilmGrainOverlay`'s bbox so clipping matches rotated / nested groups (viewBox math alone can push the path off-canvas).
+       */
+      static buildQuiltGrainClipPathFromSvg(svgEl, wPx, hPx) {
+        const svg = typeof svgEl === 'string' ? document.querySelector(svgEl) : svgEl;
+        if (!svg || typeof svg.createSVGPoint !== 'function') return null;
+        const ww = Math.max(1, Number(wPx));
+        const hh = Math.max(1, Number(hPx));
+        let polys;
+        try {
+          polys = svg.querySelectorAll('polygon[data-block-id]:not([fill*="url"])');
+        } catch (_) {
+          return null;
+        }
+        if (!polys || polys.length === 0) return null;
+
+        const grainCanvas =
+          typeof document !== 'undefined' ? document.getElementById('quiltFilmGrainOverlay') : null;
+        const cr =
+          grainCanvas && typeof grainCanvas.getBoundingClientRect === 'function'
+            ? grainCanvas.getBoundingClientRect()
+            : null;
+        if (!cr || cr.width <= 0 || cr.height <= 0) return null;
+
+        try {
+          const path = new Path2D();
+          const svgPt = svg.createSVGPoint();
+          let any = false;
+          let minX = Infinity;
+          let maxX = -Infinity;
+          let minY = Infinity;
+          let maxY = -Infinity;
+          for (let pi = 0; pi < polys.length; pi++) {
+            const poly = polys[pi];
+            const raw = poly.getAttribute('points');
+            if (!raw) continue;
+            const nums = [];
+            const tokens = raw.trim().split(/[, \t\n\r]+/).filter(Boolean);
+            for (const t of tokens) {
+              const n = parseFloat(t);
+              if (!Number.isFinite(n)) continue;
+              nums.push(n);
+            }
+            if (nums.length < 6) continue;
+            const screenM =
+              typeof poly.getScreenCTM === 'function' ? poly.getScreenCTM() : null;
+            if (!screenM) continue;
+
+            for (let i = 0; i + 1 < nums.length; i += 2) {
+              svgPt.x = nums[i];
+              svgPt.y = nums[i + 1];
+              const rp = svgPt.matrixTransform(screenM);
+              const cx = ((rp.x - cr.left) / cr.width) * ww;
+              const cy = ((rp.y - cr.top) / cr.height) * hh;
+              if (i === 0) path.moveTo(cx, cy);
+              else path.lineTo(cx, cy);
+              minX = Math.min(minX, cx);
+              maxX = Math.max(maxX, cx);
+              minY = Math.min(minY, cy);
+              maxY = Math.max(maxY, cy);
+            }
+            path.closePath();
+            any = true;
+          }
+          if (!any) return null;
+          /* Bad CTM / layout on WKWebView can park every point off-canvas — clip would drop the whole overlay. */
+          const pad = Math.max(ww, hh) * 0.75;
+          if (maxX < -pad || minX > ww + pad || maxY < -pad || minY > hh + pad) {
+            return null;
+          }
+          return path;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      /**
        * Stable quilt fingerprint (order-insensitive) so image/reel writes can be verified as same source quilt.
        * Uses integer-snapped geometry + color and a fast deterministic hash.
        */
@@ -8923,14 +10115,24 @@ try {
                     }
                     return `${String(b.hstDiagonal || 'nw-se')}:${String(b.hstColorB || '').trim().toLowerCase()}`;
                   })()
+                : '',
+            inset:
+              b.patternType === 'special' && b.specialPatternType === 'insetCircle'
+                ? `inset:${b.insetTier ?? 0}:${String(b.insetInnerColor || '').trim().toLowerCase()}:${Math.round(Number(b.insetCx) || 0)}:${Math.round(Number(b.insetCy) || 0)}:${Math.round(Number(b.insetR) || 0)}:${b.insetNextCutVertical === true ? '1' : b.insetNextCutVertical === false ? '0' : 'u'}`
                 : ''
           }))
           .sort((a, b) =>
-            a.x - b.x || a.y - b.y || a.w - b.w || a.h - b.h || a.c.localeCompare(b.c) || a.hst.localeCompare(b.hst)
+            a.x - b.x ||
+            a.y - b.y ||
+            a.w - b.w ||
+            a.h - b.h ||
+            a.c.localeCompare(b.c) ||
+            a.hst.localeCompare(b.hst) ||
+            a.inset.localeCompare(b.inset)
           );
         if (!normalized.length) return '';
         const canonical = normalized
-          .map((b) => `${b.x},${b.y},${b.w},${b.h},${b.c},${b.hst}`)
+          .map((b) => `${b.x},${b.y},${b.w},${b.h},${b.c},${b.hst},${b.inset}`)
           .join('|');
         // 32-bit FNV-1a (hex) with length prefix for quick mismatch checks.
         let h = 0x811c9dc5;
@@ -9515,6 +10717,11 @@ try {
                   .then(paintQuiltQuote)
                   .catch(() => paintQuiltQuote());
               }
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  window.app?.syncQuiltFilmGrainOverlay?.();
+                });
+              });
               window.app?.scheduleLayoutBStoryPreviewRefresh?.();
             }
 
@@ -11744,6 +12951,7 @@ try {
         const offsetX = (outW - quiltW * scale) / 2;
         const offsetY = (outH - quiltH * scale) / 2;
         blocks.forEach((block) => {
+          SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
           const jitterX = (Math.random() - 0.5) * 8;
           const jitterY = (Math.random() - 0.5) * 8;
           const jitterRotation = (Math.random() - 0.5) * 4;
@@ -11769,18 +12977,64 @@ try {
             const y0 = -canvasHeight / 2;
             const cw = canvasWidth;
             const ch = canvasHeight;
-            tris.forEach((t) => {
-              const pts = t.points || [];
-              if (pts.length < 3) return;
-              ctx.fillStyle = t.color || block.color;
-              ctx.beginPath();
-              ctx.moveTo(x0 + (pts[0][0] / bw) * cw, y0 + (pts[0][1] / bh) * ch);
-              for (let k = 1; k < pts.length; k++) {
-                ctx.lineTo(x0 + (pts[k][0] / bw) * cw, y0 + (pts[k][1] / bh) * ch);
-              }
-              ctx.closePath();
-              ctx.fill();
-            });
+              tris.forEach((t, tux) => {
+                const pts = t.points || [];
+                if (pts.length < 3) return;
+                ctx.fillStyle = t.color || block.color;
+                ctx.beginPath();
+                ctx.moveTo(x0 + (pts[0][0] / bw) * cw, y0 + (pts[0][1] / bh) * ch);
+                for (let k = 1; k < pts.length; k++) {
+                  ctx.lineTo(x0 + (pts[k][0] / bw) * cw, y0 + (pts[k][1] / bh) * ch);
+                }
+                ctx.closePath();
+                ctx.fill();
+                const anch = Utils.hstOrganicTriangleRadialAnchorLocal(pts);
+                if (!anch) return;
+                const tcx = x0 + (anch.cx / bw) * cw;
+                const tcy = y0 + (anch.cy / bh) * ch;
+                const spanPx = Math.max((anch.span / bw) * cw, (anch.span / bh) * ch, 1e-6);
+                const washHx = /^#[0-9a-f]{6}$/i.test(String(t.color || '').trim())
+                  ? String(t.color).trim()
+                  : /^#[0-9a-f]{6}$/i.test(String(block.color || '').trim())
+                    ? String(block.color).trim()
+                    : '#c8c4bf';
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(x0 + (pts[0][0] / bw) * cw, y0 + (pts[0][1] / bh) * ch);
+                for (let k = 1; k < pts.length; k++) {
+                  ctx.lineTo(x0 + (pts[k][0] / bw) * cw, y0 + (pts[k][1] / bh) * ch);
+                }
+                ctx.closePath();
+                ctx.clip();
+                Utils.canvasWatercolorWashAxisAlignedRect(
+                  ctx,
+                  x0,
+                  y0,
+                  cw,
+                  ch,
+                  washHx,
+                  `${block.id || 'blk'}|rasterblob|${tux}`,
+                  { radial: { cx: tcx, cy: tcy, span: spanPx }, skipClip: true }
+                );
+                ctx.restore();
+              });
+              ctx.restore();
+            return;
+          }
+          const isInset =
+            block.patternType === 'special' &&
+            block.specialPatternType === 'insetCircle';
+          if (isInset) {
+            const bw = Math.max(1e-6, block.width);
+            const bh = Math.max(1e-6, block.height);
+            const centerX = canvasX + canvasWidth / 2;
+            const centerY = canvasY + canvasHeight / 2;
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate((jitterRotation * Math.PI) / 180);
+            const x0 = -canvasWidth / 2;
+            const y0 = -canvasHeight / 2;
+            Utils.fillInsetCircleBlockCanvasCtx(ctx, block, x0, y0, canvasWidth, canvasHeight);
             ctx.restore();
             return;
           }
@@ -11995,6 +13249,7 @@ try {
           
           // Draw each block
           blocks.forEach(block => {
+            SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
             // Add jitter effects (same as current quilt)
             const jitterX = (Math.random() - 0.5) * 6;
             const jitterY = (Math.random() - 0.5) * 6;
@@ -12027,7 +13282,7 @@ try {
               ctx.rotate((jitterRotation * Math.PI) / 180);
               const x0 = -cw / 2;
               const y0 = -ch / 2;
-              tris.forEach((t) => {
+              tris.forEach((t, tux) => {
                 const pts = t.points || [];
                 if (pts.length < 3) return;
                 ctx.fillStyle = t.color || block.color;
@@ -12038,7 +13293,58 @@ try {
                 }
                 ctx.closePath();
                 ctx.fill();
+                const anch = Utils.hstOrganicTriangleRadialAnchorLocal(pts);
+                if (!anch) return;
+                const tcx = x0 + (anch.cx / bw) * cw;
+                const tcy = y0 + (anch.cy / bh) * ch;
+                const spanPx = Math.max((anch.span / bw) * cw, (anch.span / bh) * ch, 1e-6);
+                const washHx = /^#[0-9a-f]{6}$/i.test(String(t.color || '').trim())
+                  ? String(t.color).trim()
+                  : /^#[0-9a-f]{6}$/i.test(String(block.color || '').trim())
+                    ? String(block.color).trim()
+                    : '#c8c4bf';
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(x0 + (pts[0][0] / bw) * cw, y0 + (pts[0][1] / bh) * ch);
+                for (let k = 1; k < pts.length; k++) {
+                  ctx.lineTo(x0 + (pts[k][0] / bw) * cw, y0 + (pts[k][1] / bh) * ch);
+                }
+                ctx.closePath();
+                ctx.clip();
+                Utils.canvasWatercolorWashAxisAlignedRect(
+                  ctx,
+                  x0,
+                  y0,
+                  cw,
+                  ch,
+                  washHx,
+                  `${block.id || 'blk'}|fullquilt|${tux}`,
+                  { radial: { cx: tcx, cy: tcy, span: spanPx }, skipClip: true }
+                );
+                ctx.restore();
               });
+              ctx.restore();
+              return;
+            }
+
+            const isInset = block.patternType === 'special' && block.specialPatternType === 'insetCircle';
+            if (isInset) {
+              ctx.save();
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+              ctx.shadowBlur = 3;
+              ctx.shadowOffsetX = 2;
+              ctx.shadowOffsetY = 4;
+              const centerX = canvasX + canvasWidth / 2;
+              const centerY = canvasY + canvasHeight / 2;
+              const bw = Math.max(1e-6, block.width);
+              const bh = Math.max(1e-6, block.height);
+              const cw = canvasWidth;
+              const ch = canvasHeight;
+              ctx.translate(centerX, centerY);
+              ctx.rotate((jitterRotation * Math.PI) / 180);
+              const x0 = -cw / 2;
+              const y0 = -ch / 2;
+              Utils.fillInsetCircleBlockCanvasCtx(ctx, block, x0, y0, cw, ch);
               ctx.restore();
               return;
             }
@@ -12399,6 +13705,8 @@ try {
               const data = quiltSnap.data();
               this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
               return { 
+                dateKey: today,
+                date: data.date || today,
                 blocks: data.blocks || [], 
                 contributorCount: data.contributorCount || 1,
                 colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
@@ -12418,6 +13726,8 @@ try {
             if (savedDate && savedDate !== todayKey) {
               this.logger.warn(`⚠️ Ignoring stale localStorage quilt for ${savedDate}; today is ${todayKey}`);
               return {
+                dateKey: todayKey,
+                date: todayKey,
                 blocks: [],
                 contributorCount: 1,
                 colorReplayEvents: [],
@@ -12426,6 +13736,8 @@ try {
             }
             this.logger.log('📖 Loaded quilt from localStorage with', data.blocks?.length || 0, 'blocks, date:', data.date);
             return { 
+              dateKey: todayKey,
+              date: savedDate || todayKey,
               blocks: data.blocks || [], 
               contributorCount: data.contributorCount || 1,
               colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
@@ -12441,7 +13753,10 @@ try {
         // Default quilt
         const dimensions = Utils.getQuiltDimensions();
         this.logger.log('📖 Using default quilt');
+        const todayKey = Utils.getTodayKey();
         return { 
+          dateKey: todayKey,
+          date: todayKey,
           blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
           contributorCount: 1,
           colorReplayEvents: [],
@@ -12480,6 +13795,18 @@ try {
           };
           const contributors = Array.isArray(contributorsOrOptions) ? contributorsOrOptions : [];
           const options = saveOptions || (!Array.isArray(contributorsOrOptions) && contributorsOrOptions ? contributorsOrOptions : null);
+          const src = options && options.resetSource;
+          const nextCount = Array.isArray(blocks) ? blocks.length : 0;
+          if (nextCount === 0) {
+            console.warn(
+              `⚠️ Refusing direct client empty-quilt write${src ? ` (${src})` : ''}; resets must go through the server.`
+            );
+            return false;
+          }
+          const writeReason =
+            options?.adminMutation ? 'admin-mutation' :
+              options?.sourceFunction ? String(options.sourceFunction) :
+                'client-save';
           const quiltData = {
             blocks: blocks,
             contributorCount: contributorCount,
@@ -12487,9 +13814,9 @@ try {
             date: Utils.getTodayKey(),
             quiltFingerprint: Utils.computeQuiltFingerprint(blocks),
             colorReplayEvents: Array.isArray(colorReplayEvents) ? colorReplayEvents : [],
-            contributors: normalizeContributors(contributors)
+            contributors: normalizeContributors(contributors),
+            writeProvenance: Utils.buildWriteProvenance(writeReason)
           };
-          const src = options && options.resetSource;
           if (src === 'admin' || src === 'daily') {
             const iso = new Date().toISOString();
             quiltData.lastResetAt = iso;
@@ -12515,7 +13842,6 @@ try {
                 if (existingSnap.exists()) {
                   const existingData = existingSnap.data() || {};
                   const existingCount = Array.isArray(existingData.blocks) ? existingData.blocks.length : 0;
-                  const nextCount = Array.isArray(blocks) ? blocks.length : 0;
                   const existingFingerprint =
                     typeof existingData.quiltFingerprint === 'string' && existingData.quiltFingerprint
                       ? existingData.quiltFingerprint
@@ -12631,7 +13957,8 @@ try {
               date: Utils.getTodayKey(),
               quiltFingerprint: Utils.computeQuiltFingerprint(blocks),
               colorReplayEvents: Array.isArray(colorReplayEvents) ? colorReplayEvents : [],
-              contributors: normalizeContributors(contributors)
+              contributors: normalizeContributors(contributors),
+              writeProvenance: Utils.buildWriteProvenance(`${writeReason}:local-fallback`)
             };
             if (fsrc === 'admin' || fsrc === 'daily') {
               const iso = new Date().toISOString();
@@ -12928,8 +14255,8 @@ try {
       }
 
       /**
-       * Per-day docs (`quotes/YYYY-MM-DD`, `dailyQuoteUsage/YYYY-MM-DD`) can carry blessing even when
-       * the Notion-synced catalog row was empty or keys differed — merge for quilt display.
+       * Per-day docs can carry blessing even when the Notion-synced catalog row was empty
+       * or keys differed — merge for quilt display.
        */
       async _mergeBlessingFromDailyFirestoreDocs(dateKey, quote) {
         if (!quote || !dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return quote;
@@ -12949,7 +14276,8 @@ try {
           }
         };
 
-        let extra = (await readBlessing('quotes')).trim();
+        let extra = (await readBlessing('dailyQuoteAssignments')).trim();
+        if (!extra) extra = (await readBlessing('quotes')).trim();
         if (!extra) extra = (await readBlessing('dailyQuoteUsage')).trim();
         if (!extra) return quote;
         return { ...quote, blessing: extra };
@@ -13007,7 +14335,29 @@ try {
           delete this._pinnedByDateKey[dateKey];
         }
 
-        // Canonical daily quote doc wins over shuffled fallback / stale assignment caches.
+        const isCurrentAppDate = dateKey === this.getQuoteCalendarKeyNow();
+        // The assignment doc is the canonical per-day choice. Never let stale device-local
+        // assignment cache decide today's quote.
+        let data = isCurrentAppDate ? null : this._readLocalAssignment(dateKey);
+        if (window.db && window.firestore) {
+          try {
+            const snap = await (window.firestore.getDocFromServer || window.firestore.getDoc)(
+              window.firestore.doc(window.db, 'dailyQuoteAssignments', dateKey)
+            );
+            if (snap.exists()) data = { ...(data || {}), ...(snap.data() || {}) };
+          } catch (e) {
+            console.warn('⚠️ resolveAndPinCalendarKey assignment read failed:', e);
+          }
+        }
+
+        let quote = data ? this._findQuoteFromAssignmentPayload(data) : null;
+        if (quote) {
+          quote = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, quote);
+          this._pinnedByDateKey[dateKey] = quote;
+          return quote;
+        }
+
+        // Legacy date-shaped quote docs are fallback only; stale clients have overwritten them before.
         if (window.db && window.firestore) {
           try {
             const quoteSnap = await (window.firestore.getDocFromServer || window.firestore.getDoc)(
@@ -13048,7 +14398,7 @@ try {
                   whatIfSnapshot: String(merged.whatIf ?? merged.what_if ?? '').slice(0, 240),
                   assignedAt: new Date().toISOString(),
                 });
-                console.log(`📌 Using canonical quotes/${dateKey}: "${String(merged.text || '').slice(0, 50)}..."`);
+                console.log(`📌 Using fallback quotes/${dateKey}: "${String(merged.text || '').slice(0, 50)}..."`);
                 return merged;
               }
             }
@@ -13057,21 +14407,6 @@ try {
           }
         }
 
-        const isCurrentAppDate = dateKey === this.getQuoteCalendarKeyNow();
-        // Never let stale device-local assignment cache decide today's quote.
-        let data = isCurrentAppDate ? null : this._readLocalAssignment(dateKey);
-        if (window.db && window.firestore) {
-          try {
-            const snap = await (window.firestore.getDocFromServer || window.firestore.getDoc)(
-              window.firestore.doc(window.db, 'dailyQuoteAssignments', dateKey)
-            );
-            if (snap.exists()) data = { ...(data || {}), ...(snap.data() || {}) };
-          } catch (e) {
-            console.warn('⚠️ resolveAndPinCalendarKey read failed:', e);
-          }
-        }
-
-        let quote = data ? this._findQuoteFromAssignmentPayload(data) : null;
         if (!quote) {
           const dayIndex = QuoteService._dayIndexFromCalendarKey(dateKey);
           const qi = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
@@ -13097,40 +14432,6 @@ try {
         }
         if (!this.quotes?.length) {
           return this.getTodayQuote();
-        }
-        // Canonical source for a specific calendar day: quotes/{dateKey}.
-        // This avoids stale dailyQuoteAssignments producing the wrong caption/reel text.
-        if (window.db && window.firestore) {
-          try {
-            const snap = await (window.firestore.getDocFromServer || window.firestore.getDoc)(
-              window.firestore.doc(window.db, 'quotes', dk)
-            );
-            if (snap.exists()) {
-              const data = snap.data() || {};
-              const text = String(data.text || '').trim();
-              const author = String(data.author || '').trim();
-              const blessing = this._blessingScalarFromPlainObject(data).trim();
-              if (text) {
-                const reflectionPrompt = String(data.reflectionPrompt || data.reflection_prompt || '').trim();
-                const whatIf = String(data.whatIf ?? data.what_if ?? '').trim();
-                const igCaption = String(data.igCaption ?? data.ig_caption ?? '').trim();
-                const canonical = {
-                  text,
-                  author,
-                  ...(blessing ? { blessing } : {}),
-                  ...(reflectionPrompt ? { reflectionPrompt } : {}),
-                  ...(whatIf ? { whatIf, what_if: whatIf } : {}),
-                  ...(igCaption ? { igCaption, ig_caption: igCaption } : {}),
-                  ...(data.sourceId ? { sourceId: data.sourceId } : {}),
-                  _canonicalDailyDoc: true
-                };
-                this._pinnedByDateKey[dk] = canonical;
-                return canonical;
-              }
-            }
-          } catch (e) {
-            console.warn('getQuoteResolvedForInstagramDateKey quotes doc read failed:', e?.message || e);
-          }
         }
         try {
           const pinned = await this.resolveAndPinCalendarKey(dk);
@@ -14417,16 +15718,47 @@ try {
           if (luminance <= 96) return 0.65;
           return 0;
         };
-        const createWatercolorOverlay = (shapeNode, blockRect, colorHex, idx, strength = 1, seedKey = '') => {
+        const createWatercolorOverlay = (
+          shapeNode,
+          blockRect,
+          colorHex,
+          idx,
+          strength = 1,
+          seedKey = '',
+          washRadialOpts = null
+        ) => {
           const t = Math.max(0, Math.min(1, strength * watercolorDarknessFactor(colorHex)));
           if (t <= 0.001) return null;
-          const { x, y, width, height } = blockRect;
           const rgb = hexToRgb(colorHex);
+          const radial =
+            washRadialOpts &&
+            typeof washRadialOpts.cx === 'number' &&
+            typeof washRadialOpts.cy === 'number' &&
+            typeof washRadialOpts.span === 'number' &&
+            washRadialOpts.span > 0
+              ? washRadialOpts
+              : null;
+          const { x, y, width, height } = blockRect;
           const seed = `${seedKey || idx}|${Math.round(x)}|${Math.round(y)}|${Math.round(width)}|${Math.round(height)}`;
-          const cx = x + width * (0.38 + hash01(`${seed}|cx`) * 0.24);
-          const cy = y + height * (0.38 + hash01(`${seed}|cy`) * 0.24);
-          const edgeR = Math.max(width, height) * 0.92;
-          const centerR = Math.max(width, height) * 0.72;
+
+          let cx;
+          let cy;
+          let edgeR;
+          let centerR;
+
+          if (radial) {
+            const jitter = radial.span * 0.11;
+            const triSeed = `${seed}|tri|${Math.round(radial.cx)}:${Math.round(radial.cy)}`;
+            cx = radial.cx + (hash01(`${triSeed}|cx`) - 0.5) * 2 * jitter;
+            cy = radial.cy + (hash01(`${triSeed}|cy`) - 0.5) * 2 * jitter;
+            centerR = radial.span * 0.72;
+            edgeR = radial.span * 0.92;
+          } else {
+            cx = x + width * (0.38 + hash01(`${seed}|cx`) * 0.24);
+            cy = y + height * (0.38 + hash01(`${seed}|cy`) * 0.24);
+            edgeR = Math.max(width, height) * 0.92;
+            centerR = Math.max(width, height) * 0.72;
+          }
           const centerId = `${renderToken}_center_${idx}`;
           const edgeId = `${renderToken}_edge_${idx}`;
 
@@ -14505,11 +15837,11 @@ try {
             const d1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
             d1.setAttribute('offset', '72%');
             d1.setAttribute('stop-color', '#000000');
-            d1.setAttribute('stop-opacity', String(0.01 * darkEdgeBoost));
+            d1.setAttribute('stop-opacity', String(Math.min(0.4, 0.01 * darkEdgeBoost * t)));
             const d2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
             d2.setAttribute('offset', '100%');
             d2.setAttribute('stop-color', '#000000');
-            d2.setAttribute('stop-opacity', String(0.08 * darkEdgeBoost));
+            d2.setAttribute('stop-opacity', String(Math.min(0.55, 0.08 * darkEdgeBoost * t)));
             darkEdgeGrad.appendChild(d0);
             darkEdgeGrad.appendChild(d1);
             darkEdgeGrad.appendChild(d2);
@@ -14523,6 +15855,73 @@ try {
           }
           return overlayGroup;
         };
+
+        const paperDepthStrengthForSize = (w, h) => {
+          const minDim = Math.max(1, Math.min(Math.abs(w), Math.abs(h)));
+          if (minDim < 42) return 0;
+          if (minDim < 78) return (minDim - 42) / 36 * 0.34;
+          if (minDim < 180) return 0.34 + ((minDim - 78) / 102) * 0.26;
+          return 0.6;
+        };
+        const stripCloneBlockMetadata = (node) => {
+          try {
+            node.removeAttribute('data-block-id');
+            node.classList.remove('user-piece-highlight');
+          } catch (_) {
+            /* ignore */
+          }
+        };
+        const createPaperDepthLayers = (shapeNode, blockRect, idx, seedKey = '') => {
+          if (!shapeNode || !blockRect) return null;
+          const { x, y, width, height } = blockRect;
+          const strength = paperDepthStrengthForSize(width, height);
+          if (strength <= 0.001) return null;
+          const seed = `${seedKey || idx}|paper|${Math.round(x)}|${Math.round(y)}|${Math.round(width)}|${Math.round(height)}`;
+          const lift = 0.48 + hash01(`${seed}|lift`) * 0.42;
+          const shadowDx = 0.42 * lift;
+          const shadowDy = 0.68 * lift;
+          const strokeW = Math.max(0.65, Math.min(1.65, Math.min(Math.abs(width), Math.abs(height)) * 0.016));
+          const edgeId = `${renderToken}_paperedge_${idx}`;
+
+          const edgeGrad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+          edgeGrad.setAttribute('id', edgeId);
+          edgeGrad.setAttribute('gradientUnits', 'userSpaceOnUse');
+          edgeGrad.setAttribute('x1', String(x));
+          edgeGrad.setAttribute('y1', String(y));
+          edgeGrad.setAttribute('x2', String(x + width));
+          edgeGrad.setAttribute('y2', String(y + height));
+          [
+            ['0%', '#ffffff', (0.29 * strength).toFixed(3)],
+            ['34%', '#ffffff', (0.1 * strength).toFixed(3)],
+            ['58%', '#6f5a45', '0'],
+            ['100%', '#3b2f25', (0.24 * strength).toFixed(3)]
+          ].forEach(([offset, color, opacity]) => {
+            const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+            stop.setAttribute('offset', offset);
+            stop.setAttribute('stop-color', color);
+            stop.setAttribute('stop-opacity', opacity);
+            edgeGrad.appendChild(stop);
+          });
+          defsNode.appendChild(edgeGrad);
+
+          const under = shapeNode.cloneNode(true);
+          stripCloneBlockMetadata(under);
+          under.setAttribute('fill', '#2d241d');
+          under.setAttribute('fill-opacity', (0.045 * strength).toFixed(3));
+          under.setAttribute('stroke', 'none');
+          under.setAttribute('transform', `translate(${shadowDx.toFixed(3)} ${shadowDy.toFixed(3)})`);
+
+          const over = shapeNode.cloneNode(true);
+          stripCloneBlockMetadata(over);
+          over.setAttribute('fill', 'none');
+          over.setAttribute('stroke', `url(#${edgeId})`);
+          over.setAttribute('stroke-width', strokeW.toFixed(3));
+          over.setAttribute('stroke-linejoin', 'round');
+          over.setAttribute('stroke-linecap', 'round');
+          over.setAttribute('pointer-events', 'none');
+          over.setAttribute('vector-effect', 'non-scaling-stroke');
+          return { under, over };
+        };
         
         blocks.forEach((block, i) => {
           // Safety check: ensure block has valid color
@@ -14531,6 +15930,8 @@ try {
             return; // Skip this block
           }
           
+          SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
+
           // Special handling for special pattern cells - render as organic polygons
           if (block.patternType === 'special' && block.specialPatternType) {
             // Ensure positive dimensions to prevent SVG errors
@@ -14575,17 +15976,146 @@ try {
                 if (this.userPieces.has(block.id)) {
                   poly.classList.add('user-piece-highlight');
                 }
+                const paperDepth = createPaperDepthLayers(
+                  poly,
+                  blockRect,
+                  `hst_${i}_${ti}`,
+                  `${block.id || 'block'}_hst_${ti}`
+                );
+                if (paperDepth?.under) specialGroup.appendChild(paperDepth.under);
                 specialGroup.appendChild(poly);
+                const anchor = Utils.hstOrganicTriangleRadialAnchorLocal(t.points);
+                const triRadialWash =
+                  anchor &&
+                  ({
+                    cx: renderX + anchor.cx,
+                    cy: renderY + anchor.cy,
+                    span: anchor.span
+                  });
                 const watercolorOverlay = createWatercolorOverlay(
                   poly,
                   blockRect,
                   fillC,
                   `hst_${i}_${ti}`,
                   watercolorStrength,
-                  `${block.id || 'block'}_hst_${ti}`
+                  `${block.id || 'block'}_hst_${ti}`,
+                  triRadialWash
                 );
                 if (watercolorOverlay) specialGroup.appendChild(watercolorOverlay);
+                if (paperDepth?.over) specialGroup.appendChild(paperDepth.over);
               });
+              if (i === this.lastAddedIndex) {
+                specialGroup.setAttribute('opacity', '0');
+                specialGroup.classList.add('new-block');
+                specialGroup.addEventListener('animationend', () => {
+                  specialGroup.classList.remove('new-block');
+                  specialGroup.removeAttribute('opacity');
+                }, { once: true });
+              }
+              parallaxLayer.appendChild(specialGroup);
+              return;
+            }
+
+            if (block.specialPatternType === 'insetCircle') {
+              const w = safeWidth;
+              const h = safeHeight;
+              const jitterMultiplier = this.calculateJitterMultiplier(w, h);
+              const rotationMultiplier = this.calculateRotationMultiplier(w, h);
+              const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
+              const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
+              const jitterRotation = (Math.random() - 0.5) * 3 * rotationMultiplier;
+              const rotationRadians = (jitterRotation * Math.PI) / 180;
+              const maxExtension = Math.max(w, h) * Math.abs(Math.sin(rotationRadians)) * 0.3;
+              const renderX = block.x + jitterX - maxExtension * 0.5;
+              const renderY = block.y + jitterY - maxExtension * 0.5;
+              const blockRect = { x: renderX, y: renderY, width: w, height: h };
+              const watercolorStrength = watercolorStrengthForSize(w, h);
+              const specialGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+              specialGroup.classList.add('quilt-parallax-block');
+              const centerX = renderX + w / 2;
+              const centerY = renderY + h / 2;
+              const baseTransform = `rotate(${jitterRotation} ${centerX} ${centerY})`;
+              specialGroup.setAttribute('transform', baseTransform);
+              specialGroup.dataset.baseTransform = baseTransform;
+              specialGroup.dataset.parallaxPhase = String(i);
+              specialGroup.dataset.parallaxCx = String(centerX);
+              specialGroup.dataset.parallaxCy = String(centerY);
+
+              const handCutPolygon = this.createHandCutPolygon(renderX, renderY, w, h, jitterMultiplier);
+              handCutPolygon.setAttribute('fill', block.color);
+              handCutPolygon.setAttribute('stroke', 'none');
+              handCutPolygon.setAttribute('data-block-id', block.id);
+              if (this.userPieces.has(block.id)) {
+                handCutPolygon.classList.add('user-piece-highlight');
+              }
+              const bgPaperDepth = createPaperDepthLayers(
+                handCutPolygon,
+                blockRect,
+                `inset_bg_${i}`,
+                `${block.id || 'block'}_inset_bg`
+              );
+              if (bgPaperDepth?.under) specialGroup.appendChild(bgPaperDepth.under);
+              specialGroup.appendChild(handCutPolygon);
+              const bgPtsAttr = handCutPolygon.getAttribute('points');
+              const bgVerts = Utils.parseSvgPolygonPointsAttr(bgPtsAttr || '');
+              const bgPolyRad = Utils.polygonRadialAnchorFromPoints(bgVerts);
+              const bgOverlay = createWatercolorOverlay(
+                handCutPolygon,
+                blockRect,
+                block.color,
+                `inset_bg_${i}`,
+                watercolorStrength,
+                `${block.id || 'block'}_inset_bg`,
+                bgPolyRad &&
+                  ({
+                    cx: bgPolyRad.cx,
+                    cy: bgPolyRad.cy,
+                    span: bgPolyRad.span
+                  })
+              );
+              if (bgOverlay) specialGroup.appendChild(bgOverlay);
+              if (bgPaperDepth?.over) specialGroup.appendChild(bgPaperDepth.over);
+
+              const innerC = typeof block.insetInnerColor === 'string' ? block.insetInnerColor : block.color;
+              const sw = Utils.insetCircleSectorPointsWorld(block, renderX, renderY);
+              if (sw.kind !== 'none' && sw.points && sw.points.length >= 3) {
+                const innerVerts = sw.points.map((p) => [Number(p[0]), Number(p[1])]);
+                const innerPolyRad = Utils.polygonRadialAnchorFromPoints(innerVerts);
+                const innerPtsStr = sw.points.map((p) => `${p[0]},${p[1]}`).join(' ');
+                const innerPoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                innerPoly.setAttribute('points', innerPtsStr);
+                innerPoly.setAttribute('fill', innerC);
+                innerPoly.setAttribute('stroke', 'none');
+                innerPoly.setAttribute('data-block-id', block.id);
+                if (this.userPieces.has(block.id)) {
+                  innerPoly.classList.add('user-piece-highlight');
+                }
+                const innerPaperDepth = createPaperDepthLayers(
+                  innerPoly,
+                  blockRect,
+                  `inset_inner_${i}`,
+                  `${block.id || 'block'}_inset_inner`
+                );
+                if (innerPaperDepth?.under) specialGroup.appendChild(innerPaperDepth.under);
+                specialGroup.appendChild(innerPoly);
+                const innerOverlay = createWatercolorOverlay(
+                  innerPoly,
+                  blockRect,
+                  innerC,
+                  `inset_inner_${i}`,
+                  watercolorStrength,
+                  `${block.id || 'block'}_inset_inner`,
+                  innerPolyRad &&
+                    ({
+                      cx: innerPolyRad.cx,
+                      cy: innerPolyRad.cy,
+                      span: innerPolyRad.span
+                    })
+                );
+                if (innerOverlay) specialGroup.appendChild(innerOverlay);
+                if (innerPaperDepth?.over) specialGroup.appendChild(innerPaperDepth.over);
+              }
+
               if (i === this.lastAddedIndex) {
                 specialGroup.setAttribute('opacity', '0');
                 specialGroup.classList.add('new-block');
@@ -14619,8 +16149,16 @@ try {
             specialGroup.dataset.parallaxPhase = String(i);
             specialGroup.dataset.parallaxCx = String(block.x + safeWidth / 2);
             specialGroup.dataset.parallaxCy = String(block.y + safeHeight / 2);
+            const paperDepth = createPaperDepthLayers(
+              handCutPolygon,
+              { x: block.x, y: block.y, width: safeWidth, height: safeHeight },
+              `special_${i}`,
+              block.id || `special_${i}`
+            );
+            if (paperDepth?.under) specialGroup.appendChild(paperDepth.under);
             specialGroup.appendChild(handCutPolygon);
             if (watercolorOverlay) specialGroup.appendChild(watercolorOverlay);
+            if (paperDepth?.over) specialGroup.appendChild(paperDepth.over);
 
             // Add new block animation for special pattern cells
             if (i === this.lastAddedIndex) {
@@ -14751,8 +16289,16 @@ try {
           blockGroup.dataset.parallaxCx = String(centerX);
           blockGroup.dataset.parallaxCy = String(centerY);
           blockGroup.setAttribute('transform', baseTransform);
+          const paperDepth = createPaperDepthLayers(
+            handCutPolygon,
+            { x: jitteredBlock.x, y: jitteredBlock.y, width: scaledWidth, height: scaledHeight },
+            `regular_${i}`,
+            block.id || `regular_${i}`
+          );
+          if (paperDepth?.under) blockGroup.appendChild(paperDepth.under);
           blockGroup.appendChild(handCutPolygon);
           if (watercolorOverlay) blockGroup.appendChild(watercolorOverlay);
+          if (paperDepth?.over) blockGroup.appendChild(paperDepth.over);
 
           // Add new block animation
           if (i === this.lastAddedIndex) {
@@ -15235,11 +16781,11 @@ try {
         // Check for secret admin URL parameter
         this.checkSecretAdminAccess();
         
-        // Color picker state
-        this.selectedHue = CONFIG.COLOR_PICKER.defaultHue;
-        this.selectedSaturation = CONFIG.COLOR_PICKER.saturation;
-        /* Picker uses HSV: this is value/brightness (0–100), not HSL lightness. */
-        this.selectedLightness = CONFIG.COLOR_PICKER.defaultLightness;
+        // Color picker — start on first palette swatch (= defaultColor), reset once per calendar day after load
+        const startupHsv = Utils.hexToHsv(CONFIG.APP.defaultColor);
+        this.selectedHue = startupHsv.h;
+        this.selectedSaturation = startupHsv.s;
+        this.selectedLightness = startupHsv.v;
         this.colorHasBeenSelected = false;
         this.isDragging = false;
         this._hsvWheelCanvasKey = '';
@@ -15298,6 +16844,8 @@ try {
         this._layoutBPreviewDebounceTimer = null;
         this._layoutBPreviewGeneration = 0;
         this._quiltResetCountdownTimer = null;
+        /** App-day key for the shared quilt currently in memory. Prevents stale saves after the 07:00 UTC rollover. */
+        this._loadedSharedQuiltDateKey = null;
         /** Device-local "personal quilt" mode (derived from this user's historical color picks). */
         this._isPersonalQuiltMode = false;
         this._personalQuiltState = null;
@@ -15325,6 +16873,45 @@ try {
         /** Latest block this device contributed, used by the dedication image flow. */
         this._latestDedicatedBlockId = localStorage.getItem('ourDailyLatestDedicatedBlockId') || '';
         this._dedicationKeyEsc = null;
+      }
+
+      /**
+       * First open each calendar day (or after daily reset): wheel + preview = first palette swatch (`CONFIG.APP.defaultColor`).
+       * @param {{ forceDaily?: boolean }} [opts] pass `{ forceDaily: true }` after `resetQuiltForNewDay`.
+       */
+      _maybeSnapPickerToDailyFirstPalette(opts = {}) {
+        const forceDaily = opts.forceDaily === true;
+        try {
+          const today =
+            typeof Utils !== 'undefined' && typeof Utils.getTodayKey === 'function'
+              ? Utils.getTodayKey()
+              : '';
+          if (!today && !forceDaily) return;
+          const key = 'ourDailyFirstPalettePickerDate';
+          if (typeof localStorage !== 'undefined' && !forceDaily && localStorage.getItem(key) === today) {
+            return;
+          }
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(key, today || String(Date.now()));
+          }
+          this._applyPickerHSVFromHex(CONFIG.APP.defaultColor);
+          this.colorHasBeenSelected = false;
+          this._hsvWheelCanvasKey = '';
+          queueMicrotask(() => {
+            if (typeof this.updateColorWheel === 'function') this.updateColorWheel();
+          });
+        } catch (_) {
+          /* */
+        }
+      }
+
+      _applyPickerHSVFromHex(hex) {
+        const safe = /^#[0-9A-Fa-f]{6}$/.test(String(hex || '').trim()) ? String(hex).trim() : CONFIG.APP.defaultColor;
+        const hsv = Utils.hexToHsv(safe);
+        this.selectedHue = hsv.h;
+        this.selectedSaturation = hsv.s;
+        this.selectedLightness = hsv.v;
+        this._hsvWheelCanvasKey = '';
       }
 
       checkDeviceAndRedirect() {
@@ -15509,6 +17096,7 @@ try {
           await this.loadQuilt();
           if (window.odqPerfMark) window.odqPerfMark('after-load-quilt');
           console.log('🔍 DEBUGGING: Quilt loaded, blocks count:', this.quiltEngine.blocks.length);
+          this._maybeSnapPickerToDailyFirstPalette();
           this.updateSquareCounter();
 
           // Catalog must load before first quilt paint + shuffle (defaults have no blessing / wrong length).
@@ -15552,6 +17140,7 @@ try {
           console.log('🔄 Firestore enabled - quotes loaded from database');
           // Portal progression is user-driven via scroll/swipe gesture now.
           this.setupDailyReset(); // ENABLED - automatic daily archive and reset
+          this.setupQuiltResumeRefresh();
           this.setupQuiltResetCountdown();
           
           // Don't set up flip handlers here - they'll be set up when quilt screen is shown
@@ -15764,6 +17353,8 @@ try {
 
         // Pinch and pan for inspecting quilt details
         this.setupQuiltZoom();
+
+        this.setupQuiltFilmGrainOverlay();
         
         // Setup long-press admin access on title
         this.setupLongPressAdminAccess();
@@ -16365,6 +17956,10 @@ try {
           if (quoteScreen && quoteScreen.classList.contains('active')) {
             this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
           }
+          const quiltScreen = document.getElementById('screen-quilt');
+          if (quiltScreen && quiltScreen.classList.contains('active')) {
+            this.syncQuiltFilmGrainOverlay();
+          }
         }, 250); // 250ms debounce
       }
 
@@ -16384,6 +17979,85 @@ try {
           event.preventDefault();
           this.toggleQuiltZoomAt(event.clientX, event.clientY);
         });
+      }
+
+      syncQuiltFilmGrainOverlay() {
+        const qc = document.querySelector('#screen-quilt .quilt-container');
+        const canvas = document.getElementById('quiltFilmGrainOverlay');
+        if (!qc || !canvas) return;
+        const quiltScreen = document.getElementById('screen-quilt');
+        const visible = quiltScreen && quiltScreen.classList.contains('active');
+        if (!visible) return;
+
+        const paintCore = () => {
+          const wPx = Math.max(1, Math.round(qc.clientWidth));
+          const hPx = Math.max(1, Math.round(qc.clientHeight));
+          const dpr =
+            typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
+              ? Math.min(2.5, window.devicePixelRatio)
+              : 1;
+          const bw = Math.max(1, Math.round(wPx * dpr));
+          const bh = Math.max(1, Math.round(hPx * dpr));
+          if (canvas.width !== bw || canvas.height !== bh) {
+            canvas.width = bw;
+            canvas.height = bh;
+            canvas.style.width = `${wPx}px`;
+            canvas.style.height = `${hPx}px`;
+          }
+          const ctx = canvas.getContext('2d', { alpha: true });
+          if (!ctx) return;
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const svg = document.getElementById('quilt');
+          const isNative =
+            typeof odqIsCapacitorNative === 'function' && odqIsCapacitorNative();
+          const clipPath = Utils.buildQuiltGrainClipPathFromSvg(svg, wPx, hPx);
+          if (!clipPath) return;
+          ctx.save();
+          ctx.clip(clipPath);
+          Utils.applyFilmGrain(ctx, wPx, hPx, 0, { vignette: false, textureOnly: isNative });
+          ctx.restore();
+        };
+
+        // Defer to after layout; WKWebView often has (0,0) CTM / rects on the first paint tick.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            paintCore();
+            if (typeof odqIsCapacitorNative === 'function' && odqIsCapacitorNative()) {
+              setTimeout(paintCore, 220);
+            }
+          });
+        });
+      }
+
+      setupQuiltFilmGrainOverlay() {
+        const qc = document.querySelector('#screen-quilt .quilt-container');
+        if (!qc) return;
+        if (typeof ResizeObserver !== 'undefined') {
+          if (this._quiltFilmGrainResizeObserver) {
+            this._quiltFilmGrainResizeObserver.disconnect();
+          }
+          this._quiltFilmGrainResizeObserver = new ResizeObserver(() => {
+            this.syncQuiltFilmGrainOverlay();
+          });
+          this._quiltFilmGrainResizeObserver.observe(qc);
+        }
+
+        if (!this._quiltFilmGrainLifecycleBound) {
+          this._quiltFilmGrainLifecycleBound = true;
+          const bump = () => this.syncQuiltFilmGrainOverlay();
+          window.addEventListener('pageshow', bump);
+          window.addEventListener('orientationchange', () => requestAnimationFrame(bump));
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') bump();
+          });
+          document.addEventListener('screenChange', (e) => {
+            if (e.detail?.screenId === 'screen-quilt') {
+              requestAnimationFrame(() => requestAnimationFrame(bump));
+            }
+          });
+        }
       }
 
       syncQuiltZoomAfterRender() {
@@ -18024,17 +19698,18 @@ try {
         }
       }
 
-      // Setup long-press admin access on top-right corner
+      // Setup long-press admin access on bottom-right corner.
       setupLongPressAdminAccess() {
         let pressTimer = null;
         let isLongPress = false;
         
-        // Create invisible corner element for long-press detection
+        // Create invisible corner element for long-press detection.
+        // Keep it away from the quilt's primary tap/zoom target.
         const cornerElement = document.createElement('div');
         cornerElement.id = 'admin-corner';
         cornerElement.style.cssText = `
           position: fixed;
-          top: 0;
+          bottom: max(0px, env(safe-area-inset-bottom, 0px));
           right: 0;
           width: 60px;
           height: 60px;
@@ -19282,7 +20957,12 @@ try {
           this.quiltEngine.initialize();
           this.dailyContributors = [];
           this.logger.log('🔄 Quilt engine reinitialized');
-          
+          try {
+            this._maybeSnapPickerToDailyFirstPalette({ forceDaily: true });
+          } catch (_) {
+            /* */
+          }
+
           // Clear any cached localStorage data to ensure fresh start
           try {
             localStorage.removeItem('ourDailyQuilt');
@@ -19313,9 +20993,50 @@ try {
         }
       }
 
+      /**
+       * Quilt hydration uses a one-shot Firestore getDoc (no snapshot listener). After a CI reset
+       * (`resetBy: github-actions`) the community adds many splits while the app stays open or in
+       * the background — the WebView keeps the early snapshot. Re-fetch when the app becomes visible.
+       */
+      setupQuiltResumeRefresh() {
+        if (this._quiltResumeRefreshBound) return;
+        this._quiltResumeRefreshBound = true;
+        const schedule = () => {
+          if (this._isPersonalQuiltMode) return;
+          if (!window.db || !window.firestore) return;
+          if (!this._portalQuiltLoaded) return;
+          if (document.visibilityState !== 'visible') return;
+          clearTimeout(this._resumeQuiltSyncTimer);
+          this._resumeQuiltSyncTimer = setTimeout(async () => {
+            if (document.visibilityState !== 'visible') return;
+            if (this._isPersonalQuiltMode) return;
+            if (!window.db || !window.firestore) return;
+            const before = Utils.computeQuiltFingerprint(this.quiltEngine?.blocks || []);
+            try {
+              await this.loadQuilt();
+            } catch (_) {
+              return;
+            }
+            const after = Utils.computeQuiltFingerprint(this.quiltEngine?.blocks || []);
+            if (before !== after) {
+              this.logger.log('🔄 Quilt synced from Firestore after app became visible');
+              this.renderQuilt();
+              this.updateSquareCounter();
+            }
+          }, 450);
+        };
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') schedule();
+        });
+        window.addEventListener('pageshow', (ev) => {
+          if (ev.persisted) schedule();
+        });
+      }
+
       setupDailyReset() {
-        this.logger.log('🌙 Setting up automatic daily archive and reset...');
-        
+        this.logger.log('🌙 Browser daily reset disabled; server / GitHub Actions owns destructive resets.');
+        return;
+
         const scheduleDailyCycle = () => {
           const now = new Date();
           
@@ -19561,6 +21282,7 @@ try {
         }
         try {
           const data = await this.dataService.loadQuilt();
+          this._loadedSharedQuiltDateKey = data.dateKey || data.date || Utils.getTodayKey();
           this.dailyContributors = this.normalizeDailyContributors(data.contributors || []);
           
           if (data.blocks && data.blocks.length > 0) {
@@ -19578,7 +21300,22 @@ try {
               originalPatternId: block.originalPatternId,
               hstColorB: block.hstColorB,
               hstDiagonal: block.hstDiagonal,
-              hstTriangles: Utils.normalizeHstTrianglesFromFirestore(block.hstTriangles)
+              hstTriangles: Utils.normalizeHstTrianglesFromFirestore(block.hstTriangles),
+              insetTier: typeof block.insetTier === 'number' ? block.insetTier : undefined,
+              insetFrozen: block.insetFrozen === true ? true : undefined,
+              insetInnerColor: block.insetInnerColor,
+              insetCx: typeof block.insetCx === 'number' ? Number(block.insetCx) : undefined,
+              insetCy: typeof block.insetCy === 'number' ? Number(block.insetCy) : undefined,
+              insetR: typeof block.insetR === 'number' ? Number(block.insetR) : undefined,
+              insetMask: typeof block.insetMask === 'string' ? block.insetMask : undefined,
+              insetFirstCutVertical:
+                block.insetFirstCutVertical === true || block.insetFirstCutVertical === false
+                  ? block.insetFirstCutVertical
+                  : undefined,
+              insetNextCutVertical:
+                block.insetNextCutVertical === true || block.insetNextCutVertical === false
+                  ? block.insetNextCutVertical
+                  : undefined
             }));
             this.quiltEngine.submissionCount = data.contributorCount || 1;
             this.quiltEngine.setColorReplayEvents(data.colorReplayEvents || []);
@@ -19591,6 +21328,7 @@ try {
           
         } catch (error) {
           this.logger.error('❌ Failed to load quilt:', error);
+          this._loadedSharedQuiltDateKey = Utils.getTodayKey();
           this.quiltEngine.initialize();
           this.dailyContributors = [];
         } finally {
@@ -19763,6 +21501,25 @@ try {
 
       async saveQuilt(saveOptions = null) {
         try {
+          const options = saveOptions && typeof saveOptions === 'object' ? saveOptions : {};
+          const resetSource = options.resetSource;
+          const isIntentionalReset = resetSource === 'admin' || resetSource === 'daily';
+          const todayKey = Utils.getTodayKey();
+          if (
+            !isIntentionalReset &&
+            !this._isPersonalQuiltMode &&
+            this._loadedSharedQuiltDateKey &&
+            this._loadedSharedQuiltDateKey !== todayKey
+          ) {
+            this.logger.warn(
+              `⚠️ Refusing stale quilt save: loaded ${this._loadedSharedQuiltDateKey}, current app day is ${todayKey}. Reloading current quilt instead.`
+            );
+            await this.loadQuilt();
+            this.renderQuilt();
+            this.updateSquareCounter();
+            return false;
+          }
+
           const blocks = this.quiltEngine.blocks.map((block) => this.quiltEngine._serializeBlockForReplay(block));
           
           return await this.dataService.saveQuilt(
@@ -19856,6 +21613,7 @@ try {
           this.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
         }
         this.syncQuiltZoomAfterRender();
+        requestAnimationFrame(() => this.syncQuiltFilmGrainOverlay());
         this.updateSquareCounter();
         this.renderQuiltContributorList();
         
@@ -21505,56 +23263,6 @@ try {
         const canvas = document.createElement('canvas');
         canvas.width = W;
         canvas.height = H;
-        const grainTile = document.createElement('canvas');
-        grainTile.width = 240;
-        grainTile.height = 240;
-        {
-          const gctx = grainTile.getContext('2d');
-          const img = gctx.createImageData(grainTile.width, grainTile.height);
-          for (let i = 0; i < img.data.length; i += 4) {
-            const v = Math.floor(Math.random() * 256);
-            img.data[i] = v;
-            img.data[i + 1] = v;
-            img.data[i + 2] = v;
-            img.data[i + 3] = 255;
-          }
-          gctx.putImageData(img, 0, 0);
-        }
-        const paperTile = document.createElement('canvas');
-        paperTile.width = 320;
-        paperTile.height = 320;
-        {
-          const pctx = paperTile.getContext('2d');
-          pctx.fillStyle = '#f4f1ea';
-          pctx.fillRect(0, 0, paperTile.width, paperTile.height);
-          for (let i = 0; i < 950; i++) {
-            const x = Math.random() * paperTile.width;
-            const y = Math.random() * paperTile.height;
-            const r = 0.35 + Math.random() * 1.8;
-            const a = 0.015 + Math.random() * 0.03;
-            pctx.beginPath();
-            pctx.fillStyle = `rgba(115, 102, 90, ${a.toFixed(3)})`;
-            pctx.arc(x, y, r, 0, Math.PI * 2);
-            pctx.fill();
-          }
-        }
-        const halftoneTile = document.createElement('canvas');
-        halftoneTile.width = 180;
-        halftoneTile.height = 180;
-        {
-          const hctx = halftoneTile.getContext('2d');
-          hctx.clearRect(0, 0, halftoneTile.width, halftoneTile.height);
-          const step = 12;
-          for (let y = 0; y < halftoneTile.height + step; y += step) {
-            for (let x = 0; x < halftoneTile.width + step; x += step) {
-              const rr = 0.8 + Math.random() * 0.9;
-              hctx.beginPath();
-              hctx.fillStyle = 'rgba(70, 62, 55, 0.14)';
-              hctx.arc(x, y, rr, 0, Math.PI * 2);
-              hctx.fill();
-            }
-          }
-        }
 
         const hash01 = (str) => {
           let h = 2166136261 >>> 0;
@@ -21622,9 +23330,37 @@ try {
             ctx.fill();
           });
         };
+        const drawInsetBlockReel = (ctx, b, copyIdx) => {
+          const left = b.x - minX;
+          const top = b.y - minY;
+          ctx.beginPath();
+          traceOrganicBlockPath(ctx, b, copyIdx);
+          const bg = /^#[0-9A-Fa-f]{6}$/.test(String(b.color || '').trim()) ? b.color : '#c8c4bf';
+          ctx.fillStyle = bg;
+          ctx.fill();
+          const innerHex = typeof b.insetInnerColor === 'string' ? b.insetInnerColor : bg;
+          const inner = /^#[0-9A-Fa-f]{6}$/.test(String(innerHex || '').trim()) ? innerHex : '#c8c4bf';
+          const spec = Utils.insetCircleOrganicSectorPointsLocal(b, 1);
+          const mapToWorld = (p) => [left + p[0], top + p[1]];
+          if (spec.kind === 'none' || !(spec.points && spec.points.length >= 3)) {
+            return;
+          }
+          const pts = spec.points.map(mapToWorld);
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+          ctx.closePath();
+          ctx.fillStyle = inner;
+          ctx.fill();
+        };
         const drawOrganicBlock = (ctx, b, copyIdx) => {
+          SimpleQuiltEngine.ensureInsetClassificationFromGeometry(b);
           if (b.patternType === 'special' && b.specialPatternType === 'hst') {
             drawHstBlockReel(ctx, b);
+            return;
+          }
+          if (b.patternType === 'special' && b.specialPatternType === 'insetCircle') {
+            drawInsetBlockReel(ctx, b, copyIdx);
             return;
           }
           traceOrganicBlockPath(ctx, b, copyIdx);
@@ -21655,12 +23391,272 @@ try {
           if (luminance <= 96) return 0.65;
           return 0;
         };
+        /** HST: one wash per organic triangle, centroid-based (matches SVG). */
+        const applyWatercolorWashHstPieces = (ctx, b, copyIdx, intensity = 1) => {
+          const base = Math.max(0, Math.min(1, intensity));
+          const minDim = Math.max(1, Math.min(Math.abs(b.width), Math.abs(b.height)));
+          const sizeFactor = minDim <= 44 ? 0.45 : minDim <= 72 ? 0.7 : 1;
+          const left0 = b.x - minX;
+          const top0 = b.y - minY;
+          const tris = Utils.getHstOrganicRenderTriangles(b, 1);
+          tris.forEach((tri, ti) => {
+            const pts = tri.points || [];
+            if (pts.length < 3) return;
+            const colTri = /^#[0-9a-f]{6}$/i.test(String(tri.color || '').trim())
+              ? String(tri.color).trim()
+              : /^#[0-9a-f]{6}$/i.test(String(b.color || '').trim())
+                ? String(b.color).trim()
+                : '#c8c4bf';
+            const t0 = base * sizeFactor * watercolorDarknessFactor(colTri);
+            const t = Math.max(0, Math.min(1, t0));
+            if (t <= 0.001) return;
+            const an = Utils.hstOrganicTriangleRadialAnchorLocal(pts);
+            if (!an || !(an.span > 0)) return;
+            const jitter = an.span * 0.11;
+            const triSeed = `${b.id || ''}|hstwc|${ti}|${copyIdx}`;
+            const cx = left0 + an.cx + (hash01(`${triSeed}|cx`) - 0.5) * 2 * jitter;
+            const cy = top0 + an.cy + (hash01(`${triSeed}|cy`) - 0.5) * 2 * jitter;
+            const gSpan = Math.max(an.span, 1e-6);
+            const gMin = Math.min(gSpan, Math.min(Math.abs(b.width), Math.abs(b.height)));
+            let bx0 = Infinity;
+            let by0 = Infinity;
+            let bx1 = -Infinity;
+            let by1 = -Infinity;
+            for (let k = 0; k < pts.length; k++) {
+              const wx = left0 + Number(pts[k][0]);
+              const wy = top0 + Number(pts[k][1]);
+              bx0 = Math.min(bx0, wx);
+              by0 = Math.min(by0, wy);
+              bx1 = Math.max(bx1, wx);
+              by1 = Math.max(by1, wy);
+            }
+            const bw = bx1 - bx0;
+            const bh = by1 - by0;
+            const c = hexToRgb(colTri);
+            const darkBoost = darkEdgeBoostForColor(colTri);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(left0 + pts[0][0], top0 + pts[0][1]);
+            for (let k = 1; k < pts.length; k++) {
+              ctx.lineTo(left0 + pts[k][0], top0 + pts[k][1]);
+            }
+            ctx.closePath();
+            ctx.clip();
+
+            const centerGrad = ctx.createRadialGradient(
+              cx,
+              cy,
+              gMin * 0.08,
+              cx,
+              cy,
+              gSpan * 0.72
+            );
+            centerGrad.addColorStop(0, `rgba(255,255,255,${Math.min(0.92, 0.16 * t).toFixed(3)})`);
+            centerGrad.addColorStop(0.55, `rgba(255,255,255,${Math.min(0.45, 0.05 * t).toFixed(3)})`);
+            centerGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.globalCompositeOperation = 'screen';
+            ctx.fillStyle = centerGrad;
+            ctx.fillRect(bx0 - 2, by0 - 2, bw + 4, bh + 4);
+
+            const edgeGrad = ctx.createRadialGradient(cx, cy, gMin * 0.18, cx, cy, gSpan * 0.92);
+            edgeGrad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0)`);
+            edgeGrad.addColorStop(
+              0.65,
+              `rgba(${c.r},${c.g},${c.b},${Math.min(0.35, 0.03 * t).toFixed(3)})`
+            );
+            edgeGrad.addColorStop(
+              1,
+              `rgba(${c.r},${c.g},${c.b},${Math.min(0.75, 0.19 * t).toFixed(3)})`
+            );
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.fillStyle = edgeGrad;
+            ctx.fillRect(bx0 - 2, by0 - 2, bw + 4, bh + 4);
+
+            if (darkBoost > 0.001) {
+              const darkEdge = ctx.createRadialGradient(cx, cy, gMin * 0.2, cx, cy, gSpan * 0.96);
+              darkEdge.addColorStop(0, 'rgba(0,0,0,0)');
+              darkEdge.addColorStop(0.74, `rgba(0,0,0,${Math.min(0.4, 0.012 * darkBoost * t).toFixed(3)})`);
+              darkEdge.addColorStop(
+                1,
+                `rgba(0,0,0,${Math.min(0.55, 0.085 * darkBoost * t).toFixed(3)})`
+              );
+              ctx.fillStyle = darkEdge;
+              ctx.fillRect(bx0 - 2, by0 - 2, bw + 4, bh + 4);
+            }
+
+            ctx.restore();
+          });
+        };
+
+        const applyWatercolorWashInsetPieces = (ctx, b, copyIdx, intensity = 1) => {
+          const base = Math.max(0, Math.min(1, intensity));
+          const minDim = Math.max(1, Math.min(Math.abs(b.width), Math.abs(b.height)));
+          const sizeFactor = minDim <= 44 ? 0.45 : minDim <= 72 ? 0.7 : 1;
+          const left0 = b.x - minX;
+          const top0 = b.y - minY;
+          const bw = Math.max(1, b.width);
+          const bh = Math.max(1, b.height);
+
+          const fieldHex = /^#[0-9a-f]{6}$/i.test(String(b.color || '').trim())
+            ? String(b.color).trim()
+            : '#c8c4bf';
+          const tField0 = base * sizeFactor * watercolorDarknessFactor(fieldHex);
+          const tField = Math.max(0, Math.min(1, tField0));
+          if (tField > 0.001) {
+            const jitter = Math.min(bw, bh) * 0.06;
+            const fcx =
+              left0 +
+              bw * 0.5 +
+              (hash01(`${b.id || ''}|inf|${copyIdx}|tcx`) - 0.5) * 2 * jitter;
+            const fcy =
+              top0 +
+              bh * 0.5 +
+              (hash01(`${b.id || ''}|inf|${copyIdx}|tcy`) - 0.5) * 2 * jitter;
+            const gSpanF = Math.max(bw, bh);
+            const gMinF = Math.min(bw, bh);
+            const cF = hexToRgb(fieldHex);
+            const darkF = darkEdgeBoostForColor(fieldHex);
+
+            ctx.save();
+            ctx.beginPath();
+            traceOrganicBlockPath(ctx, b, copyIdx);
+            ctx.clip();
+
+            const cg = ctx.createRadialGradient(
+              fcx,
+              fcy,
+              gMinF * 0.08,
+              fcx,
+              fcy,
+              gSpanF * 0.72
+            );
+            cg.addColorStop(0, `rgba(255,255,255,${Math.min(0.92, 0.16 * tField).toFixed(3)})`);
+            cg.addColorStop(0.55, `rgba(255,255,255,${Math.min(0.45, 0.05 * tField).toFixed(3)})`);
+            cg.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.globalCompositeOperation = 'screen';
+            ctx.fillStyle = cg;
+            ctx.fillRect(left0 - 2, top0 - 2, bw + 4, bh + 4);
+
+            const eg = ctx.createRadialGradient(fcx, fcy, gMinF * 0.18, fcx, fcy, gSpanF * 0.92);
+            eg.addColorStop(0, `rgba(${cF.r},${cF.g},${cF.b},0)`);
+            eg.addColorStop(
+              0.65,
+              `rgba(${cF.r},${cF.g},${cF.b},${Math.min(0.35, 0.03 * tField).toFixed(3)})`
+            );
+            eg.addColorStop(
+              1,
+              `rgba(${cF.r},${cF.g},${cF.b},${Math.min(0.75, 0.19 * tField).toFixed(3)})`
+            );
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.fillStyle = eg;
+            ctx.fillRect(left0 - 2, top0 - 2, bw + 4, bh + 4);
+
+            if (darkF > 0.001) {
+              const dg = ctx.createRadialGradient(fcx, fcy, gMinF * 0.2, fcx, fcy, gSpanF * 0.96);
+              dg.addColorStop(0, 'rgba(0,0,0,0)');
+              dg.addColorStop(0.74, `rgba(0,0,0,${Math.min(0.4, 0.012 * darkF * tField).toFixed(3)})`);
+              dg.addColorStop(
+                1,
+                `rgba(0,0,0,${Math.min(0.55, 0.085 * darkF * tField).toFixed(3)})`
+              );
+              ctx.fillStyle = dg;
+              ctx.fillRect(left0 - 2, top0 - 2, bw + 4, bh + 4);
+            }
+
+            ctx.restore();
+          }
+
+          const spec = Utils.insetCircleOrganicSectorPointsLocal(b, 1);
+          if (spec.kind === 'none' || !(spec.points && spec.points.length >= 3)) return;
+          const innerHex = /^#[0-9a-f]{6}$/i.test(String(b.insetInnerColor || '').trim())
+            ? String(b.insetInnerColor).trim()
+            : fieldHex;
+          const tDisk0 = base * sizeFactor * watercolorDarknessFactor(innerHex);
+          const tDisk = Math.max(0, Math.min(1, tDisk0));
+          if (tDisk <= 0.001) return;
+
+          const dpts = spec.points.map((p) => [left0 + Number(p[0]), top0 + Number(p[1])]);
+          const an = Utils.polygonRadialAnchorFromPoints(dpts);
+          if (!an || !(an.span > 0)) return;
+          const jitterD = an.span * 0.11;
+          const dSeed = `${b.id || ''}|inDisk|${copyIdx}`;
+          const cx = an.cx + (hash01(`${dSeed}|cx`) - 0.5) * 2 * jitterD;
+          const cy = an.cy + (hash01(`${dSeed}|cy`) - 0.5) * 2 * jitterD;
+          const gSpan = Math.max(an.span, 1e-6);
+          const gMin = Math.min(gSpan, Math.min(bw, bh));
+
+          let bx0 = Infinity;
+          let by0 = Infinity;
+          let bx1 = -Infinity;
+          let by1 = -Infinity;
+          for (const q of dpts) {
+            bx0 = Math.min(bx0, q[0]);
+            by0 = Math.min(by0, q[1]);
+            bx1 = Math.max(bx1, q[0]);
+            by1 = Math.max(by1, q[1]);
+          }
+          const bbw = bx1 - bx0;
+          const bbh = by1 - by0;
+
+          const cI = hexToRgb(innerHex);
+          const darkI = darkEdgeBoostForColor(innerHex);
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(dpts[0][0], dpts[0][1]);
+          for (let k = 1; k < dpts.length; k++) {
+            ctx.lineTo(dpts[k][0], dpts[k][1]);
+          }
+          ctx.closePath();
+          ctx.clip();
+
+          const cgc = ctx.createRadialGradient(cx, cy, gMin * 0.08, cx, cy, gSpan * 0.72);
+          cgc.addColorStop(0, `rgba(255,255,255,${Math.min(0.92, 0.16 * tDisk).toFixed(3)})`);
+          cgc.addColorStop(0.55, `rgba(255,255,255,${Math.min(0.45, 0.05 * tDisk).toFixed(3)})`);
+          cgc.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fillStyle = cgc;
+          ctx.fillRect(bx0 - 2, by0 - 2, bbw + 4, bbh + 4);
+
+          const egc = ctx.createRadialGradient(cx, cy, gMin * 0.18, cx, cy, gSpan * 0.92);
+          egc.addColorStop(0, `rgba(${cI.r},${cI.g},${cI.b},0)`);
+          egc.addColorStop(0.65, `rgba(${cI.r},${cI.g},${cI.b},${Math.min(0.35, 0.03 * tDisk).toFixed(3)})`);
+          egc.addColorStop(1, `rgba(${cI.r},${cI.g},${cI.b},${Math.min(0.75, 0.19 * tDisk).toFixed(3)})`);
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.fillStyle = egc;
+          ctx.fillRect(bx0 - 2, by0 - 2, bbw + 4, bbh + 4);
+
+          if (darkI > 0.001) {
+            const dgc = ctx.createRadialGradient(cx, cy, gMin * 0.2, cx, cy, gSpan * 0.96);
+            dgc.addColorStop(0, 'rgba(0,0,0,0)');
+            dgc.addColorStop(
+              0.74,
+              `rgba(0,0,0,${Math.min(0.4, 0.012 * darkI * tDisk).toFixed(3)})`
+            );
+            dgc.addColorStop(1, `rgba(0,0,0,${Math.min(0.55, 0.085 * darkI * tDisk).toFixed(3)})`);
+            ctx.fillStyle = dgc;
+            ctx.fillRect(bx0 - 2, by0 - 2, bbw + 4, bbh + 4);
+          }
+
+          ctx.restore();
+        };
+
         const applyWatercolorWash = (ctx, b, col, copyIdx, intensity = 1) => {
+          if (b.patternType === 'special' && b.specialPatternType === 'insetCircle') {
+            applyWatercolorWashInsetPieces(ctx, b, copyIdx, intensity);
+            return;
+          }
+          if (b.patternType === 'special' && b.specialPatternType === 'hst') {
+            applyWatercolorWashHstPieces(ctx, b, copyIdx, intensity);
+            return;
+          }
           const base = Math.max(0, Math.min(1, intensity));
           // Soften watercolor on very small blocks to avoid over-texturing.
           const minDim = Math.max(1, Math.min(Math.abs(b.width), Math.abs(b.height)));
           const sizeFactor = minDim <= 44 ? 0.45 : minDim <= 72 ? 0.7 : 1;
-          const t = base * sizeFactor * watercolorDarknessFactor(col);
+          const t0 = base * sizeFactor * watercolorDarknessFactor(col);
+          const t = Math.max(0, Math.min(1, t0));
           if (t <= 0.001) return;
           const c = hexToRgb(col);
           const left = b.x - minX;
@@ -21684,8 +23680,8 @@ try {
             cy,
             Math.max(w, h) * 0.72
           );
-          centerGrad.addColorStop(0, `rgba(255,255,255,${(0.16 * t).toFixed(3)})`);
-          centerGrad.addColorStop(0.55, `rgba(255,255,255,${(0.05 * t).toFixed(3)})`);
+          centerGrad.addColorStop(0, `rgba(255,255,255,${Math.min(0.92, 0.16 * t).toFixed(3)})`);
+          centerGrad.addColorStop(0.55, `rgba(255,255,255,${Math.min(0.45, 0.05 * t).toFixed(3)})`);
           centerGrad.addColorStop(1, 'rgba(255,255,255,0)');
           ctx.globalCompositeOperation = 'screen';
           ctx.fillStyle = centerGrad;
@@ -21701,8 +23697,8 @@ try {
             Math.max(w, h) * 0.92
           );
           edgeGrad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0)`);
-          edgeGrad.addColorStop(0.65, `rgba(${c.r},${c.g},${c.b},${(0.03 * t).toFixed(3)})`);
-          edgeGrad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},${(0.19 * t).toFixed(3)})`);
+          edgeGrad.addColorStop(0.65, `rgba(${c.r},${c.g},${c.b},${Math.min(0.35, 0.03 * t).toFixed(3)})`);
+          edgeGrad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},${Math.min(0.75, 0.19 * t).toFixed(3)})`);
           ctx.globalCompositeOperation = 'multiply';
           ctx.fillStyle = edgeGrad;
           ctx.fillRect(left - 2, top - 2, w + 4, h + 4);
@@ -21719,8 +23715,8 @@ try {
               Math.max(w, h) * 0.96
             );
             darkEdge.addColorStop(0, 'rgba(0,0,0,0)');
-            darkEdge.addColorStop(0.74, `rgba(0,0,0,${(0.012 * darkBoost).toFixed(3)})`);
-            darkEdge.addColorStop(1, `rgba(0,0,0,${(0.085 * darkBoost).toFixed(3)})`);
+            darkEdge.addColorStop(0.74, `rgba(0,0,0,${Math.min(0.4, 0.012 * darkBoost * t).toFixed(3)})`);
+            darkEdge.addColorStop(1, `rgba(0,0,0,${Math.min(0.55, 0.085 * darkBoost * t).toFixed(3)})`);
             ctx.fillStyle = darkEdge;
             ctx.fillRect(left - 2, top - 2, w + 4, h + 4);
           }
@@ -21738,73 +23734,6 @@ try {
               H * 0.0055 * driftEase * Math.sin(u * Math.PI * 1.85 + 1.15)
           };
         };
-        const applyFilmGrain = (ctx, tSec) => {
-          // Matte paper wash to reduce "glassy" digital sheen.
-          ctx.save();
-          ctx.globalAlpha = 0.12;
-          ctx.globalCompositeOperation = 'multiply';
-          const wash = ctx.createLinearGradient(0, 0, 0, H);
-          wash.addColorStop(0, '#f1ece3');
-          wash.addColorStop(0.5, '#f4efe7');
-          wash.addColorStop(1, '#eee6db');
-          ctx.fillStyle = wash;
-          ctx.fillRect(0, 0, W, H);
-          ctx.restore();
-
-          const paperOffX = Math.floor((tSec * 3) % paperTile.width);
-          const paperOffY = Math.floor((tSec * 2) % paperTile.height);
-          ctx.save();
-          ctx.globalAlpha = 0.14;
-          ctx.globalCompositeOperation = 'multiply';
-          for (let y = -paperTile.height; y < H + paperTile.height; y += paperTile.height) {
-            for (let x = -paperTile.width; x < W + paperTile.width; x += paperTile.width) {
-              ctx.drawImage(paperTile, x - paperOffX, y - paperOffY);
-            }
-          }
-          ctx.restore();
-
-          const halfOffX = Math.floor((tSec * 7) % halftoneTile.width);
-          const halfOffY = Math.floor((tSec * 5) % halftoneTile.height);
-          ctx.save();
-          ctx.globalAlpha = 0.08;
-          ctx.globalCompositeOperation = 'multiply';
-          for (let y = -halftoneTile.height; y < H + halftoneTile.height; y += halftoneTile.height) {
-            for (let x = -halftoneTile.width; x < W + halftoneTile.width; x += halftoneTile.width) {
-              ctx.drawImage(halftoneTile, x - halfOffX, y - halfOffY);
-            }
-          }
-          ctx.restore();
-
-          const offX = Math.floor((tSec * 18) % grainTile.width);
-          const offY = Math.floor((tSec * 11) % grainTile.height);
-          ctx.save();
-          ctx.globalAlpha = 0.07;
-          ctx.globalCompositeOperation = 'soft-light';
-          for (let y = -grainTile.height; y < H + grainTile.height; y += grainTile.height) {
-            for (let x = -grainTile.width; x < W + grainTile.width; x += grainTile.width) {
-              ctx.drawImage(grainTile, x - offX, y - offY);
-            }
-          }
-          ctx.restore();
-
-          // Very subtle vignette to avoid glossy edge feel and add print depth.
-          ctx.save();
-          const vignette = ctx.createRadialGradient(
-            W * 0.5,
-            H * 0.5,
-            Math.min(W, H) * 0.2,
-            W * 0.5,
-            H * 0.5,
-            Math.max(W, H) * 0.72
-          );
-          vignette.addColorStop(0, 'rgba(0,0,0,0)');
-          vignette.addColorStop(1, 'rgba(36,28,20,0.12)');
-          ctx.globalCompositeOperation = 'multiply';
-          ctx.fillStyle = vignette;
-          ctx.fillRect(0, 0, W, H);
-          ctx.restore();
-        };
-
         const wrapTextLines = (ctx, text, maxWidth) => {
           const words = String(text || '').split(/\s+/).filter(Boolean);
           const lines = [];
@@ -22031,22 +23960,18 @@ try {
                 }
                 ctx.translate(-cx, -cy);
                 drawOrganicBlock(ctx, b, copyIdx);
-                if (!(b.patternType === 'special' && b.specialPatternType === 'hst')) {
-                  applyWatercolorWash(ctx, b, col, copyIdx, watercolor);
-                }
+                applyWatercolorWash(ctx, b, col, copyIdx, watercolor);
                 ctx.restore();
               } else {
                 drawOrganicBlock(ctx, b, copyIdx);
-                if (!(b.patternType === 'special' && b.specialPatternType === 'hst')) {
-                  applyWatercolorWash(ctx, b, col, copyIdx, watercolor);
-                }
+                applyWatercolorWash(ctx, b, col, copyIdx, watercolor);
               }
             }
             ctx.restore();
           }
           ctx.restore();
           if (applyGrain) {
-            applyFilmGrain(ctx, tSec);
+            Utils.applyFilmGrain(ctx, W, H, tSec);
           }
         };
         const drawFrameBlocks = (drawBlocks) =>
@@ -22130,7 +24055,7 @@ try {
             ctx.restore();
           }
           ctx.restore();
-          applyFilmGrain(ctx, tSec);
+          Utils.applyFilmGrain(ctx, W, H, tSec);
         };
 
         /**
@@ -23521,47 +25446,100 @@ try {
 
       async handleResetQuilt() {
         return this.runAdminQuiltMutation('Reset Quilt', async () => {
-        // Show confirmation dialog
-        const confirmed = confirm('Are you sure you want to reset the quilt? This will clear all blocks and start fresh. This action cannot be undone.');
-        
-        if (confirmed) {
-          try {
-            console.log('🔄 RESET: Starting quilt reset...');
-            console.log('🔄 RESET: Blocks before reset:', this.quiltEngine.blocks.length);
-            
-            // Reset the quilt engine
-            this.quiltEngine.initialize();
-            this.dailyContributors = [];
-            console.log('🔄 RESET: Quilt engine initialized, blocks after reset:', this.quiltEngine.blocks.length);
-            
-            // Clear saved data
-            const saved = await this.dataService.saveQuilt([], 1, [], { resetSource: 'admin' });
-            if (!saved) throw new Error('Admin reset failed to save');
-            console.log('🔄 RESET: Data saved to database');
-            
-            // Clear user contributions for this session
-            localStorage.removeItem('ourDailyQuilt');
-            localStorage.removeItem('quiltContributions');
-            console.log('🔄 RESET: LocalStorage cleared');
-            
-            // Re-render the quilt
-            this.renderQuilt();
-            this.updateSquareCounter();
-            console.log('🔄 RESET: Quilt re-rendered');
-            
-            // Update admin stats if menu is open
-            this.updateAdminStats();
-            
-            this.uiService.showToast('Quilt reset successfully! Starting fresh.');
-            
-            // Log the reset
-            this.logger.log('🧵 Quilt reset by user');
-            
-          } catch (error) {
-            this.errorHandler.handleError(error, 'resetQuilt');
-            this.uiService.showToast('Failed to reset quilt. Please try again.');
+          const confirmed = confirm('Are you sure you want to reset today’s quilt? This will clear all blocks and cannot be undone.');
+          if (!confirmed) return;
+
+          const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
+          if (!baseUrl) {
+            this.uiService.showToast('Admin reset failed: backend URL is not configured.');
+            return;
           }
-        }
+
+          const storageKey = 'ourDailyResetToken';
+          let token = '';
+          try {
+            token = String(localStorage.getItem(storageKey) || '').trim();
+          } catch (_) {
+            token = '';
+          }
+          if (!token) {
+            const entered = window.prompt('Paste the Railway RESET_TOKEN for manual admin reset. It will be saved in this browser.');
+            if (entered === null) return;
+            token = String(entered || '').trim();
+            if (!token) {
+              this.uiService.showToast('Admin reset cancelled: missing token.');
+              return;
+            }
+            try {
+              localStorage.setItem(storageKey, token);
+            } catch (_) {
+              /* private mode/storage blocked: use token for this request only */
+            }
+          }
+
+          const dateKey = Utils.getTodayKey();
+          this.uiService.showToast(`Resetting quilt for ${dateKey} on server…`, 8000);
+
+          let res;
+          let data = {};
+          try {
+            res = await fetch(`${baseUrl}/api/daily-reset`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-reset-token': token
+              },
+              body: JSON.stringify({
+                date: dateKey,
+                source: 'admin-manual',
+                force: true
+              })
+            });
+            try {
+              data = await res.json();
+            } catch (_) {
+              data = {};
+            }
+          } catch (error) {
+            this.errorHandler.handleError(error, 'adminServerReset');
+            this.uiService.showToast('Admin reset failed: could not reach server.');
+            return;
+          }
+
+          if (res.status === 401) {
+            try {
+              localStorage.removeItem(storageKey);
+            } catch (_) {
+              /* ignore */
+            }
+            this.uiService.showToast('Admin reset failed: unauthorized. Saved token cleared.');
+            console.error('Admin reset unauthorized:', data);
+            return;
+          }
+          if (!res.ok || !data.success) {
+            const detail = data.error || res.statusText || `HTTP ${res.status}`;
+            this.uiService.showToast(`Admin reset failed: ${detail}`);
+            console.error('Admin reset failed:', res.status, data);
+            return;
+          }
+          if (data.force !== true || data.resetApiVersion !== 'manual-force-reset-1') {
+            this.uiService.showToast('Admin reset did not run: Railway needs the latest server deploy.');
+            console.error('Admin reset endpoint is old or did not force reset:', data);
+            return;
+          }
+
+          this.quiltEngine.initialize();
+          this.dailyContributors = [];
+          localStorage.removeItem('ourDailyQuilt');
+          localStorage.removeItem('quiltContributions');
+          this._loadedSharedQuiltDateKey = dateKey;
+          await this.loadQuilt();
+          this.renderQuilt();
+          this.updateSquareCounter();
+          this.renderQuiltContributorList();
+          this.updateAdminStats();
+          this.uiService.showToast('Quilt reset successfully on server.');
+          this.logger.log('🧵 Quilt reset by admin via server', data);
         });
       }
 

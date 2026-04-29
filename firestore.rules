@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isDateKey(id) {
+      return id.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    match /quilts/{dateKey} {
+      allow read: if true;
+      // Prevent stale browser/client bundles from clearing production quilts.
+      // Admin SDK/server resets bypass Firestore rules, so scheduled resets still work.
+      allow create, update: if request.resource.data.blocks is list
+        && request.resource.data.blocks.size() > 0;
+      allow delete: if false;
+    }
+
+    match /quotes/{quoteId} {
+      allow read: if true;
+      // Date-shaped quote docs are daily state and must not be overwritten by stale clients.
+      // Server/Admin SDK maintenance bypasses rules; non-date catalog quote docs keep prior behavior.
+      allow create, update, delete: if !isDateKey(quoteId);
+    }
+
+    // Preserve the currently deployed permissive behavior for all other collections.
+    match /{collection}/{document=**} {
+      allow read, write: if collection != 'quilts' && collection != 'quotes';
+    }
+  }
+}

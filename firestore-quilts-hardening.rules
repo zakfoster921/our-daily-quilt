@@ -1,0 +1,14 @@
+// Deployed production guard for the `quilts/{dateKey}` match.
+// Purpose: old/stale browser bundles must not be able to clear a production quilt.
+//
+// Server Admin SDK writes bypass Firestore rules, so scheduled/server resets still work.
+function isNonEmptyQuiltClientWrite() {
+  return request.resource.data.blocks is list
+    && request.resource.data.blocks.size() > 0;
+}
+
+match /quilts/{dateKey} {
+  allow read: if true;
+  allow create, update: if isNonEmptyQuiltClientWrite();
+  allow delete: if false;
+}

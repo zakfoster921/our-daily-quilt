@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Prepare the iOS app for archiving: web bundle → Pods → Capacitor sync.
+# One-step iOS bundle: web → Pods → Capacitor → ios/App/App/public. Then rebuild in Xcode.
 # Usage:
-#   npm run release:ios
-#   npm run release:ios:open    # same, then open Xcode workspace (macOS only)
+#   npm run ios                 # <-- single command before Xcode Archive / Run
+#   npm run ios:open           # same, then opens App.xcworkspace (macOS)
+#   npm run release:ios        # alias → npm run ios
+#   npm run release:ios:open   # alias → npm run ios:open
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

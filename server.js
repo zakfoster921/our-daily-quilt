@@ -721,12 +721,196 @@ function getHstOrganicRenderTriangles(block, jitterMultiplier = 1) {
   ];
 }
 
+/** Match client inset circle (clip disk to block rect; our-daily-beta.html Utils). */
+function insetCircleJitterSeed(block) {
+  const s = [
+    String(block.id ?? ''),
+    String(block.insetTier ?? 0),
+    String(block.insetNextCutVertical ?? ''),
+    String(block.x ?? 0),
+    String(block.y ?? 0),
+    String(block.width ?? 0),
+    String(block.height ?? 0)
+  ].join('|');
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function insetDedupePolyVerts(pts, eps) {
+  const out = [];
+  for (const q of pts || []) {
+    if (!q || q.length < 2) continue;
+    if (
+      !out.length ||
+      Math.hypot(q[0] - out[out.length - 1][0], q[1] - out[out.length - 1][1]) > eps
+    ) {
+      out.push([q[0], q[1]]);
+    }
+  }
+  if (
+    out.length > 1 &&
+    Math.hypot(out[0][0] - out[out.length - 1][0], out[0][1] - out[out.length - 1][1]) <= eps
+  ) {
+    out.pop();
+  }
+  return out;
+}
+
+function insetClipSegVertical(x0, A, B) {
+  const [x1, y1] = A;
+  const [x2, y2] = B;
+  const d = x2 - x1;
+  if (Math.abs(d) < 1e-12) return null;
+  const t = (x0 - x1) / d;
+  if (t < -1e-6 || t > 1 + 1e-6) return null;
+  return [x0, y1 + t * (y2 - y1)];
+}
+
+function insetClipSegHorizontal(y0, A, B) {
+  const [x1, y1] = A;
+  const [x2, y2] = B;
+  const d = y2 - y1;
+  if (Math.abs(d) < 1e-12) return null;
+  const t = (y0 - y1) / d;
+  if (t < -1e-6 || t > 1 + 1e-6) return null;
+  return [x1 + t * (x2 - x1), y0];
+}
+
+function insetClipHalfPlane(poly, insideFn, intersectFn) {
+  const eps = 1e-9;
+  const out = [];
+  if (!poly || poly.length < 2) return out;
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const prev = poly[(i + n - 1) % n];
+    const curr = poly[i];
+    const prevIn = insideFn(prev);
+    const currIn = insideFn(curr);
+    if (currIn) {
+      if (!prevIn) {
+        const is = intersectFn(prev, curr);
+        if (is) out.push(is);
+      }
+      out.push([curr[0], curr[1]]);
+    } else if (prevIn) {
+      const is = intersectFn(prev, curr);
+      if (is) out.push(is);
+    }
+  }
+  return insetDedupePolyVerts(out, eps);
+}
+
+function clipConvexPolygonToRect(polyRaw, rx, ry, rw, rh) {
+  const eps = 1e-9;
+  const minX = rx;
+  const maxX = rx + rw;
+  const minY = ry;
+  const maxY = ry + rh;
+  let poly = (polyRaw || []).map((p) => [Number(p[0]), Number(p[1])]);
+  poly = insetClipHalfPlane(
+    poly,
+    (pt) => pt[0] >= minX - eps,
+    (A, B) => insetClipSegVertical(minX, A, B)
+  );
+  poly = insetClipHalfPlane(
+    poly,
+    (pt) => pt[0] <= maxX + eps,
+    (A, B) => insetClipSegVertical(maxX, A, B)
+  );
+  poly = insetClipHalfPlane(
+    poly,
+    (pt) => pt[1] >= minY - eps,
+    (A, B) => insetClipSegHorizontal(minY, A, B)
+  );
+  poly = insetClipHalfPlane(
+    poly,
+    (pt) => pt[1] <= maxY + eps,
+    (A, B) => insetClipSegHorizontal(maxY, A, B)
+  );
+  return poly;
+}
+
+function insetCircleOrganicSectorPointsLocal(block, jitterMultiplier = 1) {
+  const bw = Math.max(1, Number(block.width));
+  const bh = Math.max(1, Number(block.height));
+  let lcx = Number(block.insetCx) - Number(block.x);
+  let lcy = Number(block.insetCy) - Number(block.y);
+  let r = Number(block.insetR);
+  if (!Number.isFinite(lcx) || !Number.isFinite(lcy) || !Number.isFinite(r) || r <= 0) {
+    lcx = bw / 2;
+    lcy = bh / 2;
+    r = (Math.min(bw, bh) * 0.9) / 2;
+  }
+  const jm = jitterMultiplier == null ? 1 : Number(jitterMultiplier);
+  const blockArea = bw * bh;
+  const areaFactor = Math.sqrt(blockArea) / 100;
+  let varBase =
+    areaFactor < 2 ? Math.min(4, Math.max(0.8, areaFactor * 2)) : Math.min(6, 4 + (areaFactor - 2));
+  const arcJitter = varBase * jm * 0.5;
+  const rng = mulberry32(insetCircleJitterSeed(block));
+  const steps = 52;
+  const pts = [];
+  for (let i = 0; i < steps; i++) {
+    const t = i / steps;
+    const ang = t * Math.PI * 2;
+    const off = i > 0 && i < steps - 1 ? (rng() - 0.5) * 2 * arcJitter : 0;
+    const rr = r + off;
+    pts.push([lcx + Math.cos(ang) * rr, lcy + Math.sin(ang) * rr]);
+  }
+  const clipped = clipConvexPolygonToRect(pts, 0, 0, bw, bh);
+  if (!clipped || clipped.length < 3) {
+    const exact = [];
+    for (let j = 0; j < steps; j++) {
+      const ang = (j / steps) * Math.PI * 2;
+      exact.push([lcx + Math.cos(ang) * r, lcy + Math.sin(ang) * r]);
+    }
+    const clipped2 = clipConvexPolygonToRect(exact, 0, 0, bw, bh);
+    if (!clipped2 || clipped2.length < 3) {
+      return { kind: 'none', points: [] };
+    }
+    return { kind: 'loop', points: clipped2 };
+  }
+  return { kind: 'loop', points: clipped };
+}
+
+function drawInsetCircleBlockToCtx(ctx, block, x, y, width, height) {
+  const bw = Math.max(1e-6, Number(block.width));
+  const bh = Math.max(1e-6, Number(block.height));
+  ctx.fillStyle = block.color || '#6c757d';
+  ctx.fillRect(x, y, width, height);
+  const inner = typeof block.insetInnerColor === 'string' ? block.insetInnerColor : block.color;
+  const spec = insetCircleOrganicSectorPointsLocal(block, 1);
+  if (spec.kind === 'none' || !(spec.points && spec.points.length >= 3)) {
+    return;
+  }
+  const map = (p) => [
+    x + (Number(p[0]) / bw) * width,
+    y + (Number(p[1]) / bh) * height
+  ];
+  const pts = spec.points.map(map);
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = inner;
+  ctx.fill();
+}
+
 /** Half-square triangle blocks (must match client geometry in our-daily-beta.html). */
 function drawQuiltBlockToCtx(ctx, block, x, y, width, height) {
   const isHst = block.patternType === 'special' && block.specialPatternType === 'hst';
-  if (!isHst) {
+  const isInset = block.patternType === 'special' && block.specialPatternType === 'insetCircle';
+  if (!isHst && !isInset) {
     ctx.fillStyle = block.color || '#6c757d';
     ctx.fillRect(x, y, width, height);
+    return;
+  }
+  if (isInset) {
+    drawInsetCircleBlockToCtx(ctx, block, x, y, width, height);
     return;
   }
   const tris = getHstOrganicRenderTriangles(block, 1);
@@ -1029,47 +1213,72 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
     };
   }
 
-  const quiltRef = db.collection('quilts').doc(dateKey);
-  const quoteRef = db.collection('quotes').doc(dateKey);
-  const archiveRef = db.collection('archives').doc(dateKey);
+  /**
+   * `dateKey` is the NEW app-day (getAppDateKey() at ≥07:00 UTC, e.g. 2026-04-29).
+   * Until 07:00 UTC the live doc is still quilts/{closingKey} (previous calendar day as YYYY-MM-DD,
+   * e.g. 2026-04-28). Archiving/clearing quilts/{dateKey} at reset time was wrong: that doc is often
+   * empty while the real quilt stayed under closingKey and never got archived or rotated.
+   */
+  const closingKey = addDaysToDateKey(dateKey, -1);
+  const closingQuiltRef = db.collection('quilts').doc(closingKey);
+  const closingQuoteRef = db.collection('quotes').doc(closingKey);
+  const closingArchiveRef = db.collection('archives').doc(closingKey);
+  const newQuiltRef = db.collection('quilts').doc(dateKey);
 
-  const [quiltSnap, quoteSnap, archiveSnap] = await Promise.all([
-    quiltRef.get(),
-    quoteRef.get(),
-    archiveRef.get()
+  const [closingQuiltSnap, closingQuoteSnap, closingArchiveSnap] = await Promise.all([
+    closingQuiltRef.get(),
+    closingQuoteRef.get(),
+    closingArchiveRef.get()
   ]);
 
-  const quiltData = quiltSnap.exists ? quiltSnap.data() : null;
-  const quoteData = quoteSnap.exists ? quoteSnap.data() : null;
+  const closingQuiltData = closingQuiltSnap.exists ? closingQuiltSnap.data() : null;
+  const closingQuoteData = closingQuoteSnap.exists ? closingQuoteSnap.data() : null;
 
   let archived = false;
-  if (!archiveSnap.exists && quiltData && Array.isArray(quiltData.blocks) && quiltData.blocks.length > 1) {
+  if (
+    !closingArchiveSnap.exists &&
+    closingQuiltData &&
+    Array.isArray(closingQuiltData.blocks) &&
+    closingQuiltData.blocks.length > 1
+  ) {
     const archivePayload = {
-      date: dateKey,
+      date: closingKey,
       quilt: {
-        blocks: quiltData.blocks || [],
-        contributorCount: quiltData.contributorCount || 1
+        blocks: closingQuiltData.blocks || [],
+        contributorCount: closingQuiltData.contributorCount || 1
       },
-      quote: quoteData
-        ? { text: quoteData.text || '', author: quoteData.author || '' }
+      quote: closingQuoteData
+        ? { text: closingQuoteData.text || '', author: closingQuoteData.author || '' }
         : null,
-      userCount: quiltData.contributorCount || 1,
+      userCount: closingQuiltData.contributorCount || 1,
       isComplete: true,
       resetSource: source,
       archivedAt: getUtcIsoNow()
     };
-    await archiveRef.set(archivePayload, { merge: true });
+    await closingArchiveRef.set(archivePayload, { merge: true });
     archived = true;
   }
 
-  await quiltRef.set(
+  await newQuiltRef.set(
     {
       blocks: [],
       contributorCount: 1,
+      contributors: [],
+      colorReplayEvents: [],
+      quiltFingerprint: '',
       date: dateKey,
       lastUpdated: getUtcIsoNow(),
       resetBy: source,
-      resetAt: getUtcIsoNow()
+      resetAt: getUtcIsoNow(),
+      writeProvenance: {
+        clientBuild: 'server',
+        writeReason: 'server-daily-reset',
+        appInstanceId: 'server',
+        userId: 'server',
+        platform: 'server',
+        source,
+        writtenAt: getUtcIsoNow()
+      }
     },
     { merge: true }
   );
@@ -1078,6 +1287,7 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
     {
       status: 'success',
       date: dateKey,
+      closingKey,
       archived,
       source,
       completedAt: getUtcIsoNow()
@@ -1088,8 +1298,64 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
   return {
     success: true,
     date: dateKey,
+    closingKey,
     alreadyReset: false,
     archived
+  };
+}
+
+async function runManualAdminQuiltResetForDate(dateKey, source = 'admin-manual') {
+  if (!db) {
+    throw new Error('Firestore not initialized');
+  }
+
+  const now = getUtcIsoNow();
+  const quiltRef = db.collection('quilts').doc(dateKey);
+  await quiltRef.set(
+    {
+      blocks: [],
+      contributorCount: 1,
+      contributors: [],
+      colorReplayEvents: [],
+      quiltFingerprint: '',
+      date: dateKey,
+      lastUpdated: now,
+      resetBy: source,
+      resetAt: now,
+      lastResetAt: now,
+      lastResetSource: source,
+      writeProvenance: {
+        clientBuild: 'server',
+        writeReason: 'server-admin-manual-reset',
+        appInstanceId: 'server',
+        userId: 'server',
+        platform: 'server',
+        source,
+        writtenAt: now
+      }
+    },
+    { merge: true }
+  );
+
+  const opId = `admin-reset-${dateKey}-${now.replace(/[^0-9TZ]/g, '')}`;
+  await db.collection('ops').doc(opId).set(
+    {
+      status: 'success',
+      date: dateKey,
+      source,
+      force: true,
+      completedAt: now
+    },
+    { merge: true }
+  );
+
+  return {
+    success: true,
+    date: dateKey,
+    force: true,
+    resetApiVersion: 'manual-force-reset-1',
+    source,
+    completedAt: now
   };
 }
 
@@ -1580,6 +1846,7 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     service: 'Instagram Quilt Generator (Firestore)',
     version: '1.0.0',
+    resetApiVersion: 'manual-force-reset-1',
     firestoreReady: !!db
   });
 });
@@ -1748,8 +2015,11 @@ app.post('/api/daily-reset', async (req, res) => {
         : null;
     const dateKey = bodyDate || getAppDateKey();
     const source = req.body?.source || 'api';
+    const force = req.body?.force === true;
 
-    const result = await runDailyResetForDate(dateKey, source);
+    const result = force
+      ? await runManualAdminQuiltResetForDate(dateKey, source)
+      : await runDailyResetForDate(dateKey, source);
     return res.json(result);
   } catch (error) {
     console.error('❌ Daily reset endpoint failed:', error);
