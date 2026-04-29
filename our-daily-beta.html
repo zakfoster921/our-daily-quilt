@@ -1075,7 +1075,7 @@ try {
     /* Quote CTA: fade in like prompt, then pulse (animation-delay lets transition finish first) */
     #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible:not(.quote-color-wonky-btn--pulse-off) {
       transition: opacity 0.75s ease-out, transform 0.75s ease-out;
-      animation: quoteWonkyPulseQuoteBtn 6.5s ease-in-out 0.75s infinite;
+      animation: none;
     }
     #screen-quote
       #quoteColorWonkyBtn.quote-color-wonky-btn--visible:not(.quote-color-wonky-btn--pulse-off)
@@ -1585,6 +1585,15 @@ try {
       padding-top: 0;
       padding-bottom: 0;
       box-sizing: border-box;
+      pointer-events: auto;
+      position: relative;
+      z-index: 3;
+    }
+
+    #screen-quote #quoteColorWonkyBtn {
+      pointer-events: auto;
+      position: relative;
+      z-index: 4;
     }
 
     /* Spacing between card / prompt / CTA comes from wrapper gap — drop card’s global bottom margin here. */
@@ -2640,10 +2649,16 @@ try {
       }
 
       #screen-quilt .quilt-reset-footer {
-        position: static !important;
-        margin: 0 !important;
-        padding: 0.12rem 0 0 !important;
-        background-color: transparent !important;
+        position: relative !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        z-index: auto !important;
+        flex: 0 0 auto !important;
+        margin: 0.42rem 0 0 !important;
+        min-height: 2.25rem !important;
+        padding: 0.3rem max(1rem, env(safe-area-inset-right, 0px)) 0.06rem max(1rem, env(safe-area-inset-left, 0px)) !important;
+        background-color: #ebe8e3 !important;
         box-shadow: none !important;
         pointer-events: none !important;
       }
@@ -2670,6 +2685,7 @@ try {
       #screen-quilt .quilt-contributor-title {
         margin: 0;
         font: inherit;
+        font-weight: 420;
         text-transform: uppercase;
       }
 
@@ -2680,13 +2696,14 @@ try {
         min-height: 0;
         flex: 1 1 auto;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         column-gap: 0.75rem;
-        row-gap: 0.5rem;
-        padding: 0.2rem 0.1rem 0.85rem;
+        row-gap: 0.28rem;
+        padding: 0.12rem 0.1rem 0.55rem;
         align-items: start;
         font: inherit;
-        text-align: center;
+        font-size: 0.86em;
+        text-align: left;
         overflow-y: auto;
         /* Allow parent #screen-quilt to scroll once list hits top/bottom (contain traps gestures). */
         overscroll-behavior-y: auto;
@@ -2697,7 +2714,7 @@ try {
 
       @media (max-width: 420px) {
         #screen-quilt .quilt-contributor-list {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           column-gap: 0.5rem;
         }
       }
@@ -2712,8 +2729,8 @@ try {
         overflow-wrap: anywhere;
         word-break: break-word;
         hyphens: auto;
-        line-height: 1.3;
-        padding: 0.04em 0;
+        line-height: 1.12;
+        padding: 0.01em 0;
       }
 
       #screen-quilt .quilt-contributor-list:empty {
@@ -2796,7 +2813,7 @@ try {
         --quilt-contributors-panel-max: min(42vh, 19rem);
         /* Do not zero out safe-area; parent .screen also insets — keep horizontal flush for quilt art */
         padding-top: 0 !important;
-        padding-bottom: calc(3.75rem + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: 0 !important;
         padding-left: 0 !important;
         padding-right: 0 !important;
         margin: 0 !important;
@@ -3052,6 +3069,12 @@ try {
         position: fixed !important;
         inset: 0 !important;
       }
+
+      #screen-quilt:not(.active) {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
       
       .portal-header h1 { font-size: 2rem; }
       .css-color-wheel { 
@@ -3226,6 +3249,52 @@ try {
         background-position: center !important;
         background-repeat: no-repeat !important;
       }
+
+    .color-submit-transition {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.25rem;
+      padding: max(1.5rem, env(safe-area-inset-top, 0px)) max(1.5rem, env(safe-area-inset-right, 0px)) max(1.5rem, env(safe-area-inset-bottom, 0px)) max(1.5rem, env(safe-area-inset-left, 0px));
+      box-sizing: border-box;
+      text-align: center;
+      opacity: 0;
+      pointer-events: auto;
+      transition: opacity 0.18s ease-out;
+    }
+
+    .color-submit-transition.color-submit-transition--visible {
+      opacity: 1;
+    }
+
+    .color-submit-transition__message {
+      max-width: min(78vw, 460px);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: clamp(1.4rem, 5vw, 2rem);
+      font-weight: 300;
+      line-height: 1.25;
+      letter-spacing: 0.01em;
+    }
+
+    .color-submit-transition__spinner {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      opacity: 0.72;
+      animation: colorSubmitSpinner 0.9s linear infinite;
+    }
+
+    @keyframes colorSubmitSpinner {
+      to {
+        transform: rotate(360deg);
+      }
+    }
       
 
       
@@ -4462,10 +4531,13 @@ try {
     #screen-quilt .quilt-reset-footer {
       width: 100%;
       box-sizing: border-box;
-      padding: 0.12rem 0 0;
+      min-height: 2.25rem;
+      margin-top: 0.42rem;
+      padding: 0.3rem 1rem 0.06rem;
       display: flex;
       justify-content: center;
-      background-color: transparent;
+      align-items: center;
+      background-color: #ebe8e3;
       box-shadow: none;
       pointer-events: none;
     }
@@ -4725,7 +4797,7 @@ try {
         </div>
         <div class="quote-vspace quote-vspace--between" aria-hidden="true"></div>
         <div class="quote-action-cluster" role="group" aria-label="Color prompt">
-          <p class="quote-prompt" aria-hidden="true">What color comes to mind?</p>
+          <p class="quote-prompt" aria-hidden="true">Which color will you add to our quilt?</p>
           <button
             type="button"
             class="quote-color-wonky-btn"
@@ -4778,16 +4850,15 @@ try {
       </div>
       <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
         <div class="quilt-contributor-panel">
-          <p class="quilt-contributor-title">TODAY'S CONTRIBUTORS</p>
+          <p class="quilt-contributor-title">MADE TODAY WITH THE HELP OF</p>
           <div class="quilt-contributor-list" id="quiltContributorList" role="list"></div>
           <footer class="quilt-reset-footer">
             <p class="quilt-reset-countdown" id="quiltResetCountdown" aria-live="polite">
-              This quilt resets in <span id="quiltResetCountdownValue">--</span>
+              Our quilt resets in <span id="quiltResetCountdownValue">--</span>
             </p>
           </footer>
         </div>
       </div>
-
       <!-- Button container - side panel on desktop -->
       <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: none;">
 
@@ -11767,6 +11838,97 @@ try {
               im.src = url;
             });
 
+            const rgbToHsl = (r, g, b) => {
+              r /= 255;
+              g /= 255;
+              b /= 255;
+              const max = Math.max(r, g, b);
+              const min = Math.min(r, g, b);
+              let h = 0;
+              let s = 0;
+              const l = (max + min) / 2;
+              if (max !== min) {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                  case r:
+                    h = (g - b) / d + (g < b ? 6 : 0);
+                    break;
+                  case g:
+                    h = (b - r) / d + 2;
+                    break;
+                  default:
+                    h = (r - g) / d + 4;
+                    break;
+                }
+                h /= 6;
+              }
+              return { h, s, l };
+            };
+
+            const hslToRgb = (h, s, l) => {
+              if (s === 0) {
+                const v = Math.round(l * 255);
+                return { r: v, g: v, b: v };
+              }
+              const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1 / 6) return p + (q - p) * 6 * t;
+                if (t < 1 / 2) return q;
+                if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+                return p;
+              };
+              const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+              const p = 2 * l - q;
+              return {
+                r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+                g: Math.round(hue2rgb(p, q, h) * 255),
+                b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255)
+              };
+            };
+
+            const softComplementaryStoryBackground = (quiltImg) => {
+              try {
+                const sample = document.createElement('canvas');
+                const sw = 64;
+                const sh = 64;
+                sample.width = sw;
+                sample.height = sh;
+                const sctx = sample.getContext('2d', { willReadFrequently: true });
+                if (!sctx) return '#f6f4f1';
+                sctx.drawImage(quiltImg, 0, 0, sw, sh);
+                const pixels = sctx.getImageData(0, 0, sw, sh).data;
+                let rSum = 0;
+                let gSum = 0;
+                let bSum = 0;
+                let n = 0;
+                for (let i = 0; i < pixels.length; i += 4) {
+                  if (pixels[i + 3] < 64) continue;
+                  const r = pixels[i];
+                  const g = pixels[i + 1];
+                  const b = pixels[i + 2];
+                  const hsl = rgbToHsl(r, g, b);
+                  // Ignore paper/background pixels so the day's actual quilt colors drive the complement.
+                  if (hsl.s < 0.12 || hsl.l > 0.92) continue;
+                  rSum += r;
+                  gSum += g;
+                  bSum += b;
+                  n++;
+                }
+                if (!n) return '#f6f4f1';
+                const avg = rgbToHsl(rSum / n, gSum / n, bSum / n);
+                const comp = hslToRgb(
+                  (avg.h + 0.5) % 1,
+                  Math.max(0.26, Math.min(0.44, avg.s * 0.62)),
+                  0.86
+                );
+                return `rgb(${comp.r}, ${comp.g}, ${comp.b})`;
+              } catch (e) {
+                return '#f6f4f1';
+              }
+            };
+
             const wrapLines = (c, text, maxWidth) => {
               const breakLongWord = (word) => {
                 const out = [];
@@ -12221,7 +12383,7 @@ try {
                 const ctx = canvas.getContext('2d');
                 canvas.width = STORY_W;
                 canvas.height = STORY_H;
-                ctx.fillStyle = '#f6f4f1';
+                ctx.fillStyle = isPostLayout ? '#f6f4f1' : softComplementaryStoryBackground(quiltImg);
                 ctx.fillRect(0, 0, STORY_W, STORY_H);
 
                 const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
@@ -12282,10 +12444,9 @@ try {
                   }
                 } else {
                   // Story Layout B: two stacked quilts; lower stack mirrored on both axes.
-                  // Each half uses independent cover-fit + clipping to avoid central banding.
-                  const COVER_ZOOM = 1.08;
+                  // Slightly overfill width so exported stories do not show white raster edges.
                   const halfH = Math.ceil(STORY_H / 2);
-                  const halfScale = Math.max(STORY_W / iw, halfH / ih) * COVER_ZOOM;
+                  const halfScale = (STORY_W / iw) * 1.05;
                   const cw = Math.round(iw * halfScale);
                   const ch = Math.round(ih * halfScale);
                   const qx = Math.round((STORY_W - cw) / 2);
@@ -12613,7 +12774,7 @@ try {
                 if (!isPostLayout) {
                   const cornerPadR = 44;
                   const cornerPadB = 52;
-                  const STORY_TITLE_LABEL = 'OUR DAILY QUILT';
+                  const STORY_TITLE_LABEL = '@ourdailyquilt';
                   const measureTitleSpecs = () => {
                     const font = `400 ${bodyPx}px ${FONT_SERIF}`;
                     const lineLead = 1.38;
@@ -17265,8 +17426,44 @@ try {
         if (quoteColorWonkyBtn) {
           quoteColorWonkyBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             quoteColorWonkyBtn.classList.add('quote-color-wonky-btn--pulse-off');
+            this.hideColorSubmitTransition?.();
+            const colorScreen = document.getElementById('screen-color');
+            if (colorScreen) {
+              colorScreen.style.display = '';
+              colorScreen.classList.remove('flow-fade-enter', 'flow-fade-enter-active', 'flow-fade-exit', 'flow-fade-exit-active');
+            }
+            if (this.isIntroFlowEnabled?.()) {
+              this.disableIntroFlow();
+              document.querySelectorAll('.screen').forEach((screen) => {
+                screen.classList.remove('active');
+                screen.style.display = 'none';
+              });
+            }
+            if (this.uiService) {
+              this.uiService._flowTransitioning = false;
+            }
             this.uiService.showScreen('screen-color');
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                const activeColorScreen = document.getElementById('screen-color');
+                if (activeColorScreen?.classList.contains('active')) return;
+                document.querySelectorAll('.screen').forEach((screen) => {
+                  screen.classList.remove('active');
+                  screen.style.display = 'none';
+                });
+                document.body.classList.add('color-mode-active');
+                if (activeColorScreen) {
+                  activeColorScreen.style.display = 'flex';
+                  activeColorScreen.classList.add('active');
+                }
+                if (typeof this.updateColorWheel === 'function') {
+                  this._hsvWheelCanvasKey = '';
+                  this.updateColorWheel();
+                }
+              });
+            });
           });
         }
 
@@ -22093,6 +22290,57 @@ try {
         });
       }
 
+      wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+      }
+
+      getReadableTextColorForBackground(hex) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+        if (!m) return '#2f2925';
+        const h = m[1];
+        const r = parseInt(h.slice(0, 2), 16);
+        const g = parseInt(h.slice(2, 4), 16);
+        const b = parseInt(h.slice(4, 6), 16);
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        return luminance < 132 ? '#f6f4f1' : '#2f2925';
+      }
+
+      showColorSubmitTransition(color, message = "Finding your color's place in the quilt") {
+        const screen = document.getElementById('screen-color') || document.body;
+        let overlay = document.getElementById('colorSubmitTransition');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = 'colorSubmitTransition';
+          overlay.className = 'color-submit-transition';
+          overlay.setAttribute('role', 'status');
+          overlay.setAttribute('aria-live', 'polite');
+          overlay.innerHTML = `
+            <div class="color-submit-transition__message"></div>
+            <div class="color-submit-transition__spinner" aria-hidden="true"></div>
+          `;
+          screen.appendChild(overlay);
+        }
+        overlay.style.backgroundColor = color;
+        overlay.style.color = this.getReadableTextColorForBackground(color);
+        const messageEl = overlay.querySelector('.color-submit-transition__message');
+        if (messageEl) messageEl.textContent = message;
+        requestAnimationFrame(() => overlay.classList.add('color-submit-transition--visible'));
+        return overlay;
+      }
+
+      updateColorSubmitTransition(message) {
+        const overlay = document.getElementById('colorSubmitTransition');
+        const messageEl = overlay?.querySelector('.color-submit-transition__message');
+        if (messageEl) messageEl.textContent = message;
+      }
+
+      hideColorSubmitTransition() {
+        const overlay = document.getElementById('colorSubmitTransition');
+        if (!overlay) return;
+        overlay.classList.remove('color-submit-transition--visible');
+        setTimeout(() => overlay.remove(), 220);
+      }
+
       async handleAddColor() {
         try {
           console.log('🎨 handleAddColor called');
@@ -22121,6 +22369,15 @@ try {
               window.ODQ_onColorChange(selectedColor);
             }
           }
+
+          this.showColorSubmitTransition(selectedColor);
+          const minimumTransitionHold = this.wait(1500);
+          const showTryAgain = async () => {
+            await minimumTransitionHold;
+            this.updateColorSubmitTransition('Please try again');
+            await this.wait(1200);
+            this.hideColorSubmitTransition();
+          };
 
           await this.refreshSharedQuiltBeforeContribution();
 
@@ -22165,7 +22422,11 @@ try {
           };
 
           let result = applySelectedColorToCurrentQuilt();
-          
+          if (!result) {
+            await showTryAgain();
+            return;
+          }
+
           if (result) {
             let saved = await this.saveQuilt();
             if (!saved && window.db && window.firestore) {
@@ -22176,19 +22437,23 @@ try {
             }
 
             if (!saved) {
-              this.uiService.showToast('Could not save your block yet. Please try again.');
+              await showTryAgain();
               return;
             }
 
+            await minimumTransitionHold;
             this.renderQuilt();
             
             this.uiService.showScreen('screen-quilt');
+            this.hideColorSubmitTransition();
             this.maybeCreateColorMilestoneNotification(selectedColor).catch((error) => {
               this.logger.warn('Color milestone notification check failed:', error);
             });
           }
           
         } catch (error) {
+          this.updateColorSubmitTransition('Please try again');
+          setTimeout(() => this.hideColorSubmitTransition(), 1200);
           this.errorHandler.handleError(error, 'handleAddColor');
         }
       }
