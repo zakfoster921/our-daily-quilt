@@ -164,6 +164,13 @@ function setPushApiCors(res) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
+function setResetApiCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
 function setQuoteSubmissionCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -1991,7 +1998,13 @@ app.get('/api/simple-test', (req, res) => {
   });
 });
 
+app.options('/api/daily-reset', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).send('');
+});
+
 app.post('/api/daily-reset', async (req, res) => {
+  setResetApiCors(res);
   try {
     const expectedToken = process.env.RESET_TOKEN;
     if (!expectedToken) {
