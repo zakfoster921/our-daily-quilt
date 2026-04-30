@@ -104,7 +104,7 @@ try {
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f6f4f1" />
   <meta name="color-scheme" content="light" />
-  <title>OUR DAILY QUILT - Beta</title>
+  <title>OUR DAILY QUILT</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
@@ -5442,6 +5442,29 @@ try {
           <h3>Want more?</h3>
           <ul class="about-resource-list" aria-label="Zak Foster resources">
             <li>
+              <a class="about-resource-strip" href="https://our-daily-quilt-production.up.railway.app/privacy.html" target="_blank" rel="noopener noreferrer">
+                <span class="about-resource-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M12 3.5 19 6v5.5c0 4.5-2.8 7.6-7 9-4.2-1.4-7-4.5-7-9V6l7-2.5Z"></path>
+                    <path d="M9.5 12.2 11.3 14l3.4-4"></path>
+                  </svg>
+                </span>
+                <span><span class="about-resource-title">Privacy Policy</span> <span class="about-resource-desc">how OUR DAILY QUILT handles data</span></span>
+              </a>
+            </li>
+            <li>
+              <a class="about-resource-strip" href="https://our-daily-quilt-production.up.railway.app/support.html" target="_blank" rel="noopener noreferrer">
+                <span class="about-resource-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <circle cx="12" cy="12" r="8.5"></circle>
+                    <path d="M9.8 9.5a2.4 2.4 0 0 1 4.5 1.2c0 1.8-2.3 2-2.3 3.8"></path>
+                    <path d="M12 17.5h.01"></path>
+                  </svg>
+                </span>
+                <span><span class="about-resource-title">Support</span> <span class="about-resource-desc">help, contact, and app information</span></span>
+              </a>
+            </li>
+            <li>
               <a class="about-resource-strip" href="https://www.zakfoster.com/nook-main" target="_blank" rel="noopener noreferrer">
                 <span class="about-resource-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" role="img" focusable="false">
@@ -5611,7 +5634,7 @@ try {
     const CONFIG = {
       APP: {
         name: 'OUR DAILY QUILT',
-        version: '3.0.0-beta',
+        version: '1.0.0',
         /** First Rumi-palette swatch: fresh quilt + picker default (see `hexToHsv` / daily snap). */
         defaultColor: '#ea9b9a',
         quiltSize: 1000,
@@ -5619,8 +5642,9 @@ try {
         toastDuration: 3000,
         /** Delay before “What color…” prompt on quote screen. */
         quoteColorPromptReadPauseMs: 1500,
-        buildId: '2026-04-29-client-write-hardening',
-        debugMode: true
+        buildId: '2026-04-30-app-store-readiness',
+        debugMode: false,
+        enableAdminTools: false
       },
       FIREBASE: {
         // ENABLED FOR IMAGE REVEAL FUNCTIONALITY
@@ -17015,8 +17039,10 @@ try {
         this.dailyContributors = [];
         this.adminQuiltMutationQueue = Promise.resolve();
         
-        // Check for secret admin URL parameter
-        this.checkSecretAdminAccess();
+        // Admin tools stay disabled in release builds unless explicitly enabled in CONFIG.
+        if (CONFIG.APP.enableAdminTools) {
+          this.checkSecretAdminAccess();
+        }
         
         // Color picker — start on first palette swatch (= defaultColor), reset once per calendar day after load
         const startupHsv = Utils.hexToHsv(CONFIG.APP.defaultColor);
@@ -17665,8 +17691,9 @@ try {
 
         this.setupQuiltFilmGrainOverlay();
         
-        // Setup long-press admin access on title
-        this.setupLongPressAdminAccess();
+        if (CONFIG.APP.enableAdminTools) {
+          this.setupLongPressAdminAccess();
+        }
         
         // Clear any existing admin flags to ensure clean state
         localStorage.removeItem('ourDailyIsAdmin');
@@ -19285,6 +19312,10 @@ try {
       }
 
       isCurrentUserAdmin() {
+        if (!CONFIG.APP.enableAdminTools) {
+          return false;
+        }
+
         const currentUserId = this.currentUserId;
         const isAdminFlag = localStorage.getItem('ourDailyIsAdmin') === 'true';
         
@@ -19298,10 +19329,17 @@ try {
       }
 
       enableAdminMode() {
+        if (!CONFIG.APP.enableAdminTools) {
+          return;
+        }
         localStorage.setItem('ourDailyIsAdmin', 'true');
       }
 
       requestAdminAccess() {
+        if (!CONFIG.APP.enableAdminTools) {
+          return false;
+        }
+
         if (this.isCurrentUserAdmin()) {
           this.showAdminMenu();
           return true;
@@ -26749,24 +26787,28 @@ try {
       // Resize title text to match widths
       resizeTitleText();
       
-      // Global test functions
-      window.addTestBlock = () => app.handleTestAddBlock();
-      window.showMyPiece = () => app.handleShowMyPiece();
-      window.switchUser = () => app.handleTestDifferentUser();
-      window.shareQuilt = () => app.handleShare();
-      window.shareQuiltStoryExperimental = () => app.handleShareStoryExperimental();
-      window.shareQuiltPostLayoutExperimental = () => app.handleSharePostLayoutExperimental();
-      window.resetQuilt = () => app.handleResetQuilt();
-      window.createArchive = () => app.handleCreateArchive();
-      window.createTestArchives = () => app.handleCreateTestArchives();
-      window.generateInstagramImage = () => app.handleTestInstagramImage();
-      window.exportSyntheticQuiltReel = () => app.handleAdminSyntheticQuiltReel();
-      window.testToastWithLink = () => app.uiService.showToast('Check out our new feature!', 5000, { url: 'https://example.com', text: 'Learn More' });
-      
-      // Admin console commands
-          window.enableAdmin = () => app.requestAdminAccess();
-    window.disableAdmin = () => app.disableAdminMode();
-      window.clearAdminFlag = () => app.clearAdminFlag();
+      if (CONFIG.APP.debugMode) {
+        // Global test functions
+        window.addTestBlock = () => app.handleTestAddBlock();
+        window.showMyPiece = () => app.handleShowMyPiece();
+        window.switchUser = () => app.handleTestDifferentUser();
+        window.shareQuilt = () => app.handleShare();
+        window.shareQuiltStoryExperimental = () => app.handleShareStoryExperimental();
+        window.shareQuiltPostLayoutExperimental = () => app.handleSharePostLayoutExperimental();
+        window.resetQuilt = () => app.handleResetQuilt();
+        window.createArchive = () => app.handleCreateArchive();
+        window.createTestArchives = () => app.handleCreateTestArchives();
+        window.generateInstagramImage = () => app.handleTestInstagramImage();
+        window.exportSyntheticQuiltReel = () => app.handleAdminSyntheticQuiltReel();
+        window.testToastWithLink = () => app.uiService.showToast('Check out our new feature!', 5000, { url: 'https://example.com', text: 'Learn More' });
+      }
+
+      if (CONFIG.APP.enableAdminTools) {
+        // Admin console commands
+        window.enableAdmin = () => app.requestAdminAccess();
+        window.disableAdmin = () => app.disableAdminMode();
+        window.clearAdminFlag = () => app.clearAdminFlag();
+      }
     window.regenerateQuoteIndexes = async () => {
       console.log('🔄 Regenerating quote indexes to fix out-of-bounds errors...');
       await app.quoteService.regenerateShuffledIndexes();
@@ -26896,7 +26938,7 @@ try {
       };
     });
 
-    console.log('🧵 OUR DAILY QUILT Beta - Loading...');
+    console.log('OUR DAILY QUILT - Loading...');
     
     // ===== ZAPIER WEBHOOK API =====
     // Simple API endpoint for Zapier to generate Instagram images
