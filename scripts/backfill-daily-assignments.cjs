@@ -139,6 +139,9 @@ async function main() {
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
   const windowDates = Array.from({ length: opts.window }, (_, idx) => addDays(opts.start, idx * opts.cadence));
   const windowEnd = windowDates[windowDates.length - 1];
+  const appTodayKey = getAppDateKey();
+  const protectTodayFromAppSubmissions = opts.start === appTodayKey;
+  const firstAppSubmissionInsertIndex = protectTodayFromAppSubmissions ? Math.min(1, Math.max(0, opts.window - 1)) : 0;
 
   const snap = await db.collection(quotesCollection).get();
   const notionQuotes = [];
@@ -205,6 +208,16 @@ async function main() {
   for (const q of notionQuotes) {
     if (!isDateKey(q.dateScheduled)) continue;
     if (q.dateScheduled < opts.start || q.dateScheduled > windowEnd) continue;
+    // App submissions should never replace the current live quote. If one was
+    // accidentally scheduled for today's app day, let the rolling insert logic
+    // place it in the first future slot instead.
+    if (
+      protectTodayFromAppSubmissions &&
+      q.dateScheduled === opts.start &&
+      q.submittedVia.toLowerCase() === 'app'
+    ) {
+      continue;
+    }
     if (!explicitDateToSourceId.has(q.dateScheduled)) {
       explicitDateToSourceId.set(q.dateScheduled, q.sourceId);
     }
@@ -215,6 +228,14 @@ async function main() {
     if (row.dateKey > windowEnd) continue;
     if (explicitDateToSourceId.has(row.dateKey)) continue;
     const sourceId = String(row.data.sourceId || '').trim();
+    const quote = sourceId ? quoteBySourceId.get(sourceId) : null;
+    if (
+      protectTodayFromAppSubmissions &&
+      row.dateKey === opts.start &&
+      quote?.submittedVia?.toLowerCase?.() === 'app'
+    ) {
+      continue;
+    }
     if (sourceId && quoteBySourceId.has(sourceId)) {
       dateToExistingSourceId.set(row.dateKey, sourceId);
     }
@@ -232,7 +253,7 @@ async function main() {
     return true;
   });
 
-  let insertAt = 0;
+  let insertAt = firstAppSubmissionInsertIndex;
   for (const q of submittedToInsert) {
     if (windowSourceIds.includes(q.sourceId)) continue;
     windowSourceIds.splice(insertAt, 0, q.sourceId);
@@ -244,6 +265,7 @@ async function main() {
   const fillQueue = notionQuotes.filter((q) => {
     if (usedSourceIds.has(q.sourceId)) return false;
     if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
+    if (protectTodayFromAppSubmissions && q.submittedVia.toLowerCase() === 'app') return false;
     return true;
   });
   let fillIdx = 0;
