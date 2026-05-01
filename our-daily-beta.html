@@ -113,7 +113,6 @@ try {
   <script>
   console.log('🎯 TEST: Script in head is running!');
   </script>
-  
   <!-- Direct color control for GitHub deployment -->
   <script>
   // Direct color control - no parent communication needed
@@ -2675,14 +2674,14 @@ try {
         height: 288px; 
       }
       .quilt-container {
-        width: calc(100% - 40px) !important;
-        max-width: calc(100vw - 40px) !important;
+        width: calc(100vw + (var(--quilt-edge-bleed) * 2)) !important;
+        max-width: none !important;
         height: var(--quilt-fixed-height) !important;
         min-height: 200px !important;
         position: fixed !important;
         top: var(--quilt-fixed-top) !important;
-        left: 20px !important;
-        right: 20px !important;
+        left: calc(var(--quilt-edge-bleed) * -1) !important;
+        right: auto !important;
         flex-shrink: 0 !important;
         display: flex !important;
         align-items: center !important;
@@ -2696,23 +2695,30 @@ try {
         visibility: visible !important;
         opacity: 1 !important;
         z-index: 1 !important;
-        /* pan-y: swipe on quilt scrolls #screen-quilt; pinch-zoom works with existing zoom handlers. */
-        touch-action: pan-y pinch-zoom !important;
+        /* Let swipes hit #screen-quilt itself; fixed WKWebView layers can otherwise trap scroll. */
+        pointer-events: none !important;
+        touch-action: pan-y manipulation !important;
       }
 
       #screen-quilt .quilt-container svg,
       #screen-quilt #quilt {
-        touch-action: pan-y pinch-zoom !important;
+        pointer-events: none !important;
+        touch-action: pan-y manipulation !important;
       }
 
       #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors {
-        position: fixed !important;
-        top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 22px) !important;
+        position: relative !important;
+        top: auto !important;
         bottom: auto !important;
-        left: max(24px, calc(var(--odq-safe-left) + 18px)) !important;
-        right: max(24px, calc(var(--odq-safe-right) + 18px)) !important;
-        /* Below .button-container + .quilt-layout-b-preview-wrap (z-index 10) so scroll lifts the sheet and reveals names. */
-        z-index: 4 !important;
+        left: auto !important;
+        right: auto !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 1rem max(24px, calc(var(--odq-safe-right) + 18px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(24px, calc(var(--odq-safe-left) + 18px)) !important;
+        box-sizing: border-box !important;
+        background: #ebe8e3 !important;
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08) !important;
+        z-index: 10 !important;
         display: flex;
         justify-content: center;
         align-items: flex-start;
@@ -2893,8 +2899,9 @@ try {
         box-shadow: none !important;
       }
       #screen-quilt {
-        --quilt-fixed-top: max(36px, calc(var(--odq-safe-top) + 12px));
-        --quilt-fixed-height: min(52vh, 420px);
+        --quilt-edge-bleed: 12px;
+        --quilt-fixed-top: calc(var(--quilt-edge-bleed) * -1);
+        --quilt-fixed-height: calc(100dvh + (var(--quilt-edge-bleed) * 2));
         --quilt-contributors-panel-max: min(42vh, 19rem);
         /* Do not zero out safe-area; parent .screen also insets — keep horizontal flush for quilt art */
         padding-top: 0 !important;
@@ -2909,6 +2916,8 @@ try {
         height: auto !important;
         overflow-y: auto !important;
         overflow-x: hidden !important;
+        touch-action: pan-y !important;
+        overscroll-behavior-y: contain !important;
         position: relative !important;
         top: auto !important;
         left: auto !important;
@@ -3084,7 +3093,7 @@ try {
         margin-top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 20px) !important;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
         width: 100% !important;
-        /* Sheet above fixed contributors (z-index 4); scrolling reveals the strip underneath. */
+        /* Sheet follows the scroll-revealed contributor list below the fixed quilt. */
         z-index: 10 !important;
         height: auto !important;
         overflow: visible !important;
@@ -4647,17 +4656,10 @@ try {
     }
 
     #screen-quilt .quilt-fixed-peek {
-      height: max(
-        calc(100dvh + 24px),
-        calc(
-          var(--quilt-fixed-top, max(36px, calc(var(--odq-safe-top) + 12px))) +
-          var(--quilt-fixed-height, min(52vh, 420px)) +
-          20px
-        )
-      );
-      min-height: 280px;
+      height: 100dvh;
+      min-height: 480px;
       background: transparent;
-      /* Below fixed contributors so scrolling the spacer does not steal touches from the name list. */
+      /* Final transparent scroll area reveals the fixed quilt again after the content sheets. */
       pointer-events: none;
       flex-shrink: 0;
       position: relative;
@@ -5045,17 +5047,6 @@ try {
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" tabindex="0" aria-label="OUR DAILY QUILT — community quilt with colorful blocks. Tap to find your color."></svg>
         <canvas id="quiltFilmGrainOverlay" width="1" height="1" aria-hidden="true"></canvas>
       </div>
-      <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
-        <div class="quilt-contributor-panel">
-          <p class="quilt-contributor-title">MANY HANDS MADE THIS QUILT</p>
-          <div class="quilt-contributor-list" id="quiltContributorList" role="list"></div>
-          <footer class="quilt-reset-footer">
-            <p class="quilt-reset-countdown" id="quiltResetCountdown" aria-live="polite">
-              Our quilt resets in <span id="quiltResetCountdownValue">--</span>
-            </p>
-          </footer>
-        </div>
-      </div>
       <!-- Button container - side panel on desktop -->
       <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: none;">
 
@@ -5144,32 +5135,6 @@ try {
               </span>
             </span>
           </button>
-          <div class="quilt-footer-icon-row" aria-label="OUR DAILY QUILT links and settings">
-            <a
-              class="quilt-instagram-icon-link"
-              href="https://www.instagram.com/ourdailyquilt/"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Follow OUR DAILY QUILT on Instagram"
-            >
-              <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-                <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
-                <circle cx="12" cy="12" r="4.1"></circle>
-                <circle cx="17.2" cy="6.8" r="0.9"></circle>
-              </svg>
-            </a>
-            <button
-              type="button"
-              class="quilt-settings-icon-btn"
-              id="settingsGearBtn"
-              aria-label="Open settings"
-            >
-              <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-                <circle cx="12" cy="12" r="3.2"></circle>
-                <path d="M19.4 13.6a7.8 7.8 0 0 0 0-3.2l2-1.55-2-3.46-2.44.98a8 8 0 0 0-2.77-1.6L13.82 2h-4l-.37 2.77a8 8 0 0 0-2.77 1.6l-2.44-.98-2 3.46 2 1.55a7.8 7.8 0 0 0 0 3.2l-2 1.55 2 3.46 2.44-.98a8 8 0 0 0 2.77 1.6l.37 2.77h4l.37-2.77a8 8 0 0 0 2.77-1.6l2.44.98 2-3.46-2-1.55z"></path>
-              </svg>
-            </button>
-          </div>
         </div>
 
         <span id="squareCounter" hidden aria-hidden="true">1</span>
@@ -5217,6 +5182,32 @@ try {
           />
         </div>
         <p class="quilt-layout-b-preview-hint" id="quiltLayoutBPreviewHint">Preparing preview…</p>
+        <div class="quilt-footer-icon-row" aria-label="OUR DAILY QUILT links and settings">
+          <a
+            class="quilt-instagram-icon-link"
+            href="https://www.instagram.com/ourdailyquilt/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Follow OUR DAILY QUILT on Instagram"
+          >
+            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
+              <circle cx="12" cy="12" r="4.1"></circle>
+              <circle cx="17.2" cy="6.8" r="0.9"></circle>
+            </svg>
+          </a>
+          <button
+            type="button"
+            class="quilt-settings-icon-btn"
+            id="settingsGearBtn"
+            aria-label="Open settings"
+          >
+            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+              <circle cx="12" cy="12" r="3.2"></circle>
+              <path d="M19.4 13.6a7.8 7.8 0 0 0 0-3.2l2-1.55-2-3.46-2.44.98a8 8 0 0 0-2.77-1.6L13.82 2h-4l-.37 2.77a8 8 0 0 0-2.77 1.6l-2.44-.98-2 3.46 2 1.55a7.8 7.8 0 0 0 0 3.2l-2 1.55 2 3.46 2.44-.98a8 8 0 0 0 2.77 1.6l.37 2.77h4l.37-2.77a8 8 0 0 0 2.77-1.6l2.44.98 2-3.46-2-1.55z"></path>
+            </svg>
+          </button>
+        </div>
         <div class="quilt-story-actions" aria-label="Share and info">
           <div class="button-group" hidden aria-hidden="true">
             <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="Follow on Instagram" hidden aria-hidden="true">
@@ -5260,6 +5251,17 @@ try {
               </span>
             </button>
           </div>
+        </div>
+      </div>
+      <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
+        <div class="quilt-contributor-panel">
+          <p class="quilt-contributor-title">MANY HANDS MADE THIS QUILT</p>
+          <div class="quilt-contributor-list" id="quiltContributorList" role="list"></div>
+          <footer class="quilt-reset-footer">
+            <p class="quilt-reset-countdown" id="quiltResetCountdown" aria-live="polite">
+              Our quilt resets in <span id="quiltResetCountdownValue">--</span>
+            </p>
+          </footer>
         </div>
       </div>
       <div class="quilt-fixed-peek" aria-hidden="true"></div>
@@ -6041,6 +6043,84 @@ try {
         this.macroFreezeHstParentsExplodedCount = 0;
         /** Admin simulator only: run neighbor merge pass like production (slower); remap stays disabled so localStorage is untouched. */
         this.simulatorFullFidelity = false;
+        /** Admin simulator experiment: mirror pre-freeze splits into counterpart blocks for symmetric structure. */
+        this.simulatorMirrorPreFreeze = false;
+      }
+
+      _simMirroredPreFreezeEnabled() {
+        return (
+          this.simulatorMirrorPreFreeze === true &&
+          String(this.deviceId || '').startsWith('admin-sim') &&
+          !this.macroStructureFrozen
+        );
+      }
+
+      _simRectAlmostEqual(a, b, eps = 0.75) {
+        if (!a || !b) return false;
+        return (
+          Math.abs(Number(a.x) - Number(b.x)) <= eps &&
+          Math.abs(Number(a.y) - Number(b.y)) <= eps &&
+          Math.abs(Number(a.width) - Number(b.width)) <= eps &&
+          Math.abs(Number(a.height) - Number(b.height)) <= eps
+        );
+      }
+
+      _simMirrorBlockGeometry(block, mirrorH, mirrorV, suffix) {
+        const dims = Utils.getQuiltDimensions();
+        const width = Math.max(1, Number(block.width) || 1);
+        const height = Math.max(1, Number(block.height) || 1);
+        const out = {
+          ...block,
+          id: `${block.id}_${suffix}`,
+          x: mirrorH ? dims.width - Number(block.x || 0) - width : Number(block.x || 0),
+          y: mirrorV ? dims.height - Number(block.y || 0) - height : Number(block.y || 0)
+        };
+        if (mirrorH && typeof out.insetCx === 'number') out.insetCx = dims.width - out.insetCx;
+        if (mirrorV && typeof out.insetCy === 'number') out.insetCy = dims.height - out.insetCy;
+        if ((mirrorH || mirrorV) && typeof out.hstDiagonal === 'string' && mirrorH !== mirrorV) {
+          out.hstDiagonal = out.hstDiagonal === 'ne-sw' ? 'nw-se' : 'ne-sw';
+        }
+        if (Array.isArray(out.hstTriangles)) {
+          out.hstTriangles = out.hstTriangles.map((tri) => ({
+            ...tri,
+            points: (tri.points || []).map((p) => {
+              const x = Number(Array.isArray(p) ? p[0] : p?.x);
+              const y = Number(Array.isArray(p) ? p[1] : p?.y);
+              return [mirrorH ? width - x : x, mirrorV ? height - y : y];
+            })
+          }));
+        }
+        return out;
+      }
+
+      _simMirroredPreFreezeReplacements(parentBlock, splitResult) {
+        if (!this._simMirroredPreFreezeEnabled()) return [];
+        if (!parentBlock || !Array.isArray(splitResult) || !splitResult.length) return [];
+        const transforms = [
+          { h: true, v: false, suffix: 'mh' },
+          { h: false, v: true, suffix: 'mv' },
+          { h: true, v: true, suffix: 'mhv' }
+        ];
+        const replacements = [];
+        const seenTargetIds = new Set();
+        transforms.forEach((tx) => {
+          const mirroredParentRect = this._simMirrorBlockGeometry(parentBlock, tx.h, tx.v, tx.suffix);
+          if (this._simRectAlmostEqual(parentBlock, mirroredParentRect)) return;
+          const target = this.blocks.find(
+            (block) =>
+              block &&
+              block.id !== parentBlock.id &&
+              !seenTargetIds.has(block.id) &&
+              this._simRectAlmostEqual(block, mirroredParentRect)
+          );
+          if (!target) return;
+          seenTargetIds.add(target.id);
+          replacements.push({
+            targetId: target.id,
+            children: splitResult.map((child) => this._simMirrorBlockGeometry(child, tx.h, tx.v, tx.suffix))
+          });
+        });
+        return replacements;
       }
       
       _growthSpecialStructureScale() {
@@ -6283,7 +6363,23 @@ try {
       }
 
       _isProtectedSpecialMacroRegionBlock(block) {
-        return this._isFrozenHstMacroShard(block) || this._isFrozenInsetCircleMacroRegion(block);
+        return (
+          this._isFrozenHstMacroShard(block) ||
+          this._isFrozenInsetCircleMacroRegion(block) ||
+          (
+            this.macroStructureFrozen &&
+            block?.patternType === 'special' &&
+            typeof block.specialPatternType === 'string' &&
+            block.specialPatternType.length > 0
+          )
+        );
+      }
+
+      _regularSplitColorForFrozenSpecialBlock(block, fallbackColor) {
+        if (!this._isProtectedSpecialMacroRegionBlock(block)) return fallbackColor;
+        return typeof block.macroFrozenColor === 'string' && block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+          ? block.macroFrozenColor
+          : block.color;
       }
 
       _isInsetCirclePreFreezeSplitCapped(block) {
@@ -7087,6 +7183,7 @@ try {
 
       _stripStripesFromSplitChildren(block1, block2, parent) {
         if (!parent || parent.specialPatternType !== 'stripes') return;
+        if (this.macroStructureFrozen) return;
         [block1, block2].forEach((b) => {
           if (!b) return;
           if (SimpleQuiltEngine.hasPersistedInsetCircleGeometry(b)) {
@@ -7228,8 +7325,8 @@ try {
       }
 
       /**
-       * Whether another special (including forced HST) may run this turn — same caps
-       * and back-to-back rules as the main special-pattern roulette, without its random %.
+       * Whether another special may run this turn — same caps and early
+       * back-to-back rule as the main special-pattern roulette, without its random %.
        */
       _anotherSpecialAllowedThisTurnBeforeSplit() {
         const uniquePatternIds = new Set();
@@ -7245,32 +7342,22 @@ try {
           Math.max(2, Math.floor(this.submissionCount * 0.6)),
           Math.floor(this.submissionCount * 0.75)
         );
-        if (specialPatternsCreated >= maxSpecialPatterns) {
-          return false;
-        }
-        if (this.submissionCount >= 1 && this.submissionCount <= 6) {
+        const nextAddNumber = this.submissionCount + 1;
+        if (nextAddNumber >= 2 && nextAddNumber <= 6) {
           const wasLastSplitSpecialPattern = this.blocks.some(
             (block) =>
-              block.submissionIndex === this.submissionCount - 1 &&
+              block.submissionIndex === this.submissionCount &&
               (block.patternType === 'special' || String(block.id || '').includes('_pattern_'))
           );
-          if (this.submissionCount === 2) {
-            const wasFirstSplitSpecialPattern = this.blocks.some(
-              (block) =>
-                block.submissionIndex === 1 &&
-                (block.patternType === 'special' || String(block.id || '').includes('_pattern_'))
-            );
-            if (wasFirstSplitSpecialPattern) {
-              return false;
-            }
-            return true;
-          }
           if (wasLastSplitSpecialPattern) {
             return false;
           }
           return true;
         }
-        return true;
+        if (specialPatternsCreated >= maxSpecialPatterns) {
+          return false;
+        }
+        return nextAddNumber >= 7 && nextAddNumber <= 24;
       }
 
       getColorReplayEvents() {
@@ -7334,6 +7421,21 @@ try {
         if (!newColor || typeof newColor !== 'string' || !newColor.match(/^#[0-9A-Fa-f]{6}$/)) {
           console.error('Invalid color provided to addColor:', newColor);
           return false;
+        }
+
+        const validGeometryBlocks = this.blocks.filter((block) => {
+          const x = Number(block?.x);
+          const y = Number(block?.y);
+          const width = Number(block?.width);
+          const height = Number(block?.height);
+          return [x, y, width, height].every(Number.isFinite) && width > 0 && height > 0;
+        });
+        if (validGeometryBlocks.length === 0) {
+          console.warn('addColor: quilt had no valid blocks; reinitializing starter block before add');
+          this.initialize();
+        } else if (validGeometryBlocks.length !== this.blocks.length) {
+          console.warn(`addColor: dropping ${this.blocks.length - validGeometryBlocks.length} invalid block(s) before add`);
+          this.blocks = validGeometryBlocks;
         }
         
         // Find blocks that can be split, prioritizing larger blocks
@@ -7408,11 +7510,10 @@ try {
         }
         
         if (!selectedBlock) {
-          // Special rules for pattern creation:
-          // 1) Likelihood for splits 1-6 = 65%
-          // 2) No two back-to-back special patterns
-          // 3) After split 6, use 25% chance
-          // 4) NEW: Reserve minimum 30% of blocks as regular (prevent all-special quilt)
+          // Special rules for pattern creation before macro freeze:
+          // 1) Adds 2-6: 75% chance, unless the previous add was special
+          // 2) Adds 7-24: 35% chance, unless blocked by the special-pattern cap
+          // 3) Reserve minimum 30% of blocks as regular (prevent all-special quilt)
           
           // Count how many special patterns have been created so far
           // Count both originalPatternIds and blocks with patternType: 'special'
@@ -7436,24 +7537,18 @@ try {
 
           if (structureScale > 0) {
           
-          // Rule 4: Check if we've hit the special pattern count limit (60% of submissions max, capped at 75%)
-          if (specialPatternsCreated >= maxSpecialPatterns) {
-            shouldCreateSpecialPattern = false;
-          } else if (this.submissionCount >= 1 && this.submissionCount <= 6) {
-            // Rule 2: Splits 2-6 have 65% chance
-            // Rule 3: Check if previous split was special pattern
-            // Special pattern blocks are created with the current submissionIndex, so we need to check for blocks
-            // that were created in the previous submission (submissionIndex === this.submissionCount - 1)
+          const nextAddNumber = this.submissionCount + 1;
+
+          if (nextAddNumber >= 2 && nextAddNumber <= 6) {
+            // Adds 2-6 have 75% chance unless the previous add was special.
+            // Before incrementing for this add, submissionCount is the last completed submission.
             const wasLastSplitSpecialPattern = this.blocks.some(block => 
-              block.submissionIndex === (this.submissionCount - 1) && 
+              block.submissionIndex === this.submissionCount && 
               (block.patternType === 'special' || block.id.includes('_pattern_'))
             );
             
             // Debug: Log what blocks we're checking
-            const previousBlocks = this.blocks.filter(block => block.submissionIndex === (this.submissionCount - 1));
-            const previousSpecialBlocks = previousBlocks.filter(block => 
-              block.patternType === 'special' || block.id.includes('_pattern_')
-            );
+            const previousBlocks = this.blocks.filter(block => block.submissionIndex === this.submissionCount);
             if (previousBlocks.length > 0) {
               console.log(`🎯 DEBUG: Previous blocks detail:`, previousBlocks.map(block => ({
                 id: block.id,
@@ -7463,30 +7558,15 @@ try {
                 isSpecial: block.patternType === 'special' || block.id.includes('_pattern_')
               })));
             }
-            
-            // NEW RULE: If first split was special pattern, second split CANNOT be special
-            if (this.submissionCount === 2) {
-              const wasFirstSplitSpecialPattern = this.blocks.some(block => 
-                block.submissionIndex === 1 && 
-                (block.patternType === 'special' || block.id.includes('_pattern_'))
-              );
-              
-              if (wasFirstSplitSpecialPattern) {
-                shouldCreateSpecialPattern = false;
-              } else {
-                // Rule 1: 65% chance for splits 1-6
-                shouldCreateSpecialPattern = Math.random() < 0.65 * structureScale;
-              }
-            } else if (wasLastSplitSpecialPattern) {
-              // Rule 3: No back-to-back special patterns
+            if (wasLastSplitSpecialPattern) {
+              // No back-to-back special patterns in the early window.
               shouldCreateSpecialPattern = false;
             } else {
-              // Rule 1: 65% chance for splits 1-6
-              shouldCreateSpecialPattern = Math.random() < 0.65 * structureScale;
+              shouldCreateSpecialPattern = Math.random() < 0.75 * structureScale;
             }
-          } else {
-            // After split 6: 25% chance
-            shouldCreateSpecialPattern = Math.random() < 0.25 * structureScale;
+          } else if (nextAddNumber >= 7 && nextAddNumber <= 24) {
+            // Adds 7-24 have 35% chance unless blocked by the special-pattern cap.
+            shouldCreateSpecialPattern = specialPatternsCreated < maxSpecialPatterns && Math.random() < 0.35 * structureScale;
           }
 
           }
@@ -7556,35 +7636,6 @@ try {
           }
         }
         
-        // ~1 in 15 color selections → forced HST (when geometry + special-pattern budget allow).
-        const HST_FORCED_CHANCE = 1 / 15;
-        if (
-          structureScale > 0 &&
-          !selectedToPreserveSpecialPattern &&
-          selectedBlock &&
-          this._isRegularQuiltCellForHstRoll(selectedBlock) &&
-          this._blockMeetsHstGeometry(selectedBlock) &&
-          this._anotherSpecialAllowedThisTurnBeforeSplit() &&
-          Math.random() < HST_FORCED_CHANCE * structureScale
-        ) {
-          delete selectedBlock._shouldCreateSpecialPattern;
-          selectedBlock._forceHalfSquareTriangle = true;
-          console.log('🎯 HST ROLL: Forced half-square triangle (1/15 rule)');
-        } else if (
-          structureScale > 0 &&
-          !selectedToPreserveSpecialPattern &&
-          selectedBlock &&
-          !selectedBlock._forceHalfSquareTriangle &&
-          this._isRegularQuiltCellForHstRoll(selectedBlock) &&
-          this._blockMeetsInsetCircleGeometry(selectedBlock) &&
-          this._anotherSpecialAllowedThisTurnBeforeSplit() &&
-          Math.random() < (1 / 10) * structureScale
-        ) {
-          delete selectedBlock._shouldCreateSpecialPattern;
-          selectedBlock._forceInsetCircle = true;
-          console.log('🎯 INSET ROLL: Forced inset circle (1/10 rule)');
-        }
-        
         const parentSnapshot = this.recordColorReplayEvents ? this._serializeBlockForReplay(selectedBlock) : null;
 
         // Increment submission count right before creating blocks
@@ -7604,10 +7655,16 @@ try {
         // Debug: Log the split result
         console.log(`🔧 SPLIT RESULT: Block ${selectedBlock.id} split into ${splitResult.length} blocks:`, splitResult.map(b => b.id));
         
+        const mirroredPreFreezeReplacements = this._simMirroredPreFreezeReplacements(selectedBlock, splitResult);
+
         // Replace the original block with the split result
         const blockIndex = this.blocks.findIndex(b => b.id === selectedBlock.id);
         const beforeCount = this.blocks.length;
         this.blocks.splice(blockIndex, 1, ...splitResult);
+        mirroredPreFreezeReplacements.forEach((replacement) => {
+          const idx = this.blocks.findIndex((block) => block && block.id === replacement.targetId);
+          if (idx !== -1) this.blocks.splice(idx, 1, ...replacement.children);
+        });
         const afterCount = this.blocks.length;
         
         console.log(`🔧 BLOCK COUNT: Before: ${beforeCount}, After: ${afterCount}, Net change: ${afterCount - beforeCount}`);
@@ -7703,6 +7760,8 @@ try {
         const isWider = block.width > block.height;
         const splitDirection = isWider ? 'vertical' : 'horizontal';
         const minBlockSize = 80;
+        const splitColor = this._regularSplitColorForFrozenSpecialBlock(block, newColor);
+        const preservedParentColor = this._regularSplitColorForFrozenSpecialBlock(block, block.color);
 
         const pickPrimaryExtent = (extent) => {
           const accentBias = this._regularSplitAccentBias();
@@ -7729,7 +7788,7 @@ try {
             ...block,
             id: block.id + '_1',
             height: splitHeight,
-            color: block.color, // Ensure color is preserved
+            color: preservedParentColor, // Ensure color is preserved
             // Preserve special pattern properties
             originalPatternId: originalPatternId,
             patternType: block.patternType,
@@ -7741,7 +7800,7 @@ try {
             id: block.id + '_2',
             y: block.y + splitHeight,
             height: block.height - splitHeight,
-            color: newColor, // This should be valid due to addColor validation
+            color: splitColor,
             contributorId: this.deviceId,
             submissionIndex: this.submissionCount,
             // Preserve special pattern properties
@@ -7771,6 +7830,7 @@ try {
             ...block,
             id: block.id + '_1',
             width: splitWidth,
+            color: preservedParentColor,
             // Preserve special pattern properties
             originalPatternId: originalPatternId,
             patternType: block.patternType,
@@ -7782,7 +7842,7 @@ try {
             id: block.id + '_2',
             x: block.x + splitWidth,
             width: block.width - splitWidth,
-            color: newColor,
+            color: splitColor,
             contributorId: this.deviceId,
             submissionIndex: this.submissionCount,
             // Preserve special pattern properties
@@ -7935,8 +7995,8 @@ try {
             return this.createLogCabin(block, newColor);
           case 'framed':
             return this.createFramedPattern(block, newColor);
-          // case 'railfence':
-          //   return this.createRailFencePattern(block, newColor);
+          case 'railfence':
+            return this.createRailFencePattern(block, newColor);
           case 'cross':
             return this.createCrossPattern(block, newColor);
           case 'hst':
@@ -7973,25 +8033,23 @@ try {
             availablePatterns.push('stripes');
           }
           
-          // Log Cabin pattern is available early only (disable after split #4).
-          if (block.width > 120 && block.height > 120 && this.submissionCount <= 4) {
-            availablePatterns.push('logcabin');
-          }
+          // Log Cabin temporarily disabled; keep renderer below for existing saved quilts.
+          // if (block.width > 120 && block.height > 120 && this.submissionCount <= 4) {
+          //   availablePatterns.push('logcabin');
+          // }
           
           // Framed pattern is available for medium-large blocks
           if (block.width > 60 && block.height > 60) {
             availablePatterns.push('framed');
           }
           
-          // Rail Fence pattern is available for large blocks (needs space for 2x2 quadrants with 3 strips each)                                                                                                 
-          // Also requires square-ish aspect ratio (not too rectangular)
-          // COMMENTED OUT: Rail fence pattern disabled
-          // if (block.width > 100 && block.height > 100) {
-          //   const aspectRatio = Math.max(block.width, block.height) / Math.min(block.width, block.height);                                                                                                       
-          //   if (aspectRatio <= 1.5) { // Max 1.5:1 ratio (e.g., 150x100 is OK, 200x100 is not)
-          //     availablePatterns.push('railfence');
-          //   }
-          // }
+          // Rail fence pattern is available for large, square-ish blocks.
+          if (block.width > 100 && block.height > 100) {
+            const aspectRatio = Math.max(block.width, block.height) / Math.min(block.width, block.height);
+            if (aspectRatio <= 1.5) {
+              availablePatterns.push('railfence');
+            }
+          }
           
           // Cross pattern is available for large blocks (needs space for 3x3 grid)
           // Also requires square-ish aspect ratio (not too rectangular)
@@ -8027,18 +8085,7 @@ try {
         if (availablePatterns.length === 1) {
           return availablePatterns[0];
         }
-        const weights = availablePatterns.map((p) => {
-          if (p === 'insetCircle') return 5;
-          if (p === 'hst') return 2;
-          return 1;
-        });
-        const total = weights.reduce((a, b) => a + b, 0);
-        let r = Math.random() * total;
-        for (let i = 0; i < availablePatterns.length; i++) {
-          r -= weights[i];
-          if (r <= 0) return availablePatterns[i];
-        }
-        return availablePatterns[availablePatterns.length - 1];
+        return availablePatterns[Math.floor(Math.random() * availablePatterns.length)];
       }
       
       /**
@@ -8686,30 +8733,8 @@ try {
         // Grid size: 4x4 for very large blocks (250px+), 3x3 for medium (100px+), 2x2 for small (50px+)
         // Uses tonal variants for richer color palette
         
-        // Generate 3-color palette with proper light/dark alternation
-        // Create a third color that matches the lightness of one of the original colors
-        const basePalette = this.generateColorPalette(block.color, newColor, 2);
-        
-        // Get HSL values of the two base colors
-        const hsl1 = this.hexToHsl(basePalette[0]);
-        const hsl2 = this.hexToHsl(basePalette[1]);
-        
-        // Create a third color that has the same lightness as the lighter of the two colors
-        // but with a different hue to add variety while maintaining the light/dark pattern
-        const lighterColor = hsl1.l > hsl2.l ? basePalette[0] : basePalette[1];
-        const lighterHsl = this.hexToHsl(lighterColor);
-        
-        // Create a third color with same lightness but shifted hue
-        const thirdHsl = {
-          h: (lighterHsl.h + 60) % 360, // Shift hue by 60 degrees
-          s: Math.max(20, lighterHsl.s - 10), // Slightly less saturated
-          l: lighterHsl.l // Same lightness
-        };
-        
-        const thirdColor = Utils.hslToHex(thirdHsl.h, thirdHsl.s, thirdHsl.l);
-        
-        // Arrange colors so we have: [light, dark, light] or [dark, light, dark]
-        const colorPalette = [basePalette[0], basePalette[1], thirdColor];
+        // Classic checkerboard: strictly alternate the parent color and submitted color.
+        const colorPalette = [block.color, newColor];
         
         const minBlockSize = 20; // Further reduced minimum size to allow smaller checkerboards
         const blockArea = block.width * block.height;
@@ -8780,53 +8805,7 @@ try {
         for (let row = 0; row < gridSize; row++) {
           for (let col = 0; col < gridSize; col++) {
             const cellIndex = row * gridSize + col;
-            // Proper checkerboard pattern: alternate between light and dark values
-            // Use (row + col) % 2 to determine if this should be light or dark
-            const isLight = (row + col) % 2 === 0;
-            
-            // Choose color based on lightness value
-            let colorIndex;
-            if (isLight) {
-              // Use the lighter color (or the third color which has same lightness as lighter)
-              const hsl1 = this.hexToHsl(colorPalette[0]);
-              const hsl2 = this.hexToHsl(colorPalette[1]);
-              const hsl3 = this.hexToHsl(colorPalette[2]);
-              
-              // Find which colors are light and randomly choose between them
-              const lightColors = [];
-              if (hsl1.l > 50) lightColors.push(0);
-              if (hsl2.l > 50) lightColors.push(1);
-              if (hsl3.l > 50) lightColors.push(2);
-              
-              // Fallback: if no light colors, use the lightest available
-              if (lightColors.length === 0) {
-                const lightnesses = [hsl1.l, hsl2.l, hsl3.l];
-                const lightestIndex = lightnesses.indexOf(Math.max(...lightnesses));
-                colorIndex = lightestIndex;
-              } else {
-                colorIndex = lightColors[Math.floor(Math.random() * lightColors.length)];
-              }
-            } else {
-              // Use the darker color
-              const hsl1 = this.hexToHsl(colorPalette[0]);
-              const hsl2 = this.hexToHsl(colorPalette[1]);
-              const hsl3 = this.hexToHsl(colorPalette[2]);
-              
-              // Find which colors are dark and randomly choose between them
-              const darkColors = [];
-              if (hsl1.l <= 50) darkColors.push(0);
-              if (hsl2.l <= 50) darkColors.push(1);
-              if (hsl3.l <= 50) darkColors.push(2);
-              
-              // Fallback: if no dark colors, use the darkest available
-              if (darkColors.length === 0) {
-                const lightnesses = [hsl1.l, hsl2.l, hsl3.l];
-                const darkestIndex = lightnesses.indexOf(Math.min(...lightnesses));
-                colorIndex = darkestIndex;
-              } else {
-                colorIndex = darkColors[Math.floor(Math.random() * darkColors.length)];
-              }
-            }
+            const colorIndex = (row + col) % 2;
             
             // Use variable dimensions for this cell
             const cellWidth = columnWidths[col];
@@ -9387,6 +9366,58 @@ try {
         };
         cells.push(innerRectangle);
         
+        return cells;
+      }
+
+      createRailFencePattern(block, newColor) {
+        const colorPalette = this.generateColorPalette(block.color, newColor, 3);
+        const quadrantWidth = block.width / 2;
+        const quadrantHeight = block.height / 2;
+        const jitterMultiplier = 0.05;
+        const cells = [];
+        const quadrants = [
+          { name: 'top-left', x: block.x, y: block.y, orientation: 'vertical' },
+          { name: 'top-right', x: block.x + quadrantWidth, y: block.y, orientation: 'horizontal' },
+          { name: 'bottom-left', x: block.x, y: block.y + quadrantHeight, orientation: 'horizontal' },
+          { name: 'bottom-right', x: block.x + quadrantWidth, y: block.y + quadrantHeight, orientation: 'vertical' }
+        ];
+
+        quadrants.forEach((quadrant) => {
+          const stripDimensions = this.generateVariableDimensions(
+            quadrant.orientation === 'vertical' ? quadrantWidth : quadrantHeight,
+            3
+          );
+          const positions = [0];
+          for (let i = 0; i < stripDimensions.length; i++) {
+            positions.push(positions[i] + stripDimensions[i]);
+          }
+
+          for (let stripIndex = 0; stripIndex < 3; stripIndex++) {
+            const colorIndex =
+              quadrant.name === 'top-left' || quadrant.name === 'bottom-right'
+                ? stripIndex === 1 ? 1 : stripIndex === 0 ? 0 : 2
+                : stripIndex === 1 ? 0 : 1;
+            const stripSize = stripDimensions[stripIndex];
+            const jitterX = (Math.random() - 0.5) * jitterMultiplier * stripSize;
+            const jitterY = (Math.random() - 0.5) * jitterMultiplier * stripSize;
+            const isVertical = quadrant.orientation === 'vertical';
+
+            cells.push({
+              id: `${block.id}_pattern_railfence_${quadrant.name}_${stripIndex}`,
+              x: isVertical ? quadrant.x + positions[stripIndex] + jitterX : quadrant.x + jitterX,
+              y: isVertical ? quadrant.y + jitterY : quadrant.y + positions[stripIndex] + jitterY,
+              width: isVertical ? stripSize : quadrantWidth,
+              height: isVertical ? quadrantHeight : stripSize,
+              color: colorPalette[colorIndex],
+              contributorId: this.deviceId,
+              submissionIndex: this.submissionCount,
+              patternType: 'special',
+              specialPatternType: 'railfence',
+              originalPatternId: block.id
+            });
+          }
+        });
+
         return cells;
       }
       
@@ -14250,6 +14281,7 @@ try {
                 const ox = Math.floor((outW - dw) / 2);
                 const oy = Math.floor((outH - dh) / 2);
                 ctx.drawImage(img, 0, 0, iw, ih, ox, oy, dw, dh);
+                Utils.applyFilmGrain(ctx, outW, outH, 0, { vignette: false });
                 canvas.toBlob((blob) => {
                   URL.revokeObjectURL(svgUrl);
                   if (!blob) {
@@ -14406,6 +14438,7 @@ try {
           ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
           ctx.restore();
         });
+        Utils.applyFilmGrain(ctx, outW, outH, 0, { vignette: false });
         const mimeType =
           typeof options.mimeType === 'string' && options.mimeType.length
             ? options.mimeType
@@ -17019,10 +17052,15 @@ try {
         const actualQuiltWidth = maxX - minX;
         const actualQuiltHeight = maxY - minY;
         
+        const renderMirroredField = true;
+
         // Add some padding around the quilt content
-        const padding = 20;
-        const viewBoxWidth = actualQuiltWidth + (padding * 2);
-        const viewBoxHeight = actualQuiltHeight + (padding * 2);
+        const padding = 4;
+        const mirroredFieldHeight = renderMirroredField ? actualQuiltHeight * 2 : actualQuiltHeight;
+        const horizontalStretch = renderMirroredField ? 1.16 : 1;
+        const mirroredFieldWidth = actualQuiltWidth * horizontalStretch;
+        const viewBoxWidth = mirroredFieldWidth + (padding * 2);
+        const viewBoxHeight = mirroredFieldHeight + (padding * 2);
         
         // Set viewBox to actual quilt content with padding
         this.quiltSVG.setAttribute('viewBox', `${minX - padding} ${minY - padding} ${viewBoxWidth} ${viewBoxHeight}`);
@@ -17053,9 +17091,16 @@ try {
         // No global flip - individual blocks will be flipped when touched
 
         // No complex filters - we'll use a simple approach for sharp edges
+        const fieldLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        fieldLayer.setAttribute('id', 'quiltFieldLayer');
+        if (horizontalStretch !== 1) {
+          fieldLayer.setAttribute('transform', `translate(${minX} 0) scale(${horizontalStretch} 1) translate(${-minX} 0)`);
+        }
+        this.quiltSVG.appendChild(fieldLayer);
+
         const parallaxLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         parallaxLayer.setAttribute('id', 'quiltParallaxLayer');
-        this.quiltSVG.appendChild(parallaxLayer);
+        fieldLayer.appendChild(parallaxLayer);
         
         // Function to create inward feathering shadow filter for each block
         const createInwardShadowFilter = (blockColor, blockId) => {
@@ -17783,6 +17828,19 @@ try {
           
           parallaxLayer.appendChild(blockGroup);
         });
+
+        if (renderMirroredField) {
+          const addMirroredLayer = (id, transform) => {
+            const mirroredLayer = parallaxLayer.cloneNode(true);
+            mirroredLayer.setAttribute('id', id);
+            mirroredLayer.setAttribute('aria-hidden', 'true');
+            mirroredLayer.setAttribute('pointer-events', 'none');
+            mirroredLayer.setAttribute('transform', transform);
+            fieldLayer.appendChild(mirroredLayer);
+          };
+
+          addMirroredLayer('quiltMirroredFieldLayer', `translate(${minX + actualQuiltWidth} ${minY + actualQuiltHeight * 2}) scale(-1 -1)`);
+        }
         
         // Show newly added blocks (only when there are new blocks)
         const newBlocks = blocks.filter(b => b.submissionIndex === submissionCount);
@@ -19652,19 +19710,13 @@ try {
         if (!container) return;
         const quiltSVG = document.getElementById('quilt');
 
-        const touchOptions = { passive: false, capture: true };
-        window.addEventListener('touchstart', this.handleQuiltZoomTouchStart.bind(this), touchOptions);
-        window.addEventListener('touchmove', this.handleQuiltZoomTouchMove.bind(this), touchOptions);
-        window.addEventListener('touchend', this.handleQuiltZoomTouchEnd.bind(this), touchOptions);
-        window.addEventListener('touchcancel', this.handleQuiltZoomTouchCancel.bind(this), { passive: true, capture: true });
-        window.addEventListener('gesturestart', this.handleQuiltZoomGestureStart.bind(this), touchOptions);
-        window.addEventListener('gesturechange', this.handleQuiltZoomGestureChange.bind(this), touchOptions);
-        window.addEventListener('gestureend', this.handleQuiltZoomGestureEnd.bind(this), touchOptions);
+        // The scroll-first quilt screen was too easy to trap in custom SVG zoom.
+        // Keep tap-to-find behavior, but do not hijack touch/pinch gestures.
         container.addEventListener('click', this.handleQuiltSingleClick.bind(this));
         container.addEventListener('dblclick', (event) => {
           event.preventDefault();
           this.cancelQuiltSingleTapSpotlight();
-          this.toggleQuiltZoomAt(event.clientX, event.clientY);
+          this.scheduleQuiltSingleTapSpotlight(0);
         });
         if (quiltSVG) {
           quiltSVG.addEventListener('keydown', this.handleQuiltKeyboardSpotlight.bind(this));
@@ -21588,6 +21640,9 @@ try {
           max-width: 600px;
           max-height: 80vh;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
+          overscroll-behavior-y: contain;
           width: 100%;
         `;
         
@@ -22205,6 +22260,9 @@ try {
           min-width: 300px;
           max-height: 80vh;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
+          overscroll-behavior-y: contain;
         `;
         
         const content = menu.querySelector('.reveal-image-manager-content');
@@ -22288,6 +22346,9 @@ try {
           min-width: 400px;
           max-height: 35vh;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
+          overscroll-behavior-y: contain;
         `;
         
         const content = menu.querySelector('.admin-menu-content');
@@ -22332,9 +22393,33 @@ try {
       // Helper method to get admin stats HTML
       getAdminStatsHTML() {
         const currentBlockCount = this.quiltEngine ? this.quiltEngine.blocks.length : 0;
+        const colorBreakdown = this.getQuiltColorFamilySubmissionBreakdown(this.quiltEngine?.blocks || []);
+        const submissionTotal = colorBreakdown.reduce((sum, item) => sum + item.count, 0);
+        const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[ch]));
+        const familyRows = colorBreakdown.length
+          ? colorBreakdown.map((item) => `
+              <div style="display: grid; grid-template-columns: 14px 1fr auto auto; gap: 6px; align-items: center; font-weight: 500;">
+                <span style="display: inline-block; width: 12px; height: 12px; background: ${item.color}; border: 1px solid rgba(0,0,0,0.22);"></span>
+                <span style="text-align: left; text-transform: capitalize;">${escape(item.family)}</span>
+                <span>${item.percent.toFixed(1)}%</span>
+                <span style="color: #555;">${item.count}/${submissionTotal}</span>
+              </div>
+            `).join('')
+          : '<div style="font-weight: 500; color: #666;">No color submissions yet</div>';
         
         return `
           📊 Current Blocks: ${currentBlockCount}<br>
+          🎨 Color Families by Submission (${submissionTotal})<br>
+          <div style="margin-top: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 12px;">
+            ${familyRows}
+          </div>
+          <br>
           ⏰ Archive: 6:30 AM UTC | Reset: 7:00 AM UTC<br>
           📸 OUR DAILY QUILT: Instagram upload is handled by Zapier before reset
         `;
@@ -23011,57 +23096,68 @@ try {
           this.dailyContributors = this.normalizeDailyContributors(data.contributors || []);
           
           if (data.blocks && data.blocks.length > 0) {
-            this.quiltEngine.blocks = data.blocks.map((block) => ({
-              id: block.id || 'loaded_' + Math.random().toString(36).substr(2, 9),
-              x: Number(block.x),
-              y: Number(block.y),
-              width: Number(block.width),
-              height: Number(block.height),
-              color: block.color,
-              contributorId: block.contributorId != null ? block.contributorId : this.currentUserId,
-              contributorIds: Array.isArray(block.contributorIds)
-                ? block.contributorIds.map((id) => String(id || '').trim()).filter(Boolean)
-                : undefined,
-              submissionIndex: typeof block.submissionIndex === 'number' ? block.submissionIndex : 0,
-              patternType: block.patternType,
-              specialPatternType: block.specialPatternType,
-              originalPatternId: block.originalPatternId,
-              hstColorB: block.hstColorB,
-              hstDiagonal: block.hstDiagonal,
-              hstTriangles: Utils.normalizeHstTrianglesFromFirestore(block.hstTriangles),
-              insetTier: typeof block.insetTier === 'number' ? block.insetTier : undefined,
-              insetFrozen: block.insetFrozen === true ? true : undefined,
-              insetInnerColor: block.insetInnerColor,
-              insetCx: typeof block.insetCx === 'number' ? Number(block.insetCx) : undefined,
-              insetCy: typeof block.insetCy === 'number' ? Number(block.insetCy) : undefined,
-              insetR: typeof block.insetR === 'number' ? Number(block.insetR) : undefined,
-              insetMask: typeof block.insetMask === 'string' ? block.insetMask : undefined,
-              insetFirstCutVertical:
-                block.insetFirstCutVertical === true || block.insetFirstCutVertical === false
-                  ? block.insetFirstCutVertical
+            this.quiltEngine.blocks = data.blocks
+              .map((block) => ({
+                id: block.id || 'loaded_' + Math.random().toString(36).substr(2, 9),
+                x: Number(block.x),
+                y: Number(block.y),
+                width: Number(block.width),
+                height: Number(block.height),
+                color: block.color,
+                contributorId: block.contributorId != null ? block.contributorId : this.currentUserId,
+                contributorIds: Array.isArray(block.contributorIds)
+                  ? block.contributorIds.map((id) => String(id || '').trim()).filter(Boolean)
                   : undefined,
-              insetNextCutVertical:
-                block.insetNextCutVertical === true || block.insetNextCutVertical === false
-                  ? block.insetNextCutVertical
-                  : undefined,
-              macroRegionId:
-                typeof block.macroRegionId === 'number' && Number.isFinite(block.macroRegionId)
-                  ? block.macroRegionId
-                  : undefined,
-              macroFrozenColor:
-                typeof block.macroFrozenColor === 'string' && block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
-                  ? block.macroFrozenColor
-                  : undefined,
-              macroFrozenOutline: this.quiltEngine._normalizeMacroFrozenOutline(block.macroFrozenOutline) || undefined
-            }));
-            this.quiltEngine.submissionCount = Math.max(
-              Number(data.contributorCount) || 1,
-              this.quiltEngine.blocks.length
-            );
-            this.quiltEngine.setColorReplayEvents(data.colorReplayEvents || []);
-            this.quiltEngine.hydrateMacroFreezeFromPersistence(data.macroStructureFrozen === true);
-            this.quiltEngine.maybeApplyMacroFreezeAfterHydrate();
-            this.quiltEngine.repairMacroRegionIdsAfterLoadIfFrozen();
+                submissionIndex: typeof block.submissionIndex === 'number' ? block.submissionIndex : 0,
+                patternType: block.patternType,
+                specialPatternType: block.specialPatternType,
+                originalPatternId: block.originalPatternId,
+                hstColorB: block.hstColorB,
+                hstDiagonal: block.hstDiagonal,
+                hstTriangles: Utils.normalizeHstTrianglesFromFirestore(block.hstTriangles),
+                insetTier: typeof block.insetTier === 'number' ? block.insetTier : undefined,
+                insetFrozen: block.insetFrozen === true ? true : undefined,
+                insetInnerColor: block.insetInnerColor,
+                insetCx: typeof block.insetCx === 'number' ? Number(block.insetCx) : undefined,
+                insetCy: typeof block.insetCy === 'number' ? Number(block.insetCy) : undefined,
+                insetR: typeof block.insetR === 'number' ? Number(block.insetR) : undefined,
+                insetMask: typeof block.insetMask === 'string' ? block.insetMask : undefined,
+                insetFirstCutVertical:
+                  block.insetFirstCutVertical === true || block.insetFirstCutVertical === false
+                    ? block.insetFirstCutVertical
+                    : undefined,
+                insetNextCutVertical:
+                  block.insetNextCutVertical === true || block.insetNextCutVertical === false
+                    ? block.insetNextCutVertical
+                    : undefined,
+                macroRegionId:
+                  typeof block.macroRegionId === 'number' && Number.isFinite(block.macroRegionId)
+                    ? block.macroRegionId
+                    : undefined,
+                macroFrozenColor:
+                  typeof block.macroFrozenColor === 'string' && block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+                    ? block.macroFrozenColor
+                    : undefined,
+                macroFrozenOutline: this.quiltEngine._normalizeMacroFrozenOutline(block.macroFrozenOutline) || undefined
+              }))
+              .filter((block) =>
+                [block.x, block.y, block.width, block.height].every(Number.isFinite) &&
+                block.width > 0 &&
+                block.height > 0
+              );
+            if (this.quiltEngine.blocks.length === 0) {
+              this.logger.warn('Loaded quilt contained no valid block geometry; reinitializing starter block');
+              this.quiltEngine.initialize();
+            } else {
+              this.quiltEngine.submissionCount = Math.max(
+                Number(data.contributorCount) || 1,
+                this.quiltEngine.blocks.length
+              );
+              this.quiltEngine.setColorReplayEvents(data.colorReplayEvents || []);
+              this.quiltEngine.hydrateMacroFreezeFromPersistence(data.macroStructureFrozen === true);
+              this.quiltEngine.maybeApplyMacroFreezeAfterHydrate();
+              this.quiltEngine.repairMacroRegionIdsAfterLoadIfFrozen();
+            }
             
             // Apply responsive dimensions for current viewport
             this.quiltEngine.recalculateDimensionsForCurrentViewport();
@@ -23507,7 +23603,7 @@ try {
       }
 
       async saveAdminQuiltMutation(label) {
-        const saved = await this.saveQuilt({ adminMutation: true, skipFirestore: true });
+        const saved = await this.saveQuilt({ adminMutation: true });
         if (!saved) {
           this.uiService.showToast(`${label} was not saved. Reloading latest quilt.`);
           await this.loadQuilt();
@@ -23547,49 +23643,87 @@ try {
         ).trim().toLowerCase();
       }
 
-      getQuiltPaletteSummary(blocks = this.quiltEngine?.blocks || []) {
-        const counts = new Map();
+      getQuiltColorFamilySubmissionBreakdown(blocks = this.quiltEngine?.blocks || []) {
+        const submissions = new Map();
         (Array.isArray(blocks) ? blocks : []).forEach((block, index) => {
           const color = this.normalizeHexColor(block?.color);
           if (!color) return;
           const family = this.getQuiltBlockColorFamily(block);
           if (!family || family === 'unknown') return;
-          const existing = counts.get(family) || {
-            family,
-            color,
+          const submissionIndex = Number.isFinite(Number(block.submissionIndex))
+            ? Number(block.submissionIndex)
+            : -Infinity;
+          const submissionKey =
+            Number.isFinite(submissionIndex) && submissionIndex > 0
+              ? `submission:${submissionIndex}`
+              : `legacy:${block?.contributorId || block?.id || index}`;
+          const area = Math.max(0, Number(block.width) || 0) * Math.max(0, Number(block.height) || 0);
+          const existingSubmission = submissions.get(submissionKey);
+          if (!existingSubmission) {
+            submissions.set(submissionKey, {
+              family,
+              color,
+              area,
+              submissionIndex,
+              latestBlockIndex: index
+            });
+            return;
+          }
+          existingSubmission.area += area;
+          if (
+            submissionIndex > existingSubmission.submissionIndex ||
+            (submissionIndex === existingSubmission.submissionIndex && index > existingSubmission.latestBlockIndex)
+          ) {
+            existingSubmission.family = family;
+            existingSubmission.color = color;
+            existingSubmission.submissionIndex = submissionIndex;
+            existingSubmission.latestBlockIndex = index;
+          }
+        });
+
+        const counts = new Map();
+        submissions.forEach((submission) => {
+          const existing = counts.get(submission.family) || {
+            family: submission.family,
+            color: submission.color,
             count: 0,
             area: 0,
             latestSubmissionIndex: -Infinity,
             latestBlockIndex: -1
           };
-          const submissionIndex = Number.isFinite(Number(block.submissionIndex))
-            ? Number(block.submissionIndex)
-            : -Infinity;
           existing.count += 1;
-          existing.area += Math.max(0, Number(block.width) || 0) * Math.max(0, Number(block.height) || 0);
+          existing.area += submission.area;
           if (
-            submissionIndex > existing.latestSubmissionIndex ||
-            (submissionIndex === existing.latestSubmissionIndex && index > existing.latestBlockIndex)
+            submission.submissionIndex > existing.latestSubmissionIndex ||
+            (submission.submissionIndex === existing.latestSubmissionIndex && submission.latestBlockIndex > existing.latestBlockIndex)
           ) {
-            existing.color = color;
+            existing.color = submission.color;
           }
-          existing.latestSubmissionIndex = Math.max(existing.latestSubmissionIndex, submissionIndex);
-          existing.latestBlockIndex = Math.max(existing.latestBlockIndex, index);
-          counts.set(family, existing);
+          existing.latestSubmissionIndex = Math.max(existing.latestSubmissionIndex, submission.submissionIndex);
+          existing.latestBlockIndex = Math.max(existing.latestBlockIndex, submission.latestBlockIndex);
+          counts.set(submission.family, existing);
         });
-        const total = Array.from(counts.values()).reduce((sum, item) => sum + item.count, 0);
+
+        const total = submissions.size;
+        return Array.from(counts.values())
+          .sort((a, b) =>
+            b.count - a.count ||
+            b.latestSubmissionIndex - a.latestSubmissionIndex ||
+            b.area - a.area ||
+            b.latestBlockIndex - a.latestBlockIndex
+          )
+          .map((item) => ({
+            ...item,
+            percent: total > 0 ? (item.count / total) * 100 : 0
+          }));
+      }
+
+      getQuiltPaletteSummary(blocks = this.quiltEngine?.blocks || []) {
+        const paletteItems = this.getQuiltColorFamilySubmissionBreakdown(blocks);
+        const total = paletteItems.reduce((sum, item) => sum + item.count, 0);
         if (total < 15) return null;
 
-        const ranked = Array.from(counts.values()).sort((a, b) =>
-          b.count - a.count ||
-          b.latestSubmissionIndex - a.latestSubmissionIndex ||
-          b.area - a.area ||
-          b.latestBlockIndex - a.latestBlockIndex
-        ).map((item) => ({
-          ...item,
-          percent: total > 0 ? (item.count / total) * 100 : 0
-        }));
-
+        const ranked = paletteItems;
         const top = ranked[0] || null;
         if (!top) return null;
 
@@ -25235,6 +25369,54 @@ try {
         };
       }
 
+      async composeMirroredQuiltFieldBlob(quiltBlob, opts = {}) {
+        if (!quiltBlob) return null;
+        const bitmap = await createImageBitmap(quiltBlob);
+        try {
+          const maxEdge = Math.max(320, Number(opts.maxEdge) || 960);
+          const outW = Math.round(maxEdge * 9 / 16);
+          const outH = maxEdge;
+          const canvas = document.createElement('canvas');
+          canvas.width = outW;
+          canvas.height = outH;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return null;
+          ctx.fillStyle = '#f6f4f1';
+          ctx.fillRect(0, 0, outW, outH);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = opts.imageSmoothingQuality || 'medium';
+
+          const scale = Math.max(outW / Math.max(1, bitmap.width), outH / (Math.max(1, bitmap.height) * 2));
+          const drawW = outW;
+          const drawH = bitmap.height * scale;
+          const startY = (outH - drawH * 2) / 2;
+          const placements = [
+            { y: startY, flipX: false, flipY: false },
+            { y: startY + drawH, flipX: true, flipY: true }
+          ];
+          placements.forEach((placement) => {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, placement.y, outW, drawH);
+            ctx.clip();
+            if (placement.flipX || placement.flipY) {
+              ctx.translate(placement.flipX ? outW : 0, placement.flipY ? placement.y + drawH : placement.y);
+              ctx.scale(placement.flipX ? -1 : 1, placement.flipY ? -1 : 1);
+              ctx.drawImage(bitmap, 0, 0, drawW, drawH);
+            } else {
+              ctx.drawImage(bitmap, 0, placement.y, drawW, drawH);
+            }
+            ctx.restore();
+          });
+
+          const mimeType = opts.mimeType || 'image/jpeg';
+          const quality = typeof opts.quality === 'number' ? opts.quality : 0.88;
+          return await new Promise((resolve) => canvas.toBlob(resolve, mimeType, quality));
+        } finally {
+          if (typeof bitmap.close === 'function') bitmap.close();
+        }
+      }
+
       async buildSimulatedQuiltProgressionAsync(targetBlockCounts, seed, onProgress, simOptions = null) {
         const originalRandom = Math.random;
         const originalLog = console.log;
@@ -25243,6 +25425,7 @@ try {
         try {
           const engine = new SimpleQuiltEngine(`admin-sim-${seed}`);
           engine.simulatorFullFidelity = simOptions?.simulatorFullFidelity === true;
+          engine.simulatorMirrorPreFreeze = simOptions?.simulatorMirrorPreFreeze !== false;
           engine.initialize();
           const expandedRumiColors = this.getExpandedRumiColors();
           const targets = [...targetBlockCounts]
@@ -25362,9 +25545,13 @@ try {
           <div style="position: sticky; top: 0; z-index: 1; background: #f6f4f1; padding-bottom: 12px; border-bottom: 1px solid rgba(0,0,0,0.18); display: flex; gap: 10px; align-items: center; justify-content: space-between;">
             <div>
               <div style="font-weight: 800; font-size: 18px;">Quilt Growth Simulator</div>
-              <div style="font-size: 13px; opacity: 0.75;">One fresh random quilt shown at 100, 200, 500, 1000, and 2000 blocks. Around 100 patches the sim runs the same <strong>macro layout lock</strong> as live. Optional <strong>Full fidelity merges</strong> runs the same neighbor-combine pass as production (slower; no localStorage remap). <strong>Click Start simulation</strong> when ready—nothing runs until then. Nothing is saved.</div>
+              <div style="font-size: 13px; opacity: 0.75;">One fresh random quilt shown at 100, 200, 500, 1000, and 2000 blocks. Before freeze, optional <strong>mirrored symmetry</strong> duplicates splits into matching counterpart blocks; after freeze, growth returns to single additions. Optional <strong>Full fidelity merges</strong> runs the same neighbor-combine pass as production (slower; no localStorage remap). <strong>Click Start simulation</strong> when ready—nothing runs until then. Nothing is saved.</div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+              <label style="font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer; max-width: 280px; text-align: left;">
+                <input type="checkbox" id="admin-sim-mirror-prefreeze" checked />
+                <span>Mirrored pre-freeze symmetry experiment</span>
+              </label>
               <label style="font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer; max-width: 280px; text-align: left;">
                 <input type="checkbox" id="admin-sim-full-fidelity" />
                 <span>Full fidelity merges (slower — same combine-neighbors pass as live; does not write contribution remap)</span>
@@ -25376,7 +25563,7 @@ try {
               </div>
             </div>
           </div>
-          <div id="admin-quilt-simulation-status" style="padding: 12px 0; font-size: 13px;">Optional: enable full fidelity merges, then click <strong>Start simulation</strong>.</div>
+          <div id="admin-quilt-simulation-status" style="padding: 12px 0; font-size: 13px;">Optional: adjust symmetry/merge options, then click <strong>Start simulation</strong>.</div>
           <div id="admin-quilt-simulation-grid" style="display: grid; grid-template-columns: repeat(${targets.length}, minmax(180px, 1fr)); gap: 12px; align-items: start;"></div>
         `;
         document.body.appendChild(modal);
@@ -25390,6 +25577,7 @@ try {
         const downloadAll = modal.querySelector('#download-all-simulated-quilts');
         const startBtn = modal.querySelector('#admin-sim-start');
         const fullFiInput = modal.querySelector('#admin-sim-full-fidelity');
+        const mirrorInput = modal.querySelector('#admin-sim-mirror-prefreeze');
 
         targets.forEach((target) => {
           const card = document.createElement('div');
@@ -25411,6 +25599,7 @@ try {
           modal._odqSimRunning = true;
           startBtn.disabled = true;
           if (fullFiInput) fullFiInput.disabled = true;
+          if (mirrorInput) mirrorInput.disabled = true;
           downloadAll.disabled = true;
           downloadAll.onclick = null;
           if (Array.isArray(modal._odqObjectUrls)) {
@@ -25422,9 +25611,10 @@ try {
           const runSeed = `sim-${Date.now()}`;
           try {
           const fullFi = fullFiInput?.checked === true;
+          const mirrorPreFreeze = mirrorInput?.checked !== false;
           status.textContent = fullFi
-            ? 'Growing quilt (full fidelity — merge on, slower)…'
-            : 'Growing quilt toward 2000 blocks…';
+            ? `Growing quilt (${mirrorPreFreeze ? 'mirrored pre-freeze, ' : ''}full fidelity — merge on, slower)…`
+            : `Growing quilt toward 2000 blocks${mirrorPreFreeze ? ' with mirrored pre-freeze symmetry' : ''}…`;
           await new Promise((resolve) => requestAnimationFrame(resolve));
           const {
             simulations,
@@ -25443,7 +25633,7 @@ try {
                 : 'milestones captured';
             status.textContent = `Growing quilt… ${p.blockCount} blocks, ${p.attempts} color adds (${cap}). JPEG preview comes next.`;
           },
-            { simulatorFullFidelity: fullFi }
+            { simulatorFullFidelity: fullFi, simulatorMirrorPreFreeze: mirrorPreFreeze }
           );
 
           const rasterOpts = fullFi
@@ -25467,19 +25657,26 @@ try {
             card.innerHTML = `<div style="font-weight: 800; text-align: center; margin-bottom: 6px;">${target} blocks</div><div>Rendering...</div>`;
             await new Promise((resolve) => setTimeout(resolve, 0));
 
-            const blob = await this.archiveService.generateQuiltRasterBlobFromBlocks(
+            let blob = await this.archiveService.generateQuiltRasterBlobFromBlocks(
               simulation.blocks,
               rasterOpts
             );
+            if (blob && mirrorPreFreeze) {
+              blob = await this.composeMirroredQuiltFieldBlob(blob, {
+                ...rasterOpts,
+                maxEdge: fullFi ? 1440 : 960,
+                imageSmoothingQuality: fullFi ? 'medium' : 'low'
+              });
+            }
             if (!blob) throw new Error(`Could not render ${target}-block snapshot`);
             const url = URL.createObjectURL(blob);
             modal._odqObjectUrls.push(url);
-            const filename = `our-daily-quilt-sim-progression-${target}-blocks${fullFi ? '-fullfi' : ''}.jpg`;
+            const filename = `our-daily-quilt-sim-progression-${target}-blocks${mirrorPreFreeze ? '-mirrored-field' : ''}${fullFi ? '-fullfi' : ''}.jpg`;
             downloads.push({ url, filename });
 
             card.innerHTML = `
               <div style="font-weight: 800; text-align: center; margin-bottom: 6px;">${target} blocks</div>
-              <img decoding="async" loading="lazy" src="${url}" alt="${target}-block quilt progression snapshot" style="width: 100%; aspect-ratio: 4 / 5; object-fit: contain; background: #f6f4f1; border-radius: 4px; display: block;">
+              <img decoding="async" loading="lazy" src="${url}" alt="${target}-block quilt progression snapshot" style="width: 100%; aspect-ratio: ${mirrorPreFreeze ? '9 / 16' : '4 / 5'}; object-fit: contain; background: #f6f4f1; border-radius: 4px; display: block;">
               <div style="margin-top: 6px; opacity: 0.78;">Actual: ${simulation.blocks.length} blocks · ${simulation.submissionCount} adds</div>
               <a href="${url}" download="${filename}" style="display: inline-block; margin-top: 6px;">Download JPEG</a>
             `;
@@ -28268,6 +28465,9 @@ try {
           max-width: 600px;
           max-height: 80vh;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
+          overscroll-behavior-y: contain;
           box-shadow: 0 8px 16px rgba(0,0,0,0.3);
         `;
         
