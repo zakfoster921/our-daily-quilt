@@ -5626,6 +5626,12 @@ try {
   <!-- External dependencies -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+  <script src="rumi-colors.js"></script>
+  <script>
+    if (typeof rumiColors !== 'undefined' && Array.isArray(rumiColors)) {
+      window.__ODQ_RUMI_COLORS__ = rumiColors;
+    }
+  </script>
   
   <!-- Firebase SDK will be initialized after CONFIG is defined -->
   <!-- FIREBASE DISABLED FOR LOCAL TESTING -->
@@ -5644,7 +5650,11 @@ try {
         quoteColorPromptReadPauseMs: 1500,
         buildId: '2026-04-30-app-store-readiness',
         debugMode: false,
-        enableAdminTools: false
+        enableAdminTools: (
+          window.location.protocol === 'file:' ||
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1'
+        )
       },
       FIREBASE: {
         // ENABLED FOR IMAGE REVEAL FUNCTIONALITY
@@ -5963,6 +5973,26 @@ try {
       /** Diagonal HST works for any rectangle; cap is UX-only. Portrait strips often exceed 1.35:1. */
       static HST_ELIGIBLE_MIN_SHORT = 72;
       static HST_ELIGIBLE_MAX_ASPECT = 2.75;
+      static HST_MAX_FAMILY_BLOCKS = 5;
+      /** Beyond this block count, new-special roulette + forced HST/inset odds taper toward STRUCTURE_SCALE_FLOOR (never hard-off). Existing specials still split normally. */
+      static SPECIAL_STRUCTURE_TAPER_START_BLOCKS = 100;
+      static SPECIAL_STRUCTURE_TAPER_END_BLOCKS = 300;
+      static SPECIAL_STRUCTURE_SCALE_FLOOR = 0.1;
+      /** First snapshot of macro regions when leaf count is in [MACRO_FREEZE_AT_BLOCK_COUNT, MACRO_FREEZE_SNAPSHOT_MAX_BLOCKS]; merges never cross regions after. */
+      static MACRO_FREEZE_AT_BLOCK_COUNT = 25;
+      static MACRO_FREEZE_SNAPSHOT_MAX_BLOCKS = 148;
+      /** Late regular splits favor a thin new-color slice so most of the cell stays one field (72→190 blocks). */
+      static STRUCTURE_ACCENT_START_BLOCKS = 72;
+      static STRUCTURE_ACCENT_FULL_BLOCKS = 190;
+      static STRUCTURE_ACCENT_PROB = 0.68;
+      /** Pull chosen paint toward neighbor + quilt palette in OKLab (45→195 blocks, cap HARMONY_BLEND_MAX). */
+      static HARMONY_BLEND_START_BLOCKS = 45;
+      static HARMONY_BLEND_FULL_BLOCKS = 195;
+      static HARMONY_BLEND_MAX = 0.36;
+      /** Adjacent axis-aligned regular blocks merge when perceptual similarity meets this floor (OKLab via getColorSimilarity). */
+      static MERGE_COLOR_SIMILARITY_MIN = 0.92;
+      /** World-space tolerance for shared-edge detection (floating splits). */
+      static MERGE_EPS_PX = 1.25;
       static INSET_CIRCLE_MIN_SHORT = 76;
       static INSET_CIRCLE_MAX_ASPECT = 2.6;
       static INSET_CIRCLE_MIN_AREA = 12000;
@@ -5974,6 +6004,7 @@ try {
       static INSET_SPLIT_SIM_SIDE_HI = 220;
       static INSET_SPLIT_SIM_STRICT = 0.7;
       static INSET_SPLIT_SIM_LOOSE = 0.988;
+      static INSET_CIRCLE_PREFREEZE_MAX_SPLIT_TIER = 3;
 
       /** World-space circle params saved on descendants of an inset-circle split. */
       static hasPersistedInsetCircleGeometry(block) {
@@ -6002,8 +6033,960 @@ try {
         this.deviceId = userId || this.getOrCreateDeviceId();
         /** @type {Array<{seq:number,iso:string,newHex:string,parent:object,children:object[]}>} */
         this.colorReplayEvents = [];
+        /** Exact split replay is only needed for synthetic reels; keep it off to avoid storage bloat. */
+        this.recordColorReplayEvents = false;
+        /** Once true, neighbor merges only combine blocks with the same macroRegionId (composition outlines preserved). */
+        this.macroStructureFrozen = false;
+        /** Populated when macro freeze runs: number of unified HST cells split into two triangle shards (sim / diagnostics). */
+        this.macroFreezeHstParentsExplodedCount = 0;
+        /** Admin simulator only: run neighbor merge pass like production (slower); remap stays disabled so localStorage is untouched. */
+        this.simulatorFullFidelity = false;
       }
       
+      _growthSpecialStructureScale() {
+        const n = this.blocks.length;
+        const t0 = SimpleQuiltEngine.SPECIAL_STRUCTURE_TAPER_START_BLOCKS;
+        if (n < t0) return 1;
+        const t1 = SimpleQuiltEngine.SPECIAL_STRUCTURE_TAPER_END_BLOCKS;
+        const lo = SimpleQuiltEngine.SPECIAL_STRUCTURE_SCALE_FLOOR;
+        if (n >= t1) return lo;
+        return 1 + (lo - 1) * ((n - t0) / (t1 - t0));
+      }
+
+      _sharesAxisAlignedFullEdge(A, B, eps) {
+        if (!A || !B) return false;
+        const ox = Math.min(A.x + A.width, B.x + B.width) - Math.max(A.x, B.x);
+        const oy = Math.min(A.y + A.height, B.y + B.height) - Math.max(A.y, B.y);
+        if (ox <= eps || oy <= eps) return false;
+        if (Math.abs(A.x + A.width - B.x) < eps && oy > eps) return true;
+        if (Math.abs(B.x + B.width - A.x) < eps && oy > eps) return true;
+        if (Math.abs(A.y + A.height - B.y) < eps && ox > eps) return true;
+        if (Math.abs(B.y + B.height - A.y) < eps && ox > eps) return true;
+        return false;
+      }
+
+      _harmonyNeighborHexes(selectedBlock) {
+        const eps = SimpleQuiltEngine.MERGE_EPS_PX * 2;
+        const colors = [];
+        for (const b of this.blocks) {
+          if (!b || b.id === selectedBlock.id) continue;
+          if (!b.color || typeof b.color !== 'string' || !b.color.match(/^#[0-9A-Fa-f]{6}$/)) continue;
+          if (!this._sharesAxisAlignedFullEdge(selectedBlock, b, eps)) continue;
+          colors.push(b.color);
+        }
+        return colors;
+      }
+
+      _averageOklabFromHexColors(hexList) {
+        if (!hexList || !hexList.length) return null;
+        let L = 0;
+        let a = 0;
+        let bc = 0;
+        for (const h of hexList) {
+          const o = this.hexToOklab(h);
+          L += o.l;
+          a += o.a;
+          bc += o.b;
+        }
+        const n = hexList.length;
+        return { l: L / n, a: a / n, b: bc / n };
+      }
+
+      _sampledQuiltHarmonyOklab(maxN) {
+        const list = [];
+        const blocks = this.blocks;
+        const cap = Math.min(maxN, Math.max(8, blocks.length));
+        const step = Math.max(1, Math.floor(blocks.length / cap));
+        for (let i = 0; i < blocks.length && list.length < cap; i += step) {
+          const h = blocks[i]?.color;
+          if (h && /^#[0-9A-Fa-f]{6}$/.test(h)) list.push(h);
+        }
+        return this._averageOklabFromHexColors(list);
+      }
+
+      _harmonyTargetOklabForSplit(selectedBlock) {
+        const neigh = this._harmonyNeighborHexes(selectedBlock);
+        const nOklab = this._averageOklabFromHexColors(neigh);
+        const gOklab = this._sampledQuiltHarmonyOklab(96);
+        if (nOklab && gOklab) {
+          return {
+            l: nOklab.l * 0.62 + gOklab.l * 0.38,
+            a: nOklab.a * 0.62 + gOklab.a * 0.38,
+            b: nOklab.b * 0.62 + gOklab.b * 0.38
+          };
+        }
+        return nOklab || gOklab || this.hexToOklab(selectedBlock.color);
+      }
+
+      _harmonyBlendStrength() {
+        return 0;
+        const n = this.blocks.length;
+        const s0 = SimpleQuiltEngine.HARMONY_BLEND_START_BLOCKS;
+        if (n < s0) return 0;
+        const s1 = SimpleQuiltEngine.HARMONY_BLEND_FULL_BLOCKS;
+        const cap = SimpleQuiltEngine.HARMONY_BLEND_MAX;
+        if (n >= s1) return cap;
+        return cap * ((n - s0) / (s1 - s0));
+      }
+
+      _harmonyAdjustedSplitColor(selectedBlock, userHex) {
+        const w = this._harmonyBlendStrength();
+        if (w <= 0) return userHex;
+        const oU = this.hexToOklab(userHex);
+        const oT = this._harmonyTargetOklabForSplit(selectedBlock);
+        return this.oklabToHex(
+          oU.l * (1 - w) + oT.l * w,
+          oU.a * (1 - w) + oT.a * w,
+          oU.b * (1 - w) + oT.b * w
+        );
+      }
+
+      _regularSplitAccentBias() {
+        const n = this.blocks.length;
+        const s0 = SimpleQuiltEngine.STRUCTURE_ACCENT_START_BLOCKS;
+        if (n < s0) return 0;
+        const s1 = SimpleQuiltEngine.STRUCTURE_ACCENT_FULL_BLOCKS;
+        if (n >= s1) return 1;
+        return (n - s0) / (s1 - s0);
+      }
+
+      _stampMacroRegionFromParent(children, parent) {
+        if (!parent || parent.macroRegionId == null) return;
+        const id = parent.macroRegionId;
+        const outline = this._normalizeMacroFrozenOutline(parent.macroFrozenOutline);
+        const color =
+          typeof parent.macroFrozenColor === 'string' && parent.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+            ? parent.macroFrozenColor
+            : undefined;
+        const arr = Array.isArray(children) ? children : [];
+        arr.forEach((c) => {
+          if (!c || typeof c !== 'object') return;
+          c.macroRegionId = id;
+          if (outline) c.macroFrozenOutline = outline;
+          if (color) c.macroFrozenColor = color;
+        });
+      }
+
+      _normalizeMacroFrozenOutline(outline) {
+        if (!outline || typeof outline !== 'object') return null;
+        if (outline.type === 'rect') {
+          const x = Number(outline.x);
+          const y = Number(outline.y);
+          const width = Number(outline.width);
+          const height = Number(outline.height);
+          if ([x, y, width, height].every(Number.isFinite) && width > 0 && height > 0) {
+            return { type: 'rect', x, y, width, height };
+          }
+        }
+        if (outline.type === 'polygon' && Array.isArray(outline.points)) {
+          const points = outline.points
+            .map((p) => ({
+              x: Number(Array.isArray(p) ? p[0] : p?.x),
+              y: Number(Array.isArray(p) ? p[1] : p?.y)
+            }))
+            .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+          if (points.length >= 3) return { type: 'polygon', points };
+        }
+        if (outline.type === 'circle') {
+          const cx = Number(outline.cx);
+          const cy = Number(outline.cy);
+          const r = Number(outline.r);
+          if ([cx, cy, r].every(Number.isFinite) && r > 0) {
+            return { type: 'circle', cx, cy, r };
+          }
+        }
+        return null;
+      }
+
+      _buildMacroFrozenOutline(block) {
+        if (!block) return null;
+        if (block.patternType === 'special' && block.specialPatternType === 'hst') {
+          const tris = Utils.getHstRenderTriangles(block);
+          if (Array.isArray(tris) && tris.length === 1 && Array.isArray(tris[0].points)) {
+            const bx = Number(block.x) || 0;
+            const by = Number(block.y) || 0;
+            const points = tris[0].points
+              .map((p) => ({
+                x: bx + Number(Array.isArray(p) ? p[0] : p?.x),
+                y: by + Number(Array.isArray(p) ? p[1] : p?.y)
+              }))
+              .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+            if (points.length >= 3) return { type: 'polygon', points };
+          }
+        }
+        if (
+          block.patternType === 'special' &&
+          block.specialPatternType === 'insetCircle' &&
+          SimpleQuiltEngine.hasPersistedInsetCircleGeometry(block)
+        ) {
+          return {
+            type: 'circle',
+            cx: Number(block.insetCx),
+            cy: Number(block.insetCy),
+            r: Number(block.insetR)
+          };
+        }
+        const x = Number(block.x);
+        const y = Number(block.y);
+        const width = Number(block.width);
+        const height = Number(block.height);
+        if ([x, y, width, height].every(Number.isFinite) && width > 0 && height > 0) {
+          return { type: 'rect', x, y, width, height };
+        }
+        return null;
+      }
+
+      _stampMacroFrozenMetadataOnLeaves() {
+        this.blocks.forEach((block) => {
+          if (!block || block.macroRegionId == null) return;
+          const outline = this._buildMacroFrozenOutline(block);
+          if (outline) block.macroFrozenOutline = outline;
+          const frozenColor =
+            block.patternType === 'special' &&
+            block.specialPatternType === 'insetCircle' &&
+            typeof block.insetInnerColor === 'string' &&
+            block.insetInnerColor.match(/^#[0-9A-Fa-f]{6}$/)
+              ? block.insetInnerColor
+              : block.color;
+          if (typeof frozenColor === 'string' && frozenColor.match(/^#[0-9A-Fa-f]{6}$/)) {
+            block.macroFrozenColor = frozenColor;
+          }
+        });
+      }
+
+      _macroRegionsMergeCompatible(a, b) {
+        if (!this.macroStructureFrozen) return true;
+        const ia = a?.macroRegionId;
+        const ib = b?.macroRegionId;
+        if (ia == null || ib == null) return true;
+        return ia === ib;
+      }
+
+      _isFrozenHstMacroShard(block) {
+        if (!this.macroStructureFrozen || !block) return false;
+        const outline = this._normalizeMacroFrozenOutline(block.macroFrozenOutline);
+        return (
+          outline?.type === 'polygon' &&
+          block.patternType === 'special' &&
+          block.specialPatternType === 'hst'
+        );
+      }
+
+      _isFrozenInsetCircleMacroRegion(block) {
+        if (!this.macroStructureFrozen || !block) return false;
+        const outline = this._normalizeMacroFrozenOutline(block.macroFrozenOutline);
+        return (
+          outline?.type === 'circle' &&
+          block.patternType === 'special' &&
+          block.specialPatternType === 'insetCircle'
+        );
+      }
+
+      _isProtectedSpecialMacroRegionBlock(block) {
+        return this._isFrozenHstMacroShard(block) || this._isFrozenInsetCircleMacroRegion(block);
+      }
+
+      _isInsetCirclePreFreezeSplitCapped(block) {
+        if (
+          this.macroStructureFrozen ||
+          block?.patternType !== 'special' ||
+          block?.specialPatternType !== 'insetCircle'
+        ) {
+          return false;
+        }
+        const maxSplits = SimpleQuiltEngine.INSET_CIRCLE_PREFREEZE_MAX_SPLIT_TIER;
+        if (Number(block.insetTier || 0) >= maxSplits) return true;
+        const familyId = block.originalPatternId || block.id;
+        const familyBlockCount = this.blocks.filter(
+          (b) => b && b.specialPatternType === 'insetCircle' && (b.originalPatternId || b.id) === familyId
+        ).length;
+        return familyBlockCount >= maxSplits + 1;
+      }
+
+      _protectedSpecialMacroColorSimilarityMin() {
+        return 0.9;
+      }
+
+      _macroValueRoutingStartBlocks() {
+        return 700;
+      }
+
+      _macroRegularStrongColorSimilarityMin() {
+        return 0.72;
+      }
+
+      _macroHueFallbackMaxDistance() {
+        return 0.8;
+      }
+
+      _macroSaturatedColorChromaMin() {
+        return 0.045;
+      }
+
+      _protectedSpecialCompetitiveSimilarityMargin() {
+        return 0.03;
+      }
+
+      _protectedSpecialBoundarySimilarityMax() {
+        return 0.88;
+      }
+
+      _oklabLightnessForHex(hex) {
+        if (typeof hex !== 'string' || !hex.match(/^#[0-9A-Fa-f]{6}$/)) return null;
+        return this.hexToOklab(hex).l;
+      }
+
+      _oklabHueProfileForHex(hex) {
+        if (typeof hex !== 'string' || !hex.match(/^#[0-9A-Fa-f]{6}$/)) return null;
+        const lab = this.hexToOklab(hex);
+        const chroma = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
+        const hue = Math.atan2(lab.b, lab.a);
+        return { l: lab.l, chroma, hue };
+      }
+
+      _oklabHueDistance(a, b) {
+        if (!a || !b) return Number.POSITIVE_INFINITY;
+        const diff = Math.abs(a.hue - b.hue);
+        return Math.min(diff, Math.PI * 2 - diff);
+      }
+
+      _protectedSpecialNeighborSimilarity(block, newColor) {
+        if (!this.macroStructureFrozen || !block || this._isProtectedSpecialMacroRegionBlock(block)) return -1;
+        if (typeof newColor !== 'string' || !newColor.match(/^#[0-9A-Fa-f]{6}$/)) return -1;
+        const eps = SimpleQuiltEngine.MERGE_EPS_PX * 2;
+        let maxSim = -1;
+        for (const other of this.blocks) {
+          if (!other || other.macroRegionId === block.macroRegionId) continue;
+          if (!this._isProtectedSpecialMacroRegionBlock(other)) continue;
+          if (!this._sharesAxisAlignedFullEdge(block, other, eps)) continue;
+          const anchor =
+            typeof other.macroFrozenColor === 'string' && other.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+              ? other.macroFrozenColor
+              : other.color;
+          if (typeof anchor !== 'string' || !anchor.match(/^#[0-9A-Fa-f]{6}$/)) continue;
+          maxSim = Math.max(maxSim, this.getColorSimilarity(anchor, newColor));
+        }
+        return maxSim;
+      }
+
+      _preserveFrozenHstMacroShardInsteadOfRegularFallback(block, reason) {
+        if (!this._isFrozenHstMacroShard(block)) return null;
+        block.macroHstSplitExhausted = true;
+        console.log(`🎯 HST FREEZE: Frozen triangle shard ${block.id || 'unknown'} is too tight to split; preserving boundary (${reason}).`);
+        return [];
+      }
+
+      _frozenHstMacroMinSplitPart() {
+        return 18;
+      }
+
+      _blockMeetsMacroAwareSplitArea(block) {
+        if (!block) return false;
+        const blockArea = Math.max(0, Number(block.width) || 0) * Math.max(0, Number(block.height) || 0);
+        return blockArea > (this._isFrozenHstMacroShard(block) ? 400 : 1600);
+      }
+
+      _isBlockSafelySplittableForFrozenMacro(block) {
+        if (!block) return false;
+        if (this._isInsetCirclePreFreezeSplitCapped(block)) return false;
+        if (!this.macroStructureFrozen) return true;
+        if (block.macroHstSplitExhausted === true) return false;
+        if (this._isFrozenHstMacroShard(block)) {
+          const w = Number(block.width);
+          const h = Number(block.height);
+          if (!(w > 0 && h > 0)) return false;
+          return (w > h ? w : h) >= this._frozenHstMacroMinSplitPart() * 2;
+        }
+        return true;
+      }
+
+      _routeSplittableBlocksByMacroColor(newColor, candidateBlocks) {
+        if (!this.macroStructureFrozen || !Array.isArray(candidateBlocks) || candidateBlocks.length <= 1) {
+          return candidateBlocks;
+        }
+        const groups = new Map();
+        candidateBlocks.forEach((block) => {
+          if (!block || block.macroRegionId == null) return;
+          const key = String(block.macroRegionId);
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(block);
+        });
+        if (!groups.size) return candidateBlocks;
+
+        const ranked = [...groups.entries()]
+          .map(([regionId, blocks]) => {
+            const anchor =
+              blocks.find((b) => typeof b.macroFrozenColor === 'string' && b.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/))
+                ?.macroFrozenColor || blocks[0]?.color;
+            const similarity =
+              typeof anchor === 'string' && anchor.match(/^#[0-9A-Fa-f]{6}$/)
+                ? this.getColorSimilarity(anchor, newColor)
+                : -1;
+            const anchorL = this._oklabLightnessForHex(anchor);
+            const newL = this._oklabLightnessForHex(newColor);
+            const valueDistance =
+              anchorL != null && newL != null
+                ? Math.abs(anchorL - newL)
+                : Number.POSITIVE_INFINITY;
+            const anchorHue = this._oklabHueProfileForHex(anchor);
+            const newHue = this._oklabHueProfileForHex(newColor);
+            const hueDistance = this._oklabHueDistance(anchorHue, newHue);
+            const area = blocks.reduce((sum, b) => sum + Math.max(0, Number(b.width) || 0) * Math.max(0, Number(b.height) || 0), 0);
+            const protectedSpecial = blocks.some((b) => this._isProtectedSpecialMacroRegionBlock(b));
+            const protectedNeighborSimilarity = protectedSpecial
+              ? -1
+              : blocks.reduce((maxSim, b) => Math.max(maxSim, this._protectedSpecialNeighborSimilarity(b, newColor)), -1);
+            return { regionId, blocks, similarity, valueDistance, hueDistance, newChroma: newHue?.chroma ?? 0, area, protectedSpecial, protectedNeighborSimilarity };
+          })
+          .filter((entry) => entry.blocks.length)
+          .sort((a, b) => {
+            if (Math.abs(b.similarity - a.similarity) > 1e-6) return b.similarity - a.similarity;
+            return b.area - a.area;
+          });
+        if (!ranked.length) return candidateBlocks;
+        const protectedFloor = this._protectedSpecialMacroColorSimilarityMin();
+        const boundaryMax = this._protectedSpecialBoundarySimilarityMax();
+        const safeNonProtected = ranked.filter(
+          (entry) => !entry.protectedSpecial && entry.protectedNeighborSimilarity < boundaryMax
+        );
+        const nonProtected = ranked.filter((entry) => !entry.protectedSpecial);
+        const strongRegularFloor = this._macroRegularStrongColorSimilarityMin();
+        const strongSafeNonProtected = safeNonProtected.filter((entry) => entry.similarity >= strongRegularFloor);
+        const useValueFallback = this.blocks.length >= this._macroValueRoutingStartBlocks();
+        const valueRankedSafeNonProtected = [...safeNonProtected].sort((a, b) => {
+          if (Math.abs(a.valueDistance - b.valueDistance) > 1e-6) return a.valueDistance - b.valueDistance;
+          if (Math.abs(b.similarity - a.similarity) > 1e-6) return b.similarity - a.similarity;
+          return b.area - a.area;
+        });
+        const hueRankedSafeNonProtected = [...safeNonProtected].sort((a, b) => {
+          if (Math.abs(a.hueDistance - b.hueDistance) > 1e-6) return a.hueDistance - b.hueDistance;
+          if (Math.abs(a.valueDistance - b.valueDistance) > 1e-6) return a.valueDistance - b.valueDistance;
+          return b.area - a.area;
+        });
+        const newColorIsSaturated = (ranked[0]?.newChroma || 0) >= this._macroSaturatedColorChromaMin();
+        const hueMatchedSafeNonProtected = hueRankedSafeNonProtected.filter(
+          (entry) => entry.hueDistance <= this._macroHueFallbackMaxDistance()
+        );
+        const useHueFallback = useValueFallback && newColorIsSaturated;
+        const useNeutralValueFallback = useValueFallback && !newColorIsSaturated;
+        const bestNonProtected = safeNonProtected[0] || nonProtected[0] || null;
+        const matchingProtected = ranked.filter((entry) => {
+          if (!entry.protectedSpecial || entry.similarity < protectedFloor) return false;
+          if (newColorIsSaturated && entry.hueDistance > this._macroHueFallbackMaxDistance()) return false;
+          if (!bestNonProtected) return true;
+          return entry.similarity >= bestNonProtected.similarity - this._protectedSpecialCompetitiveSimilarityMargin();
+        });
+        const eligible = matchingProtected.length
+          ? matchingProtected
+          : strongSafeNonProtected.length
+            ? strongSafeNonProtected
+            : useHueFallback && hueMatchedSafeNonProtected.length
+              ? hueMatchedSafeNonProtected
+              : useNeutralValueFallback && valueRankedSafeNonProtected.length
+                ? valueRankedSafeNonProtected
+                : safeNonProtected.length
+                  ? safeNonProtected
+                  : nonProtected.length
+                    ? nonProtected
+                    : ranked;
+        const selected = eligible[0];
+        console.log(
+          `🎯 MACRO COLOR ROUTE: ${newColor} → region ${selected.regionId} (similarity ${selected.similarity.toFixed(3)}, ${selected.blocks.length} candidate blocks)`
+        );
+        return selected.blocks;
+      }
+
+      /**
+       * At macro freeze, replace each unified HST cell (two triangles in one block) with two blocks that each
+       * carry a single clipped triangle in local coords—so later splits cannot strip both halves via one regular split.
+       * Uses exact geometry from Utils.getHstRenderTriangles (not organic jitter); first shard keeps parent id for contributions.
+       */
+      _explodeHstBlocksIntoIndependentTriangleShardsAtMacroFreeze() {
+        const out = [];
+        let explodedParentCount = 0;
+        for (const block of this.blocks) {
+          if (
+            !block ||
+            block.patternType !== 'special' ||
+            block.specialPatternType !== 'hst'
+          ) {
+            out.push(block);
+            continue;
+          }
+          const tris = Utils.getHstRenderTriangles(block);
+          if (!Array.isArray(tris) || tris.length !== 2) {
+            out.push(block);
+            continue;
+          }
+          const bx = Number(block.x);
+          const by = Number(block.y);
+          const bw = Number(block.width);
+          const bh = Number(block.height);
+          if (!(bw > 0 && bh > 0)) {
+            out.push(block);
+            continue;
+          }
+          const baseOrig = block.originalPatternId || block.id;
+          const mkShard = (tri, shardSuffix, shardId) => {
+            const pts = (tri.points || []).map((p) => [
+              Number(Array.isArray(p) ? p[0] : p.x),
+              Number(Array.isArray(p) ? p[1] : p.y)
+            ]);
+            if (pts.length < 3) return null;
+            const fill = typeof tri.color === 'string' ? tri.color : block.color;
+            return {
+              id: shardId,
+              x: bx,
+              y: by,
+              width: bw,
+              height: bh,
+              color: fill,
+              patternType: 'special',
+              specialPatternType: 'hst',
+              hstTriangles: [{ color: fill, points: pts }],
+              contributorId: block.contributorId,
+              contributorIds: Array.isArray(block.contributorIds)
+                ? [...block.contributorIds]
+                : undefined,
+              submissionIndex: block.submissionIndex,
+              originalPatternId: `${baseOrig}__freezeShard_${shardSuffix}`
+            };
+          };
+          const idA = String(block.id != null ? block.id : `hst_${Date.now()}`);
+          const idB = `${idA}__freezeTriB`;
+          const a = mkShard(tris[0], 'a', idA);
+          const b = mkShard(tris[1], 'b', idB);
+          if (!a || !b) {
+            out.push(block);
+            continue;
+          }
+          out.push(a, b);
+          explodedParentCount++;
+        }
+        this.blocks = out;
+        return explodedParentCount;
+      }
+
+      _assignSortedMacroRegionIdsToLeaves() {
+        const sorted = [...this.blocks].sort((p, q) => {
+          const dy = (Number(p.y) || 0) - (Number(q.y) || 0);
+          if (Math.abs(dy) > 1e-6) return dy;
+          const dx = (Number(p.x) || 0) - (Number(q.x) || 0);
+          if (Math.abs(dx) > 1e-6) return dx;
+          return String(p.id || '').localeCompare(String(q.id || ''));
+        });
+        sorted.forEach((blk, idx) => {
+          blk.macroRegionId = idx + 1;
+        });
+      }
+
+      _applyMacroStructureFreeze() {
+        if (this.macroStructureFrozen) return;
+        this.macroFreezeHstParentsExplodedCount = this._explodeHstBlocksIntoIndependentTriangleShardsAtMacroFreeze();
+        this._assignSortedMacroRegionIdsToLeaves();
+        this._stampMacroFrozenMetadataOnLeaves();
+        this.macroStructureFrozen = true;
+      }
+
+      /** Call after splits/merges when growing an unfrozen quilt. */
+      maybeApplyMacroStructureFreezeAfterMutation() {
+        if (this.macroStructureFrozen) return;
+        const n = this.blocks.length;
+        if (n < SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT) return;
+        if (n > SimpleQuiltEngine.MACRO_FREEZE_SNAPSHOT_MAX_BLOCKS) return;
+        this._applyMacroStructureFreeze();
+      }
+
+      hydrateMacroFreezeFromPersistence(wasFrozen) {
+        if (wasFrozen === true) this.macroStructureFrozen = true;
+      }
+
+      /** One-time snapshot after loading legacy quilts that are already in the freeze window but have no ids yet. */
+      maybeApplyMacroFreezeAfterHydrate() {
+        if (this.macroStructureFrozen) return;
+        if (this.blocks.some((b) => b && b.macroRegionId != null)) return;
+        const n = this.blocks.length;
+        if (n < SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT) return;
+        if (n > SimpleQuiltEngine.MACRO_FREEZE_SNAPSHOT_MAX_BLOCKS) return;
+        this._applyMacroStructureFreeze();
+      }
+
+      /** Frozen docs from older saves may lack macroRegionId; re-assign deterministically without toggling freeze. */
+      repairMacroRegionIdsAfterLoadIfFrozen() {
+        if (!this.macroStructureFrozen || !this.blocks.length) return;
+        const idsComplete = this.blocks.every(
+          (b) => b && typeof b.macroRegionId === 'number' && Number.isFinite(b.macroRegionId)
+        );
+        if (!idsComplete) this._assignSortedMacroRegionIdsToLeaves();
+        const metadataByRegion = new Map();
+        this.blocks.forEach((block) => {
+          if (!block || block.macroRegionId == null) return;
+          const key = String(block.macroRegionId);
+          const existing = metadataByRegion.get(key) || {};
+          const outline = this._normalizeMacroFrozenOutline(block.macroFrozenOutline);
+          if (outline && !existing.outline) existing.outline = outline;
+          if (
+            typeof block.macroFrozenColor === 'string' &&
+            block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/) &&
+            !existing.color
+          ) {
+            existing.color = block.macroFrozenColor;
+          }
+          metadataByRegion.set(key, existing);
+        });
+        this.blocks.forEach((block) => {
+          if (!block || block.macroRegionId == null) return;
+          const regionMeta = metadataByRegion.get(String(block.macroRegionId)) || {};
+          const outline =
+            this._normalizeMacroFrozenOutline(block.macroFrozenOutline) ||
+            regionMeta.outline ||
+            this._buildMacroFrozenOutline(block);
+          if (outline) block.macroFrozenOutline = outline;
+          if (typeof block.macroFrozenColor !== 'string' || !block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)) {
+            if (regionMeta.color) {
+              block.macroFrozenColor = regionMeta.color;
+            } else if (
+              block.patternType === 'special' &&
+              block.specialPatternType === 'insetCircle' &&
+              typeof block.insetInnerColor === 'string' &&
+              block.insetInnerColor.match(/^#[0-9A-Fa-f]{6}$/)
+            ) {
+              block.macroFrozenColor = block.insetInnerColor;
+            } else if (typeof block.color === 'string' && block.color.match(/^#[0-9A-Fa-f]{6}$/)) {
+              block.macroFrozenColor = block.color;
+            }
+          }
+        });
+      }
+
+      _mergeEligibleRegularBlock(block) {
+        if (!block) return false;
+        if (block.patternType === 'special') return false;
+        if (block.specialPatternType) return false;
+        if (SimpleQuiltEngine.hasPersistedInsetCircleGeometry(block)) return false;
+        return true;
+      }
+
+      _mergeContributorIdsFromBlocks(a, b) {
+        const ordered = [a, b].sort(
+          (p, q) => (Number(p.submissionIndex) || 0) - (Number(q.submissionIndex) || 0)
+        );
+        const out = [];
+        const push = (id) => {
+          const s = id != null ? String(id).trim() : '';
+          if (s && !out.includes(s)) out.push(s);
+        };
+        ordered.forEach((blk) => {
+          if (Array.isArray(blk.contributorIds)) blk.contributorIds.forEach(push);
+          else push(blk.contributorId);
+        });
+        return out;
+      }
+
+      _mergeTwoRegularBlocks(a, b) {
+        const eps = SimpleQuiltEngine.MERGE_EPS_PX;
+        const ids = this._mergeContributorIdsFromBlocks(a, b);
+        let x;
+        let y;
+        let w;
+        let h;
+        if (
+          Math.abs(a.x + a.width - b.x) < eps &&
+          Math.abs(a.y - b.y) < eps &&
+          Math.abs(a.height - b.height) < eps
+        ) {
+          x = a.x;
+          y = a.y;
+          w = a.width + b.width;
+          h = a.height;
+        } else if (
+          Math.abs(b.x + b.width - a.x) < eps &&
+          Math.abs(a.y - b.y) < eps &&
+          Math.abs(a.height - b.height) < eps
+        ) {
+          x = b.x;
+          y = b.y;
+          w = a.width + b.width;
+          h = a.height;
+        } else if (
+          Math.abs(a.y + a.height - b.y) < eps &&
+          Math.abs(a.x - b.x) < eps &&
+          Math.abs(a.width - b.width) < eps
+        ) {
+          x = a.x;
+          y = a.y;
+          w = a.width;
+          h = a.height + b.height;
+        } else if (
+          Math.abs(b.y + b.height - a.y) < eps &&
+          Math.abs(a.x - b.x) < eps &&
+          Math.abs(a.width - b.width) < eps
+        ) {
+          x = a.x;
+          y = b.y;
+          w = a.width;
+          h = a.height + b.height;
+        } else {
+          return null;
+        }
+        const siA = Number(a.submissionIndex) || 0;
+        const siB = Number(b.submissionIndex) || 0;
+        const mergedIds = ids.length ? ids : [String(this.deviceId)];
+        const macroId =
+          a.macroRegionId != null ? a.macroRegionId : b.macroRegionId != null ? b.macroRegionId : undefined;
+        const macroOutline =
+          this._normalizeMacroFrozenOutline(a.macroFrozenOutline) ||
+          this._normalizeMacroFrozenOutline(b.macroFrozenOutline);
+        const macroColor =
+          typeof a.macroFrozenColor === 'string' && a.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+            ? a.macroFrozenColor
+            : typeof b.macroFrozenColor === 'string' && b.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+              ? b.macroFrozenColor
+              : undefined;
+        return {
+          id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+          x,
+          y,
+          width: w,
+          height: h,
+          color: siA >= siB ? a.color : b.color,
+          patternType: 'regular',
+          contributorId: mergedIds[mergedIds.length - 1],
+          contributorIds: mergedIds,
+          submissionIndex: Math.max(siA, siB),
+          ...(macroId != null ? { macroRegionId: macroId } : {}),
+          ...(macroColor ? { macroFrozenColor: macroColor } : {}),
+          ...(macroOutline ? { macroFrozenOutline: macroOutline } : {})
+        };
+      }
+
+      remapContributionBlockIds(oldIds, newId) {
+        // Simulator never touches persisted contributions / remap payloads.
+        if (String(this.deviceId || '').startsWith('admin-sim')) return;
+        const oldSet = new Set((oldIds || []).map(String));
+        if (!oldSet.size || !newId) return;
+        const remapPayload = (payload) => {
+          if (!payload?.submissions) return;
+          payload.submissions.forEach((c) => {
+            if (c && oldSet.has(String(c.blockId))) c.blockId = newId;
+          });
+        };
+        for (const key of ['quiltContributions', 'quiltContributionsLifetime']) {
+          try {
+            const raw = localStorage.getItem(key);
+            const parsed = raw ? JSON.parse(raw) : { submissions: [] };
+            if (!Array.isArray(parsed.submissions)) parsed.submissions = [];
+            remapPayload(parsed);
+            localStorage.setItem(key, JSON.stringify(parsed));
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        try {
+          const latest = localStorage.getItem('ourDailyLatestDedicatedBlockId');
+          if (latest && oldSet.has(String(latest))) {
+            localStorage.setItem('ourDailyLatestDedicatedBlockId', String(newId));
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent('odq-contribution-block-remap', {
+              detail: { oldIds: [...oldSet], newId: String(newId) }
+            })
+          );
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      swapContributionBlockIdsForColorSettling(aId, bId) {
+        // Simulator snapshots do not own persisted contribution pointers.
+        if (String(this.deviceId || '').startsWith('admin-sim')) return;
+        const idA = aId != null ? String(aId) : '';
+        const idB = bId != null ? String(bId) : '';
+        if (!idA || !idB || idA === idB) return;
+        const swapPayload = (payload) => {
+          if (!payload?.submissions) return;
+          payload.submissions.forEach((c) => {
+            if (!c) return;
+            const blockId = String(c.blockId || '');
+            if (blockId === idA) c.blockId = idB;
+            else if (blockId === idB) c.blockId = idA;
+          });
+        };
+        for (const key of ['quiltContributions', 'quiltContributionsLifetime']) {
+          try {
+            const raw = localStorage.getItem(key);
+            const parsed = raw ? JSON.parse(raw) : { submissions: [] };
+            if (!Array.isArray(parsed.submissions)) parsed.submissions = [];
+            swapPayload(parsed);
+            localStorage.setItem(key, JSON.stringify(parsed));
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        try {
+          const latest = localStorage.getItem('ourDailyLatestDedicatedBlockId');
+          if (latest === idA) localStorage.setItem('ourDailyLatestDedicatedBlockId', idB);
+          else if (latest === idB) localStorage.setItem('ourDailyLatestDedicatedBlockId', idA);
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent('odq-contribution-block-swap', {
+              detail: { aId: idA, bId: idB }
+            })
+          );
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      /**
+       * Merge adjacent regular rectangles when colors are similar — simplifies fragmentation and preserves provenance on merged cell.
+       */
+      runAdjacentSimilarMergePass() {
+        // Simulator skips merge unless simulatorFullFidelity (much slower).
+        if (String(this.deviceId || '').startsWith('admin-sim') && !this.simulatorFullFidelity) return false;
+        const simMin = SimpleQuiltEngine.MERGE_COLOR_SIMILARITY_MIN;
+        let mergedAny = false;
+        for (let sweep = 0; sweep < 80; sweep++) {
+          let pairMerged = false;
+          const blocks = this.blocks;
+          for (let i = 0; i < blocks.length; i++) {
+            for (let j = i + 1; j < blocks.length; j++) {
+              const A = blocks[i];
+              const B = blocks[j];
+              if (!this._mergeEligibleRegularBlock(A) || !this._mergeEligibleRegularBlock(B)) continue;
+              if (!this._macroRegionsMergeCompatible(A, B)) continue;
+              if (this.getColorSimilarity(A.color, B.color) < simMin) continue;
+              const merged = this._mergeTwoRegularBlocks(A, B);
+              if (!merged) continue;
+              const ia = this.blocks.indexOf(A);
+              const ib = this.blocks.indexOf(B);
+              if (ia === -1 || ib === -1) continue;
+              const hi = Math.max(ia, ib);
+              const lo = Math.min(ia, ib);
+              this.blocks.splice(hi, 1);
+              this.blocks.splice(lo, 1, merged);
+              this.remapContributionBlockIds([A.id, B.id], merged.id);
+              mergedAny = pairMerged = true;
+              break;
+            }
+            if (pairMerged) break;
+          }
+          if (!pairMerged) break;
+        }
+        return mergedAny;
+      }
+
+      _colorSettleStartBlocks() {
+        return 700;
+      }
+
+      _colorSettleEveryAdds() {
+        return 25;
+      }
+
+      _colorSettlingEnabled() {
+        return true;
+      }
+
+      _colorSettlingEligibleBlock(block) {
+        if (!this.macroStructureFrozen || !block) return false;
+        if (this._isProtectedSpecialMacroRegionBlock(block)) return false;
+        if (block.patternType === 'special') return false;
+        if (block.specialPatternType) return false;
+        if (SimpleQuiltEngine.hasPersistedInsetCircleGeometry(block)) return false;
+        return typeof block.color === 'string' && block.color.match(/^#[0-9A-Fa-f]{6}$/);
+      }
+
+      _colorPacketForBlock(block) {
+        return {
+          color: block.color,
+          contributorId: block.contributorId,
+          contributorIds: Array.isArray(block.contributorIds) ? [...block.contributorIds] : undefined,
+          submissionIndex: block.submissionIndex
+        };
+      }
+
+      _applyColorPacketToBlock(block, packet) {
+        block.color = packet.color;
+        block.contributorId = packet.contributorId;
+        if (Array.isArray(packet.contributorIds)) block.contributorIds = [...packet.contributorIds];
+        else delete block.contributorIds;
+        block.submissionIndex = packet.submissionIndex;
+      }
+
+      _neighborColorFitness(block, candidateColor, peers, eps) {
+        let score = 0;
+        let n = 0;
+        for (const other of peers) {
+          if (!other || other.id === block.id) continue;
+          if (!this._sharesAxisAlignedFullEdge(block, other, eps)) continue;
+          if (typeof other.color !== 'string' || !other.color.match(/^#[0-9A-Fa-f]{6}$/)) continue;
+          score += this.getColorSimilarity(candidateColor, other.color);
+          n++;
+        }
+        if (n === 0) return -0.25;
+        return score / n;
+      }
+
+      runColorSettlingPass() {
+        if (!this._colorSettlingEnabled()) return false;
+        if (!this.macroStructureFrozen) return false;
+        if (this.blocks.length < this._colorSettleStartBlocks()) return false;
+        const every = this._colorSettleEveryAdds();
+        if (every > 1 && (Math.floor(Number(this.submissionCount) || 0) % every) !== 0) return false;
+        const eps = SimpleQuiltEngine.MERGE_EPS_PX * 2;
+        let swapped = false;
+        const byRegion = new Map();
+        this.blocks.forEach((block) => {
+          if (!this._colorSettlingEligibleBlock(block) || block.macroRegionId == null) return;
+          const key = String(block.macroRegionId);
+          if (!byRegion.has(key)) byRegion.set(key, []);
+          byRegion.get(key).push(block);
+        });
+
+        for (const peers of byRegion.values()) {
+          if (peers.length < 4) continue;
+          const ordered = [...peers].sort((a, b) => (b.width * b.height) - (a.width * a.height));
+          const limit = Math.min(20, ordered.length);
+          for (let i = 0; i < limit; i++) {
+            const a = ordered[i];
+            let best = null;
+            let bestGain = 0.08;
+            const fitA = this._neighborColorFitness(a, a.color, peers, eps);
+            for (let j = i + 1; j < ordered.length; j++) {
+              const b = ordered[j];
+              if (!b || a.id === b.id) continue;
+              const fitB = this._neighborColorFitness(b, b.color, peers, eps);
+              const swappedFit =
+                this._neighborColorFitness(a, b.color, peers, eps) +
+                this._neighborColorFitness(b, a.color, peers, eps);
+              const currentFit = fitA + fitB;
+              const gain = swappedFit - currentFit;
+              if (gain > bestGain) {
+                bestGain = gain;
+                best = b;
+              }
+            }
+            if (best) {
+              const aPacket = this._colorPacketForBlock(a);
+              const bPacket = this._colorPacketForBlock(best);
+              this._applyColorPacketToBlock(a, bPacket);
+              this._applyColorPacketToBlock(best, aPacket);
+              this.swapContributionBlockIdsForColorSettling(a.id, best.id);
+              swapped = true;
+            }
+          }
+        }
+        return swapped;
+      }
+
       getOrCreateDeviceId() {
         let deviceId = localStorage.getItem('quiltDeviceId');
         if (!deviceId) {
@@ -6035,6 +7018,10 @@ try {
         
         this.submissionCount = 0;
         this.colorReplayEvents = [];
+        this.recordColorReplayEvents = false;
+        this.macroStructureFrozen = false;
+        this.macroFreezeHstParentsExplodedCount = 0;
+        this.simulatorFullFidelity = false;
       }
 
       /** Plain block snapshot for persisted split replay (Firestore-safe). */
@@ -6070,7 +7057,18 @@ try {
           o.insetNextCutVertical = block.insetNextCutVertical;
         }
         if (block.contributorId) o.contributorId = block.contributorId;
+        if (Array.isArray(block.contributorIds) && block.contributorIds.length) {
+          o.contributorIds = block.contributorIds.map((id) => String(id || '').trim()).filter(Boolean);
+        }
         if (typeof block.submissionIndex === 'number') o.submissionIndex = block.submissionIndex;
+        if (typeof block.macroRegionId === 'number' && Number.isFinite(block.macroRegionId)) {
+          o.macroRegionId = block.macroRegionId;
+        }
+        if (typeof block.macroFrozenColor === 'string' && block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)) {
+          o.macroFrozenColor = block.macroFrozenColor;
+        }
+        const macroOutline = this._normalizeMacroFrozenOutline(block.macroFrozenOutline);
+        if (macroOutline) o.macroFrozenOutline = macroOutline;
         return o;
       }
 
@@ -6099,6 +7097,16 @@ try {
           delete b.specialPatternType;
           delete b.originalPatternId;
         });
+      }
+
+      _hstFamilyBlockCount(block) {
+        if (!block || block.specialPatternType !== 'hst') return 0;
+        const familyId = block.originalPatternId || block.id;
+        return this.blocks.filter((b) => (
+          b &&
+          b.specialPatternType === 'hst' &&
+          (b.originalPatternId || b.id) === familyId
+        )).length;
       }
 
       /**
@@ -6266,6 +7274,7 @@ try {
       }
 
       getColorReplayEvents() {
+        if (!this.recordColorReplayEvents) return [];
         const mapBlockForFirestore = (snap) => {
           if (!snap || typeof snap !== 'object') return snap;
           const o = { ...snap };
@@ -6284,6 +7293,10 @@ try {
       }
 
       setColorReplayEvents(events) {
+        if (!this.recordColorReplayEvents) {
+          this.colorReplayEvents = [];
+          return;
+        }
         if (!Array.isArray(events) || events.length === 0) {
           this.colorReplayEvents = [];
           return;
@@ -6316,7 +7329,7 @@ try {
         return this.submissionCount;
       }
       
-      addColor(newColor) {
+      addColor(newColor, retryDepth = 0) {
         // Safety check: ensure newColor is valid
         if (!newColor || typeof newColor !== 'string' || !newColor.match(/^#[0-9A-Fa-f]{6}$/)) {
           console.error('Invalid color provided to addColor:', newColor);
@@ -6325,23 +7338,33 @@ try {
         
         // Find blocks that can be split, prioritizing larger blocks
         // This prevents small blocks from being split when huge blocks are available
-        const splittableBlocks = this.blocks.filter(block => {
-          const blockArea = block.width * block.height;
-          return blockArea > 1600; // 40×40 = 1600 square pixels minimum (much smaller)
+        let splittableBlocks = this.blocks.filter(block => {
+          return this._blockMeetsMacroAwareSplitArea(block) && this._isBlockSafelySplittableForFrozenMacro(block);
         });
         
-        // Sort by size (largest first) to prioritize splitting the biggest blocks
+        const rankByColorFit = (blocks) =>
+          [...blocks].sort((a, b) => {
+            const simA = this.getColorSimilarity(a.color, newColor);
+            const simB = this.getColorSimilarity(b.color, newColor);
+            if (Math.abs(simB - simA) > 1e-6) return simB - simA;
+            return (b.width * b.height) - (a.width * a.height);
+          });
+
+        // Sort by size before macro routing so region capacity still has a stable tie-breaker.
         splittableBlocks.sort((a, b) => (b.width * b.height) - (a.width * a.height));
-        
+        splittableBlocks = this._routeSplittableBlocksByMacroColor(newColor, splittableBlocks);
+
+        const structureScale = this.macroStructureFrozen ? 0 : this._growthSpecialStructureScale();
+
         let selectedBlock;
         let selectedToPreserveSpecialPattern = false;
         
         // Always split existing blocks - never add new blocks at edges
         if (splittableBlocks.length === 0) {
           // If no blocks meet the minimum size, just use all blocks
-          const allBlocks = this.blocks.slice();
-          allBlocks.sort((a, b) => (b.width * b.height) - (a.width * a.height));
-          selectedBlock = allBlocks[0]; // Pick the largest available block
+          let allBlocks = this.blocks.filter((block) => this._isBlockSafelySplittableForFrozenMacro(block));
+          allBlocks = this._routeSplittableBlocksByMacroColor(newColor, allBlocks);
+          selectedBlock = rankByColorFit(allBlocks)[0];
         }
         
         // Separate special pattern blocks from regular blocks
@@ -6410,6 +7433,8 @@ try {
           // Debug logging for pattern counting
           
           let shouldCreateSpecialPattern = false;
+
+          if (structureScale > 0) {
           
           // Rule 4: Check if we've hit the special pattern count limit (60% of submissions max, capped at 75%)
           if (specialPatternsCreated >= maxSpecialPatterns) {
@@ -6450,35 +7475,32 @@ try {
                 shouldCreateSpecialPattern = false;
               } else {
                 // Rule 1: 65% chance for splits 1-6
-                shouldCreateSpecialPattern = Math.random() < 0.65;
+                shouldCreateSpecialPattern = Math.random() < 0.65 * structureScale;
               }
             } else if (wasLastSplitSpecialPattern) {
               // Rule 3: No back-to-back special patterns
               shouldCreateSpecialPattern = false;
             } else {
               // Rule 1: 65% chance for splits 1-6
-              shouldCreateSpecialPattern = Math.random() < 0.65;
+              shouldCreateSpecialPattern = Math.random() < 0.65 * structureScale;
             }
           } else {
             // After split 6: 25% chance
-            shouldCreateSpecialPattern = Math.random() < 0.25;
+            shouldCreateSpecialPattern = Math.random() < 0.25 * structureScale;
           }
-          
+
+          }
+
           if (shouldCreateSpecialPattern) {
             
-            // For special patterns, only consider regular blocks and find the most CONTRASTING color
-            const colorContrastScores = regularBlocks.map(block => {
+            // For special patterns, still choose the closest color match inside the chosen macro region.
+            const colorSimilarityScores = regularBlocks.map(block => {
               const similarity = this.getColorSimilarity(block.color, newColor);
               return { block, similarity };
             });
-            
-            // Sort by LOWEST similarity (most contrasting colors first)
-            colorContrastScores.sort((a, b) => a.similarity - b.similarity);
-            
-            
-            // Pick from blocks with lowest similarity (most contrasting colors)
-            const topCount = Math.max(1, Math.floor(colorContrastScores.length * 0.3));
-            const topBlocks = colorContrastScores.slice(0, topCount);
+
+            colorSimilarityScores.sort((a, b) => b.similarity - a.similarity);
+            const topBlocks = colorSimilarityScores.slice(0, 1);
             
             // Safety check: if no regular blocks available, fall back to regular block selection
             if (topBlocks.length === 0) {
@@ -6491,33 +7513,19 @@ try {
             }
           } else {
             // Logging is already handled in the conditional blocks above
-            // Regular splitting for regular blocks only - no color restrictions
-            // Size-based selection: pick from largest blocks most of the time
+            // Regular splitting for regular blocks only: pick the closest color match inside the routed region.
             
             // Safety check: ensure we have regular blocks to work with
             if (regularBlocks.length === 0) {
               console.log(`🎯 NO REGULAR BLOCKS: No regular blocks available for selection`);
               selectedBlock = null; // Will trigger fallback logic
             } else {
-              const topCount = Math.max(1, Math.floor(regularBlocks.length * 0.2)); // Top 20% largest
-              const largestBlocks = regularBlocks.slice(0, topCount);
-              
-              // 90% chance to pick from largest blocks, 10% chance for variety
-              if (Math.random() < 0.9 && largestBlocks.length > 0) {
-                selectedBlock = largestBlocks[Math.floor(Math.random() * largestBlocks.length)];
-                if (selectedBlock) {
-                  console.log(`🎯 REGULAR SELECTION: Selected from largest blocks (${largestBlocks.length} blocks) - chosen: ${selectedBlock.id} (${selectedBlock.width.toFixed(1)}x${selectedBlock.height.toFixed(1)})`);
-                } else {
-                  console.log(`🎯 REGULAR SELECTION: Selected from largest blocks but got undefined block`);
-                }
+              const rankedRegular = rankByColorFit(regularBlocks);
+              selectedBlock = rankedRegular[0];
+              if (selectedBlock) {
+                console.log(`🎯 REGULAR SELECTION: Selected closest color match (${regularBlocks.length} blocks) - chosen: ${selectedBlock.id} (${selectedBlock.width.toFixed(1)}x${selectedBlock.height.toFixed(1)})`);
               } else {
-                // Small chance to pick from any block for variety
-                selectedBlock = regularBlocks[Math.floor(Math.random() * regularBlocks.length)];
-                if (selectedBlock) {
-                  console.log(`🎯 REGULAR SELECTION: Selected from all regular blocks (${regularBlocks.length} blocks) - chosen: ${selectedBlock.id} (${selectedBlock.width.toFixed(1)}x${selectedBlock.height.toFixed(1)})`);
-                } else {
-                  console.log(`🎯 REGULAR SELECTION: Selected from all regular blocks but got undefined block`);
-                }
+                console.log(`🎯 REGULAR SELECTION: Ranked regular blocks but got undefined block`);
               }
             }
           }
@@ -6527,7 +7535,7 @@ try {
         if (!selectedBlock) {
           console.log(`🎯 FALLBACK: No block selected, using random fallback from ${regularBlocks.length} regular blocks (protecting ${specialPatternBlocks.length} special pattern blocks)`);
           if (regularBlocks.length > 0) {
-            selectedBlock = regularBlocks[Math.floor(Math.random() * regularBlocks.length)];
+            selectedBlock = rankByColorFit(regularBlocks)[0];
           } else if (specialPatternBlocks.length > 0) {
             // Never no-op on add: if only special blocks remain, split the largest available one.
             const rankedSpecial = [...specialPatternBlocks].sort(
@@ -6537,7 +7545,7 @@ try {
             console.log(`🎯 FALLBACK: No regular blocks; using largest special block ${selectedBlock?.id || 'unknown'}`);
           } else {
             const allBlocks = this.blocks
-              .filter((b) => b && b.width > 0 && b.height > 0)
+              .filter((b) => b && b.width > 0 && b.height > 0 && this._isBlockSafelySplittableForFrozenMacro(b))
               .sort((a, b) => b.width * b.height - a.width * a.height);
             selectedBlock = allBlocks[0];
             if (!selectedBlock) {
@@ -6551,36 +7559,47 @@ try {
         // ~1 in 15 color selections → forced HST (when geometry + special-pattern budget allow).
         const HST_FORCED_CHANCE = 1 / 15;
         if (
+          structureScale > 0 &&
           !selectedToPreserveSpecialPattern &&
           selectedBlock &&
           this._isRegularQuiltCellForHstRoll(selectedBlock) &&
           this._blockMeetsHstGeometry(selectedBlock) &&
           this._anotherSpecialAllowedThisTurnBeforeSplit() &&
-          Math.random() < HST_FORCED_CHANCE
+          Math.random() < HST_FORCED_CHANCE * structureScale
         ) {
           delete selectedBlock._shouldCreateSpecialPattern;
           selectedBlock._forceHalfSquareTriangle = true;
           console.log('🎯 HST ROLL: Forced half-square triangle (1/15 rule)');
         } else if (
+          structureScale > 0 &&
           !selectedToPreserveSpecialPattern &&
           selectedBlock &&
           !selectedBlock._forceHalfSquareTriangle &&
           this._isRegularQuiltCellForHstRoll(selectedBlock) &&
           this._blockMeetsInsetCircleGeometry(selectedBlock) &&
           this._anotherSpecialAllowedThisTurnBeforeSplit() &&
-          Math.random() < 1 / 10
+          Math.random() < (1 / 10) * structureScale
         ) {
           delete selectedBlock._shouldCreateSpecialPattern;
           selectedBlock._forceInsetCircle = true;
           console.log('🎯 INSET ROLL: Forced inset circle (1/10 rule)');
         }
         
-        const parentSnapshot = this._serializeBlockForReplay(selectedBlock);
+        const parentSnapshot = this.recordColorReplayEvents ? this._serializeBlockForReplay(selectedBlock) : null;
 
         // Increment submission count right before creating blocks
         this.submissionCount++;
-        
-        const splitResult = this.splitBlock(selectedBlock, newColor);
+
+        const appliedSplitColor = this._harmonyAdjustedSplitColor(selectedBlock, newColor);
+        const splitResult = this.splitBlock(selectedBlock, appliedSplitColor);
+        if (!Array.isArray(splitResult) || splitResult.length === 0) {
+          this.submissionCount = Math.max(0, this.submissionCount - 1);
+          console.log(`🔧 SPLIT SKIPPED: Block ${selectedBlock.id} could not split safely`);
+          if (retryDepth < 8) {
+            return this.addColor(newColor, retryDepth + 1);
+          }
+          return false;
+        }
         
         // Debug: Log the split result
         console.log(`🔧 SPLIT RESULT: Block ${selectedBlock.id} split into ${splitResult.length} blocks:`, splitResult.map(b => b.id));
@@ -6595,21 +7614,25 @@ try {
         
         // Record user contribution - handle different split result sizes
         if (splitResult.length >= 2) {
-          this.recordUserContribution(splitResult[1].id, newColor, this.submissionCount);
+          this.recordUserContribution(splitResult[1].id, appliedSplitColor, this.submissionCount);
         } else if (splitResult.length === 1) {
-          this.recordUserContribution(splitResult[0].id, newColor, this.submissionCount);
+          this.recordUserContribution(splitResult[0].id, appliedSplitColor, this.submissionCount);
         }
 
-        if (blockIndex !== -1 && splitResult.length > 0) {
+        if (this.recordColorReplayEvents && blockIndex !== -1 && splitResult.length > 0) {
           this.colorReplayEvents.push({
             seq: this.submissionCount,
             iso: new Date().toISOString(),
-            newHex: newColor,
+            newHex: appliedSplitColor,
             parent: parentSnapshot,
             children: splitResult.map((c) => this._serializeBlockForReplay(c))
           });
         }
-        
+
+        this.runAdjacentSimilarMergePass();
+        this.runColorSettlingPass();
+        this.maybeApplyMacroStructureFreezeAfterMutation();
+
         return {
           originalBlock: selectedBlock,
           newBlocks: splitResult,
@@ -6632,11 +7655,20 @@ try {
           console.error('splitSpecificBlock: target block not found in quilt', selectedBlock.id);
           return false;
         }
+        if (!this._isBlockSafelySplittableForFrozenMacro(selectedBlock)) {
+          console.warn('splitSpecificBlock: target block is protected by frozen macro geometry', selectedBlock.id);
+          return false;
+        }
 
-        const parentSnapshot = this._serializeBlockForReplay(selectedBlock);
+        const parentSnapshot = this.recordColorReplayEvents ? this._serializeBlockForReplay(selectedBlock) : null;
         this.submissionCount++;
 
         const splitResult = this.splitBlock(selectedBlock, newColor);
+        if (!Array.isArray(splitResult) || splitResult.length === 0) {
+          this.submissionCount = Math.max(0, this.submissionCount - 1);
+          console.log(`splitSpecificBlock: target block could not split safely ${selectedBlock.id}`);
+          return false;
+        }
         this.blocks.splice(blockIndex, 1, ...splitResult);
 
         if (splitResult.length >= 2) {
@@ -6645,13 +7677,19 @@ try {
           this.recordUserContribution(splitResult[0].id, newColor, this.submissionCount);
         }
 
-        this.colorReplayEvents.push({
-          seq: this.submissionCount,
-          iso: new Date().toISOString(),
-          newHex: newColor,
-          parent: parentSnapshot,
-          children: splitResult.map((c) => this._serializeBlockForReplay(c))
-        });
+        if (this.recordColorReplayEvents) {
+          this.colorReplayEvents.push({
+            seq: this.submissionCount,
+            iso: new Date().toISOString(),
+            newHex: newColor,
+            parent: parentSnapshot,
+            children: splitResult.map((c) => this._serializeBlockForReplay(c))
+          });
+        }
+
+        this.runAdjacentSimilarMergePass();
+        this.runColorSettlingPass();
+        this.maybeApplyMacroStructureFreezeAfterMutation();
 
         return {
           originalBlock: selectedBlock,
@@ -6664,25 +7702,23 @@ try {
       performRegularSplit(block, newColor) {
         const isWider = block.width > block.height;
         const splitDirection = isWider ? 'vertical' : 'horizontal';
-        
-        // Define size constraints for more controlled variety
-        const minBlockSize = 80; // Increased minimum to prevent tiny blocks
-        const maxBlockSize = 300; // Increased maximum for better variety
-        
+        const minBlockSize = 80;
+
+        const pickPrimaryExtent = (extent) => {
+          const accentBias = this._regularSplitAccentBias();
+          const ratio =
+            Math.random() < accentBias * SimpleQuiltEngine.STRUCTURE_ACCENT_PROB
+              ? 0.7 + Math.random() * 0.16
+              : 0.4 + Math.random() * 0.2;
+          let primary = extent * ratio;
+          if (primary < minBlockSize) primary = minBlockSize;
+          if (extent - primary < minBlockSize) primary = extent - minBlockSize;
+          if (primary <= 0 || primary >= extent) primary = extent / 2;
+          return primary;
+        };
+
         if (splitDirection === 'horizontal') {
-          // More balanced split: 40-60% instead of 30-70%
-          const splitRatio = 0.4 + Math.random() * 0.2; // 40-60%
-          let splitHeight = block.height * splitRatio;
-          
-          // Ensure both resulting blocks meet size constraints
-          if (splitHeight < minBlockSize) splitHeight = minBlockSize;
-          if (block.height - splitHeight < minBlockSize) splitHeight = block.height - minBlockSize;
-          
-          // Final safety check: ensure splitHeight is valid
-          if (splitHeight <= 0 || splitHeight >= block.height) {
-            // If constraints create invalid split, use 50/50 split
-            splitHeight = block.height / 2;
-          }
+          let splitHeight = pickPrimaryExtent(block.height);
           
           const originalPatternId = block.originalPatternId || (block.patternType === 'special' ? block.id : undefined);
           if (originalPatternId) {
@@ -6724,19 +7760,7 @@ try {
           SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block2);
           return [block1, block2];
         } else {
-          // More balanced split: 40-60% instead of 30-70%
-          const splitRatio = 0.4 + Math.random() * 0.2; // 40-60%
-          let splitWidth = block.width * splitRatio;
-          
-          // Ensure both resulting blocks meet size constraints
-          if (splitWidth < minBlockSize) splitWidth = minBlockSize;
-          if (block.width - splitWidth < minBlockSize) splitWidth = block.width - minBlockSize;
-          
-          // Final safety check: ensure splitWidth is valid
-          if (splitWidth <= 0 || splitWidth >= block.width) {
-            // If constraints create invalid split, use 50/50 split
-            splitWidth = block.width / 2;
-          }
+          let splitWidth = pickPrimaryExtent(block.width);
           
           const originalPatternId = block.originalPatternId || (block.patternType === 'special' ? block.id : undefined);
           if (originalPatternId) {
@@ -6806,6 +7830,10 @@ try {
       
       splitBlock(block, newColor) {
         SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
+        const finishSplit = (result) => {
+          this._stampMacroRegionFromParent(result, block);
+          return result;
+        };
         // Debug: Track special pattern flag state
         if (block._shouldCreateSpecialPattern) {
           console.log(`🎯 SPLIT: Block ${block.id} has special pattern flag - creating special pattern`);
@@ -6816,34 +7844,45 @@ try {
           delete block._forceHalfSquareTriangle;
           delete block._forceInsetCircle;
           if (block.patternType === 'special' && block.specialPatternType === 'hst') {
-            return this.splitHalfSquareTriangle(block, newColor);
+            if (this._hstFamilyBlockCount(block) >= SimpleQuiltEngine.HST_MAX_FAMILY_BLOCKS) {
+              console.log(`🎯 HST CAP: Family reached ${SimpleQuiltEngine.HST_MAX_FAMILY_BLOCKS}; using regular split for ${block.id}`);
+              return finishSplit(this.performRegularSplit(block, newColor));
+            }
+            return finishSplit(this.splitHalfSquareTriangle(block, newColor));
           }
           if (block.patternType === 'special' && block.specialPatternType === 'insetCircle') {
-            return this.splitInsetCircle(block, newColor);
+            return finishSplit(this.splitInsetCircle(block, newColor));
           }
-          return this.performRegularSplit(block, newColor);
+          return finishSplit(this.performRegularSplit(block, newColor));
         }
         
         if (block._forceHalfSquareTriangle) {
           delete block._forceHalfSquareTriangle;
           console.log(`🎯 SPLIT: Forced HST for block ${block.id}`);
-          return this.createHalfSquareTriangle(block, newColor);
+          return finishSplit(this.createHalfSquareTriangle(block, newColor));
         }
 
         if (block._forceInsetCircle) {
           delete block._forceInsetCircle;
           console.log(`🎯 SPLIT: Forced inset circle for block ${block.id}`);
-          return this.createInsetCircle(block, newColor);
+          return finishSplit(this.createInsetCircle(block, newColor));
         }
 
         if (block.patternType === 'special' && block.specialPatternType === 'insetCircle') {
           delete block._shouldCreateSpecialPattern;
-          return this.splitInsetCircle(block, newColor);
+          return finishSplit(this.splitInsetCircle(block, newColor));
         }
         
         if (block.patternType === 'special' && block.specialPatternType === 'hst') {
           delete block._shouldCreateSpecialPattern;
-          return this.splitHalfSquareTriangle(block, newColor);
+          if (this._isFrozenHstMacroShard(block)) {
+            return finishSplit(this.splitHalfSquareTriangle(block, newColor));
+          }
+          if (this._hstFamilyBlockCount(block) >= SimpleQuiltEngine.HST_MAX_FAMILY_BLOCKS) {
+            console.log(`🎯 HST CAP: Family reached ${SimpleQuiltEngine.HST_MAX_FAMILY_BLOCKS}; using regular split for ${block.id}`);
+            return finishSplit(this.performRegularSplit(block, newColor));
+          }
+          return finishSplit(this.splitHalfSquareTriangle(block, newColor));
         }
         
         // Check if this block is part of a special pattern
@@ -6855,18 +7894,18 @@ try {
           const minSide = Math.min(block.width, block.height);
           if (colorSimilarity > this._hstSplitColorMatchMinSimilarity(minSide)) {
             console.log(`🎯 NO NESTED PATTERNS: Special pattern block ${block.id} has similar color (${colorSimilarity.toFixed(3)}) - using regular split to prevent nested patterns`);
-            return this.performRegularSplit(block, newColor);
+            return finishSplit(this.performRegularSplit(block, newColor));
           }
         } else if (block._shouldCreateSpecialPattern) {
           // This block was selected for special pattern creation in addColor()
           console.log(`🎯 SPECIAL: Creating special pattern for ${block.id} (${block.color}) with ${newColor}`);
           // Clean up the flag
           delete block._shouldCreateSpecialPattern;
-          return this.createSpecialPattern(block, newColor);
+          return finishSplit(this.createSpecialPattern(block, newColor));
         }
         
         // If no pattern is created, perform regular split
-        return this.performRegularSplit(block, newColor);
+        return finishSplit(this.performRegularSplit(block, newColor));
       }
       
       createSpecialPattern(block, newColor) {
@@ -7069,7 +8108,8 @@ try {
         const h = Number(block.height);
         const minSide = Math.min(w, h);
         const maxSim = this._insetCircleMaxSimilarityForSplit(minSide);
-        if (this.getColorSimilarity(block.color, newColor) > maxSim) {
+        const freezeDiskColor = this._isFrozenInsetCircleMacroRegion(block);
+        if (!freezeDiskColor && this.getColorSimilarity(block.color, newColor) > maxSim) {
           return this.performRegularSplit(block, newColor);
         }
         const minHalf = SimpleQuiltEngine.INSET_CIRCLE_MIN_HALF;
@@ -7104,15 +8144,21 @@ try {
 
         const useVertical = this._resolveInsetNextCutVertical(block);
         const nextAxisVertical = !useVertical;
+        const frozenInnerColor =
+          freezeDiskColor &&
+          typeof block.macroFrozenColor === 'string' &&
+          block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+            ? block.macroFrozenColor
+            : block.insetInnerColor;
 
-        const field2 = this._insetAdjacentFieldColor(bg, newColor);
+        const field2 = freezeDiskColor ? newColor : this._insetAdjacentFieldColor(bg, newColor);
 
         if (useVertical) {
           const w1 = w / 2;
           const w2 = w - w1;
-          if (w1 < minHalf || w2 < minHalf) return this.performRegularSplit(block, newColor);
-          const inner1 = block.insetInnerColor;
-          const inner2 = this._ensureDistinctHstPartner(inner1, newColor);
+          if (w1 < minHalf || w2 < minHalf) return freezeDiskColor ? [] : this.performRegularSplit(block, newColor);
+          const inner1 = freezeDiskColor ? frozenInnerColor : block.insetInnerColor;
+          const inner2 = freezeDiskColor ? frozenInnerColor : this._ensureDistinctHstPartner(inner1, newColor);
           return [
             mk({
               id: block.id + '_1',
@@ -7142,9 +8188,9 @@ try {
         }
         const h1 = h / 2;
         const h2 = h - h1;
-        if (h1 < minHalf || h2 < minHalf) return this.performRegularSplit(block, newColor);
-        const inner1 = block.insetInnerColor;
-        const inner2 = this._ensureDistinctHstPartner(inner1, newColor);
+        if (h1 < minHalf || h2 < minHalf) return freezeDiskColor ? [] : this.performRegularSplit(block, newColor);
+        const inner1 = freezeDiskColor ? frozenInnerColor : block.insetInnerColor;
+        const inner2 = freezeDiskColor ? frozenInnerColor : this._ensureDistinctHstPartner(inner1, newColor);
         return [
           mk({
             id: block.id + '_1',
@@ -7429,7 +8475,7 @@ try {
       _splitHalfSquareTriangleClipped(block, newColor) {
         const w = Number(block.width);
         const h = Number(block.height);
-        const minHalf = 40;
+        const minHalf = this._isFrozenHstMacroShard(block) ? this._frozenHstMacroMinSplitPart() : 40;
         const accent = this._secondaryHstColor(block);
         const parentMinSide = Math.min(w, h);
         const world = this._hstColoredTrianglesWorld(block);
@@ -7454,6 +8500,8 @@ try {
         if (w > h) {
           const [w1, w2] = this._hstAsymmetricParts(w, minHalf);
           if (w1 < minHalf || w2 < minHalf) {
+            const preserved = this._preserveFrozenHstMacroShardInsteadOfRegularFallback(block, 'width below min split');
+            if (preserved) return preserved;
             return this.performRegularSplit(block, newColor);
           }
           const r1 = { x: block.x, y: block.y, w: w1, h };
@@ -7466,6 +8514,8 @@ try {
             points: t.points
           }));
           if (loc1.length === 0 || loc2.length === 0) {
+            const preserved = this._preserveFrozenHstMacroShardInsteadOfRegularFallback(block, 'empty clipped vertical child');
+            if (preserved) return preserved;
             return this.performRegularSplit(block, newColor);
           }
           return [
@@ -7494,6 +8544,8 @@ try {
 
         const [h1, h2] = this._hstAsymmetricParts(h, minHalf);
         if (h1 < minHalf || h2 < minHalf) {
+          const preserved = this._preserveFrozenHstMacroShardInsteadOfRegularFallback(block, 'height below min split');
+          if (preserved) return preserved;
           return this.performRegularSplit(block, newColor);
         }
         const r1 = { x: block.x, y: block.y, w, h: h1 };
@@ -7506,6 +8558,8 @@ try {
           points: t.points
         }));
         if (loc1.length === 0 || loc2.length === 0) {
+          const preserved = this._preserveFrozenHstMacroShardInsteadOfRegularFallback(block, 'empty clipped horizontal child');
+          if (preserved) return preserved;
           return this.performRegularSplit(block, newColor);
         }
         return [
@@ -7543,7 +8597,7 @@ try {
         }
         const w = Number(block.width);
         const h = Number(block.height);
-        const minHalf = 40;
+        const minHalf = this._isFrozenHstMacroShard(block) ? this._frozenHstMacroMinSplitPart() : 40;
         const accentRaw = this._secondaryHstColor(block);
         const accentPartner = this._ensureDistinctHstPartner(block.color, accentRaw);
         const newPartner = this._ensureDistinctHstPartner(block.color, newColor);
@@ -7565,6 +8619,8 @@ try {
         if (w > h) {
           const [w1, w2] = this._hstAsymmetricParts(w, minHalf);
           if (w1 < minHalf || w2 < minHalf) {
+            const preserved = this._preserveFrozenHstMacroShardInsteadOfRegularFallback(block, 'legacy width below min split');
+            if (preserved) return preserved;
             return this.performRegularSplit(block, newColor);
           }
           return [
@@ -7594,6 +8650,8 @@ try {
         }
         const [h1, h2] = this._hstAsymmetricParts(h, minHalf);
         if (h1 < minHalf || h2 < minHalf) {
+          const preserved = this._preserveFrozenHstMacroShardInsteadOfRegularFallback(block, 'legacy height below min split');
+          if (preserved) return preserved;
           return this.performRegularSplit(block, newColor);
         }
         return [
@@ -8645,6 +9703,29 @@ try {
         return { l: L, a: a, b: bChannel };
       }
 
+      oklabToHex(L, a, bChannel) {
+        const l_ = L + 0.3963377774 * a + 0.2158037573 * bChannel;
+        const m_ = L - 0.1055613458 * a - 0.0638541728 * bChannel;
+        const s_ = L - 0.0894841775 * a - 1.291485548 * bChannel;
+        const l = l_ * l_ * l_;
+        const m = m_ * m_;
+        const s = s_ * s_;
+        let rLin = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+        let gLin = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+        let bLin = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+        const clamp01 = (x) => Math.min(1, Math.max(0, x));
+        rLin = clamp01(rLin);
+        gLin = clamp01(gLin);
+        bLin = clamp01(bLin);
+        const enc = (x) =>
+          x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+        const h = (v) =>
+          Math.min(255, Math.max(0, Math.round(enc(v) * 255)))
+            .toString(16)
+            .padStart(2, '0');
+        return `#${h(rLin)}${h(gLin)}${h(bLin)}`;
+      }
+
       
       recordUserContribution(blockId, color, submissionIndex) {
         const contribution = {
@@ -8695,7 +9776,12 @@ try {
           }
         });
         
-        return this.blocks.filter(block => userBlockIds.has(block.id));
+        return this.blocks.filter((block) => {
+          if (userBlockIds.has(block.id)) return true;
+          if (block.contributorId === this.deviceId) return true;
+          const ids = Array.isArray(block.contributorIds) ? block.contributorIds : [];
+          return ids.some((id) => id === this.deviceId);
+        });
       }
       
       getUserContributions() {
@@ -13189,7 +14275,7 @@ try {
       }
 
       /** Fallback raster when SVG is not available (e.g. headless / Zapier). */
-      async generateQuiltRasterBlobFromBlocks(blocks) {
+      async generateQuiltRasterBlobFromBlocks(blocks, options = {}) {
         if (!blocks || blocks.length === 0) return null;
         const minX = Math.min(...blocks.map((b) => b.x));
         const minY = Math.min(...blocks.map((b) => b.y));
@@ -13197,7 +14283,10 @@ try {
         const maxY = Math.max(...blocks.map((b) => b.y + b.height));
         const quiltW = maxX - minX;
         const quiltH = maxY - minY;
-        const maxEdge = 2400;
+        const maxEdge = Math.min(
+          4096,
+          Math.max(64, Number(options.maxEdge) || 2400)
+        );
         const aspect = quiltW / Math.max(1, quiltH);
         let outW;
         let outH;
@@ -13215,7 +14304,8 @@ try {
         ctx.fillStyle = '#f6f4f1';
         ctx.fillRect(0, 0, outW, outH);
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        ctx.imageSmoothingQuality =
+          options.imageSmoothingQuality === 'low' ? 'low' : 'high';
         const scale = Math.min(outW / quiltW, outH / quiltH);
         const offsetX = (outW - quiltW * scale) / 2;
         const offsetY = (outH - quiltH * scale) / 2;
@@ -13316,14 +14406,28 @@ try {
           ctx.fillRect(-canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
           ctx.restore();
         });
+        const mimeType =
+          typeof options.mimeType === 'string' && options.mimeType.length
+            ? options.mimeType
+            : 'image/png';
+        const quality =
+          typeof options.quality === 'number'
+            ? options.quality
+            : mimeType === 'image/jpeg' || mimeType === 'image/webp'
+              ? 0.88
+              : undefined;
         return new Promise((resolve, reject) => {
-          canvas.toBlob((blob) => {
-            if (!blob) {
-              reject(new Error('Could not create quilt raster blob'));
-              return;
-            }
-            resolve(blob);
-          }, 'image/png');
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('Could not create quilt raster blob'));
+                return;
+              }
+              resolve(blob);
+            },
+            mimeType,
+            mimeType === 'image/png' ? undefined : quality
+          );
         });
       }
 
@@ -13979,7 +15083,8 @@ try {
                 blocks: data.blocks || [], 
                 contributorCount: data.contributorCount || 1,
                 colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
-                contributors: Array.isArray(data.contributors) ? data.contributors : []
+                contributors: Array.isArray(data.contributors) ? data.contributors : [],
+                macroStructureFrozen: data.macroStructureFrozen === true
               };
             } else {
               this.logger.warn('⚠️ No Firestore document found for date:', today);
@@ -14000,7 +15105,8 @@ try {
                 blocks: [],
                 contributorCount: 1,
                 colorReplayEvents: [],
-                contributors: []
+                contributors: [],
+                macroStructureFrozen: false
               };
             }
             this.logger.log('📖 Loaded quilt from localStorage with', data.blocks?.length || 0, 'blocks, date:', data.date);
@@ -14010,7 +15116,8 @@ try {
               blocks: data.blocks || [], 
               contributorCount: data.contributorCount || 1,
               colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
-              contributors: Array.isArray(data.contributors) ? data.contributors : []
+              contributors: Array.isArray(data.contributors) ? data.contributors : [],
+              macroStructureFrozen: data.macroStructureFrozen === true
             };
           } else {
             this.logger.warn('⚠️ No localStorage data found');
@@ -14029,41 +15136,143 @@ try {
           blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
           contributorCount: 1,
           colorReplayEvents: [],
-          contributors: []
+          contributors: [],
+          macroStructureFrozen: false
         };
       }
 
       // Optional saveOptions.resetSource 'admin' | 'daily' → sets lastResetAt / lastResetSource on quilts/{date}.
       async saveQuilt(blocks, contributorCount, colorReplayEvents = [], contributorsOrOptions = [], saveOptions = null) {
-        try {
-          const normalizeContributors = (items) => {
-            const out = [];
-            const seen = new Map();
-            (Array.isArray(items) ? items : []).forEach((item) => {
-              if (!item || typeof item !== 'object') return;
-              const userId = String(item.userId || '').trim();
-              const key = userId || `${String(item.name || '').trim().toLowerCase()}:${String(item.firstContributedAt || '').trim()}`;
-              if (!key) return;
-              const rawName = String(item.name || '').replace(/\s+/g, ' ').trim();
-              const name = rawName || 'Friend';
-              const existingIndex = seen.get(key);
-              if (typeof existingIndex === 'number') {
-                if (out[existingIndex]?.name === 'Friend' && name !== 'Friend') {
-                  out[existingIndex].name = name.slice(0, 40);
-                }
-                return;
+        let fallbackOptions = null;
+        let fallbackWriteReason = 'client-save';
+        let fallbackContributors = [];
+        const normalizeContributors = (items) => {
+          const out = [];
+          const seen = new Map();
+          (Array.isArray(items) ? items : []).forEach((item) => {
+            if (!item || typeof item !== 'object') return;
+            const userId = String(item.userId || '').trim();
+            const key = userId || `${String(item.name || '').trim().toLowerCase()}:${String(item.firstContributedAt || '').trim()}`;
+            if (!key) return;
+            const rawName = String(item.name || '').replace(/\s+/g, ' ').trim();
+            const name = rawName || 'Friend';
+            const existingIndex = seen.get(key);
+            if (typeof existingIndex === 'number') {
+              if (out[existingIndex]?.name === 'Friend' && name !== 'Friend') {
+                out[existingIndex].name = name.slice(0, 40);
               }
-              seen.set(key, out.length);
-              out.push({
-                userId,
-                name: name.slice(0, 40),
-                firstContributedAt: String(item.firstContributedAt || item.timestamp || new Date().toISOString())
-              });
+              return;
+            }
+            seen.set(key, out.length);
+            out.push({
+              userId,
+              name: name.slice(0, 40),
+              firstContributedAt: String(item.firstContributedAt || item.timestamp || new Date().toISOString())
             });
-            return out;
-          };
+          });
+          return out;
+        };
+        const buildLocalStoragePayload = (payload, opts = {}) => {
+          const out = { ...payload };
+          if (opts.omitReplay === true) out.colorReplayEvents = [];
+          if (opts.omitContributors === true) out.contributors = [];
+          if (opts.sparseMacroMetadata === true && Array.isArray(out.blocks)) {
+            const seenMacroIds = new Set();
+            out.blocks = out.blocks.map((block) => {
+              if (!block || block.macroRegionId == null) return block;
+              const clone = { ...block };
+              const key = String(block.macroRegionId);
+              if (seenMacroIds.has(key)) {
+                delete clone.macroFrozenOutline;
+                delete clone.macroFrozenColor;
+              } else {
+                seenMacroIds.add(key);
+              }
+              return clone;
+            });
+          }
+          if (opts.compactBlocks === true && Array.isArray(out.blocks)) {
+            const round = (value) => {
+              const n = Number(value);
+              return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : value;
+            };
+            out.blocks = out.blocks.map((block) => {
+              if (!block || typeof block !== 'object') return block;
+              const compact = {
+                id: block.id,
+                x: round(block.x),
+                y: round(block.y),
+                width: round(block.width),
+                height: round(block.height),
+                color: block.color,
+                contributorId: block.contributorId,
+                submissionIndex: block.submissionIndex,
+                patternType: block.patternType,
+                specialPatternType: block.specialPatternType,
+                originalPatternId: block.originalPatternId,
+                hstColorB: block.hstColorB,
+                hstDiagonal: block.hstDiagonal,
+                hstTriangles: block.hstTriangles,
+                insetTier: block.insetTier,
+                insetInnerColor: block.insetInnerColor,
+                insetCx: block.insetCx,
+                insetCy: block.insetCy,
+                insetR: block.insetR,
+                insetNextCutVertical: block.insetNextCutVertical,
+                macroRegionId: block.macroRegionId,
+                macroFrozenColor: block.macroFrozenColor
+              };
+              Object.keys(compact).forEach((key) => {
+                if (compact[key] === undefined) delete compact[key];
+              });
+              return compact;
+            });
+          }
+          return out;
+        };
+        const saveLocalQuiltBackup = (payload, label) => {
+          const attempts = [
+            { payload, note: 'full' },
+            { payload: buildLocalStoragePayload(payload, { omitReplay: true }), note: 'without replay log' },
+            {
+              payload: buildLocalStoragePayload(payload, { omitReplay: true, sparseMacroMetadata: true }),
+              note: 'without replay log and with sparse macro metadata'
+            },
+            {
+              payload: buildLocalStoragePayload(payload, {
+                omitReplay: true,
+                omitContributors: true,
+                sparseMacroMetadata: true,
+                compactBlocks: true
+              }),
+              note: 'compact blocks only'
+            }
+          ];
+          let lastError = null;
+          for (const attempt of attempts) {
+            try {
+              localStorage.removeItem('ourDailyQuilt');
+              localStorage.setItem('ourDailyQuilt', JSON.stringify(attempt.payload));
+              if (attempt.note !== 'full') {
+                console.warn(`⚠️ Saved compact localStorage quilt backup (${attempt.note}) after quota limit during ${label}.`);
+              }
+              return true;
+            } catch (storageError) {
+              lastError = storageError;
+              if (storageError?.name !== 'QuotaExceededError') throw storageError;
+            }
+          }
+          console.warn(
+            `⚠️ Could not save localStorage quilt backup during ${label}: browser storage quota is full.`,
+            lastError
+          );
+          return false;
+        };
+        try {
           const contributors = Array.isArray(contributorsOrOptions) ? contributorsOrOptions : [];
+          fallbackContributors = contributors;
           const options = saveOptions || (!Array.isArray(contributorsOrOptions) && contributorsOrOptions ? contributorsOrOptions : null);
+          fallbackOptions = options;
           const src = options && options.resetSource;
           const nextCount = Array.isArray(blocks) ? blocks.length : 0;
           if (nextCount === 0) {
@@ -14076,6 +15285,7 @@ try {
             options?.adminMutation ? 'admin-mutation' :
               options?.sourceFunction ? String(options.sourceFunction) :
                 'client-save';
+          fallbackWriteReason = writeReason;
           const quiltData = {
             blocks: blocks,
             contributorCount: contributorCount,
@@ -14084,24 +15294,28 @@ try {
             quiltFingerprint: Utils.computeQuiltFingerprint(blocks),
             colorReplayEvents: Array.isArray(colorReplayEvents) ? colorReplayEvents : [],
             contributors: normalizeContributors(contributors),
-            writeProvenance: Utils.buildWriteProvenance(writeReason)
+            writeProvenance: Utils.buildWriteProvenance(writeReason),
+            macroStructureFrozen: options?.macroStructureFrozen === true
           };
           if (src === 'admin' || src === 'daily') {
             const iso = new Date().toISOString();
             quiltData.lastResetAt = iso;
             quiltData.lastResetSource = src;
           }
+          const skipFirestoreSave = options?.skipFirestore === true;
           
           // Check Firestore availability
-          if (!window.db || !window.firestore) {
+          if (!skipFirestoreSave && (!window.db || !window.firestore)) {
             console.warn('⚠️ Firestore not available for saving');
             if (src === 'daily') {
               console.warn('⚠️ Refusing daily reset without Firestore verification');
               return false;
             }
+          } else if (skipFirestoreSave) {
+            console.warn('⚠️ Firestore save skipped for local/admin-only mutation');
           }
           
-          if (window.db && window.firestore) {
+          if (!skipFirestoreSave && window.db && window.firestore) {
             // Save to Firestore
             const today = Utils.getTodayKey();
             const quiltRef = window.firestore.doc(window.db, 'quilts', today);
@@ -14206,7 +15420,10 @@ try {
           }
           
           // Also save to localStorage as backup (including explicit empty reset state).
-          localStorage.setItem('ourDailyQuilt', JSON.stringify(quiltData));
+          const localBackupSaved = saveLocalQuiltBackup(quiltData, 'saveQuilt');
+          if (!localBackupSaved && !window.db && !window.firestore) {
+            console.warn('⚠️ Quilt updated in memory, but local browser storage is full; reload may lose this local-only quilt.');
+          }
           
           return true;
         } catch (error) {
@@ -14214,7 +15431,7 @@ try {
           
           // Fallback to localStorage only
           try {
-            const fsrc = options && options.resetSource;
+            const fsrc = fallbackOptions && fallbackOptions.resetSource;
             if (fsrc === 'daily') {
               console.warn('⚠️ Refusing daily reset localStorage fallback');
               return false;
@@ -14226,15 +15443,17 @@ try {
               date: Utils.getTodayKey(),
               quiltFingerprint: Utils.computeQuiltFingerprint(blocks),
               colorReplayEvents: Array.isArray(colorReplayEvents) ? colorReplayEvents : [],
-              contributors: normalizeContributors(contributors),
-              writeProvenance: Utils.buildWriteProvenance(`${writeReason}:local-fallback`)
+              contributors: normalizeContributors(fallbackContributors),
+              writeProvenance: Utils.buildWriteProvenance(`${fallbackWriteReason}:local-fallback`),
+              macroStructureFrozen: fallbackOptions?.macroStructureFrozen === true
             };
             if (fsrc === 'admin' || fsrc === 'daily') {
               const iso = new Date().toISOString();
               fallbackPayload.lastResetAt = iso;
               fallbackPayload.lastResetSource = fsrc;
             }
-            localStorage.setItem('ourDailyQuilt', JSON.stringify(fallbackPayload));
+            const localFallbackSaved = saveLocalQuiltBackup(fallbackPayload, 'saveQuilt localStorage fallback');
+            if (!localFallbackSaved) return false;
             this.logger.log('💾 Saved quilt to localStorage (fallback)');
             return true;
           } catch (localError) {
@@ -16245,22 +17464,13 @@ try {
                 );
                 if (paperDepth?.under) specialGroup.appendChild(paperDepth.under);
                 specialGroup.appendChild(poly);
-                const anchor = Utils.hstOrganicTriangleRadialAnchorLocal(t.points);
-                const triRadialWash =
-                  anchor &&
-                  ({
-                    cx: renderX + anchor.cx,
-                    cy: renderY + anchor.cy,
-                    span: anchor.span
-                  });
                 const watercolorOverlay = createWatercolorOverlay(
                   poly,
                   blockRect,
                   fillC,
                   `hst_${i}_${ti}`,
                   watercolorStrength,
-                  `${block.id || 'block'}_hst_${ti}`,
-                  triRadialWash
+                  `${block.id || 'block'}_hst_${ti}`
                 );
                 if (watercolorOverlay) specialGroup.appendChild(watercolorOverlay);
                 if (paperDepth?.over) specialGroup.appendChild(paperDepth.over);
@@ -17418,6 +18628,37 @@ try {
       }
 
       setupEventListeners() {
+        window.addEventListener('odq-contribution-block-remap', (ev) => {
+          const oldIds = ev.detail?.oldIds;
+          const newId = ev.detail?.newId;
+          if (!Array.isArray(oldIds) || typeof newId !== 'string') return;
+          const oldSet = new Set(oldIds.map(String));
+          const latest = String(this._latestDedicatedBlockId || '').trim();
+          if (latest && oldSet.has(latest)) {
+            this._latestDedicatedBlockId = newId;
+            try {
+              localStorage.setItem('ourDailyLatestDedicatedBlockId', newId);
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        });
+        window.addEventListener('odq-contribution-block-swap', (ev) => {
+          const aId = ev.detail?.aId;
+          const bId = ev.detail?.bId;
+          if (typeof aId !== 'string' || typeof bId !== 'string') return;
+          const latest = String(this._latestDedicatedBlockId || '').trim();
+          if (latest === aId || latest === bId) {
+            const newId = latest === aId ? bId : aId;
+            this._latestDedicatedBlockId = newId;
+            try {
+              localStorage.setItem('ourDailyLatestDedicatedBlockId', newId);
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        });
+
         const aboutScreen = document.getElementById('screen-about');
         if (aboutScreen) {
           const revealAboutLinesOnScroll = () => {
@@ -17695,8 +18936,10 @@ try {
           this.setupLongPressAdminAccess();
         }
         
-        // Clear any existing admin flags to ensure clean state
-        localStorage.removeItem('ourDailyIsAdmin');
+        if (!CONFIG.APP.enableAdminTools) {
+          // Clear any existing admin flags in release builds.
+          localStorage.removeItem('ourDailyIsAdmin');
+        }
       }
 
       prepareQuoteSubmissionScreen(clearStatus = true) {
@@ -21014,6 +22257,8 @@ try {
           <div class="admin-menu-content">
             <button data-admin-quilt-action="true" onclick="app.handleAdminAddHstSample()">Add half-square triangle (largest cell)</button>
             <button data-admin-quilt-action="true" onclick="app.handleTestAddBlock()">Add Random Block</button>
+            <button data-admin-quilt-action="true" onclick="app.handleTestAdd100Blocks()">Add 100 Random Blocks</button>
+            <button data-admin-quilt-action="true" onclick="app.handleAdminSimulateQuiltVariants()">Simulate Quilt Progression</button>
             <button data-admin-quilt-action="true" onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Variations</button>
             <button data-admin-quilt-action="true" onclick="app.handleSplitLargestBlockWithPopularColor()">Split Largest Block (Popular Color)</button>
             <button data-admin-quilt-action="true" onclick="app.handleResetQuilt()">Reset Quilt</button>
@@ -21774,6 +23019,9 @@ try {
               height: Number(block.height),
               color: block.color,
               contributorId: block.contributorId != null ? block.contributorId : this.currentUserId,
+              contributorIds: Array.isArray(block.contributorIds)
+                ? block.contributorIds.map((id) => String(id || '').trim()).filter(Boolean)
+                : undefined,
               submissionIndex: typeof block.submissionIndex === 'number' ? block.submissionIndex : 0,
               patternType: block.patternType,
               specialPatternType: block.specialPatternType,
@@ -21795,10 +23043,25 @@ try {
               insetNextCutVertical:
                 block.insetNextCutVertical === true || block.insetNextCutVertical === false
                   ? block.insetNextCutVertical
-                  : undefined
+                  : undefined,
+              macroRegionId:
+                typeof block.macroRegionId === 'number' && Number.isFinite(block.macroRegionId)
+                  ? block.macroRegionId
+                  : undefined,
+              macroFrozenColor:
+                typeof block.macroFrozenColor === 'string' && block.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)
+                  ? block.macroFrozenColor
+                  : undefined,
+              macroFrozenOutline: this.quiltEngine._normalizeMacroFrozenOutline(block.macroFrozenOutline) || undefined
             }));
-            this.quiltEngine.submissionCount = data.contributorCount || 1;
+            this.quiltEngine.submissionCount = Math.max(
+              Number(data.contributorCount) || 1,
+              this.quiltEngine.blocks.length
+            );
             this.quiltEngine.setColorReplayEvents(data.colorReplayEvents || []);
+            this.quiltEngine.hydrateMacroFreezeFromPersistence(data.macroStructureFrozen === true);
+            this.quiltEngine.maybeApplyMacroFreezeAfterHydrate();
+            this.quiltEngine.repairMacroRegionIdsAfterLoadIfFrozen();
             
             // Apply responsive dimensions for current viewport
             this.quiltEngine.recalculateDimensionsForCurrentViewport();
@@ -22186,13 +23449,18 @@ try {
           }
 
           const blocks = this.quiltEngine.blocks.map((block) => this.quiltEngine._serializeBlockForReplay(block));
-          
+          const persistOpts =
+            saveOptions && typeof saveOptions === 'object' && !Array.isArray(saveOptions)
+              ? { ...saveOptions }
+              : {};
+          persistOpts.macroStructureFrozen = this.quiltEngine.macroStructureFrozen === true;
+
           return await this.dataService.saveQuilt(
             blocks,
             this.quiltEngine.submissionCount,
             this.quiltEngine.getColorReplayEvents(),
             this.dailyContributors,
-            saveOptions
+            persistOpts
           );
         } catch (error) {
           this.errorHandler.handleError(error, 'saveQuilt');
@@ -22239,7 +23507,7 @@ try {
       }
 
       async saveAdminQuiltMutation(label) {
-        const saved = await this.saveQuilt({ adminMutation: true });
+        const saved = await this.saveQuilt({ adminMutation: true, skipFirestore: true });
         if (!saved) {
           this.uiService.showToast(`${label} was not saved. Reloading latest quilt.`);
           await this.loadQuilt();
@@ -23053,7 +24321,12 @@ try {
       }
 
       getColorSubmitPlacementMessage() {
-        const nextBlockCount = Math.max(1, Math.floor(Number(this.quiltEngine?.submissionCount || 0)) + 1);
+        const loadedBlockCount = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks.length : 0;
+        const nextBlockCount = Math.max(
+          loadedBlockCount + 1,
+          Math.floor(Number(this.quiltEngine?.submissionCount || 0)) + 1,
+          1
+        );
         return `Finding the perfect place for our ${this.formatOrdinalNumber(nextBlockCount)} block`;
       }
 
@@ -23826,11 +25099,13 @@ try {
         });
       }
 
-      async handleTestAddBlock() {
-        return this.runAdminQuiltMutation('Add Random Block', async () => {
-          // 50 Representative colors from the Rumi palette
-          // Selected to maintain proportional distribution and maximize variety
-          const expandedRumiColors = [
+      getExpandedRumiColors() {
+        const fullRumiSet = Array.isArray(window.__ODQ_RUMI_COLORS__) ? window.__ODQ_RUMI_COLORS__ : [];
+        const validatedFullSet = fullRumiSet.filter((color) => Utils.validateHexColor(color));
+        if (validatedFullSet.length) return validatedFullSet;
+
+        // Fallback representative colors if the full Rumi response set is unavailable.
+        return [
           // Original 50 colors
           "#ea9b9a", "#de6c61", "#df9368", "#d57d39", "#d8a746", 
           "#caa22b", "#f6eed5", "#decd61", "#dbcc57", "#ded561",
@@ -23854,45 +25129,399 @@ try {
           "#d961ee", "#db61ee", "#de2cc0", "#ee61ca", "#fba2de",
           "#ee6193", "#ee618f", "#cd283c", "#a31f35", "#ee6165"
         ];
-        
-        // Simple random selection from 100 colors
+      }
+
+      addRandomAdminBlock() {
+        const expandedRumiColors = this.getExpandedRumiColors();
+        // Simple random selection from the Rumi response palette.
         const randomColor = expandedRumiColors[Math.floor(Math.random() * expandedRumiColors.length)];
-        
-        try {
-          const result = this.quiltEngine.addColor(randomColor);
-          
-          if (result) {
-            // Find the new block for animation
-            let newBlockIndex = -1;
-            if (result.newBlocks && result.newBlocks.length > 0) {
-              // If splitting occurred, find the new block (the one with the new color)
-              const newBlock = result.newBlocks.find(block => block.color === randomColor);
-              if (newBlock) {
-                newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === newBlock.id);
-              }
-            } else if (result.id) {
-              // If it's a single new block
-              newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === result.id);
-            }
-            
-            // Set the last added index for animation
-            if (newBlockIndex !== -1) {
-              this.renderer.setLastAddedIndex(newBlockIndex);
-            }
-            
-            this.recordAdminGeneratedContributor();
-            this.renderQuilt();
-            await this.saveAdminQuiltMutation('Add Random Block');
-            
-            // Update admin stats if menu is open
-            this.updateAdminStats();
-            
-            this.uiService.showToast(`Added test block: ${randomColor}`);
-          } else {
-            this.uiService.showToast('Could not add block — no splittable area (quilt may be too fragmented).');
+
+        const result = this.quiltEngine.addColor(randomColor);
+
+        if (!result) {
+          return null;
+        }
+
+        // Find the new block for animation
+        let newBlockIndex = -1;
+        if (result.newBlocks && result.newBlocks.length > 0) {
+          // If splitting occurred, find the new block (the one with the new color)
+          const newBlock = result.newBlocks.find(block => block.color === randomColor);
+          if (newBlock) {
+            newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === newBlock.id);
           }
+        } else if (result.id) {
+          // If it's a single new block
+          newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === result.id);
+        }
+
+        // Set the last added index for animation
+        if (newBlockIndex !== -1) {
+          this.renderer.setLastAddedIndex(newBlockIndex);
+        }
+
+        this.recordAdminGeneratedContributor();
+        return randomColor;
+      }
+
+      async handleTestAddBlock() {
+        return this.runAdminQuiltMutation('Add Random Block', async () => {
+          try {
+            const randomColor = this.addRandomAdminBlock();
+
+            if (randomColor) {
+              this.renderQuilt();
+              await this.saveAdminQuiltMutation('Add Random Block');
+
+              // Update admin stats if menu is open
+              this.updateAdminStats();
+
+              this.uiService.showToast(`Added test block: ${randomColor}`);
+            } else {
+              this.uiService.showToast('Could not add block — no splittable area (quilt may be too fragmented).');
+            }
+          } catch (error) {
+            this.errorHandler.handleError(error, 'testAddBlock');
+          }
+        });
+      }
+
+      async handleTestAdd100Blocks() {
+        return this.runAdminQuiltMutation('Add 100 Random Blocks', async () => {
+          try {
+            const targetCount = 100;
+            let successfulAdds = 0;
+
+            for (let i = 0; i < targetCount; i++) {
+              const randomColor = this.addRandomAdminBlock();
+              if (!randomColor) break;
+
+              successfulAdds++;
+              if (successfulAdds % 10 === 0) {
+                this.renderQuilt();
+                await this.saveAdminQuiltMutation('Add 100 Random Blocks');
+              }
+            }
+
+            if (successfulAdds > 0) {
+              if (successfulAdds % 10 !== 0) {
+                this.renderQuilt();
+                await this.saveAdminQuiltMutation('Add 100 Random Blocks');
+              }
+              this.updateAdminStats();
+              this.uiService.showToast(`Added ${successfulAdds} random blocks`);
+            } else {
+              this.uiService.showToast('Could not add blocks — no splittable area (quilt may be too fragmented).');
+            }
+          } catch (error) {
+            this.errorHandler.handleError(error, 'testAdd100Blocks');
+          }
+        });
+      }
+
+      createSeededRandom(seed) {
+        let h = 2166136261 >>> 0;
+        const s = String(seed || 'odq-sim');
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return () => {
+          h += 0x6D2B79F5;
+          let t = h;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      async buildSimulatedQuiltProgressionAsync(targetBlockCounts, seed, onProgress, simOptions = null) {
+        const originalRandom = Math.random;
+        const originalLog = console.log;
+        Math.random = this.createSeededRandom(seed);
+        console.log = () => {};
+        try {
+          const engine = new SimpleQuiltEngine(`admin-sim-${seed}`);
+          engine.simulatorFullFidelity = simOptions?.simulatorFullFidelity === true;
+          engine.initialize();
+          const expandedRumiColors = this.getExpandedRumiColors();
+          const targets = [...targetBlockCounts]
+            .map((count) => Math.max(1, Number(count) || 1))
+            .sort((a, b) => a - b);
+          const snapshots = new Map();
+          const maxTarget = targets[targets.length - 1] || 1;
+          const maxAttempts = Math.max(500, maxTarget * 4);
+          let attempts = 0;
+          let nextTargetIndex = 0;
+
+          while (
+            nextTargetIndex < targets.length &&
+            engine.blocks.length < maxTarget &&
+            attempts < maxAttempts
+          ) {
+            const randomColor =
+              expandedRumiColors[Math.floor(Math.random() * expandedRumiColors.length)];
+            engine.addColor(randomColor);
+            attempts++;
+
+            while (
+              nextTargetIndex < targets.length &&
+              engine.blocks.length >= targets[nextTargetIndex]
+            ) {
+              const target = targets[nextTargetIndex];
+              snapshots.set(target, {
+                blocks: engine.blocks.map((block) => ({ ...block })),
+                submissionCount: engine.submissionCount,
+                attempts,
+                target
+              });
+              nextTargetIndex++;
+            }
+
+            if (attempts === 1 || attempts % 32 === 0) {
+              if (typeof onProgress === 'function') {
+                try {
+                  onProgress({
+                    attempts,
+                    blockCount: engine.blocks.length,
+                    maxTarget,
+                    nextMilestone:
+                      nextTargetIndex < targets.length ? targets[nextTargetIndex] : null
+                  });
+                } catch (_) {}
+              }
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
+
+          return {
+            simulations: targets.map((target) => (
+              snapshots.get(target) || {
+                blocks: engine.blocks.map((block) => ({ ...block })),
+                submissionCount: engine.submissionCount,
+                attempts,
+                target
+              }
+            )),
+            macroStructureFrozen: engine.macroStructureFrozen === true,
+            macroRegionCount:
+              engine.macroStructureFrozen === true
+                ? new Set(
+                    engine.blocks.map((b) => (b && b.macroRegionId != null ? Number(b.macroRegionId) : null)).filter(
+                      (id) => id != null && Number.isFinite(id)
+                    )
+                  ).size
+                : 0,
+            macroFrozenOutlineCount:
+              engine.macroStructureFrozen === true
+                ? engine.blocks.filter((b) => engine._normalizeMacroFrozenOutline(b?.macroFrozenOutline)).length
+                : 0,
+            macroFrozenColorCount:
+              engine.macroStructureFrozen === true
+                ? engine.blocks.filter((b) => typeof b?.macroFrozenColor === 'string' && b.macroFrozenColor.match(/^#[0-9A-Fa-f]{6}$/)).length
+                : 0,
+            macroFreezeHstParentsExploded: Number(engine.macroFreezeHstParentsExplodedCount) || 0
+          };
+        } finally {
+          Math.random = originalRandom;
+          console.log = originalLog;
+        }
+      }
+
+      closeAdminQuiltSimulationModal(modal) {
+        if (modal && Array.isArray(modal._odqObjectUrls)) {
+          modal._odqObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+        }
+        if (modal) {
+          modal.remove();
+        }
+      }
+
+      async handleAdminSimulateQuiltVariants() {
+        const existing = document.querySelector('.admin-quilt-simulation-modal');
+        if (existing) this.closeAdminQuiltSimulationModal(existing);
+
+        const targets = [100, 200, 500, 1000, 2000];
+        const modal = document.createElement('div');
+        modal.className = 'admin-quilt-simulation-modal';
+        modal._odqObjectUrls = [];
+        modal.style.cssText = `
+          position: fixed;
+          inset: 18px;
+          z-index: 3000;
+          background: #f6f4f1;
+          color: #1f1b16;
+          border: 2px solid #1f1b16;
+          border-radius: 12px;
+          box-shadow: 0 12px 36px rgba(0,0,0,0.28);
+          padding: 16px;
+          overflow: auto;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        `;
+        modal.innerHTML = `
+          <div style="position: sticky; top: 0; z-index: 1; background: #f6f4f1; padding-bottom: 12px; border-bottom: 1px solid rgba(0,0,0,0.18); display: flex; gap: 10px; align-items: center; justify-content: space-between;">
+            <div>
+              <div style="font-weight: 800; font-size: 18px;">Quilt Growth Simulator</div>
+              <div style="font-size: 13px; opacity: 0.75;">One fresh random quilt shown at 100, 200, 500, 1000, and 2000 blocks. Around 100 patches the sim runs the same <strong>macro layout lock</strong> as live. Optional <strong>Full fidelity merges</strong> runs the same neighbor-combine pass as production (slower; no localStorage remap). <strong>Click Start simulation</strong> when ready—nothing runs until then. Nothing is saved.</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+              <label style="font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer; max-width: 280px; text-align: left;">
+                <input type="checkbox" id="admin-sim-full-fidelity" />
+                <span>Full fidelity merges (slower — same combine-neighbors pass as live; does not write contribution remap)</span>
+              </label>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+              <button type="button" id="admin-sim-start">Start simulation</button>
+              <button type="button" id="download-all-simulated-quilts" disabled>Download all JPEGs</button>
+              <button type="button" id="close-simulated-quilts">Close</button>
+              </div>
+            </div>
+          </div>
+          <div id="admin-quilt-simulation-status" style="padding: 12px 0; font-size: 13px;">Optional: enable full fidelity merges, then click <strong>Start simulation</strong>.</div>
+          <div id="admin-quilt-simulation-grid" style="display: grid; grid-template-columns: repeat(${targets.length}, minmax(180px, 1fr)); gap: 12px; align-items: start;"></div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelector('#close-simulated-quilts').addEventListener('click', () => {
+          this.closeAdminQuiltSimulationModal(modal);
+        });
+
+        const grid = modal.querySelector('#admin-quilt-simulation-grid');
+        const status = modal.querySelector('#admin-quilt-simulation-status');
+        const downloadAll = modal.querySelector('#download-all-simulated-quilts');
+        const startBtn = modal.querySelector('#admin-sim-start');
+        const fullFiInput = modal.querySelector('#admin-sim-full-fidelity');
+
+        targets.forEach((target) => {
+          const card = document.createElement('div');
+          card.id = `sim-card-${target}`;
+          card.style.cssText = `
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.16);
+            border-radius: 8px;
+            padding: 8px;
+            min-height: 170px;
+            font-size: 12px;
+          `;
+          card.innerHTML = `<div style="font-weight: 800; text-align: center; margin-bottom: 6px;">${target} blocks</div><div style="opacity:0.85;">Click <strong>Start simulation</strong></div>`;
+          grid.appendChild(card);
+        });
+
+        startBtn.addEventListener('click', async () => {
+          if (modal._odqSimRunning) return;
+          modal._odqSimRunning = true;
+          startBtn.disabled = true;
+          if (fullFiInput) fullFiInput.disabled = true;
+          downloadAll.disabled = true;
+          downloadAll.onclick = null;
+          if (Array.isArray(modal._odqObjectUrls)) {
+            modal._odqObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+            modal._odqObjectUrls = [];
+          }
+
+          const downloads = [];
+          const runSeed = `sim-${Date.now()}`;
+          try {
+          const fullFi = fullFiInput?.checked === true;
+          status.textContent = fullFi
+            ? 'Growing quilt (full fidelity — merge on, slower)…'
+            : 'Growing quilt toward 2000 blocks…';
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const {
+            simulations,
+            macroStructureFrozen,
+            macroRegionCount,
+            macroFrozenOutlineCount,
+            macroFrozenColorCount,
+            macroFreezeHstParentsExploded
+          } = await this.buildSimulatedQuiltProgressionAsync(
+            targets,
+            runSeed,
+            (p) => {
+            const cap =
+              p.nextMilestone != null
+                ? `next snapshot ≤ ${p.nextMilestone}`
+                : 'milestones captured';
+            status.textContent = `Growing quilt… ${p.blockCount} blocks, ${p.attempts} color adds (${cap}). JPEG preview comes next.`;
+          },
+            { simulatorFullFidelity: fullFi }
+          );
+
+          const rasterOpts = fullFi
+            ? {
+                maxEdge: 1152,
+                mimeType: 'image/jpeg',
+                quality: 0.88,
+                imageSmoothingQuality: 'medium'
+              }
+            : {
+                maxEdge: 768,
+                mimeType: 'image/jpeg',
+                quality: 0.82,
+                imageSmoothingQuality: 'low'
+              };
+
+          for (const simulation of simulations) {
+            const target = simulation.target;
+            const card = modal.querySelector(`#sim-card-${target}`);
+            status.textContent = `Rendering ${target}-block snapshot...`;
+            card.innerHTML = `<div style="font-weight: 800; text-align: center; margin-bottom: 6px;">${target} blocks</div><div>Rendering...</div>`;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            const blob = await this.archiveService.generateQuiltRasterBlobFromBlocks(
+              simulation.blocks,
+              rasterOpts
+            );
+            if (!blob) throw new Error(`Could not render ${target}-block snapshot`);
+            const url = URL.createObjectURL(blob);
+            modal._odqObjectUrls.push(url);
+            const filename = `our-daily-quilt-sim-progression-${target}-blocks${fullFi ? '-fullfi' : ''}.jpg`;
+            downloads.push({ url, filename });
+
+            card.innerHTML = `
+              <div style="font-weight: 800; text-align: center; margin-bottom: 6px;">${target} blocks</div>
+              <img decoding="async" loading="lazy" src="${url}" alt="${target}-block quilt progression snapshot" style="width: 100%; aspect-ratio: 4 / 5; object-fit: contain; background: #f6f4f1; border-radius: 4px; display: block;">
+              <div style="margin-top: 6px; opacity: 0.78;">Actual: ${simulation.blocks.length} blocks · ${simulation.submissionCount} adds</div>
+              <a href="${url}" download="${filename}" style="display: inline-block; margin-top: 6px;">Download JPEG</a>
+            `;
+          }
+
+          const hstShardNote =
+            macroFreezeHstParentsExploded > 0
+              ? ` ${macroFreezeHstParentsExploded} HST patch(es) split into separate triangle shards at freeze (block model); JPEGs may still look unchanged until later splits diverge.`
+              : '';
+
+          const freezeSuffix =
+            macroStructureFrozen && macroRegionCount > 0
+              ? ` Macro layout locked (${macroRegionCount} macro regions at freeze; ${macroFrozenOutlineCount} outlines, ${macroFrozenColorCount} color anchors); inner mosaic still grows—zoom previews.${hstShardNote}`
+              : macroStructureFrozen
+                ? ` Macro layout lock applied.${hstShardNote}`
+                : ' Macro lock did not trigger (patch count stayed outside the 100–148 snapshot window this run).';
+
+          const fiNote = fullFi
+            ? ' Full fidelity: production-style neighbor merges + higher-res exports (~1152px); sim does not remap localStorage contributions.'
+            : ' Fast mode: merges off (enable Full fidelity merges for block layout closer to live).';
+
+          status.textContent = `Generated ${downloads.length} quilt JPEGs.${fiNote}${freezeSuffix}`;
+          downloadAll.disabled = false;
+          downloadAll.onclick = () => {
+            downloads.forEach((item, index) => {
+              setTimeout(() => {
+                const a = document.createElement('a');
+                a.href = item.url;
+                a.download = item.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              }, index * 120);
+            });
+          };
         } catch (error) {
-          this.errorHandler.handleError(error, 'testAddBlock');
+          status.textContent = 'Simulation failed. Check the console for details.';
+          this.errorHandler.handleError(error, 'adminSimulateQuiltVariants');
+        } finally {
+          modal._odqSimRunning = false;
+          startBtn.disabled = false;
+          if (fullFiInput) fullFiInput.disabled = false;
         }
         });
       }
@@ -26137,9 +27766,11 @@ try {
         if (lastContribId && this.quiltEngine.blocks.some(b => b.id === lastContribId)) {
           return lastContribId;
         }
-        const mine = this.quiltEngine.blocks.filter(
-          b => b.contributorId === appUid || b.contributorId === engineUid
-        );
+        const mine = this.quiltEngine.blocks.filter((b) => {
+          if (b.contributorId === appUid || b.contributorId === engineUid) return true;
+          const ids = Array.isArray(b.contributorIds) ? b.contributorIds : [];
+          return ids.some((id) => id === appUid || id === engineUid);
+        });
         if (mine.length) {
           return mine[mine.length - 1].id;
         }
@@ -26326,7 +27957,6 @@ try {
         svg.appendChild(g);
         g.classList.add('quilt-my-block-spotlight');
 
-        const base = g.getAttribute('transform') || '';
         let bbox;
         try {
           bbox = g.getBBox();
@@ -26338,8 +27968,10 @@ try {
 
         const compose = (scale, ty, rotDeg) => {
           const r = rotDeg || 0;
-          return `${base} translate(0, ${ty}) translate(${cx}, ${cy}) scale(${scale}) rotate(${r} ${cx} ${cy}) translate(${-cx}, ${-cy})`;
+          return `translate(0px, ${ty}px) scale(${scale}) rotate(${r}deg)`;
         };
+        g.style.transformBox = 'fill-box';
+        g.style.transformOrigin = 'center';
 
         const pad = Math.max(10, Math.min(bbox.width, bbox.height) * 0.12);
         const sparkleBurst = this._createMyBlockSparkleBurst(g, bbox, cx, cy, pad);
