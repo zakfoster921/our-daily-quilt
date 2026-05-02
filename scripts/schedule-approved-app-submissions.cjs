@@ -7,7 +7,6 @@ try {
 }
 
 const admin = require('firebase-admin');
-const { spawn } = require('child_process');
 
 function requireDateArg(value, name) {
   const v = String(value || '').trim();
@@ -33,25 +32,20 @@ function getAppDateKey(d = new Date()) {
 
 function parseArgs(argv) {
   const args = {
-    start: '',
+    start: 'today',
     cadence: 1,
-    window: 7,
-    minCount: null,
+    window: 8,
     appendOnly: false,
-    dryRun: false,
-    syncNotion: false
+    dryRun: false
   };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--dry-run') args.dryRun = true;
-    else if (a === '--sync-notion') args.syncNotion = true;
     else if (a === '--append-only') args.appendOnly = true;
     else if (a.startsWith('--start=')) args.start = a.slice('--start='.length);
     else if (a.startsWith('--cadence=')) args.cadence = Number(a.slice('--cadence='.length));
     else if (a.startsWith('--window=')) args.window = Number(a.slice('--window='.length));
-    else if (a.startsWith('--min-count=')) args.minCount = Number(a.slice('--min-count='.length));
   }
-  if (!args.start) throw new Error('Missing --start=YYYY-MM-DD, --start=today, or --start=tomorrow');
   if (String(args.start).trim().toLowerCase() === 'today') {
     args.start = getAppDateKey();
   } else if (String(args.start).trim().toLowerCase() === 'tomorrow') {
@@ -61,17 +55,20 @@ function parseArgs(argv) {
   if (!Number.isInteger(args.cadence) || args.cadence < 1) {
     throw new Error('--cadence must be an integer >= 1');
   }
-  if (!Number.isInteger(args.window) || args.window < 1) {
-    throw new Error('--window must be an integer >= 1');
-  }
-  if (args.minCount != null && (!Number.isInteger(args.minCount) || args.minCount < 1)) {
-    throw new Error('--min-count must be an integer >= 1');
+  if (!Number.isInteger(args.window) || args.window < 2) {
+    throw new Error('--window must be an integer >= 2 so tomorrow can be scheduled');
   }
   return args;
 }
 
 function isDateKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+}
+
+function isApprovedQuoteData(d) {
+  if (typeof d.approved === 'boolean') return d.approved;
+  if (typeof d.active === 'boolean') return d.active;
+  return String(d.approved ?? d.active ?? '').trim().toLowerCase() !== 'false';
 }
 
 function assignmentPayloadForQuote(q, dateKey, assignedBy) {
@@ -135,16 +132,6 @@ function initFirestore() {
   return admin.firestore();
 }
 
-function runNodeScript(scriptPath) {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [scriptPath], {
-      stdio: 'inherit',
-      env: process.env
-    });
-    child.on('close', (code) => resolve(code || 0));
-  });
-}
-
 async function main() {
   const opts = parseArgs(process.argv);
   const db = initFirestore();
@@ -152,22 +139,13 @@ async function main() {
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
   const windowDates = Array.from({ length: opts.window }, (_, idx) => addDays(opts.start, idx * opts.cadence));
   const windowEnd = windowDates[windowDates.length - 1];
-  const appTodayKey = getAppDateKey();
-  const protectTodayFromAppSubmissions = opts.start === appTodayKey;
-  const firstAppSubmissionInsertIndex = protectTodayFromAppSubmissions ? Math.min(1, Math.max(0, opts.window - 1)) : 0;
 
-  const snap = await db.collection(quotesCollection).get();
+  const quotesSnap = await db.collection(quotesCollection).get();
   const notionQuotes = [];
-  snap.forEach((docSnap) => {
+  quotesSnap.forEach((docSnap) => {
     const d = docSnap.data() || {};
     if (d.source !== 'notion') return;
-    const approved =
-      typeof d.approved === 'boolean'
-        ? d.approved
-        : typeof d.active === 'boolean'
-          ? d.active
-          : String(d.approved ?? d.active ?? '').trim().toLowerCase() !== 'false';
-    if (!approved) return;
+    if (!isApprovedQuoteData(d)) return;
     const text = String(d.text || '').trim();
     const author = String(d.author || '').trim();
     if (!text || !author) return;
@@ -186,79 +164,58 @@ async function main() {
   });
 
   notionQuotes.sort((a, b) => {
-    const aSubmittedPriority =
-      a.submittedVia.toLowerCase() === 'app' &&
-      (!/^\d{4}-\d{2}-\d{2}$/.test(a.dateScheduled) || a.dateScheduled >= opts.start);
-    const bSubmittedPriority =
-      b.submittedVia.toLowerCase() === 'app' &&
-      (!/^\d{4}-\d{2}-\d{2}$/.test(b.dateScheduled) || b.dateScheduled >= opts.start);
-    if (aSubmittedPriority !== bSubmittedPriority) return aSubmittedPriority ? -1 : 1;
-    if (aSubmittedPriority && bSubmittedPriority) {
-      const at = a.submittedAt || '';
-      const bt = b.submittedAt || '';
-      if (at !== bt) return at.localeCompare(bt);
-    }
+    const aAt = a.submittedAt || '';
+    const bAt = b.submittedAt || '';
+    if (aAt !== bAt) return aAt.localeCompare(bAt);
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     if (a.text !== b.text) return a.text.localeCompare(b.text);
     if (a.author !== b.author) return a.author.localeCompare(b.author);
     return a.sourceId.localeCompare(b.sourceId);
   });
 
-  if (!notionQuotes.length) {
-    throw new Error('No Notion-backed quotes found in Firestore');
-  }
-
   const quoteBySourceId = new Map(notionQuotes.map((q) => [q.sourceId, q]));
   const assignmentsSnap = await db.collection(assignmentsCollection).get();
   const futureAssignments = [];
+  const scheduledSourceIds = new Set();
   assignmentsSnap.forEach((docSnap) => {
     if (!isDateKey(docSnap.id) || docSnap.id < opts.start) return;
-    futureAssignments.push({ dateKey: docSnap.id, data: docSnap.data() || {} });
+    const data = docSnap.data() || {};
+    const sourceId = String(data.sourceId || '').trim();
+    if (sourceId) scheduledSourceIds.add(sourceId);
+    futureAssignments.push({ dateKey: docSnap.id, data });
   });
   futureAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
+  const submissionsToInsert = notionQuotes.filter((q) => {
+    if (q.submittedVia.toLowerCase() !== 'app') return false;
+    if (scheduledSourceIds.has(q.sourceId)) return false;
+    if (isDateKey(q.dateScheduled)) return false;
+    return true;
+  });
+
   if (opts.appendOnly) {
     const assignedDateKeys = new Set(futureAssignments.map((row) => row.dateKey));
-    const usedSourceIds = new Set(
-      futureAssignments
-        .map((row) => String(row.data.sourceId || '').trim())
-        .filter(Boolean)
-    );
-    const targetCount = opts.minCount || opts.window;
-    const appendCount = Math.max(0, targetCount - futureAssignments.length);
-    const lastDate =
+    let cursorDate =
       futureAssignments.length > 0
         ? futureAssignments[futureAssignments.length - 1].dateKey
         : addDays(opts.start, -1);
 
-    const fillQueue = notionQuotes.filter((q) => {
-      if (usedSourceIds.has(q.sourceId)) return false;
-      if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
-      if (q.submittedVia.toLowerCase() === 'app') return false;
-      return true;
-    });
-
-    const scheduled = [];
-    let cursorDate = lastDate;
-    let fillIdx = 0;
-    while (scheduled.length < appendCount && fillIdx < fillQueue.length) {
-      const quote = fillQueue[fillIdx++];
+    const scheduled = submissionsToInsert.map((quote) => {
       const dateKey = firstOpenDateAfter(cursorDate, assignedDateKeys);
       assignedDateKeys.add(dateKey);
-      usedSourceIds.add(quote.sourceId);
       cursorDate = dateKey;
-      scheduled.push({
+      return {
         dateKey,
         quote,
-        payload: assignmentPayloadForQuote(quote, dateKey, 'rolling-append-scheduler')
-      });
-    }
+        payload: assignmentPayloadForQuote(quote, dateKey, 'approved-app-submission-append-scheduler')
+      };
+    });
 
     if (opts.dryRun) {
       console.log(
-        `[backfill] dry-run append-only existing=${futureAssignments.length} target=${targetCount} appending=${scheduled.length} start=${opts.start}`
+        `[app-submissions] dry-run append-only newSubmissions=${submissionsToInsert.length} appending=${scheduled.length} preserved=${futureAssignments.length} start=${opts.start}`
       );
-      console.log('[backfill] appended assignments:');
+      console.log('[app-submissions] appended assignments:');
       scheduled.forEach((row) => {
         console.log(`  ${row.dateKey} -> ${row.payload.textSnapshot} — ${row.payload.authorSnapshot}`);
       });
@@ -267,7 +224,7 @@ async function main() {
 
     if (!scheduled.length) {
       console.log(
-        `[backfill] append-only no-op existing=${futureAssignments.length} target=${targetCount} (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
+        `[app-submissions] append-only no newly approved app submissions (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
       );
       return;
     }
@@ -276,6 +233,7 @@ async function main() {
     let writes = 0;
     let quoteWrites = 0;
     const updatedAt = new Date().toISOString();
+
     for (const row of scheduled) {
       batchState.batch.set(db.collection(assignmentsCollection).doc(row.dateKey), row.payload, { merge: true });
       batchState.ops += 1;
@@ -296,7 +254,7 @@ async function main() {
             dateScheduled: row.dateKey,
             date_scheduled: row.dateKey,
             scheduleUpdatedAt: updatedAt,
-            scheduleSource: 'rolling-append-scheduler'
+            scheduleSource: 'approved-app-submission-append-scheduler'
           },
           { merge: true }
         );
@@ -308,17 +266,10 @@ async function main() {
     }
 
     if (batchState.ops > 0) await batchState.batch.commit();
-    console.log(
-      `[backfill] append-only wrote ${writes} assignments + ${quoteWrites} quote date fields, preserved ${futureAssignments.length} existing assignments (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, target=${targetCount})`
-    );
 
-    if (opts.syncNotion) {
-      const code = await runNodeScript('scripts/sync-usage-firestore-to-notion.cjs');
-      if (code !== 0) {
-        throw new Error(`sync-usage-firestore-to-notion.cjs failed with exit code ${code}`);
-      }
-      console.log('[backfill] synced date_scheduled back to Notion');
-    }
+    console.log(
+      `[app-submissions] append-only wrote ${writes} assignments + ${quoteWrites} quote date fields, preserved ${futureAssignments.length} existing assignments (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
+    );
     return;
   }
 
@@ -326,16 +277,6 @@ async function main() {
   for (const q of notionQuotes) {
     if (!isDateKey(q.dateScheduled)) continue;
     if (q.dateScheduled < opts.start || q.dateScheduled > windowEnd) continue;
-    // App submissions should never replace the current live quote. If one was
-    // accidentally scheduled for today's app day, let the rolling insert logic
-    // place it in the first future slot instead.
-    if (
-      protectTodayFromAppSubmissions &&
-      q.dateScheduled === opts.start &&
-      q.submittedVia.toLowerCase() === 'app'
-    ) {
-      continue;
-    }
     if (!explicitDateToSourceId.has(q.dateScheduled)) {
       explicitDateToSourceId.set(q.dateScheduled, q.sourceId);
     }
@@ -346,14 +287,6 @@ async function main() {
     if (row.dateKey > windowEnd) continue;
     if (explicitDateToSourceId.has(row.dateKey)) continue;
     const sourceId = String(row.data.sourceId || '').trim();
-    const quote = sourceId ? quoteBySourceId.get(sourceId) : null;
-    if (
-      protectTodayFromAppSubmissions &&
-      row.dateKey === opts.start &&
-      quote?.submittedVia?.toLowerCase?.() === 'app'
-    ) {
-      continue;
-    }
     if (sourceId && quoteBySourceId.has(sourceId)) {
       dateToExistingSourceId.set(row.dateKey, sourceId);
     }
@@ -362,37 +295,13 @@ async function main() {
   const windowSourceIds = windowDates.map(
     (dateKey) => explicitDateToSourceId.get(dateKey) || dateToExistingSourceId.get(dateKey) || null
   );
-  const originalWindowSourceIds = new Set(windowSourceIds.filter(Boolean));
 
-  const submittedToInsert = notionQuotes.filter((q) => {
-    if (q.submittedVia.toLowerCase() !== 'app') return false;
-    if (originalWindowSourceIds.has(q.sourceId)) return false;
-    if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
-    return true;
-  });
-
-  let insertAt = firstAppSubmissionInsertIndex;
-  for (const q of submittedToInsert) {
+  let insertAt = Math.min(1, Math.max(0, opts.window - 1));
+  for (const q of submissionsToInsert) {
     if (windowSourceIds.includes(q.sourceId)) continue;
     windowSourceIds.splice(insertAt, 0, q.sourceId);
     insertAt += 1;
     windowSourceIds.length = opts.window;
-  }
-
-  const usedSourceIds = new Set(windowSourceIds.filter(Boolean));
-  const fillQueue = notionQuotes.filter((q) => {
-    if (usedSourceIds.has(q.sourceId)) return false;
-    if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
-    if (protectTodayFromAppSubmissions && q.submittedVia.toLowerCase() === 'app') return false;
-    return true;
-  });
-  let fillIdx = 0;
-  for (let i = 0; i < windowSourceIds.length; i += 1) {
-    if (windowSourceIds[i]) continue;
-    const next = fillQueue[fillIdx++];
-    if (!next) break;
-    windowSourceIds[i] = next.sourceId;
-    usedSourceIds.add(next.sourceId);
   }
 
   const scheduled = windowDates
@@ -403,13 +312,12 @@ async function main() {
       return {
         dateKey,
         quote,
-        payload: assignmentPayloadForQuote(quote, dateKey, 'rolling-7-day-scheduler')
+        payload: assignmentPayloadForQuote(quote, dateKey, 'approved-app-submission-scheduler')
       };
     })
     .filter(Boolean);
 
   const scheduledSourceIdToDate = new Map(scheduled.map((row) => [row.quote.sourceId, row.dateKey]));
-  const staleFutureAssignments = futureAssignments.filter((row) => row.dateKey > windowEnd);
   const clearDateQuotes = notionQuotes.filter((q) => {
     if (scheduledSourceIdToDate.has(q.sourceId)) return false;
     return isDateKey(q.dateScheduled) && q.dateScheduled >= opts.start;
@@ -417,27 +325,31 @@ async function main() {
 
   if (opts.dryRun) {
     console.log(
-      `[backfill] dry-run rolling window scheduled=${scheduled.length}/${opts.window} start=${opts.start} windowEnd=${windowEnd} cadence=${opts.cadence}`
+      `[app-submissions] dry-run inserted=${submissionsToInsert.length} scheduled=${scheduled.length}/${opts.window} start=${opts.start} windowEnd=${windowEnd}`
     );
-    console.log(
-      `[backfill] exact Notion dates=${explicitDateToSourceId.size} app submissions inserted=${submittedToInsert.length} staleFutureAssignments=${staleFutureAssignments.length} clearQuoteDates=${clearDateQuotes.length}`
-    );
-    console.log('[backfill] assignments:');
+    console.log(`[app-submissions] clearQuoteDates=${clearDateQuotes.length}`);
+    console.log('[app-submissions] assignments:');
     scheduled.forEach((row) => {
       console.log(`  ${row.dateKey} -> ${row.payload.textSnapshot} — ${row.payload.authorSnapshot}`);
     });
     return;
   }
 
+  if (!submissionsToInsert.length) {
+    console.log(
+      `[app-submissions] no newly approved app submissions to schedule (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window}, cadence=${opts.cadence})`
+    );
+    return;
+  }
+
   const batchState = { batch: db.batch(), ops: 0 };
   let writes = 0;
   let quoteWrites = 0;
-  let deletes = 0;
   let clearedQuoteDates = 0;
   const updatedAt = new Date().toISOString();
+
   for (const row of scheduled) {
-    const ref = db.collection(assignmentsCollection).doc(row.dateKey);
-    batchState.batch.set(ref, row.payload, { merge: true });
+    batchState.batch.set(db.collection(assignmentsCollection).doc(row.dateKey), row.payload, { merge: true });
     batchState.ops += 1;
     writes += 1;
 
@@ -466,13 +378,6 @@ async function main() {
     await commitBatchIfNeeded(db, batchState);
   }
 
-  for (const row of staleFutureAssignments) {
-    batchState.batch.delete(db.collection(assignmentsCollection).doc(row.dateKey));
-    batchState.ops += 1;
-    deletes += 1;
-    await commitBatchIfNeeded(db, batchState);
-  }
-
   const deleteField = admin.firestore.FieldValue.delete();
   for (const q of clearDateQuotes) {
     batchState.batch.set(
@@ -492,20 +397,11 @@ async function main() {
   if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[backfill] rolling window wrote ${writes} assignments + ${quoteWrites} quote date fields, deleted ${deletes} stale assignments, cleared ${clearedQuoteDates} quote dates (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window}, cadence=${opts.cadence})`
+    `[app-submissions] inserted ${submissionsToInsert.length}, wrote ${writes} assignments + ${quoteWrites} quote date fields, cleared ${clearedQuoteDates} quote dates (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window}, cadence=${opts.cadence})`
   );
-
-  if (opts.syncNotion) {
-    const code = await runNodeScript('scripts/sync-usage-firestore-to-notion.cjs');
-    if (code !== 0) {
-      throw new Error(`sync-usage-firestore-to-notion.cjs failed with exit code ${code}`);
-    }
-    console.log('[backfill] synced date_scheduled back to Notion');
-  }
 }
 
 main().catch((err) => {
-  console.error('[backfill] failed:', err.message);
+  console.error('[app-submissions] failed:', err.message);
   process.exit(1);
 });
-

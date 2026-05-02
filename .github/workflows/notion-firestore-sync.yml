@@ -41,12 +41,19 @@ jobs:
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
         run: npm run sync:quotes
 
-      - name: Schedule rolling 7-day quote window
+      - name: Schedule approved app-submitted quotes
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: node scripts/backfill-daily-assignments.cjs --start=today --cadence=1 --window=8
+        run: node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8 --append-only
+
+      - name: Append rolling 7-day quote window
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
+        run: node scripts/backfill-daily-assignments.cjs --start=today --cadence=1 --window=8 --min-count=9 --append-only
 
       - name: Sync usage (Firestore -> Notion)
         env:
