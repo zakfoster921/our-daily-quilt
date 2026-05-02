@@ -5976,6 +5976,8 @@ try {
       static HST_ELIGIBLE_MIN_SHORT = 72;
       static HST_ELIGIBLE_MAX_ASPECT = 2.75;
       static HST_MAX_FAMILY_BLOCKS = 5;
+      static STARTER_AXIS_SECOND_LINE_CHANCE = 0.42;
+      static STARTER_AXIS_MAX_DEGREES = 33;
       /** Beyond this block count, new-special roulette + forced HST/inset odds taper toward STRUCTURE_SCALE_FLOOR (never hard-off). Existing specials still split normally. */
       static SPECIAL_STRUCTURE_TAPER_START_BLOCKS = 100;
       static SPECIAL_STRUCTURE_TAPER_END_BLOCKS = 300;
@@ -6090,6 +6092,18 @@ try {
             })
           }));
         }
+        if (Array.isArray(out.polygonPieces)) {
+          out.polygonPieces = out.polygonPieces.map((piece) => ({
+            ...piece,
+            points: (piece.points || []).map((p) => {
+              const x = Number(Array.isArray(p) ? p[0] : p?.x);
+              const y = Number(Array.isArray(p) ? p[1] : p?.y);
+              return [mirrorH ? width - x : x, mirrorV ? height - y : y];
+            })
+          }));
+        }
+        if (typeof out.diagonalAxisUx === 'number') out.diagonalAxisUx = mirrorH ? -out.diagonalAxisUx : out.diagonalAxisUx;
+        if (typeof out.diagonalAxisUy === 'number') out.diagonalAxisUy = mirrorV ? -out.diagonalAxisUy : out.diagonalAxisUy;
         return out;
       }
 
@@ -6342,6 +6356,13 @@ try {
         return ia === ib;
       }
 
+      _starterAxisRegionsMergeCompatible(a, b) {
+        const ia = a?.starterAxisRegionId;
+        const ib = b?.starterAxisRegionId;
+        if (ia == null && ib == null) return true;
+        return ia != null && ib != null && String(ia) === String(ib);
+      }
+
       _isFrozenHstMacroShard(block) {
         if (!this.macroStructureFrozen || !block) return false;
         const outline = this._normalizeMacroFrozenOutline(block.macroFrozenOutline);
@@ -6368,7 +6389,6 @@ try {
           this._isFrozenInsetCircleMacroRegion(block) ||
           (
             this.macroStructureFrozen &&
-            block?.patternType === 'special' &&
             typeof block.specialPatternType === 'string' &&
             block.specialPatternType.length > 0
           )
@@ -6957,6 +6977,7 @@ try {
               const A = blocks[i];
               const B = blocks[j];
               if (!this._mergeEligibleRegularBlock(A) || !this._mergeEligibleRegularBlock(B)) continue;
+              if (!this._starterAxisRegionsMergeCompatible(A, B)) continue;
               if (!this._macroRegionsMergeCompatible(A, B)) continue;
               if (this.getColorSimilarity(A.color, B.color) < simMin) continue;
               const merged = this._mergeTwoRegularBlocks(A, B);
@@ -7091,6 +7112,142 @@ try {
         }
         return deviceId;
       }
+
+      _starterAxisRatio(lo = 0.34, hi = 0.66) {
+        return lo + Math.random() * (hi - lo);
+      }
+
+      _inferStarterAxisOrientation() {
+        if (!Array.isArray(this.blocks) || this.blocks.length !== 2) return null;
+        const [a, b] = this.blocks;
+        const eps = SimpleQuiltEngine.MERGE_EPS_PX * 2;
+        const sameY = Math.abs(a.y - b.y) <= eps && Math.abs(a.height - b.height) <= eps;
+        const sameX = Math.abs(a.x - b.x) <= eps && Math.abs(a.width - b.width) <= eps;
+        if (sameY) return 'vertical';
+        if (sameX) return 'horizontal';
+        return null;
+      }
+
+      _makeStarterAxisChild(parent, partial, color, submissionIndex, suffix) {
+        const isNewColorChild = suffix === 'b';
+        return {
+          ...parent,
+          ...partial,
+          id: `${parent.id}_axis_${submissionIndex}_${suffix}`,
+          color,
+          contributorId: isNewColorChild ? this.deviceId : parent.contributorId,
+          submissionIndex: isNewColorChild ? submissionIndex : parent.submissionIndex,
+          patternType: 'regular',
+          starterAxisRegion: true,
+          starterAxisRegionId: `${parent.starterAxisRegionId || parent.id}_axis_${submissionIndex}_${suffix}`
+        };
+      }
+
+      _tryApplySubmissionAxis(newColor) {
+        if (this.macroStructureFrozen) return null;
+        if (this.submissionCount === 0 && this.blocks.length === 1) {
+          const parent = this.blocks[0];
+          const nextSubmission = this.submissionCount + 1;
+          this.submissionCount = nextSubmission;
+          const axisBlocks = this.createDiagonalAxisPattern(parent, newColor);
+          if (
+            Array.isArray(axisBlocks) &&
+            axisBlocks.length === 2 &&
+            axisBlocks.every((block) => block?.specialPatternType === 'diagonalAxis')
+          ) {
+            this.blocks = axisBlocks;
+            this.recordUserContribution(axisBlocks[1].id, newColor, this.submissionCount);
+            return { originalBlock: parent, newBlocks: axisBlocks, submissionIndex: this.submissionCount };
+          }
+          this.submissionCount = 0;
+          const vertical = Math.random() < 0.5;
+          const ratio = this._starterAxisRatio();
+          const children = vertical
+            ? [
+                this._makeStarterAxisChild(parent, { width: parent.width * ratio }, parent.color, nextSubmission, 'a'),
+                this._makeStarterAxisChild(
+                  parent,
+                  { x: parent.x + parent.width * ratio, width: parent.width * (1 - ratio) },
+                  newColor,
+                  nextSubmission,
+                  'b'
+                )
+              ]
+            : [
+                this._makeStarterAxisChild(parent, { height: parent.height * ratio }, parent.color, nextSubmission, 'a'),
+                this._makeStarterAxisChild(
+                  parent,
+                  { y: parent.y + parent.height * ratio, height: parent.height * (1 - ratio) },
+                  newColor,
+                  nextSubmission,
+                  'b'
+                )
+              ];
+          this.submissionCount = nextSubmission;
+          this.blocks = children;
+          this.recordUserContribution(children[1].id, newColor, this.submissionCount);
+          return { originalBlock: parent, newBlocks: children, submissionIndex: this.submissionCount };
+        }
+
+        if (this.submissionCount !== 1 || this.blocks.length !== 2) return null;
+        if (Math.random() >= SimpleQuiltEngine.STARTER_AXIS_SECOND_LINE_CHANCE) return null;
+
+        const firstOrientation = this._inferStarterAxisOrientation();
+        if (!firstOrientation) return null;
+        const secondOrientation = Math.random() < 0.62
+          ? (firstOrientation === 'vertical' ? 'horizontal' : 'vertical')
+          : firstOrientation;
+        const nextSubmission = this.submissionCount + 1;
+        const ratio = secondOrientation === firstOrientation
+          ? this._starterAxisRatio(0.58, 0.76)
+          : this._starterAxisRatio();
+        const nextBlocks = [];
+        const sortedBlocks = [...this.blocks].sort((a, b) => a.x - b.x || a.y - b.y);
+
+        if (secondOrientation === 'vertical') {
+          const target = firstOrientation === 'vertical' ? sortedBlocks[sortedBlocks.length - 1] : null;
+          sortedBlocks.forEach((block) => {
+            if (target && block.id !== target.id) {
+              nextBlocks.push(block);
+              return;
+            }
+            const w1 = block.width * ratio;
+            nextBlocks.push(this._makeStarterAxisChild(block, { width: w1 }, block.color, nextSubmission, 'a'));
+            nextBlocks.push(this._makeStarterAxisChild(
+              block,
+              { x: block.x + w1, width: block.width - w1 },
+              newColor,
+              nextSubmission,
+              'b'
+            ));
+          });
+        } else {
+          const target = firstOrientation === 'horizontal' ? sortedBlocks[sortedBlocks.length - 1] : null;
+          sortedBlocks.forEach((block) => {
+            if (target && block.id !== target.id) {
+              nextBlocks.push(block);
+              return;
+            }
+            const h1 = block.height * ratio;
+            nextBlocks.push(this._makeStarterAxisChild(block, { height: h1 }, block.color, nextSubmission, 'a'));
+            nextBlocks.push(this._makeStarterAxisChild(
+              block,
+              { y: block.y + h1, height: block.height - h1 },
+              newColor,
+              nextSubmission,
+              'b'
+            ));
+          });
+        }
+
+        const newContributionBlock = nextBlocks.find((block) => block.submissionIndex === nextSubmission && block.color === newColor) || nextBlocks[nextBlocks.length - 1];
+        this.submissionCount = nextSubmission;
+        this.blocks = nextBlocks;
+        if (newContributionBlock) {
+          this.recordUserContribution(newContributionBlock.id, newColor, this.submissionCount);
+        }
+        return { originalBlock: sortedBlocks[0], newBlocks: nextBlocks, submissionIndex: this.submissionCount };
+      }
   
 
       initialize() {
@@ -7139,6 +7296,12 @@ try {
         if (Array.isArray(block.hstTriangles) && block.hstTriangles.length) {
           o.hstTriangles = Utils.hstTrianglesForFirestore(block.hstTriangles);
         }
+        if (Array.isArray(block.polygonPieces) && block.polygonPieces.length) {
+          o.polygonPieces = Utils.polygonPiecesForFirestore(block.polygonPieces);
+        }
+        if (typeof block.diagonalAxisAccentColor === 'string') o.diagonalAxisAccentColor = block.diagonalAxisAccentColor;
+        if (typeof block.diagonalAxisUx === 'number' && Number.isFinite(block.diagonalAxisUx)) o.diagonalAxisUx = block.diagonalAxisUx;
+        if (typeof block.diagonalAxisUy === 'number' && Number.isFinite(block.diagonalAxisUy)) o.diagonalAxisUy = block.diagonalAxisUy;
         if (typeof block.insetTier === 'number') o.insetTier = block.insetTier;
         if (block.insetFrozen === true) o.insetFrozen = true;
         if (typeof block.insetInnerColor === 'string') o.insetInnerColor = block.insetInnerColor;
@@ -7157,6 +7320,8 @@ try {
           o.contributorIds = block.contributorIds.map((id) => String(id || '').trim()).filter(Boolean);
         }
         if (typeof block.submissionIndex === 'number') o.submissionIndex = block.submissionIndex;
+        if (block.starterAxisRegion === true) o.starterAxisRegion = true;
+        if (block.starterAxisRegionId != null) o.starterAxisRegionId = String(block.starterAxisRegionId);
         if (typeof block.macroRegionId === 'number' && Number.isFinite(block.macroRegionId)) {
           o.macroRegionId = block.macroRegionId;
         }
@@ -7331,6 +7496,9 @@ try {
       _anotherSpecialAllowedThisTurnBeforeSplit() {
         const uniquePatternIds = new Set();
         this.blocks.forEach((block) => {
+          if (block.specialPatternType === 'diagonalAxis') {
+            return;
+          }
           if (block.originalPatternId) {
             uniquePatternIds.add(block.originalPatternId);
           } else if (block.patternType === 'special') {
@@ -7347,6 +7515,7 @@ try {
           const wasLastSplitSpecialPattern = this.blocks.some(
             (block) =>
               block.submissionIndex === this.submissionCount &&
+              block.specialPatternType !== 'diagonalAxis' &&
               (block.patternType === 'special' || String(block.id || '').includes('_pattern_'))
           );
           if (wasLastSplitSpecialPattern) {
@@ -7368,6 +7537,9 @@ try {
           const ft = Utils.hstTrianglesForFirestore(o.hstTriangles);
           if (ft) o.hstTriangles = ft;
           else delete o.hstTriangles;
+          const fp = Utils.polygonPiecesForFirestore(o.polygonPieces);
+          if (fp) o.polygonPieces = fp;
+          else delete o.polygonPieces;
           return o;
         };
         return (this.colorReplayEvents || []).map((e) => ({
@@ -7394,6 +7566,9 @@ try {
           const nt = Utils.normalizeHstTrianglesFromFirestore(o.hstTriangles);
           if (nt) o.hstTriangles = nt;
           else delete o.hstTriangles;
+          const np = Utils.normalizePolygonPiecesFromFirestore(o.polygonPieces);
+          if (np) o.polygonPieces = np;
+          else delete o.polygonPieces;
           return o;
         };
         this.colorReplayEvents = events
@@ -7437,6 +7612,11 @@ try {
           console.warn(`addColor: dropping ${this.blocks.length - validGeometryBlocks.length} invalid block(s) before add`);
           this.blocks = validGeometryBlocks;
         }
+
+        const structuralAxisResult = this._tryApplySubmissionAxis(newColor);
+        if (structuralAxisResult) {
+          return structuralAxisResult;
+        }
         
         // Find blocks that can be split, prioritizing larger blocks
         // This prevents small blocks from being split when huge blocks are available
@@ -7471,13 +7651,17 @@ try {
         
         // Separate special pattern blocks from regular blocks
         // Handle backward compatibility: blocks without patternType are treated as regular
-        const specialPatternBlocks = splittableBlocks.filter(block => 
-          block.patternType === 'special' || 
-          block.id.includes('_pattern_') ||
-          block.originalPatternId // Blocks derived from special patterns
+        const specialPatternBlocks = splittableBlocks.filter(block =>
+          block.specialPatternType !== 'diagonalAxis' &&
+          (
+            block.patternType === 'special' ||
+            block.id.includes('_pattern_') ||
+            block.originalPatternId // Blocks derived from special patterns
+          )
         );
-        const regularBlocks = splittableBlocks.filter(block => 
-          block.patternType === 'regular' || 
+        const regularBlocks = splittableBlocks.filter(block =>
+          block.specialPatternType === 'diagonalAxis' ||
+          block.patternType === 'regular' ||
           (!block.patternType && !block.id.includes('_pattern_') && !block.originalPatternId)
         );
         
@@ -7519,6 +7703,9 @@ try {
           // Count both originalPatternIds and blocks with patternType: 'special'
           const uniquePatternIds = new Set();
           this.blocks.forEach(block => {
+            if (block.specialPatternType === 'diagonalAxis') {
+              return;
+            }
             if (block.originalPatternId) {
               uniquePatternIds.add(block.originalPatternId);
             } else if (block.patternType === 'special') {
@@ -7544,6 +7731,7 @@ try {
             // Before incrementing for this add, submissionCount is the last completed submission.
             const wasLastSplitSpecialPattern = this.blocks.some(block => 
               block.submissionIndex === this.submissionCount && 
+              block.specialPatternType !== 'diagonalAxis' &&
               (block.patternType === 'special' || block.id.includes('_pattern_'))
             );
             
@@ -7555,7 +7743,7 @@ try {
                 submissionIndex: block.submissionIndex,
                 patternType: block.patternType,
                 hasPattern: block.id.includes('_pattern_'),
-                isSpecial: block.patternType === 'special' || block.id.includes('_pattern_')
+                isSpecial: block.specialPatternType !== 'diagonalAxis' && (block.patternType === 'special' || block.id.includes('_pattern_'))
               })));
             }
             if (wasLastSplitSpecialPattern) {
@@ -7944,9 +8132,14 @@ try {
           }
           return finishSplit(this.splitHalfSquareTriangle(block, newColor));
         }
+
+        if (block.specialPatternType === 'diagonalAxis' && !block._shouldCreateSpecialPattern) {
+          delete block._shouldCreateSpecialPattern;
+          return finishSplit(this.splitDiagonalAxisPattern(block, newColor));
+        }
         
         // Check if this block is part of a special pattern
-        const isSpecialPatternBlock = block.patternType === 'special';
+        const isSpecialPatternBlock = block.patternType === 'special' && block.specialPatternType !== 'diagonalAxis';
         
         if (isSpecialPatternBlock) {
           // For existing special pattern blocks, require VERY SIMILAR colors to preserve pattern
@@ -7961,7 +8154,19 @@ try {
           console.log(`🎯 SPECIAL: Creating special pattern for ${block.id} (${block.color}) with ${newColor}`);
           // Clean up the flag
           delete block._shouldCreateSpecialPattern;
-          return finishSplit(this.createSpecialPattern(block, newColor));
+          const patternBase = block.specialPatternType === 'diagonalAxis'
+            ? (() => {
+                const clean = { ...block, patternType: 'regular' };
+                delete clean.specialPatternType;
+                delete clean.originalPatternId;
+                delete clean.polygonPieces;
+                delete clean.diagonalAxisAccentColor;
+                delete clean.diagonalAxisUx;
+                delete clean.diagonalAxisUy;
+                return clean;
+              })()
+            : block;
+          return finishSplit(this.createSpecialPattern(patternBase, newColor));
         }
         
         // If no pattern is created, perform regular split
@@ -8420,6 +8625,70 @@ try {
         return out;
       }
 
+      _polygonPiecesWorld(block) {
+        return (block?.polygonPieces || []).map((piece) => ({
+          color: piece.color,
+          points: (piece.points || []).map((p) => {
+            const lx = Array.isArray(p) ? Number(p[0]) : Number(p.x);
+            const ly = Array.isArray(p) ? Number(p[1]) : Number(p.y);
+            return [lx + block.x, ly + block.y];
+          })
+        }));
+      }
+
+      _clipPolygonPiecesToRect(pieces, rx, ry, rw, rh) {
+        return this._worldTrisClippedToRect(pieces, rx, ry, rw, rh);
+      }
+
+      _polygonWorldBounds(pieces) {
+        const pts = [];
+        (pieces || []).forEach((piece) => (piece.points || []).forEach((p) => pts.push(p)));
+        if (!pts.length) return null;
+        const xs = pts.map((p) => Number(p[0]));
+        const ys = pts.map((p) => Number(p[1]));
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        if (![minX, maxX, minY, maxY].every(Number.isFinite) || maxX <= minX || maxY <= minY) return null;
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      }
+
+      _localPolygonPiecesFromWorldPieces(pieces, bounds) {
+        return (pieces || []).map((piece) => ({
+          color: piece.color,
+          points: (piece.points || []).map((p) => [p[0] - bounds.x, p[1] - bounds.y])
+        }));
+      }
+
+      _clipConvexPolygonByProjection(poly, nx, ny, cut, keepLess) {
+        return this._clipConvexPolygonHalfPlane(
+          poly,
+          (pt) => {
+            const d = pt[0] * nx + pt[1] * ny;
+            return keepLess ? d <= cut + 1e-9 : d >= cut - 1e-9;
+          },
+          (p0, p1) => {
+            const d0 = p0[0] * nx + p0[1] * ny - cut;
+            const d1 = p1[0] * nx + p1[1] * ny - cut;
+            const denom = d0 - d1;
+            if (Math.abs(denom) < 1e-9) return null;
+            const t = d0 / denom;
+            if (t < -1e-6 || t > 1 + 1e-6) return null;
+            return [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t];
+          }
+        );
+      }
+
+      _clipPolygonPiecesByProjection(pieces, nx, ny, cut, keepLess) {
+        const out = [];
+        for (const piece of pieces || []) {
+          const clipped = this._clipConvexPolygonByProjection(piece.points || [], nx, ny, cut, keepLess);
+          if (clipped.length >= 3) out.push({ color: piece.color, points: clipped });
+        }
+        return out;
+      }
+
       _localColoredTrisFromWorld(worldTris, ox, oy) {
         return worldTris.map((t) => ({
           color: t.color,
@@ -8725,6 +8994,187 @@ try {
             submissionIndex: this.submissionCount
           })
         ];
+      }
+
+      splitDiagonalAxisPattern(block, newColor) {
+        const world = this._polygonPiecesWorld(block);
+        if (!Array.isArray(world) || world.length === 0) {
+          return [];
+        }
+        const originalPatternId = block.originalPatternId || (block.patternType === 'special' ? block.id : undefined);
+        const splitColor = this._regularSplitColorForFrozenSpecialBlock(block, newColor);
+        const preserveFrozenPieces = this._isProtectedSpecialMacroRegionBlock(block);
+        const recolorPieces = (pieces) =>
+          pieces.map((piece) => ({
+            color: preserveFrozenPieces ? piece.color : splitColor,
+            points: piece.points
+          }));
+        const rawUx = Number(block.diagonalAxisUx);
+        const rawUy = Number(block.diagonalAxisUy);
+        const axisLen = Math.hypot(rawUx, rawUy);
+        const ux = axisLen > 1e-6 ? rawUx / axisLen : 1;
+        const uy = axisLen > 1e-6 ? rawUy / axisLen : 0;
+        const vx = -uy;
+        const vy = ux;
+        const projections = [];
+        world.forEach((piece) => (piece.points || []).forEach((p) => {
+          projections.push({ u: p[0] * ux + p[1] * uy, v: p[0] * vx + p[1] * vy });
+        }));
+        if (!projections.length) return [];
+        const minU = Math.min(...projections.map((p) => p.u));
+        const maxU = Math.max(...projections.map((p) => p.u));
+        const minV = Math.min(...projections.map((p) => p.v));
+        const maxV = Math.max(...projections.map((p) => p.v));
+        const spanU = maxU - minU;
+        const spanV = maxV - minV;
+        const splitAlongU = spanU >= spanV;
+        const minPart = this.macroStructureFrozen ? 24 : 42;
+        const span = splitAlongU ? spanU : spanV;
+        if (span < minPart * 2) return [];
+        const ratio = 0.4 + Math.random() * 0.2;
+        const cut = (splitAlongU ? minU : minV) + span * ratio;
+        const nx = splitAlongU ? ux : vx;
+        const ny = splitAlongU ? uy : vy;
+        const worldA = this._clipPolygonPiecesByProjection(world, nx, ny, cut, true);
+        const worldB = recolorPieces(this._clipPolygonPiecesByProjection(world, nx, ny, cut, false));
+        const boundsA = this._polygonWorldBounds(worldA);
+        const boundsB = this._polygonWorldBounds(worldB);
+        if (!boundsA || !boundsB) return [];
+        const mk = (partial) => {
+          const o = {
+            ...block,
+            ...partial,
+            patternType: 'regular',
+            specialPatternType: 'diagonalAxis',
+            originalPatternId
+          };
+          delete o._shouldCreateSpecialPattern;
+          delete o._forceHalfSquareTriangle;
+          delete o._forceInsetCircle;
+          return o;
+        };
+        return [
+          mk({
+            id: block.id + '_1',
+            x: boundsA.x,
+            y: boundsA.y,
+            width: boundsA.width,
+            height: boundsA.height,
+            polygonPieces: this._localPolygonPiecesFromWorldPieces(worldA, boundsA),
+            contributorId: block.contributorId,
+            submissionIndex: block.submissionIndex
+          }),
+          mk({
+            id: block.id + '_2',
+            x: boundsB.x,
+            y: boundsB.y,
+            width: boundsB.width,
+            height: boundsB.height,
+            polygonPieces: this._localPolygonPiecesFromWorldPieces(worldB, boundsB),
+            contributorId: this.deviceId,
+            submissionIndex: this.submissionCount
+          })
+        ];
+      }
+
+      _signedDistanceFromLine(point, a, b) {
+        const dx = b[0] - a[0];
+        const dy = b[1] - a[1];
+        const len = Math.max(1e-9, Math.hypot(dx, dy));
+        return (dx * (point[1] - a[1]) - dy * (point[0] - a[0])) / len;
+      }
+
+      _clipConvexPolygonByLineDistance(poly, a, b, keepFn, boundaryDistance) {
+        return this._clipConvexPolygonHalfPlane(
+          poly,
+          (pt) => keepFn(this._signedDistanceFromLine(pt, a, b)),
+          (p0, p1) => {
+            const d0 = this._signedDistanceFromLine(p0, a, b) - boundaryDistance;
+            const d1 = this._signedDistanceFromLine(p1, a, b) - boundaryDistance;
+            const denom = d0 - d1;
+            if (Math.abs(denom) < 1e-9) return null;
+            const t = d0 / denom;
+            if (t < -1e-6 || t > 1 + 1e-6) return null;
+            return [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t];
+          }
+        );
+      }
+
+      createDiagonalAxisPattern(block, newColor) {
+        const w = Number(block.width);
+        const h = Number(block.height);
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w < 140 || h < 140) {
+          return this.performRegularSplit(block, newColor);
+        }
+        const rect = [[0, 0], [w, 0], [w, h], [0, h]];
+        const edgeInset = 0.04;
+        const maxAngle = SimpleQuiltEngine.STARTER_AXIS_MAX_DEGREES;
+        const angleDegrees = Math.floor(Math.random() * (maxAngle + 1));
+        const angle = angleDegrees * Math.PI / 180;
+        const sign = Math.random() < 0.5 ? -1 : 1;
+        const useLeftRight = Math.random() < 0.5;
+        let a;
+        let b;
+        if (useLeftRight) {
+          const dy = Math.tan(angle) * w * sign;
+          const half = Math.abs(dy) / 2;
+          const lo = Math.max(h * edgeInset + half, half);
+          const hi = Math.min(h * (1 - edgeInset) - half, h - half);
+          if (hi <= lo) return this.performRegularSplit(block, newColor);
+          const mid = lo + Math.random() * (hi - lo);
+          a = [0, mid - dy / 2];
+          b = [w, mid + dy / 2];
+        } else {
+          const dx = Math.tan(angle) * h * sign;
+          const half = Math.abs(dx) / 2;
+          const lo = Math.max(w * edgeInset + half, half);
+          const hi = Math.min(w * (1 - edgeInset) - half, w - half);
+          if (hi <= lo) return this.performRegularSplit(block, newColor);
+          const mid = lo + Math.random() * (hi - lo);
+          a = [mid - dx / 2, 0];
+          b = [mid + dx / 2, h];
+        }
+
+        const makePiece = (color, points) => ({ color, points: this._dedupePolyVertices(points, 1e-7) });
+        const negative = this._clipConvexPolygonByLineDistance(rect, a, b, (d) => d <= 1e-9, 0);
+        const positive = this._clipConvexPolygonByLineDistance(rect, a, b, (d) => d >= -1e-9, 0);
+        if (negative.length < 3 || positive.length < 3) return this.performRegularSplit(block, newColor);
+        const axisDx = b[0] - a[0];
+        const axisDy = b[1] - a[1];
+        const axisLen = Math.max(1e-9, Math.hypot(axisDx, axisDy));
+        const ux = axisDx / axisLen;
+        const uy = axisDy / axisLen;
+        const originalPatternId = block.originalPatternId || block.id;
+        const makeAxisChild = (suffix, color, points, contributorId, submissionIndex) => {
+          const localPieces = [makePiece(color, points)];
+          const localBounds = this._polygonWorldBounds(localPieces);
+          if (!localBounds || localBounds.width <= 0 || localBounds.height <= 0) return null;
+          return {
+            ...block,
+            id: `${block.id}_axis_${this.submissionCount}_${suffix}`,
+            x: block.x + localBounds.x,
+            y: block.y + localBounds.y,
+            width: localBounds.width,
+            height: localBounds.height,
+            color,
+            patternType: 'regular',
+            specialPatternType: 'diagonalAxis',
+            originalPatternId,
+            polygonPieces: this._localPolygonPiecesFromWorldPieces(localPieces, localBounds),
+            diagonalAxisUx: ux,
+            diagonalAxisUy: uy,
+            diagonalAxisAccentColor: newColor,
+            contributorId,
+            submissionIndex,
+            starterAxisRegion: true,
+            starterAxisRegionId: `${block.starterAxisRegionId || block.id}_axis_${this.submissionCount}_${suffix}`
+          };
+        };
+        const children = [
+          makeAxisChild('a', block.color, negative, block.contributorId || this.deviceId, block.submissionIndex),
+          makeAxisChild('b', newColor, positive, this.deviceId, this.submissionCount)
+        ];
+        return children.every(Boolean) ? children : this.performRegularSplit(block, newColor);
       }
 
       createOrganicCheckerboard(block, newColor) {
@@ -10647,6 +11097,14 @@ try {
         }));
       }
 
+      static normalizePolygonPiecesFromFirestore(raw) {
+        return Utils.normalizeHstTrianglesFromFirestore(raw);
+      }
+
+      static polygonPiecesForFirestore(pieces) {
+        return Utils.hstTrianglesForFirestore(pieces);
+      }
+
       /**
        * Half-square triangles in block-local coords (0…w, 0…h) for canvas/SVG/reel.
        */
@@ -11531,6 +11989,22 @@ try {
                     return `${String(b.hstDiagonal || 'nw-se')}:${String(b.hstColorB || '').trim().toLowerCase()}`;
                   })()
                 : '',
+            poly:
+              Array.isArray(b.polygonPieces) && b.polygonPieces.length
+                ? (() => {
+                    const enc = b.polygonPieces
+                      .map((piece) => ({
+                        c: String(piece.color || '').trim().toLowerCase(),
+                        p: (piece.points || []).map((pt) => {
+                          const x = Array.isArray(pt) ? pt[0] : pt?.x;
+                          const y = Array.isArray(pt) ? pt[1] : pt?.y;
+                          return [Math.round(Number(x) * 100) / 100, Math.round(Number(y) * 100) / 100];
+                        })
+                      }))
+                      .sort((a, b) => a.c.localeCompare(b.c) || JSON.stringify(a.p).localeCompare(JSON.stringify(b.p)));
+                    return `poly:${JSON.stringify(enc)}`;
+                  })()
+                : '',
             inset:
               b.patternType === 'special' && b.specialPatternType === 'insetCircle'
                 ? `inset:${b.insetTier ?? 0}:${String(b.insetInnerColor || '').trim().toLowerCase()}:${Math.round(Number(b.insetCx) || 0)}:${Math.round(Number(b.insetCy) || 0)}:${Math.round(Number(b.insetR) || 0)}:${b.insetNextCutVertical === true ? '1' : b.insetNextCutVertical === false ? '0' : 'u'}`
@@ -11543,11 +12017,12 @@ try {
             a.h - b.h ||
             a.c.localeCompare(b.c) ||
             a.hst.localeCompare(b.hst) ||
+            a.poly.localeCompare(b.poly) ||
             a.inset.localeCompare(b.inset)
           );
         if (!normalized.length) return '';
         const canonical = normalized
-          .map((b) => `${b.x},${b.y},${b.w},${b.h},${b.c},${b.hst},${b.inset}`)
+          .map((b) => `${b.x},${b.y},${b.w},${b.h},${b.c},${b.hst},${b.poly},${b.inset}`)
           .join('|');
         // 32-bit FNV-1a (hex) with length prefix for quick mismatch checks.
         let h = 0x811c9dc5;
@@ -15243,9 +15718,15 @@ try {
                 patternType: block.patternType,
                 specialPatternType: block.specialPatternType,
                 originalPatternId: block.originalPatternId,
+                starterAxisRegion: block.starterAxisRegion === true ? true : undefined,
+                starterAxisRegionId: block.starterAxisRegionId,
                 hstColorB: block.hstColorB,
                 hstDiagonal: block.hstDiagonal,
                 hstTriangles: block.hstTriangles,
+                polygonPieces: block.polygonPieces,
+                diagonalAxisAccentColor: block.diagonalAxisAccentColor,
+                diagonalAxisUx: block.diagonalAxisUx,
+                diagonalAxisUy: block.diagonalAxisUy,
                 insetTier: block.insetTier,
                 insetInnerColor: block.insetInnerColor,
                 insetCx: block.insetCx,
@@ -17458,11 +17939,85 @@ try {
           SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
 
           // Special handling for special pattern cells - render as organic polygons
-          if (block.patternType === 'special' && block.specialPatternType) {
+          if (
+            (block.patternType === 'special' && block.specialPatternType) ||
+            (block.specialPatternType === 'diagonalAxis' && Array.isArray(block.polygonPieces))
+          ) {
             // Ensure positive dimensions to prevent SVG errors
             const safeWidth = Math.max(1, block.width);
             const safeHeight = Math.max(1, block.height);
             
+            if (block.specialPatternType === 'diagonalAxis' && Array.isArray(block.polygonPieces)) {
+              const w = safeWidth;
+              const h = safeHeight;
+              const jitterMultiplier = this.calculateJitterMultiplier(w, h);
+              const rotationMultiplier = this.calculateRotationMultiplier(w, h);
+              const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
+              const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
+              const jitterRotation = (Math.random() - 0.5) * 2.2 * rotationMultiplier;
+              const renderX = block.x + jitterX;
+              const renderY = block.y + jitterY;
+              const blockRect = { x: renderX, y: renderY, width: w, height: h };
+              const watercolorStrength = watercolorStrengthForSize(w, h);
+              const specialGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+              specialGroup.classList.add('quilt-parallax-block');
+              const centerX = renderX + w / 2;
+              const centerY = renderY + h / 2;
+              const baseTransform = `rotate(${jitterRotation} ${centerX} ${centerY})`;
+              specialGroup.setAttribute('transform', baseTransform);
+              specialGroup.dataset.baseTransform = baseTransform;
+              specialGroup.dataset.parallaxPhase = String(i);
+              specialGroup.dataset.parallaxCx = String(centerX);
+              specialGroup.dataset.parallaxCy = String(centerY);
+              block.polygonPieces.forEach((piece, pi) => {
+                const pts = (piece.points || [])
+                  .map((p) => {
+                    const x = Number(Array.isArray(p) ? p[0] : p?.x);
+                    const y = Number(Array.isArray(p) ? p[1] : p?.y);
+                    return `${renderX + x},${renderY + y}`;
+                  })
+                  .join(' ');
+                if (!pts) return;
+                const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                poly.setAttribute('points', pts);
+                const fillC = piece.color || block.color;
+                poly.setAttribute('fill', fillC);
+                poly.setAttribute('stroke', 'none');
+                poly.setAttribute('data-block-id', block.id);
+                if (this.userPieces.has(block.id)) {
+                  poly.classList.add('user-piece-highlight');
+                }
+                const paperDepth = createPaperDepthLayers(
+                  poly,
+                  blockRect,
+                  `diag_${i}_${pi}`,
+                  `${block.id || 'block'}_diag_${pi}`
+                );
+                if (paperDepth?.under) specialGroup.appendChild(paperDepth.under);
+                specialGroup.appendChild(poly);
+                const watercolorOverlay = createWatercolorOverlay(
+                  poly,
+                  blockRect,
+                  fillC,
+                  `diag_${i}_${pi}`,
+                  watercolorStrength,
+                  `${block.id || 'block'}_diag_${pi}`
+                );
+                if (watercolorOverlay) specialGroup.appendChild(watercolorOverlay);
+                if (paperDepth?.over) specialGroup.appendChild(paperDepth.over);
+              });
+              if (i === this.lastAddedIndex) {
+                specialGroup.setAttribute('opacity', '0');
+                specialGroup.classList.add('new-block');
+                specialGroup.addEventListener('animationend', () => {
+                  specialGroup.classList.remove('new-block');
+                  specialGroup.removeAttribute('opacity');
+                }, { once: true });
+              }
+              parallaxLayer.appendChild(specialGroup);
+              return;
+            }
+
             if (block.specialPatternType === 'hst') {
               const w = safeWidth;
               const h = safeHeight;
@@ -23112,9 +23667,22 @@ try {
                 patternType: block.patternType,
                 specialPatternType: block.specialPatternType,
                 originalPatternId: block.originalPatternId,
+                starterAxisRegion: block.starterAxisRegion === true ? true : undefined,
+                starterAxisRegionId: block.starterAxisRegionId != null ? String(block.starterAxisRegionId) : undefined,
                 hstColorB: block.hstColorB,
                 hstDiagonal: block.hstDiagonal,
                 hstTriangles: Utils.normalizeHstTrianglesFromFirestore(block.hstTriangles),
+                polygonPieces: Utils.normalizePolygonPiecesFromFirestore(block.polygonPieces),
+                diagonalAxisAccentColor:
+                  typeof block.diagonalAxisAccentColor === 'string' && block.diagonalAxisAccentColor.match(/^#[0-9A-Fa-f]{6}$/)
+                    ? block.diagonalAxisAccentColor
+                    : undefined,
+                diagonalAxisUx: typeof block.diagonalAxisUx === 'number' && Number.isFinite(block.diagonalAxisUx)
+                  ? block.diagonalAxisUx
+                  : undefined,
+                diagonalAxisUy: typeof block.diagonalAxisUy === 'number' && Number.isFinite(block.diagonalAxisUy)
+                  ? block.diagonalAxisUy
+                  : undefined,
                 insetTier: typeof block.insetTier === 'number' ? block.insetTier : undefined,
                 insetFrozen: block.insetFrozen === true ? true : undefined,
                 insetInnerColor: block.insetInnerColor,
