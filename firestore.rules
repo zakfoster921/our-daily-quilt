@@ -22,9 +22,23 @@ service cloud.firestore {
       allow create, update, delete: if !isDateKey(quoteId);
     }
 
+    match /reflectionResponses/{responseId} {
+      // Private raw user reflections: server/Admin SDK writes only.
+      allow read, write: if false;
+    }
+
+    match /reflectionThemes/{dateKey} {
+      allow read: if true;
+      // Public generated themes, written only by the server/Admin SDK.
+      allow write: if false;
+    }
+
     // Preserve the currently deployed permissive behavior for all other collections.
     match /{collection}/{document=**} {
-      allow read, write: if collection != 'quilts' && collection != 'quotes';
+      allow read, write: if collection != 'quilts'
+        && collection != 'quotes'
+        && collection != 'reflectionResponses'
+        && collection != 'reflectionThemes';
     }
   }
 }

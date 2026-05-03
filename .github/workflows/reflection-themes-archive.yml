@@ -1,0 +1,90 @@
+name: Reflection Themes Archive
+
+on:
+  schedule:
+    # Hourly: refresh generated themes for the current app day.
+    - cron: "20 * * * *"
+  workflow_dispatch:
+    inputs:
+      date_key:
+        description: "Optional app-date override (YYYY-MM-DD)"
+        required: false
+
+jobs:
+  generate-reflection-themes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target date key
+        id: resolve_date
+        env:
+          INPUT_DATE_KEY: ${{ inputs.date_key || '' }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_DATE_KEY:-}" ]; then
+            EFFECTIVE_DATE_KEY="${INPUT_DATE_KEY}"
+            echo "Using manual date_key override: ${EFFECTIVE_DATE_KEY}"
+          else
+            EFFECTIVE_DATE_KEY="$(node -e '
+              const d = new Date();
+              const adj = new Date(d);
+              if (d.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
+              const y = adj.getUTCFullYear();
+              const m = String(adj.getUTCMonth() + 1).padStart(2, "0");
+              const day = String(adj.getUTCDate()).padStart(2, "0");
+              process.stdout.write(`${y}-${m}-${day}`);
+            ')"
+            echo "No date_key provided; using current closing app day: ${EFFECTIVE_DATE_KEY}"
+          fi
+          if ! echo "${EFFECTIVE_DATE_KEY}" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            echo "Invalid resolved date key: ${EFFECTIVE_DATE_KEY}"
+            exit 1
+          fi
+          echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
+
+      - name: Call reflection theme generation endpoint
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          REFLECTION_THEME_TOKEN: ${{ secrets.REFLECTION_THEME_TOKEN }}
+          RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
+          DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RESET_URL:-}" ]; then
+            echo "Missing RESET_URL secret"
+            exit 1
+          fi
+
+          TOKEN="${REFLECTION_THEME_TOKEN:-${RESET_TOKEN:-}}"
+          if [ -z "${TOKEN:-}" ]; then
+            echo "Missing REFLECTION_THEME_TOKEN or RESET_TOKEN secret"
+            exit 1
+          fi
+
+          API_BASE_URL="${RESET_URL%/api/daily-reset}"
+          THEMES_URL="${API_BASE_URL}/api/reflection-themes/generate"
+          echo "Generating reflection themes for ${DATE_KEY}"
+
+          http_code=$(curl -sS -o response.json -w "%{http_code}" \
+            -X POST "$THEMES_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-reflection-theme-token: $TOKEN" \
+            --data "{\"source\":\"github-actions\",\"appDateKey\":\"${DATE_KEY}\"}")
+
+          echo "HTTP $http_code"
+          cat response.json
+
+          if [ "$http_code" = "400" ] && grep -Eq '"error"[[:space:]]*:[[:space:]]*"No reflection responses found for date"' response.json; then
+            echo "No responses found for ${DATE_KEY}; leaving archive unchanged."
+            exit 0
+          fi
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 299 ]; then
+            echo "Reflection theme generation failed"
+            exit 1
+          fi
+
+          if ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' response.json; then
+            echo "Reflection theme generation returned success=false"
+            exit 1
+          fi

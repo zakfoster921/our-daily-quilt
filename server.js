@@ -4,6 +4,7 @@ const { createCanvas } = require('canvas');
 const { spawn } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
@@ -175,6 +176,13 @@ function setQuoteSubmissionCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+function setReflectionApiCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token, x-reflection-theme-token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -1044,6 +1052,127 @@ function normalizeSubmittedQuoteText(value) {
     .join('\n')
     .replace(/["“”„‟«»]/g, '')
     .trim();
+}
+
+function normalizeReflectionResponseText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function safeReflectionDeviceKey(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return crypto.randomUUID();
+  return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32);
+}
+
+function postJsonWithHttps({ hostname, path: requestPath, headers, body }) {
+  const payload = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname,
+      path: requestPath,
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      let responseBody = '';
+      res.on('data', (chunk) => {
+        responseBody += chunk.toString();
+      });
+      res.on('end', () => {
+        let parsed = null;
+        try {
+          parsed = responseBody ? JSON.parse(responseBody) : null;
+        } catch (_) {
+          parsed = null;
+        }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const error = new Error(parsed?.error?.message || parsed?.error || `HTTPS request failed (${res.statusCode})`);
+          error.statusCode = res.statusCode;
+          error.responseBody = responseBody;
+          reject(error);
+          return;
+        }
+        resolve(parsed);
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+function extractReflectionThemesFromText(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  let parsed = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        parsed = JSON.parse(match[0]);
+      } catch (_) {
+        parsed = null;
+      }
+    }
+  }
+  const source = Array.isArray(parsed) ? parsed : parsed?.themes;
+  return (Array.isArray(source) ? source : [])
+    .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest').trim();
+  const responseList = responses
+    .map((text, index) => `${index + 1}. ${String(text || '').replace(/\s+/g, ' ').trim()}`)
+    .join('\n');
+  const prompt = [
+    `Date key: ${dateKey}`,
+    reflectionPrompt ? `Reflection prompt: ${reflectionPrompt}` : '',
+    'Private responses:',
+    responseList,
+    '',
+    'Create exactly 4 short theme statements from these private reflection responses.',
+    'Do not quote, closely paraphrase, diagnose, or give advice.',
+    'Use gentle language such as "People are noticing..." or "A few responses circle around...".',
+    'Return only JSON in this shape: {"themes":["theme one","theme two","theme three","theme four"]}'
+  ].filter(Boolean).join('\n');
+
+  const result = await postJsonWithHttps({
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: {
+      model,
+      max_tokens: 360,
+      temperature: 0.3,
+      messages: [{ role: 'user', content: prompt }]
+    }
+  });
+  const text = (result?.content || [])
+    .map((part) => part?.type === 'text' ? part.text : '')
+    .join('\n')
+    .trim();
+  const themes = extractReflectionThemesFromText(text);
+  if (themes.length !== 4) throw new Error('Claude did not return exactly 4 reflection themes');
+  return { themes, model };
 }
 
 function normalizeSubmittedAuthorName(value) {
@@ -1988,6 +2117,137 @@ app.post('/api/quote-submission', async (req, res) => {
   }
 });
 
+app.options('/api/reflection-response', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/reflection-response', async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const responseText = normalizeReflectionResponseText(body.responseText || body.text);
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || '').trim())
+      ? String(body.appDateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const quoteId = String(body.quoteId || '').trim().slice(0, 180);
+    const reflectionPromptSnapshot = String(body.reflectionPromptSnapshot || '').trim().slice(0, 500);
+
+    if (!responseText) {
+      return res.status(400).json({ success: false, error: 'Reflection response is required' });
+    }
+    if (responseText.length > 240) {
+      return res.status(400).json({ success: false, error: 'Reflection response must be 240 characters or fewer' });
+    }
+
+    const deviceKey = safeReflectionDeviceKey(clientId || `${req.ip || ''}|${req.get('user-agent') || ''}`);
+    const responseId = `${appDateKey}_${deviceKey}`;
+    const responseRef = db.collection('reflectionResponses').doc(responseId);
+    const existingResponse = await responseRef.get();
+    const responsePayload = {
+      appDateKey,
+      responseText,
+      clientId: clientId || null,
+      deviceKey,
+      quoteId: quoteId || null,
+      reflectionPromptSnapshot,
+      source: 'app',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    if (!existingResponse.exists) {
+      responsePayload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+    await responseRef.set(responsePayload, { merge: true });
+
+    return res.json({ success: true, responseId, appDateKey, status: 'stored' });
+  } catch (error) {
+    console.error('❌ Reflection response failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection response failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/reflection-themes/generate', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/reflection-themes/generate', async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const expectedToken = process.env.REFLECTION_THEME_TOKEN || process.env.RESET_TOKEN || '';
+    if (!expectedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'REFLECTION_THEME_TOKEN or RESET_TOKEN must be set on the server'
+      });
+    }
+    const providedToken = req.header('x-reflection-theme-token') || req.header('x-reset-token');
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.date || '').trim())
+      ? String(body.appDateKey || body.date).trim()
+      : getAppDateKey();
+    const responseLimit = Math.max(1, Math.min(120, Number(body.limit) || 80));
+    const responseSnap = await db.collection('reflectionResponses')
+      .where('appDateKey', '==', appDateKey)
+      .limit(responseLimit)
+      .get();
+    const responses = responseSnap.docs
+      .map((doc) => String(doc.data()?.responseText || '').trim())
+      .filter(Boolean);
+    if (!responses.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'No reflection responses found for date',
+        appDateKey
+      });
+    }
+
+    let reflectionPrompt = '';
+    try {
+      const quoteDoc = await db.collection(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').doc(appDateKey).get();
+      const quoteData = quoteDoc.exists ? quoteDoc.data() : null;
+      reflectionPrompt = String(quoteData?.reflectionPrompt || quoteData?.reflection_prompt || '').trim().slice(0, 500);
+    } catch (error) {
+      console.warn('Reflection theme quote prompt lookup failed:', error.message);
+    }
+
+    const { themes, model } = await generateReflectionThemesWithClaude({
+      dateKey: appDateKey,
+      reflectionPrompt,
+      responses
+    });
+    await db.collection('reflectionThemes').doc(appDateKey).set({
+      appDateKey,
+      themes,
+      responseCount: responses.length,
+      model,
+      status: 'generated',
+      generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      generatedAtIso: getUtcIsoNow()
+    }, { merge: true });
+
+    return res.json({ success: true, appDateKey, themes, responseCount: responses.length, model });
+  } catch (error) {
+    console.error('❌ Reflection theme generation failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection theme generation failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
 app.get('/api/simple-test', (req, res) => {
   res.json({
     success: true,
@@ -2177,6 +2437,24 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     }
 
     const scheduleStartDate = getAppDateKey();
+    const appSubmissionsResult = await runNodeScript('scripts/schedule-approved-app-submissions.cjs', [
+      `--start=${scheduleStartDate}`,
+      '--cadence=1',
+      '--window=8'
+    ]);
+    if (appSubmissionsResult.code !== 0) {
+      return res.status(500).json({
+        success: false,
+        step: 'schedule:app-submissions',
+        exitCode: appSubmissionsResult.code,
+        stdout: tailOutput(appSubmissionsResult.stdout, 12000),
+        stderr: tailOutput(appSubmissionsResult.stderr, 12000),
+        note: 'Notion → Firestore (quotes) completed; approved app-submission scheduling failed before rolling append.',
+        startedAt,
+        finishedAt: getUtcIsoNow()
+      });
+    }
+
     const scheduleResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
@@ -2185,11 +2463,11 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     if (scheduleResult.code !== 0) {
       return res.status(500).json({
         success: false,
-        step: 'schedule:quotes',
+        step: 'schedule:rolling-append',
         exitCode: scheduleResult.code,
         stdout: tailOutput(scheduleResult.stdout, 12000),
         stderr: tailOutput(scheduleResult.stderr, 12000),
-        note: 'Notion → Firestore (quotes) completed; schedule rebuild failed before date_scheduled sync.',
+        note: 'Notion → Firestore (quotes) and app-submission scheduling completed; rolling append failed before date_scheduled sync.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -2203,7 +2481,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: usageResult.code,
         stdout: tailOutput(usageResult.stdout, 12000),
         stderr: tailOutput(usageResult.stderr, 12000),
-        note: 'Notion → Firestore (quotes) and schedule rebuild completed; Firestore → Notion (usage/date_scheduled) failed.',
+        note: 'Notion → Firestore (quotes), app-submission scheduling, and rolling append completed; Firestore → Notion (usage/date_scheduled) failed.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -2211,14 +2489,14 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
 
     return res.json({
       success: true,
-      steps: ['sync:quotes', 'schedule:quotes', 'sync:usage'],
+      steps: ['sync:quotes', 'schedule:app-submissions', 'schedule:rolling-append', 'sync:usage'],
       scheduleStartDate,
       stdout: tailOutput(
-        `${quotesResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
+        `${quotesResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
         16000
       ),
       stderr: tailOutput(
-        `${quotesResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
+        `${quotesResult.stderr}\n---\n${appSubmissionsResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
         8000
       ),
       startedAt,
