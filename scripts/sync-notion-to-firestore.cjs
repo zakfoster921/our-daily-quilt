@@ -212,10 +212,10 @@ function findBlessingFromProps(props) {
 /** Resolve text from known keys first, then any Notion column whose normalized name matches `base`. */
 function getMappedText(props, base, ...directKeys) {
   for (const k of directKeys) {
-    const t = getRichText(props[k]) || getTitle(props[k]);
+    const t = textFromAnyNotionProp(props[k]);
     if (t) return t.trim();
   }
-  return textFromNotionProp(findPropByBaseName(props, base));
+  return textFromAnyNotionProp(findPropByBaseName(props, base));
 }
 
 function parseNotionRow(page) {
@@ -231,6 +231,7 @@ function parseNotionRow(page) {
   const whatIf = getMappedText(props, 'what_if', 'what_if', 'What if', 'What If');
   const igCaption = getMappedText(props, 'ig_caption', 'ig_caption', 'IG Caption', 'Ig Caption');
   const mood = getMappedText(props, 'mood', 'mood', 'Mood');
+  const fortune = getMappedText(props, 'fortune', 'fortune', 'Fortune');
   const blessing = findBlessingFromProps(props);
   const submittedBy = getMappedText(
     props,
@@ -285,6 +286,7 @@ function parseNotionRow(page) {
       igCaption,
       ig_caption: igCaption,
       mood,
+      fortune,
       blessing,
       submittedBy,
       submitted_by: submittedBy,
@@ -377,6 +379,7 @@ async function run() {
   let cursor = null;
   let fetchedPages = 0;
   let writeCount = 0;
+  let fortuneCount = 0;
   let skipCount = 0;
   let page = 0;
 
@@ -393,6 +396,9 @@ async function run() {
         skipCount += 1;
         continue;
       }
+      if (String(parsed.data.fortune || '').trim()) {
+        fortuneCount += 1;
+      }
       if (!dryRun) {
         await db.collection(collectionName).doc(parsed.id).set(parsed.data, { merge: true });
       }
@@ -400,7 +406,7 @@ async function run() {
     }
 
     console.log(
-      `[sync] page=${page} fetched=${results.length} totalFetched=${fetchedPages} writes=${writeCount} skipped=${skipCount}`
+      `[sync] page=${page} fetched=${results.length} totalFetched=${fetchedPages} writes=${writeCount} fortunes=${fortuneCount} skipped=${skipCount}`
     );
 
     cursor = payload.has_more ? payload.next_cursor : null;
@@ -442,7 +448,7 @@ async function run() {
   }
 
   console.log(
-    `[sync] complete dryRun=${dryRun} fetched=${fetchedPages} writes=${writeCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} fetched=${fetchedPages} writes=${writeCount} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
   );
 }
 

@@ -84,6 +84,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     blessingSnapshot: q.blessing.slice(0, 240),
     whatIfSnapshot: q.whatIf.slice(0, 240),
     igCaptionSnapshot: q.igCaption.slice(0, 400),
+    fortuneSnapshot: q.fortune.slice(0, 400),
     assignedAt: new Date().toISOString(),
     assignedBy
   };
@@ -101,6 +102,7 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     what_if: q.whatIf || '',
     igCaption: q.igCaption || '',
     ig_caption: q.igCaption || '',
+    fortune: q.fortune || '',
     assignedBy,
     assignedAt: updatedAt,
     updatedAt
@@ -179,6 +181,7 @@ async function main() {
       blessing: String(d.blessing ?? d.dailyBlessing ?? d.daily_blessing ?? '').trim(),
       whatIf: String(d.whatIf ?? d.what_if ?? '').trim(),
       igCaption: String(d.igCaption ?? d.ig_caption ?? '').trim(),
+      fortune: String(d.fortune ?? d.Fortune ?? '').trim(),
       submittedAt: String(d.submittedAt || '').trim(),
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
       dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim()
