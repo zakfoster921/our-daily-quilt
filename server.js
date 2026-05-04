@@ -1140,7 +1140,7 @@ function extractReflectionThemesFromText(value) {
     .filter(Boolean)
     .slice(0, 4);
   if (themes.length) return themes;
-  const labeledMatches = Array.from(raw.matchAll(/THEME\s*[1-4]\s*:\s*([^\n]+)/gi))
+  const labeledMatches = Array.from(raw.matchAll(/THEME\s*[1-4]\s*:\s*([\s\S]*?)(?=\s*THEME\s*[1-4]\s*:|$)/gi))
     .map((match) => String(match[1] || '').trim())
     .filter(Boolean);
   if (labeledMatches.length) return labeledMatches.slice(0, 4);
