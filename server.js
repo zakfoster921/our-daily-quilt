@@ -1158,7 +1158,7 @@ function completeReflectionThemes(themes) {
   return (Array.isArray(themes) ? themes : [])
     .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
     .map((theme) => theme.replace(/\.+$/g, '').trim())
-    .map((theme) => theme.length > 40 ? theme.slice(0, 40).trim().replace(/[,\-:;]+$/g, '').trim() : theme)
+    .map((theme) => theme.length > 45 ? theme.slice(0, 45).trim().replace(/[,\-:;]+$/g, '').trim() : theme)
     .filter(Boolean)
     .filter((theme) => {
       const key = theme.toLowerCase();
@@ -1184,16 +1184,21 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     '- Let the list expand as good unique responses come in, up to 10 ideas',
     '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
     '- Preserve the most poetic, specific, or human keywords from the originals',
-    '- Write in first person ("I", "my", "me")',
-    '- Keep each item to 40 characters or fewer',
+    '- Remove personal pronouns where possible',
+    '- Where a pronoun is needed, use "you" — never "I" or "we"',
+    '- Keep each item to 45 characters or fewer',
     '- Do not end items with periods',
     '- Avoid clinical or self-help language',
     '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
+    'Examples:',
+    '- Watch process, not finished work',
+    '- Call it a life, not a practice',
+    '- Just keep showing up',
     'Hard rules:',
-    '- Every item must be written as a first-person statement using "I", "my", or "me"',
-    '- Do not use "you", "your", or "yours" in any item',
+    '- Prefer short phrase-style ideas over full sentences',
+    '- Do not use "I", "my", "me", "we", "our", or "us" in any item',
     '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
-    '- Do not write observations about what people are doing; turn them into small first-person ideas someone could borrow',
+    '- Do not write observations about what people are doing; turn them into small ideas someone could borrow',
     '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
     'Return only JSON in this shape: {"themes":["helpful idea","helpful idea"]}'
   ].filter(Boolean).join('\n');
@@ -1215,16 +1220,21 @@ function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, response
     '- Let the list expand as good unique responses come in, up to 10 ideas',
     '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
     '- Preserve the most poetic, specific, or human keywords from the originals',
-    '- Write in first person ("I", "my", "me")',
-    '- Keep each item to 40 characters or fewer',
+    '- Remove personal pronouns where possible',
+    '- Where a pronoun is needed, use "you" — never "I" or "we"',
+    '- Keep each item to 45 characters or fewer',
     '- Do not end items with periods',
     '- Avoid clinical or self-help language',
     '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
+    'Examples:',
+    '- Watch process, not finished work',
+    '- Call it a life, not a practice',
+    '- Just keep showing up',
     'Hard rules:',
-    '- Every item must be written as a first-person statement using "I", "my", or "me"',
-    '- Do not use "you", "your", or "yours" in any item',
+    '- Prefer short phrase-style ideas over full sentences',
+    '- Do not use "I", "my", "me", "we", "our", or "us" in any item',
     '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
-    '- Do not write observations about what people are doing; turn them into small first-person ideas someone could borrow',
+    '- Do not write observations about what people are doing; turn them into small ideas someone could borrow',
     '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
     'Return plain text only with one labeled idea per line:',
     'IDEA 1: <helpful idea>',
@@ -1276,10 +1286,10 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       '',
       `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
       'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
-      'If the responses share one broad topic, separate genuinely different first-person ideas someone could borrow.',
+      'If the responses share one broad topic, separate genuinely different phrase-style ideas someone could borrow.',
       'Do not collapse multiple distinct responses into one broad summary.',
-      'Every idea must use "I", "my", or "me" and must not use "you", "your", or "yours".',
-      'Every idea must be 40 characters or fewer.',
+      'Remove personal pronouns where possible. If a pronoun is needed, use "you"; never use "I" or "we".',
+      'Every idea must be 45 characters or fewer.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
