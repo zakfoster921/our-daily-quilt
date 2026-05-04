@@ -1147,6 +1147,34 @@ function extractReflectionThemesFromText(value) {
     .slice(0, 4);
 }
 
+function completeReflectionThemes(themes) {
+  const seen = new Set();
+  const normalized = (Array.isArray(themes) ? themes : [])
+    .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .filter((theme) => {
+      const key = theme.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  const fallbackThemes = [
+    'People are noticing what needs care today.',
+    'A few responses circle around making room for gentleness.',
+    'Many are naming a desire for steadiness.',
+    'There is a shared thread of beginning again.'
+  ];
+  fallbackThemes.forEach((theme) => {
+    if (normalized.length >= 4) return;
+    const key = theme.toLowerCase();
+    if (!seen.has(key)) {
+      normalized.push(theme);
+      seen.add(key);
+    }
+  });
+  return normalized.slice(0, 4);
+}
+
 function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
   const responseList = responses
     .map((text, index) => `${index + 1}. ${String(text || '').replace(/\s+/g, ' ').trim()}`)
@@ -1203,8 +1231,8 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
     .map((part) => part?.text || '')
     .join('\n')
     .trim();
-  const themes = extractReflectionThemesFromText(text);
-  if (themes.length !== 4) throw new Error('Gemini did not return exactly 4 reflection themes');
+  const themes = completeReflectionThemes(extractReflectionThemesFromText(text));
+  if (themes.length !== 4) throw new Error('Gemini did not return usable reflection themes');
   return { themes, model, provider: 'gemini' };
 }
 
@@ -1232,8 +1260,8 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
     .map((part) => part?.type === 'text' ? part.text : '')
     .join('\n')
     .trim();
-  const themes = extractReflectionThemesFromText(text);
-  if (themes.length !== 4) throw new Error('Claude did not return exactly 4 reflection themes');
+  const themes = completeReflectionThemes(extractReflectionThemesFromText(text));
+  if (themes.length !== 4) throw new Error('Claude did not return usable reflection themes');
   return { themes, model, provider: 'anthropic' };
 }
 
