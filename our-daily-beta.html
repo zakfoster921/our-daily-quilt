@@ -5093,34 +5093,31 @@ try {
     }
 
     #screen-quilt .quilt-reflection-wall-notes {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.62rem;
+      display: block;
       margin-top: 0.72rem;
     }
 
-    #screen-quilt .quilt-reflection-wall-note {
-      min-height: 82px;
-      padding: 0.72rem 0.68rem;
-      box-sizing: border-box;
-      border-radius: 0;
-      background: #e5d4b8;
+    #screen-quilt .quilt-reflection-wall-list {
+      margin: 0;
+      padding: 0 0 0 1.08rem;
       color: #2f2b24;
       font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
-      font-size: 0.78rem;
+      font-size: 0.82rem;
       font-style: italic;
-      line-height: 1.42;
-      box-shadow:
-        0 2px 6px rgba(45, 34, 22, 0.08);
-      transform: rotate(var(--reflection-wall-note-rotation, 0deg));
+      line-height: 1.55;
     }
 
-    #screen-quilt .quilt-reflection-wall-note:nth-child(2n) {
-      --reflection-wall-note-rotation: 1.1deg;
+    #screen-quilt .quilt-reflection-wall-list li {
+      margin: 0 0 0.54rem;
+      padding-left: 0.12rem;
     }
 
-    #screen-quilt .quilt-reflection-wall-note:nth-child(2n + 1) {
-      --reflection-wall-note-rotation: -0.9deg;
+    #screen-quilt .quilt-reflection-wall-list li::marker {
+      color: #7d6644;
+    }
+
+    #screen-quilt .quilt-reflection-wall-note {
+      display: none;
     }
 
     #screen-quilt .quilt-reflection-wall-note--mine {
@@ -6236,8 +6233,8 @@ try {
             <button class="quilt-reflection-response-submit" type="submit">Share</button>
           </form>
           <section class="quilt-reflection-wall" id="quiltReflectionWall" aria-labelledby="quiltReflectionWallTitle">
-            <p class="quilt-reflection-wall-kicker" id="quiltReflectionWallTitle">Recent themes</p>
-            <p class="quilt-reflection-wall-helper">From gathered reflections, while today&rsquo;s themes take shape.</p>
+            <p class="quilt-reflection-wall-kicker" id="quiltReflectionWallTitle">Recent ideas</p>
+            <p class="quilt-reflection-wall-helper">Helpful ideas shared back from the community.</p>
             <div class="quilt-reflection-wall-notes" id="quiltReflectionWallNotes" aria-live="polite"></div>
           </section>
           <button class="quilt-reflection-archive-link" type="button" data-next="screen-reflection-themes-archive">
@@ -21771,10 +21768,10 @@ try {
 
       getFallbackReflectionThemes() {
         return [
-          'People are noticing the need to slow down.',
-          'A few responses circle around forgiveness.',
-          'Many are naming a desire for steadiness.',
-          'There is a thread of beginning again.'
+          'Keep a short list of kind words nearby for a hard moment.',
+          'Step away long enough to notice what actually needs care.',
+          'Ask for one small bit of help before the day gets too heavy.',
+          'Let beginning again count, even if it is quiet.'
         ];
       }
 
@@ -21796,19 +21793,17 @@ try {
         const helper = wall?.querySelector?.('.quilt-reflection-wall-helper') || null;
         if (!wall || !notes) return;
         const fallbackThemes = this.getFallbackReflectionThemes();
-        const themeTexts = [
-          ...(Array.isArray(themes) ? themes : []),
-          ...fallbackThemes
-        ]
+        const themeTexts = (Array.isArray(themes) && themes.length ? themes : fallbackThemes)
           .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
-          .filter(Boolean)
-          .slice(0, 4);
-        notes.innerHTML = themeTexts
-          .map((theme) => `<div class="quilt-reflection-wall-note">${this.escapeQuiltFortuneText(theme)}</div>`)
-          .join('');
-        if (title) title.textContent = options.title || 'Recent themes';
+          .filter(Boolean);
+        notes.innerHTML = `<ul class="quilt-reflection-wall-list">${
+          themeTexts
+            .map((theme) => `<li>${this.escapeQuiltFortuneText(theme)}</li>`)
+            .join('')
+        }</ul>`;
+        if (title) title.textContent = options.title || 'Recent ideas';
         if (helper) {
-          helper.textContent = options.helper || 'From gathered reflections, while today’s themes take shape.';
+          helper.textContent = options.helper || 'Helpful ideas shared back from the community.';
         }
         wall.hidden = false;
       }
@@ -21842,7 +21837,7 @@ try {
         const todayThemes = await readThemes(dateKey);
         if (todayThemes) {
           this.renderReflectionAnonymousWall(todayThemes.themes, {
-            title: 'Today’s themes',
+            title: 'Today’s ideas',
             helper: 'Gathered from today’s reflections.'
           });
           return;
@@ -21850,8 +21845,8 @@ try {
         const recentThemes = await readThemes(yesterdayKey);
         if (recentThemes) {
           this.renderReflectionAnonymousWall(recentThemes.themes, {
-            title: 'Recent themes',
-            helper: 'From the last gathered reflections, while today’s themes take shape.'
+            title: 'Recent ideas',
+            helper: 'From the last gathered reflections, while today’s ideas take shape.'
           });
         }
       }
@@ -21984,7 +21979,7 @@ try {
             ? data.themes.map((theme) => String(theme || '').replace(/\s+/g, ' ').trim()).filter(Boolean)
             : [];
           if (dateKey && themes.length) {
-            docs.push({ dateKey, themes: themes.slice(0, 4) });
+            docs.push({ dateKey, themes });
           }
         });
 
@@ -32159,13 +32154,15 @@ try {
           if (!res.ok) return false;
           const data = await res.json();
           const themes = Array.isArray(data?.themes)
-            ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean).slice(0, 4)
+            ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
             : [];
           if (!themes.length) return false;
-          notes.innerHTML = themes
-            .map((theme) => `<div class="quilt-reflection-wall-note">${escapeHtml(theme)}</div>`)
-            .join('');
-          title.textContent = 'Today’s themes';
+          notes.innerHTML = `<ul class="quilt-reflection-wall-list">${
+            themes
+              .map((theme) => `<li>${escapeHtml(theme)}</li>`)
+              .join('')
+          }</ul>`;
+          title.textContent = 'Today’s ideas';
           if (helper) helper.textContent = 'Gathered from today’s reflections.';
           wall.hidden = false;
           return true;

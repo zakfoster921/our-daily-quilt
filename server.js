@@ -1128,31 +1128,29 @@ function extractReflectionThemesFromText(value) {
   }
   const source = Array.isArray(parsed)
     ? parsed
-    : parsed?.themes || parsed?.reflectionThemes || parsed?.themeStatements || parsed?.items;
+    : parsed?.themes || parsed?.ideas || parsed?.communityIdeas || parsed?.reflectionThemes || parsed?.themeStatements || parsed?.items;
   const themes = (Array.isArray(source) ? source : [])
     .map((theme) => {
       if (theme && typeof theme === 'object') {
-        return theme.theme || theme.text || theme.statement || theme.summary || '';
+        return theme.idea || theme.theme || theme.text || theme.statement || theme.summary || '';
       }
       return theme;
     })
     .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-    .slice(0, 4);
+    .filter(Boolean);
   if (themes.length) return themes;
-  const labeledMatches = Array.from(raw.matchAll(/(?:\*\*)?\s*THEME\s*[1-4]\s*(?:\*\*)?\s*[:\-.)]?\s*(?:\*\*)?\s*([\s\S]*?)(?=\s*(?:\*\*)?\s*THEME\s*[1-4]\s*(?:\*\*)?\s*[:\-.)]?|$)/gi))
+  const labeledMatches = Array.from(raw.matchAll(/(?:\*\*)?\s*(?:THEME|IDEA)\s*\d+\s*(?:\*\*)?\s*[:\-.)]?\s*(?:\*\*)?\s*([\s\S]*?)(?=\s*(?:\*\*)?\s*(?:THEME|IDEA)\s*\d+\s*(?:\*\*)?\s*[:\-.)]?|$)/gi))
     .map((match) => String(match[1] || '').replace(/\*\*/g, '').trim())
     .filter(Boolean);
-  if (labeledMatches.length) return labeledMatches.slice(0, 4);
+  if (labeledMatches.length) return labeledMatches;
   return raw
     .split(/\n+/)
     .map((line) => line
-      .replace(/^\s*THEME\s*[1-4]\s*:\s*/i, '')
+      .replace(/^\s*(?:THEME|IDEA)\s*\d+\s*[:\-.)]\s*/i, '')
       .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '')
       .replace(/^["']|["']$/g, '')
       .trim())
-    .filter((line) => line && !/^\{|\}|\[|\]|themes/i.test(line))
-    .slice(0, 4);
+    .filter((line) => line && !/^\{|\}|\[|\]|themes|ideas/i.test(line));
 }
 
 function completeReflectionThemes(themes) {
@@ -1165,8 +1163,7 @@ function completeReflectionThemes(themes) {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    })
-    .slice(0, 4);
+    });
 }
 
 function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
@@ -1179,12 +1176,20 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'Private responses:',
     responseList,
     '',
-    'Create exactly 4 short theme statements from these private reflection responses.',
-    'Even if there are only 1 or 2 responses, infer 4 distinct gentle themes from them.',
-    'Each theme must be specific to the responses, not generic placeholder language.',
-    'Do not quote, closely paraphrase, diagnose, or give advice.',
-    'Use gentle language such as "People are noticing..." or "A few responses circle around...".',
-    'Return only JSON in this shape: {"themes":["theme one","theme two","theme three","theme four"]}'
+    'You are synthesizing written responses from a community into a short list of helpful ideas.',
+    'Your job:',
+    '- Combine similar responses into single ideas',
+    '- Preserve the most poetic, specific, or human keywords from the originals',
+    '- Write in second person ("your", "you") — direct but not preachy',
+    '- Keep each item to one sentence, no more than 20 words',
+    '- Avoid clinical or self-help language',
+    '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
+    'Hard rules:',
+    '- Every item must directly address the reader using "you" or "your"',
+    '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
+    '- Do not write observations about what people are doing; turn them into small ideas the reader could try',
+    '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
+    'Return only JSON in this shape: {"themes":["helpful idea","helpful idea"]}'
   ].filter(Boolean).join('\n');
 }
 
@@ -1198,29 +1203,25 @@ function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, response
     'Private responses:',
     responseList,
     '',
-    'Write exactly 4 short public theme statements from these private responses.',
-    'Even with only 1 or 2 responses, infer 4 distinct gentle themes from what is present.',
-    'Make every theme specific to the responses. Avoid generic filler.',
-    'Write each theme as an observation about what people are sharing, not as advice or a summary of ideas.',
-    'Use language like "Many are...", "A few are...", "There’s a thread of...", and "Some are noticing...".',
-    'Write in third person, present tense, as if reporting back from a live gathering.',
-    'The voice should feel communal and ritual, not clinical or analytical.',
-    'Use concrete, lived images instead of abstract categories.',
-    'Write like something that helps a person feel less alone at 7am.',
-    'Avoid phrases like "external validation", "internal resilience", "self-criticism", "coping mechanisms", "processing", and "tool".',
-    'Avoid therapist case-note language and academic summary language.',
-    'Example target style: "Some are building small arsenals of kind words for when the hard moments hit."',
-    'Do not write in the imperative.',
-    'Do not give recommendations.',
-    'Do not quote or closely paraphrase any private response.',
-    'Keep each theme to one sentence.',
-    'Style: warm, plainspoken, emotionally precise, and a little handmade.',
-    'Return plain text only with exactly these four labeled lines:',
-    'THEME 1: <theme statement>',
-    'THEME 2: <theme statement>',
-    'THEME 3: <theme statement>',
-    'THEME 4: <theme statement>',
-    'Do not use markdown, JSON, bullets, or any extra text.'
+    'You are synthesizing written responses from a community into a short list of helpful ideas.',
+    'Your job:',
+    '- Combine similar responses into single ideas',
+    '- Preserve the most poetic, specific, or human keywords from the originals',
+    '- Write in second person ("your", "you") — direct but not preachy',
+    '- Keep each item to one sentence, no more than 20 words',
+    '- Avoid clinical or self-help language',
+    '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
+    'Hard rules:',
+    '- Every item must directly address the reader using "you" or "your"',
+    '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
+    '- Do not write observations about what people are doing; turn them into small ideas the reader could try',
+    '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
+    'Return plain text only with one labeled idea per line:',
+    'IDEA 1: <helpful idea>',
+    'IDEA 2: <helpful idea>',
+    'IDEA 3: <helpful idea>',
+    'Continue only for genuinely distinct ideas.',
+    'Do not use markdown, JSON, bullets, headings, or any extra text.'
   ].filter(Boolean).join('\n');
 }
 
@@ -1257,22 +1258,22 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
 
   const firstText = await postReflectionThemesToGemini({ apiKey, model, prompt });
   let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
-  if (themes.length !== 4) {
-    console.warn(`Gemini returned ${themes.length} usable themes on first attempt; retrying with repair prompt.`);
+  if (!themes.length) {
+    console.warn('Gemini returned no usable community ideas on first attempt; retrying with repair prompt.');
     const repairPrompt = [
       prompt,
       '',
-      `Your previous output produced ${themes.length} usable themes. Try again.`,
-      'Return exactly 4 distinct, response-specific theme statements using THEME 1:, THEME 2:, THEME 3:, and THEME 4: labels.'
+      'Your previous output produced no usable ideas. Try again.',
+      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
     themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
-    if (themes.length !== 4) {
+    if (!themes.length) {
       const preview = String(repairText || firstText || '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 600);
-      const error = new Error(`Gemini returned ${themes.length} usable reflection themes. Raw output preview: ${preview || '[empty]'}`);
+      const error = new Error(`Gemini returned no usable community ideas. Raw output preview: ${preview || '[empty]'}`);
       error.geminiOutputPreview = preview;
       throw error;
     }
@@ -1295,7 +1296,7 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
     },
     body: {
       model,
-      max_tokens: 360,
+      max_tokens: 1200,
       temperature: 0.3,
       messages: [{ role: 'user', content: prompt }]
     }
@@ -1305,7 +1306,7 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
     .join('\n')
     .trim();
   const themes = completeReflectionThemes(extractReflectionThemesFromText(text));
-  if (themes.length !== 4) throw new Error(`Claude returned ${themes.length} usable reflection themes`);
+  if (!themes.length) throw new Error('Claude returned no usable community ideas');
   return { themes, model, provider: 'anthropic' };
 }
 
@@ -2342,7 +2343,7 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
     }
     const data = themeDoc.data() || {};
     const themes = Array.isArray(data.themes)
-      ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean).slice(0, 4)
+      ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
       : [];
     if (!themes.length) {
       return res.status(404).json({ success: false, error: 'Reflection themes not found', appDateKey });
