@@ -21814,12 +21814,13 @@ try {
       }
 
       async loadReflectionThemesForToday() {
-        const firestoreReady = await this.waitForReflectionFirestore();
         const dateKey = Utils.getTodayKey();
         const yesterdayKey = this.getAdjacentDateKey(dateKey, -1);
         const readThemes = async (key) => {
           if (!key) return null;
-          let data = null;
+          let data = await this.fetchReflectionThemesViaBackend(key);
+          if (!data) data = await this.fetchReflectionThemesViaRest(key);
+          const firestoreReady = data ? false : await this.waitForReflectionFirestore(1200);
           if (firestoreReady) {
             try {
               const docRef = window.firestore.doc(window.db, 'reflectionThemes', key);
@@ -32137,6 +32138,45 @@ try {
       // Expose utility class for headless automation scripts (SSR workflow).
       window.Utils = Utils;
       Utils.migrateLegacyFirstNameSkipToStorage();
+
+      const applyReflectionThemesDirect = async () => {
+        const notes = document.getElementById('quiltReflectionWallNotes');
+        const title = document.getElementById('quiltReflectionWallTitle');
+        const wall = document.getElementById('quiltReflectionWall');
+        const helper = wall?.querySelector?.('.quilt-reflection-wall-helper') || null;
+        if (!notes || !title || !wall) return false;
+        const escapeHtml = (value) => String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        try {
+          const dateKey = Utils.getTodayKey();
+          const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
+          if (!baseUrl || !dateKey) return false;
+          const res = await fetch(`${baseUrl}/api/reflection-themes/${encodeURIComponent(dateKey)}?t=${Date.now()}`, { cache: 'no-store' });
+          if (!res.ok) return false;
+          const data = await res.json();
+          const themes = Array.isArray(data?.themes)
+            ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean).slice(0, 4)
+            : [];
+          if (!themes.length) return false;
+          notes.innerHTML = themes
+            .map((theme) => `<div class="quilt-reflection-wall-note">${escapeHtml(theme)}</div>`)
+            .join('');
+          title.textContent = 'Today’s themes';
+          if (helper) helper.textContent = 'Gathered from today’s reflections.';
+          wall.hidden = false;
+          return true;
+        } catch (error) {
+          console.warn('Reflection themes direct refresh failed:', error);
+          return false;
+        }
+      };
+      window.refreshReflectionThemesNow = applyReflectionThemesDirect;
+      setTimeout(applyReflectionThemesDirect, 600);
+      setTimeout(applyReflectionThemesDirect, 1800);
 
       // Before async initialize (Firebase, quilt) so the portal date is never a stale placeholder.
       Utils.refreshPortalDateText();

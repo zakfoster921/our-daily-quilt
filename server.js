@@ -1149,7 +1149,7 @@ function extractReflectionThemesFromText(value) {
 
 function completeReflectionThemes(themes) {
   const seen = new Set();
-  const normalized = (Array.isArray(themes) ? themes : [])
+  return (Array.isArray(themes) ? themes : [])
     .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .filter((theme) => {
@@ -1157,22 +1157,8 @@ function completeReflectionThemes(themes) {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    });
-  const fallbackThemes = [
-    'People are noticing what needs care today.',
-    'A few responses circle around making room for gentleness.',
-    'Many are naming a desire for steadiness.',
-    'There is a shared thread of beginning again.'
-  ];
-  fallbackThemes.forEach((theme) => {
-    if (normalized.length >= 4) return;
-    const key = theme.toLowerCase();
-    if (!seen.has(key)) {
-      normalized.push(theme);
-      seen.add(key);
-    }
-  });
-  return normalized.slice(0, 4);
+    })
+    .slice(0, 4);
 }
 
 function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
@@ -1186,18 +1172,34 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     responseList,
     '',
     'Create exactly 4 short theme statements from these private reflection responses.',
+    'Even if there are only 1 or 2 responses, infer 4 distinct gentle themes from them.',
+    'Each theme must be specific to the responses, not generic placeholder language.',
     'Do not quote, closely paraphrase, diagnose, or give advice.',
     'Use gentle language such as "People are noticing..." or "A few responses circle around...".',
     'Return only JSON in this shape: {"themes":["theme one","theme two","theme three","theme four"]}'
   ].filter(Boolean).join('\n');
 }
 
-async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses }) {
-  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured on server');
-  const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
-
+async function postReflectionThemesToGemini({ apiKey, model, prompt, useSchema = true }) {
+  const generationConfig = {
+    temperature: 0.3,
+    maxOutputTokens: 360,
+    responseMimeType: 'application/json'
+  };
+  if (useSchema) {
+    generationConfig.responseSchema = {
+      type: 'OBJECT',
+      properties: {
+        themes: {
+          type: 'ARRAY',
+          minItems: 4,
+          maxItems: 4,
+          items: { type: 'STRING' }
+        }
+      },
+      required: ['themes']
+    };
+  }
   const result = await postJsonWithHttps({
     hostname: 'generativelanguage.googleapis.com',
     path: `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -1207,32 +1209,36 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
         role: 'user',
         parts: [{ text: prompt }]
       }],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 360,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            themes: {
-              type: 'ARRAY',
-              minItems: 4,
-              maxItems: 4,
-              items: { type: 'STRING' }
-            }
-          },
-          required: ['themes']
-        }
-      }
+      generationConfig
     }
   });
-  const text = (result?.candidates || [])
+  return (result?.candidates || [])
     .flatMap((candidate) => candidate?.content?.parts || [])
     .map((part) => part?.text || '')
     .join('\n')
     .trim();
-  const themes = completeReflectionThemes(extractReflectionThemesFromText(text));
-  if (themes.length !== 4) throw new Error('Gemini did not return usable reflection themes');
+}
+
+async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses }) {
+  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured on server');
+  const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
+
+  const firstText = await postReflectionThemesToGemini({ apiKey, model, prompt, useSchema: true });
+  let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
+  if (themes.length !== 4) {
+    console.warn(`Gemini returned ${themes.length} usable themes on first attempt; retrying with repair prompt.`);
+    const repairPrompt = [
+      prompt,
+      '',
+      `Your previous output produced ${themes.length} usable themes. Try again.`,
+      'Return exactly 4 distinct, response-specific theme statements as valid JSON only.'
+    ].join('\n');
+    const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt, useSchema: false });
+    themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
+  }
+  if (themes.length !== 4) throw new Error(`Gemini returned ${themes.length} usable reflection themes`);
   return { themes, model, provider: 'gemini' };
 }
 
@@ -1261,7 +1267,7 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
     .join('\n')
     .trim();
   const themes = completeReflectionThemes(extractReflectionThemesFromText(text));
-  if (themes.length !== 4) throw new Error('Claude did not return usable reflection themes');
+  if (themes.length !== 4) throw new Error(`Claude returned ${themes.length} usable reflection themes`);
   return { themes, model, provider: 'anthropic' };
 }
 
