@@ -1140,9 +1140,17 @@ function extractReflectionThemesFromText(value) {
     .filter(Boolean)
     .slice(0, 4);
   if (themes.length) return themes;
+  const labeledMatches = Array.from(raw.matchAll(/THEME\s*[1-4]\s*:\s*([^\n]+)/gi))
+    .map((match) => String(match[1] || '').trim())
+    .filter(Boolean);
+  if (labeledMatches.length) return labeledMatches.slice(0, 4);
   return raw
     .split(/\n+/)
-    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').replace(/^["']|["']$/g, '').trim())
+    .map((line) => line
+      .replace(/^\s*THEME\s*[1-4]\s*:\s*/i, '')
+      .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '')
+      .replace(/^["']|["']$/g, '')
+      .trim())
     .filter((line) => line && !/^\{|\}|\[|\]|themes/i.test(line))
     .slice(0, 4);
 }
@@ -1194,8 +1202,12 @@ function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, response
     'Even with only 1 or 2 responses, infer 4 distinct gentle themes from what is present.',
     'Make every theme specific to the responses. Avoid generic filler.',
     'Do not quote, closely paraphrase, diagnose, or give advice.',
-    'Return plain text only: exactly 4 lines, one theme per line.',
-    'Do not use bullets, numbering, headings, markdown, or JSON.'
+    'Return plain text only with exactly these four labeled lines:',
+    'THEME 1: <theme statement>',
+    'THEME 2: <theme statement>',
+    'THEME 3: <theme statement>',
+    'THEME 4: <theme statement>',
+    'Do not use markdown, JSON, bullets, or any extra text.'
   ].filter(Boolean).join('\n');
 }
 
@@ -1237,7 +1249,7 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       prompt,
       '',
       `Your previous output produced ${themes.length} usable themes. Try again.`,
-      'Return plain text only: exactly 4 distinct, response-specific theme statements, one per line.'
+      'Return exactly 4 distinct, response-specific theme statements using THEME 1:, THEME 2:, THEME 3:, and THEME 4: labels.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
     themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
