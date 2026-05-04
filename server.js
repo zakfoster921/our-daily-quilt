@@ -1214,7 +1214,8 @@ function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, response
 async function postReflectionThemesToGemini({ apiKey, model, prompt }) {
   const generationConfig = {
     temperature: 0.3,
-    maxOutputTokens: 360
+    maxOutputTokens: 1200,
+    thinkingConfig: { thinkingBudget: 0 }
   };
   const result = await postJsonWithHttps({
     hostname: 'generativelanguage.googleapis.com',
