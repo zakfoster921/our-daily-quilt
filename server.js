@@ -1117,7 +1117,7 @@ function extractReflectionThemesFromText(value) {
   try {
     parsed = JSON.parse(raw);
   } catch (_) {
-    const match = raw.match(/\{[\s\S]*\}/);
+    const match = raw.match(/\{[\s\S]*\}/) || raw.match(/\[[\s\S]*\]/);
     if (match) {
       try {
         parsed = JSON.parse(match[0]);
@@ -1126,10 +1126,24 @@ function extractReflectionThemesFromText(value) {
       }
     }
   }
-  const source = Array.isArray(parsed) ? parsed : parsed?.themes;
-  return (Array.isArray(source) ? source : [])
+  const source = Array.isArray(parsed)
+    ? parsed
+    : parsed?.themes || parsed?.reflectionThemes || parsed?.themeStatements || parsed?.items;
+  const themes = (Array.isArray(source) ? source : [])
+    .map((theme) => {
+      if (theme && typeof theme === 'object') {
+        return theme.theme || theme.text || theme.statement || theme.summary || '';
+      }
+      return theme;
+    })
     .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean)
+    .slice(0, 4);
+  if (themes.length) return themes;
+  return raw
+    .split(/\n+/)
+    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').replace(/^["']|["']$/g, '').trim())
+    .filter((line) => line && !/^\{|\}|\[|\]|themes/i.test(line))
     .slice(0, 4);
 }
 
@@ -1168,7 +1182,19 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 360,
-        responseMimeType: 'application/json'
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            themes: {
+              type: 'ARRAY',
+              minItems: 4,
+              maxItems: 4,
+              items: { type: 'STRING' }
+            }
+          },
+          required: ['themes']
+        }
       }
     }
   });
