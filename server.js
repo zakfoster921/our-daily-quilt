@@ -1133,14 +1133,11 @@ function extractReflectionThemesFromText(value) {
     .slice(0, 4);
 }
 
-async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
-  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
-  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest').trim();
+function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
   const responseList = responses
     .map((text, index) => `${index + 1}. ${String(text || '').replace(/\s+/g, ' ').trim()}`)
     .join('\n');
-  const prompt = [
+  return [
     `Date key: ${dateKey}`,
     reflectionPrompt ? `Reflection prompt: ${reflectionPrompt}` : '',
     'Private responses:',
@@ -1151,6 +1148,45 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
     'Use gentle language such as "People are noticing..." or "A few responses circle around...".',
     'Return only JSON in this shape: {"themes":["theme one","theme two","theme three","theme four"]}'
   ].filter(Boolean).join('\n');
+}
+
+async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses }) {
+  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured on server');
+  const model = String(process.env.GEMINI_MODEL || 'gemini-1.5-flash').trim();
+  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
+
+  const result = await postJsonWithHttps({
+    hostname: 'generativelanguage.googleapis.com',
+    path: `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    headers: {},
+    body: {
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 360,
+        responseMimeType: 'application/json'
+      }
+    }
+  });
+  const text = (result?.candidates || [])
+    .flatMap((candidate) => candidate?.content?.parts || [])
+    .map((part) => part?.text || '')
+    .join('\n')
+    .trim();
+  const themes = extractReflectionThemesFromText(text);
+  if (themes.length !== 4) throw new Error('Gemini did not return exactly 4 reflection themes');
+  return { themes, model, provider: 'gemini' };
+}
+
+async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest').trim();
+  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
 
   const result = await postJsonWithHttps({
     hostname: 'api.anthropic.com',
@@ -1172,7 +1208,17 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
     .trim();
   const themes = extractReflectionThemesFromText(text);
   if (themes.length !== 4) throw new Error('Claude did not return exactly 4 reflection themes');
-  return { themes, model };
+  return { themes, model, provider: 'anthropic' };
+}
+
+async function generateReflectionThemesWithAi({ dateKey, reflectionPrompt, responses }) {
+  if (String(process.env.GEMINI_API_KEY || '').trim()) {
+    return generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses });
+  }
+  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
+    return generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses });
+  }
+  throw new Error('GEMINI_API_KEY or ANTHROPIC_API_KEY must be configured on server');
 }
 
 function normalizeSubmittedAuthorName(value) {
@@ -2222,7 +2268,7 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       console.warn('Reflection theme quote prompt lookup failed:', error.message);
     }
 
-    const { themes, model } = await generateReflectionThemesWithClaude({
+    const { themes, model, provider } = await generateReflectionThemesWithAi({
       dateKey: appDateKey,
       reflectionPrompt,
       responses
@@ -2232,12 +2278,13 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       themes,
       responseCount: responses.length,
       model,
+      provider,
       status: 'generated',
       generatedAt: admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso: getUtcIsoNow()
     }, { merge: true });
 
-    return res.json({ success: true, appDateKey, themes, responseCount: responses.length, model });
+    return res.json({ success: true, appDateKey, themes, responseCount: responses.length, model, provider });
   } catch (error) {
     console.error('❌ Reflection theme generation failed:', error);
     return res.status(500).json({
