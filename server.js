@@ -1153,7 +1153,7 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
 async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses }) {
   const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured on server');
-  const model = String(process.env.GEMINI_MODEL || 'gemini-1.5-flash').trim();
+  const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
   const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
 
   const result = await postJsonWithHttps({
