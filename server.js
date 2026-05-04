@@ -1179,6 +1179,8 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'You are synthesizing written responses from a community into a short list of helpful ideas.',
     'Your job:',
     '- Combine similar responses into single ideas',
+    '- Let the list expand as good unique responses come in, up to 10 ideas',
+    '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
     '- Preserve the most poetic, specific, or human keywords from the originals',
     '- Write in second person ("your", "you") — direct but not preachy',
     '- Keep each item to one sentence, no more than 20 words',
@@ -1206,6 +1208,8 @@ function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, response
     'You are synthesizing written responses from a community into a short list of helpful ideas.',
     'Your job:',
     '- Combine similar responses into single ideas',
+    '- Let the list expand as good unique responses come in, up to 10 ideas',
+    '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
     '- Preserve the most poetic, specific, or human keywords from the originals',
     '- Write in second person ("your", "you") — direct but not preachy',
     '- Keep each item to one sentence, no more than 20 words',
@@ -1258,12 +1262,16 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
 
   const firstText = await postReflectionThemesToGemini({ apiKey, model, prompt });
   let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
-  if (!themes.length) {
-    console.warn('Gemini returned no usable community ideas on first attempt; retrying with repair prompt.');
+  const shouldRetryForMoreIdeas = responses.length >= 3 && themes.length < 2;
+  if (!themes.length || shouldRetryForMoreIdeas) {
+    console.warn(`Gemini returned ${themes.length} usable community ideas on first attempt; retrying for better range.`);
     const repairPrompt = [
       prompt,
       '',
-      'Your previous output produced no usable ideas. Try again.',
+      `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
+      'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
+      'If the responses share one broad topic, separate genuinely different practical angles someone could try.',
+      'Do not collapse multiple distinct responses into one broad summary.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
