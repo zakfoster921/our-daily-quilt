@@ -181,7 +181,7 @@ function setQuoteSubmissionCors(res) {
 
 function setReflectionApiCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token, x-reflection-theme-token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
@@ -2275,6 +2275,51 @@ app.post('/api/reflection-response', async (req, res) => {
 app.options('/api/reflection-themes/generate', (req, res) => {
   setReflectionApiCors(res);
   return res.status(204).end();
+});
+
+app.options('/api/reflection-themes/:dateKey', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+app.get('/api/reflection-themes/:dateKey', async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(req.params.dateKey || '').trim())
+      ? String(req.params.dateKey).trim()
+      : '';
+    if (!appDateKey) {
+      return res.status(400).json({ success: false, error: 'Valid dateKey is required' });
+    }
+    const themeDoc = await db.collection('reflectionThemes').doc(appDateKey).get();
+    if (!themeDoc.exists) {
+      return res.status(404).json({ success: false, error: 'Reflection themes not found', appDateKey });
+    }
+    const data = themeDoc.data() || {};
+    const themes = Array.isArray(data.themes)
+      ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean).slice(0, 4)
+      : [];
+    if (!themes.length) {
+      return res.status(404).json({ success: false, error: 'Reflection themes not found', appDateKey });
+    }
+    return res.json({
+      success: true,
+      appDateKey,
+      themes,
+      responseCount: Number(data.responseCount) || 0,
+      provider: data.provider || null,
+      model: data.model || null,
+      generatedAtIso: data.generatedAtIso || null
+    });
+  } catch (error) {
+    console.error('❌ Reflection theme read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection theme read failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
 });
 
 app.post('/api/reflection-themes/generate', async (req, res) => {

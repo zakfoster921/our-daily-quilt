@@ -21726,9 +21726,13 @@ try {
         if (!form || !input || form.dataset.listenerAttached === '1') return;
         form.dataset.listenerAttached = '1';
         this.renderReflectionAnonymousWall();
-        this.loadReflectionThemesForToday().catch((error) => {
+        const refreshThemes = () => this.loadReflectionThemesForToday().catch((error) => {
           this.logger?.warn?.('Reflection themes load failed:', error);
         });
+        refreshThemes();
+        document.addEventListener('firebaseReady', refreshThemes, { once: true });
+        setTimeout(refreshThemes, 1200);
+        setTimeout(refreshThemes, 3500);
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
           const responseText = String(input.value || '').replace(/\s+/g, ' ').trim();
@@ -21761,6 +21765,7 @@ try {
             submit.textContent = 'Shared';
             submit.disabled = true;
           }
+          setTimeout(refreshThemes, 1200);
         });
       }
 
@@ -21809,16 +21814,25 @@ try {
       }
 
       async loadReflectionThemesForToday() {
-        if (!window.db || !window.firestore?.doc || !window.firestore?.getDoc) return;
+        const firestoreReady = await this.waitForReflectionFirestore();
         const dateKey = Utils.getTodayKey();
         const yesterdayKey = this.getAdjacentDateKey(dateKey, -1);
         const readThemes = async (key) => {
           if (!key) return null;
-          const snap = await window.firestore.getDoc(
-            window.firestore.doc(window.db, 'reflectionThemes', key)
-          );
-          if (!snap.exists()) return null;
-          const data = snap.data() || {};
+          let data = null;
+          if (firestoreReady) {
+            try {
+              const docRef = window.firestore.doc(window.db, 'reflectionThemes', key);
+              const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
+              const snap = await readDoc(docRef);
+              data = snap.exists() ? (snap.data() || {}) : null;
+            } catch (error) {
+              this.logger?.warn?.(`Reflection themes SDK read failed for ${key}:`, error);
+            }
+          }
+          if (!data) data = await this.fetchReflectionThemesViaRest(key);
+          if (!data) data = await this.fetchReflectionThemesViaBackend(key);
+          if (!data) return null;
           const themes = Array.isArray(data.themes)
             ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
             : [];
@@ -21839,6 +21853,73 @@ try {
             helper: 'From the last gathered reflections, while today’s themes take shape.'
           });
         }
+      }
+
+      waitForReflectionFirestore(timeoutMs = 3500) {
+        if (window.db && window.firestore?.doc && window.firestore?.getDoc) return Promise.resolve(true);
+        return new Promise((resolve) => {
+          let settled = false;
+          const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            document.removeEventListener('firebaseReady', onReady);
+            clearTimeout(timer);
+            resolve(value);
+          };
+          const onReady = () => {
+            finish(!!(window.db && window.firestore?.doc && window.firestore?.getDoc));
+          };
+          const timer = setTimeout(() => {
+            finish(!!(window.db && window.firestore?.doc && window.firestore?.getDoc));
+          }, timeoutMs);
+          document.addEventListener('firebaseReady', onReady, { once: true });
+        });
+      }
+
+      async fetchReflectionThemesViaRest(dateKey) {
+        const key = String(dateKey || '').trim();
+        const projectId = String(CONFIG.FIREBASE?.projectId || '').trim();
+        const apiKey = String(CONFIG.FIREBASE?.apiKey || '').trim();
+        if (!key || !projectId || !apiKey || typeof fetch !== 'function') return null;
+        const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/reflectionThemes/${encodeURIComponent(key)}?key=${encodeURIComponent(apiKey)}`;
+        try {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (res.status === 404) return null;
+          if (!res.ok) throw new Error(`Firestore REST read failed (${res.status})`);
+          const payload = await res.json();
+          return this.decodeReflectionThemeRestDocument(payload);
+        } catch (error) {
+          this.logger?.warn?.(`Reflection themes REST read failed for ${key}:`, error);
+          return null;
+        }
+      }
+
+      async fetchReflectionThemesViaBackend(dateKey) {
+        const key = String(dateKey || '').trim();
+        const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
+        if (!key || !baseUrl || typeof fetch !== 'function') return null;
+        try {
+          const res = await fetch(`${baseUrl}/api/reflection-themes/${encodeURIComponent(key)}`, { cache: 'no-store' });
+          if (res.status === 404) return null;
+          const data = await res.json().catch(() => null);
+          if (!res.ok || !data?.success) {
+            throw new Error(data?.error || `Backend reflection themes read failed (${res.status})`);
+          }
+          return { themes: Array.isArray(data.themes) ? data.themes : [] };
+        } catch (error) {
+          this.logger?.warn?.(`Reflection themes backend read failed for ${key}:`, error);
+          return null;
+        }
+      }
+
+      decodeReflectionThemeRestDocument(payload) {
+        const fields = payload?.fields || {};
+        const themes = fields.themes?.arrayValue?.values || [];
+        return {
+          themes: themes
+            .map((item) => String(item?.stringValue || '').trim())
+            .filter(Boolean)
+        };
       }
 
       formatReflectionThemeArchiveDate(dateKey) {
