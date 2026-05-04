@@ -2435,7 +2435,28 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
     try {
       const quoteDoc = await db.collection(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').doc(appDateKey).get();
       const quoteData = quoteDoc.exists ? quoteDoc.data() : null;
-      reflectionPrompt = String(quoteData?.reflectionPrompt || quoteData?.reflection_prompt || '').trim().slice(0, 500);
+      reflectionPrompt = String(
+        quoteData?.communityPrompt ||
+        quoteData?.community_prompt ||
+        quoteData?.reflectionPrompt ||
+        quoteData?.reflection_prompt ||
+        ''
+      ).trim().slice(0, 500);
+      if (!reflectionPrompt) {
+        const assignmentDoc = await db.collection(process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments').doc(appDateKey).get();
+        const sourceId = assignmentDoc.exists ? String(assignmentDoc.data()?.sourceId || '').trim() : '';
+        if (sourceId) {
+          const sourceQuoteDoc = await db.collection(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').doc(sourceId).get();
+          const sourceQuoteData = sourceQuoteDoc.exists ? sourceQuoteDoc.data() : null;
+          reflectionPrompt = String(
+            sourceQuoteData?.communityPrompt ||
+            sourceQuoteData?.community_prompt ||
+            sourceQuoteData?.reflectionPrompt ||
+            sourceQuoteData?.reflection_prompt ||
+            ''
+          ).trim().slice(0, 500);
+        }
+      }
     } catch (error) {
       console.warn('Reflection theme quote prompt lookup failed:', error.message);
     }

@@ -7197,9 +7197,6 @@ try {
       static STARTER_AXIS_MAX_DEGREES = 33;
       static RECENT_VISIBLE_SUBMISSION_WINDOW = 4;
       static AXIS_COLLAGE_MAX_VISUAL_EXTENSION = 32;
-      static AXIS_COLLAGE_SPECIAL_MAX_AREA_FRACTION = 0.1;
-      static AXIS_COLLAGE_SPECIAL_MAX_SIDE_FRACTION = 0.46;
-      static AXIS_COLLAGE_SPECIAL_MAX_AVG_BLOCK_MULTIPLIER = 1.85;
       static NEW_VISIBLE_REGULAR_RENDER_SCALE = 1;
       static RECENT_VISIBLE_REGULAR_RENDER_SCALE = 1;
       static OVERSIZED_SPLIT_START_BLOCKS = 18;
@@ -8784,7 +8781,13 @@ try {
           ) {
             this.blocks = axisBlocks;
             this.recordUserContribution(axisBlocks[1].id, newColor, this.submissionCount);
-            return { originalBlock: parent, newBlocks: axisBlocks, submissionIndex: this.submissionCount };
+            return {
+              originalBlock: parent,
+              newBlocks: axisBlocks,
+              dedicatedBlockId: axisBlocks[1].id,
+              appliedColor: newColor,
+              submissionIndex: this.submissionCount
+            };
           }
           this.submissionCount = 0;
           const vertical = Math.random() < 0.5;
@@ -8813,7 +8816,13 @@ try {
           this.submissionCount = nextSubmission;
           this.blocks = children;
           this.recordUserContribution(children[1].id, newColor, this.submissionCount);
-          return { originalBlock: parent, newBlocks: children, submissionIndex: this.submissionCount };
+          return {
+            originalBlock: parent,
+            newBlocks: children,
+            dedicatedBlockId: children[1].id,
+            appliedColor: newColor,
+            submissionIndex: this.submissionCount
+          };
         }
 
         if (this.submissionCount !== 1 || this.blocks.length !== 2) return null;
@@ -8873,7 +8882,13 @@ try {
         if (newContributionBlock) {
           this.recordUserContribution(newContributionBlock.id, newColor, this.submissionCount);
         }
-        return { originalBlock: sortedBlocks[0], newBlocks: nextBlocks, submissionIndex: this.submissionCount };
+        return {
+          originalBlock: sortedBlocks[0],
+          newBlocks: nextBlocks,
+          dedicatedBlockId: newContributionBlock?.id || '',
+          appliedColor: newColor,
+          submissionIndex: this.submissionCount
+        };
       }
   
 
@@ -9232,6 +9247,28 @@ try {
         this.submissionCount++;
         return this.submissionCount;
       }
+
+      _contributionBlockFromCandidates(blocks, color, submissionIndex) {
+        const candidates = (blocks || []).filter((block) => {
+          if (!block) return false;
+          const ids = Array.isArray(block.contributorIds) ? block.contributorIds : [];
+          const belongsToDevice = block.contributorId === this.deviceId || ids.some((id) => id === this.deviceId);
+          return belongsToDevice && Number(block.submissionIndex) === Number(submissionIndex);
+        });
+        if (!candidates.length) return null;
+        const exact = candidates.find((block) => this._hexSame(block.color, color));
+        if (exact) return exact;
+        return [...candidates].sort((a, b) => {
+          const simA = this.getColorSimilarity(a.color, color);
+          const simB = this.getColorSimilarity(b.color, color);
+          if (Math.abs(simB - simA) > 1e-6) return simB - simA;
+          return (b.width * b.height) - (a.width * a.height);
+        })[0];
+      }
+
+      _currentContributionBlock(color, submissionIndex) {
+        return this._contributionBlockFromCandidates(this.blocks, color, submissionIndex);
+      }
       
       addColor(newColor, retryDepth = 0) {
         // Safety check: ensure newColor is valid
@@ -9433,15 +9470,12 @@ try {
             } else {
               const eligibleTopBlocks = topBlocks.filter(
                 ({ block }) =>
-                  !this._isProtectedAnchorBlock(block) &&
-                  (block?.specialPatternType !== 'diagonalAxis' || this._axisCollageSpecialSizeAllowed(block))
+                  !this._isProtectedAnchorBlock(block)
               );
               selectedBlock = (eligibleTopBlocks[0] || topBlocks.find(({ block }) => !this._isProtectedAnchorBlock(block)) || topBlocks[0]).block;
               // Mark this block for special pattern creation
               if (this._isProtectedAnchorBlock(selectedBlock)) {
                 console.log(`🛡️ PROTECTED ANCHOR: ${selectedBlock.id} cannot receive an overlapping special; using regular split`);
-              } else if (selectedBlock.specialPatternType === 'diagonalAxis' && !this._axisCollageSpecialSizeAllowed(selectedBlock)) {
-                console.log(`🎯 COLLAGE CAP: Axis region ${selectedBlock.id} is too large for an overlapping special; using regular axis split first`);
               } else {
                 selectedBlock._shouldCreateSpecialPattern = true;
               }
@@ -9528,11 +9562,12 @@ try {
         
         console.log(`🔧 BLOCK COUNT: Before: ${beforeCount}, After: ${afterCount}, Net change: ${afterCount - beforeCount}`);
         
-        // Record user contribution - handle different split result sizes
-        if (splitResult.length >= 2) {
-          this.recordUserContribution(splitResult[1].id, appliedSplitColor, this.submissionCount);
-        } else if (splitResult.length === 1) {
-          this.recordUserContribution(splitResult[0].id, appliedSplitColor, this.submissionCount);
+        const contributionBlock =
+          this._contributionBlockFromCandidates(splitResult, appliedSplitColor, this.submissionCount) ||
+          splitResult.find((block) => Number(block?.submissionIndex) === Number(this.submissionCount)) ||
+          splitResult[splitResult.length - 1];
+        if (contributionBlock) {
+          this.recordUserContribution(contributionBlock.id, appliedSplitColor, this.submissionCount);
         }
 
         if (this.recordColorReplayEvents && blockIndex !== -1 && splitResult.length > 0) {
@@ -9549,10 +9584,16 @@ try {
         this.runColorSettlingPass();
         this._maybeChooseProtectedAnchorAfterMutation();
         this.maybeApplyMacroStructureFreezeAfterMutation();
+        const finalContributionBlock =
+          this._currentContributionBlock(appliedSplitColor, this.submissionCount) ||
+          this.blocks.find((block) => block && block.id === contributionBlock?.id) ||
+          null;
 
         return {
           originalBlock: selectedBlock,
           newBlocks: splitResult,
+          dedicatedBlockId: finalContributionBlock?.id || contributionBlock?.id || '',
+          appliedColor: appliedSplitColor,
           submissionIndex: this.submissionCount
         };
       }
@@ -9938,10 +9979,6 @@ try {
           // Clean up the flag
           delete block._shouldCreateSpecialPattern;
           const isAxisCollageSource = block.specialPatternType === 'diagonalAxis';
-          if (isAxisCollageSource && !this._axisCollageSpecialSizeAllowed(block)) {
-            console.log(`🎯 COLLAGE CAP: Axis region ${block.id} is too large for an overlapping special; splitting within the axis instead`);
-            return finishSplit(this.splitDiagonalAxisPattern(block, newColor));
-          }
           const patternBase = isAxisCollageSource
             ? (() => {
                 const clean = { ...block, patternType: 'regular' };
@@ -10452,28 +10489,6 @@ try {
           });
           return out;
         });
-      }
-
-      _axisCollageSpecialSizeAllowed(block) {
-        if (!block) return false;
-        const w = Math.max(0, Number(block.width) || 0);
-        const h = Math.max(0, Number(block.height) || 0);
-        if (!(w > 0 && h > 0)) return false;
-        const dims = Utils.getQuiltDimensions();
-        const quiltW = Math.max(1, Number(dims?.width) || 1070);
-        const quiltH = Math.max(1, Number(dims?.height) || 1340);
-        const quiltArea = quiltW * quiltH;
-        const blockArea = w * h;
-        const avgBlockArea = quiltArea / Math.max(1, this.blocks.length || 1);
-        const maxArea = Math.min(
-          quiltArea * SimpleQuiltEngine.AXIS_COLLAGE_SPECIAL_MAX_AREA_FRACTION,
-          avgBlockArea * SimpleQuiltEngine.AXIS_COLLAGE_SPECIAL_MAX_AVG_BLOCK_MULTIPLIER
-        );
-        return (
-          blockArea <= maxArea &&
-          w <= quiltW * SimpleQuiltEngine.AXIS_COLLAGE_SPECIAL_MAX_SIDE_FRACTION &&
-          h <= quiltH * SimpleQuiltEngine.AXIS_COLLAGE_SPECIAL_MAX_SIDE_FRACTION
-        );
       }
 
       _clipPolygonPiecesToRect(pieces, rx, ry, rw, rh) {
@@ -18158,6 +18173,7 @@ try {
 
       async saveDayAssignment(dateKey, quote) {
         const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
+        const communityPromptSnapshot = String(quote?.communityPrompt ?? quote?.community_prompt ?? '').trim();
         const whatIfSnapshot = String(quote?.whatIf ?? quote?.what_if ?? '').trim();
         const payload = {
           dateKey,
@@ -18165,6 +18181,7 @@ try {
           embeddedStableKey: sourceId ? null : this._embeddedStableKey(quote),
           textSnapshot: String(quote?.text || '').slice(0, 160),
           authorSnapshot: String(quote?.author || '').slice(0, 120),
+          communityPromptSnapshot: communityPromptSnapshot.slice(0, 500),
           whatIfSnapshot: whatIfSnapshot.slice(0, 240),
           assignedAt: new Date().toISOString(),
         };
@@ -18229,6 +18246,7 @@ try {
               const author = String(quoteData.author || '').trim();
               if (text) {
                 const blessing = this._blessingScalarFromPlainObject(quoteData).trim();
+                const communityPrompt = String(quoteData.communityPrompt || quoteData.community_prompt || '').trim();
                 const reflectionPrompt = String(quoteData.reflectionPrompt || quoteData.reflection_prompt || '').trim();
                 const whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim();
                 const igCaption = String(quoteData.igCaption ?? quoteData.ig_caption ?? '').trim();
@@ -18237,6 +18255,7 @@ try {
                   text,
                   author,
                   ...(blessing ? { blessing } : {}),
+                  ...(communityPrompt ? { communityPrompt, community_prompt: communityPrompt } : {}),
                   ...(reflectionPrompt ? { reflectionPrompt } : {}),
                   ...(whatIf ? { whatIf, what_if: whatIf } : {}),
                   ...(igCaption ? { igCaption, ig_caption: igCaption } : {}),
@@ -18257,6 +18276,7 @@ try {
                   embeddedStableKey: merged.sourceId ? null : this._embeddedStableKey(merged),
                   textSnapshot: String(merged.text || '').slice(0, 160),
                   authorSnapshot: String(merged.author || '').slice(0, 120),
+                  communityPromptSnapshot: String(merged.communityPrompt ?? merged.community_prompt ?? '').slice(0, 500),
                   whatIfSnapshot: String(merged.whatIf ?? merged.what_if ?? '').slice(0, 240),
                   assignedAt: new Date().toISOString(),
                 });
@@ -19052,16 +19072,20 @@ try {
 
         const todayQuote = this.getTodayQuote();
         const dateKey = this.getQuoteCalendarKeyNow();
-        const reflectionPrompt =
-          String(todayQuote?.reflectionPrompt || todayQuote?.reflection_prompt || '').trim() ||
-          '[Reflection prompt coming soon for this quote.]';
+        const reflectionPrompt = this.getQuiltReflectionPromptText(todayQuote);
         reflectionBody.innerHTML = this.formatReflectionPromptForCard(reflectionPrompt);
         console.log('📓 Reflection prompt initial render:', {
           dateKey,
           hasDb: !!window.db,
           hasFirestore: !!window.firestore,
           quoteText: String(todayQuote?.text || '').slice(0, 48),
-          hasReflectionPrompt: !!String(todayQuote?.reflectionPrompt || todayQuote?.reflection_prompt || '').trim()
+          hasReflectionPrompt: !!String(
+            todayQuote?.communityPrompt ||
+            todayQuote?.community_prompt ||
+            todayQuote?.reflectionPrompt ||
+            todayQuote?.reflection_prompt ||
+            ''
+          ).trim()
         });
 
         const hydrateReflectionPromptFromServer = (attempt = 0) => {
@@ -19083,16 +19107,17 @@ try {
                 return;
               }
               const data = snap.data() || {};
-              const prompt = String(data.reflectionPrompt || data.reflection_prompt || '').trim();
+              const prompt = this.getQuiltReflectionPromptText(data);
               console.log(`📓 Reflection prompt server read quotes/${dateKey}:`, {
                 text: String(data.text || '').slice(0, 48),
-                hasPrompt: !!prompt
+                hasPrompt: prompt !== '[Reflection prompt coming soon for this quote.]'
               });
-              if (!prompt) return;
+              if (!prompt || prompt === '[Reflection prompt coming soon for this quote.]') return;
               this._pinnedByDateKey[dateKey] = {
                 ...(this._pinnedByDateKey[dateKey] || todayQuote || {}),
                 ...data,
-                reflectionPrompt: prompt,
+                communityPrompt: String(data.communityPrompt || data.community_prompt || '').trim() || undefined,
+                reflectionPrompt: String(data.reflectionPrompt || data.reflection_prompt || '').trim() || prompt,
                 _canonicalDailyDoc: true
               };
               reflectionBody.innerHTML = this.formatReflectionPromptForCard(prompt);
@@ -19273,6 +19298,7 @@ try {
             firestoreQuotes.push({
               text,
               author,
+              communityPrompt: String(data.communityPrompt ?? data.community_prompt ?? '').trim(),
               reflectionPrompt: String(data.reflectionPrompt || '').trim(),
               whatIf: String(data.whatIf ?? data.what_if ?? '').trim(),
               fortune: String(data.fortune ?? data.Fortune ?? '').trim(),
@@ -19844,6 +19870,9 @@ try {
         const renderQueue = blocks
           .map((block, originalIndex) => ({ block, originalIndex }))
           .sort((a, b) => {
+            const addedA = a.originalIndex === this.lastAddedIndex;
+            const addedB = b.originalIndex === this.lastAddedIndex;
+            if (addedA !== addedB) return addedA ? 1 : -1;
             const protectedAnchor = (block) => block && block.protectedAnchorId != null;
             const protectedA = protectedAnchor(a.block);
             const protectedB = protectedAnchor(b.block);
@@ -19858,6 +19887,40 @@ try {
             if (Math.abs(layerA - layerB) > 1e-6) return layerA - layerB;
             return a.originalIndex - b.originalIndex;
           });
+
+        const diagonalAxisRenderKey = (block) =>
+          String(block?.axisOriginId || block?.starterAxisRegionId || block?.originalPatternId || block?.id || '');
+        const diagonalAxisRenderByKey = new Map();
+        renderQueue.forEach(({ block }) => {
+          if (!block || block.specialPatternType !== 'diagonalAxis' || !Array.isArray(block.polygonPieces)) return;
+          if (block.axisLayerMode !== 'collage') return;
+          const key = diagonalAxisRenderKey(block);
+          const x = Number(block.x) || 0;
+          const y = Number(block.y) || 0;
+          const w = Math.max(1, Number(block.width) || 1);
+          const h = Math.max(1, Number(block.height) || 1);
+          const prev = diagonalAxisRenderByKey.get(key);
+          if (!prev) {
+            diagonalAxisRenderByKey.set(key, { x, y, x2: x + w, y2: y + h });
+          } else {
+            prev.x = Math.min(prev.x, x);
+            prev.y = Math.min(prev.y, y);
+            prev.x2 = Math.max(prev.x2, x + w);
+            prev.y2 = Math.max(prev.y2, y + h);
+          }
+        });
+        diagonalAxisRenderByKey.forEach((group, key) => {
+          const groupW = Math.max(1, group.x2 - group.x);
+          const groupH = Math.max(1, group.y2 - group.y);
+          const jitterMultiplier = this.calculateJitterMultiplier(groupW, groupH);
+          const rotationMultiplier = this.calculateRotationMultiplier(groupW, groupH);
+          group.jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
+          group.jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
+          group.jitterRotation = (Math.random() - 0.5) * 2.2 * rotationMultiplier;
+          group.centerX = group.x + groupW / 2 + group.jitterX;
+          group.centerY = group.y + groupH / 2 + group.jitterY;
+          diagonalAxisRenderByKey.set(key, group);
+        });
 
         renderQueue.forEach(({ block, originalIndex }, i) => {
           // Safety check: ensure block has valid color
@@ -19884,19 +19947,18 @@ try {
             if (block.specialPatternType === 'diagonalAxis' && Array.isArray(block.polygonPieces)) {
               const w = safeWidth;
               const h = safeHeight;
-              const jitterMultiplier = this.calculateJitterMultiplier(w, h);
-              const rotationMultiplier = this.calculateRotationMultiplier(w, h);
-              const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
-              const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
-              const jitterRotation = (Math.random() - 0.5) * 2.2 * rotationMultiplier;
+              const axisRender = isAxisCollageLayer ? diagonalAxisRenderByKey.get(diagonalAxisRenderKey(block)) : null;
+              const jitterX = Number(axisRender?.jitterX) || 0;
+              const jitterY = Number(axisRender?.jitterY) || 0;
+              const jitterRotation = Number(axisRender?.jitterRotation) || 0;
               const renderX = block.x + jitterX;
               const renderY = block.y + jitterY;
               const blockRect = { x: renderX, y: renderY, width: w, height: h };
               const watercolorStrength = watercolorStrengthForSize(w, h);
               const specialGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
               specialGroup.classList.add('quilt-parallax-block');
-              const centerX = renderX + w / 2;
-              const centerY = renderY + h / 2;
+              const centerX = Number(axisRender?.centerX) || (renderX + w / 2);
+              const centerY = Number(axisRender?.centerY) || (renderY + h / 2);
               const baseTransform = `rotate(${jitterRotation} ${centerX} ${centerY})`;
               specialGroup.setAttribute('transform', baseTransform);
               specialGroup.dataset.baseTransform = baseTransform;
@@ -21763,6 +21825,9 @@ try {
             submit.textContent = 'Shared';
             submit.disabled = true;
           }
+          setTimeout(() => {
+            form.hidden = true;
+          }, 2400);
           setTimeout(refreshThemes, 1200);
         });
       }
@@ -22065,6 +22130,8 @@ try {
       pickQuiltFortuneAnchorWord(quote) {
         const raw = [
           quote?.blessing,
+          quote?.communityPrompt,
+          quote?.community_prompt,
           quote?.whatIf,
           quote?.what_if,
           quote?.reflectionPrompt,
@@ -22121,9 +22188,14 @@ try {
       }
 
       getQuiltReflectionPromptText(quote) {
-        const prompt = String(quote?.reflectionPrompt ?? quote?.reflection_prompt ?? '')
-          .replace(/\s+/g, ' ')
-          .trim();
+        const prompt = [
+          quote?.communityPrompt,
+          quote?.community_prompt,
+          quote?.reflectionPrompt,
+          quote?.reflection_prompt
+        ]
+          .map((value) => String(value ?? '').replace(/\s+/g, ' ').trim())
+          .find(Boolean) || '';
         return prompt || '[Reflection prompt coming soon for this quote.]';
       }
 
@@ -27938,16 +28010,41 @@ try {
             if (result) {
               // Find the new block for animation
               let newBlockIndex = -1;
+              const appliedColor = Utils.validateHexColor(result.appliedColor) ? result.appliedColor : selectedColor;
               if (result.newBlocks && result.newBlocks.length > 0) {
-                // If splitting occurred, find the new block (the one with the new color)
-                const newBlock = result.newBlocks.find(block => block.color === selectedColor);
+                const finalDedicatedBlock = result.dedicatedBlockId
+                  ? this.quiltEngine.blocks.find(block => block.id === result.dedicatedBlockId)
+                  : null;
+                // If splitting occurred, find the final surviving user-contribution block.
+                const newBlock =
+                  finalDedicatedBlock ||
+                  result.newBlocks.find(block => block.id === result.dedicatedBlockId) ||
+                  result.newBlocks.find(block => block.color === appliedColor) ||
+                  result.newBlocks.find(block => block.color === selectedColor);
                 if (newBlock) {
                   newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === newBlock.id);
-                  this._latestDedicatedBlockId = newBlock.id || '';
-                } else {
-                  // Fallback: if no exact color match, use the first new block
-                  newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === result.newBlocks[0].id);
-                  this._latestDedicatedBlockId = result.newBlocks[0]?.id || '';
+                  if (newBlockIndex !== -1) {
+                    this._latestDedicatedBlockId = newBlock.id || '';
+                  }
+                }
+                if (newBlockIndex === -1) {
+                  const userIds = [this.currentUserId, this.quiltEngine?.deviceId]
+                    .map((id) => String(id || '').trim())
+                    .filter(Boolean);
+                  const newestUserBlock = this.quiltEngine.blocks.find((block) => {
+                    const ids = Array.isArray(block.contributorIds) ? block.contributorIds : [];
+                    return (
+                      Number(block.submissionIndex) === Number(result.submissionIndex) &&
+                      (
+                        userIds.includes(String(block.contributorId || '').trim()) ||
+                        ids.some((id) => userIds.includes(String(id || '').trim()))
+                      )
+                    );
+                  });
+                  if (newestUserBlock) {
+                    newBlockIndex = this.quiltEngine.blocks.findIndex(block => block.id === newestUserBlock.id);
+                    this._latestDedicatedBlockId = newestUserBlock.id || '';
+                  }
                 }
               } else if (result.id) {
                 // If it's a single new block

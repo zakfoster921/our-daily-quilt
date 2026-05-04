@@ -228,6 +228,13 @@ function parseNotionRow(page) {
   const author = getRichText(props.author) || getTitle(props.author);
   const reflectionPrompt =
     getRichText(props.reflection_prompt) || getTitle(props.reflection_prompt);
+  const communityPrompt = getMappedText(
+    props,
+    'community_prompt',
+    'community_prompt',
+    'Community prompt',
+    'Community Prompt'
+  );
   const whatIf = getMappedText(props, 'what_if', 'what_if', 'What if', 'What If');
   const igCaption = getMappedText(props, 'ig_caption', 'ig_caption', 'IG Caption', 'Ig Caption');
   const mood = getMappedText(props, 'mood', 'mood', 'Mood');
@@ -281,6 +288,8 @@ function parseNotionRow(page) {
       text,
       author,
       reflectionPrompt,
+      communityPrompt,
+      community_prompt: communityPrompt,
       whatIf,
       what_if: whatIf,
       igCaption,
