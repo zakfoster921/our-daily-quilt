@@ -1180,26 +1180,30 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
   ].filter(Boolean).join('\n');
 }
 
-async function postReflectionThemesToGemini({ apiKey, model, prompt, useSchema = true }) {
+function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
+  const responseList = responses
+    .map((text, index) => `${index + 1}. ${String(text || '').replace(/\s+/g, ' ').trim()}`)
+    .join('\n');
+  return [
+    `Date key: ${dateKey}`,
+    reflectionPrompt ? `Reflection prompt: ${reflectionPrompt}` : '',
+    'Private responses:',
+    responseList,
+    '',
+    'Write exactly 4 short public theme statements from these private responses.',
+    'Even with only 1 or 2 responses, infer 4 distinct gentle themes from what is present.',
+    'Make every theme specific to the responses. Avoid generic filler.',
+    'Do not quote, closely paraphrase, diagnose, or give advice.',
+    'Return plain text only: exactly 4 lines, one theme per line.',
+    'Do not use bullets, numbering, headings, markdown, or JSON.'
+  ].filter(Boolean).join('\n');
+}
+
+async function postReflectionThemesToGemini({ apiKey, model, prompt }) {
   const generationConfig = {
     temperature: 0.3,
-    maxOutputTokens: 360,
-    responseMimeType: 'application/json'
+    maxOutputTokens: 360
   };
-  if (useSchema) {
-    generationConfig.responseSchema = {
-      type: 'OBJECT',
-      properties: {
-        themes: {
-          type: 'ARRAY',
-          minItems: 4,
-          maxItems: 4,
-          items: { type: 'STRING' }
-        }
-      },
-      required: ['themes']
-    };
-  }
   const result = await postJsonWithHttps({
     hostname: 'generativelanguage.googleapis.com',
     path: `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -1223,9 +1227,9 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
   const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured on server');
   const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
+  const prompt = buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
 
-  const firstText = await postReflectionThemesToGemini({ apiKey, model, prompt, useSchema: true });
+  const firstText = await postReflectionThemesToGemini({ apiKey, model, prompt });
   let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
   if (themes.length !== 4) {
     console.warn(`Gemini returned ${themes.length} usable themes on first attempt; retrying with repair prompt.`);
@@ -1233,9 +1237,9 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       prompt,
       '',
       `Your previous output produced ${themes.length} usable themes. Try again.`,
-      'Return exactly 4 distinct, response-specific theme statements as valid JSON only.'
+      'Return plain text only: exactly 4 distinct, response-specific theme statements, one per line.'
     ].join('\n');
-    const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt, useSchema: false });
+    const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
     themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
   }
   if (themes.length !== 4) throw new Error(`Gemini returned ${themes.length} usable reflection themes`);
