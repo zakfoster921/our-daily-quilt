@@ -1253,8 +1253,16 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
     themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
+    if (themes.length !== 4) {
+      const preview = String(repairText || firstText || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 600);
+      const error = new Error(`Gemini returned ${themes.length} usable reflection themes. Raw output preview: ${preview || '[empty]'}`);
+      error.geminiOutputPreview = preview;
+      throw error;
+    }
   }
-  if (themes.length !== 4) throw new Error(`Gemini returned ${themes.length} usable reflection themes`);
   return { themes, model, provider: 'gemini' };
 }
 
