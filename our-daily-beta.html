@@ -5101,10 +5101,11 @@ try {
       margin: 0;
       padding: 0 0 0 1.08rem;
       color: #2f2b24;
-      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
       font-size: 0.82rem;
-      font-style: italic;
+      font-style: normal;
       line-height: 1.55;
+      text-align: left;
     }
 
     #screen-quilt .quilt-reflection-wall-list li {
@@ -21786,6 +21787,16 @@ try {
         return `${year}-${month}-${day}`;
       }
 
+      normalizeReflectionIdeaText(value) {
+        const normalized = String(value || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/\.+$/g, '')
+          .trim();
+        if (normalized.length <= 40) return normalized;
+        return normalized.slice(0, 40).trim().replace(/[,\-:;]+$/g, '').trim();
+      }
+
       renderReflectionAnonymousWall(themes = null, options = {}) {
         const wall = document.getElementById('quiltReflectionWall');
         const notes = document.getElementById('quiltReflectionWallNotes');
@@ -21794,7 +21805,7 @@ try {
         if (!wall || !notes) return;
         const fallbackThemes = this.getFallbackReflectionThemes();
         const themeTexts = (Array.isArray(themes) && themes.length ? themes : fallbackThemes)
-          .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
+          .map((theme) => this.normalizeReflectionIdeaText(theme))
           .filter(Boolean);
         notes.innerHTML = `<ul class="quilt-reflection-wall-list">${
           themeTexts
@@ -22013,7 +22024,7 @@ try {
           const dateLabel = this.formatReflectionThemeArchiveDate(entry.dateKey);
           const prompt = this.escapeQuiltFortuneText(entry.prompt);
           const themes = entry.themes
-            .map((theme) => `<li>${this.escapeQuiltFortuneText(theme)}</li>`)
+            .map((theme) => `<li>${this.escapeQuiltFortuneText(this.normalizeReflectionIdeaText(theme))}</li>`)
             .join('');
           return `
             <article class="reflection-themes-archive-entry">
@@ -32154,7 +32165,14 @@ try {
           if (!res.ok) return false;
           const data = await res.json();
           const themes = Array.isArray(data?.themes)
-            ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
+            ? data.themes
+              .map((theme) => {
+                const normalized = String(theme || '').replace(/\s+/g, ' ').trim().replace(/\.+$/g, '').trim();
+                return normalized.length <= 40
+                  ? normalized
+                  : normalized.slice(0, 40).trim().replace(/[,\-:;]+$/g, '').trim();
+              })
+              .filter(Boolean)
             : [];
           if (!themes.length) return false;
           notes.innerHTML = `<ul class="quilt-reflection-wall-list">${

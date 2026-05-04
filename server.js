@@ -1157,6 +1157,8 @@ function completeReflectionThemes(themes) {
   const seen = new Set();
   return (Array.isArray(themes) ? themes : [])
     .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
+    .map((theme) => theme.replace(/\.+$/g, '').trim())
+    .map((theme) => theme.length > 40 ? theme.slice(0, 40).trim().replace(/[,\-:;]+$/g, '').trim() : theme)
     .filter(Boolean)
     .filter((theme) => {
       const key = theme.toLowerCase();
@@ -1182,14 +1184,16 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     '- Let the list expand as good unique responses come in, up to 10 ideas',
     '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
     '- Preserve the most poetic, specific, or human keywords from the originals',
-    '- Write in second person ("your", "you") — direct but not preachy',
-    '- Keep each item to one sentence, no more than 20 words',
+    '- Write in first person ("I", "my", "me")',
+    '- Keep each item to 40 characters or fewer',
+    '- Do not end items with periods',
     '- Avoid clinical or self-help language',
     '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
     'Hard rules:',
-    '- Every item must directly address the reader using "you" or "your"',
+    '- Every item must be written as a first-person statement using "I", "my", or "me"',
+    '- Do not use "you", "your", or "yours" in any item',
     '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
-    '- Do not write observations about what people are doing; turn them into small ideas the reader could try',
+    '- Do not write observations about what people are doing; turn them into small first-person ideas someone could borrow',
     '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
     'Return only JSON in this shape: {"themes":["helpful idea","helpful idea"]}'
   ].filter(Boolean).join('\n');
@@ -1211,14 +1215,16 @@ function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, response
     '- Let the list expand as good unique responses come in, up to 10 ideas',
     '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
     '- Preserve the most poetic, specific, or human keywords from the originals',
-    '- Write in second person ("your", "you") — direct but not preachy',
-    '- Keep each item to one sentence, no more than 20 words',
+    '- Write in first person ("I", "my", "me")',
+    '- Keep each item to 40 characters or fewer',
+    '- Do not end items with periods',
     '- Avoid clinical or self-help language',
     '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
     'Hard rules:',
-    '- Every item must directly address the reader using "you" or "your"',
+    '- Every item must be written as a first-person statement using "I", "my", or "me"',
+    '- Do not use "you", "your", or "yours" in any item',
     '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
-    '- Do not write observations about what people are doing; turn them into small ideas the reader could try',
+    '- Do not write observations about what people are doing; turn them into small first-person ideas someone could borrow',
     '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
     'Return plain text only with one labeled idea per line:',
     'IDEA 1: <helpful idea>',
@@ -1270,8 +1276,10 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       '',
       `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
       'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
-      'If the responses share one broad topic, separate genuinely different practical angles someone could try.',
+      'If the responses share one broad topic, separate genuinely different first-person ideas someone could borrow.',
       'Do not collapse multiple distinct responses into one broad summary.',
+      'Every idea must use "I", "my", or "me" and must not use "you", "your", or "yours".',
+      'Every idea must be 40 characters or fewer.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
@@ -2296,9 +2304,8 @@ app.post('/api/reflection-response', async (req, res) => {
     }
 
     const deviceKey = safeReflectionDeviceKey(clientId || `${req.ip || ''}|${req.get('user-agent') || ''}`);
-    const responseId = `${appDateKey}_${deviceKey}`;
-    const responseRef = db.collection('reflectionResponses').doc(responseId);
-    const existingResponse = await responseRef.get();
+    const responseRef = db.collection('reflectionResponses').doc();
+    const responseId = responseRef.id;
     const responsePayload = {
       appDateKey,
       responseText,
@@ -2307,12 +2314,10 @@ app.post('/api/reflection-response', async (req, res) => {
       quoteId: quoteId || null,
       reflectionPromptSnapshot,
       source: 'app',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    if (!existingResponse.exists) {
-      responsePayload.createdAt = admin.firestore.FieldValue.serverTimestamp();
-    }
-    await responseRef.set(responsePayload, { merge: true });
+    await responseRef.set(responsePayload);
 
     return res.json({ success: true, responseId, appDateKey, status: 'stored' });
   } catch (error) {
