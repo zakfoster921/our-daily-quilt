@@ -99,6 +99,7 @@ try {
 </script>
 <head>
   <meta charset="UTF-8" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
   <style>html,body{background-color:#f6f4f1}</style>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -1257,6 +1258,10 @@ try {
       transition: opacity 1.28s cubic-bezier(0.18, 0.82, 0.22, 1);
       transition-delay: 0.1s;
     }
+    #screen-welcome.flow-fade-enter.flow-fade-enter-active {
+      transition-duration: 1.9s;
+      transition-delay: 0.18s;
+    }
     @media (prefers-reduced-motion: reduce) {
       .screen.flow-fade-exit,
       .screen.flow-fade-exit.flow-fade-exit-active,
@@ -1367,11 +1372,15 @@ try {
     /* Welcome screen fade-in elements */
     .welcome-screen-fade-in {
       opacity: 0 !important;
-      transition: opacity 0.8s ease-in-out !important;
+      transform: translate3d(0, 10px, 0);
+      transition:
+        opacity 0.8s ease-in-out,
+        transform 0.8s cubic-bezier(0.22, 1, 0.28, 1) !important;
     }
 
     .welcome-screen-fade-in.visible {
       opacity: 1 !important;
+      transform: translate3d(0, 0, 0);
     }
     .welcome-screen-fade-in.step-arrow-1.visible,
     .welcome-screen-fade-in.step-arrow-2.visible {
@@ -1380,6 +1389,13 @@ try {
     @keyframes welcomeArrowFadeOut {
       to {
         opacity: 0;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .welcome-screen-fade-in,
+      .welcome-screen-fade-in.visible {
+        transform: none !important;
+        transition: opacity 0.01ms linear !important;
       }
     }
 
@@ -1683,60 +1699,162 @@ try {
     }
     
     /* ===== WELCOME SCREEN ===== */
-    .welcome-header {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-    
     #screen-welcome {
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: flex-start;
       align-items: center;
       min-height: 100vh;
-      padding: 2rem 1rem;
+      min-height: 100dvh;
+      padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
+      background: #f6f4f1;
+      box-sizing: border-box;
     }
 
     #screen-welcome .btn {
       text-transform: none;
     }
-    
-    .welcome-header h1 {
-      font-size: 2.5rem;
-      font-weight: 900;
-      margin-bottom: 0.5rem;
-      color: #000;
-    }
-    
-    .welcome-subtitle {
-      font-size: 1.2rem;
-      color: #666;
-      margin: 0;
-    }
-    
+
     .welcome-content {
-      max-width: 600px;
+      width: 100%;
+      max-width: min(86vw, 38rem);
+      min-height: calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)) - max(1rem, env(safe-area-inset-bottom, 0px)));
       margin: 0 auto;
-      padding: 0 1rem;
+      padding: 0 0 clamp(1rem, 3.2vh, 2rem);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      text-align: center;
+    }
+
+    .welcome-title-graphic {
+      display: block;
+      width: min(34vw, 150px);
+      max-width: 100%;
+      height: auto;
+      margin: clamp(0.1rem, 1vh, 0.65rem) auto clamp(0.8rem, 2.6vh, 1.5rem);
+    }
+
+    .welcome-hero {
+      margin: 0 0 clamp(2.2rem, 6vh, 3.8rem);
+    }
+
+    .welcome-hero-line {
+      margin: 0;
+      color: #292622;
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-size: clamp(1.85rem, 7.1vw, 3.9rem);
+      font-weight: 400;
+      line-height: 1.02;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+
+    .welcome-hero-line--soft {
+      margin: clamp(0.1rem, 0.55vh, 0.3rem) 0;
+      color: rgba(41, 38, 34, 0.58);
+      font-style: italic;
+      font-weight: 400;
+    }
+
+    .welcome-steps {
+      width: min(100%, 34rem);
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(1.4rem, 4.4vh, 2.35rem);
       text-align: left;
     }
-    
-    .welcome-info h3 {
-      font-size: 1.8rem;
-      font-weight: 600;
-      margin: 1.5rem 0 0.5rem 0;
-      color: #000;
+
+    .welcome-step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 2.2rem minmax(0, 1fr);
+      column-gap: clamp(0.9rem, 3vw, 1.35rem);
+      min-height: clamp(4.1rem, 11vh, 5.4rem);
     }
-    
-    .welcome-info h3:first-child {
-      margin-top: 0;
+
+    .welcome-step::before {
+      content: '';
+      position: absolute;
+      left: 0.7rem;
+      top: 1.25rem;
+      bottom: calc(clamp(1.4rem, 4.4vh, 2.35rem) * -1 + 0.25rem);
+      width: 2px;
+      background: rgba(53, 48, 42, 0.16);
     }
-    
-    .welcome-info p {
-      font-size: 1.4rem;
-      line-height: 1.8;
-      color: #333;
-      margin-bottom: 1rem;
+
+    .welcome-step:last-child::before {
+      display: none;
+    }
+
+    .welcome-step__dot {
+      grid-column: 1;
+      width: 0.9rem;
+      height: 0.9rem;
+      margin: 0.35rem 0 0 0.27rem;
+      border: 2px solid rgba(53, 48, 42, 0.28);
+      border-radius: 999px;
+      box-sizing: border-box;
+      background: #f6f4f1;
+      z-index: 1;
+    }
+
+    .welcome-step__body {
+      grid-column: 2;
+    }
+
+    .welcome-step__title {
+      margin: 0;
+      color: #24211e;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: clamp(1.55rem, 5vw, 2rem);
+      font-weight: 360;
+      line-height: 1.18;
+      letter-spacing: -0.045em;
+    }
+
+    .welcome-step__copy {
+      margin: 0.45rem 0 0;
+      color: rgba(53, 48, 42, 0.58);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: clamp(1.05rem, 3.7vw, 1.38rem);
+      font-weight: 360;
+      line-height: 1.25;
+      letter-spacing: -0.035em;
+    }
+
+    .welcome-footer {
+      width: min(100%, 38rem);
+      margin: clamp(1.4rem, 4vh, 2.5rem) auto 0;
+    }
+
+    #screen-welcome .welcome-begin-btn.btn {
+      width: 100% !important;
+      min-height: clamp(3.35rem, 7vh, 4.1rem);
+      margin: 0 !important;
+      padding: 0.72rem 1.5rem !important;
+      border: none !important;
+      border-radius: 14px !important;
+      background: #242421 !important;
+      color: #fff !important;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: clamp(1.45rem, 4.6vw, 1.95rem);
+      font-weight: 440;
+      letter-spacing: 0.16em;
+      box-shadow: none !important;
+      text-transform: uppercase;
+    }
+
+    .welcome-reset-note {
+      margin: clamp(0.75rem, 2.1vh, 1.15rem) 0 0;
+      color: rgba(53, 48, 42, 0.34);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: clamp(1rem, 3.3vw, 1.28rem);
+      font-weight: 360;
+      line-height: 1.3;
+      text-align: center;
     }
 
     /* No `display` here — #id would beat `.screen { display:none }` before JS sets inline styles. */
@@ -1768,6 +1886,38 @@ try {
       letter-spacing: 0;
       color: rgba(0, 0, 0, 0.78);
       line-height: 1.2;
+    }
+    #nameThanksLine {
+      opacity: 0;
+      transition: opacity 700ms ease;
+    }
+    #nameThanksLine.is-visible {
+      opacity: 1;
+    }
+    .name-thanks-line__lead,
+    .name-thanks-line__name {
+      display: block;
+    }
+    .name-thanks-line__name {
+      margin-top: clamp(0.28rem, 1vh, 0.55rem);
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-size: 1.5em;
+      font-style: italic;
+      font-weight: 400;
+      line-height: 1.08;
+    }
+    .first-quote-bridge-line {
+      opacity: 0;
+      transition: opacity 700ms ease;
+    }
+    .first-quote-bridge-line.is-visible {
+      opacity: 1;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #nameThanksLine,
+      .first-quote-bridge-line {
+        transition: opacity 0.01ms linear !important;
+      }
     }
     .first-name-screen-inner {
       width: 100%;
@@ -2788,6 +2938,7 @@ try {
       #screen-quilt .quilt-contributor-panel {
         pointer-events: none;
         width: min(88vw, 380px);
+        height: var(--quilt-contributors-panel-max);
         max-height: var(--quilt-contributors-panel-max);
         margin: 0 auto;
         display: flex;
@@ -3314,6 +3465,15 @@ try {
         height: calc(100vh - 120px) !important;
         min-height: calc(100vh - 120px) !important;
         max-height: calc(100vh - 120px) !important;
+      }
+
+      #screen-welcome,
+      #screen-welcome.active {
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        max-height: 100dvh !important;
+        padding: max(0.75rem, var(--odq-safe-top)) max(1rem, var(--odq-safe-right)) max(0.75rem, var(--odq-safe-bottom)) max(1rem, var(--odq-safe-left)) !important;
+        overflow: hidden !important;
       }
 
       /* Portal always fills viewport so first-visit and returning match real screen height. */
@@ -4067,6 +4227,110 @@ try {
 
     .about-resource-list li:last-child {
       margin-bottom: 0;
+    }
+
+    .about-resource-video-item {
+      display: block;
+    }
+
+    .about-resource-video {
+      width: min(calc(100% - 2rem), 560px);
+      margin: 0 auto;
+      box-sizing: border-box;
+      text-align: left;
+    }
+
+    .about-resource-video-desc {
+      margin: 0 0 0.65rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.98rem;
+      line-height: 1.4;
+      color: #3f3a35;
+      text-align: center;
+    }
+
+    .about-resource-video-frame {
+      position: relative;
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      background: #111;
+      border: 6px solid #ffffff;
+      box-shadow: 0 2px 7px rgba(0, 0, 0, 0.14);
+      box-sizing: border-box;
+      color: #ffffff;
+      text-decoration: none;
+    }
+
+    .about-resource-video-frame:hover,
+    .about-resource-video-frame:focus-visible {
+      outline: 2px solid rgba(63, 58, 53, 0.55);
+      outline-offset: 3px;
+    }
+
+    .about-resource-video-frame img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .about-resource-video-play {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.55rem 0.85rem;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.72);
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.9rem;
+      font-weight: 700;
+      line-height: 1;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    }
+
+    .about-resource-video-play::before {
+      content: '';
+      display: block;
+      width: 0;
+      height: 0;
+      border-top: 0.38rem solid transparent;
+      border-bottom: 0.38rem solid transparent;
+      border-left: 0.58rem solid currentColor;
+    }
+
+    .about-resource-plain-links {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.65rem;
+      color: #4a4642;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.86rem;
+      line-height: 1.3;
+    }
+
+    .about-resource-plain-links a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .about-resource-plain-links a:hover,
+    .about-resource-plain-links a:focus-visible {
+      color: #2f2b27;
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .about-resource-plain-divider {
+      color: #7a746e;
     }
 
     .about-resource-strip {
@@ -6253,31 +6517,57 @@ try {
 
     <!-- Welcome / How it works (first visit: after name and thanks) -->
     <section class="screen" id="screen-welcome" role="main" aria-label="Welcome to OUR DAILY QUILT">
-      <div class="welcome-header">
-      </div>
-      
       <div class="welcome-content">
-        <div class="welcome-info">
-          <h3 style="text-align: center;">How It Works</h3>
-          
-          <div style="margin-top: 2rem;"></div>
-          
-          <p class="welcome-screen-fade-in step-1" style="text-align: center;">Read a quote</p>
-          <p class="welcome-screen-fade-in step-arrow-1" style="text-align: center; margin: 0.5rem 0;">↓</p>
-          <p class="welcome-screen-fade-in step-2" style="text-align: center;">Add your color</p>
-          <p class="welcome-screen-fade-in step-arrow-2" style="text-align: center; margin: 0.5rem 0;">↓</p>
-          <p class="welcome-screen-fade-in step-4" style="text-align: center; line-height: 1.2;">Build today&rsquo;s quilt</p>
+        <div>
+          <img
+            class="welcome-title-graphic welcome-screen-fade-in"
+            src="assets/portal-our-daily-quilt.png"
+            alt="OUR DAILY QUILT"
+            width="705"
+            height="705"
+            decoding="async"
+          />
+          <header class="welcome-hero" aria-label="One color. One day. Shared with everyone.">
+            <p class="welcome-hero-line welcome-screen-fade-in">One color.</p>
+            <p class="welcome-hero-line welcome-hero-line--soft welcome-screen-fade-in">One day.</p>
+            <p class="welcome-hero-line welcome-screen-fade-in">Shared with everyone.</p>
+          </header>
+
+          <div class="welcome-steps" aria-label="How it works">
+            <section class="welcome-step welcome-screen-fade-in">
+              <span class="welcome-step__dot" aria-hidden="true"></span>
+              <div class="welcome-step__body">
+                <h2 class="welcome-step__title">Read today&rsquo;s quote</h2>
+                <p class="welcome-step__copy">A single thought to sit with</p>
+              </div>
+            </section>
+            <section class="welcome-step welcome-screen-fade-in">
+              <span class="welcome-step__dot" aria-hidden="true"></span>
+              <div class="welcome-step__body">
+                <h2 class="welcome-step__title">Choose your color</h2>
+                <p class="welcome-step__copy">Whichever color comes to mind</p>
+              </div>
+            </section>
+            <section class="welcome-step welcome-screen-fade-in">
+              <span class="welcome-step__dot" aria-hidden="true"></span>
+              <div class="welcome-step__body">
+                <h2 class="welcome-step__title">Watch the quilt grow</h2>
+                <p class="welcome-step__copy">See what everyone is feeling today</p>
+              </div>
+            </section>
+          </div>
         </div>
+
+        <footer class="welcome-footer welcome-screen-fade-in">
+          <button type="button" class="btn welcome-begin-btn" data-next="screen-first-quote-bridge" aria-label="Begin with today&rsquo;s quote">BEGIN</button>
+          <p class="welcome-reset-note">Resets at midnight &middot; Gone by tomorrow</p>
+        </footer>
       </div>
-      
-      <div style="margin-top: 2rem;"></div>
-      
-      <button type="button" class="btn welcome-screen-fade-in" data-next="screen-first-quote-bridge" aria-label="Continue to your first quote">Ready?</button>
     </section>
 
     <!-- Brief bridge after How it works before the quote (first visit) -->
-    <section class="screen" id="screen-first-quote-bridge" role="status" aria-label="Your first quote">
-      <p class="name-thanks-line" id="firstQuoteBridgeLine" aria-live="polite">Here&rsquo;s your first quote</p>
+    <section class="screen" id="screen-first-quote-bridge" role="status" aria-label="Today&rsquo;s quote">
+      <p class="name-thanks-line first-quote-bridge-line" id="firstQuoteBridgeLine" aria-live="polite">Here&rsquo;s our quote for today</p>
     </section>
 
     <!-- Quote Screen -->
@@ -6295,7 +6585,7 @@ try {
         </div>
         <div class="quote-vspace quote-vspace--between" aria-hidden="true"></div>
         <div class="quote-action-cluster" role="group" aria-label="Color prompt">
-          <p class="quote-prompt" aria-hidden="true">Which color will you add to our quilt?</p>
+          <p class="quote-prompt" aria-hidden="true">What color comes to mind?</p>
           <button
             type="button"
             class="quote-color-wonky-btn"
@@ -6874,28 +7164,25 @@ try {
         <div class="about-section about-resources">
           <h3>Want more?</h3>
           <ul class="about-resource-list" aria-label="Zak Foster resources">
-            <li>
-              <a class="about-resource-strip" href="https://our-daily-quilt-production.up.railway.app/privacy.html" target="_blank" rel="noopener noreferrer">
-                <span class="about-resource-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" role="img" focusable="false">
-                    <path d="M12 3.5 19 6v5.5c0 4.5-2.8 7.6-7 9-4.2-1.4-7-4.5-7-9V6l7-2.5Z"></path>
-                    <path d="M9.5 12.2 11.3 14l3.4-4"></path>
-                  </svg>
-                </span>
-                <span><span class="about-resource-title">Privacy Policy</span> <span class="about-resource-desc">how OUR DAILY QUILT handles data</span></span>
-              </a>
-            </li>
-            <li>
-              <a class="about-resource-strip" href="https://our-daily-quilt-production.up.railway.app/support.html" target="_blank" rel="noopener noreferrer">
-                <span class="about-resource-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" role="img" focusable="false">
-                    <circle cx="12" cy="12" r="8.5"></circle>
-                    <path d="M9.8 9.5a2.4 2.4 0 0 1 4.5 1.2c0 1.8-2.3 2-2.3 3.8"></path>
-                    <path d="M12 17.5h.01"></path>
-                  </svg>
-                </span>
-                <span><span class="about-resource-title">Support</span> <span class="about-resource-desc">help, contact, and app information</span></span>
-              </a>
+            <li class="about-resource-video-item">
+              <div class="about-resource-video">
+                <p class="about-resource-video-desc">Let&rsquo;s make a REAL (tiny) quilt!</p>
+                <a
+                  class="about-resource-video-frame"
+                  href="https://www.youtube.com/watch?v=XKhm8bYyWTQ"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Watch LET'S MAKE A TINY QUILT: PART 1 on YouTube"
+                >
+                  <img
+                    src="https://i.ytimg.com/vi/XKhm8bYyWTQ/hqdefault.jpg"
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <span class="about-resource-video-play">Watch on YouTube</span>
+                </a>
+              </div>
             </li>
             <li>
               <a class="about-resource-strip" href="https://www.zakfoster.com/nook-main" target="_blank" rel="noopener noreferrer">
@@ -6973,6 +7260,13 @@ try {
                 </span>
                 <span><span class="about-resource-title">Free Stuff</span> <span class="about-resource-desc">lot of goodies here for creative folks</span></span>
               </a>
+            </li>
+            <li>
+              <span class="about-resource-plain-links">
+                <a href="https://our-daily-quilt-production.up.railway.app/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+                <span class="about-resource-plain-divider" aria-hidden="true">&bull;</span>
+                <a href="https://our-daily-quilt-production.up.railway.app/support.html" target="_blank" rel="noopener noreferrer">Support</a>
+              </span>
             </li>
           </ul>
         </div>
@@ -12808,11 +13102,16 @@ try {
         return '';
       }
 
-      /** One line for the post-name thanks screen: "Thank you, Zak" / "Thank you, Friend". */
+      /** One line for the post-name welcome screen: "Welcome to ODQ, Zak" / "Welcome to ODQ, Friend". */
       static formatNameThanksFullLine() {
         const g = Utils.getPortalGreetingName();
         const frag = !g ? 'Friend' : g === 'friend' ? 'Friend' : g;
-        return `Thank you, ${frag}`;
+        return `Welcome to ODQ, ${frag}`;
+      }
+
+      static getNameThanksDisplayName() {
+        const g = Utils.getPortalGreetingName();
+        return !g ? 'Friend' : g === 'friend' ? 'Friend' : g;
       }
 
       /**
@@ -14669,7 +14968,7 @@ try {
                 target.classList.remove(...flowClassCleanup);
                 this._flowTransitioning = false;
                 if (welcomeToBridgeFade) {
-                  window.app?.scheduleFirstQuoteBridgeAdvance?.(1000);
+                  window.app?.scheduleFirstQuoteBridgeAdvance?.(1200);
                 }
               };
 
@@ -14705,7 +15004,7 @@ try {
                     settle();
                   };
                   target.addEventListener('transitionend', onTransEnd);
-                  const fallbackId = setTimeout(settle, 1300);
+                  const fallbackId = setTimeout(settle, screenId === 'screen-welcome' ? 2400 : 1300);
                 });
               });
             } else if (bridgeToQuoteFade) {
@@ -14791,7 +15090,7 @@ try {
             }
 
             if (screenId === 'screen-first-quote-bridge' && !welcomeToBridgeFade) {
-              window.app?.scheduleFirstQuoteBridgeAdvance?.(1000);
+              window.app?.scheduleFirstQuoteBridgeAdvance?.(1200);
             }
             
             // Set date immediately when portal screen is shown
@@ -16312,7 +16611,7 @@ try {
                 const ctx = canvas.getContext('2d');
                 canvas.width = STORY_W;
                 canvas.height = STORY_H;
-                ctx.fillStyle = isPostLayout ? '#f6f4f1' : softComplementaryStoryBackground(quiltImg);
+                ctx.fillStyle = isPostLayout ? '#ffffff' : softComplementaryStoryBackground(quiltImg);
                 ctx.fillRect(0, 0, STORY_W, STORY_H);
 
                 const iw = Math.max(1, quiltImg.naturalWidth || quiltImg.width);
@@ -16347,6 +16646,12 @@ try {
                     const maxQuiltW = STORY_W - marginX * 2;
                     const maxQuiltH = STORY_H - marginY * 2;
                     postScale = Math.min(maxQuiltW / iw, maxQuiltH / ih);
+                    dw = Math.round(iw * postScale);
+                    dh = Math.round(ih * postScale);
+                    dx = Math.round((STORY_W - dw) / 2);
+                    dy = Math.round((STORY_H - dh) / 2);
+                  } else if (options?.quiltFit === 'cover') {
+                    postScale = Math.max(STORY_W / iw, STORY_H / ih);
                     dw = Math.round(iw * postScale);
                     dh = Math.round(ih * postScale);
                     dx = Math.round((STORY_W - dw) / 2);
@@ -16834,7 +17139,11 @@ try {
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
-              quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks);
+              quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, {
+                skipExportUnderpaint: true,
+                exportModeLabel: 'classic_screen_aspect_padded_no_underpaint',
+                viewBoxPaddingRatio: 0.1
+              });
             } catch (e) {
               this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
             }
@@ -16890,6 +17199,9 @@ try {
 
       hasRenderedQuiltSvgForBlocks(quiltSVG, blocks) {
         if (!quiltSVG || !Array.isArray(blocks) || blocks.length === 0) return false;
+        if (quiltSVG.querySelector('#quiltFieldLayer, #quiltParallaxLayer, polygon, rect')) {
+          return true;
+        }
         const renderedIds = Array.from(quiltSVG.querySelectorAll('[data-block-id]'))
           .map((node) => node.getAttribute('data-block-id'))
           .filter(Boolean);
@@ -16902,7 +17214,7 @@ try {
       }
 
       /** Rasterize the live quilt crop as it appears on the quilt screen. */
-      async rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks = null) {
+      async rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks = null, options = {}) {
         if (!quiltSVG) return null;
         const rect = quiltSVG.getBoundingClientRect?.();
         const screenAspect =
@@ -16912,7 +17224,10 @@ try {
         return this.rasterizeQuiltSvgToPngBlob(quiltSVG, {
           underpaintBlocks: blocks,
           targetAspect: screenAspect || undefined,
-          exportModeLabel: screenAspect ? 'zapier_screen_aspect_crop' : undefined
+          exportModeLabel:
+            options.exportModeLabel || (screenAspect ? 'zapier_screen_aspect_crop' : undefined),
+          skipExportUnderpaint: options.skipExportUnderpaint === true,
+          viewBoxPaddingRatio: options.viewBoxPaddingRatio
         });
       }
 
@@ -16935,6 +17250,22 @@ try {
         }
         const croppedWidth = height * targetAspect;
         return [x + (width - croppedWidth) / 2, y, Math.min(width, croppedWidth), height];
+      }
+
+      padViewBoxParts(viewBoxParts, paddingRatio) {
+        if (
+          !Array.isArray(viewBoxParts) ||
+          viewBoxParts.length !== 4 ||
+          !Number.isFinite(paddingRatio) ||
+          paddingRatio <= 0
+        ) {
+          return null;
+        }
+        const [x, y, width, height] = viewBoxParts;
+        if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+        const dx = width * paddingRatio;
+        const dy = height * paddingRatio;
+        return [x - dx, y - dy, width + dx * 2, height + dy * 2];
       }
 
       addQuiltExportUnderpaint(svgClone, explicitBlocks = null) {
@@ -17163,11 +17494,16 @@ try {
               targetAspect && viewBoxParts
                 ? this.cropViewBoxForSliceAspect(viewBoxParts, targetAspect)
                 : null;
-            if (croppedViewBoxParts) {
-              viewBoxParts = croppedViewBoxParts;
-              sourceWidth = Math.max(1, croppedViewBoxParts[2]);
-              sourceHeight = Math.max(1, croppedViewBoxParts[3]);
-              svgClone.setAttribute('viewBox', croppedViewBoxParts.join(' '));
+            const paddedViewBoxParts =
+              options.viewBoxPaddingRatio && (croppedViewBoxParts || viewBoxParts)
+                ? this.padViewBoxParts(croppedViewBoxParts || viewBoxParts, Number(options.viewBoxPaddingRatio))
+                : null;
+            const exportViewBoxParts = paddedViewBoxParts || croppedViewBoxParts;
+            if (exportViewBoxParts) {
+              viewBoxParts = exportViewBoxParts;
+              sourceWidth = Math.max(1, exportViewBoxParts[2]);
+              sourceHeight = Math.max(1, exportViewBoxParts[3]);
+              svgClone.setAttribute('viewBox', exportViewBoxParts.join(' '));
               svgClone.setAttribute('preserveAspectRatio', 'xMidYMin meet');
             }
             const rect = quiltSVG.getBoundingClientRect?.();
@@ -17186,11 +17522,15 @@ try {
             svgClone.removeAttribute('style');
             svgClone.setAttribute('width', String(outW));
             svgClone.setAttribute('height', String(outH));
-            this.addQuiltExportUnderpaint(svgClone, options.underpaintBlocks);
+            if (!options.skipExportUnderpaint) {
+              this.addQuiltExportUnderpaint(svgClone, options.underpaintBlocks);
+            }
             this.lastQuiltExportDebug = {
               mode: options.exportModeLabel || (targetAspect ? 'target_aspect_crop' : 'default_svg_raster'),
               originalViewBox: viewBox || '',
               croppedViewBox: croppedViewBoxParts ? croppedViewBoxParts.join(' ') : '',
+              paddedViewBox: paddedViewBoxParts ? paddedViewBoxParts.join(' ') : '',
+              viewBoxPaddingRatio: Number(options.viewBoxPaddingRatio) || null,
               targetAspect: targetAspect || null,
               sourceWidth,
               sourceHeight,
@@ -17220,9 +17560,9 @@ try {
                 const ctx = canvas.getContext('2d');
                 canvas.width = outW;
                 canvas.height = outH;
-                ctx.fillStyle = '#f6f4f1';
+                ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, outW, outH);
-                if (viewBoxParts && options.underpaintBlocks) {
+                if (viewBoxParts && options.underpaintBlocks && !options.skipExportUnderpaint) {
                   this.drawQuiltExportCanvasUnderpaint(
                     ctx,
                     outW,
@@ -17475,7 +17815,7 @@ try {
             1080,
             1350,
             dk,
-            { quiltFit: 'contain' }
+            { quiltFit: 'cover' }
           );
           return await new Promise((resolve) => {
             const fr = new FileReader();
@@ -21321,6 +21661,11 @@ try {
         if (renderMirroredField) {
           const addMirroredLayer = (id, transform) => {
             const mirroredLayer = parallaxLayer.cloneNode(true);
+            mirroredLayer.querySelectorAll('.new-block').forEach((node) => {
+              node.classList.remove('new-block');
+              node.removeAttribute('opacity');
+              node.style.animation = 'none';
+            });
             mirroredLayer.setAttribute('id', id);
             mirroredLayer.setAttribute('aria-hidden', 'true');
             mirroredLayer.setAttribute('pointer-events', 'none');
@@ -21935,6 +22280,7 @@ try {
         this._quiltFortuneFrontGeneration = 0;
         this._quiltResetCountdownTimer = null;
         this._reflectionThemesArchiveLoaded = false;
+        this._quoteSubmissionReturnTimer = null;
         /** App-day key for the shared quilt currently in memory. Prevents stale saves after the 07:00 UTC rollover. */
         this._loadedSharedQuiltDateKey = null;
         /** Device-local "personal quilt" mode (derived from this user's historical color picks). */
@@ -22340,14 +22686,29 @@ try {
           Utils.refreshPortalGreeting();
           const line = document.getElementById('nameThanksLine');
           if (line) {
-            line.textContent = Utils.formatNameThanksFullLine();
+            line.classList.remove('is-visible');
+            const lead = document.createElement('span');
+            lead.className = 'name-thanks-line__lead';
+            lead.textContent = 'Welcome to ODQ,';
+            const name = document.createElement('span');
+            name.className = 'name-thanks-line__name';
+            name.textContent = Utils.getNameThanksDisplayName();
+            line.replaceChildren(lead, name);
           }
           this.clearNameThanksAdvanceTimer();
           this.uiService.showScreen('screen-name-thanks');
+          if (line) {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => line.classList.add('is-visible'));
+            });
+          }
           this._nameThanksAdvanceTimer = setTimeout(() => {
-            this._nameThanksAdvanceTimer = null;
-            this.uiService.showScreen('screen-welcome');
-          }, 1000);
+            if (line) line.classList.remove('is-visible');
+            this._nameThanksAdvanceTimer = setTimeout(() => {
+              this._nameThanksAdvanceTimer = null;
+              this.uiService.showScreen('screen-welcome');
+            }, 720);
+          }, 1850);
         };
         if (firstNameContinueBtn) {
           firstNameContinueBtn.addEventListener('click', (e) => {
@@ -22575,6 +22936,7 @@ try {
       prepareQuoteSubmissionScreen(clearStatus = true) {
         const nameInput = document.getElementById('quoteSubmissionName');
         const status = document.getElementById('quoteSubmissionStatus');
+        if (clearStatus) this.clearQuoteSubmissionReturnTimer();
         if (nameInput && !nameInput.value.trim()) {
           const storedName = Utils.getUserFirstName();
           if (storedName && storedName.toLowerCase() !== 'friend') {
@@ -23443,6 +23805,23 @@ try {
         }
       }
 
+      clearQuoteSubmissionReturnTimer() {
+        if (this._quoteSubmissionReturnTimer) {
+          clearTimeout(this._quoteSubmissionReturnTimer);
+          this._quoteSubmissionReturnTimer = null;
+        }
+      }
+
+      scheduleQuoteSubmissionReturnToQuilt(delayMs = 1000) {
+        this.clearQuoteSubmissionReturnTimer();
+        this._quoteSubmissionReturnTimer = setTimeout(() => {
+          this._quoteSubmissionReturnTimer = null;
+          const quoteSubmissionScreen = document.getElementById('screen-quote-submission');
+          if (!quoteSubmissionScreen?.classList.contains('active')) return;
+          this.uiService.showScreen('screen-quilt');
+        }, delayMs);
+      }
+
       normalizeSubmittedQuoteText(value) {
         return String(value || '')
           .replace(/\r\n?/g, '\n')
@@ -23530,10 +23909,10 @@ try {
         this.saveQuoteSubmissionLocally({ ...payload, savedToBackend, backendResult });
 
         if (savedToBackend) {
-          if (status) status.textContent = 'Thank you. Your quote was sent for review.';
+          if (status) status.textContent = 'Thank you. Your quote was sent for review. Returning to the quilt...';
           this.uiService.showToast('Quote sent for review');
           form.reset();
-          this.prepareQuoteSubmissionScreen(false);
+          this.scheduleQuoteSubmissionReturnToQuilt(1000);
         } else {
           if (status) {
             status.textContent = 'Saved on this device, but it could not be sent yet. Please try again when you are online.';
@@ -26876,13 +27255,23 @@ try {
         }
       }
 
-      /** After the “first quote” interstitial, crossfade to quote (mirrors name-thanks → welcome timing). */
-      scheduleFirstQuoteBridgeAdvance(delayMs = 1000) {
+      /** After the quote bridge line appears, fade it out before crossfading to the quote screen. */
+      scheduleFirstQuoteBridgeAdvance(delayMs = 1200) {
         this.clearFirstQuoteBridgeTimer();
+        const line = document.getElementById('firstQuoteBridgeLine');
+        if (line) {
+          line.classList.remove('is-visible');
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => line.classList.add('is-visible'));
+          });
+        }
         const ms = Math.max(0, delayMs);
         this._firstQuoteBridgeTimer = setTimeout(() => {
-          this._firstQuoteBridgeTimer = null;
-          this.uiService.showScreen('screen-quote');
+          if (line) line.classList.remove('is-visible');
+          this._firstQuoteBridgeTimer = setTimeout(() => {
+            this._firstQuoteBridgeTimer = null;
+            this.uiService.showScreen('screen-quote');
+          }, 720);
         }, ms);
       }
 
@@ -27746,6 +28135,7 @@ try {
           list.appendChild(item);
         });
         wrap.classList.toggle('has-content', contributors.length > 0);
+        list.scrollTop = 0;
       }
 
       prepareSettingsScreen() {
@@ -28922,13 +29312,7 @@ try {
       }
 
       getColorSubmitPlacementMessage() {
-        const loadedBlockCount = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks.length : 0;
-        const nextBlockCount = Math.max(
-          loadedBlockCount + 1,
-          Math.floor(Number(this.quiltEngine?.submissionCount || 0)) + 1,
-          1
-        );
-        return `Finding the perfect place for our ${this.formatOrdinalNumber(nextBlockCount)} block`;
+        return 'Adding your color';
       }
 
       getReadableTextColorForBackground(hex) {
