@@ -16932,6 +16932,69 @@ try {
         }
       }
 
+      drawQuiltExportCanvasUnderpaint(ctx, width, height, viewBoxParts, explicitBlocks = null, svgClone = null) {
+        if (!ctx || !Array.isArray(viewBoxParts) || viewBoxParts.length !== 4) return;
+        const blocks = Array.isArray(explicitBlocks) && explicitBlocks.length
+          ? explicitBlocks
+          : (typeof window !== 'undefined' && Array.isArray(window.app?.quiltEngine?.blocks)
+            ? window.app.quiltEngine.blocks
+            : []);
+        if (!blocks.length) return;
+        const [vbX, vbY, vbW, vbH] = viewBoxParts;
+        if (![vbX, vbY, vbW, vbH].every(Number.isFinite) || vbW <= 0 || vbH <= 0) return;
+        const fieldTransform = String(svgClone?.querySelector?.('#quiltFieldLayer')?.getAttribute('transform') || '');
+        const transformMatch = /translate\(\s*([-0-9.]+)(?:[\s,]+[-0-9.]+)?\s*\)\s*scale\(\s*([-0-9.]+)/.exec(fieldTransform);
+        const stretchAnchor = transformMatch ? Number(transformMatch[1]) : 0;
+        const stretchScale = transformMatch ? Number(transformMatch[2]) : 1;
+        const hasHorizontalStretch =
+          Number.isFinite(stretchAnchor) &&
+          Number.isFinite(stretchScale) &&
+          Math.abs(stretchScale - 1) > 1e-6;
+        const sx = width / vbW;
+        const sy = height / vbH;
+        const bleed = 8;
+        const drawOneField = (mirror = false) => {
+          blocks.forEach((block) => {
+            if (!block) return;
+            const bx = Number(block.x);
+            const by = Number(block.y);
+            const bw = Math.max(0, Number(block.width));
+            const bh = Math.max(0, Number(block.height));
+            if (![bx, by, bw, bh].every(Number.isFinite) || bw <= 0 || bh <= 0) return;
+            const fill = Utils.validateHexColor(block.color) ? block.color : '#d8d4cf';
+            let x1 = bx - bleed;
+            let x2 = bx + bw + bleed;
+            let y1 = by - bleed;
+            let y2 = by + bh + bleed;
+            if (hasHorizontalStretch) {
+              x1 = stretchAnchor + (x1 - stretchAnchor) * stretchScale;
+              x2 = stretchAnchor + (x2 - stretchAnchor) * stretchScale;
+            }
+            if (mirror) {
+              const sourceMinY = Math.min(...blocks.map((b) => Number(b?.y) || 0));
+              const sourceMaxY = Math.max(...blocks.map((b) => (Number(b?.y) || 0) + (Number(b?.height) || 0)));
+              const mirrorSeam = sourceMaxY - sourceMinY;
+              const oldY1 = y1;
+              const oldY2 = y2;
+              y1 = sourceMinY + mirrorSeam + (sourceMaxY - oldY2);
+              y2 = sourceMinY + mirrorSeam + (sourceMaxY - oldY1);
+            }
+            const px = (Math.min(x1, x2) - vbX) * sx;
+            const py = (Math.min(y1, y2) - vbY) * sy;
+            const pw = Math.abs(x2 - x1) * sx;
+            const ph = Math.abs(y2 - y1) * sy;
+            ctx.fillStyle = fill;
+            ctx.fillRect(px, py, pw, ph);
+          });
+        };
+        ctx.save();
+        drawOneField(false);
+        if (svgClone?.querySelector?.('#quiltMirroredFieldLayer')) {
+          drawOneField(true);
+        }
+        ctx.restore();
+      }
+
       /** High-res PNG blob from the live quilt SVG (same path as layout B story share). */
       async rasterizeQuiltSvgToPngBlob(quiltSVG, options = {}) {
         return new Promise((resolve, reject) => {
@@ -16945,11 +17008,13 @@ try {
             });
 
             const viewBox = (quiltSVG.getAttribute('viewBox') || '').trim();
+            let viewBoxParts = null;
             let sourceWidth = 1080;
             let sourceHeight = 1080;
             if (viewBox) {
               const parts = viewBox.split(/\s+/).map(Number);
               if (parts.length === 4 && parts.every(Number.isFinite)) {
+                viewBoxParts = parts;
                 sourceWidth = Math.max(1, parts[2]);
                 sourceHeight = Math.max(1, parts[3]);
               }
@@ -16989,6 +17054,16 @@ try {
                 canvas.height = outH;
                 ctx.fillStyle = '#f6f4f1';
                 ctx.fillRect(0, 0, outW, outH);
+                if (viewBoxParts && options.underpaintBlocks) {
+                  this.drawQuiltExportCanvasUnderpaint(
+                    ctx,
+                    outW,
+                    outH,
+                    viewBoxParts,
+                    options.underpaintBlocks,
+                    svgClone
+                  );
+                }
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 const iw = Math.max(1, img.naturalWidth || outW);
