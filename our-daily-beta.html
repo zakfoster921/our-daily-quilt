@@ -13167,6 +13167,15 @@ try {
         return new Blob([bytes], { type: m[1] });
       }
 
+      static blobToDataUrl(blob) {
+        return new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result || null);
+          fr.onerror = () => reject(new Error('Could not read blob as data URL'));
+          fr.readAsDataURL(blob);
+        });
+      }
+
       /** localStorage: YYYY-MM-DD for which we already uploaded a Zapier reel WebM (max one reel capture per day per browser). */
       static ZAPIER_REEL_ONCE_STORAGE_KEY = 'ourDailyZapierReelSyncedDate';
 
@@ -14218,7 +14227,9 @@ try {
         postLayoutBImageData,
         reelWebmBlob = null,
         zapierCaption = '',
-        quiltFingerprint = ''
+        quiltFingerprint = '',
+        exportDebug = null,
+        debugRawQuiltImage = null
       }) {
         if (!window.db || !window.firestore) {
           throw new Error('Firestore not ready');
@@ -14272,6 +14283,7 @@ try {
         let imageStorageUrl = null;
         let postLayoutBImageStorageUrl = null;
         let reelWebmStorageUrl = null;
+        let debugRawQuiltStorageUrl = null;
         if (instagramImage) {
           const r = ref(storage, `${basePath}/classic-${assetVersion}.png`);
           await uploadBytes(r, Utils.dataUrlToBlob(instagramImage), {
@@ -14292,6 +14304,14 @@ try {
           const r = ref(storage, `${basePath}/reel.webm`);
           await uploadBytes(r, reelWebmBlob, { contentType: 'video/webm' });
           reelWebmStorageUrl = await getDownloadURL(r);
+        }
+        if (debugRawQuiltImage) {
+          const r = ref(storage, `${basePath}/debug-raw-quilt-${assetVersion}.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(debugRawQuiltImage), {
+            contentType: 'image/png',
+            cacheControl: 'no-store'
+          });
+          debugRawQuiltStorageUrl = await getDownloadURL(r);
         }
         /** Only set fields we uploaded so merge does not null out prior classic/layout URLs on reel-only writes. */
         const docPayload = {
@@ -14335,6 +14355,15 @@ try {
         const cap = typeof zapierCaption === 'string' ? zapierCaption.trim() : '';
         if (cap) {
           docPayload.zapierCaption = cap;
+        }
+        if (debugRawQuiltStorageUrl) {
+          docPayload.debugRawQuiltStorageUrl = debugRawQuiltStorageUrl;
+        }
+        if (exportDebug && typeof exportDebug === 'object') {
+          docPayload.exportDebug = {
+            ...exportDebug,
+            debugWrittenAt: new Date().toISOString()
+          };
         }
         await window.firestore.setDoc(imageRef, docPayload, { merge: true });
         return docPayload;
@@ -16686,6 +16715,8 @@ try {
         this.isLoading = false;
         this.currentPage = 0;
         this.postsPerPage = 10;
+        this.lastQuiltExportDebug = null;
+        this.lastQuiltExportRawDataUrl = null;
       }
 
       // Archive data structure for each day
@@ -17081,6 +17112,8 @@ try {
       async rasterizeQuiltSvgToPngBlob(quiltSVG, options = {}) {
         return new Promise((resolve, reject) => {
           try {
+            this.lastQuiltExportDebug = null;
+            this.lastQuiltExportRawDataUrl = null;
             const svgClone = quiltSVG.cloneNode(true);
             svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
             svgClone.querySelectorAll('.new-block').forEach((node) => {
@@ -17121,6 +17154,7 @@ try {
               svgClone.setAttribute('viewBox', croppedViewBoxParts.join(' '));
               svgClone.setAttribute('preserveAspectRatio', 'xMidYMin meet');
             }
+            const rect = quiltSVG.getBoundingClientRect?.();
             const maxEdge = 2400;
             const aspect = targetAspect || (sourceWidth / sourceHeight);
             let outW;
@@ -17137,6 +17171,27 @@ try {
             svgClone.setAttribute('width', String(outW));
             svgClone.setAttribute('height', String(outH));
             this.addQuiltExportUnderpaint(svgClone, options.underpaintBlocks);
+            this.lastQuiltExportDebug = {
+              mode: targetAspect ? 'zapier_4x5_explicit_top_crop' : 'default_svg_raster',
+              originalViewBox: viewBox || '',
+              croppedViewBox: croppedViewBoxParts ? croppedViewBoxParts.join(' ') : '',
+              targetAspect: targetAspect || null,
+              sourceWidth,
+              sourceHeight,
+              outputWidth: outW,
+              outputHeight: outH,
+              svgClientRect: rect
+                ? {
+                  width: Math.round(rect.width),
+                  height: Math.round(rect.height),
+                  top: Math.round(rect.top),
+                  left: Math.round(rect.left)
+                }
+                : null,
+              preserveAspectRatio: svgClone.getAttribute('preserveAspectRatio') || '',
+              usedLiveSvg: true,
+              backsidePreview: !!(typeof window !== 'undefined' && window.app?._isBacksidePreviewMode)
+            };
 
             const svgData = new XMLSerializer().serializeToString(svgClone);
             const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
@@ -17175,11 +17230,18 @@ try {
                   this.healQuiltExportRasterSeams(ctx, outW, outH);
                 }
                 Utils.applyFilmGrain(ctx, outW, outH, 0, { vignette: false });
-                canvas.toBlob((blob) => {
+                canvas.toBlob(async (blob) => {
                   URL.revokeObjectURL(svgUrl);
                   if (!blob) {
                     reject(new Error('Could not convert canvas to blob'));
                     return;
+                  }
+                  if (options.captureDebugRawDataUrl !== false) {
+                    try {
+                      this.lastQuiltExportRawDataUrl = await Utils.blobToDataUrl(blob);
+                    } catch (_) {
+                      this.lastQuiltExportRawDataUrl = null;
+                    }
                   }
                   resolve(blob);
                 }, 'image/png');
@@ -32030,13 +32092,17 @@ try {
             this.uiService.showToast('Failed to generate images');
             return;
           }
+          const exportDebug = arch.lastQuiltExportDebug || null;
+          const debugRawQuiltImage = arch.lastQuiltExportRawDataUrl || null;
 
           const docPayload = await Utils.writeInstagramImagesDocForZapier({
             dateKey: today,
             instagramImage,
             postLayoutBImageData,
             zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
-            quiltFingerprint
+            quiltFingerprint,
+            exportDebug,
+            debugRawQuiltImage
           });
 
           const zapierReelCaptureEnabled = false;
