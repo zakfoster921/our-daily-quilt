@@ -16786,8 +16786,8 @@ try {
           }
 
           /**
-           * Match on-screen quilt: rasterize the live SVG with its displayed aspect
-           * ratio so preserveAspectRatio="slice" keeps the same visible composition.
+           * Match the quilt screen's top/center crop, but in the Zapier 4:5 shape.
+           * This avoids exporting the entire tall mirrored field as a different composition.
            */
           let quiltBlob = null;
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
@@ -16865,8 +16865,29 @@ try {
         if (!quiltSVG) return null;
         return this.rasterizeQuiltSvgToPngBlob(quiltSVG, {
           underpaintBlocks: blocks,
-          matchRenderedAspect: true
+          targetAspect: 1080 / 1350
         });
+      }
+
+      cropViewBoxForSliceAspect(viewBoxParts, targetAspect) {
+        if (
+          !Array.isArray(viewBoxParts) ||
+          viewBoxParts.length !== 4 ||
+          !Number.isFinite(targetAspect) ||
+          targetAspect <= 0
+        ) {
+          return null;
+        }
+        const [x, y, width, height] = viewBoxParts;
+        if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+        const sourceAspect = width / height;
+        if (Math.abs(sourceAspect - targetAspect) < 0.0001) return [x, y, width, height];
+        if (targetAspect > sourceAspect) {
+          const croppedHeight = width / targetAspect;
+          return [x, y, width, Math.min(height, croppedHeight)];
+        }
+        const croppedWidth = height * targetAspect;
+        return [x + (width - croppedWidth) / 2, y, Math.min(width, croppedWidth), height];
       }
 
       addQuiltExportUnderpaint(svgClone, explicitBlocks = null) {
@@ -17085,16 +17106,23 @@ try {
               sourceHeight = Math.max(1, Math.round(rect.height));
             }
 
-            const renderedRect = quiltSVG.getBoundingClientRect?.();
-            const renderedAspect =
-              options.matchRenderedAspect &&
-              renderedRect &&
-              renderedRect.width > 0 &&
-              renderedRect.height > 0
-                ? renderedRect.width / renderedRect.height
+            const targetAspect =
+              Number.isFinite(options.targetAspect) && options.targetAspect > 0
+                ? options.targetAspect
                 : null;
+            const croppedViewBoxParts =
+              targetAspect && viewBoxParts
+                ? this.cropViewBoxForSliceAspect(viewBoxParts, targetAspect)
+                : null;
+            if (croppedViewBoxParts) {
+              viewBoxParts = croppedViewBoxParts;
+              sourceWidth = Math.max(1, croppedViewBoxParts[2]);
+              sourceHeight = Math.max(1, croppedViewBoxParts[3]);
+              svgClone.setAttribute('viewBox', croppedViewBoxParts.join(' '));
+              svgClone.setAttribute('preserveAspectRatio', 'xMidYMin meet');
+            }
             const maxEdge = 2400;
-            const aspect = renderedAspect || (sourceWidth / sourceHeight);
+            const aspect = targetAspect || (sourceWidth / sourceHeight);
             let outW;
             let outH;
             if (aspect >= 1) {
@@ -17123,7 +17151,7 @@ try {
                 canvas.height = outH;
                 ctx.fillStyle = '#f6f4f1';
                 ctx.fillRect(0, 0, outW, outH);
-                if (viewBoxParts && options.underpaintBlocks && !options.matchRenderedAspect) {
+                if (viewBoxParts && options.underpaintBlocks) {
                   this.drawQuiltExportCanvasUnderpaint(
                     ctx,
                     outW,
