@@ -13,11 +13,12 @@ alwaysApply: true
 2. **Nightly path — “static” reel**  
    `POST /api/nightly-instagram-snapshot` → **`reel-nightly.mp4`**. The server builds the **classic 4:5 image** (full quilt for that day — **all blocks in one frame**), then **loops that single frame for ~8s** with ffmpeg. It is a **valid MP4** but **nothing moves** — not “one block only,” but **no animation**.
 
-## Automation (no manual “Push IG”)
+## Automation status
 
-- **`.github/workflows/nightly-instagram-snapshot.yml`** (cron ~06:30 UTC): runs **`npm run ssr:reel`** (Playwright) → **`reel.webm` + transcode → `reel.mp4`** (animated), same as the app path.
-- If SSR **fails**, the job **fails** (no automatic **`/api/nightly-instagram-snapshot`** from CI) so **Firebase is unchanged** for that run; GitHub can email you. Download **nightly-ssr-failure-artifacts**; re-run via **workflow_dispatch** with the same `date_key` after fixing. `POST /api/nightly-instagram-snapshot` still exists on the server for **manual** use if you ever need a static `reel-nightly.mp4`.
-- Workflow uses **`SSR_REQUIRE_SPLIT_MODE: false`** so “fade”/“replay” reels count as success, not only “split”.
+- Automatic daily reel generation is **disabled for now** to avoid daily video storage growth.
+- App “Push IG images to Firestore (Zapier)” currently uploads **Classic + Layout B images only**; it does not record/upload `reel.webm` or call MP4 transcode.
+- **`.github/workflows/nightly-instagram-snapshot.yml`** has no cron schedule; it can still be run manually via **workflow_dispatch** if an animated reel is needed for a specific `date_key`.
+- `POST /api/nightly-instagram-snapshot` still exists on the server for **manual** use if you ever need a static `reel-nightly.mp4`.
 
 ## Zapier / debugging
 

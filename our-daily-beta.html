@@ -16897,6 +16897,7 @@ try {
           group.setAttribute('aria-hidden', 'true');
           group.setAttribute('pointer-events', 'none');
           group.setAttribute('data-export-underpaint', '1');
+          const bleed = 2.5;
           blocks.forEach((block) => {
             if (!block) return;
             const x = Number(block.x);
@@ -16906,10 +16907,10 @@ try {
             const fill = Utils.validateHexColor(block.color) ? block.color : '#d8d4cf';
             if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return;
             const rect = document.createElementNS(ns, 'rect');
-            rect.setAttribute('x', String(x));
-            rect.setAttribute('y', String(y));
-            rect.setAttribute('width', String(w));
-            rect.setAttribute('height', String(h));
+            rect.setAttribute('x', String(x - bleed));
+            rect.setAttribute('y', String(y - bleed));
+            rect.setAttribute('width', String(w + bleed * 2));
+            rect.setAttribute('height', String(h + bleed * 2));
             rect.setAttribute('fill', fill);
             rect.setAttribute('stroke', 'none');
             group.appendChild(rect);
@@ -31806,8 +31807,8 @@ try {
 
       /**
        * Writes `instagram-images/{today}` to Firestore (classic 4:5 + layout B 4:5 when available).
-       * Reel: at most one capture per calendar day (see Utils.shouldSkipZapierReelCapture); then Railway transcodes WebM → MP4.
-       * Railway POST /api/generate-instagram reads this doc so Zapier can use imageUrl, postLayoutBImageUrl, and reelVideoUrl.
+       * Reel capture is currently disabled to avoid daily video storage growth.
+       * Railway POST /api/generate-instagram reads this doc so Zapier can use imageUrl and postLayoutBImageUrl.
        */
       async handlePushInstagramAssetsToFirestore() {
         try {
@@ -31863,10 +31864,11 @@ try {
             quiltFingerprint
           });
 
-          const reelLockedSkip = await Utils.shouldSkipZapierReelCapture(today);
+          const zapierReelCaptureEnabled = false;
+          const reelLockedSkip = true;
           let reelWebmBlob = null;
           let transcodedMp4 = false;
-          if (!reelLockedSkip) {
+          if (zapierReelCaptureEnabled && !reelLockedSkip) {
             this.uiService.showToast('Recording reel for Zapier (~8s, keep tab focused)…');
             await Utils.enqueueZapierReelCapture(async () => {
               if (await Utils.shouldSkipZapierReelCapture(today)) return;
@@ -31936,8 +31938,10 @@ try {
             transcodedMp4 ? 'reel MP4' : null
           ].filter(Boolean);
           const reelNote =
-            reelLockedSkip && !reelWebmBlob
-              ? ' — reel already captured today (images updated)'
+            !zapierReelCaptureEnabled
+              ? ' — reel capture disabled'
+              : reelLockedSkip && !reelWebmBlob
+                ? ' — reel already captured today (images updated)'
               : '';
           this.uiService.showToast(
             `Saved instagram-images/${today} (${parts.join(' + ') || 'images'}) via Storage${reelNote} — refresh Firebase console`
@@ -31948,7 +31952,8 @@ try {
             hasPostLayoutB: !!postLayoutBImageData,
             hasReelWebm: !!reelWebmBlob,
             transcodedMp4,
-            reelSkipBecauseAlreadyToday: reelLockedSkip && !reelWebmBlob,
+            reelCaptureEnabled: zapierReelCaptureEnabled,
+            reelSkipBecauseAlreadyToday: zapierReelCaptureEnabled && reelLockedSkip && !reelWebmBlob,
             storage: {
               imageStorageUrl: !!docPayload.imageStorageUrl,
               postLayoutBImageStorageUrl: !!docPayload.postLayoutBImageStorageUrl,
