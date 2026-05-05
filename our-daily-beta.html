@@ -16341,6 +16341,16 @@ try {
                     dx = Math.round((STORY_W - dw) / 2);
                     dy = Math.round(marginTop + Math.max(0, (maxQuiltH - dh) / 2));
                     dedicationBox.y = Math.round(dy + dh + messageGap);
+                  } else if (options?.quiltFit === 'contain') {
+                    const marginX = 58;
+                    const marginY = 46;
+                    const maxQuiltW = STORY_W - marginX * 2;
+                    const maxQuiltH = STORY_H - marginY * 2;
+                    postScale = Math.min(maxQuiltW / iw, maxQuiltH / ih);
+                    dw = Math.round(iw * postScale);
+                    dh = Math.round(ih * postScale);
+                    dx = Math.round((STORY_W - dw) / 2);
+                    dy = Math.round((STORY_H - dh) / 2);
                   } else {
                     postScale = Math.max(STORY_W / iw, STORY_H / ih) * 1.04;
                     dw = Math.round(iw * postScale);
@@ -16817,8 +16827,8 @@ try {
           }
 
           /**
-           * Match the quilt screen's top/center crop, but in the Zapier 4:5 shape.
-           * This avoids exporting the entire tall mirrored field as a different composition.
+           * Match the quilt screen crop first. The 4:5 Zapier canvases then place
+           * this screen-faithful raster inside the post instead of re-cropping it.
            */
           let quiltBlob = null;
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
@@ -16894,9 +16904,15 @@ try {
       /** Rasterize the live quilt crop as it appears on the quilt screen. */
       async rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks = null) {
         if (!quiltSVG) return null;
+        const rect = quiltSVG.getBoundingClientRect?.();
+        const screenAspect =
+          rect && rect.width > 0 && rect.height > 0
+            ? rect.width / rect.height
+            : null;
         return this.rasterizeQuiltSvgToPngBlob(quiltSVG, {
           underpaintBlocks: blocks,
-          targetAspect: 1080 / 1350
+          targetAspect: screenAspect || undefined,
+          exportModeLabel: screenAspect ? 'zapier_screen_aspect_crop' : undefined
         });
       }
 
@@ -17172,7 +17188,7 @@ try {
             svgClone.setAttribute('height', String(outH));
             this.addQuiltExportUnderpaint(svgClone, options.underpaintBlocks);
             this.lastQuiltExportDebug = {
-              mode: targetAspect ? 'zapier_4x5_explicit_top_crop' : 'default_svg_raster',
+              mode: options.exportModeLabel || (targetAspect ? 'target_aspect_crop' : 'default_svg_raster'),
               originalViewBox: viewBox || '',
               croppedViewBox: croppedViewBoxParts ? croppedViewBoxParts.join(' ') : '',
               targetAspect: targetAspect || null,
@@ -17458,7 +17474,8 @@ try {
             quoteAuthor,
             1080,
             1350,
-            dk
+            dk,
+            { quiltFit: 'contain' }
           );
           return await new Promise((resolve) => {
             const fr = new FileReader();
