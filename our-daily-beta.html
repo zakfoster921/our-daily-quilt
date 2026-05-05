@@ -10155,6 +10155,12 @@ try {
             const routedAllBlocks = this._filterMacroCandidatesByColorOrValue(allBlocks, newColor);
             selectedBlock = this._routeSplittableBlocksByMacroColor(newColor, routedAllBlocks)[0];
             if (!selectedBlock) {
+              selectedBlock = this.blocks
+                .filter((b) => b && Number(b.width) > 0 && Number(b.height) > 0)
+                .filter(protectedAnchorCanSplitForColor)
+                .sort((a, b) => (Number(b.width) || 0) * (Number(b.height) || 0) - (Number(a.width) || 0) * (Number(a.height) || 0))[0];
+            }
+            if (!selectedBlock) {
               console.log(`🎯 FALLBACK: No eligible blocks available`);
               return;
             }
@@ -22286,6 +22292,8 @@ try {
         /** Device-local "personal quilt" mode (derived from this user's historical color picks). */
         this._isPersonalQuiltMode = false;
         this._personalQuiltState = null;
+        this._personalQuiltPreviewCache = null;
+        this._settingsPersonalQuiltPreviewTimer = null;
         this._isBacksidePreviewMode = false;
         this.quiltZoomState = {
           baseViewBox: null,
@@ -22752,14 +22760,9 @@ try {
           settingsGearBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            this.prepareSettingsScreen({ renderPreview: false });
             this.uiService.showScreen('screen-settings');
-            requestAnimationFrame(() => {
-              try {
-                this.prepareSettingsScreen();
-              } catch (error) {
-                this.logger?.warn?.('Settings prep failed:', error);
-              }
-            });
+            this.scheduleSettingsPersonalQuiltPreview();
           });
         }
         if (settingsSaveNameBtn) {
@@ -28145,13 +28148,37 @@ try {
         list.scrollTop = 0;
       }
 
-      prepareSettingsScreen() {
+      prepareSettingsScreen({ renderPreview = true } = {}) {
         const input = document.getElementById('settingsNameInput');
         if (input) {
           const current = Utils.getUserFirstName() || Utils.getPortalGreetingName() || '';
           input.value = current && current.toLowerCase() !== 'friend' ? current : '';
         }
-        this.renderSettingsPersonalQuiltPreview();
+        if (renderPreview) this.renderSettingsPersonalQuiltPreview();
+      }
+
+      scheduleSettingsPersonalQuiltPreview(delayMs = 650) {
+        if (this._settingsPersonalQuiltPreviewTimer) {
+          clearTimeout(this._settingsPersonalQuiltPreviewTimer);
+          this._settingsPersonalQuiltPreviewTimer = null;
+        }
+        const renderIfStillOpen = () => {
+          this._settingsPersonalQuiltPreviewTimer = null;
+          const settingsScreen = document.getElementById('screen-settings');
+          if (!settingsScreen?.classList.contains('active')) return;
+          try {
+            this.renderSettingsPersonalQuiltPreview();
+          } catch (error) {
+            this.logger?.warn?.('Settings preview failed:', error);
+          }
+        };
+        this._settingsPersonalQuiltPreviewTimer = setTimeout(() => {
+          if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(renderIfStillOpen, { timeout: 1200 });
+          } else {
+            renderIfStillOpen();
+          }
+        }, Math.max(0, Number(delayMs) || 0));
       }
 
       async updateCurrentContributorName(name) {
@@ -28189,11 +28216,13 @@ try {
         if (!confirmed) return;
         try {
           localStorage.removeItem('quiltContributionsLifetime');
+          localStorage.removeItem(this.getPersonalQuiltCacheKey());
         } catch (_) {
           /* */
         }
         this._isPersonalQuiltMode = false;
         this._personalQuiltState = null;
+        this._personalQuiltPreviewCache = null;
         this.renderSettingsPersonalQuiltPreview();
         this.uiService.showToast('Color history reset on this device');
       }
@@ -29502,11 +29531,16 @@ try {
 
             this.markDailyColorCompleted();
             await minimumTransitionHold;
-            this.renderQuilt();
-            this.refreshQuiltFortuneReveal();
+            try {
+              this.renderQuilt();
+              this.refreshQuiltFortuneReveal();
+            } catch (renderError) {
+              this.logger.warn('Color was saved, but quilt refresh hit a non-blocking error:', renderError);
+            }
             
             this.uiService.showScreen('screen-quilt');
             this.hideColorSubmitTransition();
+            this.schedulePersonalQuiltPreviewCacheWarmup();
             this.maybeCreateColorMilestoneNotification(selectedColor).catch((error) => {
               this.logger.warn('Color milestone notification check failed:', error);
             });
@@ -33345,22 +33379,108 @@ try {
           .filter((hex) => Utils.validateHexColor(hex));
       }
 
+      getPersonalQuiltCacheKey() {
+        const userId = String(this.currentUserId || this.quiltEngine?.deviceId || 'device').trim() || 'device';
+        return `ourDailyPersonalQuiltPreview:${userId}`;
+      }
+
+      clonePersonalQuiltState(state) {
+        if (!state || !Array.isArray(state.blocks)) return null;
+        return {
+          blocks: state.blocks.map((block) => ({ ...block })),
+          submissionCount: Math.max(0, Number(state.submissionCount) || 0),
+          colorCount: Math.max(0, Number(state.colorCount) || 0),
+          colorSignature: String(state.colorSignature || '')
+        };
+      }
+
+      readPersonalQuiltPreviewCache(colorSignature) {
+        const memory = this.clonePersonalQuiltState(this._personalQuiltPreviewCache);
+        if (memory && memory.colorSignature === colorSignature) return memory;
+        try {
+          const raw = localStorage.getItem(this.getPersonalQuiltCacheKey());
+          const parsed = raw ? JSON.parse(raw) : null;
+          const cached = this.clonePersonalQuiltState(parsed);
+          if (cached && cached.colorSignature === colorSignature) {
+            this._personalQuiltPreviewCache = cached;
+            return this.clonePersonalQuiltState(cached);
+          }
+        } catch (_) {
+          /* ignore corrupt cache */
+        }
+        return null;
+      }
+
+      writePersonalQuiltPreviewCache(state) {
+        const cached = this.clonePersonalQuiltState(state);
+        if (!cached) return;
+        this._personalQuiltPreviewCache = cached;
+        try {
+          localStorage.setItem(this.getPersonalQuiltCacheKey(), JSON.stringify(cached));
+        } catch (_) {
+          /* cache is optional */
+        }
+      }
+
+      schedulePersonalQuiltPreviewCacheWarmup(delayMs = 1400) {
+        const warmup = () => {
+          try {
+            this.buildPersonalQuiltStateFromDeviceHistory();
+          } catch (error) {
+            this.logger?.warn?.('Personal quilt preview cache warmup failed:', error);
+          }
+        };
+        setTimeout(() => {
+          if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(warmup, { timeout: 1800 });
+          } else {
+            warmup();
+          }
+        }, Math.max(0, Number(delayMs) || 0));
+      }
+
       buildPersonalQuiltStateFromDeviceHistory() {
         const colors = this.getDevicePersonalColorHistory();
         if (!colors.length) return null;
+        const colorSignature = colors.join('|');
+        const exactCache = this.readPersonalQuiltPreviewCache(colorSignature);
+        if (exactCache) return exactCache;
+
         const tempUserId = this.currentUserId || this.quiltEngine?.deviceId || null;
         const personalEngine = new SimpleQuiltEngine(tempUserId);
-        personalEngine.initialize();
         // Personal quilt should be deterministic from local history only; don't mutate shared contribution storage.
         personalEngine.recordUserContribution = () => {};
-        for (const hex of colors) {
+
+        const previous = this.clonePersonalQuiltState(this._personalQuiltPreviewCache);
+        const canExtendPrevious =
+          previous &&
+          previous.colorSignature &&
+          colorSignature.startsWith(`${previous.colorSignature}|`) &&
+          Array.isArray(previous.blocks) &&
+          previous.blocks.length > 0;
+        const colorsToApply = canExtendPrevious
+          ? colors.slice(Math.max(0, Number(previous.colorCount) || 0))
+          : colors;
+
+        if (canExtendPrevious) {
+          personalEngine.blocks = previous.blocks.map((block) => ({ ...block }));
+          personalEngine.submissionCount = Math.max(0, Number(previous.submissionCount) || 0);
+        } else {
+          personalEngine.initialize();
+        }
+
+        for (const hex of colorsToApply) {
           personalEngine.addColor(hex);
         }
-        return {
+
+        const state = {
           blocks: personalEngine.blocks.map((b) => ({ ...b })),
           submissionCount: personalEngine.submissionCount,
-          colorCount: colors.length
+          colorCount: colors.length,
+          colorSignature
         };
+        this.writePersonalQuiltPreviewCache(state);
+        return this.clonePersonalQuiltState(state);
       }
 
       async handleTogglePersonalQuilt() {
