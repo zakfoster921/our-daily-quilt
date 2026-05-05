@@ -945,12 +945,16 @@ function drawQuiltBlockToCtx(ctx, block, x, y, width, height) {
   }
 }
 
-// Generate Instagram image from quilt data (server-side)
-async function generateInstagramImageFromQuilt(blocks, quote) {
+// Generate Instagram image from quilt data (server-side fallback/manual path).
+async function generateInstagramImageFromQuilt(blocks, _quote) {
   const canvas = createCanvas(1080, 1350); // 4:5 ratio for Instagram
   const ctx = canvas.getContext('2d');
   
-  // Fill background with true white to match Instagram
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    throw new Error('No quilt blocks available for Instagram image');
+  }
+
+  // Fill background with true white to match the client classic card.
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, 1080, 1350);
   
@@ -963,54 +967,28 @@ async function generateInstagramImageFromQuilt(blocks, quote) {
   const quiltWidth = maxX - minX;
   const quiltHeight = maxY - minY;
   
-  // Use fixed 4:5 dimensions (1070 x 1340) - same as client
+  if (!(quiltWidth > 0) || !(quiltHeight > 0)) {
+    throw new Error('Invalid quilt bounds for Instagram image');
+  }
+
+  // Fit the full quilt into the same 5px-padded classic 4:5 card the app uploads.
   const targetWidth = 1070;  // 1080 - 10px padding
   const targetHeight = 1340; // 1350 - 10px padding
-  
-  // Center the quilt in the Instagram canvas (5px padding all around)
-  const startX = 5;  // 5px from left
-  const startY = 5;  // 5px from top
-  
-  // Draw quilt blocks using their actual positions (no scaling)
+  const scale = Math.min(targetWidth / quiltWidth, targetHeight / quiltHeight);
+  const drawWidth = quiltWidth * scale;
+  const drawHeight = quiltHeight * scale;
+  const startX = 5 + (targetWidth - drawWidth) / 2;
+  const startY = 5 + (targetHeight - drawHeight) / 2;
+
+  // Draw scaled full-quilt blocks; never use raw world coordinates or a zoomed crop here.
   blocks.forEach((block) => {
-    const x = startX + block.x;
-    const y = startY + block.y;
-    const width = block.width;
-    const height = block.height;
+    const x = startX + (Number(block.x) - minX) * scale;
+    const y = startY + (Number(block.y) - minY) * scale;
+    const width = Number(block.width) * scale;
+    const height = Number(block.height) * scale;
     drawQuiltBlockToCtx(ctx, block, x, y, width, height);
   });
-  
-  // Add quote at bottom
-  ctx.fillStyle = '#212529';
-  ctx.font = 'bold 32px Arial';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  
-  // Wrap text if needed
-  const maxWidth = 1000;
-  const words = quote.split(' ');
-  const lines = [];
-  let currentLine = '';
-  
-  words.forEach(word => {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
-  });
-  if (currentLine) lines.push(currentLine);
-  
-  // Draw quote lines
-  const lineHeight = 40;
-  const quoteY = 1350 - 150 - (lines.length - 1) * lineHeight / 2;
-  lines.forEach((line, index) => {
-    ctx.fillText(line, 540, quoteY + index * lineHeight);
-  });
-  
+
   // Convert to base64
   const buffer = canvas.toBuffer('image/png');
   return `data:image/png;base64,${buffer.toString('base64')}`;
@@ -2367,17 +2345,18 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
     }
     const themeDoc = await db.collection('reflectionThemes').doc(appDateKey).get();
     if (!themeDoc.exists) {
-      return res.status(404).json({ success: false, error: 'Reflection themes not found', appDateKey });
+      return res.json({ success: true, found: false, appDateKey, themes: [] });
     }
     const data = themeDoc.data() || {};
     const themes = Array.isArray(data.themes)
       ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
       : [];
     if (!themes.length) {
-      return res.status(404).json({ success: false, error: 'Reflection themes not found', appDateKey });
+      return res.json({ success: true, found: false, appDateKey, themes: [] });
     }
     return res.json({
       success: true,
+      found: true,
       appDateKey,
       themes,
       responseCount: Number(data.responseCount) || 0,

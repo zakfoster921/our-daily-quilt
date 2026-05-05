@@ -14241,6 +14241,7 @@ try {
         const isImageWrite = !!(instagramImage || postLayoutBImageData);
         const isReelWrite = !!(reelWebmBlob && reelWebmBlob.size > 0);
         const qfp = typeof quiltFingerprint === 'string' ? quiltFingerprint.trim() : '';
+        const assetVersion = `${Date.now()}-${(qfp || 'no-qfp').replace(/[^a-z0-9_-]/gi, '').slice(0, 48)}`;
         const imageRef = window.firestore.doc(window.db, 'instagram-images', dateKey);
         const existingSnap = await window.firestore.getDoc(imageRef);
         const existing = existingSnap.exists() ? existingSnap.data() || {} : {};
@@ -14276,13 +14277,19 @@ try {
         let postLayoutBImageStorageUrl = null;
         let reelWebmStorageUrl = null;
         if (instagramImage) {
-          const r = ref(storage, `${basePath}/classic.png`);
-          await uploadBytes(r, Utils.dataUrlToBlob(instagramImage));
+          const r = ref(storage, `${basePath}/classic-${assetVersion}.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(instagramImage), {
+            contentType: 'image/png',
+            cacheControl: 'public, max-age=31536000, immutable'
+          });
           imageStorageUrl = await getDownloadURL(r);
         }
         if (postLayoutBImageData) {
-          const r = ref(storage, `${basePath}/layout-b.png`);
-          await uploadBytes(r, Utils.dataUrlToBlob(postLayoutBImageData));
+          const r = ref(storage, `${basePath}/layout-b-${assetVersion}.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(postLayoutBImageData), {
+            contentType: 'image/png',
+            cacheControl: 'public, max-age=31536000, immutable'
+          });
           postLayoutBImageStorageUrl = await getDownloadURL(r);
         }
         if (reelWebmBlob && reelWebmBlob.size > 0) {
@@ -16780,7 +16787,7 @@ try {
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
-              quiltBlob = await this.rasterizeQuiltSvgToPngBlob(quiltSVG);
+              quiltBlob = await this.rasterizeFullQuiltSvgToPngBlob(quiltSVG, blocks);
             } catch (e) {
               this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
             }
@@ -16847,8 +16854,85 @@ try {
         return renderedIds.length >= blocks.length;
       }
 
+      /** Rasterize the live quilt from its full base viewBox, regardless of current zoom/pan state. */
+      async rasterizeFullQuiltSvgToPngBlob(quiltSVG, blocks = null) {
+        if (!quiltSVG) return null;
+        const currentViewBox = quiltSVG.getAttribute('viewBox');
+        const app = typeof window !== 'undefined' ? window.app : null;
+        const fullViewBox = app?.quiltZoomState?.baseViewBox;
+        let changedViewBox = false;
+        if (fullViewBox && typeof app?.formatQuiltViewBox === 'function') {
+          quiltSVG.setAttribute('viewBox', app.formatQuiltViewBox(fullViewBox));
+          changedViewBox = true;
+        }
+        try {
+          return await this.rasterizeQuiltSvgToPngBlob(quiltSVG, { underpaintBlocks: blocks });
+        } finally {
+          if (changedViewBox) {
+            if (currentViewBox) {
+              quiltSVG.setAttribute('viewBox', currentViewBox);
+            } else {
+              quiltSVG.removeAttribute('viewBox');
+            }
+          }
+        }
+      }
+
+      addQuiltExportUnderpaint(svgClone, explicitBlocks = null) {
+        if (!svgClone) return;
+        const blocks = Array.isArray(explicitBlocks) && explicitBlocks.length
+          ? explicitBlocks
+          : (typeof window !== 'undefined' && Array.isArray(window.app?.quiltEngine?.blocks)
+            ? window.app.quiltEngine.blocks
+            : []);
+        if (!blocks.length) return;
+        const ns = 'http://www.w3.org/2000/svg';
+        const fieldLayer = svgClone.querySelector('#quiltFieldLayer') || svgClone;
+        const parallaxLayer = fieldLayer.querySelector('#quiltParallaxLayer');
+        const mirroredLayer = fieldLayer.querySelector('#quiltMirroredFieldLayer');
+
+        const buildUnderpaintGroup = (id) => {
+          const group = document.createElementNS(ns, 'g');
+          group.setAttribute('id', id);
+          group.setAttribute('aria-hidden', 'true');
+          group.setAttribute('pointer-events', 'none');
+          group.setAttribute('data-export-underpaint', '1');
+          blocks.forEach((block) => {
+            if (!block) return;
+            const x = Number(block.x);
+            const y = Number(block.y);
+            const w = Math.max(0, Number(block.width));
+            const h = Math.max(0, Number(block.height));
+            const fill = Utils.validateHexColor(block.color) ? block.color : '#d8d4cf';
+            if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return;
+            const rect = document.createElementNS(ns, 'rect');
+            rect.setAttribute('x', String(x));
+            rect.setAttribute('y', String(y));
+            rect.setAttribute('width', String(w));
+            rect.setAttribute('height', String(h));
+            rect.setAttribute('fill', fill);
+            rect.setAttribute('stroke', 'none');
+            group.appendChild(rect);
+          });
+          return group.childNodes.length ? group : null;
+        };
+
+        const underpaint = buildUnderpaintGroup('quiltExportGapUnderpaint');
+        if (underpaint) {
+          fieldLayer.insertBefore(underpaint, parallaxLayer || fieldLayer.firstChild);
+        }
+        if (mirroredLayer) {
+          const mirroredUnderpaint = buildUnderpaintGroup('quiltExportMirroredGapUnderpaint');
+          if (mirroredUnderpaint) {
+            const mirroredTransform = mirroredLayer.getAttribute('transform');
+            if (mirroredTransform) mirroredUnderpaint.setAttribute('transform', mirroredTransform);
+            fieldLayer.insertBefore(mirroredUnderpaint, mirroredLayer);
+          }
+        }
+      }
+
       /** High-res PNG blob from the live quilt SVG (same path as layout B story share). */
-      async rasterizeQuiltSvgToPngBlob(quiltSVG) {
+      async rasterizeQuiltSvgToPngBlob(quiltSVG, options = {}) {
         return new Promise((resolve, reject) => {
           try {
             const svgClone = quiltSVG.cloneNode(true);
@@ -16889,6 +16973,7 @@ try {
             svgClone.removeAttribute('style');
             svgClone.setAttribute('width', String(outW));
             svgClone.setAttribute('height', String(outH));
+            this.addQuiltExportUnderpaint(svgClone, options.underpaintBlocks);
 
             const svgData = new XMLSerializer().serializeToString(svgClone);
             const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
@@ -17110,7 +17195,7 @@ try {
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
-              highResBlob = await this.rasterizeQuiltSvgToPngBlob(quiltSVG);
+              highResBlob = await this.rasterizeFullQuiltSvgToPngBlob(quiltSVG, blocks);
             } catch (e) {
               this.logger.warn('SVG raster failed, falling back to blocks:', e);
             }
@@ -22449,23 +22534,28 @@ try {
       async loadReflectionThemesForToday() {
         const dateKey = Utils.getTodayKey();
         const yesterdayKey = this.getAdjacentDateKey(dateKey, -1);
+        if (!this._reflectionThemesNotFoundKeys) this._reflectionThemesNotFoundKeys = new Set();
         const readThemes = async (key) => {
           if (!key) return null;
-          let data = await this.fetchReflectionThemesViaBackend(key);
-          if (!data) data = await this.fetchReflectionThemesViaRest(key);
-          const firestoreReady = data ? false : await this.waitForReflectionFirestore(1200);
+          let data = null;
+          const firestoreReady = await this.waitForReflectionFirestore(1200);
           if (firestoreReady) {
             try {
               const docRef = window.firestore.doc(window.db, 'reflectionThemes', key);
               const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
               const snap = await readDoc(docRef);
               data = snap.exists() ? (snap.data() || {}) : null;
+              if (!snap.exists()) this._reflectionThemesNotFoundKeys.add(key);
             } catch (error) {
               this.logger?.warn?.(`Reflection themes SDK read failed for ${key}:`, error);
             }
           }
-          if (!data) data = await this.fetchReflectionThemesViaRest(key);
-          if (!data) data = await this.fetchReflectionThemesViaBackend(key);
+          if (!data && !this._reflectionThemesNotFoundKeys.has(key)) {
+            data = await this.fetchReflectionThemesViaRest(key);
+          }
+          if (!data && !this._reflectionThemesNotFoundKeys.has(key)) {
+            data = await this.fetchReflectionThemesViaBackend(key);
+          }
           if (!data) return null;
           const themes = Array.isArray(data.themes)
             ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
@@ -22518,7 +22608,11 @@ try {
         const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/reflectionThemes/${encodeURIComponent(key)}?key=${encodeURIComponent(apiKey)}`;
         try {
           const res = await fetch(url, { cache: 'no-store' });
-          if (res.status === 404) return null;
+          if (res.status === 404) {
+            if (!this._reflectionThemesNotFoundKeys) this._reflectionThemesNotFoundKeys = new Set();
+            this._reflectionThemesNotFoundKeys.add(key);
+            return null;
+          }
           if (!res.ok) throw new Error(`Firestore REST read failed (${res.status})`);
           const payload = await res.json();
           return this.decodeReflectionThemeRestDocument(payload);
@@ -22534,7 +22628,11 @@ try {
         if (!key || !baseUrl || typeof fetch !== 'function') return null;
         try {
           const res = await fetch(`${baseUrl}/api/reflection-themes/${encodeURIComponent(key)}`, { cache: 'no-store' });
-          if (res.status === 404) return null;
+          if (res.status === 404) {
+            if (!this._reflectionThemesNotFoundKeys) this._reflectionThemesNotFoundKeys = new Set();
+            this._reflectionThemesNotFoundKeys.add(key);
+            return null;
+          }
           const data = await res.json().catch(() => null);
           if (!res.ok || !data?.success) {
             throw new Error(data?.error || `Backend reflection themes read failed (${res.status})`);
@@ -29387,14 +29485,7 @@ try {
        * On success, shows a single toast (camera roll wording) for both native share and download fallback.
        */
       async exportLayoutBShareImage(layoutH, shareTitle, filenameStem) {
-        const quiltSVG = document.getElementById('quilt');
-        if (!quiltSVG) {
-          throw new Error('Quilt SVG not found');
-        }
-        const highResBlob = await this.archiveService.rasterizeQuiltSvgToPngBlob(quiltSVG);
-        if (!highResBlob) {
-          throw new Error('Failed to generate rendered share image');
-        }
+        const highResBlob = await this.getHighResQuiltBlobForShare();
         const qt = this.quoteService?.getTodayQuote?.() || { text: '', author: '' };
         const qText = String(qt.text ?? qt.body ?? '').trim();
         const qAuthor = String(qt.author ?? '').trim();
