@@ -16995,6 +16995,76 @@ try {
         ctx.restore();
       }
 
+      healQuiltExportRasterSeams(ctx, width, height) {
+        if (!ctx || !(width > 0) || !(height > 0)) return;
+        let img;
+        try {
+          img = ctx.getImageData(0, 0, width, height);
+        } catch (_) {
+          return;
+        }
+        const data = img.data;
+        const source = new Uint8ClampedArray(data);
+        const idxFor = (x, y) => (y * width + x) * 4;
+        const sat = (i) => Math.max(source[i], source[i + 1], source[i + 2]) - Math.min(source[i], source[i + 1], source[i + 2]);
+        const luma = (i) => 0.299 * source[i] + 0.587 * source[i + 1] + 0.114 * source[i + 2];
+        const isNeutralSeam = (i) => {
+          if (source[i + 3] < 220) return true;
+          const nearPaper =
+            Math.abs(source[i] - 246) <= 18 &&
+            Math.abs(source[i + 1] - 244) <= 18 &&
+            Math.abs(source[i + 2] - 241) <= 18;
+          return nearPaper || (luma(i) >= 224 && sat(i) <= 26);
+        };
+        const isQuiltColor = (i) => source[i + 3] >= 220 && luma(i) < 246 && sat(i) >= 28;
+        const hasNearbyColor = (x, y) => {
+          const probes = [
+            [-3, 0], [3, 0], [0, -3], [0, 3],
+            [-2, -2], [2, -2], [-2, 2], [2, 2]
+          ];
+          return probes.some(([dx, dy]) => {
+            const nx = x + dx;
+            const ny = y + dy;
+            return nx >= 0 && ny >= 0 && nx < width && ny < height && isQuiltColor(idxFor(nx, ny));
+          });
+        };
+        const radius = 5;
+        let changed = 0;
+        for (let y = 1; y < height - 1; y++) {
+          for (let x = 1; x < width - 1; x++) {
+            const i = idxFor(x, y);
+            if (!isNeutralSeam(i) || !hasNearbyColor(x, y)) continue;
+            let r = 0;
+            let g = 0;
+            let b = 0;
+            let count = 0;
+            for (let dy = -radius; dy <= radius; dy++) {
+              const ny = y + dy;
+              if (ny < 0 || ny >= height) continue;
+              for (let dx = -radius; dx <= radius; dx++) {
+                const nx = x + dx;
+                if (nx < 0 || nx >= width) continue;
+                const ni = idxFor(nx, ny);
+                if (!isQuiltColor(ni)) continue;
+                r += source[ni];
+                g += source[ni + 1];
+                b += source[ni + 2];
+                count++;
+              }
+            }
+            if (count < 3) continue;
+            data[i] = Math.round(r / count);
+            data[i + 1] = Math.round(g / count);
+            data[i + 2] = Math.round(b / count);
+            data[i + 3] = 255;
+            changed++;
+          }
+        }
+        if (changed > 0) {
+          ctx.putImageData(img, 0, 0);
+        }
+      }
+
       /** High-res PNG blob from the live quilt SVG (same path as layout B story share). */
       async rasterizeQuiltSvgToPngBlob(quiltSVG, options = {}) {
         return new Promise((resolve, reject) => {
@@ -17074,6 +17144,9 @@ try {
                 const ox = Math.floor((outW - dw) / 2);
                 const oy = Math.floor((outH - dh) / 2);
                 ctx.drawImage(img, 0, 0, iw, ih, ox, oy, dw, dh);
+                if (options.underpaintBlocks) {
+                  this.healQuiltExportRasterSeams(ctx, outW, outH);
+                }
                 Utils.applyFilmGrain(ctx, outW, outH, 0, { vignette: false });
                 canvas.toBlob((blob) => {
                   URL.revokeObjectURL(svgUrl);
