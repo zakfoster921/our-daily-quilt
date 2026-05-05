@@ -32092,8 +32092,20 @@ try {
             this.uiService.showToast('Failed to generate images');
             return;
           }
-          const exportDebug = arch.lastQuiltExportDebug || null;
-          const debugRawQuiltImage = arch.lastQuiltExportRawDataUrl || null;
+          let exportDebug = null;
+          let debugRawQuiltImage = null;
+          try {
+            const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
+            const debugBlob = quiltSVG
+              ? await arch.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks)
+              : null;
+            exportDebug = arch.lastQuiltExportDebug
+              ? { ...arch.lastQuiltExportDebug, diagnosticSource: 'dedicated_zapier_debug_export' }
+              : null;
+            debugRawQuiltImage = debugBlob ? await Utils.blobToDataUrl(debugBlob) : null;
+          } catch (debugErr) {
+            console.warn('Zapier export debug capture failed:', debugErr);
+          }
 
           const docPayload = await Utils.writeInstagramImagesDocForZapier({
             dateKey: today,
