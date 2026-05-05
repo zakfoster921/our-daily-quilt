@@ -14258,16 +14258,12 @@ try {
           existing.reelMp4Url ||
           existing.reelUrl
         );
-        if (qfp && isImageWrite && !isReelWrite && hasExistingReel && !existingReelQfp) {
-          throw new Error(
-            `Refusing image-only update for ${dateKey}: existing reel has no quiltFingerprint. Regenerate reel once to seed fingerprint metadata.`
-          );
-        }
-        if (qfp && isImageWrite && !isReelWrite && hasExistingReel && existingReelQfp && existingReelQfp !== qfp) {
-          throw new Error(
-            `Refusing image-only update for ${dateKey}: quiltFingerprint mismatch with existing reel (${existingReelQfp} ≠ ${qfp}). Regenerate reel in same run.`
-          );
-        }
+        const shouldClearStaleReel =
+          qfp &&
+          isImageWrite &&
+          !isReelWrite &&
+          hasExistingReel &&
+          (!existingReelQfp || existingReelQfp !== qfp);
         if (qfp && isReelWrite && !isImageWrite && existingImageQfp && existingImageQfp !== qfp) {
           throw new Error(
             `Refusing reel-only update for ${dateKey}: quiltFingerprint mismatch with existing images (${existingImageQfp} ≠ ${qfp}). Regenerate images in same run.`
@@ -14315,6 +14311,17 @@ try {
           docPayload.reelWebmUrl = reelWebmStorageUrl;
           docPayload.reelUrl = reelWebmStorageUrl;
           docPayload.reelSource = 'app_synthetic_webm';
+        }
+        if (shouldClearStaleReel) {
+          docPayload.reelWebmStorageUrl = '';
+          docPayload.reelWebmUrl = '';
+          docPayload.reelUrl = '';
+          docPayload.reelMp4StorageUrl = '';
+          docPayload.reelMp4Url = '';
+          docPayload.reelSource = 'disabled_stale_reel_cleared';
+          docPayload.reelQuiltFingerprint = '';
+          docPayload.reelNote =
+            'Reel capture is disabled; stale reel URLs were cleared so image-only Zapier pushes can update.';
         }
         if (qfp) {
           docPayload.quiltFingerprint = qfp;
