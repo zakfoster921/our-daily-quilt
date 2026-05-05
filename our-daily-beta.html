@@ -16786,15 +16786,14 @@ try {
           }
 
           /**
-           * Match on-screen quilt: rasterize live SVG (viewBox + padding + meet),
-           * then scale to fit 1080×1350. The old path drew blocks at 1:1 coords,
-           * leaving huge white margins vs the scaled SVG view.
+           * Match on-screen quilt: rasterize the live SVG with its displayed aspect
+           * ratio so preserveAspectRatio="slice" keeps the same visible composition.
            */
           let quiltBlob = null;
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
-              quiltBlob = await this.rasterizeFullQuiltSvgToPngBlob(quiltSVG, blocks);
+              quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks);
             } catch (e) {
               this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
             }
@@ -16861,28 +16860,13 @@ try {
         return renderedIds.length >= blocks.length;
       }
 
-      /** Rasterize the live quilt from its full base viewBox, regardless of current zoom/pan state. */
-      async rasterizeFullQuiltSvgToPngBlob(quiltSVG, blocks = null) {
+      /** Rasterize the live quilt crop as it appears on the quilt screen. */
+      async rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks = null) {
         if (!quiltSVG) return null;
-        const currentViewBox = quiltSVG.getAttribute('viewBox');
-        const app = typeof window !== 'undefined' ? window.app : null;
-        const fullViewBox = app?.quiltZoomState?.baseViewBox;
-        let changedViewBox = false;
-        if (fullViewBox && typeof app?.formatQuiltViewBox === 'function') {
-          quiltSVG.setAttribute('viewBox', app.formatQuiltViewBox(fullViewBox));
-          changedViewBox = true;
-        }
-        try {
-          return await this.rasterizeQuiltSvgToPngBlob(quiltSVG, { underpaintBlocks: blocks });
-        } finally {
-          if (changedViewBox) {
-            if (currentViewBox) {
-              quiltSVG.setAttribute('viewBox', currentViewBox);
-            } else {
-              quiltSVG.removeAttribute('viewBox');
-            }
-          }
-        }
+        return this.rasterizeQuiltSvgToPngBlob(quiltSVG, {
+          underpaintBlocks: blocks,
+          matchRenderedAspect: true
+        });
       }
 
       addQuiltExportUnderpaint(svgClone, explicitBlocks = null) {
@@ -17101,8 +17085,16 @@ try {
               sourceHeight = Math.max(1, Math.round(rect.height));
             }
 
+            const renderedRect = quiltSVG.getBoundingClientRect?.();
+            const renderedAspect =
+              options.matchRenderedAspect &&
+              renderedRect &&
+              renderedRect.width > 0 &&
+              renderedRect.height > 0
+                ? renderedRect.width / renderedRect.height
+                : null;
             const maxEdge = 2400;
-            const aspect = sourceWidth / sourceHeight;
+            const aspect = renderedAspect || (sourceWidth / sourceHeight);
             let outW;
             let outH;
             if (aspect >= 1) {
@@ -17131,7 +17123,7 @@ try {
                 canvas.height = outH;
                 ctx.fillStyle = '#f6f4f1';
                 ctx.fillRect(0, 0, outW, outH);
-                if (viewBoxParts && options.underpaintBlocks) {
+                if (viewBoxParts && options.underpaintBlocks && !options.matchRenderedAspect) {
                   this.drawQuiltExportCanvasUnderpaint(
                     ctx,
                     outW,
@@ -17351,7 +17343,7 @@ try {
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
-              highResBlob = await this.rasterizeFullQuiltSvgToPngBlob(quiltSVG, blocks);
+              highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks);
             } catch (e) {
               this.logger.warn('SVG raster failed, falling back to blocks:', e);
             }
