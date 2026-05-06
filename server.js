@@ -1807,7 +1807,6 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey()) {
     const message = {
       tokens: chunk.map((r) => r.token),
       notification: {
-        title: 'Today’s Our Daily quote is ready',
         body
       },
       data: {
