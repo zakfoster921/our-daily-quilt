@@ -300,6 +300,20 @@ function parseNotionRow(page) {
     'why_good_guide',
     'why_good_for_reflection'
   );
+  const imageAttribution = getMappedText(
+    props,
+    'image_attribution',
+    'image_attribution',
+    'imageAttribution',
+    'Image attribution',
+    'Image Attribution',
+    'image_credit',
+    'Image credit',
+    'Image Credit',
+    'photo_credit',
+    'Photo credit',
+    'Photo Credit'
+  );
   const submittedBy = getMappedText(
     props,
     'submitted_by',
@@ -326,7 +340,7 @@ function parseNotionRow(page) {
   );
   const itemNo = typeof props.item_no?.number === 'number' ? props.item_no.number : null;
   const lastUsedDate = getDateStart(props.last_used_date);
-  const reviewed = getCheckbox(props['reviewed?'], false);
+  const reviewed = getCheckbox(props['reviewed?'] || props.reviewed || props.Reviewed, false);
   const sourceNotes = getSelect(props.source_notes) || getRichText(props.source_notes) || getTitle(props.source_notes);
   const status = getSelect(props.status) || getRichText(props.status) || getTitle(props.status);
   const timesUsed = typeof props.times_used?.number === 'number' ? props.times_used.number : null;
@@ -367,6 +381,8 @@ function parseNotionRow(page) {
       speaker_died: speakerDied,
       speakerGuideLine,
       speaker_guide_line: speakerGuideLine,
+      imageAttribution,
+      image_attribution: imageAttribution,
       submittedBy,
       submitted_by: submittedBy,
       notificationTitle,

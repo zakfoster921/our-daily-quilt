@@ -55,6 +55,15 @@ jobs:
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: node scripts/backfill-daily-assignments.cjs --start=today --cadence=1 --window=8 --min-count=9 --append-only
 
+      - name: Process speaker cutouts for scheduled quotes
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
+        run: node scripts/process-speaker-cutouts.cjs --scheduled --require-reviewed --start=today --window=9 --limit=3 --soft-fail
+
       - name: Sync usage (Firestore -> Notion)
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}

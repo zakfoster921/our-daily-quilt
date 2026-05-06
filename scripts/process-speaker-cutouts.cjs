@@ -13,16 +13,25 @@ function parseArgs(argv) {
   const args = {
     dryRun: argv.includes('--dry-run'),
     force: argv.includes('--force'),
+    scheduled: argv.includes('--scheduled'),
+    softFail: argv.includes('--soft-fail'),
+    requireReviewed: argv.includes('--require-reviewed'),
     limit: 0,
+    start: 'today',
+    window: 9,
     author: '',
     doc: ''
   };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
     if (a.startsWith('--limit=')) args.limit = Math.max(0, Number(a.slice('--limit='.length)) || 0);
+    else if (a.startsWith('--start=')) args.start = a.slice('--start='.length).trim();
+    else if (a.startsWith('--window=')) args.window = Math.max(1, Number(a.slice('--window='.length)) || 9);
     else if (a.startsWith('--author=')) args.author = a.slice('--author='.length).trim().toLowerCase();
     else if (a.startsWith('--doc=')) args.doc = a.slice('--doc='.length).trim();
   }
+  if (String(args.start).toLowerCase() === 'today') args.start = getAppDateKey();
+  if (String(args.start).toLowerCase() === 'tomorrow') args.start = addDays(getAppDateKey(), 1);
   return args;
 }
 
@@ -45,6 +54,19 @@ function resolveFirebaseStorageBucket(serviceAccount) {
   const pid = (serviceAccount && serviceAccount.project_id) || process.env.FIREBASE_PROJECT_ID || null;
   if (pid && pid !== 'your-project-id') return `${pid}.firebasestorage.app`;
   return undefined;
+}
+
+function addDays(dateKey, deltaDays) {
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+function getAppDateKey(d = new Date()) {
+  const adjusted = new Date(d);
+  if (d.getUTCHours() < 7) adjusted.setUTCDate(adjusted.getUTCDate() - 1);
+  return `${adjusted.getUTCFullYear()}-${String(adjusted.getUTCMonth() + 1).padStart(2, '0')}-${String(adjusted.getUTCDate()).padStart(2, '0')}`;
 }
 
 function initFirebase() {
@@ -120,6 +142,28 @@ async function collectRows(db, collectionName, opts) {
     const snap = await db.collection(collectionName).doc(opts.doc).get();
     return snap.exists ? [{ id: snap.id, ref: snap.ref, data: snap.data() || {} }] : [];
   }
+  if (opts.scheduled) {
+    const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+    const scheduledSourceIds = [];
+    const assignmentSnap = await db.collection(assignmentsCollection).get();
+    const windowEnd = addDays(opts.start, Math.max(0, opts.window - 1));
+    assignmentSnap.forEach((docSnap) => {
+      if (!isDateKey(docSnap.id) || docSnap.id < opts.start || docSnap.id > windowEnd) return;
+      const sourceId = String((docSnap.data() || {}).sourceId || '').trim();
+      if (sourceId && !scheduledSourceIds.includes(sourceId)) scheduledSourceIds.push(sourceId);
+    });
+
+    const rows = [];
+    for (const sourceId of scheduledSourceIds) {
+      const snap = await db.collection(collectionName).doc(sourceId).get();
+      if (snap.exists) rows.push({ id: snap.id, ref: snap.ref, data: snap.data() || {} });
+      else console.log(`[cutout] scheduled source doc missing: ${sourceId}`);
+    }
+    console.log(
+      `[cutout] scheduled mode start=${opts.start} window=${opts.window} sourceIds=${scheduledSourceIds.length} rows=${rows.length}`
+    );
+    return rows;
+  }
   const snap = await db.collection(collectionName).where('source', '==', 'notion').get();
   const rows = [];
   snap.forEach((docSnap) => rows.push({ id: docSnap.id, ref: docSnap.ref, data: docSnap.data() || {} }));
@@ -128,6 +172,14 @@ async function collectRows(db, collectionName, opts) {
 
 function isDateKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
+function isReviewedQuote(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (typeof data.reviewed === 'boolean') return data.reviewed;
+  if (typeof data.reviewed_ === 'boolean') return data.reviewed_;
+  const value = String(data.reviewed ?? data.reviewed_ ?? '').trim().toLowerCase();
+  return ['true', 'yes', 'y', '1', 'checked', 'reviewed'].includes(value);
 }
 
 function assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp) {
@@ -216,12 +268,20 @@ async function patchDerivedQuoteDocs(db, quotesCollection, sourceIds, sourceData
 
 async function main() {
   const opts = parseArgs(process.argv);
-  const apiKey = opts.dryRun ? String(process.env.REMOVE_BG_API_KEY || '').trim() : requireEnv('REMOVE_BG_API_KEY');
+  const apiKey = opts.dryRun ? String(process.env.REMOVE_BG_API_KEY || '').trim() : String(process.env.REMOVE_BG_API_KEY || '').trim();
+  if (!opts.dryRun && !apiKey) {
+    if (opts.softFail) {
+      console.log('[cutout] REMOVE_BG_API_KEY missing; soft-fail enabled, skipping cutout processing');
+      return;
+    }
+    requireEnv('REMOVE_BG_API_KEY');
+  }
   const db = initFirebase();
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   const rows = await collectRows(db, collectionName, opts);
 
   let processed = 0;
+  let generated = 0;
   let skipped = 0;
   let failed = 0;
 
@@ -229,6 +289,11 @@ async function main() {
     const d = row.data;
     const author = String(d.author || '').trim();
     if (opts.author && !author.toLowerCase().includes(opts.author)) {
+      skipped += 1;
+      continue;
+    }
+    if (opts.requireReviewed && !isReviewedQuote(d)) {
+      console.log(`[cutout] skipped unreviewed quote ${row.id} ${author}`);
       skipped += 1;
       continue;
     }
@@ -248,9 +313,10 @@ async function main() {
       processed += 1;
       continue;
     }
-    if (opts.limit && processed >= opts.limit) break;
+    if (opts.limit && generated >= opts.limit) break;
 
     console.log(`[cutout] ${opts.dryRun ? 'would process' : 'processing'} ${row.id} ${author}`);
+    generated += 1;
     if (opts.dryRun) {
       processed += 1;
       continue;
@@ -282,8 +348,14 @@ async function main() {
     }
   }
 
-  console.log(`[cutout] complete processed=${processed} skipped=${skipped} failed=${failed} collection=${collectionName}`);
-  if (failed) process.exitCode = 1;
+  console.log(
+    `[cutout] complete processed=${processed} generatedOrPreviewed=${generated} skipped=${skipped} failed=${failed} collection=${collectionName}`
+  );
+  if (failed && opts.softFail) {
+    console.log('[cutout] soft-fail enabled; leaving workflow successful despite cutout errors');
+  } else if (failed) {
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {

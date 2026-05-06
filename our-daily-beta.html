@@ -5768,6 +5768,14 @@ try {
       text-align: left;
     }
 
+    #screen-quilt .quote-speaker-attribution {
+      margin: 0.9rem 24px 0;
+      font-size: 0.68rem;
+      line-height: 1.25;
+      color: rgba(47, 39, 31, 0.48);
+      text-align: left;
+    }
+
     #screen-quilt .quilt-fortune-reveal:focus-visible {
       outline: 2px solid #1f1f1f;
       outline-offset: 2px;
@@ -7004,6 +7012,7 @@ try {
           <p class="quote-speaker-name" id="quoteSpeakerName"></p>
           <p class="quote-speaker-dates" id="quoteSpeakerDates" hidden></p>
           <p class="quote-speaker-guide" id="quoteSpeakerGuide" hidden></p>
+          <p class="quote-speaker-attribution" id="quoteSpeakerAttribution" hidden></p>
         </div>
       </aside>
 
@@ -19294,7 +19303,9 @@ try {
             speakerDied: String(data.speakerDiedSnapshot || '').trim(),
             speaker_died: String(data.speakerDiedSnapshot || '').trim(),
             speakerGuideLine: String(data.speakerGuideLineSnapshot || '').trim(),
-            speaker_guide_line: String(data.speakerGuideLineSnapshot || '').trim()
+            speaker_guide_line: String(data.speakerGuideLineSnapshot || '').trim(),
+            imageAttribution: String(data.imageAttributionSnapshot || '').trim(),
+            image_attribution: String(data.imageAttributionSnapshot || '').trim()
           };
         }
         return null;
@@ -19432,6 +19443,7 @@ try {
         const speakerBornSnapshot = String(quote?.speakerBorn ?? quote?.speaker_born ?? '').trim();
         const speakerDiedSnapshot = String(quote?.speakerDied ?? quote?.speaker_died ?? '').trim();
         const speakerGuideLineSnapshot = String(quote?.speakerGuideLine ?? quote?.speaker_guide_line ?? '').trim();
+        const imageAttributionSnapshot = String(quote?.imageAttribution ?? quote?.image_attribution ?? '').trim();
         const payload = {
           dateKey,
           sourceId: sourceId || null,
@@ -19446,6 +19458,7 @@ try {
           speakerBornSnapshot: speakerBornSnapshot.slice(0, 80),
           speakerDiedSnapshot: speakerDiedSnapshot.slice(0, 80),
           speakerGuideLineSnapshot: speakerGuideLineSnapshot.slice(0, 260),
+          imageAttributionSnapshot: imageAttributionSnapshot.slice(0, 260),
           assignedAt: new Date().toISOString(),
         };
         this._writeLocalAssignment(dateKey, payload);
@@ -19520,6 +19533,7 @@ try {
                 const speakerBorn = String(quoteData.speakerBorn ?? quoteData.speaker_born ?? '').trim();
                 const speakerDied = String(quoteData.speakerDied ?? quoteData.speaker_died ?? '').trim();
                 const speakerGuideLine = String(quoteData.speakerGuideLine ?? quoteData.speaker_guide_line ?? '').trim();
+                const imageAttribution = String(quoteData.imageAttribution ?? quoteData.image_attribution ?? '').trim();
                 const canonical = {
                   text,
                   author,
@@ -19535,6 +19549,7 @@ try {
                   ...(speakerBorn ? { speakerBorn, speaker_born: speakerBorn } : {}),
                   ...(speakerDied ? { speakerDied, speaker_died: speakerDied } : {}),
                   ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
+                  ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {}),
                   ...(quoteData.sourceId ? { sourceId: quoteData.sourceId } : {}),
                   _canonicalDailyDoc: true
                 };
@@ -19559,6 +19574,7 @@ try {
                   speakerBornSnapshot: String(merged.speakerBorn ?? merged.speaker_born ?? '').slice(0, 80),
                   speakerDiedSnapshot: String(merged.speakerDied ?? merged.speaker_died ?? '').slice(0, 80),
                   speakerGuideLineSnapshot: String(merged.speakerGuideLine ?? merged.speaker_guide_line ?? '').slice(0, 260),
+                  imageAttributionSnapshot: String(merged.imageAttribution ?? merged.image_attribution ?? '').slice(0, 260),
                   assignedAt: new Date().toISOString(),
                 });
                 console.log(`📌 Using fallback quotes/${dateKey}: "${String(merged.text || '').slice(0, 50)}..."`);
@@ -20609,6 +20625,8 @@ try {
               speaker_died: String(data.speakerDied ?? data.speaker_died ?? '').trim(),
               speakerGuideLine: String(data.speakerGuideLine ?? data.speaker_guide_line ?? '').trim(),
               speaker_guide_line: String(data.speakerGuideLine ?? data.speaker_guide_line ?? '').trim(),
+              imageAttribution: String(data.imageAttribution ?? data.image_attribution ?? '').trim(),
+              image_attribution: String(data.imageAttribution ?? data.image_attribution ?? '').trim(),
               submittedBy: this._scalarTextField(
                 data.submittedBy ??
                   data.submitted_by ??
@@ -23967,9 +23985,18 @@ try {
           'why_good_guide',
           'speakerGuideLineSnapshot'
         ]);
+        const imageAttribution = this.getQuoteSpeakerField(quote, [
+          'imageAttribution',
+          'image_attribution',
+          'imageCredit',
+          'image_credit',
+          'photoCredit',
+          'photo_credit',
+          'imageAttributionSnapshot'
+        ]);
         const dates = explicitDates || (born && died ? `${born} - ${died}` : born ? `born ${born}` : died ? `died ${died}` : '');
         if (!name) return null;
-        return { name, imageUrl, dates, guideLine };
+        return { name, imageUrl, dates, guideLine, imageAttribution };
       }
 
       getQuoteSpeakerInitials(name) {
@@ -23994,6 +24021,7 @@ try {
         const nameEl = document.getElementById('quoteSpeakerName');
         const datesEl = document.getElementById('quoteSpeakerDates');
         const guideEl = document.getElementById('quoteSpeakerGuide');
+        const attributionEl = document.getElementById('quoteSpeakerAttribution');
         if (!profile) {
           widget.hidden = true;
           return;
@@ -24014,6 +24042,10 @@ try {
         if (guideEl) {
           guideEl.textContent = profile.guideLine;
           guideEl.hidden = !profile.guideLine;
+        }
+        if (attributionEl) {
+          attributionEl.textContent = profile.imageAttribution;
+          attributionEl.hidden = !profile.imageAttribution;
         }
         const imageToken = `${profile.name}:${profile.imageUrl}`;
         this._quoteSpeakerImageToken = imageToken;

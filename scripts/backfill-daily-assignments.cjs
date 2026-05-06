@@ -92,6 +92,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     speakerBornSnapshot: q.speakerBorn.slice(0, 80),
     speakerDiedSnapshot: q.speakerDied.slice(0, 80),
     speakerGuideLineSnapshot: q.speakerGuideLine.slice(0, 260),
+    imageAttributionSnapshot: q.imageAttribution.slice(0, 260),
     assignedAt: new Date().toISOString(),
     assignedBy
   };
@@ -124,6 +125,8 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     speaker_died: q.speakerDied || '',
     speakerGuideLine: q.speakerGuideLine || '',
     speaker_guide_line: q.speakerGuideLine || '',
+    imageAttribution: q.imageAttribution || '',
+    image_attribution: q.imageAttribution || '',
     assignedBy,
     assignedAt: updatedAt,
     updatedAt
@@ -210,6 +213,7 @@ async function main() {
       speakerBorn: String(d.speakerBorn ?? d.speaker_born ?? '').trim(),
       speakerDied: String(d.speakerDied ?? d.speaker_died ?? '').trim(),
       speakerGuideLine: String(d.speakerGuideLine ?? d.speaker_guide_line ?? '').trim(),
+      imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
       submittedAt: String(d.submittedAt || '').trim(),
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
       dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim()
