@@ -322,8 +322,9 @@ try {
           radial-gradient(circle at center, rgba(255, 246, 226, 0.18) 0 0.95px, transparent 1.08px);
         background-size: 13px 13px, 13px 13px;
         background-position: 0 0, 6.5px 6.5px;
-        mix-blend-mode: soft-light;
+        mix-blend-mode: overlay;
         opacity: 0.22;
+        filter: blur(0.7px);
         transform: translate3d(0, var(--quilt-overlay-shift, 0px), 0) rotate(-18deg);
         will-change: transform;
       }
@@ -7986,6 +7987,9 @@ try {
       /** First snapshot of macro regions when leaf count is in [MACRO_FREEZE_AT_BLOCK_COUNT, MACRO_FREEZE_SNAPSHOT_MAX_BLOCKS]; merges never cross regions after. */
       static MACRO_FREEZE_AT_BLOCK_COUNT = 25;
       static MACRO_FREEZE_SNAPSHOT_MAX_BLOCKS = 148;
+      /** Early regular splits persist slight seam angles so later splits inherit handmade geometry. */
+      static CANONICAL_HANDCUT_SPLIT_UNTIL_BLOCKS = 25;
+      static CANONICAL_HANDCUT_SPLIT_MAX_DEGREES = 4;
       /** Late regular splits favor a thin new-color slice so most of the cell stays one field (72→190 blocks). */
       static STRUCTURE_ACCENT_START_BLOCKS = 72;
       static STRUCTURE_ACCENT_FULL_BLOCKS = 190;
@@ -10594,6 +10598,17 @@ try {
           return primary;
         };
 
+        const canonicalHandcutSplit = this._tryCanonicalHandcutRegularSplit(block, newColor, {
+          splitDirection,
+          minBlockSize,
+          preservedParentColor,
+          splitColor,
+          pickPrimaryExtent
+        });
+        if (canonicalHandcutSplit) {
+          return canonicalHandcutSplit;
+        }
+
         if (splitDirection === 'horizontal') {
           let splitHeight = pickPrimaryExtent(block.height);
           
@@ -11487,6 +11502,231 @@ try {
         }));
       }
 
+      _regularBlockWorldPieces(block, color) {
+        if (Array.isArray(block?.polygonPieces) && block.polygonPieces.length) {
+          return this._polygonPiecesWorld(block)
+            .map((piece) => ({
+              color,
+              points: (piece.points || []).map((p) => [Number(p[0]), Number(p[1])])
+            }))
+            .filter((piece) => piece.points.length >= 3);
+        }
+        const x = Number(block?.x);
+        const y = Number(block?.y);
+        const w = Number(block?.width);
+        const h = Number(block?.height);
+        if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return [];
+        return [{
+          color,
+          points: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
+        }];
+      }
+
+      _shouldUseCanonicalHandcutRegularSplit(block) {
+        if (this.macroStructureFrozen || !block) return false;
+        if ((this.blocks?.length || 0) >= SimpleQuiltEngine.CANONICAL_HANDCUT_SPLIT_UNTIL_BLOCKS) return false;
+        if (block.patternType === 'special') return false;
+        if (block.specialPatternType && block.specialPatternType !== 'diagonalAxis') return false;
+        if (['checkerboard', 'stripes', 'railfence'].includes(block.specialPatternType)) return false;
+        const w = Number(block.width);
+        const h = Number(block.height);
+        return [w, h].every(Number.isFinite) && w > 0 && h > 0;
+      }
+
+      _tryCanonicalHandcutStripPieces(block, isHorizontal, a, b, preservedParentColor, splitColor) {
+        if (Array.isArray(block?.polygonPieces) && block.polygonPieces.length) return null;
+        const x = Number(block.x);
+        const y = Number(block.y);
+        const w = Number(block.width);
+        const h = Number(block.height);
+        if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+        const span = isHorizontal ? w : h;
+        const maxKink = Math.max(1.5, Math.min(12, span * 0.018));
+        const innerCount = span > 420 && Math.random() < 0.55 ? 2 : 1;
+        const ts = innerCount === 2 ? [0.34, 0.67] : [0.5 + (Math.random() - 0.5) * 0.16];
+        const seamPoints = [
+          a,
+          ...ts.map((t, idx) => {
+            const base = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+            const bend = (Math.random() - 0.5) * 2 * maxKink * (idx % 2 === 0 ? 1 : 0.75);
+            return isHorizontal ? [base[0], base[1] + bend] : [base[0] + bend, base[1]];
+          }),
+          b
+        ];
+        const makePiece = (color, points) => ({
+          color,
+          points: this._dedupePolyVertices(points, 1e-7)
+        });
+        const aPieces = [];
+        const bPieces = [];
+        for (let i = 0; i < seamPoints.length - 1; i++) {
+          const p0 = seamPoints[i];
+          const p1 = seamPoints[i + 1];
+          if (isHorizontal) {
+            const leftX = p0[0];
+            const rightX = p1[0];
+            aPieces.push(makePiece(preservedParentColor, [[leftX, y], [rightX, y], p1, p0]));
+            bPieces.push(makePiece(splitColor, [p0, p1, [rightX, y + h], [leftX, y + h]]));
+          } else {
+            const topY = p0[1];
+            const bottomY = p1[1];
+            aPieces.push(makePiece(preservedParentColor, [[x, topY], p0, p1, [x, bottomY]]));
+            bPieces.push(makePiece(splitColor, [p0, [x + w, topY], [x + w, bottomY], p1]));
+          }
+        }
+        const validA = aPieces.filter((piece) => piece.points.length >= 3);
+        const validB = bPieces.filter((piece) => piece.points.length >= 3);
+        return validA.length && validB.length ? { worldA: validA, worldB: validB } : null;
+      }
+
+      _tryCanonicalHandcutRegularSplit(block, newColor, options) {
+        if (!this._shouldUseCanonicalHandcutRegularSplit(block)) return null;
+        const splitDirection = options?.splitDirection;
+        const pickPrimaryExtent = options?.pickPrimaryExtent;
+        const minBlockSize = Math.max(1, Number(options?.minBlockSize) || 80);
+        const preservedParentColor = options?.preservedParentColor || block.color;
+        const splitColor = options?.splitColor || newColor;
+        if (typeof pickPrimaryExtent !== 'function') return null;
+
+        const x = Number(block.x);
+        const y = Number(block.y);
+        const w = Number(block.width);
+        const h = Number(block.height);
+        if (![x, y, w, h].every(Number.isFinite) || w < minBlockSize * 2 || h < minBlockSize * 2) {
+          return null;
+        }
+
+        const isHorizontal = splitDirection === 'horizontal';
+        const primaryExtent = pickPrimaryExtent(isHorizontal ? h : w);
+        if (!(primaryExtent > minBlockSize && primaryExtent < (isHorizontal ? h : w) - minBlockSize)) {
+          return null;
+        }
+
+        const maxAngle = SimpleQuiltEngine.CANONICAL_HANDCUT_SPLIT_MAX_DEGREES;
+        const angle = (0.75 + Math.random() * Math.max(0.25, maxAngle - 0.75)) * Math.PI / 180;
+        const sign = Math.random() < 0.5 ? -1 : 1;
+        let a;
+        let b;
+        let sideAPoint;
+        if (isHorizontal) {
+          const seamY = y + primaryExtent;
+          const rawDrift = Math.tan(angle) * w * sign;
+          const maxDrift = Math.max(0, Math.min(
+            primaryExtent - minBlockSize * 0.55,
+            h - primaryExtent - minBlockSize * 0.55,
+            h * 0.08,
+            28
+          ));
+          const dy = Math.max(-maxDrift, Math.min(maxDrift, rawDrift));
+          a = [x, seamY - dy / 2];
+          b = [x + w, seamY + dy / 2];
+          sideAPoint = [x + w / 2, y];
+        } else {
+          const seamX = x + primaryExtent;
+          const rawDrift = Math.tan(angle) * h * sign;
+          const maxDrift = Math.max(0, Math.min(
+            primaryExtent - minBlockSize * 0.55,
+            w - primaryExtent - minBlockSize * 0.55,
+            w * 0.08,
+            28
+          ));
+          const dx = Math.max(-maxDrift, Math.min(maxDrift, rawDrift));
+          a = [seamX - dx / 2, y];
+          b = [seamX + dx / 2, y + h];
+          sideAPoint = [x, y + h / 2];
+        }
+
+        const axisDx = b[0] - a[0];
+        const axisDy = b[1] - a[1];
+        const axisLen = Math.max(1e-9, Math.hypot(axisDx, axisDy));
+        const ux = axisDx / axisLen;
+        const uy = axisDy / axisLen;
+        const nx = -uy;
+        const ny = ux;
+        const cut = a[0] * nx + a[1] * ny;
+        const keepLessForA = (sideAPoint[0] * nx + sideAPoint[1] * ny) <= cut;
+        const world = this._regularBlockWorldPieces(block, preservedParentColor);
+        const stripSplit = this._tryCanonicalHandcutStripPieces(
+          block,
+          isHorizontal,
+          a,
+          b,
+          preservedParentColor,
+          splitColor
+        );
+        const childAxisUx = stripSplit && isHorizontal ? 1 : ux;
+        const childAxisUy = stripSplit && isHorizontal ? 0 : uy;
+        const worldA = stripSplit
+          ? stripSplit.worldA
+          : this._clipPolygonPiecesByProjection(world, nx, ny, cut, keepLessForA);
+        const worldB = stripSplit
+          ? stripSplit.worldB
+          : this._clipPolygonPiecesByProjection(world, nx, ny, cut, !keepLessForA)
+            .map((piece) => ({ color: splitColor, points: piece.points }));
+        const boundsA = this._polygonWorldBounds(worldA);
+        const boundsB = this._polygonWorldBounds(worldB);
+        if (!boundsA || !boundsB) return null;
+
+        const originalPatternId = block.originalPatternId || block.id;
+        const makeChild = (suffix, pieces, bounds, color, contributorId, submissionIndex, backsideMeta) => {
+          const child = {
+            ...block,
+            ...backsideMeta,
+            id: `${block.id}_hc_${this.submissionCount}_${suffix}`,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            color,
+            patternType: 'regular',
+            specialPatternType: 'diagonalAxis',
+            originalPatternId,
+            polygonPieces: this._localPolygonPiecesFromWorldPieces(pieces, bounds),
+            diagonalAxisUx: childAxisUx,
+            diagonalAxisUy: childAxisUy,
+            diagonalAxisAccentColor: newColor,
+            contributorId,
+            submissionIndex,
+            visualLayerIndex: this._visualLayerIndexForBlock(block),
+            starterAxisRegion: true,
+            starterAxisRegionId: `${block.starterAxisRegionId || block.id}_hc_${this.submissionCount}_${suffix}`
+          };
+          delete child._shouldCreateSpecialPattern;
+          delete child._forceHalfSquareTriangle;
+          delete child._forceInsetCircle;
+          delete child._forceOversizedAccentSplit;
+          return child;
+        };
+
+        const childA = makeChild(
+          'a',
+          worldA,
+          boundsA,
+          preservedParentColor,
+          block.contributorId,
+          block.submissionIndex,
+          this._backsideRestoreMetadataForExistingPatch(block)
+        );
+        const childB = makeChild(
+          'b',
+          worldB,
+          boundsB,
+          splitColor,
+          this.deviceId,
+          this.submissionCount,
+          this._backsideRestoreMetadataForNewPatch({
+            ...block,
+            id: `${block.id}_hc_${this.submissionCount}_b`,
+            x: boundsB.x,
+            y: boundsB.y,
+            width: boundsB.width,
+            height: boundsB.height,
+            color: splitColor
+          })
+        );
+        return [childA, childB];
+      }
+
       _hexSame(a, b) {
         return String(a || '')
           .trim()
@@ -11833,10 +12073,26 @@ try {
           )
           : 0.4 + Math.random() * 0.2;
         const cut = (splitAlongU ? minU : minV) + span * ratio;
-        const nx = splitAlongU ? ux : vx;
-        const ny = splitAlongU ? uy : vy;
-        const worldA = this._clipPolygonPiecesByProjection(world, nx, ny, cut, true);
-        const worldB = recolorPieces(this._clipPolygonPiecesByProjection(world, nx, ny, cut, false));
+        let nx = splitAlongU ? ux : vx;
+        let ny = splitAlongU ? uy : vy;
+        let adjustedCut = cut;
+        if (this._shouldUseCanonicalHandcutRegularSplit(block)) {
+          const driftRadians = (0.65 + Math.random() * 2.35) * Math.PI / 180 * (Math.random() < 0.5 ? -1 : 1);
+          const cos = Math.cos(driftRadians);
+          const sin = Math.sin(driftRadians);
+          const driftNx = nx * cos - ny * sin;
+          const driftNy = nx * sin + ny * cos;
+          const cx = (minU + maxU) / 2 * ux + (minV + maxV) / 2 * vx;
+          const cy = (minU + maxU) / 2 * uy + (minV + maxV) / 2 * vy;
+          const anchorOffset = cut - (cx * nx + cy * ny);
+          const anchorX = cx + nx * anchorOffset;
+          const anchorY = cy + ny * anchorOffset;
+          nx = driftNx;
+          ny = driftNy;
+          adjustedCut = anchorX * nx + anchorY * ny;
+        }
+        const worldA = this._clipPolygonPiecesByProjection(world, nx, ny, adjustedCut, true);
+        const worldB = recolorPieces(this._clipPolygonPiecesByProjection(world, nx, ny, adjustedCut, false));
         const boundsA = this._polygonWorldBounds(worldA);
         const boundsB = this._polygonWorldBounds(worldB);
         if (!boundsA || !boundsB) return [];
@@ -11936,34 +12192,56 @@ try {
           b = [mid + dx / 2, h];
         }
 
-        const makePiece = (color, points) => ({ color, points: this._dedupePolyVertices(points, 1e-7) });
-        const negative = this._clipConvexPolygonByLineDistance(rect, a, b, (d) => d <= 1e-9, 0);
-        const positive = this._clipConvexPolygonByLineDistance(rect, a, b, (d) => d >= -1e-9, 0);
-        if (negative.length < 3 || positive.length < 3) return this.performRegularSplit(block, newColor);
         const axisDx = b[0] - a[0];
         const axisDy = b[1] - a[1];
         const axisLen = Math.max(1e-9, Math.hypot(axisDx, axisDy));
         const ux = axisDx / axisLen;
         const uy = axisDy / axisLen;
+        const makePiece = (color, points) => ({ color, points: this._dedupePolyVertices(points, 1e-7) });
+        const stripSplit = this._tryCanonicalHandcutStripPieces(
+          block,
+          useLeftRight,
+          [block.x + a[0], block.y + a[1]],
+          [block.x + b[0], block.y + b[1]],
+          block.color,
+          newColor
+        );
+        const localToWorldPiece = (color, points) => ({
+          color,
+          points: this._dedupePolyVertices(points, 1e-7).map((p) => [block.x + p[0], block.y + p[1]])
+        });
+        const worldA = stripSplit
+          ? stripSplit.worldA
+          : [localToWorldPiece(block.color, this._clipConvexPolygonByLineDistance(rect, a, b, (d) => d <= 1e-9, 0))];
+        const worldB = stripSplit
+          ? stripSplit.worldB
+          : [localToWorldPiece(newColor, this._clipConvexPolygonByLineDistance(rect, a, b, (d) => d >= -1e-9, 0))];
+        if (!worldA.some((piece) => piece.points.length >= 3) || !worldB.some((piece) => piece.points.length >= 3)) {
+          return this.performRegularSplit(block, newColor);
+        }
+        const childAxisUx = stripSplit && useLeftRight ? 1 : ux;
+        const childAxisUy = stripSplit && useLeftRight ? 0 : uy;
         const originalPatternId = block.originalPatternId || block.id;
-        const makeAxisChild = (suffix, color, points, contributorId, submissionIndex) => {
-          const localPieces = [makePiece(color, points)];
-          const localBounds = this._polygonWorldBounds(localPieces);
-          if (!localBounds || localBounds.width <= 0 || localBounds.height <= 0) return null;
+        const makeAxisChild = (suffix, color, pieces, contributorId, submissionIndex) => {
+          const validPieces = (pieces || [])
+            .map((piece) => makePiece(color, piece.points || []))
+            .filter((piece) => piece.points.length >= 3);
+          const worldBounds = this._polygonWorldBounds(validPieces);
+          if (!worldBounds || worldBounds.width <= 0 || worldBounds.height <= 0) return null;
           return {
             ...block,
             id: `${block.id}_axis_${this.submissionCount}_${suffix}`,
-            x: block.x + localBounds.x,
-            y: block.y + localBounds.y,
-            width: localBounds.width,
-            height: localBounds.height,
+            x: worldBounds.x,
+            y: worldBounds.y,
+            width: worldBounds.width,
+            height: worldBounds.height,
             color,
             patternType: 'regular',
             specialPatternType: 'diagonalAxis',
             originalPatternId,
-            polygonPieces: this._localPolygonPiecesFromWorldPieces(localPieces, localBounds),
-            diagonalAxisUx: ux,
-            diagonalAxisUy: uy,
+            polygonPieces: this._localPolygonPiecesFromWorldPieces(validPieces, worldBounds),
+            diagonalAxisUx: childAxisUx,
+            diagonalAxisUy: childAxisUy,
             diagonalAxisAccentColor: newColor,
             contributorId,
             submissionIndex,
@@ -11973,8 +12251,8 @@ try {
           };
         };
         const children = [
-          makeAxisChild('a', block.color, negative, block.contributorId || this.deviceId, block.submissionIndex),
-          makeAxisChild('b', newColor, positive, this.deviceId, this.submissionCount)
+          makeAxisChild('a', block.color, worldA, block.contributorId || this.deviceId, block.submissionIndex),
+          makeAxisChild('b', newColor, worldB, this.deviceId, this.submissionCount)
         ];
         return children.every(Boolean) ? children : this.performRegularSplit(block, newColor);
       }
@@ -21213,6 +21491,19 @@ try {
         const renderToken = `wc_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
         const risoTexturePatternId = `${renderToken}_riso_ink_texture`;
         const risoPaperKnockoutPatternId = `${renderToken}_riso_paper_knockout`;
+        const risoDotSoftenFilterId = `${renderToken}_riso_dot_soften`;
+        {
+          const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+          filter.setAttribute('id', risoDotSoftenFilterId);
+          filter.setAttribute('x', '-6%');
+          filter.setAttribute('y', '-6%');
+          filter.setAttribute('width', '112%');
+          filter.setAttribute('height', '112%');
+          const blur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+          blur.setAttribute('stdDeviation', '0.85');
+          filter.appendChild(blur);
+          defsNode.appendChild(filter);
+        }
         {
           const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
           pattern.setAttribute('id', risoTexturePatternId);
@@ -21411,6 +21702,8 @@ try {
           risoTexturePoly.setAttribute('fill', `url(#${risoTexturePatternId})`);
           risoTexturePoly.setAttribute('opacity', String(Math.min(0.48, 0.15 * risoTextureCoverage * t)));
           risoTexturePoly.setAttribute('stroke', 'none');
+          risoTexturePoly.setAttribute('filter', `url(#${risoDotSoftenFilterId})`);
+          risoTexturePoly.style.mixBlendMode = 'overlay';
           stripOverlayMetadata(risoTexturePoly);
           const centerPoly = shapeNode.cloneNode(true);
           centerPoly.setAttribute('fill', `url(#${centerId})`);
@@ -21682,7 +21975,11 @@ try {
                 poly.setAttribute('points', pts);
                 const fillC = piece.color || block.color;
                 poly.setAttribute('fill', fillC);
-                poly.setAttribute('stroke', 'none');
+                poly.setAttribute('stroke', fillC);
+                poly.setAttribute('stroke-width', '1.2');
+                poly.setAttribute('stroke-linejoin', 'round');
+                poly.setAttribute('stroke-linecap', 'round');
+                poly.setAttribute('vector-effect', 'non-scaling-stroke');
                 poly.setAttribute('data-block-id', block.id);
                 if (this.userPieces.has(block.id)) {
                   poly.classList.add('user-piece-highlight');
@@ -22030,6 +22327,24 @@ try {
             baseUnderlayPolygon.setAttribute('stroke', 'none');
             baseUnderlayPolygon.setAttribute('pointer-events', 'none');
           }
+          const seamUnderpaintBleed = regularVisibilityScale < 1
+            ? 0
+            : Math.min(2.8125, (0.65 + jitterMultiplier * 1.05 + Math.min(0.55, maxExtension * 0.08)) * 1.25);
+          const seamUnderpaintPolygon = seamUnderpaintBleed > 0
+            ? this.createHandCutPolygon(
+                scaledX - seamUnderpaintBleed,
+                scaledY - seamUnderpaintBleed,
+                scaledWidth + seamUnderpaintBleed * 2,
+                scaledHeight + seamUnderpaintBleed * 2,
+                jitterMultiplier * 0.28
+              )
+            : null;
+          if (seamUnderpaintPolygon) {
+            seamUnderpaintPolygon.setAttribute('fill', jitteredBlock.color);
+            seamUnderpaintPolygon.setAttribute('fill-opacity', '0.9');
+            seamUnderpaintPolygon.setAttribute('stroke', 'none');
+            seamUnderpaintPolygon.setAttribute('pointer-events', 'none');
+          }
 
           // Create hand-cut polygon instead of perfect rectangle
           const handCutPolygon = this.createHandCutPolygon(scaledX, scaledY, scaledWidth, scaledHeight, jitterMultiplier);
@@ -22125,6 +22440,7 @@ try {
             block.id || `regular_${i}`
           );
           if (baseUnderlayPolygon) blockGroup.appendChild(baseUnderlayPolygon);
+          if (seamUnderpaintPolygon) blockGroup.appendChild(seamUnderpaintPolygon);
           if (paperDepth?.under) blockGroup.appendChild(paperDepth.under);
           blockGroup.appendChild(handCutPolygon);
           if (watercolorOverlay) blockGroup.appendChild(watercolorOverlay);
@@ -22228,7 +22544,7 @@ try {
           });
           fieldLayer.appendChild(debugLayer);
         }
-        
+
         // Show newly added blocks (only when there are new blocks)
         const newBlocks = displayBlocks.filter(b => b.submissionIndex === submissionCount);
         if (newBlocks.length > 0) {
@@ -22254,7 +22570,7 @@ try {
         // Calculate progressive edge variation based on block size
         const blockArea = width * height;
         const minVariation = 1; // Minimum 1px variation for tiny blocks
-        const maxVariation = 6; // Reduced from 12 to 6 for less dramatic large blocks
+        const maxVariation = 8; // Medium/large blocks need a little more hand-cut character
         
         // More selective scaling - large blocks get moderate variation, not dramatic
         const areaFactor = Math.sqrt(blockArea) / 100; // Normalize to 100px² blocks
@@ -22265,8 +22581,8 @@ try {
           // Small/medium blocks: subtle variation (1-4px)
           sizeAdjustedVariation = Math.min(4, Math.max(minVariation, areaFactor * 2));
         } else {
-          // Large blocks: moderate variation (4-6px) - much less dramatic
-          sizeAdjustedVariation = Math.min(maxVariation, 4 + (areaFactor - 2) * 1);
+          // Large blocks: moderate variation (4-8px) without making the edges wobbly
+          sizeAdjustedVariation = Math.min(maxVariation, 4 + (areaFactor - 2) * 1.35);
         }
         
         // Apply jitter multiplier to the size-adjusted variation
@@ -22274,27 +22590,63 @@ try {
         
         // Progressive segments - also more selective
         const minSegments = 1; // Minimal segments for tiny blocks
-        const maxSegments = 4; // Reduced from 6 to 4 for less wavy large blocks
+        const maxSegments = 5; // A single extra segment helps larger edges stop reading as square
         
         let segments;
         if (areaFactor < 2) {
           // Small/medium blocks: minimal segments (1-3)
           segments = Math.max(minSegments, Math.min(3, Math.floor(areaFactor * 1.5)));
         } else {
-          // Large blocks: moderate segments (3-4) - less wavy
-          segments = Math.max(3, Math.min(maxSegments, Math.floor(3 + (areaFactor - 2) * 0.5)));
+          // Large blocks: moderate segments (3-5) - still restrained, but less boxy
+          segments = Math.max(3, Math.min(maxSegments, Math.floor(3 + (areaFactor - 2) * 0.7)));
         }
         
         const points = [];
+        const cornerNudgeAmount = areaFactor < 1.4
+          ? 0
+          : Math.min(3, 0.9 + (areaFactor - 1.4) * 0.9) * jitterMultiplier;
+        const cornerOffsets = cornerNudgeAmount > 0
+          ? {
+              tl: {
+                x: (Math.random() - 0.5) * cornerNudgeAmount,
+                y: (Math.random() - 0.5) * cornerNudgeAmount
+              },
+              tr: {
+                x: (Math.random() - 0.5) * cornerNudgeAmount,
+                y: (Math.random() - 0.5) * cornerNudgeAmount
+              },
+              br: {
+                x: (Math.random() - 0.5) * cornerNudgeAmount,
+                y: (Math.random() - 0.5) * cornerNudgeAmount
+              },
+              bl: {
+                x: (Math.random() - 0.5) * cornerNudgeAmount,
+                y: (Math.random() - 0.5) * cornerNudgeAmount
+              }
+            }
+          : {
+              tl: { x: 0, y: 0 },
+              tr: { x: 0, y: 0 },
+              br: { x: 0, y: 0 },
+              bl: { x: 0, y: 0 }
+            };
+        const cornerOffsetForPoint = (baseX, baseY) => {
+          if (baseX === 0 && baseY === 0) return cornerOffsets.tl;
+          if (baseX === width && baseY === 0) return cornerOffsets.tr;
+          if (baseX === width && baseY === height) return cornerOffsets.br;
+          if (baseX === 0 && baseY === height) return cornerOffsets.bl;
+          return { x: 0, y: 0 };
+        };
         
         // Top edge (left to right)
         for (let i = 0; i <= segments; i++) {
           const t = i / segments;
           const baseX = t * width;
           const baseY = 0;
+          const cornerOffset = cornerOffsetForPoint(baseX, baseY);
           const variationX = (Math.random() - 0.5) * handCutVariation;
           const variationY = (Math.random() - 0.5) * handCutVariation;
-          points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+          points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
         // Right edge (top to bottom)
@@ -22302,9 +22654,10 @@ try {
           const t = i / segments;
           const baseX = width;
           const baseY = t * height;
+          const cornerOffset = cornerOffsetForPoint(baseX, baseY);
           const variationX = (Math.random() - 0.5) * handCutVariation;
           const variationY = (Math.random() - 0.5) * handCutVariation;
-          points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+          points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
         // Bottom edge (right to left)
@@ -22312,9 +22665,10 @@ try {
           const t = i / segments;
           const baseX = width - (t * width);
           const baseY = height;
+          const cornerOffset = cornerOffsetForPoint(baseX, baseY);
           const variationX = (Math.random() - 0.5) * handCutVariation;
           const variationY = (Math.random() - 0.5) * handCutVariation;
-          points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+          points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
         // Left edge (bottom to top)
@@ -22322,9 +22676,10 @@ try {
           const t = i / segments;
           const baseX = 0;
           const baseY = height - (t * height);
+          const cornerOffset = cornerOffsetForPoint(baseX, baseY);
           const variationX = (Math.random() - 0.5) * handCutVariation;
           const variationY = (Math.random() - 0.5) * handCutVariation;
-          points.push(`${baseX + variationX + x},${baseY + variationY + y}`);
+          points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
         polygon.setAttribute('points', points.join(' '));
@@ -25173,6 +25528,7 @@ try {
         const quiltScreen = document.getElementById('screen-quilt');
         const visible = quiltScreen && quiltScreen.classList.contains('active');
         if (!visible) return;
+        canvas.style.display = '';
 
         const paintCore = () => {
           const wPx = Math.max(1, Math.round(qc.clientWidth));
