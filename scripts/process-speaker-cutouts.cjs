@@ -115,6 +115,8 @@ async function removeBackgroundFromUrl(imageUrl, apiKey) {
   form.append('image_url', imageUrl);
   form.append('size', 'auto');
   form.append('format', 'png');
+  form.append('crop', 'true');
+  form.append('crop_margin', '10%');
 
   const res = await fetch('https://api.remove.bg/v1.0/removebg', {
     method: 'POST',
