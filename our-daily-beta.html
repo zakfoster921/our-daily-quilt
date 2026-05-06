@@ -303,7 +303,7 @@ try {
         z-index: 4;
         display: block;
         mix-blend-mode: multiply;
-        opacity: 0.72;
+        opacity: 0.88;
         will-change: transform;
         /* Promote composite layer — helps WKWebView draw blended canvas pixels on device builds. */
         transform: translate3d(0, var(--quilt-base-shift, 0px), 0) translateZ(0);
@@ -311,10 +311,27 @@ try {
         -webkit-backface-visibility: hidden;
       }
 
+      #screen-quilt .quilt-container::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 3;
+        background:
+          radial-gradient(circle at center, rgba(41, 32, 25, 0.18) 0 1.22px, transparent 1.35px),
+          radial-gradient(circle at center, rgba(255, 246, 226, 0.18) 0 0.95px, transparent 1.08px);
+        background-size: 13px 13px, 13px 13px;
+        background-position: 0 0, 6.5px 6.5px;
+        mix-blend-mode: soft-light;
+        opacity: 0.22;
+        transform: translate3d(0, var(--quilt-overlay-shift, 0px), 0) rotate(-18deg);
+        will-change: transform;
+      }
+
       html.odq-capacitor-native #quiltFilmGrainOverlay {
         /* WKWebView can fail to composite blended canvas layers on device; native draws transparent texture pixels directly. */
         mix-blend-mode: normal;
-        opacity: 0.82;
+        opacity: 0.94;
       }
     
     /* Base SVG styling - will be overridden by media queries */
@@ -2135,6 +2152,7 @@ try {
       touch-action: none;
       transform: translate3d(0, var(--quilt-base-shift, 0px), 0) !important;
       will-change: transform;
+      filter: saturate(1.06) contrast(1.03) sepia(0.025);
     }
     
 
@@ -3640,8 +3658,7 @@ try {
     #quilt .quilt-parallax-block,
     #settingsPersonalQuiltSvg .quilt-parallax-block {
       filter:
-        drop-shadow(0.8px 1.05px 0.55px rgba(45, 36, 29, 0.15))
-        drop-shadow(-0.3px -0.3px 0 rgba(255, 255, 255, 0.11));
+        drop-shadow(0.35px 0.55px 0 rgba(45, 36, 29, 0.11));
     }
 
     /* "Show me my block" — stronger depth + warm edge glow while the piece is forward. */
@@ -5543,8 +5560,8 @@ try {
     }
 
     #screen-quilt .quilt-fortune-reveal {
-      --fortune-container-color: #fff;
-      --fortune-container-ink: #1f1f1f;
+      --fortune-container-color: #ebe8e3;
+      --fortune-container-ink: #241b14;
       display: block;
       width: 100%;
       margin: 0 0 12px;
@@ -5619,9 +5636,8 @@ try {
         radial-gradient(ellipse at 48% 54%, rgba(58, 45, 34, 0.06) 0 42%, transparent 68%);
       border: 0;
       box-shadow: none;
-      filter: drop-shadow(3px 10px 10px rgba(45, 34, 22, 0.14));
       isolation: isolate;
-      margin-bottom: 32px;
+      margin-bottom: 8px;
       transform: rotate(-0.8deg);
     }
 
@@ -5647,8 +5663,7 @@ try {
         grayscale(1)
         contrast(1.48)
         brightness(1.56)
-        drop-shadow(-2px 3px 0 rgba(255, 250, 236, 0.72))
-        drop-shadow(4px 8px 7px rgba(45, 34, 22, 0.18));
+        drop-shadow(-2px 3px 0 rgba(255, 250, 236, 0.72));
       mix-blend-mode: multiply;
       opacity: 0.86;
       transform: rotate(0.6deg);
@@ -5749,7 +5764,7 @@ try {
     #screen-quilt .quote-speaker-name {
       margin: 0;
       font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
-      font-size: clamp(1.08rem, 4.1vw, 1.28rem);
+      font-size: clamp(1.62rem, 6.15vw, 1.92rem);
       line-height: 1.18;
       font-weight: 700;
       color: #241f19;
@@ -5773,11 +5788,11 @@ try {
     }
 
     #screen-quilt .quote-speaker-attribution {
-      margin: 0.9rem 24px 0;
+      margin: 0 24px 28px;
       font-size: 0.68rem;
       line-height: 1.25;
       color: rgba(47, 39, 31, 0.48);
-      text-align: left;
+      text-align: right;
     }
 
     #screen-quilt .quilt-fortune-reveal:focus-visible {
@@ -6017,7 +6032,7 @@ try {
     /* Simplified fortune: a horizontal quilt flips over to its solid backing. */
     #screen-quilt .quilt-fortune-reveal[data-stage="0"],
     #screen-quilt .quilt-fortune-reveal[data-stage="1"] {
-      --fortune-backing-color: #d8c1a4;
+      --fortune-backing-color: #ebe8e3;
       --fortune-backing-ink: #241b14;
     }
 
@@ -7012,11 +7027,10 @@ try {
             <span class="quote-speaker-avatar" id="quoteSpeakerAvatar" hidden></span>
             <span class="quote-speaker-xerox-grain" aria-hidden="true"></span>
           </span>
-          <span class="quote-speaker-kicker">Today&rsquo;s guide</span>
+          <p class="quote-speaker-attribution" id="quoteSpeakerAttribution" hidden></p>
           <p class="quote-speaker-name" id="quoteSpeakerName"></p>
           <p class="quote-speaker-dates" id="quoteSpeakerDates" hidden></p>
           <p class="quote-speaker-guide" id="quoteSpeakerGuide" hidden></p>
-          <p class="quote-speaker-attribution" id="quoteSpeakerAttribution" hidden></p>
         </div>
       </aside>
 
@@ -14442,7 +14456,7 @@ try {
       /** Memoized canvases identical to synthetic reel grain tiles. */
       static _odqFilmGrainTileCache = null;
 
-      /** @returns {{grainTile: HTMLCanvasElement, screenNoiseTile: HTMLCanvasElement, paperTile: HTMLCanvasElement, halftoneTile: HTMLCanvasElement}} */
+      /** @returns {{grainTile: HTMLCanvasElement, screenNoiseTile: HTMLCanvasElement, paperTile: HTMLCanvasElement, halftoneTile: HTMLCanvasElement, inkSpeckleTile: HTMLCanvasElement}} */
       static getFilmGrainTileCanvases() {
         if (Utils._odqFilmGrainTileCache) return Utils._odqFilmGrainTileCache;
         const grainTile = document.createElement('canvas');
@@ -14499,18 +14513,47 @@ try {
         {
           const hctx = halftoneTile.getContext('2d');
           hctx.clearRect(0, 0, halftoneTile.width, halftoneTile.height);
-          const step = 12;
+          const step = 10;
           for (let y = 0; y < halftoneTile.height + step; y += step) {
             for (let x = 0; x < halftoneTile.width + step; x += step) {
-              const rr = 0.8 + Math.random() * 0.9;
+              const rr = 0.7 + Math.random() * 1.15;
               hctx.beginPath();
-              hctx.fillStyle = 'rgba(70, 62, 55, 0.14)';
-              hctx.arc(x, y, rr, 0, Math.PI * 2);
+              hctx.fillStyle = 'rgba(70, 62, 55, 0.18)';
+              hctx.arc(x + (Math.random() - 0.5) * 1.4, y + (Math.random() - 0.5) * 1.4, rr, 0, Math.PI * 2);
               hctx.fill();
             }
           }
         }
-        Utils._odqFilmGrainTileCache = { grainTile, screenNoiseTile, paperTile, halftoneTile };
+        const inkSpeckleTile = document.createElement('canvas');
+        inkSpeckleTile.width = 220;
+        inkSpeckleTile.height = 220;
+        {
+          const ictx = inkSpeckleTile.getContext('2d');
+          ictx.clearRect(0, 0, inkSpeckleTile.width, inkSpeckleTile.height);
+          for (let i = 0; i < 420; i++) {
+            const x = Math.random() * inkSpeckleTile.width;
+            const y = Math.random() * inkSpeckleTile.height;
+            const r = 0.25 + Math.random() * 0.95;
+            const a = 0.035 + Math.random() * 0.12;
+            ictx.beginPath();
+            ictx.fillStyle = `rgba(42, 34, 28, ${a.toFixed(3)})`;
+            ictx.arc(x, y, r, 0, Math.PI * 2);
+            ictx.fill();
+          }
+          for (let i = 0; i < 90; i++) {
+            const x = Math.random() * inkSpeckleTile.width;
+            const y = Math.random() * inkSpeckleTile.height;
+            const w = 0.6 + Math.random() * 2.6;
+            const h = 0.45 + Math.random() * 1.5;
+            ictx.save();
+            ictx.translate(x, y);
+            ictx.rotate((Math.random() - 0.5) * Math.PI);
+            ictx.fillStyle = `rgba(35, 28, 23, ${(0.035 + Math.random() * 0.075).toFixed(3)})`;
+            ictx.fillRect(-w / 2, -h / 2, w, h);
+            ictx.restore();
+          }
+        }
+        Utils._odqFilmGrainTileCache = { grainTile, screenNoiseTile, paperTile, halftoneTile, inkSpeckleTile };
         return Utils._odqFilmGrainTileCache;
       }
 
@@ -14529,7 +14572,7 @@ try {
         const ww = Math.max(1, Number(W));
         const hh = Math.max(1, Number(H));
         const sec = typeof tSec === 'number' && Number.isFinite(tSec) ? tSec : 0;
-        const { grainTile, screenNoiseTile, paperTile, halftoneTile } = Utils.getFilmGrainTileCanvases();
+        const { grainTile, screenNoiseTile, paperTile, halftoneTile, inkSpeckleTile } = Utils.getFilmGrainTileCanvases();
 
         if (textureOnly) {
           const noiseOffX = Math.floor((sec * 13) % screenNoiseTile.width);
@@ -14542,12 +14585,18 @@ try {
               ctx.drawImage(screenNoiseTile, x - noiseOffX, y - noiseOffY);
             }
           }
+          ctx.globalAlpha = 0.26;
+          for (let y = -inkSpeckleTile.height; y < hh + inkSpeckleTile.height; y += inkSpeckleTile.height) {
+            for (let x = -inkSpeckleTile.width; x < ww + inkSpeckleTile.width; x += inkSpeckleTile.width) {
+              ctx.drawImage(inkSpeckleTile, x + 7, y - 5);
+            }
+          }
           ctx.restore();
           return;
         }
 
         ctx.save();
-        ctx.globalAlpha = 0.12;
+        ctx.globalAlpha = 0.14;
         /* First pass must not use `multiply` on a transparent destination — WebKit/WKWebView
            keeps the buffer fully transparent and the whole overlay disappears (desktop often still shows grain). */
         ctx.globalCompositeOperation = 'source-over';
@@ -14562,7 +14611,7 @@ try {
         const paperOffX = Math.floor((sec * 3) % paperTile.width);
         const paperOffY = Math.floor((sec * 2) % paperTile.height);
         ctx.save();
-        ctx.globalAlpha = 0.09;
+        ctx.globalAlpha = 0.12;
         ctx.globalCompositeOperation = 'multiply';
         for (let y = -paperTile.height; y < hh + paperTile.height; y += paperTile.height) {
           for (let x = -paperTile.width; x < ww + paperTile.width; x += paperTile.width) {
@@ -14574,7 +14623,7 @@ try {
         const halfOffX = Math.floor((sec * 7) % halftoneTile.width);
         const halfOffY = Math.floor((sec * 5) % halftoneTile.height);
         ctx.save();
-        ctx.globalAlpha = 0.045;
+        ctx.globalAlpha = 0.072;
         ctx.globalCompositeOperation = 'multiply';
         for (let y = -halftoneTile.height; y < hh + halftoneTile.height; y += halftoneTile.height) {
           for (let x = -halftoneTile.width; x < ww + halftoneTile.width; x += halftoneTile.width) {
@@ -14583,10 +14632,22 @@ try {
         }
         ctx.restore();
 
+        const inkOffX = Math.floor((sec * 5) % inkSpeckleTile.width);
+        const inkOffY = Math.floor((sec * 4) % inkSpeckleTile.height);
+        ctx.save();
+        ctx.globalAlpha = 0.085;
+        ctx.globalCompositeOperation = 'multiply';
+        for (let y = -inkSpeckleTile.height; y < hh + inkSpeckleTile.height; y += inkSpeckleTile.height) {
+          for (let x = -inkSpeckleTile.width; x < ww + inkSpeckleTile.width; x += inkSpeckleTile.width) {
+            ctx.drawImage(inkSpeckleTile, x - inkOffX, y - inkOffY);
+          }
+        }
+        ctx.restore();
+
         const offX = Math.floor((sec * 18) % grainTile.width);
         const offY = Math.floor((sec * 11) % grainTile.height);
         ctx.save();
-        ctx.globalAlpha = 0.04;
+        ctx.globalAlpha = 0.055;
         ctx.globalCompositeOperation = 'soft-light';
         for (let y = -grainTile.height; y < hh + grainTile.height; y += grainTile.height) {
           for (let x = -grainTile.width; x < ww + grainTile.width; x += grainTile.width) {
@@ -21150,6 +21211,47 @@ try {
           return defs;
         })();
         const renderToken = `wc_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+        const risoTexturePatternId = `${renderToken}_riso_ink_texture`;
+        const risoPaperKnockoutPatternId = `${renderToken}_riso_paper_knockout`;
+        {
+          const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+          pattern.setAttribute('id', risoTexturePatternId);
+          pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+          pattern.setAttribute('width', '14');
+          pattern.setAttribute('height', '14');
+          pattern.setAttribute('patternTransform', 'rotate(-18)');
+          [
+            ['circle', { cx: '3.5', cy: '3.5', r: '1.65', fill: 'rgba(255, 244, 220, 0.42)' }],
+            ['circle', { cx: '10.5', cy: '10.5', r: '1.65', fill: 'rgba(255, 244, 220, 0.42)' }],
+            ['circle', { cx: '10.5', cy: '3.5', r: '0.82', fill: 'rgba(39, 31, 25, 0.13)' }],
+            ['circle', { cx: '3.5', cy: '10.5', r: '0.82', fill: 'rgba(39, 31, 25, 0.1)' }]
+          ].forEach(([tag, attrs]) => {
+            const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+            Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+            pattern.appendChild(node);
+          });
+          defsNode.appendChild(pattern);
+        }
+        {
+          const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+          pattern.setAttribute('id', risoPaperKnockoutPatternId);
+          pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+          pattern.setAttribute('width', '32');
+          pattern.setAttribute('height', '32');
+          pattern.setAttribute('patternTransform', 'rotate(11)');
+          [
+            ['circle', { cx: '5.4', cy: '6.2', r: '1.85', fill: 'rgba(250, 244, 226, 0.86)' }],
+            ['circle', { cx: '17.8', cy: '10.6', r: '1.18', fill: 'rgba(250, 244, 226, 0.7)' }],
+            ['circle', { cx: '26.4', cy: '21.2', r: '2.05', fill: 'rgba(250, 244, 226, 0.74)' }],
+            ['circle', { cx: '10.8', cy: '27.1', r: '1.0', fill: 'rgba(250, 244, 226, 0.66)' }],
+            ['rect', { x: '22.2', y: '4.8', width: '3.4', height: '1.05', rx: '0.5', fill: 'rgba(250, 244, 226, 0.62)' }]
+          ].forEach(([tag, attrs]) => {
+            const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+            Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+            pattern.appendChild(node);
+          });
+          defsNode.appendChild(pattern);
+        }
         const hexToRgb = (hex) => {
           const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
           if (!m) return { r: 200, g: 196, b: 191 };
@@ -21211,6 +21313,15 @@ try {
               : null;
           const { x, y, width, height } = blockRect;
           const seed = `${seedKey || idx}|${Math.round(x)}|${Math.round(y)}|${Math.round(width)}|${Math.round(height)}`;
+          const minDim = Math.max(1, Math.min(Math.abs(width), Math.abs(height)));
+          const risoTextureCoverage = Math.max(0.55, Math.min(1.55, (minDim - 34) / 122));
+          const paperKnockoutCoverage = Math.max(0, Math.min(1.35, (minDim - 56) / 112));
+          const luminance = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+          const paperKnockoutToneFactor =
+            luminance <= 72 ? 0.36 :
+              luminance <= 108 ? 0.56 :
+                luminance <= 150 ? 0.78 :
+                  1;
 
           let cx;
           let cy;
@@ -21242,11 +21353,11 @@ try {
           const c0 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
           c0.setAttribute('offset', '0%');
           c0.setAttribute('stop-color', '#ffffff');
-          c0.setAttribute('stop-opacity', String(0.16 * t));
+          c0.setAttribute('stop-opacity', String(0.055 * t));
           const c1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
           c1.setAttribute('offset', '55%');
           c1.setAttribute('stop-color', '#ffffff');
-          c1.setAttribute('stop-opacity', String(0.05 * t));
+          c1.setAttribute('stop-opacity', String(0.018 * t));
           const c2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
           c2.setAttribute('offset', '100%');
           c2.setAttribute('stop-color', '#ffffff');
@@ -21269,11 +21380,11 @@ try {
           const e1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
           e1.setAttribute('offset', '65%');
           e1.setAttribute('stop-color', `rgb(${rgb.r},${rgb.g},${rgb.b})`);
-          e1.setAttribute('stop-opacity', String(0.03 * t));
+          e1.setAttribute('stop-opacity', String(0.045 * t));
           const e2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
           e2.setAttribute('offset', '100%');
           e2.setAttribute('stop-color', `rgb(${rgb.r},${rgb.g},${rgb.b})`);
-          e2.setAttribute('stop-opacity', String(0.19 * t));
+          e2.setAttribute('stop-opacity', String(0.24 * t));
           edgeGrad.appendChild(e0);
           edgeGrad.appendChild(e1);
           edgeGrad.appendChild(e2);
@@ -21281,16 +21392,71 @@ try {
 
           const overlayGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
           overlayGroup.setAttribute('style', 'mix-blend-mode: normal; pointer-events: none;');
+          const stripOverlayMetadata = (node) => {
+            try {
+              node.removeAttribute('data-block-id');
+              node.classList.remove('user-piece-highlight');
+            } catch (_) {
+              /* ignore */
+            }
+          };
+          const inkSpreadPoly = shapeNode.cloneNode(true);
+          const spreadShiftX = (hash01(`${seed}|risoSpreadX`) - 0.5) * 2.6;
+          const spreadShiftY = (hash01(`${seed}|risoSpreadY`) - 0.5) * 2.6;
+          inkSpreadPoly.setAttribute('fill', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${(0.13 * risoTextureCoverage * t).toFixed(3)})`);
+          inkSpreadPoly.setAttribute('stroke', 'none');
+          inkSpreadPoly.setAttribute('transform', `translate(${spreadShiftX.toFixed(3)} ${spreadShiftY.toFixed(3)})`);
+          stripOverlayMetadata(inkSpreadPoly);
+          const risoTexturePoly = shapeNode.cloneNode(true);
+          risoTexturePoly.setAttribute('fill', `url(#${risoTexturePatternId})`);
+          risoTexturePoly.setAttribute('opacity', String(Math.min(0.48, 0.15 * risoTextureCoverage * t)));
+          risoTexturePoly.setAttribute('stroke', 'none');
+          stripOverlayMetadata(risoTexturePoly);
           const centerPoly = shapeNode.cloneNode(true);
           centerPoly.setAttribute('fill', `url(#${centerId})`);
           centerPoly.setAttribute('opacity', '1');
           centerPoly.setAttribute('stroke', 'none');
+          stripOverlayMetadata(centerPoly);
           const edgePoly = shapeNode.cloneNode(true);
           edgePoly.setAttribute('fill', `url(#${edgeId})`);
           edgePoly.setAttribute('opacity', '1');
           edgePoly.setAttribute('stroke', 'none');
+          stripOverlayMetadata(edgePoly);
+          const paperKnockoutPoly = shapeNode.cloneNode(true);
+          paperKnockoutPoly.setAttribute('fill', `url(#${risoPaperKnockoutPatternId})`);
+          paperKnockoutPoly.setAttribute('opacity', String(Math.min(0.48, 0.32 * paperKnockoutCoverage * paperKnockoutToneFactor * t)));
+          paperKnockoutPoly.setAttribute('stroke', 'none');
+          stripOverlayMetadata(paperKnockoutPoly);
+          const inkBloomPoly = shapeNode.cloneNode(true);
+          inkBloomPoly.setAttribute('fill', 'none');
+          inkBloomPoly.setAttribute('stroke', `rgb(${rgb.r},${rgb.g},${rgb.b})`);
+          inkBloomPoly.setAttribute('stroke-width', String((1.45 + 1.05 * risoTextureCoverage).toFixed(2)));
+          inkBloomPoly.setAttribute('stroke-opacity', String(Math.min(0.34, 0.14 * risoTextureCoverage * t)));
+          inkBloomPoly.setAttribute('stroke-linejoin', 'round');
+          inkBloomPoly.setAttribute('stroke-linecap', 'round');
+          inkBloomPoly.setAttribute('vector-effect', 'non-scaling-stroke');
+          stripOverlayMetadata(inkBloomPoly);
+          const paperToothPoly = shapeNode.cloneNode(true);
+          const toothShiftX = (hash01(`${seed}|paperToothX`) - 0.5) * 1.6;
+          const toothShiftY = (hash01(`${seed}|paperToothY`) - 0.5) * 1.6;
+          paperToothPoly.setAttribute('fill', 'none');
+          paperToothPoly.setAttribute('stroke', 'rgba(246, 239, 224, 0.5)');
+          paperToothPoly.setAttribute('stroke-width', String((0.72 + 0.36 * risoTextureCoverage).toFixed(2)));
+          paperToothPoly.setAttribute('stroke-opacity', String(Math.min(0.46, 0.2 * risoTextureCoverage * t)));
+          paperToothPoly.setAttribute('stroke-linejoin', 'round');
+          paperToothPoly.setAttribute('stroke-linecap', 'round');
+          paperToothPoly.setAttribute('stroke-dasharray', '1.3 5.8');
+          paperToothPoly.setAttribute('stroke-dashoffset', String((hash01(`${seed}|paperDash`) * 7).toFixed(2)));
+          paperToothPoly.setAttribute('transform', `translate(${toothShiftX.toFixed(3)} ${toothShiftY.toFixed(3)})`);
+          paperToothPoly.setAttribute('vector-effect', 'non-scaling-stroke');
+          stripOverlayMetadata(paperToothPoly);
+          overlayGroup.appendChild(inkSpreadPoly);
+          overlayGroup.appendChild(risoTexturePoly);
           overlayGroup.appendChild(centerPoly);
           overlayGroup.appendChild(edgePoly);
+          if (paperKnockoutCoverage > 0.001) overlayGroup.appendChild(paperKnockoutPoly);
+          overlayGroup.appendChild(inkBloomPoly);
+          overlayGroup.appendChild(paperToothPoly);
 
           const darkEdgeBoost = darkEdgeBoostForLuminance(colorHex);
           if (darkEdgeBoost > 0.001) {
@@ -21308,11 +21474,11 @@ try {
             const d1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
             d1.setAttribute('offset', '72%');
             d1.setAttribute('stop-color', '#000000');
-            d1.setAttribute('stop-opacity', String(Math.min(0.4, 0.01 * darkEdgeBoost * t)));
+            d1.setAttribute('stop-opacity', String(Math.min(0.4, 0.014 * darkEdgeBoost * t)));
             const d2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
             d2.setAttribute('offset', '100%');
             d2.setAttribute('stop-color', '#000000');
-            d2.setAttribute('stop-opacity', String(Math.min(0.55, 0.08 * darkEdgeBoost * t)));
+            d2.setAttribute('stop-opacity', String(Math.min(0.55, 0.105 * darkEdgeBoost * t)));
             darkEdgeGrad.appendChild(d0);
             darkEdgeGrad.appendChild(d1);
             darkEdgeGrad.appendChild(d2);
@@ -21349,9 +21515,9 @@ try {
           if (strength <= 0.001) return null;
           const includeEdge = options.edge === true;
           const seed = `${seedKey || idx}|paper|${Math.round(x)}|${Math.round(y)}|${Math.round(width)}|${Math.round(height)}`;
-          const lift = 0.48 + hash01(`${seed}|lift`) * 0.42;
-          const shadowDx = 0.42 * lift;
-          const shadowDy = 0.68 * lift;
+          const lift = 0.28 + hash01(`${seed}|lift`) * 0.28;
+          const shadowDx = 0.28 * lift;
+          const shadowDy = 0.38 * lift;
           const strokeW = Math.max(0.65, Math.min(1.65, Math.min(Math.abs(width), Math.abs(height)) * 0.016));
           let edgeId = null;
 
@@ -21382,7 +21548,7 @@ try {
           const under = shapeNode.cloneNode(true);
           stripCloneBlockMetadata(under);
           under.setAttribute('fill', '#2d241d');
-          under.setAttribute('fill-opacity', (0.045 * strength).toFixed(3));
+          under.setAttribute('fill-opacity', (0.025 * strength).toFixed(3));
           under.setAttribute('stroke', 'none');
           under.setAttribute('transform', `translate(${shadowDx.toFixed(3)} ${shadowDy.toFixed(3)})`);
 
@@ -24105,13 +24271,10 @@ try {
         if (textEl) {
           textEl.innerHTML = this.escapeQuiltFortuneText(this.getQuiltBlessingText(todayQuote));
         }
-        const colors = this.getQuiltFortuneColors();
-        const backingColor = this.getQuiltFortuneBackingColor(colors);
-        const containerColor = this.getQuiltFortuneContainerColor(colors);
-        reveal.style.setProperty('--fortune-container-color', containerColor);
-        reveal.style.setProperty('--fortune-container-ink', this.getReadableTextColorForHex(containerColor));
-        reveal.style.setProperty('--fortune-backing-color', backingColor);
-        reveal.style.setProperty('--fortune-backing-ink', this.getReadableTextColorForHex(backingColor));
+        reveal.style.setProperty('--fortune-container-color', '#ebe8e3');
+        reveal.style.setProperty('--fortune-container-ink', '#241b14');
+        reveal.style.setProperty('--fortune-backing-color', '#ebe8e3');
+        reveal.style.setProperty('--fortune-backing-ink', '#241b14');
       }
 
       refreshQuiltReflectionScrapWidget(quote = null) {
@@ -25035,9 +25198,10 @@ try {
           const isNative =
             typeof odqIsCapacitorNative === 'function' && odqIsCapacitorNative();
           const clipPath = Utils.buildQuiltGrainClipPathFromSvg(svg, wPx, hPx);
-          if (!clipPath) return;
           ctx.save();
-          ctx.clip(clipPath);
+          if (clipPath) {
+            ctx.clip(clipPath);
+          }
           Utils.applyFilmGrain(ctx, wPx, hPx, 0, { vignette: false, textureOnly: isNative });
           ctx.restore();
         };
