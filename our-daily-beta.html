@@ -22244,6 +22244,9 @@ try {
         this.parallaxTouchStartListener = null;
         this.parallaxLastTouchY = null;
         this.parallaxAppliedSvgShift = 0;
+        this._quiltScrollCueTimer = null;
+        this._quiltScrollCueAnimationFrame = null;
+        this._quiltScrollCueCancelHandlers = [];
         this.quiltNotificationPromptListener = null;
         /** Scroll position when quilt screen became active; notification prompt waits for scroll past threshold. */
         this._notificationPromptScrollBaseline = null;
@@ -25087,11 +25090,113 @@ try {
             this._dailyQuotePromptedFromQuiltScroll = false;
             this.parallaxTargetShift = 0;
             this.handleParallaxScroll();
+            this.scheduleQuiltScrollCue();
           } else {
+            this.clearQuiltScrollCue();
             this.parallaxTargetShift = 0;
             this.requestParallaxFrame();
           }
         });
+      }
+
+      clearQuiltScrollCue() {
+        if (this._quiltScrollCueTimer != null) {
+          clearTimeout(this._quiltScrollCueTimer);
+          this._quiltScrollCueTimer = null;
+        }
+        if (this._quiltScrollCueAnimationFrame != null) {
+          cancelAnimationFrame(this._quiltScrollCueAnimationFrame);
+          this._quiltScrollCueAnimationFrame = null;
+        }
+        this._quiltScrollCueCancelHandlers.forEach(({ target, type, handler, options }) => {
+          try {
+            target.removeEventListener(type, handler, options);
+          } catch (_) {
+            /* ignore stale listener cleanup */
+          }
+        });
+        this._quiltScrollCueCancelHandlers = [];
+      }
+
+      scheduleQuiltScrollCue(delayMs = 1000) {
+        this.clearQuiltScrollCue();
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+
+        const quiltScreen = document.getElementById('screen-quilt');
+        if (!quiltScreen?.classList.contains('active')) return;
+
+        const cancelCue = () => this.clearQuiltScrollCue();
+        const registerCancel = (target, type, options = { passive: true }) => {
+          if (!target) return;
+          target.addEventListener(type, cancelCue, options);
+          this._quiltScrollCueCancelHandlers.push({ target, type, handler: cancelCue, options });
+        };
+        registerCancel(quiltScreen, 'wheel');
+        registerCancel(quiltScreen, 'touchstart');
+        registerCancel(quiltScreen, 'pointerdown');
+        registerCancel(window, 'keydown');
+
+        this._quiltScrollCueTimer = setTimeout(() => {
+          this._quiltScrollCueTimer = null;
+          const activeQuiltScreen = document.getElementById('screen-quilt');
+          if (!activeQuiltScreen?.classList.contains('active')) {
+            this.clearQuiltScrollCue();
+            return;
+          }
+
+          const maxScroll = activeQuiltScreen.scrollHeight - activeQuiltScreen.clientHeight;
+          if (activeQuiltScreen.scrollTop > 4 || maxScroll < 32) {
+            this.clearQuiltScrollCue();
+            return;
+          }
+
+          const bumpPx = Math.min(50, Math.max(30, maxScroll * 0.14));
+          this.playQuiltScrollCue(activeQuiltScreen, bumpPx);
+        }, Math.max(0, Number(delayMs) || 0));
+      }
+
+      playQuiltScrollCue(scroller, bumpPx) {
+        if (!scroller) return;
+        const startTop = scroller.scrollTop || 0;
+        const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        const peakTop = Math.min(maxScroll, startTop + bumpPx);
+        if (peakTop <= startTop + 1) return;
+
+        const duration = 1680;
+        const startedAt = performance.now();
+        const clamp01 = (t) => Math.max(0, Math.min(1, t));
+        const easeOutBack = (t) => {
+          const c1 = 1.45;
+          const c3 = c1 + 1;
+          return 1 + c3 * Math.pow(clamp01(t) - 1, 3) + c1 * Math.pow(clamp01(t) - 1, 2);
+        };
+        const easeInOutSine = (t) => -(Math.cos(Math.PI * clamp01(t)) - 1) / 2;
+
+        const tick = (now) => {
+          const progress = Math.min(1, (now - startedAt) / duration);
+          const distance = peakTop - startTop;
+          let nextTop;
+          if (progress < 0.38) {
+            nextTop = startTop + (distance * Math.min(1.08, easeOutBack(progress / 0.38)));
+          } else if (progress < 0.68) {
+            const wiggleProgress = (progress - 0.38) / 0.3;
+            const wiggle = Math.sin(wiggleProgress * Math.PI * 5) * 4 * (1 - (wiggleProgress * 0.35));
+            nextTop = peakTop + wiggle;
+          } else {
+            nextTop = peakTop - (distance * easeInOutSine((progress - 0.68) / 0.32));
+          }
+          scroller.scrollTop = Math.max(startTop, Math.min(maxScroll, nextTop));
+
+          if (progress < 1 && document.getElementById('screen-quilt')?.classList.contains('active')) {
+            this._quiltScrollCueAnimationFrame = requestAnimationFrame(tick);
+          } else {
+            scroller.scrollTop = startTop;
+            this._quiltScrollCueAnimationFrame = null;
+            this.clearQuiltScrollCue();
+          }
+        };
+
+        this._quiltScrollCueAnimationFrame = requestAnimationFrame(tick);
       }
 
       handleParallaxInteraction(event) {
