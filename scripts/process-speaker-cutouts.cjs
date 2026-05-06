@@ -126,6 +126,69 @@ async function collectRows(db, collectionName, opts) {
   return rows;
 }
 
+function isDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
+async function patchDerivedQuoteDocs(db, quotesCollection, sourceIds, sourceData, cutoutUrl, imageUrl) {
+  const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const timestamp = admin.firestore.FieldValue.serverTimestamp();
+  let writes = 0;
+
+  for (const sourceId of sourceIds) {
+    const assignmentSnap = await db.collection(assignmentsCollection).where('sourceId', '==', sourceId).get();
+    for (const docSnap of assignmentSnap.docs) {
+      await docSnap.ref.set(
+        {
+          speakerCutoutUrlSnapshot: cutoutUrl,
+          speaker_cutout_url_snapshot: cutoutUrl,
+          speakerCutoutSourceUrlSnapshot: imageUrl,
+          speaker_cutout_source_url_snapshot: imageUrl,
+          speakerCutoutUpdatedAt: timestamp,
+          speaker_cutout_updated_at: timestamp
+        },
+        { merge: true }
+      );
+      writes += 1;
+    }
+
+    const dailyQuoteSnap = await db.collection(quotesCollection).where('sourceId', '==', sourceId).get();
+    for (const docSnap of dailyQuoteSnap.docs) {
+      if (!isDateKey(docSnap.id)) continue;
+      await docSnap.ref.set(
+        {
+          speakerCutoutUrl: cutoutUrl,
+          speaker_cutout_url: cutoutUrl,
+          speakerCutoutSourceUrl: imageUrl,
+          speaker_cutout_source_url: imageUrl,
+          speakerCutoutUpdatedAt: timestamp,
+          speaker_cutout_updated_at: timestamp
+        },
+        { merge: true }
+      );
+      writes += 1;
+    }
+  }
+
+  const scheduledDate = String(sourceData.dateScheduled || sourceData.date_scheduled || '').trim();
+  if (isDateKey(scheduledDate)) {
+    await db.collection(quotesCollection).doc(scheduledDate).set(
+      {
+        speakerCutoutUrl: cutoutUrl,
+        speaker_cutout_url: cutoutUrl,
+        speakerCutoutSourceUrl: imageUrl,
+        speaker_cutout_source_url: imageUrl,
+        speakerCutoutUpdatedAt: timestamp,
+        speaker_cutout_updated_at: timestamp
+      },
+      { merge: true }
+    );
+    writes += 1;
+  }
+
+  return writes;
+}
+
 async function main() {
   const opts = parseArgs(process.argv);
   const apiKey = opts.dryRun ? String(process.env.REMOVE_BG_API_KEY || '').trim() : requireEnv('REMOVE_BG_API_KEY');
@@ -146,12 +209,18 @@ async function main() {
     }
     const imageUrl = String(d.speakerImageUrl || d.speaker_image_url || '').trim();
     const existing = String(d.speakerCutoutUrl || d.speaker_cutout_url || '').trim();
+    const sourceIds = Array.from(new Set([row.id, String(d.sourceId || '').trim()].filter(Boolean)));
     if (!imageUrl) {
       skipped += 1;
       continue;
     }
     if (existing && !opts.force) {
-      skipped += 1;
+      console.log(`[cutout] reusing existing cutout for ${row.id} ${author}`);
+      if (!opts.dryRun) {
+        const derivedWrites = await patchDerivedQuoteDocs(db, collectionName, sourceIds, d, existing, imageUrl);
+        console.log(`[cutout] patched ${derivedWrites} derived doc(s)`);
+      }
+      processed += 1;
       continue;
     }
     if (opts.limit && processed >= opts.limit) break;
@@ -178,8 +247,10 @@ async function main() {
         },
         { merge: true }
       );
+      const derivedWrites = await patchDerivedQuoteDocs(db, collectionName, sourceIds, d, cutoutUrl, imageUrl);
       processed += 1;
       console.log(`[cutout] wrote ${path}`);
+      console.log(`[cutout] patched ${derivedWrites} derived doc(s)`);
     } catch (error) {
       failed += 1;
       console.error(`[cutout] failed ${row.id} ${author}: ${error.message}`);
