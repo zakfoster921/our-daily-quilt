@@ -1486,6 +1486,21 @@ function formatZapierCaptionFromQuoteData(quoteData = {}) {
   return `${core}\n\nWhat if: ${whatIf}`;
 }
 
+function formatNotificationTextFromQuoteData(quoteData = {}) {
+  const notificationText = String(
+    quoteData.notificationText ??
+      quoteData.notification_text ??
+      quoteData.pushNotificationText ??
+      quoteData.push_notification_text ??
+      ''
+  ).trim();
+  if (notificationText) return notificationText;
+
+  const text = String(quoteData.text ?? quoteData.body ?? quoteData.quote ?? '').trim();
+  const author = String(quoteData.author ?? '').trim();
+  return text && author ? `${text} — ${author}` : text || author || '';
+}
+
 async function runDailyResetForDate(dateKey, source = 'unknown') {
   if (!db) {
     throw new Error('Firestore not initialized');
@@ -1693,6 +1708,36 @@ async function captionFromDailyQuoteAssignments(dateKey) {
   return '';
 }
 
+async function notificationTextFromDailyQuoteAssignments(dateKey) {
+  if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return '';
+  try {
+    const snap = await db.collection('dailyQuoteAssignments').doc(dateKey).get();
+    if (!snap.exists) return '';
+    const a = snap.data() || {};
+    const sourceId = String(a.sourceId || '').trim();
+    if (sourceId) {
+      try {
+        const quoteSnap = await db.collection('quotes').doc(sourceId).get();
+        if (quoteSnap.exists) {
+          const notificationText = formatNotificationTextFromQuoteData(quoteSnap.data() || {});
+          if (notificationText) return notificationText;
+        }
+      } catch (e) {
+        console.warn(`⚠️ quotes/${sourceId} notification text lookup:`, e.message);
+      }
+    }
+    const assignmentNotificationText = formatNotificationTextFromQuoteData(a);
+    if (assignmentNotificationText) return assignmentNotificationText;
+    const t = String(a.textSnapshot || '').trim();
+    const au = String(a.authorSnapshot || '').trim();
+    if (t && au) return `${t} — ${au}`;
+    if (t) return t;
+  } catch (e) {
+    console.warn(`⚠️ dailyQuoteAssignments/${dateKey} notification text:`, e.message);
+  }
+  return '';
+}
+
 function getPushTokenDocId(token) {
   return crypto.createHash('sha256').update(String(token || '')).digest('hex');
 }
@@ -1713,14 +1758,14 @@ function truncatePushBody(text, maxLen = 178) {
 }
 
 async function getDailyQuotePushText(dateKey) {
-  const assigned = await captionFromDailyQuoteAssignments(dateKey);
+  const assigned = await notificationTextFromDailyQuoteAssignments(dateKey);
   if (assigned) return assigned;
 
   try {
     const quoteSnap = await db.collection('quotes').doc(dateKey).get();
     if (quoteSnap.exists) {
-      const caption = formatZapierCaptionFromQuoteData(quoteSnap.data() || {});
-      if (caption) return caption;
+      const notificationText = formatNotificationTextFromQuoteData(quoteSnap.data() || {});
+      if (notificationText) return notificationText;
     }
   } catch (e) {
     console.warn(`⚠️ push quote fallback quotes/${dateKey}:`, e.message);
