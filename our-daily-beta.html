@@ -15114,6 +15114,7 @@ try {
         dateKey,
         instagramImage,
         postLayoutBImageData,
+        postLayoutBSpeakerImageData,
         reelWebmBlob = null,
         zapierCaption = '',
         quiltFingerprint = '',
@@ -15123,7 +15124,7 @@ try {
         if (!window.db || !window.firestore) {
           throw new Error('Firestore not ready');
         }
-        if (!instagramImage && !postLayoutBImageData && !(reelWebmBlob && reelWebmBlob.size > 0)) {
+        if (!instagramImage && !postLayoutBImageData && !postLayoutBSpeakerImageData && !(reelWebmBlob && reelWebmBlob.size > 0)) {
           throw new Error('No images or reel to upload');
         }
         if (!window.app || typeof window.app.initializeFirebaseForImages !== 'function') {
@@ -15138,7 +15139,7 @@ try {
         );
         const storage = window.firebaseStorage;
         const basePath = `instagram-zapier/${dateKey}`;
-        const isImageWrite = !!(instagramImage || postLayoutBImageData);
+        const isImageWrite = !!(instagramImage || postLayoutBImageData || postLayoutBSpeakerImageData);
         const isReelWrite = !!(reelWebmBlob && reelWebmBlob.size > 0);
         const qfp = typeof quiltFingerprint === 'string' ? quiltFingerprint.trim() : '';
         const assetVersion = `${Date.now()}-${(qfp || 'no-qfp').replace(/[^a-z0-9_-]/gi, '').slice(0, 48)}`;
@@ -15171,6 +15172,7 @@ try {
         }
         let imageStorageUrl = null;
         let postLayoutBImageStorageUrl = null;
+        let postLayoutBSpeakerImageStorageUrl = null;
         let reelWebmStorageUrl = null;
         let debugRawQuiltStorageUrl = null;
         if (instagramImage) {
@@ -15188,6 +15190,14 @@ try {
             cacheControl: 'public, max-age=31536000, immutable'
           });
           postLayoutBImageStorageUrl = await getDownloadURL(r);
+        }
+        if (postLayoutBSpeakerImageData) {
+          const r = ref(storage, `${basePath}/layout-b-speaker-${assetVersion}.png`);
+          await uploadBytes(r, Utils.dataUrlToBlob(postLayoutBSpeakerImageData), {
+            contentType: 'image/png',
+            cacheControl: 'public, max-age=31536000, immutable'
+          });
+          postLayoutBSpeakerImageStorageUrl = await getDownloadURL(r);
         }
         if (reelWebmBlob && reelWebmBlob.size > 0) {
           const r = ref(storage, `${basePath}/reel.webm`);
@@ -15214,6 +15224,10 @@ try {
         if (postLayoutBImageStorageUrl) {
           docPayload.postLayoutBImageStorageUrl = postLayoutBImageStorageUrl;
           docPayload.layoutBUrl = postLayoutBImageStorageUrl;
+        }
+        if (postLayoutBSpeakerImageStorageUrl) {
+          docPayload.postLayoutBSpeakerImageStorageUrl = postLayoutBSpeakerImageStorageUrl;
+          docPayload.layoutBSpeakerUrl = postLayoutBSpeakerImageStorageUrl;
         }
         if (reelWebmStorageUrl) {
           docPayload.reelWebmStorageUrl = reelWebmStorageUrl;
@@ -16538,6 +16552,13 @@ try {
             const dedicationMessage = String(options?.dedicationMessage || '').trim().slice(0, 180);
             const focusBlockRect = options?.focusBlockRect || null;
             const focusSourceViewBox = options?.focusSourceViewBox || null;
+            const speakerOverlay = options?.speakerOverlay && options.speakerOverlay.enabled !== false
+              ? {
+                  imageUrl: String(options.speakerOverlay.imageUrl || '').trim(),
+                  name: String(options.speakerOverlay.name || '').trim(),
+                  washColor: String(options.speakerOverlay.washColor || '#ea9b9a').trim()
+                }
+              : null;
 
             const rngDateKey = dateKey || new Date().toISOString().split('T')[0];
             let rngSeed = 2166136261;
@@ -16711,6 +16732,48 @@ try {
               };
               im.src = url;
             });
+
+            const getSpeakerOverlayImageCandidates = (url) => {
+              const safeUrl = String(url || '').trim();
+              if (!safeUrl) return [];
+              if (/^(?:data|blob):/i.test(safeUrl)) return [safeUrl];
+              const out = [];
+              const baseUrl =
+                typeof CONFIG !== 'undefined' && CONFIG.BACKEND && CONFIG.BACKEND.baseUrl
+                  ? String(CONFIG.BACKEND.baseUrl).replace(/\/$/, '')
+                  : '';
+              if (/^https?:\/\//i.test(safeUrl) && baseUrl) {
+                out.push(`${baseUrl}/api/proxy-image?url=${encodeURIComponent(safeUrl)}`);
+              }
+              out.push(safeUrl);
+              return [...new Set(out)];
+            };
+
+            const loadSpeakerOverlayImage = (url) => new Promise((res) => {
+              const safeUrl = String(url || '').trim();
+              if (!safeUrl) return res(null);
+              const im = new Image();
+              im.crossOrigin = 'anonymous';
+              im.referrerPolicy = 'no-referrer';
+              im.onload = () => res(im);
+              im.onerror = () => res(null);
+              im.src = safeUrl;
+            });
+
+            const loadSpeakerOverlayImages = async (url) => {
+              const loaded = [];
+              for (const candidate of getSpeakerOverlayImageCandidates(url)) {
+                const img = await loadSpeakerOverlayImage(candidate);
+                if (img) loaded.push(img);
+              }
+              if (String(url || '').trim() && !loaded.length) {
+                console.warn(
+                  'Layout B speaker image load failed. If using Firebase Storage, deploy /api/proxy-image or serve a same-origin/data URL.',
+                  { sourceUrl: String(url || '').trim(), candidates: getSpeakerOverlayImageCandidates(url) }
+                );
+              }
+              return loaded;
+            };
 
             const rgbToHsl = (r, g, b) => {
               r /= 255;
@@ -17175,8 +17238,188 @@ try {
               g.restore();
             };
 
+            const parseSpeakerWashRgb = (hex) => {
+              const fallback = '#ea9b9a';
+              const safe = /^#[0-9A-Fa-f]{6}$/.test(String(hex || '').trim())
+                ? String(hex).trim()
+                : fallback;
+              return {
+                r: parseInt(safe.slice(1, 3), 16),
+                g: parseInt(safe.slice(3, 5), 16),
+                b: parseInt(safe.slice(5, 7), 16)
+              };
+            };
+
+            const makeSpeakerSilhouetteCanvas = (img, outW, outH) => {
+              const c = document.createElement('canvas');
+              c.width = Math.max(1, Math.round(outW));
+              c.height = Math.max(1, Math.round(outH));
+              const g = c.getContext('2d', { willReadFrequently: true });
+              if (!g) return null;
+              const iw = Math.max(1, img.naturalWidth || img.width);
+              const ih = Math.max(1, img.naturalHeight || img.height);
+              const scale = Math.max(c.width / iw, c.height / ih);
+              const dw = iw * scale;
+              const dh = ih * scale;
+              const dx = (c.width - dw) / 2;
+              const dy = (c.height - dh) / 2;
+              g.imageSmoothingEnabled = true;
+              g.imageSmoothingQuality = 'high';
+              g.drawImage(img, dx, dy, dw, dh);
+              const image = g.getImageData(0, 0, c.width, c.height);
+              const d = image.data;
+              for (let i = 0; i < d.length; i += 4) {
+                const alpha = d[i + 3];
+                if (alpha < 8) {
+                  d[i + 3] = 0;
+                  continue;
+                }
+                const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                const v = Math.max(0, Math.min(255, (lum - 128) * 1.55 + 116));
+                d[i] = v;
+                d[i + 1] = v;
+                d[i + 2] = v;
+                d[i + 3] = Math.min(255, alpha * 0.98);
+              }
+              g.putImageData(image, 0, 0);
+              return c;
+            };
+
+            const getSpeakerOverlayRect = (img, strips) => {
+              if (!img || !isPostLayout) return null;
+              const iw = Math.max(1, img.naturalWidth || img.width);
+              const ih = Math.max(1, img.naturalHeight || img.height);
+              const aspect = iw / ih;
+              const canvasArea = STORY_W * STORY_H;
+              const hardAreaMax = canvasArea * 0.25;
+              const targetArea = canvasArea * 0.18;
+              let w = Math.sqrt(targetArea * aspect);
+              let h = w / aspect;
+              const maxW = STORY_W * 0.48;
+              const maxH = STORY_H * 0.48;
+              const dimScale = Math.min(1, maxW / w, maxH / h);
+              w *= dimScale;
+              h *= dimScale;
+              const areaScale = Math.min(1, Math.sqrt(hardAreaMax / Math.max(1, w * h)));
+              w *= areaScale;
+              h *= areaScale;
+              const minPad = 28;
+              const candidates = [
+                { x: STORY_W * 0.24, y: STORY_H * 0.24, pref: 34 },
+                { x: STORY_W * 0.76, y: STORY_H * 0.24, pref: 36 },
+                { x: STORY_W * 0.23, y: STORY_H * 0.72, pref: 12 },
+                { x: STORY_W * 0.77, y: STORY_H * 0.72, pref: 10 },
+                { x: STORY_W * 0.5, y: STORY_H * 0.78, pref: 28 },
+                { x: STORY_W * 0.5, y: STORY_H * 0.25, pref: 48 }
+              ];
+              const stripRects = (Array.isArray(strips) ? strips : []).map((s) => ({
+                left: s.x - s.w / 2 - 18,
+                top: s.y - s.h / 2 - 18,
+                right: s.x + s.w / 2 + 18,
+                bottom: s.y + s.h / 2 + 18
+              }));
+              const overlapArea = (a, b) => {
+                const ow = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+                const oh = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+                return ow * oh;
+              };
+              let best = null;
+              let bestScore = Infinity;
+              for (const candidate of candidates) {
+                const x = Math.max(minPad + w / 2, Math.min(STORY_W - minPad - w / 2, candidate.x));
+                const y = Math.max(minPad + h / 2, Math.min(STORY_H - minPad - h / 2, candidate.y));
+                const rect = { left: x - w / 2, top: y - h / 2, right: x + w / 2, bottom: y + h / 2 };
+                const overlap = stripRects.reduce((sum, stripRect) => sum + overlapArea(rect, stripRect), 0);
+                const score = overlap * 4 + candidate.pref + Math.abs(x - STORY_W * 0.72) * 0.05;
+                if (score < bestScore) {
+                  bestScore = score;
+                  best = { x: rect.left, y: rect.top, width: w, height: h, angle: (rnd() - 0.5) * 0.07 };
+                }
+              }
+              return best;
+            };
+
+            const drawSpeakerOverlay = (g, img, rect, washColor) => {
+              if (!img || !rect || rect.width <= 0 || rect.height <= 0) return false;
+              let portrait = null;
+              try {
+                portrait = makeSpeakerSilhouetteCanvas(img, rect.width, rect.height);
+              } catch (_) {
+                return false;
+              }
+              if (!portrait) return false;
+              const wash = parseSpeakerWashRgb(washColor);
+              const grain = document.createElement('canvas');
+              grain.width = portrait.width;
+              grain.height = portrait.height;
+              const gx = grain.getContext('2d');
+              if (gx) {
+                gx.drawImage(portrait, 0, 0);
+                gx.globalCompositeOperation = 'source-in';
+                for (let i = 0; i < 950; i++) {
+                  gx.fillStyle = `rgba(34,27,20,${0.03 + rnd() * 0.08})`;
+                  const px = rnd() * grain.width;
+                  const py = rnd() * grain.height;
+                  const sz = 0.6 + rnd() * 2.4;
+                  gx.fillRect(px, py, sz, sz);
+                }
+              }
+              const washLayer = document.createElement('canvas');
+              washLayer.width = portrait.width;
+              washLayer.height = portrait.height;
+              const wx = washLayer.getContext('2d');
+              if (wx) {
+                const grad = wx.createRadialGradient(
+                  washLayer.width * 0.28,
+                  washLayer.height * 0.24,
+                  washLayer.width * 0.04,
+                  washLayer.width * 0.5,
+                  washLayer.height * 0.5,
+                  washLayer.width * 0.74
+                );
+                grad.addColorStop(0, `rgba(${wash.r}, ${wash.g}, ${wash.b}, 0.58)`);
+                grad.addColorStop(0.52, `rgba(${wash.r}, ${wash.g}, ${wash.b}, 0.38)`);
+                grad.addColorStop(1, 'rgba(255,244,218,0.12)');
+                wx.fillStyle = grad;
+                wx.fillRect(0, 0, washLayer.width, washLayer.height);
+                wx.globalCompositeOperation = 'destination-in';
+                wx.drawImage(portrait, 0, 0);
+              }
+              g.save();
+              g.translate(rect.x + rect.width / 2, rect.y + rect.height / 2);
+              g.rotate(rect.angle || 0);
+              g.globalCompositeOperation = 'source-over';
+              g.globalAlpha = 0.18;
+              g.shadowColor = 'rgba(255,250,236,0.5)';
+              g.shadowBlur = 7;
+              g.shadowOffsetX = -2;
+              g.shadowOffsetY = 3;
+              g.drawImage(portrait, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
+              g.shadowColor = 'transparent';
+              g.shadowBlur = 0;
+              g.shadowOffsetX = 0;
+              g.shadowOffsetY = 0;
+              g.globalCompositeOperation = 'multiply';
+              g.globalAlpha = 0.95;
+              g.drawImage(portrait, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
+              if (wx) {
+                g.globalCompositeOperation = 'source-over';
+                g.globalAlpha = 0.62;
+                g.drawImage(washLayer, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
+              }
+              if (gx) {
+                g.globalCompositeOperation = 'multiply';
+                g.globalAlpha = 0.2;
+                g.drawImage(grain, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
+              }
+              g.globalAlpha = 1;
+              g.globalCompositeOperation = 'source-over';
+              g.restore();
+              return true;
+            };
+
             loadQuiltImage()
-              .then((quiltImg) => {
+              .then(async (quiltImg) => {
                 const segmentQuoteForLayout = (text) => {
                   const raw = String(text ?? '');
                   /** Keep explicit line breaks (e.g. in Firestore) as separate strip groups; do not collapse \n into spaces first. */
@@ -17541,6 +17784,12 @@ try {
                   ctx.restore();
                 };
 
+                const speakerImgs = speakerOverlay?.imageUrl
+                  ? await loadSpeakerOverlayImages(speakerOverlay.imageUrl)
+                  : [];
+                const speakerRectForPlan = speakerImgs.length
+                  ? getSpeakerOverlayRect(speakerImgs[0], [])
+                  : null;
                 const quoteStripPlan = getLayoutBStoryQuotePlan(ctx, {
                   quoteText,
                   quoteAuthor,
@@ -17558,9 +17807,19 @@ try {
                     : null,
                   avoidRects: [
                     focusCanvasRect ? { ...focusCanvasRect, pad: 84 } : null,
+                    speakerRectForPlan ? { ...speakerRectForPlan, pad: 42 } : null,
                     dedicationBox ? { x: dedicationBox.x, y: dedicationBox.y, width: dedicationBox.width, height: dedicationBox.height, pad: 18 } : null
                   ].filter(Boolean)
                 });
+                let speakerDrawn = false;
+                for (const speakerImg of speakerImgs) {
+                  const speakerRect = speakerRectForPlan || getSpeakerOverlayRect(speakerImg, quoteStripPlan);
+                  speakerDrawn = drawSpeakerOverlay(ctx, speakerImg, speakerRect, speakerOverlay?.washColor);
+                  if (speakerDrawn) break;
+                }
+                if (speakerOverlay?.imageUrl && !speakerDrawn) {
+                  console.warn('Layout B speaker overlay skipped: image could not be drawn safely');
+                }
                 drawDedicatedBlockRing(ctx, focusCanvasRect);
                 for (const spec of quoteStripPlan) {
                   drawStripContent(spec, spec.x, spec.y, spec.angle);
@@ -18415,6 +18674,86 @@ try {
           });
         } catch (error) {
           this.logger.error('Instagram post layout B generation failed:', error);
+          return null;
+        }
+      }
+
+      /**
+       * Additional Instagram feed post variant: current Layout B plus speaker portrait between quilt and strips.
+       */
+      async generateInstagramPostLayoutBSpeakerImage(blocks, quoteObj = null, dateKey = null) {
+        try {
+          if (!blocks || blocks.length === 0) {
+            this.logger.warn('No blocks for post layout B speaker image');
+            return null;
+          }
+          const dk = dateKey || Utils.getTodayKey();
+          const q =
+            quoteObj ||
+            (typeof window !== 'undefined' && window.app?.quoteService?.getTodayQuote?.()) ||
+            { text: '', author: '' };
+          const speakerImageUrl = String(
+            q.speakerCutoutUrl ??
+            q.speaker_cutout_url ??
+            q.speakerCutoutUrlSnapshot ??
+            q.speakerImageUrl ??
+            q.speaker_image_url ??
+            q.speakerImageUrlSnapshot ??
+            q.speakerImage ??
+            q.speaker_image ??
+            ''
+          ).trim();
+          if (!speakerImageUrl) return null;
+
+          let highResBlob = null;
+          const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
+          if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
+            try {
+              highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks);
+            } catch (e) {
+              this.logger.warn('SVG raster failed, falling back to blocks for speaker layout B:', e);
+            }
+          } else if (quiltSVG) {
+            this.logger.warn('Live quilt SVG is not ready for layout B speaker post image; using block data');
+          }
+          if (!highResBlob) {
+            highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
+          }
+          if (!highResBlob) return null;
+
+          const quoteText = String(q.text ?? q.body ?? '').trim();
+          const quoteAuthor = String(q.author ?? '').trim();
+          const speakerName = String(q.speakerName ?? q.speaker_name ?? quoteAuthor).replace(/^\s*[—-]\s*/, '').trim();
+          const washColor = String(
+            (typeof window !== 'undefined' && window.app?.getMostPopularQuiltColor?.(blocks)?.color) ||
+            CONFIG.APP.defaultColor ||
+            '#ea9b9a'
+          ).trim();
+          const postBlob = await composeInstagramLayoutBFromQuiltBlob(
+            highResBlob,
+            quoteText,
+            quoteAuthor,
+            1080,
+            1350,
+            dk,
+            {
+              quiltFit: 'cover',
+              speakerOverlay: {
+                enabled: true,
+                imageUrl: speakerImageUrl,
+                name: speakerName,
+                washColor
+              }
+            }
+          );
+          return await new Promise((resolve) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(fr.result || null);
+            fr.onerror = () => resolve(null);
+            fr.readAsDataURL(postBlob);
+          });
+        } catch (error) {
+          this.logger.error('Instagram post layout B speaker generation failed:', error);
           return null;
         }
       }
@@ -19372,13 +19711,22 @@ try {
                       igDateKey
                     );
                   }
-                  if (instagramImage || postLayoutBImageData) {
+                  let postLayoutBSpeakerImageData = null;
+                  if (arch.generateInstagramPostLayoutBSpeakerImage) {
+                    postLayoutBSpeakerImageData = await arch.generateInstagramPostLayoutBSpeakerImage(
+                      igBlocks,
+                      todayQuote,
+                      igDateKey
+                    );
+                  }
+                  if (instagramImage || postLayoutBImageData || postLayoutBSpeakerImageData) {
                     if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
                       const igFingerprint = Utils.computeQuiltFingerprint(igBlocks);
                       await Utils.writeInstagramImagesDocForZapier({
                         dateKey: igDateKey,
                         instagramImage,
                         postLayoutBImageData,
+                        postLayoutBSpeakerImageData,
                         zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
                         quiltFingerprint: igFingerprint
                       });
@@ -28227,6 +28575,7 @@ try {
             <button data-admin-quilt-action="true" onclick="app.handleResetQuilt()">Reset Quilt</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handleRunAsFirstTimeUser()">Run as First-Time User</button>
             <button onclick="app.handleTestInstagramImage()">📸 Create IG post (Layout B 4:5)</button>
+            <button onclick="app.handleTestInstagramSpeakerImage()">📸 Create IG post (Layout B speaker)</button>
             <button onclick="app.handleTestInstagramStoryImage()">📱 Create IG story (Layout B 9:16)</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handleAdminSyntheticQuiltReel()">🎬 Synthetic reel: split build (WebM ~8s)</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handlePushInstagramAssetsToFirestore()">Push IG images to Firestore (Zapier)</button>
@@ -33385,6 +33734,103 @@ try {
         }
       }
 
+      // Test Instagram image: feed post 4:5 Layout B with speaker portrait overlay.
+      async handleTestInstagramSpeakerImage() {
+        try {
+          if (!this.quiltEngine.blocks || this.quiltEngine.blocks.length <= 1) {
+            return;
+          }
+
+          if (!this.archiveService.generateInstagramPostLayoutBSpeakerImage) {
+            this.logger.warn('Layout B speaker post generator not available');
+            return;
+          }
+
+          const todayKey = Utils.getTodayKey();
+          const quote =
+            (this.quoteService && typeof this.quoteService.getQuoteResolvedForInstagramDateKey === 'function'
+              ? await this.quoteService.getQuoteResolvedForInstagramDateKey(todayKey)
+              : this.quoteService?.getTodayQuote?.()) || null;
+          const speakerImageUrl = String(
+            quote?.speakerCutoutUrl ??
+            quote?.speaker_cutout_url ??
+            quote?.speakerCutoutUrlSnapshot ??
+            quote?.speakerImageUrl ??
+            quote?.speaker_image_url ??
+            quote?.speakerImageUrlSnapshot ??
+            ''
+          ).trim();
+          if (!speakerImageUrl) {
+            this.uiService.showToast("Today's quote has no speaker image");
+            this.logger.warn('Layout B speaker test skipped: no speaker image on today quote');
+            return;
+          }
+          let speakerImageForCanvas = speakerImageUrl;
+          if (/^https?:\/\//i.test(speakerImageUrl)) {
+            const baseUrl =
+              typeof CONFIG !== 'undefined' && CONFIG.BACKEND && CONFIG.BACKEND.baseUrl
+                ? String(CONFIG.BACKEND.baseUrl).replace(/\/$/, '')
+                : '';
+            if (!baseUrl) {
+              this.uiService.showToast('Speaker image needs backend proxy for canvas export');
+              this.logger.warn('Layout B speaker test skipped: CONFIG.BACKEND.baseUrl is not set');
+              return;
+            }
+            const proxyUrl = `${baseUrl}/api/proxy-image?url=${encodeURIComponent(speakerImageUrl)}`;
+            try {
+              const res = await fetch(proxyUrl, { cache: 'no-store' });
+              if (!res.ok) {
+                throw new Error(`Proxy returned ${res.status}`);
+              }
+              const blob = await res.blob();
+              if (!String(blob.type || '').startsWith('image/')) {
+                throw new Error(`Proxy returned ${blob.type || 'unknown content type'}`);
+              }
+              speakerImageForCanvas = await Utils.blobToDataUrl(blob);
+            } catch (proxyError) {
+              this.uiService.showToast('Speaker proxy is not live yet — deploy server.js first');
+              this.logger.warn('Layout B speaker test skipped: proxy image fetch failed', {
+                proxyUrl,
+                sourceUrl: speakerImageUrl,
+                error: proxyError?.message || proxyError
+              });
+              return;
+            }
+          }
+          const quoteForCanvas = {
+            ...quote,
+            speakerCutoutUrl: speakerImageForCanvas,
+            speaker_cutout_url: speakerImageForCanvas,
+            speakerCutoutUrlSnapshot: speakerImageForCanvas
+          };
+
+          const imageDataUrl = await this.archiveService.generateInstagramPostLayoutBSpeakerImage(
+            this.quiltEngine.blocks,
+            quoteForCanvas,
+            todayKey
+          );
+
+          if (imageDataUrl) {
+            const link = document.createElement('a');
+            link.href = imageDataUrl;
+            link.download = `instagram-layout-b-speaker-post-${todayKey}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            await this.saveQuilt();
+
+            this.uiService.showToast('Speaker image saved to your camera roll');
+            this.logger.log('✅ Instagram Layout B speaker post image generated and downloaded');
+          } else {
+            this.logger.warn('Failed to generate Layout B speaker post image');
+            this.uiService.showToast('Failed to generate speaker post image');
+          }
+        } catch (error) {
+          this.errorHandler.handleError(error, 'testInstagramSpeakerImage');
+        }
+      }
+
       // Test Instagram image: story 9:16 Layout B (downloads directly like post button)
       async handleTestInstagramStoryImage() {
         try {
@@ -33626,7 +34072,15 @@ try {
               today
             );
           }
-          if (!instagramImage && !postLayoutBImageData) {
+          let postLayoutBSpeakerImageData = null;
+          if (arch.generateInstagramPostLayoutBSpeakerImage) {
+            postLayoutBSpeakerImageData = await arch.generateInstagramPostLayoutBSpeakerImage(
+              blocks,
+              todayQuote,
+              today
+            );
+          }
+          if (!instagramImage && !postLayoutBImageData && !postLayoutBSpeakerImageData) {
             this.uiService.showToast('Failed to generate images');
             return;
           }
@@ -33649,6 +34103,7 @@ try {
             dateKey: today,
             instagramImage,
             postLayoutBImageData,
+            postLayoutBSpeakerImageData,
             zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
             quiltFingerprint,
             exportDebug,
@@ -33725,6 +34180,7 @@ try {
           const parts = [
             instagramImage ? 'classic' : null,
             postLayoutBImageData ? 'layout B' : null,
+            postLayoutBSpeakerImageData ? 'layout B speaker' : null,
             reelWebmBlob ? 'reel WebM' : null,
             transcodedMp4 ? 'reel MP4' : null
           ].filter(Boolean);
@@ -33741,6 +34197,7 @@ try {
             docPath: `instagram-images/${today}`,
             hasClassic: !!instagramImage,
             hasPostLayoutB: !!postLayoutBImageData,
+            hasPostLayoutBSpeaker: !!postLayoutBSpeakerImageData,
             hasReelWebm: !!reelWebmBlob,
             transcodedMp4,
             reelCaptureEnabled: zapierReelCaptureEnabled,
@@ -33748,6 +34205,7 @@ try {
             storage: {
               imageStorageUrl: !!docPayload.imageStorageUrl,
               postLayoutBImageStorageUrl: !!docPayload.postLayoutBImageStorageUrl,
+              postLayoutBSpeakerImageStorageUrl: !!docPayload.postLayoutBSpeakerImageStorageUrl,
               reelWebmStorageUrl: !!(docPayload.reelWebmStorageUrl || reelWebmBlob)
             }
           });

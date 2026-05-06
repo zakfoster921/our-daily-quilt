@@ -1669,7 +1669,10 @@ function hasLayoutBInRaw(raw) {
   return !!(
     raw.postLayoutBImageStorageUrl ||
     raw.layoutBUrl ||
-    raw.postLayoutBImageData
+    raw.postLayoutBSpeakerImageStorageUrl ||
+    raw.layoutBSpeakerUrl ||
+    raw.postLayoutBImageData ||
+    raw.postLayoutBSpeakerImageData
   );
 }
 
@@ -1924,7 +1927,12 @@ async function getTodayInstagramImage(options = {}) {
         postLayoutBImageStorageUrl:
           raw.postLayoutBImageStorageUrl || fb.postLayoutBImageStorageUrl,
         layoutBUrl: raw.layoutBUrl || fb.layoutBUrl,
-        postLayoutBImageData: raw.postLayoutBImageData || fb.postLayoutBImageData
+        postLayoutBSpeakerImageStorageUrl:
+          raw.postLayoutBSpeakerImageStorageUrl || fb.postLayoutBSpeakerImageStorageUrl,
+        layoutBSpeakerUrl: raw.layoutBSpeakerUrl || fb.layoutBSpeakerUrl,
+        postLayoutBImageData: raw.postLayoutBImageData || fb.postLayoutBImageData,
+        postLayoutBSpeakerImageData:
+          raw.postLayoutBSpeakerImageData || fb.postLayoutBSpeakerImageData
       };
       console.log(`📎 Merged layout B from ${fallbackKey} into ${primaryKey}`);
     }
@@ -1936,11 +1944,14 @@ async function getTodayInstagramImage(options = {}) {
     const storageClassicUrl = raw.imageStorageUrl || raw.classicUrl || null;
     const storageLayoutBUrl =
       raw.postLayoutBImageStorageUrl || raw.layoutBUrl || null;
+    const storageLayoutBSpeakerUrl =
+      raw.postLayoutBSpeakerImageStorageUrl || raw.layoutBSpeakerUrl || null;
     const storageReelWebmUrl = raw.reelWebmStorageUrl || raw.reelUrl || null;
     const storageReelMp4Url = raw.reelMp4StorageUrl || raw.reelMp4Url || null;
 
     let imageDataField = raw.imageData || null;
     let postLayoutBField = raw.postLayoutBImageData || null;
+    let postLayoutBSpeakerField = raw.postLayoutBSpeakerImageData || null;
 
     // Only fetch bytes when we do not already have a public URL for that slot.
     if (!imageDataField && !storageClassicUrl && raw.imageStorageUrl) {
@@ -1954,6 +1965,12 @@ async function getTodayInstagramImage(options = {}) {
     }
     if (!postLayoutBField && !storageLayoutBUrl && raw.layoutBUrl) {
       postLayoutBField = await fetchUrlAsImageDataString(raw.layoutBUrl);
+    }
+    if (!postLayoutBSpeakerField && !storageLayoutBSpeakerUrl && raw.postLayoutBSpeakerImageStorageUrl) {
+      postLayoutBSpeakerField = await fetchUrlAsImageDataString(raw.postLayoutBSpeakerImageStorageUrl);
+    }
+    if (!postLayoutBSpeakerField && !storageLayoutBSpeakerUrl && raw.layoutBSpeakerUrl) {
+      postLayoutBSpeakerField = await fetchUrlAsImageDataString(raw.layoutBSpeakerUrl);
     }
     if (!imageDataField && !storageClassicUrl) {
       throw new Error(`Instagram doc for ${dateUsed} has no imageData or imageStorageUrl`);
@@ -2016,8 +2033,10 @@ async function getTodayInstagramImage(options = {}) {
     return {
       imageData: imageDataField,
       postLayoutBImageData: postLayoutBField || null,
+      postLayoutBSpeakerImageData: postLayoutBSpeakerField || null,
       storageClassicUrl,
       storageLayoutBUrl,
+      storageLayoutBSpeakerUrl,
       storageReelWebmUrl,
       storageReelMp4Url,
       quote: quote,
@@ -2050,6 +2069,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     // Prefer Firebase Storage URLs from Firestore (reliable for Zapier). Fall back to proxying via /api/image.
     let imageUrl = '';
     let postLayoutBImageUrl = '';
+    let postLayoutBSpeakerImageUrl = '';
 
     if (imageData.storageClassicUrl) {
       imageUrl = imageData.storageClassicUrl;
@@ -2067,7 +2087,16 @@ app.post('/api/generate-instagram', async (req, res) => {
       postLayoutBImageUrl = `${baseUrl}/api/image/${postLayoutBFilename}`;
     }
 
+    if (imageData.storageLayoutBSpeakerUrl) {
+      postLayoutBSpeakerImageUrl = imageData.storageLayoutBSpeakerUrl;
+    } else if (imageData.postLayoutBSpeakerImageData) {
+      const postLayoutBSpeakerFilename = `instagram-post-layout-b-speaker-${timestamp}.png`;
+      imageStore.set(postLayoutBSpeakerFilename, imageData.postLayoutBSpeakerImageData);
+      postLayoutBSpeakerImageUrl = `${baseUrl}/api/image/${postLayoutBSpeakerFilename}`;
+    }
+
     const hasLayoutB = !!postLayoutBImageUrl;
+    const hasLayoutBSpeaker = !!postLayoutBSpeakerImageUrl;
     const reelWebmUrl = imageData.storageReelWebmUrl || '';
     const reelMp4Url = imageData.storageReelMp4Url || '';
     /** Instagram Reels accept MP4 (H.264); WebM is a fallback until /api/transcode-instagram-reel runs. */
@@ -2075,10 +2104,14 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-13-ig-caption-alias';
+    const apiVersion = 'instagram-api-14-layout-b-speaker';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
-    const imageUrls = hasLayoutB ? [imageUrl, postLayoutBImageUrl] : [imageUrl];
+    const imageUrls = [
+      imageUrl,
+      hasLayoutB ? postLayoutBImageUrl : '',
+      hasLayoutBSpeaker ? postLayoutBSpeakerImageUrl : ''
+    ].filter(Boolean);
     const mediaUrls = [...imageUrls];
     if (reelVideoUrl) mediaUrls.push(reelVideoUrl);
     const result = {
@@ -2086,8 +2119,10 @@ app.post('/api/generate-instagram', async (req, res) => {
       success: true,
       imageUrl,
       postLayoutBImageUrl: postLayoutBImageUrl || '',
+      postLayoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
       classicImageUrl: imageUrl,
       layoutBImageUrl: postLayoutBImageUrl || '',
+      layoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
       imageUrls,
       reelWebmUrl,
       reelMp4Url,
@@ -2103,13 +2138,16 @@ app.post('/api/generate-instagram', async (req, res) => {
       date: imageData.date,
       captionLength: imageData.quote.length,
       hasPostLayoutB: hasLayoutB,
+      hasPostLayoutBSpeaker: hasLayoutBSpeaker,
       note:
-        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. reelVideoUrl = IG-ready MP4 when present, else WebM. After pushing assets, the app calls POST /api/transcode-instagram-reel to produce reelMp4Url.'
+        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. postLayoutBSpeakerImageUrl/layoutBSpeakerImageUrl = layout B with speaker portrait. reelVideoUrl = IG-ready MP4 when present, else WebM. After pushing assets, the app calls POST /api/transcode-instagram-reel to produce reelMp4Url.'
     };
     
     console.log(
       '✅ Instagram assets from Firestore:',
-      hasLayoutB ? 'classic + layout B URLs' : 'classic URL only',
+      hasLayoutB || hasLayoutBSpeaker
+        ? `classic${hasLayoutB ? ' + layout B' : ''}${hasLayoutBSpeaker ? ' + layout B speaker' : ''} URLs`
+        : 'classic URL only',
       hasReelWebm || hasReelMp4 ? `+ reel (${hasReelMp4 ? 'MP4' : 'WebM only'})` : ''
     );
     res.json(result);
@@ -2147,6 +2185,41 @@ app.get('/api/image/:filename', (req, res) => {
   res.setHeader('Content-Type', mime);
   res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
   res.send(buffer);
+});
+
+// CORS-safe image proxy for canvas exports that need to read/process remote speaker portraits.
+app.get('/api/proxy-image', async (req, res) => {
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    const rawUrl = String(req.query?.url || '').trim();
+    if (!rawUrl) {
+      return res.status(400).json({ error: 'Missing url' });
+    }
+    const parsed = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return res.status(400).json({ error: 'Only http(s) image URLs are supported' });
+    }
+    const upstream = await fetch(parsed.toString(), {
+      headers: {
+        'User-Agent': 'OurDailyQuiltImageProxy/1.0'
+      }
+    });
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: `Image fetch failed (${upstream.status})` });
+    }
+    const contentType = (upstream.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+    if (!contentType.startsWith('image/')) {
+      return res.status(415).json({ error: `Unsupported content type: ${contentType}` });
+    }
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(buf);
+  } catch (error) {
+    console.warn('proxy-image failed:', error.message);
+    res.status(500).json({ error: 'Image proxy failed' });
+  }
 });
 
 // Clean up old images (keep only last 10)
