@@ -1759,7 +1759,7 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey()) {
 
   for (let i = 0; i < recipients.length; i += 500) {
     const chunk = recipients.slice(i, i + 500);
-    const response = await admin.messaging().sendMulticast({
+    const message = {
       tokens: chunk.map((r) => r.token),
       notification: {
         title: 'Today’s Our Daily quote is ready',
@@ -1776,7 +1776,11 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey()) {
           }
         }
       }
-    });
+    };
+    const messaging = admin.messaging();
+    const response = typeof messaging.sendEachForMulticast === 'function'
+      ? await messaging.sendEachForMulticast(message)
+      : await messaging.sendMulticast(message);
 
     sent += response.successCount || 0;
     failed += response.failureCount || 0;
