@@ -1,0 +1,79 @@
+name: Speaker Cutouts
+
+on:
+  workflow_dispatch:
+    inputs:
+      author:
+        description: "Optional author filter, e.g. kusama"
+        required: false
+        default: ""
+      doc:
+        description: "Optional Firestore quote doc id"
+        required: false
+        default: ""
+      limit:
+        description: "Max speakers to process"
+        required: false
+        default: "1"
+      force:
+        description: "Regenerate existing cutouts"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Preview matches without calling remove.bg"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Install dependencies (skip native builds)
+        run: npm ci --ignore-scripts
+
+      - name: Validate required secrets
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" ]; then
+            echo "Missing required secret: GOOGLE_APPLICATION_CREDENTIALS_JSON"
+            exit 1
+          fi
+          if [ "${DRY_RUN}" != "true" ] && [ -z "${REMOVE_BG_API_KEY:-}" ]; then
+            echo "Missing required secret for non-dry run: REMOVE_BG_API_KEY"
+            exit 1
+          fi
+
+      - name: Process speaker cutouts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
+          AUTHOR: ${{ inputs.author }}
+          DOC_ID: ${{ inputs.doc }}
+          LIMIT: ${{ inputs.limit }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          cmd=(node scripts/process-speaker-cutouts.cjs)
+          if [ "${DRY_RUN}" = "true" ]; then cmd+=(--dry-run); fi
+          if [ "${FORCE}" = "true" ]; then cmd+=(--force); fi
+          if [ -n "${AUTHOR:-}" ]; then cmd+=("--author=${AUTHOR}"); fi
+          if [ -n "${DOC_ID:-}" ]; then cmd+=("--doc=${DOC_ID}"); fi
+          if [ -n "${LIMIT:-}" ]; then cmd+=("--limit=${LIMIT}"); fi
+          "${cmd[@]}"
