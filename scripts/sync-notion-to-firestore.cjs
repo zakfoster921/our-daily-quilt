@@ -218,6 +218,24 @@ function getMappedText(props, base, ...directKeys) {
   return textFromAnyNotionProp(findPropByBaseName(props, base));
 }
 
+function urlFromNotionProp(prop) {
+  if (!prop) return '';
+  if (prop.type === 'url' && prop.url) return String(prop.url).trim();
+  if (prop.type === 'files' && Array.isArray(prop.files)) {
+    const first = prop.files.find((file) => file?.external?.url || file?.file?.url);
+    if (first) return String(first.external?.url || first.file?.url || '').trim();
+  }
+  return textFromAnyNotionProp(prop);
+}
+
+function getMappedUrl(props, base, ...directKeys) {
+  for (const k of directKeys) {
+    const u = urlFromNotionProp(props[k]);
+    if (u) return u.trim();
+  }
+  return urlFromNotionProp(findPropByBaseName(props, base));
+}
+
 function parseNotionRow(page) {
   const props = page?.properties || {};
   const text =
@@ -240,6 +258,48 @@ function parseNotionRow(page) {
   const mood = getMappedText(props, 'mood', 'mood', 'Mood');
   const fortune = getMappedText(props, 'fortune', 'fortune', 'Fortune');
   const blessing = findBlessingFromProps(props);
+  const speakerImageUrl = getMappedUrl(
+    props,
+    'speaker_image_url',
+    'speaker_image_url',
+    'speakerImageUrl',
+    'Speaker image URL',
+    'Speaker Image URL',
+    'speaker_image',
+    'Speaker image',
+    'Speaker Image',
+    'portrait_url',
+    'Portrait URL',
+    'portrait',
+    'Portrait',
+    'image_url',
+    'Image URL',
+    'image',
+    'Image'
+  );
+  const speakerDates = getMappedText(
+    props,
+    'speaker_dates',
+    'speaker_dates',
+    'speakerDates',
+    'Speaker dates',
+    'Speaker Dates'
+  );
+  const speakerBorn = getMappedText(props, 'speaker_born', 'speaker_born', 'speakerBorn', 'Speaker born', 'Speaker Born', 'born', 'Born');
+  const speakerDied = getMappedText(props, 'speaker_died', 'speaker_died', 'speakerDied', 'Speaker died', 'Speaker Died', 'died', 'Died');
+  const speakerGuideLine = getMappedText(
+    props,
+    'speaker_guide_line',
+    'speaker_guide_line',
+    'speakerGuideLine',
+    'Guide line',
+    'Guide Line',
+    'Why this guide',
+    'Why good guide',
+    'Why good for reflection',
+    'why_good_guide',
+    'why_good_for_reflection'
+  );
   const submittedBy = getMappedText(
     props,
     'submitted_by',
@@ -297,6 +357,16 @@ function parseNotionRow(page) {
       mood,
       fortune,
       blessing,
+      speakerImageUrl,
+      speaker_image_url: speakerImageUrl,
+      speakerDates,
+      speaker_dates: speakerDates,
+      speakerBorn,
+      speaker_born: speakerBorn,
+      speakerDied,
+      speaker_died: speakerDied,
+      speakerGuideLine,
+      speaker_guide_line: speakerGuideLine,
       submittedBy,
       submitted_by: submittedBy,
       notificationTitle,
