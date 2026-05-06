@@ -130,60 +130,85 @@ function isDateKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 }
 
+function assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp) {
+  return {
+    speakerCutoutUrlSnapshot: cutoutUrl,
+    speaker_cutout_url_snapshot: cutoutUrl,
+    speakerCutoutSourceUrlSnapshot: imageUrl,
+    speaker_cutout_source_url_snapshot: imageUrl,
+    speakerCutoutUpdatedAt: timestamp,
+    speaker_cutout_updated_at: timestamp
+  };
+}
+
+function dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp) {
+  return {
+    speakerCutoutUrl: cutoutUrl,
+    speaker_cutout_url: cutoutUrl,
+    speakerCutoutSourceUrl: imageUrl,
+    speaker_cutout_source_url: imageUrl,
+    speakerCutoutUpdatedAt: timestamp,
+    speaker_cutout_updated_at: timestamp
+  };
+}
+
 async function patchDerivedQuoteDocs(db, quotesCollection, sourceIds, sourceData, cutoutUrl, imageUrl) {
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
   const timestamp = admin.firestore.FieldValue.serverTimestamp();
+  const author = String(sourceData.author || '').trim();
+  const patchedRefs = new Set();
   let writes = 0;
+
+  async function patchRef(ref, payload) {
+    const key = ref.path;
+    if (patchedRefs.has(key)) return;
+    patchedRefs.add(key);
+    await ref.set(payload, { merge: true });
+    writes += 1;
+  }
 
   for (const sourceId of sourceIds) {
     const assignmentSnap = await db.collection(assignmentsCollection).where('sourceId', '==', sourceId).get();
     for (const docSnap of assignmentSnap.docs) {
-      await docSnap.ref.set(
-        {
-          speakerCutoutUrlSnapshot: cutoutUrl,
-          speaker_cutout_url_snapshot: cutoutUrl,
-          speakerCutoutSourceUrlSnapshot: imageUrl,
-          speaker_cutout_source_url_snapshot: imageUrl,
-          speakerCutoutUpdatedAt: timestamp,
-          speaker_cutout_updated_at: timestamp
-        },
-        { merge: true }
-      );
-      writes += 1;
+      await patchRef(docSnap.ref, assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp));
     }
 
     const dailyQuoteSnap = await db.collection(quotesCollection).where('sourceId', '==', sourceId).get();
     for (const docSnap of dailyQuoteSnap.docs) {
       if (!isDateKey(docSnap.id)) continue;
-      await docSnap.ref.set(
-        {
-          speakerCutoutUrl: cutoutUrl,
-          speaker_cutout_url: cutoutUrl,
-          speakerCutoutSourceUrl: imageUrl,
-          speaker_cutout_source_url: imageUrl,
-          speakerCutoutUpdatedAt: timestamp,
-          speaker_cutout_updated_at: timestamp
-        },
-        { merge: true }
-      );
-      writes += 1;
+      await patchRef(docSnap.ref, dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp));
+    }
+  }
+
+  if (author) {
+    const assignmentByAuthorSnap = await db.collection(assignmentsCollection).where('authorSnapshot', '==', author).get();
+    for (const docSnap of assignmentByAuthorSnap.docs) {
+      await patchRef(docSnap.ref, assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp));
+    }
+
+    const dailyQuoteByAuthorSnap = await db.collection(quotesCollection).where('author', '==', author).get();
+    for (const docSnap of dailyQuoteByAuthorSnap.docs) {
+      if (!isDateKey(docSnap.id)) continue;
+      await patchRef(docSnap.ref, dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp));
+    }
+  }
+
+  if (imageUrl) {
+    const assignmentByImageSnap = await db
+      .collection(assignmentsCollection)
+      .where('speakerImageUrlSnapshot', '==', imageUrl)
+      .get();
+    for (const docSnap of assignmentByImageSnap.docs) {
+      await patchRef(docSnap.ref, assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp));
     }
   }
 
   const scheduledDate = String(sourceData.dateScheduled || sourceData.date_scheduled || '').trim();
   if (isDateKey(scheduledDate)) {
-    await db.collection(quotesCollection).doc(scheduledDate).set(
-      {
-        speakerCutoutUrl: cutoutUrl,
-        speaker_cutout_url: cutoutUrl,
-        speakerCutoutSourceUrl: imageUrl,
-        speaker_cutout_source_url: imageUrl,
-        speakerCutoutUpdatedAt: timestamp,
-        speaker_cutout_updated_at: timestamp
-      },
-      { merge: true }
+    await patchRef(
+      db.collection(quotesCollection).doc(scheduledDate),
+      dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp)
     );
-    writes += 1;
   }
 
   return writes;
