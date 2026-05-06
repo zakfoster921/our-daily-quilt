@@ -113,7 +113,7 @@ function resolveFirebaseStorageBucket(serviceAccount) {
     process.env.FIREBASE_PROJECT_ID ||
     null;
   if (pid && pid !== 'your-project-id') {
-    return `${pid}.appspot.com`;
+    return `${pid}.firebasestorage.app`;
   }
   return undefined;
 }
