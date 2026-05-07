@@ -1156,72 +1156,24 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'Private responses:',
     responseList,
     '',
-    'You are synthesizing written responses from a community into a short list of helpful ideas.',
-    'Your job:',
-    '- Combine similar responses into single ideas',
-    '- Let the list expand as good unique responses come in, up to 10 ideas',
-    '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
-    '- Keep as much of the original language intact as possible while staying under 45 characters',
-    '- Preserve the most poetic, specific, or human words from the originals',
-    '- Shorten only as much as needed for length and privacy',
-    '- Remove personal pronouns where possible',
-    '- Where a pronoun is needed, use "you" — never "I" or "we"',
-    '- Keep each item to 45 characters or fewer',
-    '- Do not end items with periods',
-    '- Avoid clinical or self-help language',
-    '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
-    'Examples:',
-    '- Watch process, not finished work',
-    '- Call it a life, not a practice',
-    '- Just keep showing up',
-    'Hard rules:',
-    '- Prefer short phrase-style ideas over full sentences',
-    '- Do not use "I", "my", "me", "we", "our", or "us" in any item',
-    '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
-    '- Do not write observations about what people are doing; turn them into small ideas someone could borrow',
-    '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
-    'Return only JSON in this shape: {"themes":["helpful idea","helpful idea"]}'
-  ].filter(Boolean).join('\n');
-}
-
-function buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
-  const responseList = responses
-    .map((text, index) => `${index + 1}. ${String(text || '').replace(/\s+/g, ' ').trim()}`)
-    .join('\n');
-  return [
-    `Date key: ${dateKey}`,
-    reflectionPrompt ? `Reflection prompt: ${reflectionPrompt}` : '',
-    'Private responses:',
-    responseList,
+    'These are not craft suggestions. They are reports of how people use making to think. Your job is to name the thinking move, not the craft.',
     '',
-    'You are synthesizing written responses from a community into a short list of helpful ideas.',
-    'Your job:',
-    '- Combine similar responses into single ideas',
-    '- Let the list expand as good unique responses come in, up to 10 ideas',
-    '- If responses cluster around one topic, separate genuinely different practical angles instead of collapsing everything into one item',
-    '- Keep as much of the original language intact as possible while staying under 45 characters',
-    '- Preserve the most poetic, specific, or human words from the originals',
-    '- Shorten only as much as needed for length and privacy',
-    '- Remove personal pronouns where possible',
-    '- Where a pronoun is needed, use "you" — never "I" or "we"',
-    '- Keep each item to 45 characters or fewer',
-    '- Do not end items with periods',
-    '- Avoid clinical or self-help language',
-    '- The tone should feel like a wise friend distilling what they heard, not a therapist summarizing a session',
-    'Examples:',
-    '- Watch process, not finished work',
-    '- Call it a life, not a practice',
-    '- Just keep showing up',
-    'Hard rules:',
-    '- Prefer short phrase-style ideas over full sentences',
-    '- Do not use "I", "my", "me", "we", "our", or "us" in any item',
-    '- Do not start any item with "Many", "Some", "A few", "There is", or "There’s"',
-    '- Do not write observations about what people are doing; turn them into small ideas someone could borrow',
-    '- Do not use words like belonging, integrated, thread, fabric, existence, resilience, validation, or commitments',
+    'Before writing any idea, ask yourself:',
+    '- What is the person actually DOING (not what did they make)?',
+    '- What does that action DO for them (not what did they learn)?',
+    '- Can someone borrow this move without copying the exact example?',
+    '',
+    'Bad: "Build something with your hands"  ← still an example',
+    'Good: "Make something when words aren\'t working"  ← transferable move',
+    '',
+    'Bad: "Journal your thoughts"  ← generic self-help',
+    'Good: "Write to find out what you actually think"  ← specific mechanism',
+    '',
+    '- Never use generic maker verbs (build, make, create, write, draw) as the main point — they describe the example, not the principle. If you must use them, they should serve the idea, not BE the idea.',
+    '',
     'Return plain text only with one labeled idea per line:',
     'IDEA 1: <helpful idea>',
     'IDEA 2: <helpful idea>',
-    'IDEA 3: <helpful idea>',
     'Continue only for genuinely distinct ideas.',
     'Do not use markdown, JSON, bullets, headings, or any extra text.'
   ].filter(Boolean).join('\n');
@@ -1256,7 +1208,7 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
   const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured on server');
   const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-  const prompt = buildGeminiReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
+  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
 
   const firstText = await postReflectionThemesToGemini({ apiKey, model, prompt });
   let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
@@ -1268,10 +1220,10 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       '',
       `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
       'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
-      'If the responses share one broad topic, separate genuinely different phrase-style ideas someone could borrow.',
-      'Do not collapse multiple distinct responses into one broad summary.',
-      'Keep as much of the original language intact as possible while staying under 45 characters.',
-      'Remove personal pronouns where possible. If a pronoun is needed, use "you"; never use "I" or "we".',
+      'Name the thinking move, not the craft.',
+      'Group responses that share the same move people are making, even if the examples differ.',
+      'Make each idea transferable without copying the exact example.',
+      'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
       'Every idea must be 45 characters or fewer.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
@@ -1290,12 +1242,7 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
   return { themes, model, provider: 'gemini' };
 }
 
-async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
-  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
-  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest').trim();
-  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
-
+async function postReflectionThemesToClaude({ apiKey, model, prompt }) {
   const result = await postJsonWithHttps({
     hostname: 'api.anthropic.com',
     path: '/v1/messages',
@@ -1310,23 +1257,58 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
       messages: [{ role: 'user', content: prompt }]
     }
   });
-  const text = (result?.content || [])
+  return (result?.content || [])
     .map((part) => part?.type === 'text' ? part.text : '')
     .join('\n')
     .trim();
-  const themes = completeReflectionThemes(extractReflectionThemesFromText(text));
-  if (!themes.length) throw new Error('Claude returned no usable community ideas');
+}
+
+async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest').trim();
+  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
+
+  const firstText = await postReflectionThemesToClaude({ apiKey, model, prompt });
+  let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
+  const shouldRetryForMoreIdeas = responses.length >= 3 && themes.length < 2;
+  if (!themes.length || shouldRetryForMoreIdeas) {
+    console.warn(`Claude returned ${themes.length} usable community ideas on first attempt; retrying for better range.`);
+    const repairPrompt = [
+      prompt,
+      '',
+      `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
+      'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
+      'Name the thinking move, not the craft.',
+      'Group responses that share the same move people are making, even if the examples differ.',
+      'Make each idea transferable without copying the exact example.',
+      'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
+      'Every idea must be 45 characters or fewer.',
+      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
+    ].join('\n');
+    const repairText = await postReflectionThemesToClaude({ apiKey, model, prompt: repairPrompt });
+    themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
+    if (!themes.length) {
+      const preview = String(repairText || firstText || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 600);
+      const error = new Error(`Claude returned no usable community ideas. Raw output preview: ${preview || '[empty]'}`);
+      error.claudeOutputPreview = preview;
+      throw error;
+    }
+  }
   return { themes, model, provider: 'anthropic' };
 }
 
 async function generateReflectionThemesWithAi({ dateKey, reflectionPrompt, responses }) {
-  if (String(process.env.GEMINI_API_KEY || '').trim()) {
-    return generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses });
-  }
   if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
     return generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses });
   }
-  throw new Error('GEMINI_API_KEY or ANTHROPIC_API_KEY must be configured on server');
+  if (String(process.env.GEMINI_API_KEY || '').trim()) {
+    return generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses });
+  }
+  throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
 }
 
 function normalizeSubmittedAuthorName(value) {
@@ -2480,6 +2462,7 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
       found: true,
       appDateKey,
       themes,
+      reflectionPrompt: String(data.reflectionPrompt || data.communityPrompt || '').trim(),
       responseCount: Number(data.responseCount) || 0,
       provider: data.provider || null,
       model: data.model || null,
@@ -2569,6 +2552,7 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
     await db.collection('reflectionThemes').doc(appDateKey).set({
       appDateKey,
       themes,
+      reflectionPrompt,
       responseCount: responses.length,
       model,
       provider,
@@ -2577,7 +2561,7 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       generatedAtIso: getUtcIsoNow()
     }, { merge: true });
 
-    return res.json({ success: true, appDateKey, themes, responseCount: responses.length, model, provider });
+    return res.json({ success: true, appDateKey, themes, reflectionPrompt, responseCount: responses.length, model, provider });
   } catch (error) {
     console.error('❌ Reflection theme generation failed:', error);
     return res.status(500).json({
