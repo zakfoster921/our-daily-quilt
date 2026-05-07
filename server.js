@@ -1073,7 +1073,11 @@ function postJsonWithHttps({ hostname, path: requestPath, headers, body }) {
           parsed = null;
         }
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          const error = new Error(parsed?.error?.message || parsed?.error || `HTTPS request failed (${res.statusCode})`);
+          const parsedError = parsed?.error || parsed;
+          const errorMessage = typeof parsedError === 'string'
+            ? parsedError
+            : parsedError?.message || JSON.stringify(parsedError || responseBody || `HTTPS request failed (${res.statusCode})`);
+          const error = new Error(errorMessage);
           error.statusCode = res.statusCode;
           error.responseBody = responseBody;
           reject(error);
@@ -1266,7 +1270,7 @@ async function postReflectionThemesToClaude({ apiKey, model, prompt }) {
 async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
   const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
-  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022').trim();
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307').trim();
   const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
 
   const firstText = await postReflectionThemesToClaude({ apiKey, model, prompt });
