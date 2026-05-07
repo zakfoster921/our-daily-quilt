@@ -6009,14 +6009,11 @@ try {
       overflow: visible;
       border-radius: 0;
       background:
-        radial-gradient(ellipse at 50% 58%, rgba(255, 249, 235, 0.64) 0 38%, transparent 66%),
-        radial-gradient(circle at 24% 18%, var(--speaker-wash-color-strong, rgba(234, 155, 154, 0.46)) 0 21%, transparent 48%),
-        radial-gradient(circle at 76% 32%, var(--speaker-wash-color-soft, rgba(234, 155, 154, 0.36)) 0 19%, transparent 45%),
-        radial-gradient(circle at 52% 76%, var(--speaker-wash-color-medium, rgba(234, 155, 154, 0.42)) 0 24%, transparent 58%),
-        linear-gradient(132deg, var(--speaker-wash-color-faint, rgba(234, 155, 154, 0.28)), rgba(255, 250, 236, 0.18)),
+        linear-gradient(132deg, rgba(255, 250, 236, 0.42), rgba(255, 250, 236, 0.12) 54%, rgba(58, 45, 34, 0.035)),
         radial-gradient(ellipse at 48% 54%, rgba(58, 45, 34, 0.06) 0 42%, transparent 68%);
       border: 0;
       box-shadow: none;
+      filter: drop-shadow(3px 10px 10px rgba(45, 34, 22, 0.12));
       isolation: isolate;
       margin-bottom: 8px;
       transform: rotate(-0.8deg);
@@ -6038,8 +6035,9 @@ try {
       inset: 0;
       z-index: 1;
       background-image: var(--speaker-image-url, none);
-      background-size: cover;
-      background-position: center;
+      background-size: 100% auto;
+      background-position: top center;
+      background-repeat: no-repeat;
       filter:
         grayscale(1)
         contrast(1.48)
@@ -6051,24 +6049,24 @@ try {
     }
 
     #screen-quilt .quote-speaker-image-wrap::after {
-      inset: 1%;
+      inset: 0;
       z-index: 2;
       background:
-        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.28) 0 8%, transparent 28%),
-        radial-gradient(circle at 25% 22%, var(--speaker-wash-color, #ea9b9a) 0 19%, transparent 45%),
-        radial-gradient(circle at 74% 30%, var(--speaker-wash-color, #ea9b9a) 0 18%, transparent 43%),
-        radial-gradient(circle at 48% 76%, var(--speaker-wash-color, #ea9b9a) 0 25%, transparent 56%),
-        linear-gradient(128deg, var(--speaker-wash-color, #ea9b9a), rgba(255, 244, 218, 0.22) 58%, transparent);
+        radial-gradient(circle at 19% 17%, rgba(255, 255, 255, 0.24) 0 7%, transparent 25%),
+        radial-gradient(circle at 73% 28%, var(--speaker-wash-color-soft, rgba(234, 155, 154, 0.36)) 0 16%, transparent 42%),
+        linear-gradient(126deg, var(--speaker-wash-color-strong, rgba(234, 155, 154, 0.46)), var(--speaker-wash-color-medium, rgba(234, 155, 154, 0.42)) 55%, rgba(255, 244, 218, 0.2));
       -webkit-mask-image: var(--speaker-image-url, none);
       mask-image: var(--speaker-image-url, none);
-      -webkit-mask-size: cover;
-      mask-size: cover;
-      -webkit-mask-position: center;
-      mask-position: center;
+      -webkit-mask-size: 100% auto;
+      mask-size: 100% auto;
+      -webkit-mask-position: top center;
+      mask-position: top center;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
       mix-blend-mode: multiply;
-      opacity: 0.52;
-      filter: blur(0.25px) saturate(1.12) contrast(1.22);
-      transform: translate(-1.5%, 1%) rotate(-1.1deg) scale(1.025);
+      opacity: 0.6;
+      filter: blur(0.12px) saturate(1.16) contrast(1.18);
+      transform: translate(-1.7%, 1.4%) rotate(-0.55deg) scale(1.012);
     }
 
     #screen-quilt .quote-speaker-image-wrap .quote-speaker-xerox-grain {
@@ -6079,10 +6077,12 @@ try {
         repeating-linear-gradient(92deg, rgba(35, 27, 20, 0.08) 0 1px, transparent 1px 7px);
       -webkit-mask-image: var(--speaker-image-url, none);
       mask-image: var(--speaker-image-url, none);
-      -webkit-mask-size: cover;
-      mask-size: cover;
-      -webkit-mask-position: center;
-      mask-position: center;
+      -webkit-mask-size: 100% auto;
+      mask-size: 100% auto;
+      -webkit-mask-position: top center;
+      mask-position: top center;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
       mix-blend-mode: multiply;
       opacity: 0.18;
       transform: translate(0.6%, -0.4%) rotate(0.35deg);
@@ -17662,11 +17662,11 @@ try {
               if (!g) return null;
               const iw = Math.max(1, img.naturalWidth || img.width);
               const ih = Math.max(1, img.naturalHeight || img.height);
-              const scale = Math.max(c.width / iw, c.height / ih);
+              const scale = c.width / iw;
               const dw = iw * scale;
               const dh = ih * scale;
               const dx = (c.width - dw) / 2;
-              const dy = (c.height - dh) / 2;
+              const dy = 0;
               g.imageSmoothingEnabled = true;
               g.imageSmoothingQuality = 'high';
               g.drawImage(img, dx, dy, dw, dh);
@@ -25606,6 +25606,12 @@ try {
         return `${first}${last}`.toUpperCase();
       }
 
+      formatQuoteSpeakerImageAttribution(attribution) {
+        const value = String(attribution || '').trim();
+        if (!value) return '';
+        return /^image\s*:/i.test(value) ? value : `Image: ${value}`;
+      }
+
       refreshQuoteSpeakerWidget(quote = null) {
         const widget = document.getElementById('quoteSpeakerWidget');
         if (!widget) return;
@@ -25645,8 +25651,9 @@ try {
           guideEl.hidden = !profile.guideLine;
         }
         if (attributionEl) {
-          attributionEl.textContent = profile.imageAttribution;
-          attributionEl.hidden = !profile.imageAttribution;
+          const imageAttribution = this.formatQuoteSpeakerImageAttribution(profile.imageAttribution);
+          attributionEl.textContent = imageAttribution;
+          attributionEl.hidden = !imageAttribution;
         }
         const imageToken = `${profile.name}:${profile.imageUrl}`;
         this._quoteSpeakerImageToken = imageToken;
