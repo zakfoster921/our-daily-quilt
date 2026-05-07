@@ -1140,11 +1140,6 @@ function completeReflectionThemes(themes) {
   return (Array.isArray(themes) ? themes : [])
     .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
     .map((theme) => theme.replace(/\.+$/g, '').trim())
-    .map((theme) => {
-      if (theme.length <= 45) return theme;
-      const shortened = theme.slice(0, 45).replace(/\s+\S*$/, '').trim();
-      return (shortened || theme.slice(0, 45)).replace(/[,\-:;([]+$/g, '').trim();
-    })
     .filter(Boolean)
     .filter((theme) => {
       const key = theme.toLowerCase();
@@ -1169,6 +1164,11 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'Test before writing each idea: which response does this come from? If you can\'t answer, discard it.',
     '',
     'These are not craft suggestions. They are reports of how people use making to think. Your job is to name the thinking move, not the craft.',
+    '',
+    'Group responses that share the same move people are making, even if the examples differ.',
+    'Two ideas are the same move if removing one loses nothing. If in doubt, merge.',
+    'Merging test: "Make something physical" and "Do something with your hands" are the same — merge them. "Repetitive motion quiets noise" and "make without a plan" are different — keep them separate.',
+    'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
     '',
     'Before writing any idea, ask yourself:',
     '- What is the person actually DOING (not what did they make)?',
@@ -1234,6 +1234,9 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
       'Name the thinking move, not the craft.',
       'Group responses that share the same move people are making, even if the examples differ.',
+      'Two ideas are the same move if removing one loses nothing. If in doubt, merge.',
+      'Merging test: "Make something physical" and "Do something with your hands" are the same — merge them. "Repetitive motion quiets noise" and "make without a plan" are different — keep them separate.',
+      'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
       'Make each idea transferable without copying the exact example.',
       'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
       'Every idea must be 45 characters or fewer.',
@@ -1293,6 +1296,9 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
       'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
       'Name the thinking move, not the craft.',
       'Group responses that share the same move people are making, even if the examples differ.',
+      'Two ideas are the same move if removing one loses nothing. If in doubt, merge.',
+      'Merging test: "Make something physical" and "Do something with your hands" are the same — merge them. "Repetitive motion quiets noise" and "make without a plan" are different — keep them separate.',
+      'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
       'Make each idea transferable without copying the exact example.',
       'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
       'Every idea must be 45 characters or fewer.',
