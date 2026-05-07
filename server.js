@@ -1187,6 +1187,7 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'IDEA 1: <helpful idea>',
     'IDEA 2: <helpful idea>',
     'Continue only for genuinely distinct ideas.',
+    'Every idea must be 45 characters or fewer.',
     'Do not use markdown, JSON, bullets, headings, or any extra text.'
   ].filter(Boolean).join('\n');
 }
