@@ -5978,7 +5978,7 @@ try {
       max-width: 460px;
       box-sizing: border-box;
       margin: 54px auto 54px;
-      padding: 48px 16px;
+      padding: 26px 16px 48px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -6019,8 +6019,10 @@ try {
       transform: rotate(-0.8deg);
     }
 
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-halo,
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette,
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash,
     #screen-quilt .quote-speaker-image-wrap::before,
-    #screen-quilt .quote-speaker-image-wrap::after,
     #screen-quilt .quote-speaker-image-wrap .quote-speaker-xerox-grain {
       content: "";
       position: absolute;
@@ -6033,7 +6035,7 @@ try {
 
     #screen-quilt .quote-speaker-image-wrap::before {
       inset: 0;
-      z-index: 1;
+      z-index: 4;
       background-image: var(--speaker-image-url, none);
       background-size: 100% auto;
       background-position: top center;
@@ -6048,30 +6050,65 @@ try {
       transform: rotate(0.6deg);
     }
 
-    #screen-quilt .quote-speaker-image-wrap::after {
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-halo {
+      inset: 5%;
+      z-index: 1;
+      background: var(--speaker-halo-color, rgba(214, 151, 126, 0.32));
+      clip-path: polygon(9% 10%, 77% 5%, 96% 25%, 90% 84%, 66% 96%, 15% 90%, 4% 52%);
+      opacity: 0.34;
+      filter: blur(0.25px) saturate(1.08);
+      transform: rotate(1.25deg);
+    }
+
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette,
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash {
       inset: 0;
+      background-image: var(--speaker-image-url, none);
+      background-size: 100% auto;
+      background-position: top center;
+      background-repeat: no-repeat;
+      mix-blend-mode: normal;
+    }
+
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette {
       z-index: 2;
-      background:
-        radial-gradient(circle at 19% 17%, rgba(255, 255, 255, 0.24) 0 7%, transparent 25%),
-        radial-gradient(circle at 73% 28%, var(--speaker-wash-color-soft, rgba(234, 155, 154, 0.36)) 0 16%, transparent 42%),
-        linear-gradient(126deg, var(--speaker-wash-color-strong, rgba(234, 155, 154, 0.46)), var(--speaker-wash-color-medium, rgba(234, 155, 154, 0.42)) 55%, rgba(255, 244, 218, 0.2));
-      -webkit-mask-image: var(--speaker-image-url, none);
-      mask-image: var(--speaker-image-url, none);
-      -webkit-mask-size: 100% auto;
-      mask-size: 100% auto;
-      -webkit-mask-position: top center;
-      mask-position: top center;
-      -webkit-mask-repeat: no-repeat;
-      mask-repeat: no-repeat;
-      mix-blend-mode: multiply;
-      opacity: 0.6;
-      filter: blur(0.12px) saturate(1.16) contrast(1.18);
-      transform: translate(-1.7%, 1.4%) rotate(-0.55deg) scale(1.012);
+      opacity: 1;
+      filter:
+        brightness(0)
+        saturate(100%)
+        invert(92%)
+        sepia(10%)
+        saturate(324%)
+        hue-rotate(349deg)
+        brightness(102%)
+        contrast(93%);
+      transform: translate(0.7%, 0.6%) rotate(0.18deg) scale(1.004);
+    }
+
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash {
+      z-index: 3;
+      opacity: 0.34;
+      filter:
+        brightness(0)
+        saturate(100%)
+        invert(76%)
+        sepia(28%)
+        saturate(1018%)
+        hue-rotate(var(--speaker-wash-hue-rotate, 304deg))
+        brightness(97%)
+        contrast(91%);
+      transform: translate(-2.2%, 1.9%) rotate(-0.55deg) scale(1.012);
+    }
+
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-halo[hidden],
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette[hidden],
+    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash[hidden] {
+      display: none;
     }
 
     #screen-quilt .quote-speaker-image-wrap .quote-speaker-xerox-grain {
       inset: 0;
-      z-index: 3;
+      z-index: 5;
       background:
         repeating-radial-gradient(circle at 13% 21%, rgba(35, 27, 20, 0.18) 0 0.55px, transparent 0.65px 4px),
         repeating-linear-gradient(92deg, rgba(35, 27, 20, 0.08) 0 1px, transparent 1px 7px);
@@ -6703,7 +6740,7 @@ try {
       #screen-quilt .quote-speaker-widget {
         width: calc(100% - 50px);
         margin: 54px 25px 54px;
-        padding: 48px 16px;
+        padding: 26px 16px 48px;
       }
 
       #screen-quilt .quote-speaker-widget--no-image {
@@ -7416,6 +7453,9 @@ try {
               referrerpolicy="no-referrer"
               hidden
             />
+            <span class="quote-speaker-halo" id="quoteSpeakerHalo" hidden></span>
+            <span class="quote-speaker-neutral-silhouette" id="quoteSpeakerNeutralSilhouette" hidden></span>
+            <span class="quote-speaker-color-wash" id="quoteSpeakerColorWash" hidden></span>
             <span class="quote-speaker-avatar" id="quoteSpeakerAvatar" hidden></span>
             <span class="quote-speaker-xerox-grain" aria-hidden="true"></span>
           </span>
@@ -25619,6 +25659,9 @@ try {
         const img = document.getElementById('quoteSpeakerImage');
         const avatar = document.getElementById('quoteSpeakerAvatar');
         const imageWrap = document.getElementById('quoteSpeakerImageWrap');
+        const halo = document.getElementById('quoteSpeakerHalo');
+        const neutralSilhouette = document.getElementById('quoteSpeakerNeutralSilhouette');
+        const colorWash = document.getElementById('quoteSpeakerColorWash');
         const nameEl = document.getElementById('quoteSpeakerName');
         const datesEl = document.getElementById('quoteSpeakerDates');
         const guideEl = document.getElementById('quoteSpeakerGuide');
@@ -25632,8 +25675,21 @@ try {
         widget.classList.remove('quote-speaker-widget--no-image');
         const washColor = String(this.getMostPopularQuiltColor()?.color || CONFIG.APP.defaultColor || '#ea9b9a').trim();
         const safeWashColor = /^#[0-9A-Fa-f]{6}$/.test(washColor) ? washColor : '#ea9b9a';
+        const palette = this.getQuiltPaletteSummary?.()?.palette || [];
+        const haloColor =
+          palette.find((item) => {
+            const value = String(item?.color || '').trim();
+            return /^#[0-9A-Fa-f]{6}$/.test(value) && value.toLowerCase() !== safeWashColor.toLowerCase();
+          })?.color ||
+          this.getContrastingQuiltColorExcludingDominant?.() ||
+          CONFIG.APP.defaultColor ||
+          '#d6977e';
+        const safeHaloColor = /^#[0-9A-Fa-f]{6}$/.test(String(haloColor || '').trim())
+          ? String(haloColor).trim()
+          : '#d6977e';
         const washRgb = safeWashColor.match(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
         widget.style.setProperty('--speaker-wash-color', safeWashColor);
+        widget.style.setProperty('--speaker-halo-color', safeHaloColor);
         if (washRgb) {
           const rgb = washRgb.slice(1).map((hex) => parseInt(hex, 16)).join(', ');
           widget.style.setProperty('--speaker-wash-color-strong', `rgba(${rgb}, 0.46)`);
@@ -25661,6 +25717,15 @@ try {
           imageWrap.hidden = !profile.imageUrl;
           imageWrap.style.removeProperty('--speaker-image-url');
         }
+        if (halo) {
+          halo.hidden = true;
+        }
+        if (neutralSilhouette) {
+          neutralSilhouette.hidden = true;
+        }
+        if (colorWash) {
+          colorWash.hidden = true;
+        }
         if (avatar) {
           avatar.textContent = this.getQuoteSpeakerInitials(profile.name);
           avatar.hidden = !!profile.imageUrl;
@@ -25676,17 +25741,33 @@ try {
           preloader.referrerPolicy = 'no-referrer';
           preloader.onload = () => {
             if (this._quoteSpeakerImageToken !== imageToken) return;
+            const speakerImageCssUrl = `url("${String(profile.imageUrl).replace(/"/g, '%22')}")`;
             imageWrap.hidden = false;
-            imageWrap.style.setProperty(
-              '--speaker-image-url',
-              `url("${String(profile.imageUrl).replace(/"/g, '%22')}")`
-            );
+            imageWrap.style.setProperty('--speaker-image-url', speakerImageCssUrl);
+            if (halo) {
+              halo.hidden = false;
+            }
+            if (neutralSilhouette) {
+              neutralSilhouette.hidden = false;
+            }
+            if (colorWash) {
+              colorWash.hidden = false;
+            }
             if (avatar) avatar.hidden = true;
           };
           preloader.onerror = () => {
             if (this._quoteSpeakerImageToken !== imageToken) return;
             imageWrap.hidden = false;
             imageWrap.style.removeProperty('--speaker-image-url');
+            if (halo) {
+              halo.hidden = true;
+            }
+            if (neutralSilhouette) {
+              neutralSilhouette.hidden = true;
+            }
+            if (colorWash) {
+              colorWash.hidden = true;
+            }
             if (avatar) avatar.hidden = false;
           };
           preloader.src = profile.imageUrl;
