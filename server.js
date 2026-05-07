@@ -1159,6 +1159,11 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'Private responses:',
     responseList,
     '',
+    'Read all responses before writing anything.',
+    '- Discard any response that does not answer the reflection prompt.',
+    '- Discard any response that is offensive or harmful.',
+    '- Do not synthesize joke responses or absurdist entries into real ideas.',
+    '',
     'The responses below are real. Your output must be traceable to specific language or images in those responses. Do not generate principles from scratch. Find them inside what was actually written.',
     '',
     'Test before writing each idea: which response does this come from? If you can\'t answer, discard it.',
@@ -1187,7 +1192,7 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'IDEA 1: <helpful idea>',
     'IDEA 2: <helpful idea>',
     'Continue only for genuinely distinct ideas.',
-    'Every idea must be 45 characters or fewer.',
+    'Keep each idea concise enough to read as a short standalone phrase.',
     'Do not use markdown, JSON, bullets, headings, or any extra text.'
   ].filter(Boolean).join('\n');
 }
@@ -1240,7 +1245,7 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
       'Make each idea transferable without copying the exact example.',
       'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
-      'Every idea must be 45 characters or fewer.',
+      'Keep each idea concise enough to read as a short standalone phrase.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
@@ -1282,7 +1287,7 @@ async function postReflectionThemesToClaude({ apiKey, model, prompt }) {
 async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
   const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
-  const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
   const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
 
   const firstText = await postReflectionThemesToClaude({ apiKey, model, prompt });
@@ -1302,7 +1307,7 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
       'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
       'Make each idea transferable without copying the exact example.',
       'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
-      'Every idea must be 45 characters or fewer.',
+      'Keep each idea concise enough to read as a short standalone phrase.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToClaude({ apiKey, model, prompt: repairPrompt });
