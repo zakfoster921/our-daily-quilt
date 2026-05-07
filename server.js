@@ -1266,7 +1266,7 @@ async function postReflectionThemesToClaude({ apiKey, model, prompt }) {
 async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
   const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
-  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest').trim();
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022').trim();
   const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
 
   const firstText = await postReflectionThemesToClaude({ apiKey, model, prompt });
