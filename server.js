@@ -1140,7 +1140,11 @@ function completeReflectionThemes(themes) {
   return (Array.isArray(themes) ? themes : [])
     .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
     .map((theme) => theme.replace(/\.+$/g, '').trim())
-    .map((theme) => theme.length > 45 ? theme.slice(0, 45).trim().replace(/[,\-:;]+$/g, '').trim() : theme)
+    .map((theme) => {
+      if (theme.length <= 45) return theme;
+      const shortened = theme.slice(0, 45).replace(/\s+\S*$/, '').trim();
+      return (shortened || theme.slice(0, 45)).replace(/[,\-:;([]+$/g, '').trim();
+    })
     .filter(Boolean)
     .filter((theme) => {
       const key = theme.toLowerCase();
@@ -1159,6 +1163,10 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     reflectionPrompt ? `Reflection prompt: ${reflectionPrompt}` : '',
     'Private responses:',
     responseList,
+    '',
+    'The responses below are real. Your output must be traceable to specific language or images in those responses. Do not generate principles from scratch. Find them inside what was actually written.',
+    '',
+    'Test before writing each idea: which response does this come from? If you can\'t answer, discard it.',
     '',
     'These are not craft suggestions. They are reports of how people use making to think. Your job is to name the thinking move, not the craft.',
     '',
