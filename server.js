@@ -2559,30 +2559,38 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       });
     }
 
+    const getReflectionPromptFromQuoteData = (data) => String(
+      data?.communityPrompt ||
+      data?.community_prompt ||
+      data?.reflectionPrompt ||
+      data?.reflection_prompt ||
+      ''
+    ).trim().slice(0, 500);
+    const getReflectionQuoteSnapshotFromData = (data) => {
+      if (!data || typeof data !== 'object') return null;
+      const text = String(data.text || data.quoteText || data.textSnapshot || data.quoteTextSnapshot || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+      const author = String(data.author || data.quoteAuthor || data.authorSnapshot || data.quoteAuthorSnapshot || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+      return text ? { text, author } : null;
+    };
+
     let reflectionPrompt = '';
+    let quoteSnapshot = null;
     try {
       const quoteDoc = await db.collection(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').doc(appDateKey).get();
       const quoteData = quoteDoc.exists ? quoteDoc.data() : null;
-      reflectionPrompt = String(
-        quoteData?.communityPrompt ||
-        quoteData?.community_prompt ||
-        quoteData?.reflectionPrompt ||
-        quoteData?.reflection_prompt ||
-        ''
-      ).trim().slice(0, 500);
-      if (!reflectionPrompt) {
+      reflectionPrompt = getReflectionPromptFromQuoteData(quoteData);
+      quoteSnapshot = getReflectionQuoteSnapshotFromData(quoteData);
+      if (!reflectionPrompt || !quoteSnapshot) {
         const assignmentDoc = await db.collection(process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments').doc(appDateKey).get();
-        const sourceId = assignmentDoc.exists ? String(assignmentDoc.data()?.sourceId || '').trim() : '';
+        const assignmentData = assignmentDoc.exists ? assignmentDoc.data() : null;
+        if (!reflectionPrompt) reflectionPrompt = getReflectionPromptFromQuoteData(assignmentData);
+        if (!quoteSnapshot) quoteSnapshot = getReflectionQuoteSnapshotFromData(assignmentData);
+        const sourceId = assignmentDoc.exists ? String(assignmentData?.sourceId || assignmentData?.quoteId || '').trim() : '';
         if (sourceId) {
           const sourceQuoteDoc = await db.collection(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').doc(sourceId).get();
           const sourceQuoteData = sourceQuoteDoc.exists ? sourceQuoteDoc.data() : null;
-          reflectionPrompt = String(
-            sourceQuoteData?.communityPrompt ||
-            sourceQuoteData?.community_prompt ||
-            sourceQuoteData?.reflectionPrompt ||
-            sourceQuoteData?.reflection_prompt ||
-            ''
-          ).trim().slice(0, 500);
+          if (!reflectionPrompt) reflectionPrompt = getReflectionPromptFromQuoteData(sourceQuoteData);
+          if (!quoteSnapshot) quoteSnapshot = getReflectionQuoteSnapshotFromData(sourceQuoteData);
         }
       }
     } catch (error) {
@@ -2602,6 +2610,8 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       model,
       provider,
       status: 'generated',
+      textSnapshot: quoteSnapshot?.text || '',
+      authorSnapshot: quoteSnapshot?.author || '',
       generatedAt: admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso: getUtcIsoNow()
     }, { merge: true });

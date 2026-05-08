@@ -3961,6 +3961,38 @@ try {
       text-align: center;
     }
 
+    .reflection-themes-archive-status--loading {
+      min-height: calc(100dvh - 12rem);
+      padding: max(1.5rem, env(safe-area-inset-top, 0px)) max(1.5rem, env(safe-area-inset-right, 0px)) max(1.5rem, env(safe-area-inset-bottom, 0px)) max(1.5rem, env(safe-area-inset-left, 0px));
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.25rem;
+      background: transparent;
+      color: #2f241b;
+    }
+
+    .reflection-themes-archive-status--loading .reflection-themes-archive-status-message {
+      max-width: min(78vw, 460px);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: clamp(1.4rem, 5vw, 2rem);
+      font-weight: 300;
+      line-height: 1.25;
+      letter-spacing: 0.01em;
+    }
+
+    .reflection-themes-archive-status-spinner {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      opacity: 0.72;
+      animation: colorSubmitSpinner 0.9s linear infinite;
+    }
+
     @media (max-width: 480px) {
       .reflection-themes-archive-feed,
       .reflection-themes-archive-header {
@@ -6468,8 +6500,11 @@ try {
       height: clamp(177px, 34.5vw, 216px);
       margin: 0 auto;
       transform-style: preserve-3d;
-      transition: transform 1.05s cubic-bezier(0.2, 0.75, 0.18, 1);
-      filter: drop-shadow(0 12px 18px rgba(45, 34, 22, 0.18));
+      -webkit-transform-style: preserve-3d;
+      transform: translateZ(0) rotateY(0deg);
+      transition: transform 0.78s cubic-bezier(0.2, 0.8, 0.2, 1);
+      will-change: transform;
+      box-shadow: 0 12px 18px rgba(45, 34, 22, 0.18);
     }
 
     @keyframes quiltFortuneGentleWobble {
@@ -6500,11 +6535,9 @@ try {
       overflow: hidden;
       backface-visibility: hidden;
       -webkit-backface-visibility: hidden;
+      transform-style: preserve-3d;
+      -webkit-transform-style: preserve-3d;
       box-shadow: inset 0 0 0 1px rgba(45, 34, 22, 0.08);
-      transition:
-        opacity 0.16s ease,
-        transform 1.05s cubic-bezier(0.2, 0.75, 0.18, 1),
-        z-index 0s linear 0.52s;
     }
 
     #screen-quilt .quilt-fortune-face--front {
@@ -6515,7 +6548,6 @@ try {
         inset 0 1px 0 rgba(255, 255, 255, 0.52),
         inset 0 -1px 0 rgba(88, 62, 30, 0.12);
       z-index: 2;
-      opacity: 1;
       transform: rotateY(0deg) translateZ(1px);
     }
 
@@ -6576,8 +6608,7 @@ try {
         linear-gradient(135deg, rgba(255,255,255,0.18), rgba(0,0,0,0.1)),
         var(--fortune-backing-color);
       z-index: 1;
-      opacity: 0;
-      transform: rotateY(-180deg) translateZ(1px);
+      transform: rotateY(180deg) translateZ(1px);
     }
 
     #screen-quilt .quilt-fortune-face--back::before {
@@ -6590,27 +6621,15 @@ try {
     }
 
     #screen-quilt .quilt-fortune-reveal[data-stage="1"] .quilt-fortune-card {
-      transform: none;
+      transform: translateZ(0) rotateY(180deg);
     }
 
     #screen-quilt .quilt-fortune-reveal[data-stage="1"] .quilt-fortune-face--front {
       z-index: 1;
-      opacity: 0;
-      transform: rotateY(180deg) translateZ(1px);
-      transition:
-        opacity 0.16s ease 0.44s,
-        transform 1.05s cubic-bezier(0.2, 0.75, 0.18, 1),
-        z-index 0s linear 0.52s;
     }
 
     #screen-quilt .quilt-fortune-reveal[data-stage="1"] .quilt-fortune-face--back {
       z-index: 2;
-      opacity: 1;
-      transform: rotateY(0deg) translateZ(1px);
-      transition:
-        opacity 0.16s ease 0.44s,
-        transform 1.05s cubic-bezier(0.2, 0.75, 0.18, 1),
-        z-index 0s;
     }
 
     #screen-quilt .quilt-fortune-card .quilt-fortune-quilt,
@@ -7754,7 +7773,10 @@ try {
       </div>
 
       <div class="reflection-themes-archive-feed" id="reflectionThemesArchiveFeed" aria-live="polite">
-        <div class="reflection-themes-archive-status">Loading reflections...</div>
+        <div class="reflection-themes-archive-status reflection-themes-archive-status--loading">
+          <div class="reflection-themes-archive-status-message">Loading reflections...</div>
+          <div class="reflection-themes-archive-status-spinner" aria-hidden="true"></div>
+        </div>
       </div>
 
       <div class="reflection-themes-archive-controls" id="reflectionThemesArchiveControls" aria-label="Reflection archive weeks">
@@ -14104,18 +14126,18 @@ try {
       }
 
       /**
-       * Display-only: personalize the daily blessing for quilt UI — e.g. "May you keep learning, Zak."
-       * when we have a portal greeting name (including the skip fallback). Does not change stored quote data.
+       * Display-only: keep the daily blessing unpersonalized on the quilt UI.
+       * Does not change stored quote data.
        */
       static formatBlessingWithDisplayName(blessingBody) {
         const body = String(blessingBody || '').trim();
         if (!body) return '';
         const name = Utils.getPortalGreetingName();
-        if (!name) return body;
-        const label = name === 'friend' ? 'Friend' : name;
         const rest = /^may\b/i.test(body) ? body.replace(/^may\b/i, 'May') : body;
-        const withoutTerminalPunctuation = rest.replace(/[.!?]+$/, '');
-        return `${withoutTerminalPunctuation}, ${label}.`;
+        if (!name) return rest;
+        const label = name === 'friend' ? 'Friend' : name;
+        const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return rest.replace(new RegExp(`,\\s*${escapedLabel}\\s*([.!?])?$`, 'i'), '$1').trim();
       }
 
       /**
@@ -20081,7 +20103,19 @@ try {
             const quiltRef = window.firestore.doc(window.db, 'quilts', today);
             if (src !== 'admin') {
               try {
-                const existingSnap = await (window.firestore.getDocFromServer || window.firestore.getDoc)(quiltRef);
+                let existingSnap = null;
+                let guardReadError = null;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                  try {
+                    existingSnap = await (window.firestore.getDocFromServer || window.firestore.getDoc)(quiltRef);
+                    guardReadError = null;
+                    break;
+                  } catch (readError) {
+                    guardReadError = readError;
+                    await new Promise(resolve => setTimeout(resolve, 350 + (attempt * 250)));
+                  }
+                }
+                if (!existingSnap && guardReadError) throw guardReadError;
                 if (existingSnap.exists()) {
                   const existingData = existingSnap.data() || {};
                   const existingCount = Array.isArray(existingData.blocks) ? existingData.blocks.length : 0;
@@ -23879,6 +23913,9 @@ try {
         this._quiltScrollCueTimer = null;
         this._quiltScrollCueAnimationFrame = null;
         this._quiltScrollCueCancelHandlers = [];
+        this._quiltScrollCuePlaying = false;
+        this._quiltScrollCueScroller = null;
+        this._quiltScrollCuePreviousScrollBehavior = '';
         this.quiltNotificationPromptListener = null;
         /** Scroll position when quilt screen became active; notification prompt waits for scroll past threshold. */
         this._notificationPromptScrollBaseline = null;
@@ -24679,6 +24716,7 @@ try {
           }
           const currentStage = reveal.dataset.stage === '1' ? 1 : 0;
           const nextStage = currentStage === 1 ? 0 : 1;
+          reveal.classList.remove('is-gently-wobbling');
           reveal.dataset.stage = String(nextStage);
           reveal.setAttribute(
             'aria-label',
@@ -25057,14 +25095,21 @@ try {
 
       async loadReflectionArchiveContextForDate(dateKey, themeData = null) {
         const fromThemeDoc = this.getReflectionPromptFromArchiveData(themeData || {});
+        const quoteFromThemeDoc = this.getReflectionArchiveQuoteFromData(themeData || {});
+        const isUsablePrompt = (prompt) => prompt && prompt !== '[Reflection prompt coming soon for this quote.]';
+        if (isUsablePrompt(fromThemeDoc)) {
+          return {
+            prompt: fromThemeDoc,
+            quote: quoteFromThemeDoc
+          };
+        }
         if (!window.db || !window.firestore?.doc || !window.firestore?.getDoc) {
           return {
             prompt: fromThemeDoc || this.getQuiltReflectionPromptText({}),
-            quote: this.getReflectionArchiveQuoteFromData(themeData || {})
+            quote: quoteFromThemeDoc
           };
         }
         const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
-        const isUsablePrompt = (prompt) => prompt && prompt !== '[Reflection prompt coming soon for this quote.]';
         const readArchiveDoc = async (collectionId, docId) => {
           if (!docId) return { prompt: '', quote: null, data: null };
           try {
@@ -25082,7 +25127,7 @@ try {
         };
 
         let prompt = fromThemeDoc;
-        let quote = this.getReflectionArchiveQuoteFromData(themeData || {});
+        let quote = quoteFromThemeDoc;
 
         const dailyQuote = await readArchiveDoc('quotes', dateKey);
         if (!quote) quote = dailyQuote.quote;
@@ -25116,10 +25161,16 @@ try {
         });
       }
 
-      setReflectionThemesArchiveStatus(message) {
+      setReflectionThemesArchiveStatus(message, options = {}) {
         const feed = document.getElementById('reflectionThemesArchiveFeed');
         if (!feed) return;
-        feed.innerHTML = `<div class="reflection-themes-archive-status">${this.escapeQuiltFortuneText(message)}</div>`;
+        const safeMessage = this.escapeQuiltFortuneText(message);
+        feed.innerHTML = options.loading
+          ? `<div class="reflection-themes-archive-status reflection-themes-archive-status--loading">
+              <div class="reflection-themes-archive-status-message">${safeMessage}</div>
+              <div class="reflection-themes-archive-status-spinner" aria-hidden="true"></div>
+            </div>`
+          : `<div class="reflection-themes-archive-status">${safeMessage}</div>`;
       }
 
       async initializeReflectionThemesArchiveScreen() {
@@ -25132,7 +25183,7 @@ try {
           }
           return;
         }
-        this.setReflectionThemesArchiveStatus('Loading reflections...');
+        this.setReflectionThemesArchiveStatus('Loading reflections...', { loading: true });
         try {
           const page = await this.loadReflectionThemeArchiveEntries();
           this._reflectionThemesArchivePages = [page];
@@ -25198,9 +25249,13 @@ try {
               reflection_prompt: data.reflection_prompt,
               reflectionPromptSnapshot: data.reflectionPromptSnapshot,
               text: data.text,
+              quoteText: data.quoteText,
               textSnapshot: data.textSnapshot,
+              quoteTextSnapshot: data.quoteTextSnapshot,
               author: data.author,
-              authorSnapshot: data.authorSnapshot
+              quoteAuthor: data.quoteAuthor,
+              authorSnapshot: data.authorSnapshot,
+              quoteAuthorSnapshot: data.quoteAuthorSnapshot
             });
           }
         });
@@ -27398,6 +27453,12 @@ try {
           cancelAnimationFrame(this._quiltScrollCueAnimationFrame);
           this._quiltScrollCueAnimationFrame = null;
         }
+        if (this._quiltScrollCueScroller) {
+          this._quiltScrollCueScroller.style.scrollBehavior = this._quiltScrollCuePreviousScrollBehavior || '';
+        }
+        this._quiltScrollCuePlaying = false;
+        this._quiltScrollCueScroller = null;
+        this._quiltScrollCuePreviousScrollBehavior = '';
         this._quiltScrollCueCancelHandlers.forEach(({ target, type, handler, options }) => {
           try {
             target.removeEventListener(type, handler, options);
@@ -27440,7 +27501,7 @@ try {
             return;
           }
 
-          const bumpPx = Math.min(50, Math.max(30, maxScroll * 0.14));
+          const bumpPx = Math.min(58, Math.max(34, maxScroll * 0.13));
           this.playQuiltScrollCue(activeQuiltScreen, bumpPx);
         }, Math.max(0, Number(delayMs) || 0));
       }
@@ -27452,29 +27513,26 @@ try {
         const peakTop = Math.min(maxScroll, startTop + bumpPx);
         if (peakTop <= startTop + 1) return;
 
-        const duration = 1680;
+        this._quiltScrollCuePlaying = true;
+        this._quiltScrollCueScroller = scroller;
+        const duration = 1120;
         const startedAt = performance.now();
         const clamp01 = (t) => Math.max(0, Math.min(1, t));
-        const easeOutBack = (t) => {
-          const c1 = 1.45;
-          const c3 = c1 + 1;
-          return 1 + c3 * Math.pow(clamp01(t) - 1, 3) + c1 * Math.pow(clamp01(t) - 1, 2);
-        };
         const easeInOutSine = (t) => -(Math.cos(Math.PI * clamp01(t)) - 1) / 2;
+        const previousScrollBehavior = scroller.style.scrollBehavior;
+        this._quiltScrollCuePreviousScrollBehavior = previousScrollBehavior;
+        scroller.style.scrollBehavior = 'auto';
 
         const tick = (now) => {
           const progress = Math.min(1, (now - startedAt) / duration);
           const distance = peakTop - startTop;
-          let nextTop;
-          if (progress < 0.38) {
-            nextTop = startTop + (distance * Math.min(1.08, easeOutBack(progress / 0.38)));
-          } else if (progress < 0.68) {
-            const wiggleProgress = (progress - 0.38) / 0.3;
-            const wiggle = Math.sin(wiggleProgress * Math.PI * 5) * 4 * (1 - (wiggleProgress * 0.35));
-            nextTop = peakTop + wiggle;
+          let eased;
+          if (progress < 0.54) {
+            eased = easeInOutSine(progress / 0.54);
           } else {
-            nextTop = peakTop - (distance * easeInOutSine((progress - 0.68) / 0.32));
+            eased = 1 - easeInOutSine((progress - 0.54) / 0.46);
           }
+          const nextTop = startTop + (distance * eased);
           scroller.scrollTop = Math.max(startTop, Math.min(maxScroll, nextTop));
 
           if (progress < 1 && document.getElementById('screen-quilt')?.classList.contains('active')) {
@@ -27482,6 +27540,10 @@ try {
           } else {
             scroller.scrollTop = startTop;
             this._quiltScrollCueAnimationFrame = null;
+            this._quiltScrollCuePlaying = false;
+            scroller.style.scrollBehavior = previousScrollBehavior;
+            this._quiltScrollCueScroller = null;
+            this._quiltScrollCuePreviousScrollBehavior = '';
             this.clearQuiltScrollCue();
           }
         };
@@ -27491,6 +27553,7 @@ try {
 
       handleParallaxInteraction(event) {
         if (!this.parallaxEnabled) return;
+        if (this._quiltScrollCuePlaying) return;
 
         const quiltScreen = document.getElementById('screen-quilt');
         const isQuiltActive = quiltScreen && quiltScreen.classList.contains('active');
@@ -27523,6 +27586,7 @@ try {
       }
 
       handleQuiltNotificationPromptInteraction() {
+        if (this._quiltScrollCuePlaying) return;
         const quiltScreen = document.getElementById('screen-quilt');
         if (!quiltScreen || !quiltScreen.classList.contains('active')) return;
         if (this._dailyQuotePromptedFromQuiltScroll) return;
@@ -27561,6 +27625,7 @@ try {
 
       handleParallaxScroll() {
         if (!this.parallaxEnabled) return;
+        if (this._quiltScrollCuePlaying) return;
 
         const quiltScreen = document.getElementById('screen-quilt');
         const isQuiltActive = quiltScreen && quiltScreen.classList.contains('active');
@@ -32183,12 +32248,17 @@ try {
           }
 
           if (result) {
-            let saved = await this.saveQuilt();
-            if (!saved && window.db && window.firestore) {
-              this.logger.warn('Shared quilt changed while saving; refreshing and retrying color add once.');
+            let saved = false;
+            const maxSaveAttempts = window.db && window.firestore ? 3 : 1;
+            for (let attempt = 1; attempt <= maxSaveAttempts; attempt++) {
+              saved = await this.saveQuilt();
+              if (saved) break;
+              if (attempt >= maxSaveAttempts || !window.db || !window.firestore) break;
+              this.logger.warn(`Shared quilt changed while saving; refreshing and retrying color add (${attempt + 1}/${maxSaveAttempts}).`);
+              await this.wait(300 * attempt);
               await this.loadQuilt();
               result = applySelectedColorToCurrentQuilt();
-              saved = result ? await this.saveQuilt() : false;
+              if (!result) break;
             }
 
             if (!saved) {
