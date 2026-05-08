@@ -2954,7 +2954,8 @@ try {
         box-sizing: border-box !important;
         background: #ebe8e3 !important;
         z-index: 10 !important;
-        display: flex !important;
+        /* TEMP: hide bottom “Our quilt resets in …” bar — restore display:flex + justify/align below */
+        display: none !important;
         justify-content: center !important;
         align-items: center !important;
         pointer-events: none !important;
@@ -5291,7 +5292,7 @@ try {
     }
 
     #screen-quilt .quilt-reflection-scrap-kicker {
-      margin: 0 0 0.52rem;
+      margin: 0 0 0.85rem;
       color: rgba(0, 0, 0, 0.54);
       font-size: 1.02rem;
       font-weight: 700;
@@ -5301,7 +5302,7 @@ try {
     }
 
     #screen-quilt .quilt-reflection-scrap-text {
-      margin: 0;
+      margin: 0 0 1.05rem;
       color: #2e2e2e;
       font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
       font-size: clamp(1.26rem, 4.5vw, 1.44rem);
@@ -5315,13 +5316,14 @@ try {
     }
 
     #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-scrap-kicker {
-      margin-bottom: 0.42rem;
+      margin-bottom: 0.95rem;
       font-size: 0.86rem;
     }
 
     #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-scrap-text {
       font-size: clamp(1.15rem, 4.15vw, 1.33rem);
       line-height: 1.42;
+      margin-bottom: 1.15rem;
     }
 
     #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-scraps-after {
@@ -7046,7 +7048,8 @@ try {
       box-sizing: border-box;
       padding: 0.38rem 1rem 0.32rem;
       background: #ebe8e3;
-      display: flex;
+      /* TEMP: hide bottom reset countdown — restore display:flex */
+      display: none !important;
       justify-content: center;
       align-items: center;
       flex-shrink: 0;
@@ -25163,6 +25166,41 @@ try {
           .replace(/'/g, '&#39;');
       }
 
+      /** Split prose into a few lines with roughly equal word counts (blessing + reflection UI). */
+      balanceQuiltDisplayLines(text) {
+        const words = String(text || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean);
+        if (!words.length) return '';
+        if (words.length <= 2) return words.join(' ');
+        const n = Math.min(5, Math.max(2, Math.round(Math.sqrt(words.length * 1.15))));
+        const base = Math.floor(words.length / n);
+        let extra = words.length - base * n;
+        const lines = [];
+        let i = 0;
+        for (let line = 0; line < n && i < words.length; line++) {
+          const take = Math.max(1, base + (extra > 0 ? 1 : 0));
+          if (extra > 0) extra -= 1;
+          lines.push(words.slice(i, i + take).join(' '));
+          i += take;
+        }
+        if (i < words.length && lines.length) {
+          lines[lines.length - 1] = `${lines[lines.length - 1]} ${words.slice(i).join(' ')}`.trim();
+        }
+        return lines.filter(Boolean).join('\n');
+      }
+
+      escapeQuiltFortuneTextWithLineBreaks(value) {
+        const balanced = this.balanceQuiltDisplayLines(String(value || '').trim());
+        if (!balanced) return '';
+        return balanced
+          .split(/\n+/)
+          .map((line) => this.escapeQuiltFortuneText(line))
+          .join('<br />');
+      }
+
       setupReflectionResponsePrototype() {
         const form = document.getElementById('quiltReflectionResponseForm');
         const input = document.getElementById('quiltReflectionResponseInput');
@@ -26250,7 +26288,7 @@ try {
         const textEl = document.getElementById('quiltFortuneText');
         const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
         if (textEl) {
-          textEl.innerHTML = this.escapeQuiltFortuneText(this.getQuiltBlessingText(todayQuote));
+          textEl.innerHTML = this.escapeQuiltFortuneTextWithLineBreaks(this.getQuiltBlessingText(todayQuote));
         }
         reveal.style.setProperty('--fortune-container-color', '#ebe8e3');
         reveal.style.setProperty('--fortune-container-ink', '#241b14');
@@ -26264,7 +26302,7 @@ try {
         const textEl = document.getElementById('quiltReflectionScrapText');
         const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
         if (textEl) {
-          textEl.innerHTML = this.escapeQuiltFortuneText(this.getQuiltReflectionPromptText(todayQuote));
+          textEl.innerHTML = this.escapeQuiltFortuneTextWithLineBreaks(this.getQuiltReflectionPromptText(todayQuote));
         }
         const paletteColors = (this.getQuiltPaletteSummary()?.palette || [])
           .map((item) => item?.color)
