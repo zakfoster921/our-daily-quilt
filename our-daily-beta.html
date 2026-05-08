@@ -22210,11 +22210,24 @@ try {
 
             const blessingStr = this._blessingScalarFromPlainObject(data);
 
+            const artRaw = data.art_recs ?? data.artRecs;
+            const artRecsFields =
+              artRaw == null
+                ? {}
+                : typeof artRaw === 'string'
+                  ? (() => {
+                      const t = String(artRaw).trim();
+                      return t ? { art_recs: t, artRecs: t } : {};
+                    })()
+                  : typeof artRaw === 'object'
+                    ? { art_recs: artRaw, artRecs: artRaw }
+                    : {};
+
             firestoreQuotes.push({
               text,
               author,
               communityPrompt: String(data.communityPrompt ?? data.community_prompt ?? '').trim(),
-              reflectionPrompt: String(data.reflectionPrompt || '').trim(),
+              reflectionPrompt: String(data.reflectionPrompt || data.reflection_prompt || '').trim(),
               whatIf: String(data.whatIf ?? data.what_if ?? '').trim(),
               fortune: String(data.fortune ?? data.Fortune ?? '').trim(),
               blessing: blessingStr,
@@ -22239,6 +22252,7 @@ try {
                   data.submittedByName ??
                   data.submitted_by_name
               ),
+              ...artRecsFields,
               sourceId: String(data.sourceId || docSnap.id),
               sortOrder:
                 typeof data.sortOrder === 'number' && Number.isFinite(data.sortOrder)
