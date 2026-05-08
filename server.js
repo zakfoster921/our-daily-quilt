@@ -1819,10 +1819,39 @@ async function collectDailyQuotePushTokens() {
   return tokens;
 }
 
-async function sendDailyQuotePushNotifications(dateKey = getAppDateKey()) {
+async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), options = {}) {
   if (!db) throw new Error('Firestore not initialized');
+  const force = options && options.force === true;
+  const opRef = db.collection('ops').doc(`daily-quote-push-${dateKey}`);
+  if (!force) {
+    const opSnap = await opRef.get();
+    const opData = opSnap.exists ? opSnap.data() || {} : null;
+    if (opData?.status === 'success') {
+      return {
+        success: true,
+        date: dateKey,
+        alreadySent: true,
+        sent: Number(opData.sent || 0),
+        failed: Number(opData.failed || 0),
+        pruned: Number(opData.pruned || 0)
+      };
+    }
+  }
+
   const recipients = await collectDailyQuotePushTokens();
   if (!recipients.length) {
+    await opRef.set(
+      {
+        status: 'success',
+        date: dateKey,
+        sent: 0,
+        failed: 0,
+        pruned: 0,
+        quotePreview: '',
+        completedAt: getUtcIsoNow()
+      },
+      { merge: true }
+    );
     return { success: true, date: dateKey, sent: 0, failed: 0, pruned: 0 };
   }
 
@@ -1887,8 +1916,9 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey()) {
     );
   }
 
-  await db.collection('ops').doc(`daily-quote-push-${dateKey}`).set(
+  await opRef.set(
     {
+      status: 'success',
       date: dateKey,
       sent,
       failed,
@@ -2363,7 +2393,8 @@ app.post('/api/push/daily-quote', async (req, res) => {
       req.body && typeof req.body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date.trim())
         ? req.body.date.trim()
         : null;
-    const result = await sendDailyQuotePushNotifications(bodyDate || getAppDateKey());
+    const force = req.body?.force === true;
+    const result = await sendDailyQuotePushNotifications(bodyDate || getAppDateKey(), { force });
     return res.json(result);
   } catch (error) {
     console.error('❌ Daily quote push failed:', error);
