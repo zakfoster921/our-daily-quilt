@@ -1186,7 +1186,7 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     '',
     'Do not use em dashes',
     '',
-    'Each idea must be at most 125 characters. Count only the text after "IDEA n:" (the label does not count toward the limit). Never exceed 125 characters for any single idea.',
+    'Each idea must be at most 100 characters. Count only the text after "IDEA n:" (the label does not count toward the limit). Never exceed 100 characters for any single idea.',
     '',
     'Return plain text only:',
     'IDEA 1: <idea>',
@@ -1240,7 +1240,7 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       'Merge ideas that lose nothing by merging; keep the more specific language.',
       'Write like a thoughtful friend, not a caption or aphorism. Do not use em dashes in your output.',
       'Do not start more than one idea with the same word.',
-      'Each idea at most 125 characters (text after the IDEA label only).',
+      'Each idea at most 100 characters (text after the IDEA label only).',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
@@ -1299,7 +1299,7 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
       'Merge ideas that lose nothing by merging; keep the more specific language.',
       'Write like a thoughtful friend, not a caption or aphorism. Do not use em dashes in your output.',
       'Do not start more than one idea with the same word.',
-      'Each idea at most 125 characters (text after the IDEA label only).',
+      'Each idea at most 100 characters (text after the IDEA label only).',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToClaude({ apiKey, model, prompt: repairPrompt });
