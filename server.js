@@ -1161,58 +1161,35 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     '',
     'Read all responses before writing anything.',
     '',
-    'If the reflection prompt asks what people DO or what HELPS them, summarize as transferable moves. If it asks what people NOTICED, FELT, or what making SHOWED them, summarize as observations — descriptive, no imperatives, traceable to what was actually said, and IMPORTANT: leave in first person "I"',
+    '**Route first:** If the reflection prompt asks what people DO or what HELPS them, this is actionable. If it asks what people NOTICED, FELT, or what making SHOWED them, this is experiential.',
     '',
-    '- Discard any response that does not answer the reflection prompt.',
-    '- Discard any response that is offensive or harmful.',
-    '- Do not synthesize joke responses or absurdist entries into real ideas.',
+    '**If actionable**, before writing any idea ask:',
+    '- What is the person actually DOING?',
+    '- Can someone borrow this move without copying the specific example?',
     '',
-    'The responses are real. Your output must be traceable to specific language or images in those responses. Do not generate principles from scratch. Find them inside what was actually written.',
+    '**If experiential**, before writing any idea ask:',
+    '- What specific thing did this person notice or feel?',
+    '- Does my idea still have the concrete detail that makes it real?',
     '',
-    'Test before writing each idea: which response does this come from? If you can\'t answer, discard it.',
+    'Bad: "My unfinished things revealed my patterns" ← abstracted away',
+    'Good: "I have so many unfinished things. Turns out I\'m not as patient as I thought" ← keeps the image',
     '',
-    'These are not craft suggestions. They are reports of how people use making to think. Your job is to name the thinking move, not the craft.',
+    'Actionable ideas can use imperatives. Experiential ideas stay in first person, descriptive, no mandates.',
     '',
-    'Before writing any idea, ask yourself:',
-    '- What is the person actually DOING (not what did they make)?',
-    '- What does that action DO for them (not what did they learn)?',
-    '- Can someone borrow this move without copying the exact example?',
-    'Bad: "Build something with your hands"  ← still an example',
-    'Good: "Make something when words aren\'t working"  ← transferable move',
+    'Discard any response that doesn\'t answer the prompt, is offensive, or is absurdist. Your output must be traceable to specific language in the responses. Test each idea: which response does this come from? If you can\'t answer, discard it.',
     '',
-    'Bad: "Journal your thoughts"  ← generic self-help',
-    'Good: "Write to find out what you actually think"  ← specific mechanism',
+    'Group responses that share the same observation or move. If two ideas lose nothing by merging, merge them. Keep the one with more specific language.',
     '',
-    'Write as if speaking to someone who is smart enough',
-    'to finish the thought themselves. Name the move,',
-    'then stop. Do not explain why it works or what it',
-    'reveals. Trust the reader.',
-    '',
-    'Bad: "Finishing work can reveal patterns you couldn\'t',
-    'see while you were still inside it"',
-    'Good: "Finish it. The pattern shows up after"',
-    '',
-    'Bad: "Your defensiveness maps territory you haven\'t',
-    'finished thinking through"',
-    'Good: "Notice what you get defensive about"',
-    '',
-    'Group responses that share the same move people are making, even if the examples differ.',
-    'Two ideas are the same move if removing one loses nothing. If in doubt, merge.',
-    'Merging test: "Make something physical" and "Do something with your hands" are the same — merge them. "Repetitive motion quiets noise" and "make without a plan" are different — keep them separate.',
-    'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
+    'Write the way a thoughtful friend talks, not like a caption, not like an aphorism.',
     '',
     'Do not start more than one idea with the same word.',
-    'If two ideas begin the same way, rewrite one from',
-    'a different angle or merge them.',
     '',
-    'Never use generic maker verbs (build, make, create, write, draw) as the main point — they describe the example, not the principle. If you must use them, they should serve the idea, not BE the idea.',
+    'Do not use em dashes',
     '',
-    'Return plain text only with one labeled idea per line:',
-    'IDEA 1: <helpful idea>',
-    'IDEA 2: <helpful idea>',
-    'Continue only for genuinely distinct ideas.',
-    'Keep each idea concise enough to read as a short standalone phrase.',
-    'Do not use markdown, JSON, bullets, headings, or any extra text.'
+    'Return plain text only:',
+    'IDEA 1: <idea>',
+    'IDEA 2: <idea>',
+    'Continue only for genuinely distinct ideas.'
   ].filter(Boolean).join('\n');
 }
 
@@ -1257,17 +1234,10 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       '',
       `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
       'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
-      'If the reflection prompt asks what people DO or what HELPS them, use transferable moves; if it asks what people NOTICED, FELT, or what making SHOWED them, use observations in first person "I", descriptive, no imperatives.',
-      'Name the thinking move, not the craft.',
-      'Group responses that share the same move people are making, even if the examples differ.',
-      'Two ideas are the same move if removing one loses nothing. If in doubt, merge.',
-      'Merging test: "Make something physical" and "Do something with your hands" are the same — merge them. "Repetitive motion quiets noise" and "make without a plan" are different — keep them separate.',
-      'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
-      'Make each idea transferable without copying the exact example.',
-      'Write as if speaking to someone who is smart enough to finish the thought themselves. Name the move, then stop. Do not explain why it works or what it reveals. Trust the reader.',
-      'Do not start more than one idea with the same word. If two ideas begin the same way, rewrite one from a different angle or merge them.',
-      'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
-      'Keep each idea concise enough to read as a short standalone phrase.',
+      'Route first: actionable (DO/HELPS) vs experiential (NOTICED/FELT/SHOWED). Actionable: imperatives OK. Experiential: first person, concrete detail, no mandates.',
+      'Merge ideas that lose nothing by merging; keep the more specific language.',
+      'Write like a thoughtful friend, not a caption or aphorism. Do not use em dashes in your output.',
+      'Do not start more than one idea with the same word.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
@@ -1322,17 +1292,10 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
       '',
       `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
       'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
-      'If the reflection prompt asks what people DO or what HELPS them, use transferable moves; if it asks what people NOTICED, FELT, or what making SHOWED them, use observations in first person "I", descriptive, no imperatives.',
-      'Name the thinking move, not the craft.',
-      'Group responses that share the same move people are making, even if the examples differ.',
-      'Two ideas are the same move if removing one loses nothing. If in doubt, merge.',
-      'Merging test: "Make something physical" and "Do something with your hands" are the same — merge them. "Repetitive motion quiets noise" and "make without a plan" are different — keep them separate.',
-      'Never list more than one idea about using your hands to start. Never list more than one idea about organizing or tracking. If two ideas feel like variations, pick the one with more specific language and discard the other.',
-      'Make each idea transferable without copying the exact example.',
-      'Write as if speaking to someone who is smart enough to finish the thought themselves. Name the move, then stop. Do not explain why it works or what it reveals. Trust the reader.',
-      'Do not start more than one idea with the same word. If two ideas begin the same way, rewrite one from a different angle or merge them.',
-      'Do not use generic maker verbs like build, make, create, write, or draw as the main point.',
-      'Keep each idea concise enough to read as a short standalone phrase.',
+      'Route first: actionable (DO/HELPS) vs experiential (NOTICED/FELT/SHOWED). Actionable: imperatives OK. Experiential: first person, concrete detail, no mandates.',
+      'Merge ideas that lose nothing by merging; keep the more specific language.',
+      'Write like a thoughtful friend, not a caption or aphorism. Do not use em dashes in your output.',
+      'Do not start more than one idea with the same word.',
       'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
     ].join('\n');
     const repairText = await postReflectionThemesToClaude({ apiKey, model, prompt: repairPrompt });
@@ -2558,6 +2521,37 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
   }
 });
 
+function reflectionThemeGenerationTimeMillis(themeData) {
+  if (!themeData || typeof themeData !== 'object') return null;
+  const ts = themeData.generatedAt;
+  if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+  const iso = String(themeData.generatedAtIso || '').trim();
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+async function getLatestReflectionResponseCreatedMillis(db, appDateKey) {
+  try {
+    const snap = await db.collection('reflectionResponses')
+      .where('appDateKey', '==', appDateKey)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .get();
+    if (snap.empty) return null;
+    const createdAt = snap.docs[0].get('createdAt');
+    if (createdAt && typeof createdAt.toMillis === 'function') return createdAt.toMillis();
+  } catch (err) {
+    const msg = String(err?.message || err || '');
+    if (/index|FAILED_PRECONDITION|requires an index/i.test(msg)) {
+      console.warn('reflectionResponses latest-by-createdAt query failed; continuing without skip:', msg.slice(0, 240));
+      return null;
+    }
+    throw err;
+  }
+  return null;
+}
+
 app.post('/api/reflection-themes/generate', async (req, res) => {
   setReflectionApiCors(res);
   try {
@@ -2578,6 +2572,36 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
     const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.date || '').trim())
       ? String(body.appDateKey || body.date).trim()
       : getAppDateKey();
+    const force = body.force === true || String(body.force || '').toLowerCase() === 'true';
+
+    const themeDocSnap = await db.collection('reflectionThemes').doc(appDateKey).get();
+    const priorThemeData = themeDocSnap.exists ? themeDocSnap.data() || {} : null;
+    const priorThemes = Array.isArray(priorThemeData?.themes)
+      ? priorThemeData.themes.map((t) => String(t || '').trim()).filter(Boolean)
+      : [];
+
+    if (!force && priorThemes.length) {
+      const genMs = reflectionThemeGenerationTimeMillis(priorThemeData);
+      if (genMs != null) {
+        const latestMs = await getLatestReflectionResponseCreatedMillis(db, appDateKey);
+        if (latestMs != null && latestMs <= genMs) {
+          console.log(`Reflection themes unchanged for ${appDateKey}: no responses newer than last generation (credits skip).`);
+          return res.json({
+            success: true,
+            skipped: true,
+            skipReason: 'no_new_responses_since_last_generation',
+            appDateKey,
+            themes: priorThemes,
+            reflectionPrompt: String(priorThemeData.reflectionPrompt || priorThemeData.communityPrompt || '').trim(),
+            responseCount: Number(priorThemeData.responseCount) || 0,
+            model: priorThemeData.model || null,
+            provider: priorThemeData.provider || null,
+            generatedAtIso: priorThemeData.generatedAtIso || null
+          });
+        }
+      }
+    }
+
     const responseLimit = Math.max(1, Math.min(120, Number(body.limit) || 80));
     const responseSnap = await db.collection('reflectionResponses')
       .where('appDateKey', '==', appDateKey)
