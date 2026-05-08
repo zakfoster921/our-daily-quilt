@@ -1460,6 +1460,8 @@ try {
       display: block;
       overflow: hidden;
       touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
       background: #e0e0e0;
     }
     
@@ -26370,16 +26372,23 @@ try {
         const valueSlider = document.getElementById('valueSlider');
 
         if (colorWheel) {
-          colorWheel.addEventListener('mousedown', this.handleColorWheelMouseDown.bind(this));
-          colorWheel.addEventListener('mousemove', this.handleColorWheelMouseMove.bind(this));
-          colorWheel.addEventListener('mouseup', this.handleColorWheelMouseUp.bind(this));
-          
-          colorWheel.addEventListener('touchstart', this.handleColorWheelTouchStart.bind(this));
-          colorWheel.addEventListener('touchmove', this.handleColorWheelTouchMove.bind(this));
-          colorWheel.addEventListener('touchend', this.handleColorWheelTouchEnd.bind(this));
+          if (window.PointerEvent) {
+            colorWheel.addEventListener('pointerdown', this.handleColorWheelPointerDown.bind(this));
+            colorWheel.addEventListener('pointermove', this.handleColorWheelPointerMove.bind(this));
+            colorWheel.addEventListener('pointerup', this.handleColorWheelPointerUp.bind(this));
+            colorWheel.addEventListener('pointercancel', this.handleColorWheelPointerUp.bind(this));
+          } else {
+            colorWheel.addEventListener('mousedown', this.handleColorWheelMouseDown.bind(this));
+            colorWheel.addEventListener('mousemove', this.handleColorWheelMouseMove.bind(this));
+            colorWheel.addEventListener('mouseup', this.handleColorWheelMouseUp.bind(this));
+            
+            colorWheel.addEventListener('touchstart', this.handleColorWheelTouchStart.bind(this), { passive: false });
+            colorWheel.addEventListener('touchmove', this.handleColorWheelTouchMove.bind(this), { passive: false });
+            colorWheel.addEventListener('touchend', this.handleColorWheelTouchEnd.bind(this), { passive: false });
+            colorWheel.addEventListener('click', this.handleColorWheelClick.bind(this));
+          }
           
           colorWheel.addEventListener('keydown', this.handleColorWheelKeyDown.bind(this));
-          colorWheel.addEventListener('click', this.handleColorWheelClick.bind(this));
         }
 
         if (valueSlider) {
@@ -26387,6 +26396,34 @@ try {
         }
 
         this.updateColorWheel();
+      }
+
+      handleColorWheelPointerDown(e) {
+        if (e.isPrimary === false) return;
+        e.preventDefault();
+        this.isDragging = true;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch (_) {
+          /* Pointer capture is best-effort for older embedded browsers. */
+        }
+        this.setHueFromCoords(e.clientX, e.clientY);
+      }
+
+      handleColorWheelPointerMove(e) {
+        if (!this.isDragging || e.isPrimary === false) return;
+        e.preventDefault();
+        this.setHueFromCoords(e.clientX, e.clientY);
+      }
+
+      handleColorWheelPointerUp(e) {
+        if (e.isPrimary === false) return;
+        this.isDragging = false;
+        try {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        } catch (_) {
+          /* ignore */
+        }
       }
 
       handleColorWheelMouseDown(e) {
@@ -31958,6 +31995,12 @@ try {
         return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
       }
 
+      waitForNextPaint() {
+        return new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+      }
+
       formatOrdinalNumber(value) {
         const n = Math.max(1, Math.floor(Number(value) || 1));
         const mod100 = n % 100;
@@ -31990,7 +32033,6 @@ try {
       }
 
       showColorSubmitTransition(color, message = this.getColorSubmitPlacementMessage()) {
-        const screen = document.getElementById('screen-color') || document.body;
         let overlay = document.getElementById('colorSubmitTransition');
         if (!overlay) {
           overlay = document.createElement('div');
@@ -32002,7 +32044,7 @@ try {
             <div class="color-submit-transition__message"></div>
             <div class="color-submit-transition__spinner" aria-hidden="true"></div>
           `;
-          screen.appendChild(overlay);
+          document.body.appendChild(overlay);
         }
         overlay.style.backgroundColor = color;
         overlay.style.color = this.getReadableTextColorForBackground(color);
@@ -32057,15 +32099,13 @@ try {
           const failureMessage = 'We hit a snag. Mind trying again?';
           this.showColorSubmitTransition(selectedColor, this.getColorSubmitPlacementMessage());
           const minimumTransitionHold = this.wait(1500);
+          await this.waitForNextPaint();
           const showTryAgain = async () => {
             await minimumTransitionHold;
             this.updateColorSubmitTransition(failureMessage);
             await this.wait(1200);
             this.hideColorSubmitTransition();
           };
-
-          await this.refreshSharedQuiltBeforeContribution();
-          this.updateColorSubmitTransition(this.getColorSubmitPlacementMessage());
 
           const applySelectedColorToCurrentQuilt = () => {
             const result = this.quiltEngine.addColor(selectedColor);
@@ -32158,15 +32198,21 @@ try {
 
             this.markDailyColorCompleted();
             await minimumTransitionHold;
+            const quiltContainer = document.querySelector('#screen-quilt .quilt-container');
+            if (quiltContainer) quiltContainer.classList.add('odq-quilt-shell--pending');
+            this.uiService.showScreen('screen-quilt');
+            await this.waitForNextPaint();
             try {
               this.renderQuilt();
               this.refreshQuiltFortuneReveal();
             } catch (renderError) {
               this.logger.warn('Color was saved, but quilt refresh hit a non-blocking error:', renderError);
+            } finally {
+              if (quiltContainer) quiltContainer.classList.remove('odq-quilt-shell--pending');
             }
-            
-            this.uiService.showScreen('screen-quilt');
+            await this.waitForNextPaint();
             this.hideColorSubmitTransition();
+            this.scheduleQuiltScrollCue(650);
             this.schedulePersonalQuiltPreviewCacheWarmup();
             this.maybeCreateColorMilestoneNotification(selectedColor).catch((error) => {
               this.logger.warn('Color milestone notification check failed:', error);
