@@ -1163,16 +1163,14 @@ function completeReflectionThemes(themes) {
     });
 }
 
-function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
-  const responseList = responses
-    .map((text, index) => `${index + 1}. ${String(text || '').replace(/\s+/g, ' ').trim()}`)
-    .join('\n');
-  return [
-    `Date key: ${dateKey}`,
-    reflectionPrompt ? `Reflection prompt: ${reflectionPrompt}` : '',
-    'Private responses:',
-    responseList,
-    '',
+function buildReflectionThemesPrompt({ reflectionPrompt, responses }) {
+  const rp = String(reflectionPrompt || '').replace(/\s+/g, ' ').trim();
+  const responseParagraphs = (Array.isArray(responses) ? responses : [])
+    .map((text) => String(text || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  /** No date key, labels, or numbering — raw prompt + responses only (experiment). */
+  const preamble = [rp, ...responseParagraphs].filter(Boolean).join('\n\n');
+  const instructions = [
     'Read all responses before writing anything.',
     '',
     '- What is the person actually DOING?',
@@ -1200,7 +1198,8 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     'IDEA 1: <idea>',
     'IDEA 2: <idea>',
     'Continue only for genuinely distinct ideas.'
-  ].filter(Boolean).join('\n');
+  ].join('\n');
+  return preamble ? `${preamble}\n\n${instructions}` : instructions;
 }
 
 async function postReflectionThemesToGemini({ apiKey, model, prompt }) {
