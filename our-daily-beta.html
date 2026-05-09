@@ -2912,18 +2912,22 @@ try {
         right: auto !important;
         width: 100% !important;
         margin: 0 !important;
-        padding: 1rem max(24px, calc(var(--odq-safe-right) + 18px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(24px, calc(var(--odq-safe-left) + 18px)) !important;
+        /* Bottom safe-area lives on `.quilt-scroll-icon-footer` below the transparent gap. */
+        padding: 0.75rem max(24px, calc(var(--odq-safe-right) + 18px)) 0.85rem max(24px, calc(var(--odq-safe-left) + 18px)) !important;
         box-sizing: border-box !important;
         background: #ebe8e3 !important;
         box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08) !important;
         z-index: 10 !important;
-        display: flex;
-        justify-content: center;
-        align-items: center;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        min-height: var(--quilt-contributors-band-height);
         pointer-events: none;
         opacity: 1;
         visibility: visible;
-        transform: none;
+        /* Keep the band short, but place it in the vertical center of the final scroll viewport. */
+        transform: translateY(calc(-1 * var(--quilt-contributors-final-screen-lift)));
       }
 
       #screen-quilt .quilt-reset-footer {
@@ -2942,8 +2946,9 @@ try {
         pointer-events: none !important;
       }
 
+      /* Reset countdown is hidden — avoid a tall empty scroll region below the icon strip. */
       #screen-quilt .quilt-reset-scroll-gap {
-        min-height: 24vh !important;
+        min-height: 0 !important;
       }
 
       #screen-quilt .quilt-fixed-reset-counter {
@@ -2964,13 +2969,18 @@ try {
       #screen-quilt .quilt-contributor-panel {
         pointer-events: none;
         width: min(88vw, 380px);
-        height: var(--quilt-contributors-panel-max);
+        /* Shrink to content when the list is short so the outer band can center the whole card vertically. */
+        height: auto;
+        min-height: 0;
         max-height: var(--quilt-contributors-panel-max);
         margin: 0 auto;
         display: flex;
         flex-direction: column;
         align-items: stretch;
-        gap: 0.42rem;
+        /* safe: when content exceeds max-height, align to start so the list scrolls predictably. */
+        justify-content: center;
+        justify-content: safe center;
+        gap: 0;
         color: rgba(0, 0, 0, 0.42);
         font-family: inherit;
         font-size: calc(clamp(1.4rem, 3.5vw, 2rem) * 0.75);
@@ -2979,6 +2989,19 @@ try {
         letter-spacing: 0.02em;
         text-align: center;
         overflow: visible;
+      }
+
+      #screen-quilt .quilt-contributor-panel-body {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: center;
+        justify-content: safe center;
+        gap: 0.42rem;
+        flex: 0 1 auto;
+        min-height: 0;
+        max-height: 100%;
+        width: 100%;
       }
 
       #screen-quilt .quilt-contributor-title {
@@ -2997,16 +3020,19 @@ try {
         margin: 0 auto;
         width: 100%;
         min-height: 0;
-        flex: 1 1 auto;
+        /* Do not grow: flex-grow was stealing vertical space and sitting the title+grid low in the band. */
+        flex: 0 1 auto;
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         column-gap: var(--quilt-contributor-gutter);
         row-gap: 0.28rem;
         grid-auto-rows: max-content;
         /* Horizontal padding matches column-gap so edge inset equals space between columns. */
-        padding: 0.12rem var(--quilt-contributor-gutter) 0.55rem;
+        padding: 0.55rem var(--quilt-contributor-gutter) 0.55rem;
         align-items: start;
-        align-content: start;
+        /* Center short lists vertically in the panel; long lists still scroll normally. */
+        align-content: center;
+        align-content: safe center;
         justify-items: start;
         font: inherit;
         font-size: 0.86em;
@@ -3127,6 +3153,11 @@ try {
         --quilt-fixed-top: calc(var(--quilt-edge-bleed) * -1);
         --quilt-fixed-height: calc(100dvh + (var(--quilt-edge-bleed) * 2));
         --quilt-contributors-panel-max: min(42vh, 19rem);
+        --quilt-contributors-band-height: min(44vh, 24rem);
+        --quilt-icon-strip-pad-v: clamp(0rem, 0.2vh, 0.15rem);
+        --quilt-contributor-footer-gap-height: clamp(0.15rem, 0.6vw, 0.35rem);
+        --quilt-scroll-icon-footer-height: calc(44px + (2 * var(--quilt-icon-strip-pad-v)) + max(0px, env(safe-area-inset-bottom, 0px)));
+        --quilt-contributors-final-screen-lift: calc((100dvh - var(--quilt-scroll-icon-footer-height) - var(--quilt-contributor-footer-gap-height) - var(--quilt-contributors-band-height)) / 2);
         /* Do not zero out safe-area; parent .screen also insets — keep horizontal flush for quilt art */
         padding-top: 0 !important;
         padding-bottom: 0 !important;
@@ -6877,6 +6908,8 @@ try {
     /* Full-res Layout B story (1080×1920); same asset as share flow; image band is full viewport width. */
     #screen-quilt .quilt-layout-b-preview-wrap {
       --quilt-story-preview-frame-pad-bottom: 0.65rem;
+      /* Same value above and below `.quilt-before-you-go` (was 16px bottom only). */
+      --quilt-before-you-go-outer-y: calc(30px + var(--quilt-story-preview-frame-pad-bottom) + 0.15rem);
       width: 100%;
       max-width: 100vw;
       box-sizing: border-box;
@@ -6885,7 +6918,7 @@ try {
       background: transparent;
       flex-shrink: 0;
       position: relative;
-      /* Same stacking sheet as .button-container — covers fixed contributors until scrolled past. */
+      /* Stacking for the Layout B preview sheet over the quilt canvas (icon strip lives in `.quilt-scroll-icon-footer`). */
       z-index: 10;
     }
 
@@ -6902,14 +6935,34 @@ try {
     /* Same vertical rhythm as quote Layout B card margin-bottom + reflection fabric margin-top + padding-top. */
     #screen-quilt .quilt-layout-b-preview-before-gap {
       width: 100%;
-      min-height: calc(30px + 0.65rem + 0.15rem);
+      min-height: var(--quilt-before-you-go-outer-y);
       flex-shrink: 0;
       pointer-events: none;
     }
 
-    #screen-quilt .quilt-layout-b-preview-tail {
-      background: #ebe8e3;
+    /* Scroll-end footer: icon strip + hidden share slots. It stays in normal flow so icons only appear at the bottom of the scroll. */
+    #screen-quilt .quilt-scroll-icon-footer {
+      width: 100%;
       box-sizing: border-box;
+      position: relative;
+      bottom: auto;
+      z-index: 12;
+      flex-shrink: 0;
+      background: #ebe8e3;
+      padding: 0 0 max(0.05rem, env(safe-area-inset-bottom, 0px)) 0;
+      box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.05);
+    }
+
+    #screen-quilt .quilt-scroll-icon-footer > .button-group:last-of-type {
+      margin-bottom: 0;
+    }
+
+    #screen-quilt .quilt-contributor-footer-gap {
+      flex-shrink: 0;
+      width: 100%;
+      min-height: var(--quilt-contributor-footer-gap-height);
+      background: transparent;
+      pointer-events: none;
     }
 
     #screen-quilt .quilt-layout-b-preview-wrap--empty .quilt-layout-b-preview-frame {
@@ -6969,7 +7022,7 @@ try {
       box-sizing: border-box;
       /* Extra top air matches frame padding under story preview image. */
       padding: calc(1.2rem + var(--quilt-story-preview-frame-pad-bottom, 0.65rem)) 1.15rem 1.15rem;
-      margin: 0 auto 16px;
+      margin: 0 auto var(--quilt-before-you-go-outer-y);
       background: #f8f4ed;
       border: 1px solid rgba(90, 74, 58, 0.14);
       border-radius: 0;
@@ -7094,6 +7147,47 @@ try {
       text-decoration: none;
     }
 
+    #screen-quilt .quilt-before-you-go__share-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.15rem;
+      flex: 0 0 auto;
+      max-width: 58%;
+    }
+
+    #screen-quilt .quilt-before-you-go__share-wrap .quilt-before-you-go__link,
+    #screen-quilt .quilt-before-you-go__share-wrap .quilt-before-you-go__share-plain {
+      max-width: 100%;
+    }
+
+    #screen-quilt .quilt-before-you-go__coming-soon {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 0.72rem;
+      font-weight: 500;
+      font-style: italic;
+      color: rgba(86, 66, 47, 0.45);
+      line-height: 1.2;
+    }
+
+    #screen-quilt .quilt-before-you-go__share-plain {
+      text-decoration: none;
+      cursor: default;
+      color: rgba(74, 59, 44, 0.92);
+    }
+
+    #screen-quilt .quilt-before-you-go__share-plain:hover,
+    #screen-quilt .quilt-before-you-go__share-plain:focus-visible {
+      color: rgba(74, 59, 44, 0.92);
+      background: transparent;
+      border-color: transparent;
+    }
+
+    #screen-quilt .quilt-before-you-go__share-plain:disabled {
+      opacity: 1;
+      cursor: default;
+    }
+
     #screen-quilt .quilt-before-you-go__closing {
       margin: 0;
       padding: 0;
@@ -7120,6 +7214,11 @@ try {
         text-align: left;
         justify-content: flex-start;
       }
+
+      #screen-quilt .quilt-before-you-go__share-wrap {
+        max-width: 100%;
+        align-items: flex-start;
+      }
     }
 
     #screen-quilt .button-group:has(#quiltSubmitQuoteFooterBtn),
@@ -7137,8 +7236,9 @@ try {
       z-index: 2;
     }
 
+    /* Extra scroll past the icon strip when the reset bar is shown; keep small while the bar stays hidden. */
     #screen-quilt .quilt-reset-scroll-gap {
-      min-height: 24vh;
+      min-height: 0;
       background: transparent;
       pointer-events: none;
       flex-shrink: 0;
@@ -7162,35 +7262,30 @@ try {
       pointer-events: none;
     }
 
-    #screen-quilt .quilt-story-actions {
-      width: 100%;
-      box-sizing: border-box;
-      margin-top: clamp(0.35rem, 1vh, 0.65rem);
-      padding: 0 0 max(0.85rem, env(safe-area-inset-bottom, 0px));
-    }
-
-    #screen-quilt .quilt-story-actions .button-group:last-of-type {
-      margin-bottom: 0;
-    }
-
     #screen-quilt .quilt-footer-icon-row {
       display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
       align-items: center;
       justify-content: center;
       gap: 0.4rem;
-      margin: 0.35rem auto 0.2rem;
+      margin: 0 auto;
+      padding-block: var(--quilt-icon-strip-pad-v);
+      padding-inline: 0;
+      box-sizing: border-box;
+      line-height: 0;
     }
 
     #screen-quilt .quilt-instagram-icon-link,
     #screen-quilt .quilt-about-icon-link,
-    #screen-quilt .quilt-settings-icon-btn,
-    #screen-quilt .quilt-backside-toggle {
-      display: inline-flex;
+    #screen-quilt .quilt-settings-icon-btn {
+      display: flex;
       align-items: center;
       justify-content: center;
-      width: 48px;
-      height: 48px;
+      width: 44px;
+      height: 44px;
       margin: 0;
+      line-height: 0;
       color: rgba(0, 0, 0, 0.58);
       text-decoration: none;
       border-radius: 999px;
@@ -7203,9 +7298,23 @@ try {
     }
 
     #screen-quilt .quilt-backside-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
       width: auto;
       min-width: 74px;
+      min-height: 44px;
+      margin: 0;
+      line-height: normal;
+      color: rgba(0, 0, 0, 0.58);
+      text-decoration: none;
+      border-radius: 999px;
+      border: 0;
+      background: transparent;
       padding: 0 0.7rem;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
       font-size: 0.72rem;
       font-weight: 650;
       letter-spacing: 0.05em;
@@ -7236,6 +7345,7 @@ try {
     #screen-quilt .quilt-instagram-icon-link svg,
     #screen-quilt .quilt-about-icon-link svg,
     #screen-quilt .quilt-settings-icon-btn svg {
+      display: block;
       width: 28px;
       height: 28px;
       stroke: currentColor;
@@ -7850,7 +7960,7 @@ try {
 
           <div class="quilt-before-you-go__actions">
             <div class="quilt-before-you-go__action-row">
-              <span class="quilt-before-you-go__action-lead">Pass it on</span>
+              <span class="quilt-before-you-go__action-lead">Know a good quote?</span>
               <button
                 type="button"
                 class="quilt-before-you-go__link"
@@ -7862,9 +7972,12 @@ try {
             </div>
             <div class="quilt-before-you-go__action-row">
               <span class="quilt-before-you-go__action-lead" id="beforeYouGoShareLead"></span>
-              <button type="button" class="quilt-before-you-go__link" id="beforeYouGoShareBtn" aria-live="polite">
-                …
-              </button>
+              <div class="quilt-before-you-go__share-wrap">
+                <button type="button" class="quilt-before-you-go__link" id="beforeYouGoShareBtn" aria-live="polite">
+                  …
+                </button>
+                <span class="quilt-before-you-go__coming-soon" id="beforeYouGoShareSoon" hidden>Coming soon</span>
+              </div>
             </div>
           </div>
 
@@ -7872,8 +7985,19 @@ try {
 
           <p class="quilt-before-you-go__closing" id="beforeYouGoClosing" aria-live="polite"></p>
         </div>
-        <div class="quilt-layout-b-preview-tail">
-        <div class="button-group">
+      </div>
+      <div class="quilt-scroll-quilt-gap" aria-hidden="true"></div>
+      <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
+        <div class="quilt-contributor-panel">
+          <div class="quilt-contributor-panel-body">
+            <p class="quilt-contributor-title">MANY HANDS MADE THIS QUILT</p>
+            <div class="quilt-contributor-list" id="quiltContributorList" role="list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="quilt-contributor-footer-gap" aria-hidden="true"></div>
+      <div class="quilt-scroll-icon-footer" aria-label="OUR DAILY QUILT — links and settings">
+        <div class="button-group" hidden aria-hidden="true">
           <button
             type="button"
             class="btn"
@@ -7901,7 +8025,7 @@ try {
           </button>
         </div>
 
-        <div class="button-group">
+        <div class="button-group" hidden aria-hidden="true">
           <button
             type="button"
             class="btn"
@@ -7981,57 +8105,48 @@ try {
             </svg>
           </button>
         </div>
-        <div class="quilt-story-actions" aria-label="Share and info">
-          <div class="button-group" hidden aria-hidden="true">
-            <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="Follow on Instagram" hidden aria-hidden="true">
-              <span class="stack-btn-content">
-                <span class="stack-btn-left">
-                  <span class="stack-btn-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" role="img" focusable="false">
-                      <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
-                      <circle cx="12" cy="12" r="4.1"></circle>
-                      <circle cx="17.2" cy="6.8" r="0.9"></circle>
-                    </svg>
-                  </span>
-                  <span>Follow on Instagram</span>
-                </span>
-                <span class="stack-btn-chevron" aria-hidden="true">
+        <div class="button-group" hidden aria-hidden="true">
+          <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="Follow on Instagram" hidden aria-hidden="true">
+            <span class="stack-btn-content">
+              <span class="stack-btn-left">
+                <span class="stack-btn-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" role="img" focusable="false">
-                    <path d="M9 5l7 7-7 7"></path>
+                    <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
+                    <circle cx="12" cy="12" r="4.1"></circle>
+                    <circle cx="17.2" cy="6.8" r="0.9"></circle>
                   </svg>
                 </span>
+                <span>Follow on Instagram</span>
               </span>
-            </button>
-          </div>
-          <div class="button-group">
-            <button id="shareBtnCompleted" class="btn quilt-share-hidden" aria-label="Share OUR DAILY QUILT temporarily hidden" hidden>
-              <span class="stack-btn-content">
-                <span class="stack-btn-left">
-                  <span class="stack-btn-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" role="img" focusable="false">
-                      <path d="M12 4v10"></path>
-                      <path d="M8 8l4-4 4 4"></path>
-                      <rect x="4" y="13" width="16" height="7" rx="2"></rect>
-                    </svg>
-                  </span>
-                  <span>Share OUR DAILY QUILT</span>
-                </span>
-                <span class="stack-btn-chevron" aria-hidden="true">
+              <span class="stack-btn-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                  <path d="M9 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </span>
+          </button>
+        </div>
+        <!-- Re-enable share: remove `hidden` from this div and from `#shareBtnCompleted`, drop `quilt-share-hidden` / `hidden` on the button. -->
+        <div class="button-group" hidden aria-hidden="true">
+          <button id="shareBtnCompleted" class="btn quilt-share-hidden" aria-label="Share OUR DAILY QUILT temporarily hidden" hidden>
+            <span class="stack-btn-content">
+              <span class="stack-btn-left">
+                <span class="stack-btn-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" role="img" focusable="false">
-                    <path d="M9 5l7 7-7 7"></path>
+                    <path d="M12 4v10"></path>
+                    <path d="M8 8l4-4 4 4"></path>
+                    <rect x="4" y="13" width="16" height="7" rx="2"></rect>
                   </svg>
                 </span>
+                <span>Share OUR DAILY QUILT</span>
               </span>
-            </button>
-          </div>
-        </div>
-        </div>
-      </div>
-      <div class="quilt-scroll-quilt-gap" aria-hidden="true"></div>
-      <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
-        <div class="quilt-contributor-panel">
-          <p class="quilt-contributor-title">MANY HANDS MADE THIS QUILT</p>
-          <div class="quilt-contributor-list" id="quiltContributorList" role="list"></div>
+              <span class="stack-btn-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                  <path d="M9 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </span>
+          </button>
         </div>
       </div>
       <div class="quilt-reset-scroll-gap" aria-hidden="true"></div>
@@ -24556,6 +24671,8 @@ try {
         this._layoutBPreviewObjectUrl = null;
         this._layoutBPreviewDebounceTimer = null;
         this._layoutBPreviewGeneration = 0;
+        /** After a successful story preview for 2+ blocks, skip heavy regen until preview is cleared (≤1 blocks). */
+        this._layoutBStoryPreviewHeavyDoneThisVisit = false;
         this._quiltFortuneFrontObjectUrl = null;
         this._quiltFortuneFrontGeneration = 0;
         this._quiltResetCountdownTimer = null;
@@ -31110,7 +31227,7 @@ try {
         const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
         if (totalSeconds < 60) {
           el.textContent =
-            "Today's quilt closes in less than a minute.\nThank you for being here.";
+            "Today's quilt closes in less than a minute.\nThank you for being here ♡";
           return;
         }
         const hours = Math.floor(totalSeconds / 3600);
@@ -31124,7 +31241,7 @@ try {
           const mu = minutes === 1 ? 'minute' : 'minutes';
           timePart = `${minutes} ${mu}`;
         }
-        el.textContent = `Today's quilt closes in ${timePart}.\nThank you for being here.`;
+        el.textContent = `Today's quilt closes in ${timePart}.\nThank you for being here ♡`;
       }
 
       setupQuiltResetCountdown() {
@@ -32320,6 +32437,11 @@ try {
 
       scheduleLayoutBStoryPreviewRefresh() {
         if (this.isDesktopRedirect) return;
+        const blocks = this.quiltEngine?.blocks;
+        const blockCount = Array.isArray(blocks) ? blocks.length : 0;
+        if (blockCount > 1 && this._layoutBStoryPreviewHeavyDoneThisVisit) {
+          return;
+        }
         if (this._layoutBPreviewDebounceTimer) {
           clearTimeout(this._layoutBPreviewDebounceTimer);
         }
@@ -32408,6 +32530,7 @@ try {
         const exploreDescEl = document.getElementById('beforeYouGoExploreDesc');
         const shareLeadEl = document.getElementById('beforeYouGoShareLead');
         const shareBtn = document.getElementById('beforeYouGoShareBtn');
+        const shareSoonEl = document.getElementById('beforeYouGoShareSoon');
         if (writeEl) writeEl.textContent = qs.getFreeWritePromptText(quote);
         const { titleLine, blurb } = qs.getArtRecBeforeYouGoParts(quote);
         if (exploreTitleEl) exploreTitleEl.textContent = titleLine;
@@ -32433,8 +32556,23 @@ try {
         if (shareLeadEl) shareLeadEl.textContent = v.lead;
         if (shareBtn) {
           shareBtn.textContent = v.label;
-          shareBtn.disabled = false;
-          shareBtn.removeAttribute('aria-disabled');
+          if (v.mode === 'friend') {
+            shareBtn.classList.remove('quilt-before-you-go__link');
+            shareBtn.classList.add('quilt-before-you-go__share-plain');
+            shareBtn.disabled = true;
+            shareBtn.setAttribute('aria-disabled', 'true');
+            shareBtn.setAttribute('aria-label', 'Share with a friend (coming soon)');
+          } else {
+            shareBtn.classList.add('quilt-before-you-go__link');
+            shareBtn.classList.remove('quilt-before-you-go__share-plain');
+            shareBtn.disabled = false;
+            shareBtn.removeAttribute('aria-disabled');
+            shareBtn.removeAttribute('aria-label');
+          }
+        }
+        if (shareSoonEl) {
+          shareSoonEl.hidden = v.mode !== 'friend';
+          shareSoonEl.setAttribute('aria-hidden', v.mode === 'friend' ? 'false' : 'true');
         }
       }
 
@@ -32550,6 +32688,7 @@ try {
         const blocks = this.quiltEngine?.blocks;
         const blockCount = Array.isArray(blocks) ? blocks.length : 0;
         if (blockCount <= 1) {
+          this._layoutBStoryPreviewHeavyDoneThisVisit = false;
           this._revokeLayoutBPreviewObjectUrl();
           img.removeAttribute('src');
           img.hidden = true;
@@ -32559,6 +32698,10 @@ try {
             hint.hidden = false;
             hint.textContent = "Add another color to see today's story collage preview.";
           }
+          return;
+        }
+
+        if (this._layoutBStoryPreviewHeavyDoneThisVisit) {
           return;
         }
 
@@ -32591,6 +32734,7 @@ try {
 
           const applyReady = () => {
             if (gen !== this._layoutBPreviewGeneration) return;
+            this._layoutBStoryPreviewHeavyDoneThisVisit = true;
             wrap.setAttribute('aria-busy', 'false');
             if (hint) {
               hint.textContent = '';
