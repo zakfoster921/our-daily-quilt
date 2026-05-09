@@ -1092,6 +1092,18 @@ function postJsonWithHttps({ hostname, path: requestPath, headers, body }) {
   });
 }
 
+/** Strip model self-verification appended after the real idea (same-line "Count: 83 ✓", "Check: …", "Fix one. Revise", etc.). */
+function stripReflectionThemeModelMeta(theme) {
+  let s = String(theme || '').replace(/\s+/g, ' ').trim();
+  if (!s) return s;
+  s = s.replace(/\s+Count:\s*\d+(?:\s*[✓✔√])?[\s\S]*$/i, '').trim();
+  s = s.replace(/\s+No idea starts[\s\S]*$/i, '').trim();
+  s = s.replace(/\s+Check:\s*(?:Improv|I[,']|same word|different words)[\s\S]*$/i, '').trim();
+  s = s.replace(/\s+Fix one\.[\s\S]*$/i, '').trim();
+  s = s.replace(/\s+Revise\s*$/i, '').trim();
+  return s.trim();
+}
+
 function extractReflectionThemesFromText(value) {
   const raw = String(value || '').trim();
   if (!raw) return [];
@@ -1118,11 +1130,11 @@ function extractReflectionThemesFromText(value) {
       }
       return theme;
     })
-    .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
+    .map((theme) => stripReflectionThemeModelMeta(String(theme || '').replace(/\s+/g, ' ').trim()))
     .filter(Boolean);
   if (themes.length) return themes;
   const labeledMatches = Array.from(raw.matchAll(/(?:\*\*)?\s*(?:THEME|IDEA)\s*\d+\s*(?:\*\*)?\s*[:\-.)]?\s*(?:\*\*)?\s*([\s\S]*?)(?=\s*(?:\*\*)?\s*(?:THEME|IDEA)\s*\d+\s*(?:\*\*)?\s*[:\-.)]?|$)/gi))
-    .map((match) => String(match[1] || '').replace(/\*\*/g, '').trim())
+    .map((match) => stripReflectionThemeModelMeta(String(match[1] || '').replace(/\*\*/g, '').trim()))
     .filter(Boolean);
   if (labeledMatches.length) return labeledMatches;
   return raw
@@ -1132,13 +1144,15 @@ function extractReflectionThemesFromText(value) {
       .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '')
       .replace(/^["']|["']$/g, '')
       .trim())
-    .filter((line) => line && !/^\{|\}|\[|\]|themes|ideas/i.test(line));
+    .map((line) => stripReflectionThemeModelMeta(line))
+    .filter((line) => line && !/^\{|\}|\[|\]|themes|ideas/i.test(line))
+    .filter((line) => !/^(?:count|check|no idea starts|fix one|revise)\b/i.test(line));
 }
 
 function completeReflectionThemes(themes) {
   const seen = new Set();
   return (Array.isArray(themes) ? themes : [])
-    .map((theme) => String(theme || '').replace(/\s+/g, ' ').trim())
+    .map((theme) => stripReflectionThemeModelMeta(String(theme || '').replace(/\s+/g, ' ').trim()))
     .map((theme) => theme.replace(/\.+$/g, '').trim())
     .filter(Boolean)
     .filter((theme) => {
@@ -1161,32 +1175,26 @@ function buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses }) {
     '',
     'Read all responses before writing anything.',
     '',
-    '**Route first:** If the reflection prompt asks what people DO or what HELPS them, this is actionable. If it asks what people NOTICED, FELT, or what making SHOWED them, this is experiential.',
-    '',
-    '**If actionable**, before writing any idea ask:',
     '- What is the person actually DOING?',
     '- Can someone borrow this move without copying the specific example?',
-    '',
-    '**If experiential**, before writing any idea ask:',
-    '- What specific thing did this person notice or feel?',
     '- Does my idea still have the concrete detail that makes it real?',
     '',
     'Bad: "My unfinished things revealed my patterns" ← abstracted away',
     'Good: "I have so many unfinished things. Turns out I\'m not as patient as I thought" ← keeps the image',
     '',
-    'Actionable ideas can use imperatives. Experiential ideas stay in first person, descriptive, no mandates.',
+    'ideas stay in first person, descriptive, no mandates.',
     '',
     'Discard any response that doesn\'t answer the prompt, is offensive, or is absurdist. Your output must be traceable to specific language in the responses. Test each idea: which response does this come from? If you can\'t answer, discard it.',
     '',
     'Group responses that share the same observation or move. If two ideas lose nothing by merging, merge them. Keep the one with more specific language.',
     '',
-    'Write the way a thoughtful friend talks, not like a caption, not like an aphorism.',
+    'Write the way a thoughtful friend talks — not like a caption, not like an aphorism.',
+    '',
+    'limit each idea to 100 characters max. shorter is fine.',
     '',
     'Do not start more than one idea with the same word.',
     '',
     'Do not use em dashes',
-    '',
-    'Each idea must be at most 100 characters. Count only the text after "IDEA n:" (the label does not count toward the limit). Never exceed 100 characters for any single idea.',
     '',
     'Return plain text only:',
     'IDEA 1: <idea>',
@@ -1235,13 +1243,10 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
       prompt,
       '',
       `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
-      'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
-      'Route first: actionable (DO/HELPS) vs experiential (NOTICED/FELT/SHOWED). Actionable: imperatives OK. Experiential: first person, concrete detail, no mandates.',
-      'Merge ideas that lose nothing by merging; keep the more specific language.',
-      'Write like a thoughtful friend, not a caption or aphorism. Do not use em dashes in your output.',
-      'Do not start more than one idea with the same word.',
-      'Each idea at most 100 characters (text after the IDEA label only).',
-      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
+      'Return one idea for each genuinely distinct response or response cluster, up to 10 ideas.',
+      'Follow every instruction in the prompt above exactly.',
+      'Output nothing except IDEA lines: no counts, checkmarks, Check:, or revision notes.',
+      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels.'
     ].join('\n');
     const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
     themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
@@ -1294,13 +1299,10 @@ async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, r
       prompt,
       '',
       `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
-      'Return one idea for each genuinely distinct useful response or response cluster, up to 10 ideas.',
-      'Route first: actionable (DO/HELPS) vs experiential (NOTICED/FELT/SHOWED). Actionable: imperatives OK. Experiential: first person, concrete detail, no mandates.',
-      'Merge ideas that lose nothing by merging; keep the more specific language.',
-      'Write like a thoughtful friend, not a caption or aphorism. Do not use em dashes in your output.',
-      'Do not start more than one idea with the same word.',
-      'Each idea at most 100 characters (text after the IDEA label only).',
-      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels for each distinct helpful idea.'
+      'Return one idea for each genuinely distinct response or response cluster, up to 10 ideas.',
+      'Follow every instruction in the prompt above exactly.',
+      'Output nothing except IDEA lines: no counts, checkmarks, Check:, or revision notes.',
+      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels.'
     ].join('\n');
     const repairText = await postReflectionThemesToClaude({ apiKey, model, prompt: repairPrompt });
     themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
@@ -2525,14 +2527,61 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
   }
 });
 
-function reflectionThemeGenerationTimeMillis(themeData) {
-  if (!themeData || typeof themeData !== 'object') return null;
-  const ts = themeData.generatedAt;
-  if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
-  const iso = String(themeData.generatedAtIso || '').trim();
-  if (!iso) return null;
-  const ms = Date.parse(iso);
-  return Number.isFinite(ms) ? ms : null;
+function reflectionThemeGenerationTimeMillis(themeData, themeDocSnap = null) {
+  if (themeData && typeof themeData === 'object') {
+    const ts = themeData.generatedAt;
+    if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+    const iso = String(themeData.generatedAtIso || '').trim();
+    if (iso) {
+      const ms = Date.parse(iso);
+      if (Number.isFinite(ms)) return ms;
+    }
+  }
+  if (themeDocSnap && themeDocSnap.exists && typeof themeDocSnap.updateTime?.toMillis === 'function') {
+    return themeDocSnap.updateTime.toMillis();
+  }
+  return null;
+}
+
+async function countReflectionResponsesForDate(db, appDateKey) {
+  try {
+    const agg = await db.collection('reflectionResponses')
+      .where('appDateKey', '==', appDateKey)
+      .count()
+      .get();
+    return agg.data().count;
+  } catch (err) {
+    console.warn('reflectionResponses count() failed:', String(err?.message || err || '').slice(0, 240));
+    return null;
+  }
+}
+
+/** Newest-first query when index exists; else unordered sample (same as legacy). */
+async function loadReflectionResponseTextsForGeneration(db, appDateKey, responseLimit) {
+  try {
+    const snap = await db.collection('reflectionResponses')
+      .where('appDateKey', '==', appDateKey)
+      .orderBy('createdAt', 'desc')
+      .limit(responseLimit)
+      .get();
+    return snap.docs
+      .map((doc) => String(doc.data()?.responseText || '').trim())
+      .filter(Boolean)
+      .reverse();
+  } catch (err) {
+    const msg = String(err?.message || err || '');
+    if (/index|FAILED_PRECONDITION|requires an index/i.test(msg)) {
+      console.warn('reflectionResponses orderBy(createdAt desc) failed; using unordered sample:', msg.slice(0, 240));
+      const snap = await db.collection('reflectionResponses')
+        .where('appDateKey', '==', appDateKey)
+        .limit(responseLimit)
+        .get();
+      return snap.docs
+        .map((doc) => String(doc.data()?.responseText || '').trim())
+        .filter(Boolean);
+    }
+    throw err;
+  }
 }
 
 async function getLatestReflectionResponseCreatedMillis(db, appDateKey) {
@@ -2584,36 +2633,47 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       ? priorThemeData.themes.map((t) => String(t || '').trim()).filter(Boolean)
       : [];
 
-    if (!force && priorThemes.length) {
-      const genMs = reflectionThemeGenerationTimeMillis(priorThemeData);
-      if (genMs != null) {
-        const latestMs = await getLatestReflectionResponseCreatedMillis(db, appDateKey);
-        if (latestMs != null && latestMs <= genMs) {
-          console.log(`Reflection themes unchanged for ${appDateKey}: no responses newer than last generation (credits skip).`);
-          return res.json({
-            success: true,
-            skipped: true,
-            skipReason: 'no_new_responses_since_last_generation',
-            appDateKey,
-            themes: priorThemes,
-            reflectionPrompt: String(priorThemeData.reflectionPrompt || priorThemeData.communityPrompt || '').trim(),
-            responseCount: Number(priorThemeData.responseCount) || 0,
-            model: priorThemeData.model || null,
-            provider: priorThemeData.provider || null,
-            generatedAtIso: priorThemeData.generatedAtIso || null
-          });
-        }
-      }
+    const totalReflectionResponses = await countReflectionResponsesForDate(db, appDateKey);
+    if (totalReflectionResponses === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No reflection responses found for date',
+        appDateKey
+      });
     }
 
     const responseLimit = Math.max(1, Math.min(120, Number(body.limit) || 80));
-    const responseSnap = await db.collection('reflectionResponses')
-      .where('appDateKey', '==', appDateKey)
-      .limit(responseLimit)
-      .get();
-    const responses = responseSnap.docs
-      .map((doc) => String(doc.data()?.responseText || '').trim())
-      .filter(Boolean);
+
+    if (!force && themeDocSnap.exists && priorThemeData) {
+      const genMs = reflectionThemeGenerationTimeMillis(priorThemeData, themeDocSnap);
+      const priorTotal = Number(priorThemeData.responseCount) || 0;
+      const latestMs = await getLatestReflectionResponseCreatedMillis(db, appDateKey);
+      const countOkForTimeSkip = totalReflectionResponses == null
+        || totalReflectionResponses === priorTotal
+        || priorTotal < totalReflectionResponses;
+      const noNewByTime = latestMs != null && latestMs <= genMs && countOkForTimeSkip;
+      const noNewByCountFallback = latestMs == null
+        && totalReflectionResponses != null
+        && totalReflectionResponses === priorTotal;
+      if (genMs != null && (noNewByTime || noNewByCountFallback)) {
+        const reason = noNewByTime ? 'no_new_responses_since_last_generation' : 'no_response_count_change_since_last_generation';
+        console.log(`Reflection themes unchanged for ${appDateKey}: ${reason} (credits skip).`);
+        return res.json({
+          success: true,
+          skipped: true,
+          skipReason: reason,
+          appDateKey,
+          themes: priorThemes,
+          reflectionPrompt: String(priorThemeData.reflectionPrompt || priorThemeData.communityPrompt || '').trim(),
+          responseCount: totalReflectionResponses != null ? totalReflectionResponses : priorTotal,
+          model: priorThemeData.model || null,
+          provider: priorThemeData.provider || null,
+          generatedAtIso: priorThemeData.generatedAtIso || null
+        });
+      }
+    }
+
+    const responses = await loadReflectionResponseTextsForGeneration(db, appDateKey, responseLimit);
     if (!responses.length) {
       return res.status(400).json({
         success: false,
@@ -2665,11 +2725,13 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       reflectionPrompt,
       responses
     });
-    await db.collection('reflectionThemes').doc(appDateKey).set({
+    const responseCountTotal = totalReflectionResponses != null ? totalReflectionResponses : responses.length;
+    const themePayload = {
       appDateKey,
       themes,
       reflectionPrompt,
-      responseCount: responses.length,
+      responseCount: responseCountTotal,
+      responseSampleSize: responses.length,
       model,
       provider,
       status: 'generated',
@@ -2677,9 +2739,19 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       authorSnapshot: quoteSnapshot?.author || '',
       generatedAt: admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso: getUtcIsoNow()
-    }, { merge: true });
+    };
+    await db.collection('reflectionThemes').doc(appDateKey).set(themePayload);
 
-    return res.json({ success: true, appDateKey, themes, reflectionPrompt, responseCount: responses.length, model, provider });
+    return res.json({
+      success: true,
+      appDateKey,
+      themes,
+      reflectionPrompt,
+      responseCount: responseCountTotal,
+      responseSampleSize: responses.length,
+      model,
+      provider
+    });
   } catch (error) {
     console.error('❌ Reflection theme generation failed:', error);
     return res.status(500).json({
