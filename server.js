@@ -1186,6 +1186,8 @@ function buildReflectionThemesPrompt({ reflectionPrompt, responses }) {
     '',
     'Group responses that share the same observation or move. If two ideas lose nothing by merging, merge them. Keep the one with more specific language.',
     '',
+    'Preserve key aspects of the speaker\'s original phrasing when possible to maintain authentic voice. Only rephrase when merging two responses into one.',
+    '',
     'Write the way a thoughtful friend talks — not like a caption, not like an aphorism.',
     '',
     'limit each idea to 100 characters max. shorter is fine.',
