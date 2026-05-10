@@ -219,7 +219,9 @@ async function main() {
   futureAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
   const submissionsToInsert = notionQuotes.filter((q) => {
-    if (q.submittedVia.toLowerCase() !== 'app') return false;
+    // Previously gated on submittedVia === 'app'. Now any approved Notion quote
+    // without an explicit date_scheduled is eligible for auto-scheduling so rows
+    // added directly in Notion flow through the same path as app submissions.
     if (scheduledSourceIds.has(q.sourceId)) return false;
     if (isDateKey(q.dateScheduled)) return false;
     return true;
