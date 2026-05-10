@@ -1,9 +1,27 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
+const fs = require('fs');
+const path = require('path');
+
 try {
   require('dotenv').config();
 } catch (_) {
   // dotenv is optional in CI where env vars come from GitHub secrets.
+  const envPath = path.resolve(__dirname, '..', '.env');
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!match) continue;
+      let value = match[2];
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (process.env[match[1]] == null) process.env[match[1]] = value;
+    }
+  }
 }
 const admin = require('firebase-admin');
 
@@ -98,6 +116,14 @@ function textFromNotionProp(prop) {
   }
   if (prop.type === 'url' && prop.url) return String(prop.url).trim();
   if (prop.type === 'number' && typeof prop.number === 'number') return String(prop.number);
+  if (prop.type === 'select' && prop.select?.name) return String(prop.select.name).trim();
+  if (prop.type === 'status' && prop.status?.name) return String(prop.status.name).trim();
+  if (prop.type === 'multi_select' && Array.isArray(prop.multi_select)) {
+    return prop.multi_select
+      .map((s) => (s && s.name ? String(s.name).trim() : ''))
+      .filter(Boolean)
+      .join(', ');
+  }
   return '';
 }
 
@@ -236,16 +262,38 @@ function getMappedUrl(props, base, ...directKeys) {
   return urlFromNotionProp(findPropByBaseName(props, base));
 }
 
+function getTitleTextFromAnyTitleProp(props) {
+  if (!props) return '';
+  for (const [, prop] of Object.entries(props)) {
+    if (prop && prop.type === 'title') {
+      const t = getTitle(prop);
+      if (t) return t;
+    }
+  }
+  return '';
+}
+
 function parseNotionRow(page) {
   const props = page?.properties || {};
+  // Title column: try common aliases first, then fall back to whichever property is type=title.
+  // This survives renames like "quote_text" -> "Quote" / "Quote text" / "Name".
   const text =
-    getTitle(props.quote_text) ||
-    getRichText(props.quote_text) ||
-    getTitle(props.Name) ||
-    getRichText(props.Name);
-  const author = getRichText(props.author) || getTitle(props.author);
+    getMappedText(props, 'quote_text', 'quote_text', 'Quote', 'quote', 'Quote Text', 'Quote text', 'Name')
+    || getTitleTextFromAnyTitleProp(props);
+  const author = getMappedText(props, 'author', 'author', 'Author');
   const reflectionPrompt =
     getRichText(props.reflection_prompt) || getTitle(props.reflection_prompt);
+  const artRecs = getMappedText(
+    props,
+    'art_recs',
+    'art_recs',
+    'Art recs',
+    'Art Recs',
+    'art recommendation',
+    'Art recommendation',
+    'explore',
+    'Explore'
+  );
   const communityPrompt = getMappedText(
     props,
     'community_prompt',
@@ -362,6 +410,8 @@ function parseNotionRow(page) {
       text,
       author,
       reflectionPrompt,
+      artRecs,
+      art_recs: artRecs,
       communityPrompt,
       community_prompt: communityPrompt,
       whatIf,
