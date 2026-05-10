@@ -6990,15 +6990,31 @@ try {
       box-shadow: none;
       border: none;
       box-sizing: border-box;
-      padding-bottom: var(--quilt-story-preview-frame-pad-bottom);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      /* Chin height was padding-bottom; ::after avoids WebKit %height bugs inside aspect-ratio + overflow:hidden. */
+      padding-bottom: 0;
+    }
+
+    #screen-quilt .quilt-layout-b-preview-frame::after {
+      content: '';
+      flex: 0 0 var(--quilt-story-preview-frame-pad-bottom);
+      width: 100%;
+      margin-top: auto;
+      background: #d8d4cf;
+      pointer-events: none;
     }
 
     #screen-quilt .quilt-layout-b-preview-img {
       display: block;
+      flex: 1 1 0;
+      min-height: 0;
       width: 100%;
-      height: 100%;
       object-fit: contain;
       object-position: center;
+      -webkit-touch-callout: none;
+      user-select: none;
     }
 
     #screen-quilt .quilt-layout-b-preview-hint {
@@ -7896,7 +7912,7 @@ try {
           data-stage="0"
           aria-label="Tap to flip today's quilt blessing"
         >
-          <span class="quilt-fortune-kicker">OUR DAILY BLESSING</span>
+          <span class="quilt-fortune-kicker">a communal blessing</span>
           <span class="quilt-fortune-stage" aria-hidden="true">
             <span class="quilt-fortune-card">
               <span class="quilt-fortune-face quilt-fortune-face--front">
@@ -16916,7 +16932,8 @@ try {
         dateKey,
         usePostQuoteLayout = true,
         avoidRects = [],
-        stripBoundsRect = null
+        stripBoundsRect = null,
+        maxQuoteCanvasCoverage = null
       } = options || {};
       const STORY_W = layoutW;
       const STORY_H = layoutH;
@@ -17301,9 +17318,16 @@ try {
         return minCx + rnd() * (maxCx - minCx);
       };
       const stripTopFrac = isPostLayout ? 0.04 : 0.12;
+      const requestedMaxCoverage =
+        Number.isFinite(Number(maxQuoteCanvasCoverage)) && Number(maxQuoteCanvasCoverage) > 0
+          ? Math.max(0.2, Math.min(1, Number(maxQuoteCanvasCoverage)))
+          : null;
       const stripBudget = stripBounds
         ? Math.max(120, stripBounds.bottom - stripBounds.top - 20)
-        : (usePostQuoteLayout ? STORY_H * 0.97 : STORY_H - 32);
+        : Math.min(
+            usePostQuoteLayout ? STORY_H * 0.97 : STORY_H - 32,
+            requestedMaxCoverage ? STORY_H * requestedMaxCoverage : Infinity
+          );
       const minBodyPx = stripBounds ? 18 : (usePostQuoteLayout ? 22 : 24);
       const shrinkIters = stripBounds ? 34 : (usePostQuoteLayout ? 24 : 18);
       for (let s = 0; s < shrinkIters; s++) {
@@ -17334,7 +17358,9 @@ try {
           cursorY += layoutQuoteAuthorGap;
         }
         const spec = stripSpecs[i];
-        const gap = usePostQuoteLayout ? (15 + rnd() * 18) : (11 + rnd() * 12);
+        const gap = requestedMaxCoverage
+          ? stackVertPad
+          : (usePostQuoteLayout ? (15 + rnd() * 18) : (11 + rnd() * 12));
         if (
           spec.rowGroup != null &&
           spec.rowSlot === 0 &&
@@ -17492,6 +17518,26 @@ try {
 
     // Back-compat alias while call sites migrate.
     const buildLayoutBQuoteStripPlan = getLayoutBStoryQuotePlan;
+
+    const IG_QUILT_SCREEN_ASPECT = 9 / 16;
+
+    function getAspectSafeCanvasRect(sourceW, sourceH, targetW, targetH, fit = 'contain') {
+      const sw = Math.max(1, Number(sourceW) || 1);
+      const sh = Math.max(1, Number(sourceH) || 1);
+      const tw = Math.max(1, Number(targetW) || 1);
+      const th = Math.max(1, Number(targetH) || 1);
+      const scale = fit === 'cover'
+        ? Math.max(tw / sw, th / sh)
+        : Math.min(tw / sw, th / sh);
+      const width = Math.round(sw * scale);
+      const height = Math.round(sh * scale);
+      return {
+        x: Math.round((tw - width) / 2),
+        y: Math.round((th - height) / 2),
+        width,
+        height
+      };
+    }
 
     /**
      * Instagram layout B: full-bleed quilt, paper quote strips; story (9:16) adds a corner title strip.
@@ -18340,9 +18386,8 @@ try {
               if (best) {
                 /** Move the minimum amount to clear overlap; allow ~10% of portrait height into strip band (strips still paint on top). */
                 const encroachPx = Math.max(1, Math.round(h * 0.1));
-                /** Allow the speaker to extend off the bottom of the canvas if needed. */
-                const overflowAllowance = h;
-                const absoluteMaxTop = STORY_H + overflowAllowance - h;
+                const overflowAllowance = isPostLayout ? 0 : h;
+                const absoluteMaxTop = STORY_H + overflowAllowance - h - (isPostLayout ? minPad : 0);
                 let safety = 0;
                 while (safety < 32) {
                   const r = { left: best.x, top: best.y, right: best.x + w, bottom: best.y + h };
@@ -18363,6 +18408,7 @@ try {
                   } else {
                     break;
                   }
+                  if (Math.abs(best.y - absoluteMaxTop) <= 0.5) break;
                   safety += 1;
                 }
               }
@@ -18514,11 +18560,11 @@ try {
                     dx = Math.round((STORY_W - dw) / 2);
                     dy = Math.round((STORY_H - dh) / 2);
                   } else if (options?.quiltFit === 'cover') {
-                    postScale = Math.max(STORY_W / iw, STORY_H / ih);
-                    dw = Math.round(iw * postScale);
-                    dh = Math.round(ih * postScale);
-                    dx = Math.round((STORY_W - dw) / 2);
-                    dy = Math.round((STORY_H - dh) / 2);
+                    const rect = getAspectSafeCanvasRect(iw, ih, STORY_W, STORY_H, 'cover');
+                    dx = rect.x;
+                    dy = rect.y;
+                    dw = rect.width;
+                    dh = rect.height;
                   } else {
                     postScale = Math.max(STORY_W / iw, STORY_H / ih) * 1.04;
                     dw = Math.round(iw * postScale);
@@ -18836,7 +18882,10 @@ try {
                   avoidRects: [
                     focusCanvasRect ? { ...focusCanvasRect, pad: 84 } : null,
                     dedicationBox ? { x: dedicationBox.x, y: dedicationBox.y, width: dedicationBox.width, height: dedicationBox.height, pad: 18 } : null
-                  ].filter(Boolean)
+                  ].filter(Boolean),
+                  maxQuoteCanvasCoverage: speakerOverlay?.imageUrl && speakerImgs.length && isPostLayout
+                    ? 0.7
+                    : null
                 });
                 /** Layout B + speaker: shift the whole quote stack up above the portrait. Post uses a modest lift; story lifts more (extra 25% vs post-style factor, story-only). */
                 if (speakerOverlay?.imageUrl && speakerImgs.length && quoteStripPlan.length) {
@@ -19036,8 +19085,9 @@ try {
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
               quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, {
+                targetAspect: IG_QUILT_SCREEN_ASPECT,
                 skipExportUnderpaint: true,
-                exportModeLabel: 'classic_screen_aspect_padded_no_underpaint',
+                exportModeLabel: 'classic_9x16_padded_no_underpaint',
                 viewBoxPaddingRatio: 0.1
               });
             } catch (e) {
@@ -19047,7 +19097,9 @@ try {
             this.logger.warn('Live quilt SVG is not ready for classic Instagram image; using block data');
           }
           if (!quiltBlob) {
-            quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
+            quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, {
+              targetAspect: IG_QUILT_SCREEN_ASPECT
+            });
           }
           if (!quiltBlob) return null;
 
@@ -19074,14 +19126,12 @@ try {
             });
             const iw = Math.max(1, img.naturalWidth || img.width);
             const ih = Math.max(1, img.naturalHeight || img.height);
-            const scale = Math.min(innerW / iw, innerH / ih);
-            const dw = Math.round(iw * scale);
-            const dh = Math.round(ih * scale);
-            const dx = pad + (innerW - dw) / 2;
-            const dy = pad + (innerH - dh) / 2;
+            const rect = getAspectSafeCanvasRect(iw, ih, innerW, innerH, 'contain');
+            const dx = pad + rect.x;
+            const dy = pad + rect.y;
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, dx, dy, dw, dh);
+            ctx.drawImage(img, dx, dy, rect.width, rect.height);
           } finally {
             URL.revokeObjectURL(bitmapUrl);
           }
@@ -19113,10 +19163,15 @@ try {
       async rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks = null, options = {}) {
         if (!quiltSVG) return null;
         const rect = quiltSVG.getBoundingClientRect?.();
-        const screenAspect =
-          rect && rect.width > 0 && rect.height > 0
-            ? rect.width / rect.height
+        const requestedAspect =
+          Number.isFinite(options.targetAspect) && options.targetAspect > 0
+            ? options.targetAspect
             : null;
+        const screenAspect =
+          requestedAspect ||
+          (rect && rect.width > 0 && rect.height > 0
+            ? rect.width / rect.height
+            : null);
         return this.rasterizeQuiltSvgToPngBlob(quiltSVG, {
           underpaintBlocks: blocks,
           targetAspect: screenAspect || undefined,
@@ -19522,11 +19577,28 @@ try {
         const maxY = Math.max(...blocks.map((b) => b.y + b.height));
         const quiltW = maxX - minX;
         const quiltH = maxY - minY;
+        let sourceX = minX;
+        let sourceY = minY;
+        let sourceW = quiltW;
+        let sourceH = quiltH;
+        const targetAspect =
+          Number.isFinite(options.targetAspect) && options.targetAspect > 0
+            ? Number(options.targetAspect)
+            : null;
+        if (targetAspect && quiltW > 0 && quiltH > 0) {
+          const sourceAspect = quiltW / quiltH;
+          if (targetAspect > sourceAspect) {
+            sourceH = Math.min(quiltH, quiltW / targetAspect);
+          } else {
+            sourceW = Math.min(quiltW, quiltH * targetAspect);
+            sourceX = minX + (quiltW - sourceW) / 2;
+          }
+        }
         const maxEdge = Math.min(
           4096,
           Math.max(64, Number(options.maxEdge) || 2400)
         );
-        const aspect = quiltW / Math.max(1, quiltH);
+        const aspect = targetAspect || sourceW / Math.max(1, sourceH);
         let outW;
         let outH;
         if (aspect >= 1) {
@@ -19545,9 +19617,8 @@ try {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality =
           options.imageSmoothingQuality === 'low' ? 'low' : 'high';
-        const scale = Math.min(outW / quiltW, outH / quiltH);
-        const offsetX = (outW - quiltW * scale) / 2;
-        const offsetY = (outH - quiltH * scale) / 2;
+        const scaleX = outW / Math.max(1, sourceW);
+        const scaleY = outH / Math.max(1, sourceH);
         blocks.forEach((block) => {
           SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
           const jitterX = (Math.random() - 0.5) * 8;
@@ -19555,10 +19626,10 @@ try {
           const jitterRotation = (Math.random() - 0.5) * 4;
           const jitteredX = block.x + jitterX;
           const jitteredY = block.y + jitterY;
-          const canvasX = offsetX + (jitteredX - minX) * scale;
-          const canvasY = offsetY + (jitteredY - minY) * scale;
-          const canvasWidth = block.width * scale;
-          const canvasHeight = block.height * scale;
+          const canvasX = (jitteredX - sourceX) * scaleX;
+          const canvasY = (jitteredY - sourceY) * scaleY;
+          const canvasWidth = block.width * scaleX;
+          const canvasHeight = block.height * scaleY;
           const isHst =
             block.patternType === 'special' &&
             block.specialPatternType === 'hst';
@@ -19685,7 +19756,10 @@ try {
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
-              highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks);
+              highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, {
+                targetAspect: IG_QUILT_SCREEN_ASPECT,
+                exportModeLabel: 'layout_b_post_9x16_cover_source'
+              });
             } catch (e) {
               this.logger.warn('SVG raster failed, falling back to blocks:', e);
             }
@@ -19693,7 +19767,9 @@ try {
             this.logger.warn('Live quilt SVG is not ready for layout B post image; using block data');
           }
           if (!highResBlob) {
-            highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
+            highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, {
+              targetAspect: IG_QUILT_SCREEN_ASPECT
+            });
           }
           if (!highResBlob) return null;
 
@@ -19756,7 +19832,10 @@ try {
           const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
           if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
             try {
-              highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks);
+              highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, {
+                targetAspect: IG_QUILT_SCREEN_ASPECT,
+                exportModeLabel: 'layout_b_speaker_post_9x16_cover_source'
+              });
             } catch (e) {
               this.logger.warn('SVG raster failed, falling back to blocks for speaker layout B:', e);
             }
@@ -19764,7 +19843,9 @@ try {
             this.logger.warn('Live quilt SVG is not ready for layout B speaker post image; using block data');
           }
           if (!highResBlob) {
-            highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks);
+            highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, {
+              targetAspect: IG_QUILT_SCREEN_ASPECT
+            });
           }
           if (!highResBlob) return null;
 
@@ -22160,12 +22241,12 @@ try {
         return prompt || '[Reflection prompt coming soon for this quote.]';
       }
 
-      /** Free-write line for Before You Go: `reflection_prompt` only (not community prompt). */
+      /** Before You Go prompt line: Firestore `what_if` / `whatIf` (not reflection_prompt). */
       getFreeWritePromptText(quote) {
-        const t = String(quote?.reflection_prompt ?? quote?.reflectionPrompt ?? '')
+        const t = String(quote?.what_if ?? quote?.whatIf ?? '')
           .replace(/\s+/g, ' ')
           .trim();
-        return t || 'Free-write prompt for this quote is coming soon.';
+        return t || 'What-if prompt for this quote is coming soon.';
       }
 
       /** Art pick from Firestore `art_recs` / `artRecs` (string, object, or array). */
@@ -24669,10 +24750,14 @@ try {
 
         /** Full-res Layout B story preview under quilt controls (1080×1920 blob URL). */
         this._layoutBPreviewObjectUrl = null;
+        /** Same pixels as preview; used for Web Share (full iOS sheet) instead of default `<img>` long-press menu. */
+        this._layoutBStoryPreviewShareBlob = null;
         this._layoutBPreviewDebounceTimer = null;
         this._layoutBPreviewGeneration = 0;
         /** After a successful story preview for 2+ blocks, skip heavy regen until preview is cleared (≤1 blocks). */
         this._layoutBStoryPreviewHeavyDoneThisVisit = false;
+        /** Calendar key (UTC 7:00 boundary) for which `_layoutBStoryPreviewHeavyDoneThisVisit` last succeeded; forces regen after day roll. */
+        this._layoutBStoryPreviewSatisfiedForDateKey = null;
         this._quiltFortuneFrontObjectUrl = null;
         this._quiltFortuneFrontGeneration = 0;
         this._quiltResetCountdownTimer = null;
@@ -25094,6 +25179,7 @@ try {
         }
 
         this.setupQuiltFortuneReveal();
+        this.setupLayoutBStoryPreviewLongPressShare();
         this.setupReflectionResponsePrototype();
 
         const firstNameContinueBtn = document.getElementById('firstNameContinueBtn');
@@ -25362,7 +25448,6 @@ try {
           }
         }
         if (clearStatus && status) status.textContent = '';
-        setTimeout(() => document.getElementById('quoteSubmissionText')?.focus(), 80);
       }
 
       setupQuiltFortuneReveal() {
@@ -25452,6 +25537,53 @@ try {
         });
       }
 
+      /**
+       * Long-press the Layout B preview (same timing as the blessing card) to open the system share sheet
+       * with files — not the WebKit default image menu on `<img blob:…>`.
+       */
+      setupLayoutBStoryPreviewLongPressShare() {
+        const wrap = document.getElementById('quiltLayoutBPreviewWrap');
+        const sheet = wrap?.querySelector?.('.quilt-layout-b-preview-sheet');
+        if (!sheet || sheet.dataset.listenerAttached === '1') return;
+        sheet.dataset.listenerAttached = '1';
+
+        let shareTimer = null;
+        const clearShareTimer = () => {
+          if (!shareTimer) return;
+          clearTimeout(shareTimer);
+          shareTimer = null;
+        };
+
+        const layoutBPreviewShareText = () =>
+          `Today's OUR DAILY QUILT has ${this.quiltEngine?.submissionCount ?? 0} contributors — take a look!`;
+
+        sheet.addEventListener('pointerdown', () => {
+          const img = document.getElementById('quiltLayoutBPreviewImg');
+          if (!img || img.hidden || !this._layoutBStoryPreviewShareBlob) return;
+          clearShareTimer();
+          shareTimer = setTimeout(async () => {
+            shareTimer = null;
+            try {
+              const dateStr = new Date().toISOString().split('T')[0];
+              await this.shareBlobWithSystem(
+                this._layoutBStoryPreviewShareBlob,
+                `our-daily-quilt-story-collage-${dateStr}.png`,
+                'OUR DAILY QUILT — Story collage',
+                layoutBPreviewShareText()
+              );
+            } catch (error) {
+              this.errorHandler.handleError(error, 'layoutBPreviewShare');
+            }
+          }, 650);
+        });
+        sheet.addEventListener('pointerup', clearShareTimer);
+        sheet.addEventListener('pointercancel', clearShareTimer);
+        sheet.addEventListener('pointerleave', clearShareTimer);
+        sheet.addEventListener('contextmenu', (event) => {
+          event.preventDefault();
+        });
+      }
+
       escapeQuiltFortuneText(value) {
         return String(value || '')
           .replace(/&/g, '&amp;')
@@ -25461,16 +25593,28 @@ try {
           .replace(/'/g, '&#39;');
       }
 
-      /** Split prose into a few lines with roughly equal word counts (blessing + reflection UI). */
-      balanceQuiltDisplayLines(text) {
+      /**
+       * Split prose into lines with roughly equal word counts (blessing + reflection UI).
+       * @param {string} text
+       * @param {number} [maxLines] When set (e.g. 2 for the flipped communal blessing), caps line count and balances words across those lines.
+       */
+      balanceQuiltDisplayLines(text, maxLines) {
         const words = String(text || '')
           .replace(/\s+/g, ' ')
           .trim()
           .split(/\s+/)
           .filter(Boolean);
         if (!words.length) return '';
-        if (words.length <= 2) return words.join(' ');
-        const n = Math.min(5, Math.max(2, Math.round(Math.sqrt(words.length * 1.15))));
+
+        let n;
+        if (maxLines != null && Number.isFinite(maxLines) && maxLines > 0) {
+          n = Math.min(Math.floor(maxLines), words.length);
+          if (n <= 1) return words.join(' ');
+        } else {
+          if (words.length <= 2) return words.join(' ');
+          n = Math.min(5, Math.max(2, Math.round(Math.sqrt(words.length * 1.15))));
+        }
+
         const base = Math.floor(words.length / n);
         let extra = words.length - base * n;
         const lines = [];
@@ -25487,8 +25631,8 @@ try {
         return lines.filter(Boolean).join('\n');
       }
 
-      escapeQuiltFortuneTextWithLineBreaks(value) {
-        const balanced = this.balanceQuiltDisplayLines(String(value || '').trim());
+      escapeQuiltFortuneTextWithLineBreaks(value, maxLines) {
+        const balanced = this.balanceQuiltDisplayLines(String(value || '').trim(), maxLines);
         if (!balanced) return '';
         return balanced
           .split(/\n+/)
@@ -26615,7 +26759,7 @@ try {
         const textEl = document.getElementById('quiltFortuneText');
         const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
         if (textEl) {
-          textEl.innerHTML = this.escapeQuiltFortuneTextWithLineBreaks(this.getQuiltBlessingText(todayQuote));
+          textEl.innerHTML = this.escapeQuiltFortuneTextWithLineBreaks(this.getQuiltBlessingText(todayQuote), 2);
         }
         reveal.style.setProperty('--fortune-container-color', '#ebe8e3');
         reveal.style.setProperty('--fortune-container-ink', '#241b14');
@@ -31036,6 +31180,7 @@ try {
 
         this._dailyDateChangeHandling = true;
         try {
+          this._invalidateLayoutBStoryPreviewForAppDayChange();
           this.logger.log(`🔄 App-day changed (${source}); returning user to today's portal`);
           try {
             localStorage.setItem('ourDailyLastVisitDate', currentDate);
@@ -32435,12 +32580,39 @@ try {
         }
       }
 
+      /** Drop cached Layout B story preview so a new app-day cannot keep yesterday's bitmap. */
+      _invalidateLayoutBStoryPreviewForAppDayChange() {
+        this._layoutBStoryPreviewHeavyDoneThisVisit = false;
+        this._layoutBStoryPreviewSatisfiedForDateKey = null;
+        this._layoutBStoryPreviewShareBlob = null;
+        this._layoutBPreviewGeneration++;
+        if (this._layoutBPreviewDebounceTimer) {
+          clearTimeout(this._layoutBPreviewDebounceTimer);
+          this._layoutBPreviewDebounceTimer = null;
+        }
+        this._revokeLayoutBPreviewObjectUrl();
+        const img = document.getElementById('quiltLayoutBPreviewImg');
+        if (img) {
+          img.removeAttribute('src');
+          img.hidden = true;
+          img.onload = null;
+          img.onerror = null;
+        }
+      }
+
       scheduleLayoutBStoryPreviewRefresh() {
         if (this.isDesktopRedirect) return;
         const blocks = this.quiltEngine?.blocks;
         const blockCount = Array.isArray(blocks) ? blocks.length : 0;
         if (blockCount > 1 && this._layoutBStoryPreviewHeavyDoneThisVisit) {
-          return;
+          const calendarKey =
+            this.quoteService && typeof this.quoteService.getQuoteCalendarKeyNow === 'function'
+              ? this.quoteService.getQuoteCalendarKeyNow()
+              : Utils.getTodayKey();
+          if (this._layoutBStoryPreviewSatisfiedForDateKey === calendarKey) {
+            return;
+          }
+          this._layoutBStoryPreviewHeavyDoneThisVisit = false;
         }
         if (this._layoutBPreviewDebounceTimer) {
           clearTimeout(this._layoutBPreviewDebounceTimer);
@@ -32613,11 +32785,13 @@ try {
 
           const prev = qs._pinnedByDateKey[dateKey] || todayQuote || {};
           const ref = String(data.reflection_prompt || data.reflectionPrompt || '').trim();
+          const whatIf = String(data.what_if ?? data.whatIf ?? '').trim();
           const art = data.art_recs ?? data.artRecs ?? prev.art_recs ?? prev.artRecs;
           qs._pinnedByDateKey[dateKey] = {
             ...prev,
             ...data,
             ...(ref ? { reflectionPrompt: ref, reflection_prompt: ref } : {}),
+            ...(whatIf ? { whatIf, what_if: whatIf } : {}),
             ...(art != null ? { art_recs: data.art_recs ?? data.artRecs ?? art, artRecs: data.artRecs ?? data.art_recs ?? art } : {})
           };
           this._beforeYouGoHydratedDateKey = dateKey;
@@ -32689,6 +32863,8 @@ try {
         const blockCount = Array.isArray(blocks) ? blocks.length : 0;
         if (blockCount <= 1) {
           this._layoutBStoryPreviewHeavyDoneThisVisit = false;
+          this._layoutBStoryPreviewSatisfiedForDateKey = null;
+          this._layoutBStoryPreviewShareBlob = null;
           this._revokeLayoutBPreviewObjectUrl();
           img.removeAttribute('src');
           img.hidden = true;
@@ -32716,7 +32892,10 @@ try {
         try {
           const highResBlob = await this.getHighResQuiltBlobForShare();
           if (gen !== this._layoutBPreviewGeneration) return;
-          const dk = Utils.getTodayKey();
+          const dk =
+            this.quoteService && typeof this.quoteService.getQuoteCalendarKeyNow === 'function'
+              ? this.quoteService.getQuoteCalendarKeyNow()
+              : Utils.getTodayKey();
           const { qText, qAuthor, composeExtras } = await this.resolveLayoutBStoryQuoteAndComposeOptions(dk, blocks);
           const lbBlob = await composeInstagramLayoutBFromQuiltBlob(
             highResBlob,
@@ -32728,6 +32907,7 @@ try {
             composeExtras
           );
           if (gen !== this._layoutBPreviewGeneration) return;
+          this._layoutBStoryPreviewShareBlob = lbBlob;
           const url = URL.createObjectURL(lbBlob);
           this._revokeLayoutBPreviewObjectUrl();
           this._layoutBPreviewObjectUrl = url;
@@ -32735,6 +32915,7 @@ try {
           const applyReady = () => {
             if (gen !== this._layoutBPreviewGeneration) return;
             this._layoutBStoryPreviewHeavyDoneThisVisit = true;
+            this._layoutBStoryPreviewSatisfiedForDateKey = dk;
             wrap.setAttribute('aria-busy', 'false');
             if (hint) {
               hint.textContent = '';
@@ -32746,6 +32927,7 @@ try {
           img.onload = () => applyReady();
           img.onerror = () => {
             if (gen !== this._layoutBPreviewGeneration) return;
+            this._layoutBStoryPreviewShareBlob = null;
             wrap.setAttribute('aria-busy', 'false');
             if (hint) {
               hint.hidden = false;
@@ -32759,6 +32941,7 @@ try {
           }
         } catch (error) {
           if (gen !== this._layoutBPreviewGeneration) return;
+          this._layoutBStoryPreviewShareBlob = null;
           this.logger.warn('Layout B story preview failed:', error);
           wrap.setAttribute('aria-busy', 'false');
           if (hint) {
@@ -33684,23 +33867,6 @@ try {
             im.src = url;
           });
 
-          const wrapLines = (ctx, text, maxWidth) => {
-            const words = String(text || '').split(/\s+/).filter(Boolean);
-            const lines = [];
-            let line = '';
-            for (const word of words) {
-              const test = line ? `${line} ${word}` : word;
-              if (ctx.measureText(test).width <= maxWidth || !line) {
-                line = test;
-              } else {
-                lines.push(line);
-                line = word;
-              }
-            }
-            if (line) lines.push(line);
-            return lines;
-          };
-
           const roundedRect = (ctx, x, y, w, h, r) => {
             const radius = Math.min(r, w / 2, h / 2);
             ctx.beginPath();
@@ -33742,13 +33908,19 @@ try {
               const cardPadY = 64;
               let fontSize = 54;
               let lineHeight = fontSize * 1.36;
-              let lines = [];
               const maxTextW = cardW - cardPadX * 2;
-              for (let attempt = 0; attempt < 12; attempt++) {
+              const balanced = this.balanceQuiltDisplayLines(blessing, 2);
+              let lines = balanced
+                ? balanced.split(/\n+/).map((l) => l.trim()).filter(Boolean)
+                : [];
+              if (!lines.length) {
+                lines = [String(blessing || '').trim() || "Today's blessing is still being stitched."];
+              }
+              for (let attempt = 0; attempt < 20; attempt++) {
                 ctx.font = `italic 400 ${fontSize}px 'Libre Baskerville', Georgia, serif`;
-                lines = wrapLines(ctx, blessing, maxTextW);
-                if (lines.length <= 5 || fontSize <= 36) break;
-                fontSize -= 3;
+                const maxLineW = Math.max(0, ...lines.map((line) => ctx.measureText(line).width));
+                if (maxLineW <= maxTextW || fontSize <= 24) break;
+                fontSize -= 2;
                 lineHeight = fontSize * 1.36;
               }
               const textH = lines.length * lineHeight;

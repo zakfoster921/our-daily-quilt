@@ -971,23 +971,47 @@ async function generateInstagramImageFromQuilt(blocks, _quote) {
     throw new Error('Invalid quilt bounds for Instagram image');
   }
 
-  // Fit the full quilt into the same 5px-padded classic 4:5 card the app uploads.
+  // Classic card: preserve the quilt-screen 9:16 composition inside the 4:5 post.
+  const quiltScreenAspect = 9 / 16;
+  let sourceX = minX;
+  let sourceY = minY;
+  let sourceWidth = quiltWidth;
+  let sourceHeight = quiltHeight;
+  const sourceAspect = quiltWidth / quiltHeight;
+  if (quiltScreenAspect > sourceAspect) {
+    sourceHeight = Math.min(quiltHeight, quiltWidth / quiltScreenAspect);
+  } else {
+    sourceWidth = Math.min(quiltWidth, quiltHeight * quiltScreenAspect);
+    sourceX = minX + (quiltWidth - sourceWidth) / 2;
+  }
+
+  // Fit that 9:16 raster into the same 5px-padded 4:5 card the app uploads.
   const targetWidth = 1070;  // 1080 - 10px padding
   const targetHeight = 1340; // 1350 - 10px padding
-  const scale = Math.min(targetWidth / quiltWidth, targetHeight / quiltHeight);
-  const drawWidth = quiltWidth * scale;
-  const drawHeight = quiltHeight * scale;
+  let drawHeight = targetHeight;
+  let drawWidth = drawHeight * quiltScreenAspect;
+  if (drawWidth > targetWidth) {
+    drawWidth = targetWidth;
+    drawHeight = drawWidth / quiltScreenAspect;
+  }
   const startX = 5 + (targetWidth - drawWidth) / 2;
   const startY = 5 + (targetHeight - drawHeight) / 2;
+  const scaleX = drawWidth / sourceWidth;
+  const scaleY = drawHeight / sourceHeight;
 
-  // Draw scaled full-quilt blocks; never use raw world coordinates or a zoomed crop here.
+  // Draw the 9:16 screen composition; the white post background remains visible at the sides.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(startX, startY, drawWidth, drawHeight);
+  ctx.clip();
   blocks.forEach((block) => {
-    const x = startX + (Number(block.x) - minX) * scale;
-    const y = startY + (Number(block.y) - minY) * scale;
-    const width = Number(block.width) * scale;
-    const height = Number(block.height) * scale;
+    const x = startX + (Number(block.x) - sourceX) * scaleX;
+    const y = startY + (Number(block.y) - sourceY) * scaleY;
+    const width = Number(block.width) * scaleX;
+    const height = Number(block.height) * scaleY;
     drawQuiltBlockToCtx(ctx, block, x, y, width, height);
   });
+  ctx.restore();
 
   // Convert to base64
   const buffer = canvas.toBuffer('image/png');
