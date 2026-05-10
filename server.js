@@ -15,6 +15,8 @@ try {
 } catch (e) {
   console.warn('⚠️ FFmpeg installer unavailable:', e.message);
 }
+
+const { buildSubmittedQuotePrefillPrompt } = require('./lib/submitted-quote-prefill-prompts');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
@@ -980,22 +982,24 @@ async function generateInstagramImageFromQuilt(blocks, _quote) {
   const sourceAspect = quiltWidth / quiltHeight;
   if (quiltScreenAspect > sourceAspect) {
     sourceHeight = Math.min(quiltHeight, quiltWidth / quiltScreenAspect);
+    sourceY = minY + (quiltHeight - sourceHeight) / 2;
   } else {
     sourceWidth = Math.min(quiltWidth, quiltHeight * quiltScreenAspect);
     sourceX = minX + (quiltWidth - sourceWidth) / 2;
   }
 
-  // Fit that 9:16 raster into the same 5px-padded 4:5 card the app uploads.
-  const targetWidth = 1070;  // 1080 - 10px padding
-  const targetHeight = 1340; // 1350 - 10px padding
+  // Fit that 9:16 raster into the same thin symmetric inset as the client classic card (pad 2).
+  const pad = 2;
+  const targetWidth = 1080 - pad * 2;
+  const targetHeight = 1350 - pad * 2;
   let drawHeight = targetHeight;
   let drawWidth = drawHeight * quiltScreenAspect;
   if (drawWidth > targetWidth) {
     drawWidth = targetWidth;
     drawHeight = drawWidth / quiltScreenAspect;
   }
-  const startX = 5 + (targetWidth - drawWidth) / 2;
-  const startY = 5 + (targetHeight - drawHeight) / 2;
+  const startX = pad + (targetWidth - drawWidth) / 2;
+  const startY = pad + (targetHeight - drawHeight) / 2;
   const scaleX = drawWidth / sourceWidth;
   const scaleY = drawHeight / sourceHeight;
 
@@ -1490,8 +1494,547 @@ async function createPendingSubmittedQuote({ text, author, submitterName, userId
     appDateKey: appDateKey || null, currentQuoteText: currentQuoteText || '', currentQuoteAuthor: currentQuoteAuthor || '',
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
+
+  // Fire-and-forget: enrich the row with AI + Wikipedia data without delaying the HTTP response.
+  // Failures are logged only; the row remains as written above.
+  setImmediate(() => {
+    prefillSubmittedQuoteWithAi({ notionPageId, quoteText: text, authorName: author }).catch((err) => {
+      console.warn(`⚠️ Prefill failed for ${notionPageId}:`, err?.message || err);
+    });
+  });
+
   return { notionPageId, quoteId: notionPageId, submittedAt };
 }
+
+// --- Submitted-quote AI prefill ---------------------------------------------
+
+function extractPrefillJsonFromText(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt }) {
+  const result = await postJsonWithHttps({
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: {
+      model,
+      max_tokens: 1400,
+      temperature: 0.4,
+      messages: [{ role: 'user', content: prompt }]
+    }
+  });
+  return (result?.content || [])
+    .map((part) => (part?.type === 'text' ? part.text : ''))
+    .join('\n')
+    .trim();
+}
+
+async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
+  const model = String(process.env.ANTHROPIC_PREFILL_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+  const prompt = buildSubmittedQuotePrefillPrompt({ quoteText, authorName });
+
+  const firstText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt });
+  let parsed = extractPrefillJsonFromText(firstText);
+  if (!parsed || typeof parsed !== 'object') {
+    const repairPrompt = `${prompt}\n\nYour previous output could not be parsed as JSON. Return ONLY the JSON object described in OUTPUT SCHEMA. No prose, no fences.`;
+    const repairText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: repairPrompt });
+    parsed = extractPrefillJsonFromText(repairText);
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    const preview = String(firstText || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    throw new Error(`Claude returned no parseable prefill JSON. Preview: ${preview || '[empty]'}`);
+  }
+  const pickString = (key) => {
+    const v = parsed[key];
+    if (typeof v !== 'string') return '';
+    return v.replace(/^\s+|\s+$/g, '');
+  };
+  return {
+    author: pickString('author'),
+    community_prompt: pickString('community_prompt'),
+    blessing: pickString('blessing'),
+    notification_text: pickString('notification_text'),
+    ig_caption: pickString('ig_caption'),
+    what_if: pickString('what_if'),
+    speaker_guide_line: pickString('speaker_guide_line'),
+    art_recs: pickString('art_recs'),
+    _model: model
+  };
+}
+
+// --- Wikipedia / Wikimedia speaker lookup -----------------------------------
+
+const WIKIPEDIA_USER_AGENT = 'OurDailyQuilt/1.0 (https://ourdailyquilt.com)';
+
+function parseSpeakerDatesFromExtract(extract) {
+  const text = String(extract || '').replace(/\s+/g, ' ');
+  if (!text) return '';
+  // Look inside the first parenthetical of the lead paragraph (Wikipedia convention).
+  const parenMatch = text.match(/\(([^)]*)\)/);
+  const haystack = parenMatch ? parenMatch[1] : text.split('.')[0] || '';
+  const yearTokens = haystack.match(/\b(1[6-9][0-9]{2}|20[0-9]{2})\b/g) || [];
+  const years = Array.from(new Set(yearTokens.map((y) => parseInt(y, 10)))).sort((a, b) => a - b);
+  if (years.length >= 2) return `${years[0]} \u2013 ${years[years.length - 1]}`;
+  if (years.length === 1) {
+    if (/\bborn\b/i.test(haystack) || /\bb\.\s*\d/i.test(haystack)) return `born ${years[0]}`;
+  }
+  return '';
+}
+
+function stripHtml(value) {
+  return String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractCommonsFileTitle(imageUrl) {
+  if (!imageUrl) return '';
+  try {
+    const u = new URL(imageUrl);
+    if (!/wikimedia\.org$/i.test(u.hostname) && !/wikipedia\.org$/i.test(u.hostname)) return '';
+    // Examples:
+    //   /wikipedia/commons/thumb/5/5e/Maya_Angelou.jpg/440px-Maya_Angelou.jpg
+    //   /wikipedia/commons/5/5e/Maya_Angelou.jpg
+    const parts = u.pathname.split('/').filter(Boolean);
+    const thumbIdx = parts.indexOf('thumb');
+    let fileName;
+    if (thumbIdx >= 0) {
+      fileName = parts[thumbIdx + 3];
+    } else {
+      fileName = parts[parts.length - 1];
+    }
+    return fileName ? decodeURIComponent(fileName) : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+async function fetchCommonsImageAttribution(imageUrl) {
+  const fileTitle = extractCommonsFileTitle(imageUrl);
+  if (!fileTitle) return '';
+  const params = new URLSearchParams({
+    action: 'query',
+    prop: 'imageinfo',
+    iiprop: 'extmetadata',
+    titles: `File:${fileTitle}`,
+    format: 'json',
+    origin: '*'
+  });
+  const url = `https://commons.wikimedia.org/w/api.php?${params.toString()}`;
+  const res = await fetch(url, { headers: { 'User-Agent': WIKIPEDIA_USER_AGENT } });
+  if (!res.ok) return '';
+  const data = await res.json();
+  const pages = data?.query?.pages || {};
+  const first = Object.values(pages)[0];
+  const meta = first?.imageinfo?.[0]?.extmetadata || {};
+  const artist = stripHtml(meta?.Artist?.value || '');
+  if (artist) return artist;
+  return '';
+}
+
+async function fetchWikipediaSpeakerInfo(authorName) {
+  const name = String(authorName || '').trim();
+  if (!name) return null;
+  const title = encodeURIComponent(name.replace(/\s+/g, '_'));
+  let summary;
+  try {
+    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${title}`, {
+      headers: { 'User-Agent': WIKIPEDIA_USER_AGENT, Accept: 'application/json' },
+      redirect: 'follow'
+    });
+    if (!res.ok) return null;
+    summary = await res.json();
+  } catch (e) {
+    console.warn(`⚠️ Wikipedia summary fetch failed for "${name}":`, e.message);
+    return null;
+  }
+  if (!summary || summary.type === 'disambiguation') return null;
+
+  const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || '';
+  const dates = parseSpeakerDatesFromExtract(summary?.extract || '');
+  let attribution = '';
+  if (imageUrl) {
+    try {
+      attribution = await fetchCommonsImageAttribution(imageUrl);
+    } catch (e) {
+      console.warn(`⚠️ Commons attribution fetch failed for "${name}":`, e.message);
+    }
+  }
+  return {
+    speaker_image_url: imageUrl || '',
+    speaker_dates: dates || '',
+    image_attribution: attribution || ''
+  };
+}
+
+// --- Notion patch + Firestore mirror ----------------------------------------
+
+function buildPrefillNotionProperties(schema, ai, wiki) {
+  const properties = {};
+  const set = (baseName, value, ...aliases) => {
+    if (!value) return;
+    const propName = findNotionPropName(schema, baseName, ...aliases);
+    if (!propName) return;
+    const payload = notionTextPropertyValue(schema[propName], value);
+    if (payload) properties[propName] = payload;
+  };
+
+  if (ai?.author) set('author', ai.author);
+  if (ai?.community_prompt) set('community_prompt', ai.community_prompt, 'communityPrompt', 'Community prompt');
+  if (ai?.blessing) set('blessing', ai.blessing, 'Daily blessing', 'daily_blessing');
+  if (ai?.notification_text) set('notification_text', ai.notification_text, 'notificationText');
+  if (ai?.ig_caption) set('ig_caption', ai.ig_caption, 'igCaption', 'IG Caption');
+  if (ai?.what_if) set('what_if', ai.what_if, 'whatIf', 'What if');
+  if (ai?.speaker_guide_line) set('speaker_guide_line', ai.speaker_guide_line, 'speakerGuideLine', 'Guide line');
+  if (ai?.art_recs) set('art_recs', ai.art_recs, 'artRecs', 'Art recs', 'explore');
+
+  // Wikipedia-derived fields: write fixed placeholders when no match, per spec.
+  set('speaker_image_url', wiki?.speaker_image_url || 'needs manual lookup', 'speakerImageUrl', 'Speaker image URL', 'image_url');
+  set('image_attribution', wiki?.image_attribution || 'unavailable', 'imageAttribution', 'Image attribution', 'image_credit');
+  if (wiki?.speaker_dates) {
+    set('speaker_dates', wiki.speaker_dates, 'speakerDates', 'Speaker dates');
+  }
+
+  return properties;
+}
+
+function buildPrefillFirestorePayload(ai, wiki) {
+  const payload = {};
+  if (ai?.author) {
+    payload.author = ai.author;
+  }
+  if (ai?.community_prompt) {
+    payload.communityPrompt = ai.community_prompt;
+    payload.community_prompt = ai.community_prompt;
+  }
+  if (ai?.blessing) {
+    payload.blessing = ai.blessing;
+  }
+  if (ai?.notification_text) {
+    payload.notificationText = ai.notification_text;
+    payload.notification_text = ai.notification_text;
+  }
+  if (ai?.ig_caption) {
+    payload.igCaption = ai.ig_caption;
+    payload.ig_caption = ai.ig_caption;
+  }
+  if (ai?.what_if) {
+    payload.whatIf = ai.what_if;
+    payload.what_if = ai.what_if;
+  }
+  if (ai?.speaker_guide_line) {
+    payload.speakerGuideLine = ai.speaker_guide_line;
+    payload.speaker_guide_line = ai.speaker_guide_line;
+  }
+  if (ai?.art_recs) {
+    payload.artRecs = ai.art_recs;
+    payload.art_recs = ai.art_recs;
+  }
+  payload.speakerImageUrl = wiki?.speaker_image_url || 'needs manual lookup';
+  payload.speaker_image_url = payload.speakerImageUrl;
+  payload.imageAttribution = wiki?.image_attribution || 'unavailable';
+  payload.image_attribution = payload.imageAttribution;
+  if (wiki?.speaker_dates) {
+    payload.speakerDates = wiki.speaker_dates;
+    payload.speaker_dates = wiki.speaker_dates;
+  }
+  payload.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+  return payload;
+}
+
+// --- Prefill attempt tracking + Notion failure visibility ------------------
+
+const MAX_PREFILL_ATTEMPTS = 3;
+const PREFILL_ERROR_PROP_ALIASES = ['ai_prefill_error', 'aiPrefillError', 'AI prefill error'];
+
+function notionRichTextToPlain(prop) {
+  if (!prop) return '';
+  if (Array.isArray(prop.rich_text)) return prop.rich_text.map((x) => x?.plain_text || '').join('').trim();
+  if (Array.isArray(prop.title)) return prop.title.map((x) => x?.plain_text || '').join('').trim();
+  return '';
+}
+
+function parsePrefillAttemptCount(errorText) {
+  const m = String(errorText || '').match(/^\s*Attempt\s+(\d+)\s*\/\s*\d+\b/i);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function formatPrefillErrorText(attemptNumber, reason) {
+  const ts = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const cleaned = String(reason || 'unknown').replace(/\s+/g, ' ').trim().slice(0, 240);
+  return `Attempt ${attemptNumber}/${MAX_PREFILL_ATTEMPTS} at ${ts} | ${cleaned}`;
+}
+
+async function notionGetPage(pageId) {
+  if (!pageId) return null;
+  try {
+    return await notionFetchJson(`/pages/${pageId}`, { method: 'GET' });
+  } catch (e) {
+    console.warn(`⚠️ Notion page fetch failed for ${pageId}:`, e.message);
+    return null;
+  }
+}
+
+function readCurrentPrefillErrorState(pageProperties) {
+  for (const alias of PREFILL_ERROR_PROP_ALIASES) {
+    const found = pageProperties && Object.entries(pageProperties).find(
+      ([name]) => normNotionPropKey(name) === normNotionPropKey(alias)
+    );
+    if (found) {
+      const text = notionRichTextToPlain(found[1]);
+      return { propName: found[0], text, attempts: parsePrefillAttemptCount(text) };
+    }
+  }
+  return { propName: '', text: '', attempts: 0 };
+}
+
+async function writePrefillErrorField(schema, notionPageId, message) {
+  const propName = findNotionPropName(schema, ...PREFILL_ERROR_PROP_ALIASES);
+  if (!propName) return false;
+  const prop = schema[propName];
+  const payload = prop?.type === 'rich_text'
+    ? { rich_text: message ? [{ text: { content: message } }] : [] }
+    : notionTextPropertyValue(prop, message || '\u200B');
+  if (!payload) return false;
+  await notionFetchJson(`/pages/${notionPageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ properties: { [propName]: payload } })
+  });
+  return true;
+}
+
+/**
+ * Orchestrates: Claude prefill + Wikipedia lookup + Notion PATCH + Firestore merge.
+ * Tracks attempts in the optional `ai_prefill_error` Notion column (created by user, not required).
+ * Returns a summary object so the sweep caller can log aggregate results; never throws.
+ */
+async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName, pageProperties = null }) {
+  if (!notionPageId) return { status: 'skipped', reason: 'no page id' };
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!databaseId) throw new Error('NOTION_DATABASE_ID is not configured on server');
+
+  // Resolve current attempt count from the row (skip the fetch if the caller already has properties).
+  let currentProps = pageProperties;
+  if (!currentProps) {
+    const page = await notionGetPage(notionPageId);
+    currentProps = page?.properties || {};
+  }
+  const errState = readCurrentPrefillErrorState(currentProps);
+  if (errState.attempts >= MAX_PREFILL_ATTEMPTS) {
+    return { status: 'skipped', reason: `attempt cap reached (${errState.attempts}/${MAX_PREFILL_ATTEMPTS})` };
+  }
+  const nextAttempt = errState.attempts + 1;
+
+  const schema = await notionGetDatabaseProperties(databaseId);
+
+  let ai = null;
+  let claudeError = null;
+  try {
+    ai = await generateSubmittedQuotePrefillFields({ quoteText, authorName });
+  } catch (e) {
+    claudeError = e?.message || String(e);
+    console.warn(`⚠️ Claude prefill failed for ${notionPageId} (attempt ${nextAttempt}/${MAX_PREFILL_ATTEMPTS}):`, claudeError);
+  }
+
+  // Claude failure is the only "real" failure for retry purposes; surface it to Notion and stop here.
+  if (!ai) {
+    try {
+      const wrote = await writePrefillErrorField(
+        schema,
+        notionPageId,
+        formatPrefillErrorText(nextAttempt, `Claude: ${claudeError || 'unknown error'}`)
+      );
+      if (!wrote) {
+        console.warn(`⚠️ ai_prefill_error column not present on Notion DB; failures will not be visible there.`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not write ai_prefill_error for ${notionPageId}:`, e.message);
+    }
+    return { status: 'failed', attempt: nextAttempt, max: MAX_PREFILL_ATTEMPTS, error: claudeError };
+  }
+
+  const resolvedAuthor = ai?.author || authorName;
+  let wiki = null;
+  try {
+    wiki = await fetchWikipediaSpeakerInfo(resolvedAuthor);
+  } catch (e) {
+    console.warn(`⚠️ Wikipedia lookup failed for "${resolvedAuthor}":`, e.message);
+  }
+
+  const properties = buildPrefillNotionProperties(schema, ai, wiki);
+  // Clear any prior error message on success.
+  if (errState.propName) {
+    const errProp = schema[errState.propName];
+    if (errProp?.type === 'rich_text') {
+      properties[errState.propName] = { rich_text: [] };
+    }
+  }
+  if (Object.keys(properties).length) {
+    await notionFetchJson(`/pages/${notionPageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ properties })
+    });
+  }
+
+  if (db) {
+    const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+    const payload = buildPrefillFirestorePayload(ai, wiki);
+    await db.collection(collection).doc(notionPageId).set(payload, { merge: true });
+  }
+
+  console.log(
+    `\u2728 Prefilled ${notionPageId} (claude=${ai._model || 'ok'}, wiki=${wiki?.speaker_image_url ? 'image+meta' : wiki?.speaker_dates ? 'meta-only' : 'none'})`
+  );
+  return { status: 'ok', attempt: nextAttempt, hasWiki: !!wiki };
+}
+
+// --- Polling sweep for Notion-added quotes ----------------------------------
+
+const PREFILL_SWEEP_TICK_MS = Math.max(60000, parseInt(process.env.QUOTE_PREFILL_POLL_INTERVAL_MS || '', 10) || 600000);
+const PREFILL_SWEEP_BATCH_LIMIT = Math.max(1, parseInt(process.env.QUOTE_PREFILL_BATCH_LIMIT || '', 10) || 5);
+let quotePrefillSweepRunning = false;
+
+function extractQuoteTextFromNotionPage(page) {
+  const props = page?.properties || {};
+  const titleProp = props.quote_text || Object.values(props).find((p) => p?.type === 'title');
+  const richProp = props.quote_text?.type === 'rich_text' ? props.quote_text : null;
+  return notionRichTextToPlain(titleProp) || notionRichTextToPlain(richProp) || '';
+}
+
+function extractAuthorFromNotionPage(page) {
+  const props = page?.properties || {};
+  for (const alias of ['author', 'Author']) {
+    if (props[alias]) {
+      const t = notionRichTextToPlain(props[alias]);
+      if (t) return t;
+    }
+  }
+  return '';
+}
+
+async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
+  const quoteTextName = getNotionTitlePropName(schema);
+  const communityPromptName = findNotionPropName(schema, 'community_prompt', 'communityPrompt', 'Community prompt');
+  if (!quoteTextName || !communityPromptName) {
+    throw new Error(`Notion DB missing required columns (need title + community_prompt rich_text)`);
+  }
+  const quoteProp = schema[quoteTextName];
+  const communityProp = schema[communityPromptName];
+  const filter = {
+    and: [
+      { property: quoteTextName, [quoteProp.type]: { is_not_empty: true } },
+      { property: communityPromptName, [communityProp.type]: { is_empty: true } }
+    ]
+  };
+  const json = await notionFetchJson(`/databases/${databaseId}/query`, {
+    method: 'POST',
+    body: JSON.stringify({ filter, page_size: Math.min(100, limit * 4) })
+  });
+  return Array.isArray(json?.results) ? json.results : [];
+}
+
+async function runQuotePrefillSweep({ limit = PREFILL_SWEEP_BATCH_LIMIT, trigger = 'manual' } = {}) {
+  if (quotePrefillSweepRunning) {
+    return { skipped: true, reason: 'sweep already running' };
+  }
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) return { skipped: true, reason: 'ANTHROPIC_API_KEY not configured' };
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!databaseId) return { skipped: true, reason: 'NOTION_DATABASE_ID not configured' };
+
+  quotePrefillSweepRunning = true;
+  const startedAt = Date.now();
+  const counts = { considered: 0, capped: 0, ok: 0, failed: 0, errored: 0 };
+  try {
+    const schema = await notionGetDatabaseProperties(databaseId);
+    const candidates = await queryNotionForPrefillCandidates(databaseId, schema, limit);
+    counts.considered = candidates.length;
+    let processed = 0;
+    for (const page of candidates) {
+      if (processed >= limit) break;
+      const errState = readCurrentPrefillErrorState(page.properties);
+      if (errState.attempts >= MAX_PREFILL_ATTEMPTS) {
+        counts.capped += 1;
+        continue;
+      }
+      const quoteText = extractQuoteTextFromNotionPage(page);
+      const authorName = extractAuthorFromNotionPage(page);
+      if (!quoteText || !authorName) {
+        counts.capped += 1;
+        continue;
+      }
+      processed += 1;
+      try {
+        const result = await prefillSubmittedQuoteWithAi({
+          notionPageId: page.id,
+          quoteText,
+          authorName,
+          pageProperties: page.properties
+        });
+        if (result?.status === 'ok') counts.ok += 1;
+        else if (result?.status === 'failed') counts.failed += 1;
+        else counts.capped += 1;
+      } catch (e) {
+        counts.errored += 1;
+        console.warn(`⚠️ Sweep error for ${page.id}:`, e.message);
+      }
+    }
+    const ms = Date.now() - startedAt;
+    console.log(`🧹 Quote prefill sweep (${trigger}): ${JSON.stringify(counts)} in ${ms}ms`);
+    return { ...counts, ms, trigger };
+  } finally {
+    quotePrefillSweepRunning = false;
+  }
+}
+
+let quotePrefillSweepTimer = null;
+function startQuotePrefillSweepScheduler() {
+  if (quotePrefillSweepTimer) return;
+  const enabled = process.env.NODE_ENV === 'production'
+    || String(process.env.ENABLE_QUOTE_PREFILL_POLL || '').trim() === '1';
+  if (!enabled) {
+    console.log('ℹ️ Quote prefill sweep disabled (set ENABLE_QUOTE_PREFILL_POLL=1 or run NODE_ENV=production to enable).');
+    return;
+  }
+  if (!process.env.ANTHROPIC_API_KEY || !process.env.NOTION_DATABASE_ID) {
+    console.log('ℹ️ Quote prefill sweep disabled (missing ANTHROPIC_API_KEY or NOTION_DATABASE_ID).');
+    return;
+  }
+  quotePrefillSweepTimer = setInterval(() => {
+    runQuotePrefillSweep({ trigger: 'cron' }).catch((e) => {
+      console.warn('⚠️ Quote prefill sweep tick failed:', e?.message || e);
+    });
+  }, PREFILL_SWEEP_TICK_MS);
+  if (typeof quotePrefillSweepTimer.unref === 'function') quotePrefillSweepTimer.unref();
+  console.log(`🧹 Quote prefill sweep scheduled every ${Math.round(PREFILL_SWEEP_TICK_MS / 1000)}s (batch=${PREFILL_SWEEP_BATCH_LIMIT}, maxAttempts=${MAX_PREFILL_ATTEMPTS}).`);
+}
+
+// ---------------------------------------------------------------------------
 
 function formatZapierCaptionFromQuoteData(quoteData = {}) {
   const igCaption = String(
@@ -2899,6 +3442,36 @@ app.options('/api/sync-notion-firestore', (req, res) => {
   return res.status(204).end();
 });
 
+app.options('/api/quote-prefill-sweep', (req, res) => {
+  setNotionSyncCors(res);
+  return res.status(204).end();
+});
+
+/**
+ * Manually run a Notion quote prefill sweep right now. Same auth pattern as /api/sync-notion-firestore.
+ * Optional body: { limit: number } to override the per-tick cap for this run.
+ */
+app.post('/api/quote-prefill-sweep', async (req, res) => {
+  setNotionSyncCors(res);
+  const expectedToken = process.env.NOTION_SYNC_TOKEN || process.env.RESET_TOKEN || '';
+  if (!expectedToken) {
+    return res.status(500).json({ success: false, error: 'NOTION_SYNC_TOKEN or RESET_TOKEN must be set on the server' });
+  }
+  const providedToken = req.header('x-notion-sync-token');
+  if (!providedToken || providedToken !== expectedToken) {
+    return res.status(401).json({ success: false, error: 'Invalid sync token' });
+  }
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const limit = Math.max(1, Math.min(50, parseInt(body.limit, 10) || PREFILL_SWEEP_BATCH_LIMIT));
+    const result = await runQuotePrefillSweep({ limit, trigger: 'manual' });
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('❌ Manual quote prefill sweep failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'Sweep failed', timestamp: getUtcIsoNow() });
+  }
+});
+
 /**
  * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
  * Auth: header x-notion-sync-token must match NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset.
@@ -3121,4 +3694,5 @@ app.listen(PORT, () => {
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test-instagram`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
+  startQuotePrefillSweepScheduler();
 });

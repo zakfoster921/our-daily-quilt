@@ -2106,12 +2106,12 @@ try {
     }
     .settings-personal-quilt {
       width: 100%;
-      margin: 0.2rem 0 0.55rem;
-      padding: 0.55rem 0;
+      margin: 0.1rem 0 0.275rem;
+      padding: 0.275rem 0;
       box-sizing: border-box;
     }
     .settings-personal-quilt__frame {
-      width: min(100%, 320px);
+      width: min(100%, 160px);
       margin: 0 auto;
       aspect-ratio: 1070 / 1340;
       background: #ebe8e3;
@@ -2124,8 +2124,8 @@ try {
       height: 100%;
     }
     .settings-personal-quilt__description {
-      margin: 0.62rem auto 0;
-      max-width: 22rem;
+      margin: 0.31rem auto 0;
+      max-width: 11rem;
       color: rgba(0, 0, 0, 0.52);
       font-size: 0.92rem;
       line-height: 1.35;
@@ -2828,6 +2828,114 @@ try {
     
     .toast-link:hover {
       color: #45b7aa;
+    }
+
+    /* ===== IN-APP NOTIFICATION (milestone banners) ===== */
+    .odq-inapp-notify-host {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100030;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: max(8px, calc(var(--odq-safe-top) + 4px)) 12px 0;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+    .odq-inapp-notify {
+      pointer-events: auto;
+      width: 100%;
+      max-width: min(400px, calc(100vw - 20px));
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 14px 12px 12px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.78);
+      -webkit-backdrop-filter: blur(18px) saturate(1.35);
+      backdrop-filter: blur(18px) saturate(1.35);
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.9) inset,
+        0 12px 40px rgba(15, 12, 10, 0.18),
+        0 2px 8px rgba(15, 12, 10, 0.08);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      text-align: left;
+      opacity: 0;
+      transform: translateY(-14px) scale(0.97);
+      transition:
+        opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .odq-inapp-notify.odq-inapp-notify--in {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    .odq-inapp-notify.odq-inapp-notify--leaving {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.98);
+      transition:
+        opacity 0.32s ease,
+        transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .odq-inapp-notify__icon-wrap {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    }
+    .odq-inapp-notify__icon {
+      display: block;
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+    }
+    .odq-inapp-notify__main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .odq-inapp-notify__title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .odq-inapp-notify__title {
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(0, 0, 0, 0.45);
+      margin: 0;
+      line-height: 1.2;
+    }
+    .odq-inapp-notify__accent {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+    }
+    .odq-inapp-notify__body {
+      font-size: 0.94rem;
+      font-weight: 500;
+      line-height: 1.45;
+      color: rgba(0, 0, 0, 0.88);
+      margin: 0;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .odq-inapp-notify {
+        transition-duration: 0.01ms !important;
+      }
     }
 
     /* ===== RESPONSIVE ===== */
@@ -3749,7 +3857,9 @@ try {
       
       .screen {
         -webkit-overflow-scrolling: touch;
-        overscroll-behavior: none;
+        /* "none" removed native rubber-band; keep y elastic, block x to avoid sideways glow */
+        overscroll-behavior-y: auto;
+        overscroll-behavior-x: none;
       }
       
       html, body {
@@ -8558,6 +8668,7 @@ try {
 
       <!-- Toast notifications -->
     <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+    <div id="odq-inapp-notify-host" class="odq-inapp-notify-host" aria-live="polite"></div>
 
     <!-- Archive Modal -->
     <div id="archiveModal" class="archive-modal" style="display: none;">
@@ -8600,6 +8711,10 @@ try {
         quiltSize: 1000,
         animationDuration: 2000,
         toastDuration: 3000,
+        /** Milestone “banner” read time (longer copy than typical toasts). */
+        milestoneInAppNotificationMs: 7000,
+        /** Optional; falls back to generated icon if missing. */
+        notificationIconUrl: 'assets/icon.png',
         /** Delay before “What color…” prompt on quote screen. */
         quoteColorPromptReadPauseMs: 1500,
         buildId: '2026-04-30-app-store-readiness',
@@ -16085,6 +16200,41 @@ try {
       }
 
       /**
+       * Firestore rejects `undefined` and `NaN`. Strip undefined recursively; coerce non-finite numbers to null.
+       * (Export debug often includes geometry from getBoundingClientRect — NaN can slip in on odd layouts.)
+       */
+      static sanitizeForFirestore(value) {
+        const walk = (v) => {
+          if (v === undefined) return undefined;
+          if (v === null) return null;
+          if (typeof v === 'number') {
+            return Number.isFinite(v) ? v : null;
+          }
+          if (typeof v === 'string' || typeof v === 'boolean') return v;
+          if (v instanceof Date) return v;
+          if (Array.isArray(v)) {
+            const out = [];
+            for (const item of v) {
+              const next = walk(item);
+              if (next !== undefined) out.push(next);
+            }
+            return out;
+          }
+          if (typeof v === 'object') {
+            const out = {};
+            for (const [k, val] of Object.entries(v)) {
+              const next = walk(val);
+              if (next !== undefined) out[k] = next;
+            }
+            return out;
+          }
+          return undefined;
+        };
+        const out = walk(value);
+        return out === undefined ? {} : out;
+      }
+
+      /**
        * Uploads PNGs (and optional synthetic reel WebM) to Firebase Storage and writes `instagram-images/{dateKey}` with URLs only
        * (Firestore field limit ~1 MiB — inline base64 exceeds that for layout B).
        * Uses merge so reel / MP4 URLs from a prior step are not wiped when updating images only.
@@ -16247,8 +16397,9 @@ try {
             debugWrittenAt: new Date().toISOString()
           };
         }
-        await window.firestore.setDoc(imageRef, docPayload, { merge: true });
-        return docPayload;
+        const safePayload = Utils.sanitizeForFirestore(docPayload);
+        await window.firestore.setDoc(imageRef, safePayload, { merge: true });
+        return safePayload;
       }
     }
 
@@ -16303,6 +16454,109 @@ try {
         
         toast.classList.add('show');
         setTimeout(() => toast.classList.remove('show'), duration);
+      }
+
+      /**
+       * iOS-style top banner for milestone copy (not the bottom toast strip).
+       * @param {{ title?: string, body: string, accentColor?: string|null, duration?: number, iconUrl?: string }} options
+       */
+      showInAppNotification(options = {}) {
+        const body = typeof options.body === 'string' ? options.body.trim() : '';
+        if (!body) return;
+
+        const title = (options.title && String(options.title).trim()) || CONFIG.APP.name || 'OUR DAILY QUILT';
+        const duration = Math.max(
+          2200,
+          Number(options.duration) || CONFIG.APP.milestoneInAppNotificationMs || 7000
+        );
+        const accent = options.accentColor != null && String(options.accentColor).trim() ? String(options.accentColor).trim() : null;
+
+        let host = document.getElementById('odq-inapp-notify-host');
+        if (!host) {
+          host = document.createElement('div');
+          host.id = 'odq-inapp-notify-host';
+          host.className = 'odq-inapp-notify-host';
+          host.setAttribute('aria-live', 'polite');
+          document.body.appendChild(host);
+        }
+
+        const card = document.createElement('article');
+        card.className = 'odq-inapp-notify';
+        card.setAttribute('role', 'status');
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'odq-inapp-notify__icon-wrap';
+        const img = document.createElement('img');
+        img.className = 'odq-inapp-notify__icon';
+        img.alt = '';
+        img.decoding = 'async';
+        const rawDefault = String(CONFIG.APP.defaultColor || '').trim();
+        const fallbackHex = /^#?([0-9a-f]{6})$/i.test(rawDefault)
+          ? `#${rawDefault.replace(/^#/, '')}`
+          : '#ea9b9a';
+        const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${fallbackHex}"/><path fill="rgba(255,255,255,0.35)" d="M10 10h18v18H10zm26 0h18v18H36zM10 36h18v18H10zm26 0h18v18H36z"/></svg>`;
+        const fallbackDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fallbackSvg)}`;
+        img.src = options.iconUrl || CONFIG.APP.notificationIconUrl || 'assets/icon.png';
+        img.onerror = () => {
+          img.onerror = null;
+          img.src = fallbackDataUrl;
+        };
+        iconWrap.appendChild(img);
+
+        const main = document.createElement('div');
+        main.className = 'odq-inapp-notify__main';
+        const titleRow = document.createElement('div');
+        titleRow.className = 'odq-inapp-notify__title-row';
+        const h = document.createElement('p');
+        h.className = 'odq-inapp-notify__title';
+        h.textContent = title;
+        titleRow.appendChild(h);
+        if (accent) {
+          const dot = document.createElement('span');
+          dot.className = 'odq-inapp-notify__accent';
+          dot.style.backgroundColor = accent;
+          dot.setAttribute('aria-hidden', 'true');
+          titleRow.appendChild(dot);
+        }
+        main.appendChild(titleRow);
+        const p = document.createElement('p');
+        p.className = 'odq-inapp-notify__body';
+        p.textContent = body;
+        main.appendChild(p);
+
+        card.appendChild(iconWrap);
+        card.appendChild(main);
+        host.prepend(card);
+
+        const removeCard = () => {
+          if (!card.parentNode) return;
+          card.classList.remove('odq-inapp-notify--in');
+          card.classList.add('odq-inapp-notify--leaving');
+          setTimeout(() => card.remove(), 400);
+        };
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => card.classList.add('odq-inapp-notify--in'));
+        });
+
+        let hideTimer = setTimeout(removeCard, duration);
+        card.addEventListener('click', () => {
+          clearTimeout(hideTimer);
+          removeCard();
+        });
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            clearTimeout(hideTimer);
+            removeCard();
+          }
+        });
+        card.tabIndex = 0;
+
+        return () => {
+          clearTimeout(hideTimer);
+          removeCard();
+        };
       }
 
       showLoading(show = true) {
@@ -17752,11 +18006,31 @@ try {
               const safeUrl = String(url || '').trim();
               if (!safeUrl) return [];
               if (/^(?:data|blob):/i.test(safeUrl)) return [safeUrl];
-              const out = [];
               const baseUrl =
                 typeof CONFIG !== 'undefined' && CONFIG.BACKEND && CONFIG.BACKEND.baseUrl
                   ? String(CONFIG.BACKEND.baseUrl).replace(/\/$/, '')
                   : '';
+              /**
+               * Firebase Storage download URLs do not reliably send Access-Control-Allow-Origin for
+               * cross-origin <img crossOrigin="anonymous"> (required so canvas can read pixels for the
+               * speaker silhouette). Opening the app from file:// (origin "null") makes that worse.
+               * Same-origin /api/proxy-image returns ACAO: * — use it only for Storage so we never
+               * fall through to a direct URL that always fails CORS for this code path.
+               */
+              let isFirebaseStorageHost = false;
+              try {
+                const u = new URL(safeUrl);
+                isFirebaseStorageHost =
+                  /(^|\.)firebasestorage\.googleapis\.com$/i.test(u.hostname) ||
+                  /\.firebasestorage\.app$/i.test(u.hostname);
+              } catch (_) {
+                /* ignore */
+              }
+              if (isFirebaseStorageHost && baseUrl) {
+                const proxied = `${baseUrl}/api/proxy-image?url=${encodeURIComponent(safeUrl)}`;
+                return [proxied];
+              }
+              const out = [];
               if (/^https?:\/\//i.test(safeUrl) && baseUrl) {
                 out.push(`${baseUrl}/api/proxy-image?url=${encodeURIComponent(safeUrl)}`);
               }
@@ -19088,7 +19362,11 @@ try {
                 targetAspect: IG_QUILT_SCREEN_ASPECT,
                 skipExportUnderpaint: true,
                 exportModeLabel: 'classic_9x16_padded_no_underpaint',
-                viewBoxPaddingRatio: 0.1
+                /** Tight slice so the 4:5 classic card does not show thick top/bottom white bands. */
+                viewBoxPaddingRatio: 0.02,
+                /** YMid so the quilt sits vertically centered in the 9:16 slice (YMin left a huge empty “header”). */
+                preserveAspectRatio: 'xMidYMid meet',
+                instagramTrueWhiteMatte: true
               });
             } catch (e) {
               this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
@@ -19098,14 +19376,16 @@ try {
           }
           if (!quiltBlob) {
             quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, {
-              targetAspect: IG_QUILT_SCREEN_ASPECT
+              targetAspect: IG_QUILT_SCREEN_ASPECT,
+              instagramTrueWhiteMatte: true
             });
           }
           if (!quiltBlob) return null;
 
           const W = 1080;
           const H = 1350;
-          const pad = 5;
+          /** Minimal symmetric inset so IG classic matches thin top/bottom (contain centers in full inner box). */
+          const pad = 2;
           const innerW = W - pad * 2;
           const innerH = H - pad * 2;
 
@@ -19126,12 +19406,14 @@ try {
             });
             const iw = Math.max(1, img.naturalWidth || img.width);
             const ih = Math.max(1, img.naturalHeight || img.height);
-            const rect = getAspectSafeCanvasRect(iw, ih, innerW, innerH, 'contain');
-            const dx = pad + rect.x;
-            const dy = pad + rect.y;
+            const scale = Math.min(innerW / iw, innerH / ih);
+            const dw = Math.round(iw * scale);
+            const dh = Math.round(ih * scale);
+            const dx = pad + (innerW - dw) / 2;
+            const dy = pad + (innerH - dh) / 2;
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, dx, dy, rect.width, rect.height);
+            ctx.drawImage(img, 0, 0, iw, ih, dx, dy, dw, dh);
           } finally {
             URL.revokeObjectURL(bitmapUrl);
           }
@@ -19178,7 +19460,9 @@ try {
           exportModeLabel:
             options.exportModeLabel || (screenAspect ? 'zapier_screen_aspect_crop' : undefined),
           skipExportUnderpaint: options.skipExportUnderpaint === true,
-          viewBoxPaddingRatio: options.viewBoxPaddingRatio
+          viewBoxPaddingRatio: options.viewBoxPaddingRatio,
+          preserveAspectRatio: options.preserveAspectRatio,
+          instagramTrueWhiteMatte: options.instagramTrueWhiteMatte === true
         });
       }
 
@@ -19197,7 +19481,10 @@ try {
         if (Math.abs(sourceAspect - targetAspect) < 0.0001) return [x, y, width, height];
         if (targetAspect > sourceAspect) {
           const croppedHeight = width / targetAspect;
-          return [x, y, width, Math.min(height, croppedHeight)];
+          const ch = Math.min(height, croppedHeight);
+          /** Center vertically (top-anchored crops left a huge empty band above the quilt in 9:16 exports). */
+          const y0 = y + Math.max(0, (height - ch) / 2);
+          return [x, y0, width, ch];
         }
         const croppedWidth = height * targetAspect;
         return [x + (width - croppedWidth) / 2, y, Math.min(width, croppedWidth), height];
@@ -19406,6 +19693,112 @@ try {
         }
       }
 
+      /**
+       * After film grain, restore pure white only in the viewBox margin outside the blocks' bounds.
+       * Does not touch pixels inside the block envelope (quilt + internal gaps keep grain/texture).
+       */
+      bleachInstagramOuterMatteAroundBlockBounds(ctx, outW, outH, viewBoxParts, blocks, svgClone = null) {
+        if (!ctx || !Array.isArray(viewBoxParts) || viewBoxParts.length !== 4) return;
+        if (!Array.isArray(blocks) || !blocks.length) return;
+        const [vbX, vbY, vbW, vbH] = viewBoxParts;
+        if (![vbX, vbY, vbW, vbH].every(Number.isFinite) || vbW <= 0 || vbH <= 0) return;
+        const fieldTransform = String(svgClone?.querySelector?.('#quiltFieldLayer')?.getAttribute('transform') || '');
+        const transformMatch = /translate\(\s*([-0-9.]+)(?:[\s,]+[-0-9.]+)?\s*\)\s*scale\(\s*([-0-9.]+)/.exec(fieldTransform);
+        const stretchAnchor = transformMatch ? Number(transformMatch[1]) : 0;
+        const stretchScale = transformMatch ? Number(transformMatch[2]) : 1;
+        const hasHorizontalStretch =
+          Number.isFinite(stretchAnchor) &&
+          Number.isFinite(stretchScale) &&
+          Math.abs(stretchScale - 1) > 1e-6;
+        let qx1 = Infinity;
+        let qy1 = Infinity;
+        let qx2 = -Infinity;
+        let qy2 = -Infinity;
+        for (const b of blocks) {
+          if (!b) continue;
+          const bx = Number(b.x);
+          const by = Number(b.y);
+          const bw = Number(b.width);
+          const bh = Number(b.height);
+          if (![bx, by, bw, bh].every(Number.isFinite) || bw <= 0 || bh <= 0) continue;
+          let x1 = bx;
+          let x2 = bx + bw;
+          if (hasHorizontalStretch) {
+            x1 = stretchAnchor + (x1 - stretchAnchor) * stretchScale;
+            x2 = stretchAnchor + (x2 - stretchAnchor) * stretchScale;
+          }
+          qx1 = Math.min(qx1, x1);
+          qy1 = Math.min(qy1, by);
+          qx2 = Math.max(qx2, x2);
+          qy2 = Math.max(qy2, by + bh);
+        }
+        /**
+         * Primary blocks do not include the mirrored field (`#quiltMirroredFieldLayer`).
+         * Without extending qy2, the reflection is below the union bbox and gets bleached to white,
+         * so the export looks like a thin quilt pinned to the top of a 9:16 (and the classic 4:5 card).
+         */
+        if (svgClone?.querySelector?.('#quiltMirroredFieldLayer')) {
+          qy2 = Math.max(qy2, vbY + vbH);
+        }
+        if (!Number.isFinite(qx1) || qx2 <= qx1 || qy2 <= qy1) return;
+        const bleed = Math.max(6, Math.min(outW, outH) * 0.006);
+        const sx = outW / vbW;
+        const sy = outH / vbH;
+        let left = (qx1 - vbX) * sx - bleed;
+        let top = (qy1 - vbY) * sy - bleed;
+        let right = (qx2 - vbX) * sx + bleed;
+        let bottom = (qy2 - vbY) * sy + bleed;
+        left = Math.max(0, Math.floor(left));
+        top = Math.max(0, Math.floor(top));
+        right = Math.min(outW, Math.ceil(right));
+        bottom = Math.min(outH, Math.ceil(bottom));
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        if (top > 0) ctx.fillRect(0, 0, outW, top);
+        if (bottom < outH) ctx.fillRect(0, bottom, outW, outH - bottom);
+        if (left > 0) ctx.fillRect(0, top, left, Math.max(0, bottom - top));
+        if (right < outW) ctx.fillRect(right, top, outW - right, Math.max(0, bottom - top));
+        ctx.restore();
+      }
+
+      /** Same outer-matte bleach as `bleachInstagramOuterMatteAroundBlockBounds` for the block-only raster (no SVG viewBox). */
+      bleachInstagramOuterMatteForBlockRaster(ctx, outW, outH, sourceX, sourceY, scaleX, scaleY, blocks) {
+        if (!ctx || !Array.isArray(blocks) || !blocks.length) return;
+        let qx1 = Infinity;
+        let qy1 = Infinity;
+        let qx2 = -Infinity;
+        let qy2 = -Infinity;
+        for (const b of blocks) {
+          if (!b) continue;
+          const bx = Number(b.x);
+          const by = Number(b.y);
+          const bw = Number(b.width);
+          const bh = Number(b.height);
+          if (![bx, by, bw, bh].every(Number.isFinite) || bw <= 0 || bh <= 0) continue;
+          qx1 = Math.min(qx1, bx);
+          qy1 = Math.min(qy1, by);
+          qx2 = Math.max(qx2, bx + bw);
+          qy2 = Math.max(qy2, by + bh);
+        }
+        if (!Number.isFinite(qx1) || qx2 <= qx1 || qy2 <= qy1) return;
+        const bleed = Math.max(6, Math.min(outW, outH) * 0.006);
+        let left = (qx1 - sourceX) * scaleX - bleed;
+        let top = (qy1 - sourceY) * scaleY - bleed;
+        let right = (qx2 - sourceX) * scaleX + bleed;
+        let bottom = (qy2 - sourceY) * scaleY + bleed;
+        left = Math.max(0, Math.floor(left));
+        top = Math.max(0, Math.floor(top));
+        right = Math.min(outW, Math.ceil(right));
+        bottom = Math.min(outH, Math.ceil(bottom));
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        if (top > 0) ctx.fillRect(0, 0, outW, top);
+        if (bottom < outH) ctx.fillRect(0, bottom, outW, outH - bottom);
+        if (left > 0) ctx.fillRect(0, top, left, Math.max(0, bottom - top));
+        if (right < outW) ctx.fillRect(right, top, outW - right, Math.max(0, bottom - top));
+        ctx.restore();
+      }
+
       /** High-res PNG blob from the live quilt SVG (same path as layout B story share). */
       async rasterizeQuiltSvgToPngBlob(quiltSVG, options = {}) {
         return new Promise((resolve, reject) => {
@@ -19455,7 +19848,16 @@ try {
               sourceWidth = Math.max(1, exportViewBoxParts[2]);
               sourceHeight = Math.max(1, exportViewBoxParts[3]);
               svgClone.setAttribute('viewBox', exportViewBoxParts.join(' '));
-              svgClone.setAttribute('preserveAspectRatio', 'xMidYMin meet');
+              /**
+               * xMidYMin: pins content to top of viewBox — good for some story exports.
+               * xMidYMid: centers vertically — classic 4:5 IG card should have even white bands
+               * top/bottom once the 9:16 raster is contained in the post.
+               */
+              const par =
+                typeof options.preserveAspectRatio === 'string' && options.preserveAspectRatio.trim()
+                  ? options.preserveAspectRatio.trim()
+                  : 'xMidYMin meet';
+              svgClone.setAttribute('preserveAspectRatio', par);
             }
             const rect = quiltSVG.getBoundingClientRect?.();
             const maxEdge = 2400;
@@ -19537,6 +19939,21 @@ try {
                   this.healQuiltExportRasterSeams(ctx, outW, outH);
                 }
                 Utils.applyFilmGrain(ctx, outW, outH, 0, { vignette: false });
+                if (
+                  options.instagramTrueWhiteMatte === true &&
+                  viewBoxParts &&
+                  Array.isArray(options.underpaintBlocks) &&
+                  options.underpaintBlocks.length
+                ) {
+                  this.bleachInstagramOuterMatteAroundBlockBounds(
+                    ctx,
+                    outW,
+                    outH,
+                    viewBoxParts,
+                    options.underpaintBlocks,
+                    svgClone
+                  );
+                }
                 canvas.toBlob(async (blob) => {
                   URL.revokeObjectURL(svgUrl);
                   if (!blob) {
@@ -19589,6 +20006,7 @@ try {
           const sourceAspect = quiltW / quiltH;
           if (targetAspect > sourceAspect) {
             sourceH = Math.min(quiltH, quiltW / targetAspect);
+            sourceY = minY + (quiltH - sourceH) / 2;
           } else {
             sourceW = Math.min(quiltW, quiltH * targetAspect);
             sourceX = minX + (quiltW - sourceW) / 2;
@@ -19717,6 +20135,18 @@ try {
           ctx.restore();
         });
         Utils.applyFilmGrain(ctx, outW, outH, 0, { vignette: false });
+        if (options.instagramTrueWhiteMatte === true) {
+          this.bleachInstagramOuterMatteForBlockRaster(
+            ctx,
+            outW,
+            outH,
+            sourceX,
+            sourceY,
+            scaleX,
+            scaleY,
+            blocks
+          );
+        }
         const mimeType =
           typeof options.mimeType === 'string' && options.mimeType.length
             ? options.mimeType
@@ -19758,7 +20188,8 @@ try {
             try {
               highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, {
                 targetAspect: IG_QUILT_SCREEN_ASPECT,
-                exportModeLabel: 'layout_b_post_9x16_cover_source'
+                exportModeLabel: 'layout_b_post_9x16_cover_source',
+                instagramTrueWhiteMatte: true
               });
             } catch (e) {
               this.logger.warn('SVG raster failed, falling back to blocks:', e);
@@ -19768,7 +20199,8 @@ try {
           }
           if (!highResBlob) {
             highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, {
-              targetAspect: IG_QUILT_SCREEN_ASPECT
+              targetAspect: IG_QUILT_SCREEN_ASPECT,
+              instagramTrueWhiteMatte: true
             });
           }
           if (!highResBlob) return null;
@@ -25204,13 +25636,20 @@ try {
               requestAnimationFrame(() => line.classList.add('is-visible'));
             });
           }
+          /* #nameThanksLine uses opacity 700ms (see CSS); the outer delay must not overlap that
+             or the line barely reaches full opacity before exit — feels like a flash. */
+          const nameThanksLineFadeMs = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+            ?.matches
+            ? 0
+            : 700;
+          const nameThanksDwellBeforeExitMs = 1000;
           this._nameThanksAdvanceTimer = setTimeout(() => {
             if (line) line.classList.remove('is-visible');
             this._nameThanksAdvanceTimer = setTimeout(() => {
               this._nameThanksAdvanceTimer = null;
               this.uiService.showScreen('screen-welcome');
             }, 720);
-          }, 1850);
+          }, nameThanksLineFadeMs + nameThanksDwellBeforeExitMs);
         };
         if (firstNameContinueBtn) {
           firstNameContinueBtn.addEventListener('click', (e) => {
@@ -27524,7 +27963,7 @@ try {
         const wEl = document.getElementById('colorWheelCanvas');
         /* Wheel bitmap is always drawn at full V for readability; brightness is the slider + screen fill only. */
         const wheelKey = wEl
-          ? `${Math.round(wEl.clientWidth)}x${Math.round(wEl.clientHeight)}|${Math.min(2, window.devicePixelRatio || 1)}`
+          ? `${Math.round(wEl.clientWidth)}x${Math.round(wEl.clientHeight)}|${Math.min(3, window.devicePixelRatio || 1)}`
           : '';
         if (wheelKey !== this._hsvWheelCanvasKey) {
           this._renderHsvWheelCanvas();
@@ -27539,7 +27978,7 @@ try {
         const ctx = wheel.getContext('2d', { alpha: true });
         const cssW = Math.max(1, wheel.clientWidth || 1);
         const cssH = Math.max(1, wheel.clientHeight || 1);
-        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const dpr = Math.min(3, window.devicePixelRatio || 1);
         const W = Math.max(1, Math.round(cssW * dpr));
         const H = Math.max(1, Math.round(cssH * dpr));
         if (wheel.width !== W || wheel.height !== H) {
@@ -29075,35 +29514,32 @@ try {
       }
 
       async initializeFirebaseForImages() {
-        // Only initialize Firebase if not already done
-        if (window.firebaseApp && window.firebaseStorage && window.firebaseAuth) {
-          return window.firebaseApp;
-        }
-        
         try {
-          
           const { initializeApp, getApp, getApps } = await import(
             'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'
           );
           const { getStorage } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
           const { getAuth, signInAnonymously } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js');
-          
+
           /** Reuse [DEFAULT] app from Firestore init — avoid duplicate initializeApp() throw. */
           const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(CONFIG.FIREBASE);
           const storage = getStorage(firebaseApp);
           const auth = getAuth(firebaseApp);
-          
-          // Sign in anonymously to enable uploads (requires host in Firebase Auth → Authorized domains)
-          try {
-            await signInAnonymously(auth);
-          } catch (authError) {
-            // Try to continue anyway
+
+          // Sign in anonymously to enable Storage uploads (rules often require request.auth).
+          // Re-auth when the session expired but Storage objects still exist from an earlier visit.
+          if (!auth.currentUser) {
+            try {
+              await signInAnonymously(auth);
+            } catch (authError) {
+              console.warn('Anonymous sign-in for Storage (retry or first run):', authError?.message || authError);
+            }
           }
-          
+
           window.firebaseApp = firebaseApp;
           window.firebaseStorage = storage;
           window.firebaseAuth = auth;
-          
+
           return firebaseApp;
         } catch (error) {
           console.error('Failed to initialize Firebase for images:', error);
@@ -32720,7 +33156,7 @@ try {
         /** 0 = friend, 1 = Instagram layout B, 2 = App Store review — index chosen from dateKey. */
         const variants = [
           { mode: 'friend', lead: 'Tell someone', label: 'Share with a friend' },
-          { mode: 'instagram', lead: 'Save for Instagram', label: 'Post to Instagram (save story layout)' },
+          { mode: 'instagram', lead: 'Share with friends', label: 'Post to Instagram' },
           { mode: 'review', lead: 'Help us grow', label: 'Leave a review' }
         ];
         const v = variants[idx];
@@ -33279,7 +33715,11 @@ try {
           }
         }
 
-        this.uiService.showToast(message);
+        this.uiService.showInAppNotification({
+          title: 'OUR DAILY QUILT',
+          body: message,
+          accentColor: color
+        });
         return payload;
       }
 
