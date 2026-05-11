@@ -5,6 +5,15 @@ on:
     # Once daily at 07:15 UTC
     - cron: "15 7 * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Schedule mode: 'swap' (newly-approved quotes take tomorrow's slot) or 'append' (tack at end of queue, matches the daily cron)."
+        required: false
+        default: "swap"
+        type: choice
+        options:
+          - swap
+          - append
 
 jobs:
   sync:
@@ -17,9 +26,26 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "24"
+          cache: npm
 
+      # Transient ECONNRESET / registry blips are common on scheduled runs; npm
+      # retries + a few full retries avoid a false-negative failed sync.
       - name: Install dependencies (skip native builds)
-        run: npm ci --ignore-scripts
+        run: |
+          npm config set fetch-retries 8
+          npm config set fetch-retry-mintimeout 15000
+          npm config set fetch-retry-maxtimeout 120000
+          for attempt in 1 2 3 4; do
+            if npm ci --ignore-scripts; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "npm ci failed after 4 attempts"
+              exit 1
+            fi
+            echo "npm ci failed (attempt ${attempt}/4), waiting 60s before retry..."
+            sleep 60
+          done
 
       - name: Validate required secrets
         env:
@@ -41,12 +67,25 @@ jobs:
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
         run: npm run sync:quotes
 
+      # Scheduled cron runs use --append-only (tack new approvals onto the end
+      # of the queue). Manual `workflow_dispatch` defaults to swap mode so a
+      # quote you just approved takes tomorrow's slot, displacing whatever was
+      # there back into the pool. Pick "append" from the dispatch input to
+      # match the cron behavior on demand.
       - name: Schedule approved app-submitted quotes
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8 --append-only
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "$MODE" = "append" ]; then
+            echo "[workflow] running schedule script in --append-only mode"
+            node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8 --append-only
+          else
+            echo "[workflow] running schedule script in swap mode (mode=${MODE:-swap})"
+            node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8
+          fi
 
       - name: Append rolling 7-day quote window
         env:
