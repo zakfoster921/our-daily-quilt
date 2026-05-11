@@ -84,23 +84,80 @@ function initFirestore() {
   return admin.firestore();
 }
 
-async function notionPatchPage(pageId, notionToken, payload) {
-  const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${notionToken}`,
-      'Notion-Version': NOTION_API_VERSION,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-  const body = await res.text();
-  if (!res.ok) {
-    const err = new Error(`Notion page patch failed (${res.status}) for ${pageId}: ${body}`);
-    err.notionStatus = res.status;
-    err.notionBody = body;
-    throw err;
+/**
+ * Notion / Cloudflare occasionally returns 502/503/504/408/429 mid-sync. Those
+ * are transient — retry with capped exponential backoff (plus jitter) before
+ * failing the whole job. 4xx (other than 408/429) and parse errors bubble up
+ * immediately.
+ */
+const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MAX_NOTION_RETRIES = Number.isFinite(Number(process.env.NOTION_MAX_RETRIES))
+  ? Math.max(0, Number(process.env.NOTION_MAX_RETRIES))
+  : 5;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function backoffDelayMs(attempt, retryAfterHeader) {
+  const retryAfter = Number(retryAfterHeader);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return Math.min(60_000, retryAfter * 1000);
   }
+  const base = Math.min(16_000, 500 * Math.pow(2, attempt)); // 500, 1000, 2000, 4000, 8000, 16000
+  const jitter = Math.floor(Math.random() * 250);
+  return base + jitter;
+}
+
+async function fetchNotionWithRetry(url, init, label) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_NOTION_RETRIES; attempt += 1) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return res;
+      const status = res.status;
+      const body = await res.text();
+      if (TRANSIENT_HTTP_STATUSES.has(status) && attempt < MAX_NOTION_RETRIES) {
+        const delay = backoffDelayMs(attempt, res.headers.get('retry-after'));
+        console.warn(
+          `[usage-sync] ${label} got ${status}, retry ${attempt + 1}/${MAX_NOTION_RETRIES} in ${delay}ms`
+        );
+        await sleep(delay);
+        continue;
+      }
+      const err = new Error(`${label} failed (${status}): ${body}`);
+      err.notionStatus = status;
+      err.notionBody = body;
+      throw err;
+    } catch (e) {
+      // Network errors (no res.status). Retry the same way.
+      if (e && typeof e.notionStatus === 'number') throw e;
+      if (attempt >= MAX_NOTION_RETRIES) throw e;
+      lastErr = e;
+      const delay = backoffDelayMs(attempt, null);
+      console.warn(
+        `[usage-sync] ${label} network error: ${e?.message || e}; retry ${attempt + 1}/${MAX_NOTION_RETRIES} in ${delay}ms`
+      );
+      await sleep(delay);
+    }
+  }
+  throw lastErr || new Error(`${label} failed after ${MAX_NOTION_RETRIES} retries`);
+}
+
+async function notionPatchPage(pageId, notionToken, payload) {
+  await fetchNotionWithRetry(
+    `https://api.notion.com/v1/pages/${pageId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        'Notion-Version': NOTION_API_VERSION,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    },
+    `Notion page patch for ${pageId}`
+  );
 }
 
 /** PATCH cannot update archived or deleted pages — skip instead of failing the whole job. */
@@ -116,17 +173,17 @@ function isSkippableNotionUsagePatchError(err) {
 }
 
 async function notionGetDatabaseSchema(databaseId, notionToken) {
-  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${notionToken}`,
-      'Notion-Version': NOTION_API_VERSION
-    }
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Notion DB schema fetch failed (${res.status}): ${body}`);
-  }
+  const res = await fetchNotionWithRetry(
+    `https://api.notion.com/v1/databases/${databaseId}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        'Notion-Version': NOTION_API_VERSION
+      }
+    },
+    `Notion DB schema fetch for ${databaseId}`
+  );
   const json = await res.json();
   return json.properties || {};
 }

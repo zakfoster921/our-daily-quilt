@@ -475,26 +475,80 @@ function parseNotionRow(page) {
   };
 }
 
+// Notion + Cloudflare occasionally return transient 5xx/429 — retry these
+// before bailing on the whole sync.
+const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MAX_NOTION_RETRIES = Number.isFinite(Number(process.env.NOTION_MAX_RETRIES))
+  ? Math.max(0, Number(process.env.NOTION_MAX_RETRIES))
+  : 5;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function backoffDelayMs(attempt, retryAfterHeader) {
+  const retryAfter = Number(retryAfterHeader);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return Math.min(60_000, retryAfter * 1000);
+  }
+  const base = Math.min(16_000, 500 * Math.pow(2, attempt));
+  const jitter = Math.floor(Math.random() * 250);
+  return base + jitter;
+}
+
+async function fetchNotionWithRetry(url, init, label) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_NOTION_RETRIES; attempt += 1) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return res;
+      const status = res.status;
+      const body = await res.text();
+      if (TRANSIENT_HTTP_STATUSES.has(status) && attempt < MAX_NOTION_RETRIES) {
+        const delay = backoffDelayMs(attempt, res.headers.get('retry-after'));
+        console.warn(
+          `[sync] ${label} got ${status}, retry ${attempt + 1}/${MAX_NOTION_RETRIES} in ${delay}ms`
+        );
+        await sleep(delay);
+        continue;
+      }
+      const err = new Error(`${label} failed (${status}): ${body}`);
+      err.notionStatus = status;
+      err.notionBody = body;
+      throw err;
+    } catch (e) {
+      if (e && typeof e.notionStatus === 'number') throw e;
+      if (attempt >= MAX_NOTION_RETRIES) throw e;
+      lastErr = e;
+      const delay = backoffDelayMs(attempt, null);
+      console.warn(
+        `[sync] ${label} network error: ${e?.message || e}; retry ${attempt + 1}/${MAX_NOTION_RETRIES} in ${delay}ms`
+      );
+      await sleep(delay);
+    }
+  }
+  throw lastErr || new Error(`${label} failed after ${MAX_NOTION_RETRIES} retries`);
+}
+
 async function notionQuery(databaseId, notionToken, startCursor) {
   const body = {
     page_size: 100
   };
   if (startCursor) body.start_cursor = startCursor;
 
-  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${notionToken}`,
-      'Notion-Version': NOTION_API_VERSION,
-      'Content-Type': 'application/json'
+  const res = await fetchNotionWithRetry(
+    `https://api.notion.com/v1/databases/${databaseId}/query`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        'Notion-Version': NOTION_API_VERSION,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
     },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const msg = await res.text();
-    throw new Error(`Notion API error ${res.status}: ${msg}`);
-  }
+    `Notion DB query ${databaseId}`
+  );
   return res.json();
 }
 
