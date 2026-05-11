@@ -1585,16 +1585,28 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
 const WIKIPEDIA_USER_AGENT = 'OurDailyQuilt/1.0 (https://ourdailyquilt.com)';
 
 function parseSpeakerDatesFromExtract(extract) {
-  const text = String(extract || '').replace(/\s+/g, ' ');
+  const text = String(extract || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
-  // Look inside the first parenthetical of the lead paragraph (Wikipedia convention).
-  const parenMatch = text.match(/\(([^)]*)\)/);
-  const haystack = parenMatch ? parenMatch[1] : text.split('.')[0] || '';
-  const yearTokens = haystack.match(/\b(1[6-9][0-9]{2}|20[0-9]{2})\b/g) || [];
-  const years = Array.from(new Set(yearTokens.map((y) => parseInt(y, 10)))).sort((a, b) => a - b);
-  if (years.length >= 2) return `${years[0]} \u2013 ${years[years.length - 1]}`;
-  if (years.length === 1) {
+  // Wikipedia lead usually puts birth/death years in a parenthetical, but the
+  // first paren may be IPA/pronunciation only (e.g. "Audre Lorde (/ˈɔːdri lɔːrd/) (1934–1992)").
+  // Collect every parenthetical and pick the one that contains years; if nothing
+  // there, fall back to the first sentence, then the whole extract.
+  const parenContents = [];
+  const re = /\(([^)]*)\)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) parenContents.push(m[1]);
+  const firstSentence = text.split(/[.!?](?:\s|$)/)[0] || text;
+  // Years 1000–2099 covers everyone whose dates the app would plausibly cite.
+  const yearRe = /\b(1[0-9]{3}|20[0-9]{2})\b/g;
+
+  const candidates = [...parenContents, firstSentence, text].map((h) => String(h || ''));
+  for (const haystack of candidates) {
+    const yearTokens = haystack.match(yearRe) || [];
+    const years = Array.from(new Set(yearTokens.map((y) => parseInt(y, 10)))).sort((a, b) => a - b);
+    if (!years.length) continue;
+    if (years.length >= 2) return `${years[0]} \u2013 ${years[years.length - 1]}`;
     if (/\bborn\b/i.test(haystack) || /\bb\.\s*\d/i.test(haystack)) return `born ${years[0]}`;
+    if (/\bdied\b/i.test(haystack) || /\bd\.\s*\d/i.test(haystack)) return `died ${years[0]}`;
   }
   return '';
 }
@@ -1665,16 +1677,29 @@ async function fetchWikipediaSpeakerInfo(authorName) {
       headers: { 'User-Agent': WIKIPEDIA_USER_AGENT, Accept: 'application/json' },
       redirect: 'follow'
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`⚠️ Wikipedia summary HTTP ${res.status} for "${name}"`);
+      return null;
+    }
     summary = await res.json();
   } catch (e) {
     console.warn(`⚠️ Wikipedia summary fetch failed for "${name}":`, e.message);
     return null;
   }
-  if (!summary || summary.type === 'disambiguation') return null;
+  if (!summary) return null;
+  if (summary.type === 'disambiguation') {
+    console.warn(`⚠️ Wikipedia returned disambiguation page for "${name}" — speaker_dates/image not auto-fillable`);
+    return null;
+  }
 
   const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || '';
-  const dates = parseSpeakerDatesFromExtract(summary?.extract || '');
+  const extract = String(summary?.extract || '');
+  const dates = parseSpeakerDatesFromExtract(extract);
+  if (!dates) {
+    console.warn(
+      `⚠️ No speaker_dates parsed from Wikipedia for "${name}". Extract preview: ${extract.slice(0, 220) || '(empty)'}`
+    );
+  }
   let attribution = '';
   if (imageUrl) {
     try {
@@ -1697,9 +1722,20 @@ function buildPrefillNotionProperties(schema, ai, wiki) {
   const set = (baseName, value, ...aliases) => {
     if (!value) return;
     const propName = findNotionPropName(schema, baseName, ...aliases);
-    if (!propName) return;
+    if (!propName) {
+      console.warn(`⚠️ Prefill: no Notion column matched [${[baseName, ...aliases].join(', ')}] — value not written`);
+      return;
+    }
     const payload = notionTextPropertyValue(schema[propName], value);
-    if (payload) properties[propName] = payload;
+    if (!payload) {
+      // The column exists but its type (e.g. Date, Formula, Rollup) can't accept
+      // the plain-text payload. Make this loud so it doesn't silently swallow data.
+      console.warn(
+        `⚠️ Prefill: Notion column "${propName}" has type "${schema[propName]?.type}" which doesn't accept the prefilled text. Change it to Text/Rich text to populate "${baseName}".`
+      );
+      return;
+    }
+    properties[propName] = payload;
   };
 
   if (ai?.author) set('author', ai.author);
@@ -3445,6 +3481,85 @@ app.options('/api/sync-notion-firestore', (req, res) => {
 app.options('/api/quote-prefill-sweep', (req, res) => {
   setNotionSyncCors(res);
   return res.status(204).end();
+});
+
+app.options('/api/quote-wiki-refresh', (req, res) => {
+  setNotionSyncCors(res);
+  return res.status(204).end();
+});
+
+/**
+ * Re-run Wikipedia lookup for a single Notion row and patch only the three
+ * Wikipedia-derived columns (speaker_dates, speaker_image_url, image_attribution)
+ * + their Firestore mirrors. Leaves Claude-generated fields alone so manual edits
+ * are preserved.
+ *
+ * Auth: same as /api/sync-notion-firestore.
+ * Body: { pageId: string, authorName?: string }
+ */
+app.post('/api/quote-wiki-refresh', async (req, res) => {
+  setNotionSyncCors(res);
+  const expectedToken = process.env.NOTION_SYNC_TOKEN || process.env.RESET_TOKEN || '';
+  if (!expectedToken) {
+    return res.status(500).json({ success: false, error: 'NOTION_SYNC_TOKEN or RESET_TOKEN must be set on the server' });
+  }
+  const providedToken = req.header('x-notion-sync-token');
+  if (!providedToken || providedToken !== expectedToken) {
+    return res.status(401).json({ success: false, error: 'Invalid sync token' });
+  }
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const pageId = String(body.pageId || '').trim();
+    if (!pageId) return res.status(400).json({ success: false, error: 'pageId is required' });
+    const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+    if (!databaseId) return res.status(500).json({ success: false, error: 'NOTION_DATABASE_ID is not configured' });
+
+    const page = await notionGetPage(pageId);
+    if (!page) return res.status(404).json({ success: false, error: `Notion page ${pageId} not found` });
+    const authorName = String(body.authorName || '').trim() || extractAuthorFromNotionPage(page);
+    if (!authorName) {
+      return res.status(400).json({ success: false, error: 'No author name on the row and none provided in the request body' });
+    }
+
+    const wiki = await fetchWikipediaSpeakerInfo(authorName);
+    if (!wiki) {
+      return res.json({
+        success: true,
+        pageId,
+        author: authorName,
+        wiki: null,
+        note: 'Wikipedia returned no usable info (404 / disambiguation / network). Nothing patched.'
+      });
+    }
+
+    const schema = await notionGetDatabaseProperties(databaseId);
+    // Build a properties payload with ONLY the Wikipedia-derived fields.
+    const properties = buildPrefillNotionProperties(schema, null, wiki);
+    if (Object.keys(properties).length) {
+      await notionFetchJson(`/pages/${pageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ properties })
+      });
+    }
+    if (db) {
+      const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+      const payload = buildPrefillFirestorePayload(null, wiki);
+      if (Object.keys(payload).length) {
+        await db.collection(collection).doc(pageId).set(payload, { merge: true });
+      }
+    }
+
+    return res.json({
+      success: true,
+      pageId,
+      author: authorName,
+      wiki,
+      notionPropertiesPatched: Object.keys(properties)
+    });
+  } catch (error) {
+    console.error('❌ Wiki refresh failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'Wiki refresh failed' });
+  }
 });
 
 /**
