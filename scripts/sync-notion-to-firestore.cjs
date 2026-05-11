@@ -401,6 +401,10 @@ function parseNotionRow(page) {
   const approvedProp = props.approved || props.Approved || props.active || props.Active;
   const approved = getBoolean(approvedProp, true);
   const notificationEnabled = getBoolean(props.notification_enabled, true);
+  // Page-level (not a property) — used by swap-mode scheduler to pick the
+  // most-recently-edited approved quote for the next-day slot.
+  const notionLastEditedTime = page?.last_edited_time ? String(page.last_edited_time).trim() : '';
+  const notionCreatedTime = page?.created_time ? String(page.created_time).trim() : '';
 
   if (!text || !author) return null;
 
@@ -463,6 +467,8 @@ function parseNotionRow(page) {
       theme,
       source: 'notion',
       sourceId: page.id,
+      notionLastEditedTime,
+      notionCreatedTime,
       notionProperties: notionPropertiesSnapshot(props),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }

@@ -161,8 +161,6 @@ async function main() {
   const db = initFirestore();
   const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
-  const windowDates = Array.from({ length: opts.window }, (_, idx) => addDays(opts.start, idx * opts.cadence));
-  const windowEnd = windowDates[windowDates.length - 1];
 
   const quotesSnap = await db.collection(quotesCollection).get();
   const notionQuotes = [];
@@ -191,7 +189,9 @@ async function main() {
       imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
       submittedAt: String(d.submittedAt || '').trim(),
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
-      dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim()
+      dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim(),
+      notionLastEditedTime: String(d.notionLastEditedTime || '').trim(),
+      scheduleSource: String(d.scheduleSource || '').trim()
     });
   });
 
@@ -205,7 +205,6 @@ async function main() {
     return a.sourceId.localeCompare(b.sourceId);
   });
 
-  const quoteBySourceId = new Map(notionQuotes.map((q) => [q.sourceId, q]));
   const assignmentsSnap = await db.collection(assignmentsCollection).get();
   const futureAssignments = [];
   const scheduledSourceIds = new Set();
@@ -307,131 +306,200 @@ async function main() {
     return;
   }
 
-  const explicitDateToSourceId = new Map();
-  for (const q of notionQuotes) {
-    if (!isDateKey(q.dateScheduled)) continue;
-    if (q.dateScheduled < opts.start || q.dateScheduled > windowEnd) continue;
-    if (!explicitDateToSourceId.has(q.dateScheduled)) {
-      explicitDateToSourceId.set(q.dateScheduled, q.sourceId);
-    }
-  }
+  // ─── Swap mode ───────────────────────────────────────────────────────────
+  // Default mode (used by the admin "Notion ↔ Firestore sync" button).
+  //
+  // Goal: when the user approves a quote in Notion and clicks sync, that quote
+  // takes tomorrow's slot. Whatever was at tomorrow gets its date cleared and
+  // returns to the pool — the next append-only run (or backfill) re-schedules
+  // it at the end of the queue. No cascade; just a 1-for-1 swap.
+  //
+  // A quote is a "swap candidate" if it is approved AND either:
+  //   - It has no future assignment AND was edited in Notion recently, OR
+  //   - Its current assignment was written by the append-only scheduler
+  //     (i.e. the daily GH Action auto-appended it; the user hasn't manually
+  //     pinned a date) AND it was either appended or edited recently.
+  //
+  // "Recently" = within `RECENT_CANDIDATE_MS`. This stops the entire 70+ day
+  // queue from being treated as candidates on every sync.
+  const RECENT_CANDIDATE_MS = (() => {
+    const fromEnv = Number(process.env.SWAP_RECENT_CANDIDATE_HOURS);
+    const hours = Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 48;
+    return hours * 60 * 60 * 1000;
+  })();
+  const nowMs = Date.now();
 
-  const dateToExistingSourceId = new Map();
+  const assignmentBySourceId = new Map();
+  const sourceIdByDate = new Map();
   for (const row of futureAssignments) {
-    if (row.dateKey > windowEnd) continue;
-    if (explicitDateToSourceId.has(row.dateKey)) continue;
-    const sourceId = String(row.data.sourceId || '').trim();
-    if (sourceId && quoteBySourceId.has(sourceId)) {
-      dateToExistingSourceId.set(row.dateKey, sourceId);
+    const sid = String(row.data.sourceId || '').trim();
+    if (sid) assignmentBySourceId.set(sid, row);
+    sourceIdByDate.set(row.dateKey, sid);
+  }
+
+  const appendSource = 'approved-app-submission-append-scheduler';
+  const swapSource = 'approved-app-submission-swap-scheduler';
+
+  function withinRecentMs(iso) {
+    if (!iso) return false;
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return false;
+    return nowMs - t <= RECENT_CANDIDATE_MS;
+  }
+
+  const candidates = notionQuotes.filter((q) => {
+    const assignment = assignmentBySourceId.get(q.sourceId);
+    const wasAppendScheduled = !!(
+      assignment && String(assignment.data.assignedBy || '').trim() === appendSource
+    );
+
+    if (isDateKey(q.dateScheduled) && !wasAppendScheduled) {
+      // User (or some other writer) pinned this row to a specific date. Leave it alone.
+      return false;
     }
-  }
 
-  const windowSourceIds = windowDates.map(
-    (dateKey) => explicitDateToSourceId.get(dateKey) || dateToExistingSourceId.get(dateKey) || null
-  );
+    if (!assignment) {
+      // Truly unscheduled approved quote — must be recently edited in Notion.
+      return withinRecentMs(q.notionLastEditedTime);
+    }
 
-  let insertAt = Math.min(1, Math.max(0, opts.window - 1));
-  for (const q of submissionsToInsert) {
-    if (windowSourceIds.includes(q.sourceId)) continue;
-    windowSourceIds.splice(insertAt, 0, q.sourceId);
-    insertAt += 1;
-    windowSourceIds.length = opts.window;
-  }
+    if (!wasAppendScheduled) return false; // assigned by a non-append source — pinned
 
-  const scheduled = windowDates
-    .map((dateKey, idx) => {
-      const sourceId = windowSourceIds[idx];
-      const quote = sourceId ? quoteBySourceId.get(sourceId) : null;
-      if (!quote) return null;
-      return {
-        dateKey,
-        quote,
-        payload: assignmentPayloadForQuote(quote, dateKey, 'approved-app-submission-scheduler')
-      };
-    })
-    .filter(Boolean);
-
-  const scheduledSourceIdToDate = new Map(scheduled.map((row) => [row.quote.sourceId, row.dateKey]));
-  const clearDateQuotes = notionQuotes.filter((q) => {
-    if (scheduledSourceIdToDate.has(q.sourceId)) return false;
-    return isDateKey(q.dateScheduled) && q.dateScheduled >= opts.start;
+    if (withinRecentMs(assignment.data.assignedAt)) return true;
+    if (withinRecentMs(q.notionLastEditedTime)) return true;
+    return false;
   });
+
+  // Most-recently edited in Notion wins the closest target date (tomorrow).
+  candidates.sort((a, b) => {
+    const aT = a.notionLastEditedTime || '';
+    const bT = b.notionLastEditedTime || '';
+    if (aT !== bT) return bT.localeCompare(aT);
+    // Tiebreaker: most recent assignedAt (newer append wins).
+    const aA = assignmentBySourceId.get(a.sourceId)?.data?.assignedAt || '';
+    const bA = assignmentBySourceId.get(b.sourceId)?.data?.assignedAt || '';
+    if (aA !== bA) return bA.localeCompare(aA);
+    return a.sourceId.localeCompare(b.sourceId);
+  });
+
+  const tomorrow = addDays(opts.start, 1);
+  const targetByCandidate = new Map();
+  candidates.forEach((cand, idx) => {
+    targetByCandidate.set(cand.sourceId, addDays(tomorrow, idx));
+  });
+  const candidateSourceIds = new Set(candidates.map((c) => c.sourceId));
+  const targetDateSet = new Set(targetByCandidate.values());
+
+  // Quotes currently occupying a target date that AREN'T a candidate get displaced
+  // (their date_scheduled is cleared and they return to the pool).
+  const displacedSourceIds = new Set();
+  for (const target of targetDateSet) {
+    const occupant = sourceIdByDate.get(target);
+    if (!occupant) continue;
+    if (candidateSourceIds.has(occupant)) continue;
+    displacedSourceIds.add(occupant);
+  }
+
+  // Vacated dates = candidates' old dates that no other candidate is moving into.
+  // These get their assignment + daily quote docs deleted.
+  const datesToDelete = new Set();
+  for (const cand of candidates) {
+    const oldAssignment = assignmentBySourceId.get(cand.sourceId);
+    if (!oldAssignment) continue;
+    const oldDate = oldAssignment.dateKey;
+    const newDate = targetByCandidate.get(cand.sourceId);
+    if (oldDate === newDate) continue;
+    if (targetDateSet.has(oldDate)) continue; // another candidate's write will replace
+    datesToDelete.add(oldDate);
+  }
 
   if (opts.dryRun) {
     console.log(
-      `[app-submissions] dry-run inserted=${submissionsToInsert.length} scheduled=${scheduled.length}/${opts.window} start=${opts.start} windowEnd=${windowEnd}`
+      `[app-submissions] dry-run swap-mode candidates=${candidates.length} displaced=${displacedSourceIds.size} vacated=${datesToDelete.size} start=${opts.start} recentHours=${RECENT_CANDIDATE_MS / 3600000}`
     );
-    console.log(`[app-submissions] clearQuoteDates=${clearDateQuotes.length}`);
-    console.log('[app-submissions] assignments:');
-    scheduled.forEach((row) => {
-      console.log(`  ${row.dateKey} -> ${row.payload.textSnapshot} — ${row.payload.authorSnapshot}`);
-    });
+    for (const cand of candidates) {
+      const target = targetByCandidate.get(cand.sourceId);
+      const old = assignmentBySourceId.get(cand.sourceId);
+      const oldDate = old ? old.dateKey : '(unscheduled)';
+      console.log(`  ${oldDate} -> ${target}: ${cand.text.slice(0, 60)} — ${cand.author}`);
+    }
     return;
   }
 
-  if (!submissionsToInsert.length) {
+  if (!candidates.length) {
     console.log(
-      `[app-submissions] no newly approved app submissions to schedule (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window}, cadence=${opts.cadence})`
+      `[app-submissions] swap-mode no recently approved candidates to place at tomorrow+ (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
     );
     return;
   }
 
   const batchState = { batch: db.batch(), ops: 0 };
-  let writes = 0;
-  let quoteWrites = 0;
-  let clearedQuoteDates = 0;
   const updatedAt = new Date().toISOString();
+  const deleteField = admin.firestore.FieldValue.delete();
+  let assignmentWrites = 0;
+  let assignmentDeletes = 0;
+  let displacedClears = 0;
 
-  for (const row of scheduled) {
-    batchState.batch.set(db.collection(assignmentsCollection).doc(row.dateKey), row.payload, { merge: true });
+  for (const cand of candidates) {
+    const target = targetByCandidate.get(cand.sourceId);
+    const payload = assignmentPayloadForQuote(cand, target, swapSource);
+
+    // Full replace at the target date (no merge) so we don't leak any stale
+    // fields from the previous occupant.
+    batchState.batch.set(db.collection(assignmentsCollection).doc(target), payload);
     batchState.ops += 1;
-    writes += 1;
+    assignmentWrites += 1;
 
     batchState.batch.set(
-      db.collection(quotesCollection).doc(row.dateKey),
-      dailyQuotePayloadForQuote(row.quote, row.dateKey, row.payload.assignedBy, updatedAt),
-      { merge: true }
+      db.collection(quotesCollection).doc(target),
+      dailyQuotePayloadForQuote(cand, target, swapSource, updatedAt)
     );
     batchState.ops += 1;
 
-    const sid = String(row.quote.sourceId || '').trim();
-    if (sid) {
-      batchState.batch.set(
-        db.collection(quotesCollection).doc(sid),
-        {
-          dateScheduled: row.dateKey,
-          date_scheduled: row.dateKey,
-          scheduleUpdatedAt: updatedAt
-        },
-        { merge: true }
-      );
-      batchState.ops += 1;
-      quoteWrites += 1;
-    }
-
-    await commitBatchIfNeeded(db, batchState);
-  }
-
-  const deleteField = admin.firestore.FieldValue.delete();
-  for (const q of clearDateQuotes) {
     batchState.batch.set(
-      db.collection(quotesCollection).doc(q.sourceId),
+      db.collection(quotesCollection).doc(cand.sourceId),
       {
-        dateScheduled: deleteField,
-        date_scheduled: deleteField,
-        scheduleUpdatedAt: updatedAt
+        dateScheduled: target,
+        date_scheduled: target,
+        scheduleUpdatedAt: updatedAt,
+        scheduleSource: swapSource
       },
       { merge: true }
     );
     batchState.ops += 1;
-    clearedQuoteDates += 1;
+
+    await commitBatchIfNeeded(db, batchState);
+  }
+
+  for (const dateKey of datesToDelete) {
+    batchState.batch.delete(db.collection(assignmentsCollection).doc(dateKey));
+    batchState.ops += 1;
+    batchState.batch.delete(db.collection(quotesCollection).doc(dateKey));
+    batchState.ops += 1;
+    assignmentDeletes += 1;
+    await commitBatchIfNeeded(db, batchState);
+  }
+
+  for (const sid of displacedSourceIds) {
+    batchState.batch.set(
+      db.collection(quotesCollection).doc(sid),
+      {
+        dateScheduled: deleteField,
+        date_scheduled: deleteField,
+        scheduleUpdatedAt: updatedAt,
+        scheduleSource: deleteField
+      },
+      { merge: true }
+    );
+    batchState.ops += 1;
+    displacedClears += 1;
     await commitBatchIfNeeded(db, batchState);
   }
 
   if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[app-submissions] inserted ${submissionsToInsert.length}, wrote ${writes} assignments + ${quoteWrites} quote date fields, cleared ${clearedQuoteDates} quote dates (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window}, cadence=${opts.cadence})`
+    `[app-submissions] swap-mode placed=${assignmentWrites} vacated=${assignmentDeletes} displaced=${displacedClears} (start=${opts.start}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
   );
 }
 
