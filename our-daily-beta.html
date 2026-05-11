@@ -109,7 +109,7 @@ try {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-  
+  <link rel="preload" href="assets/fonts/Zakarack-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <!-- Test script to verify it's running -->
   <script>
   console.log('🎯 TEST: Script in head is running!');
@@ -203,6 +203,14 @@ try {
       --odq-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px));
       --odq-safe-left: max(0px, env(safe-area-inset-left, 0px));
       --odq-safe-right: max(0px, env(safe-area-inset-right, 0px));
+    }
+
+    @font-face {
+      font-family: 'Zakarack';
+      src: url('assets/fonts/Zakarack-Regular.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
     }
     
     html, body {
@@ -5981,27 +5989,45 @@ try {
       font-size: 1.02rem;
     }
 
+    #screen-quilt .quilt-reflection-scrap-kicker {
+      /* TEMP: hide reflection kicker (Share one small thought) */
+      display: none !important;
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
+      font-size: clamp(1.7rem, 6vw, 2.08rem);
+      line-height: 1;
+      margin: 0 0 0.62rem;
+      color: var(--reflection-fabric-ink);
+      letter-spacing: 0.01em;
+      text-transform: none;
+    }
+
     #screen-quilt .quilt-reflection-response-input {
       display: block;
       width: 100%;
       min-height: 4.1rem;
       height: 4.1rem;
-      padding: 0.54rem 0.72rem;
+      padding: 0.62rem 0.74rem;
       box-sizing: border-box;
-      border: 0;
-      border-radius: 0;
+      border: 1px solid rgba(91, 70, 44, 0.16);
+      border-radius: 8px;
       background: rgba(255, 250, 240, 0.54);
       color: #2e2e2e;
       font: 0.92rem/1.45 'Libre Baskerville', Georgia, 'Times New Roman', serif;
       resize: vertical;
       outline: none;
+      transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
     }
 
     #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-response-input {
-      min-height: 3.75rem;
-      height: 3.75rem;
-      background: rgba(255, 250, 240, 0.62);
+      min-height: 4.45rem;
+      height: 4.45rem;
+      background: rgba(255, 250, 240, 0.72);
       color: var(--reflection-fabric-ink);
+    }
+
+    #screen-quilt .quilt-reflection-response-input::placeholder {
+      color: rgba(46, 46, 46, 0.46);
+      font-style: italic;
     }
 
     #screen-quilt .quilt-reflection-response-input:focus {
@@ -6024,7 +6050,25 @@ try {
 
     #screen-quilt .quilt-reflection-response-helper {
       font-style: italic;
-      font-size: 1.08rem;
+      font-size: 0.88rem;
+      color: rgba(46, 46, 46, 0.62);
+    }
+
+    #screen-quilt .quilt-reflection-response-helper[hidden] {
+      display: none !important;
+      margin: 0;
+    }
+
+    #screen-quilt .quilt-reflection-response-helper.is-error {
+      color: #7a2f24;
+      font-style: normal;
+      font-weight: 700;
+    }
+
+    #screen-quilt .quilt-reflection-response-helper.is-success {
+      color: #2f5130;
+      font-style: normal;
+      font-weight: 700;
     }
 
     #screen-quilt .quilt-reflection-response-byline {
@@ -6038,14 +6082,15 @@ try {
 
     #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-response-byline {
       color: rgba(46, 46, 46, 0.58);
+      margin-top: 0.46rem;
     }
 
     #screen-quilt .quilt-reflection-response-submit {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin: 0.72rem 0 0;
-      padding: 0.56rem 0.86rem;
+      margin: 0.78rem 0 0;
+      padding: 0.64rem 1rem;
       border: 1px solid rgba(91, 70, 44, 0.18);
       border-radius: 999px;
       background: #2f2b24;
@@ -6070,6 +6115,18 @@ try {
 
     #screen-quilt .quilt-reflection-response-form.is-submitted .quilt-reflection-response-submit:disabled {
       opacity: 1 !important;
+    }
+
+    #screen-quilt .quilt-reflection-response-form.is-confirmed-collapsed {
+      padding-top: 0.45rem;
+    }
+
+    #screen-quilt .quilt-reflection-response-form.is-confirmed-collapsed .quilt-reflection-response-helper {
+      margin-top: 0;
+      padding: 0.72rem 0.78rem;
+      border-radius: 10px;
+      background: rgba(255, 250, 240, 0.72);
+      box-shadow: inset 0 0 0 1px rgba(91, 70, 44, 0.1);
     }
 
     #screen-quilt .quilt-reflection-wall {
@@ -6427,6 +6484,7 @@ try {
 
     #screen-quilt .quote-speaker-copy {
       min-width: 0;
+      width: 100%;
       text-align: center;
       box-sizing: border-box;
     }
@@ -6442,12 +6500,20 @@ try {
     }
 
     #screen-quilt .quote-speaker-name {
-      margin: 0;
-      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
-      font-size: clamp(1.62rem, 6.15vw, 1.92rem);
-      line-height: 1.18;
+      /* Match horizontal inset of .quote-speaker-guide (24px). */
+      margin: 0 24px;
+      width: auto;
+      max-width: calc(100% - 48px);
+      min-width: 0;
+      box-sizing: border-box;
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
+      /* Default cap; JS (fitQuoteSpeakerNameToOneLine) shrinks so the full name fits on one line. */
+      font-size: 5.75rem;
+      line-height: 1.05;
       font-weight: 700;
       color: #241f19;
+      white-space: nowrap;
+      overflow: visible;
     }
 
     #screen-quilt .quote-speaker-dates {
@@ -7009,6 +7075,19 @@ try {
         margin: 0.65rem 25px 30px;
       }
 
+      #screen-quilt .quilt-reflection-fabric-card {
+        min-height: 450px;
+        padding: 2.95rem 3.2rem 3.35rem;
+      }
+
+      #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-scrap-text {
+        font-size: clamp(1.04rem, 5.15vw, 1.22rem);
+      }
+
+      #screen-quilt .quilt-reflection-response-submit {
+        width: 100%;
+      }
+
       #screen-quilt .quilt-quote-layoutb-card.quote-card {
         width: calc(100% + 40px);
         margin: 0 -20px 30px;
@@ -7159,13 +7238,13 @@ try {
 
     #screen-quilt .quilt-before-you-go__title {
       margin: 0 0 1.05rem;
-      font-size: calc(0.72rem * 3 * 0.5);
+      font-size: 2.04rem;
       font-weight: 700;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: rgba(86, 66, 47, 0.52);
+      color: #000;
       text-align: left;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
       line-height: 1.15;
     }
 
@@ -7871,22 +7950,24 @@ try {
           aria-live="polite"
         ></div>
 
-        <section class="quilt-reflection-scrap-widget quilt-reflection-scrap-widget--fabric" id="quiltReflectionScrapWidget" aria-labelledby="quiltReflectionScrapTitle">
-          <p class="quilt-reflection-scrap-kicker" id="quiltReflectionScrapTitle">Today&rsquo;s reflection</p>
+        <section class="quilt-reflection-scrap-widget quilt-reflection-scrap-widget--fabric" id="quiltReflectionScrapWidget" aria-label="Community reflection">
+          <p class="quilt-reflection-scrap-kicker" id="quiltReflectionScrapTitle">Share one small thought</p>
           <div class="quilt-reflection-fabric-card">
             <div class="quilt-reflection-scrap-note">
               <p class="quilt-reflection-scrap-text" id="quiltReflectionScrapText"></p>
-              <form class="quilt-reflection-response-form" id="quiltReflectionResponseForm" aria-label="Anonymous reflection response prototype">
+              <form class="quilt-reflection-response-form" id="quiltReflectionResponseForm" aria-label="Anonymous reflection response">
                 <textarea
                   class="quilt-reflection-response-input"
                   id="quiltReflectionResponseInput"
                   rows="2"
                   maxlength="240"
+                  placeholder="Share your experience"
                   aria-label="Share a reflection response"
                   aria-describedby="quiltReflectionResponseByline"
                 ></textarea>
-                <p class="quilt-reflection-response-byline" id="quiltReflectionResponseByline">Gathered anonymously and reshared below</p>
-                <button class="quilt-reflection-response-submit" type="submit">Share</button>
+                <p class="quilt-reflection-response-helper" id="quiltReflectionResponseHelper" aria-live="polite" hidden></p>
+                <p class="quilt-reflection-response-byline" id="quiltReflectionResponseByline">Anonymous. Common threads are drawn from responses and shared below.</p>
+                <button class="quilt-reflection-response-submit" type="submit">Add yours</button>
               </form>
             </div>
           </div>
@@ -8727,7 +8808,9 @@ try {
           window.location.protocol === 'file:' ||
           window.location.hostname === 'localhost' ||
           window.location.hostname === '127.0.0.1'
-        )
+        ),
+        /** Temporarily hide only the “What keeps coming up” / “Drawn from responses…” headings for today’s themes; themes carousel still shows. */
+        reflectionTodayAggregateWallDisabled: true
       },
       FIREBASE: {
         // ENABLED FOR IMAGE REVEAL FUNCTIONALITY
@@ -21571,6 +21654,15 @@ try {
           return {
             text: snapT,
             author: snapA,
+            communityPrompt: String(data.communityPromptSnapshot || '').trim(),
+            community_prompt: String(data.communityPromptSnapshot || '').trim(),
+            reflectionPrompt: String(data.reflectionPromptSnapshot || '').trim(),
+            reflection_prompt: String(data.reflectionPromptSnapshot || '').trim(),
+            whatIf: String(data.whatIfSnapshot || '').trim(),
+            what_if: String(data.whatIfSnapshot || '').trim(),
+            igCaption: String(data.igCaptionSnapshot || '').trim(),
+            ig_caption: String(data.igCaptionSnapshot || '').trim(),
+            blessing: String(data.blessingSnapshot || '').trim(),
             speakerImageUrl: String(data.speakerImageUrlSnapshot || '').trim(),
             speaker_image_url: String(data.speakerImageUrlSnapshot || '').trim(),
             speakerCutoutUrl: String(data.speakerCutoutUrlSnapshot || '').trim(),
@@ -22792,19 +22884,31 @@ try {
                 return;
               }
               const data = snap.data() || {};
-              const prompt = this.getQuiltReflectionPromptText(data);
+              const base = this._pinnedByDateKey[dateKey] || todayQuote || {};
+              // `quotes/{dateKey}` is a legacy per-day copy; Notion sync only updates `quotes/{notionPageId}`.
+              // Spreading the daily doc here overwrote fresh catalog `communityPrompt` / `reflectionPrompt`
+              // with stale duplicates after sync — even when Notion had the right text.
+              const notionBacked = String(base?.sourceId || '').trim() !== '';
+              const dailyPromptKeys = new Set([
+                'communityPrompt',
+                'community_prompt',
+                'reflectionPrompt',
+                'reflection_prompt',
+                'communityPromptSnapshot',
+                'reflectionPromptSnapshot'
+              ]);
+              const dataForMerge = notionBacked
+                ? Object.fromEntries(Object.entries(data).filter(([k]) => !dailyPromptKeys.has(k)))
+                : data;
+              const merged = { ...base, ...dataForMerge };
+              const prompt = this.getQuiltReflectionPromptText(merged);
               console.log(`📓 Reflection prompt server read quotes/${dateKey}:`, {
                 text: String(data.text || '').slice(0, 48),
-                hasPrompt: prompt !== '[Reflection prompt coming soon for this quote.]'
+                hasPrompt: prompt !== '[Reflection prompt coming soon for this quote.]',
+                skippedDailyPromptFields: notionBacked
               });
               if (!prompt || prompt === '[Reflection prompt coming soon for this quote.]') return;
-              this._pinnedByDateKey[dateKey] = {
-                ...(this._pinnedByDateKey[dateKey] || todayQuote || {}),
-                ...data,
-                communityPrompt: String(data.communityPrompt || data.community_prompt || '').trim() || undefined,
-                reflectionPrompt: String(data.reflectionPrompt || data.reflection_prompt || '').trim() || prompt,
-                _canonicalDailyDoc: true
-              };
+              this._pinnedByDateKey[dateKey] = merged;
               reflectionBody.innerHTML = this.formatReflectionPromptForCard(prompt);
               window.app?.refreshQuiltReflectionScrapWidget?.(this._pinnedByDateKey[dateKey]);
               console.log(`📓 Loaded reflection prompt from quotes/${dateKey}`);
@@ -26084,6 +26188,31 @@ try {
         const input = document.getElementById('quiltReflectionResponseInput');
         if (!form || !input || form.dataset.listenerAttached === '1') return;
         form.dataset.listenerAttached = '1';
+        const helper = form.querySelector('.quilt-reflection-response-helper');
+        const submit = form.querySelector('.quilt-reflection-response-submit');
+        const idleSubmitLabel = 'Add yours';
+        const setHelper = (message, state = '') => {
+          if (!helper) return;
+          const text = String(message || '');
+          helper.textContent = text;
+          helper.classList.toggle('is-error', state === 'error');
+          helper.classList.toggle('is-success', state === 'success');
+          const show = Boolean(text.trim()) || state === 'error' || state === 'success';
+          if (show) helper.removeAttribute('hidden');
+          else {
+            helper.setAttribute('hidden', 'hidden');
+            helper.textContent = '';
+          }
+        };
+        input.addEventListener('input', () => {
+          form.classList.remove('is-submitted', 'is-confirmed-collapsed');
+          input.removeAttribute('readonly');
+          setHelper('', '');
+          if (submit) {
+            submit.textContent = idleSubmitLabel;
+            submit.disabled = false;
+          }
+        });
         this.renderReflectionAnonymousWall();
         const refreshThemes = () => this.loadReflectionThemesForToday().catch((error) => {
           this.logger?.warn?.('Reflection themes load failed:', error);
@@ -26096,22 +26225,22 @@ try {
           event.preventDefault();
           const responseText = String(input.value || '').replace(/\s+/g, ' ').trim();
           if (!responseText) {
+            setHelper('Add one small thought first.', 'error');
             input.focus();
             return;
           }
-          const submit = form.querySelector('.quilt-reflection-response-submit');
-          const helper = form.querySelector('.quilt-reflection-response-helper');
           if (submit) {
             submit.disabled = true;
-            submit.textContent = 'Sharing...';
+            submit.textContent = 'Adding…';
           }
+          setHelper('One moment…');
           try {
             await this.submitReflectionResponse(responseText);
           } catch (error) {
             this.logger?.warn?.('Reflection response submit failed:', error);
-            if (helper) helper.textContent = 'Could not share yet. Please try again when you are online.';
+            setHelper('Could not share yet. Check your connection and try again.', 'error');
             if (submit) {
-              submit.textContent = 'Share';
+              submit.textContent = idleSubmitLabel;
               submit.disabled = false;
             }
             return;
@@ -26119,14 +26248,14 @@ try {
           form.classList.add('is-submitted');
           input.value = '';
           input.setAttribute('readonly', 'readonly');
-          if (helper) helper.textContent = 'Thank you for sharing ♡ We update throughout the day as more comes in.';
+          setHelper("Shared. Thank you - your thought helps shape today's quilt.", 'success');
           if (submit) {
-            submit.textContent = 'Shared';
+            submit.textContent = 'Added';
             submit.disabled = true;
           }
           setTimeout(() => {
             form.classList.add('is-confirmed-collapsed');
-          }, 2400);
+          }, 1600);
           setTimeout(refreshThemes, 1200);
         });
       }
@@ -26237,17 +26366,41 @@ try {
         const title = document.getElementById('quiltReflectionWallTitle');
         const helper = wall?.querySelector?.('.quilt-reflection-wall-helper') || null;
         if (!wall || !notes) return;
+        const todayTitle = 'What keeps coming up';
+        const todayHelper = 'Drawn from responses as they come in';
+        const optTitle = String(options.title || '').trim();
+        const optHelperPresent = Object.prototype.hasOwnProperty.call(options, 'helper');
+        const optHelperTrim = optHelperPresent ? String(options.helper ?? '').trim() : null;
+        const isTodayAggregateCopy =
+          optTitle === todayTitle &&
+          (!optHelperPresent || optHelperTrim === todayHelper || optHelperTrim === '');
+        const hideTodayHeadings = CONFIG?.APP?.reflectionTodayAggregateWallDisabled && isTodayAggregateCopy;
+        if (helper && !hideTodayHeadings) helper.removeAttribute('hidden');
         const fallbackThemes = this.getFallbackReflectionThemes();
         const themeTexts = (Array.isArray(themes) && themes.length ? themes : fallbackThemes)
           .map((theme) => this.normalizeReflectionIdeaText(theme))
           .filter(Boolean);
         notes.innerHTML = this.getReflectionCarouselMarkup(themeTexts);
         this.initReflectionCarouselLoop(notes);
-        if (title) title.textContent = options.title || 'Recent ideas';
+        if (title) {
+          if (hideTodayHeadings) {
+            title.textContent = '';
+            title.setAttribute('hidden', 'hidden');
+          } else {
+            title.removeAttribute('hidden');
+            title.textContent = options.title || 'Recent ideas';
+          }
+        }
         if (helper) {
-          helper.textContent = Object.prototype.hasOwnProperty.call(options, 'helper')
-            ? options.helper
-            : 'Helpful ideas shared back from the community.';
+          if (hideTodayHeadings) {
+            helper.textContent = '';
+            helper.setAttribute('hidden', 'hidden');
+          } else {
+            helper.removeAttribute('hidden');
+            helper.textContent = optHelperPresent
+              ? options.helper
+              : 'Helpful ideas shared back from the community.';
+          }
         }
         wall.hidden = false;
       }
@@ -27068,6 +27221,78 @@ try {
         return /^image\s*:/i.test(value) ? value : `Image: ${value}`;
       }
 
+      fitQuoteSpeakerNameToOneLine(nameEl, opts = {}) {
+        if (!nameEl || !nameEl.isConnected) return;
+        const silent = !!(opts && opts.silent);
+        const copy = nameEl.closest('.quote-speaker-copy');
+        if (!copy) return;
+        const rootRem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+        const minPx = Math.max(11, 1.65 * rootRem);
+        const maxPx = 5.75 * rootRem;
+        const applyFit = () => {
+          void copy.offsetWidth;
+          const available = Math.max(1, Math.floor(nameEl.clientWidth));
+          nameEl.style.removeProperty('font-size');
+          void nameEl.offsetWidth;
+          nameEl.style.fontSize = `${maxPx}px`;
+          if (nameEl.scrollWidth <= available) {
+            if (!silent) nameEl.style.removeProperty('opacity');
+            return;
+          }
+          let lo = minPx;
+          let hi = maxPx;
+          for (let i = 0; i < 30; i++) {
+            const mid = (lo + hi) / 2;
+            nameEl.style.fontSize = `${mid}px`;
+            if (nameEl.scrollWidth <= available) lo = mid;
+            else hi = mid;
+          }
+          nameEl.style.fontSize = `${lo}px`;
+          let guard = 0;
+          while (nameEl.scrollWidth > available && parseFloat(nameEl.style.fontSize) > 8 && guard < 40) {
+            nameEl.style.fontSize = `${parseFloat(nameEl.style.fontSize) - 0.5}px`;
+            guard += 1;
+          }
+          if (!silent) nameEl.style.removeProperty('opacity');
+        };
+        if (!silent) nameEl.style.opacity = '0';
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const done = () => {
+              try {
+                applyFit();
+              } catch (_) {
+                if (!silent) nameEl.style.removeProperty('opacity');
+              }
+            };
+            if (typeof document !== 'undefined' && document.fonts && typeof document.fonts.ready?.then === 'function') {
+              document.fonts.ready.then(done).catch(done);
+            } else {
+              done();
+            }
+          });
+        });
+      }
+
+      _ensureQuoteSpeakerNameResizeFit() {
+        if (this._quoteSpeakerNameResizeFitReady) return;
+        const copy = document.querySelector('#screen-quilt #quoteSpeakerWidget .quote-speaker-copy');
+        if (!copy || typeof ResizeObserver === 'undefined') return;
+        this._quoteSpeakerNameResizeFitReady = true;
+        let t = null;
+        const ro = new ResizeObserver(() => {
+          if (t) clearTimeout(t);
+          t = setTimeout(() => {
+            const nameEl = document.getElementById('quoteSpeakerName');
+            const widget = document.getElementById('quoteSpeakerWidget');
+            if (!nameEl || !widget || widget.hidden || !String(nameEl.textContent || '').trim()) return;
+            this.fitQuoteSpeakerNameToOneLine(nameEl, { silent: true });
+          }, 48);
+        });
+        ro.observe(copy);
+        this._quoteSpeakerNameResizeObserver = ro;
+      }
+
       refreshQuoteSpeakerWidget(quote = null) {
         const widget = document.getElementById('quoteSpeakerWidget');
         if (!widget) return;
@@ -27113,7 +27338,11 @@ try {
           widget.style.setProperty('--speaker-wash-color-soft', `rgba(${rgb}, 0.36)`);
           widget.style.setProperty('--speaker-wash-color-faint', `rgba(${rgb}, 0.28)`);
         }
-        if (nameEl) nameEl.textContent = profile.name;
+        if (nameEl) {
+          nameEl.textContent = profile.name;
+          this.fitQuoteSpeakerNameToOneLine(nameEl);
+          this._ensureQuoteSpeakerNameResizeFit();
+        }
         if (datesEl) {
           datesEl.textContent = profile.dates;
           datesEl.hidden = !profile.dates;
@@ -38583,8 +38812,17 @@ try {
               scrollToIndex(currentIndex + 1, 'smooth');
             });
           }
-          title.textContent = 'What keeps coming up';
-          if (helper) helper.textContent = 'Drawn from responses as they come in';
+          if (CONFIG?.APP?.reflectionTodayAggregateWallDisabled) {
+            title.textContent = '';
+            title.setAttribute('hidden', 'hidden');
+            if (helper) {
+              helper.textContent = '';
+              helper.setAttribute('hidden', 'hidden');
+            }
+          } else {
+            title.textContent = 'What keeps coming up';
+            if (helper) helper.textContent = 'Drawn from responses as they come in';
+          }
           wall.hidden = false;
           return true;
         } catch (error) {

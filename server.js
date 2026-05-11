@@ -1569,7 +1569,7 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
   };
   return {
     author: pickString('author'),
-    community_prompt: pickString('community_prompt'),
+    community_prompt: pickString('community_prompt') || pickString('community_prompt '),
     blessing: pickString('blessing'),
     notification_text: pickString('notification_text'),
     ig_caption: pickString('ig_caption'),
@@ -1715,9 +1715,65 @@ async function fetchWikipediaSpeakerInfo(authorName) {
   };
 }
 
+/**
+ * Deep link to a single Firestore document in the Firebase console (quotes collection by default).
+ * Used in Notion prefill notes when an existing portrait/cutout is reused so editors can open the source row.
+ */
+function buildFirestoreConsoleUrlForQuoteDoc(docId) {
+  const projectId = String(process.env.FIREBASE_PROJECT_ID || '').trim();
+  if (!projectId || !docId) return '';
+  const coll = String(process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes').trim() || 'quotes';
+  const relPath = `/${coll}/${docId}`;
+  const enc = encodeURIComponent(relPath).replace(/%/g, '~');
+  return `https://console.firebase.google.com/project/${projectId}/firestore/databases/-default-/data/${enc}`;
+}
+
+/**
+ * When pre-filling a new Notion quote, look for another Firestore quote by the same author that already
+ * has a speaker portrait or transparent cutout. If found, we do not need a fresh Wikimedia URL — reuse
+ * the stored URLs and point editors at the prior doc in the console.
+ * @param {*} dbConn Firestore instance
+ * @param {string[]} authorCandidates e.g. [Claude-canonical author, name typed on submission]
+ * @param {string} excludeDocId Firestore doc id for the new quote (Notion page id)
+ * @returns {Promise<null | { sourceDocId: string, speakerCutoutUrl: string, speakerImageUrl: string, imageAttribution: string }>}
+ */
+async function findExistingSpeakerAssetReuseForPrefill(dbConn, authorCandidates, excludeDocId) {
+  if (!dbConn || !excludeDocId) return null;
+  const names = [...new Set(authorCandidates.map((n) => String(n || '').trim()).filter(Boolean))];
+  if (!names.length) return null;
+  const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const ref = dbConn.collection(collection);
+  const matches = [];
+  for (const author of names) {
+    const snap = await ref.where('author', '==', author).limit(40).get();
+    snap.forEach((docSnap) => {
+      if (docSnap.id === excludeDocId) return;
+      const d = docSnap.data() || {};
+      const cutout = String(d.speakerCutoutUrl ?? d.speaker_cutout_url ?? '').trim();
+      const portrait = String(d.speakerImageUrl ?? d.speaker_image_url ?? '').trim();
+      if (!cutout && !portrait) return;
+      matches.push({
+        sourceDocId: docSnap.id,
+        speakerCutoutUrl: cutout,
+        speakerImageUrl: portrait,
+        imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim()
+      });
+    });
+  }
+  if (!matches.length) return null;
+  const withCutout = matches.find((m) => m.speakerCutoutUrl);
+  return withCutout || matches[0];
+}
+
+function truncateForNotionRichText(value, maxLen = 1900) {
+  const s = String(value || '').trim();
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, maxLen - 1)}…`;
+}
+
 // --- Notion patch + Firestore mirror ----------------------------------------
 
-function buildPrefillNotionProperties(schema, ai, wiki) {
+function buildPrefillNotionProperties(schema, ai, wiki, speakerReuse) {
   const properties = {};
   const set = (baseName, value, ...aliases) => {
     if (!value) return;
@@ -1739,7 +1795,7 @@ function buildPrefillNotionProperties(schema, ai, wiki) {
   };
 
   if (ai?.author) set('author', ai.author);
-  if (ai?.community_prompt) set('community_prompt', ai.community_prompt, 'communityPrompt', 'Community prompt');
+  if (ai?.community_prompt) set('community_prompt', ai.community_prompt, 'community_prompt ', 'communityPrompt', 'Community prompt');
   if (ai?.blessing) set('blessing', ai.blessing, 'Daily blessing', 'daily_blessing');
   if (ai?.notification_text) set('notification_text', ai.notification_text, 'notificationText');
   if (ai?.ig_caption) set('ig_caption', ai.ig_caption, 'igCaption', 'IG Caption');
@@ -1747,17 +1803,57 @@ function buildPrefillNotionProperties(schema, ai, wiki) {
   if (ai?.speaker_guide_line) set('speaker_guide_line', ai.speaker_guide_line, 'speakerGuideLine', 'Guide line');
   if (ai?.art_recs) set('art_recs', ai.art_recs, 'artRecs', 'Art recs', 'explore');
 
-  // Wikipedia-derived fields: write fixed placeholders when no match, per spec.
-  set('speaker_image_url', wiki?.speaker_image_url || 'needs manual lookup', 'speakerImageUrl', 'Speaker image URL', 'image_url');
-  set('image_attribution', wiki?.image_attribution || 'unavailable', 'imageAttribution', 'Image attribution', 'image_credit');
+  // Speaker portrait: Notion "Speaker image URL" must stay a single HTTPS URL so sync → Firestore keeps working.
+  // When we already have a cutout (or portrait) on another quote for this author, reuse that URL — no new Wikimedia link needed.
+  const reusePortraitUrl =
+    speakerReuse && (speakerReuse.speakerCutoutUrl || speakerReuse.speakerImageUrl)
+      ? String(speakerReuse.speakerCutoutUrl || speakerReuse.speakerImageUrl).trim()
+      : '';
+  const wikiPortraitUrl = String(wiki?.speaker_image_url || '').trim();
+  const speakerImageUrlForNotion = reusePortraitUrl || wikiPortraitUrl || 'needs manual lookup';
+  set('speaker_image_url', speakerImageUrlForNotion, 'speakerImageUrl', 'Speaker image URL', 'image_url');
+
+  const attrFromReuse = speakerReuse?.imageAttribution ? String(speakerReuse.imageAttribution).trim() : '';
+  const attrFromWiki = String(wiki?.image_attribution || '').trim();
+  set(
+    'image_attribution',
+    attrFromReuse || attrFromWiki || 'unavailable',
+    'imageAttribution',
+    'Image attribution',
+    'image_credit'
+  );
   if (wiki?.speaker_dates) {
     set('speaker_dates', wiki.speaker_dates, 'speakerDates', 'Speaker dates');
+  }
+
+  if (speakerReuse?.sourceDocId) {
+    const consoleUrl = buildFirestoreConsoleUrlForQuoteDoc(speakerReuse.sourceDocId);
+    const reuseNotes = truncateForNotionRichText(
+      [
+        'Existing speaker cutout/portrait already on file for this author — you do not need a new Wikimedia or portrait URL.',
+        consoleUrl ? `Open the prior Firestore quote (copy speakerCutoutUrl / speakerImageUrl if you edit manually): ${consoleUrl}` : '',
+        reusePortraitUrl ? `Reused image URL (also written on Speaker image URL): ${reusePortraitUrl}` : ''
+      ]
+        .filter(Boolean)
+        .join('\n')
+    );
+    set(
+      'speaker_image_notes',
+      reuseNotes,
+      'Speaker image notes',
+      'speaker_image_note',
+      'image_notes',
+      'prefill_notes',
+      'Prefill notes',
+      'internal_notes',
+      'Internal notes'
+    );
   }
 
   return properties;
 }
 
-function buildPrefillFirestorePayload(ai, wiki) {
+function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   const payload = {};
   if (ai?.author) {
     payload.author = ai.author;
@@ -1789,9 +1885,19 @@ function buildPrefillFirestorePayload(ai, wiki) {
     payload.artRecs = ai.art_recs;
     payload.art_recs = ai.art_recs;
   }
-  payload.speakerImageUrl = wiki?.speaker_image_url || 'needs manual lookup';
-  payload.speaker_image_url = payload.speakerImageUrl;
-  payload.imageAttribution = wiki?.image_attribution || 'unavailable';
+  const reuseCutout = speakerReuse?.speakerCutoutUrl ? String(speakerReuse.speakerCutoutUrl).trim() : '';
+  const reusePortrait = speakerReuse?.speakerImageUrl ? String(speakerReuse.speakerImageUrl).trim() : '';
+  const wikiPortrait = wiki?.speaker_image_url ? String(wiki.speaker_image_url).trim() : '';
+  const portraitForRow = reusePortrait || wikiPortrait || reuseCutout || 'needs manual lookup';
+  payload.speakerImageUrl = portraitForRow;
+  payload.speaker_image_url = portraitForRow;
+  if (reuseCutout) {
+    payload.speakerCutoutUrl = reuseCutout;
+    payload.speaker_cutout_url = reuseCutout;
+  }
+  const attrReuse = speakerReuse?.imageAttribution ? String(speakerReuse.imageAttribution).trim() : '';
+  const attrWiki = wiki?.image_attribution ? String(wiki.image_attribution).trim() : '';
+  payload.imageAttribution = attrReuse || attrWiki || 'unavailable';
   payload.image_attribution = payload.imageAttribution;
   if (wiki?.speaker_dates) {
     payload.speakerDates = wiki.speaker_dates;
@@ -1922,7 +2028,24 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     console.warn(`⚠️ Wikipedia lookup failed for "${resolvedAuthor}":`, e.message);
   }
 
-  const properties = buildPrefillNotionProperties(schema, ai, wiki);
+  let speakerReuse = null;
+  if (db) {
+    try {
+      speakerReuse = await findExistingSpeakerAssetReuseForPrefill(db, [resolvedAuthor, authorName], notionPageId);
+    } catch (e) {
+      console.warn(`⚠️ Existing speaker reuse lookup failed for "${resolvedAuthor}":`, e.message);
+    }
+  }
+  if (speakerReuse?.sourceDocId) {
+    const consoleUrl = buildFirestoreConsoleUrlForQuoteDoc(speakerReuse.sourceDocId);
+    const cut = speakerReuse.speakerCutoutUrl ? 'yes' : 'no';
+    const portrait = speakerReuse.speakerImageUrl ? 'yes' : 'no';
+    console.log(
+      `\u2139\ufe0f Prefill: reusing speaker assets from an existing quote (cutout=${cut}, portrait=${portrait}). No new Wikimedia URL required. Prior doc: ${speakerReuse.sourceDocId}${consoleUrl ? ` | ${consoleUrl}` : ''}`
+    );
+  }
+
+  const properties = buildPrefillNotionProperties(schema, ai, wiki, speakerReuse);
   // Clear any prior error message on success.
   if (errState.propName) {
     const errProp = schema[errState.propName];
@@ -1939,12 +2062,13 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
 
   if (db) {
     const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
-    const payload = buildPrefillFirestorePayload(ai, wiki);
+    const payload = buildPrefillFirestorePayload(ai, wiki, speakerReuse);
     await db.collection(collection).doc(notionPageId).set(payload, { merge: true });
   }
 
+  const reuseTag = speakerReuse?.sourceDocId ? `reuse=${speakerReuse.sourceDocId}` : 'reuse=none';
   console.log(
-    `\u2728 Prefilled ${notionPageId} (claude=${ai._model || 'ok'}, wiki=${wiki?.speaker_image_url ? 'image+meta' : wiki?.speaker_dates ? 'meta-only' : 'none'})`
+    `\u2728 Prefilled ${notionPageId} (claude=${ai._model || 'ok'}, wiki=${wiki?.speaker_image_url ? 'image+meta' : wiki?.speaker_dates ? 'meta-only' : 'none'}, ${reuseTag})`
   );
   return { status: 'ok', attempt: nextAttempt, hasWiki: !!wiki };
 }
@@ -1975,7 +2099,13 @@ function extractAuthorFromNotionPage(page) {
 
 async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   const quoteTextName = getNotionTitlePropName(schema);
-  const communityPromptName = findNotionPropName(schema, 'community_prompt', 'communityPrompt', 'Community prompt');
+  const communityPromptName = findNotionPropName(
+    schema,
+    'community_prompt',
+    'community_prompt ',
+    'communityPrompt',
+    'Community prompt'
+  );
   if (!quoteTextName || !communityPromptName) {
     throw new Error(`Notion DB missing required columns (need title + community_prompt rich_text)`);
   }
@@ -3534,7 +3664,7 @@ app.post('/api/quote-wiki-refresh', async (req, res) => {
 
     const schema = await notionGetDatabaseProperties(databaseId);
     // Build a properties payload with ONLY the Wikipedia-derived fields.
-    const properties = buildPrefillNotionProperties(schema, null, wiki);
+    const properties = buildPrefillNotionProperties(schema, null, wiki, null);
     if (Object.keys(properties).length) {
       await notionFetchJson(`/pages/${pageId}`, {
         method: 'PATCH',
@@ -3543,7 +3673,7 @@ app.post('/api/quote-wiki-refresh', async (req, res) => {
     }
     if (db) {
       const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
-      const payload = buildPrefillFirestorePayload(null, wiki);
+      const payload = buildPrefillFirestorePayload(null, wiki, null);
       if (Object.keys(payload).length) {
         await db.collection(collection).doc(pageId).set(payload, { merge: true });
       }
