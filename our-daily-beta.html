@@ -33647,10 +33647,35 @@ try {
           const byDate = await readQuoteDoc(dateKey);
           const bySource =
             sourceId && sourceId !== dateKey ? await readQuoteDoc(sourceId) : null;
-          const data = { ...(byDate || {}), ...(bySource || {}) };
           if (!byDate && !bySource) return;
 
           const prev = qs._pinnedByDateKey[dateKey] || todayQuote || {};
+          /* `quotes/{dateKey}` is a legacy/sync duplicate. When the real doc is `quotes/{sourceId}`,
+             stale copies of prompts / what-if / art recs on the date doc overwrite catalog + source
+             after merge — same failure mode as reflection (see populateReflectionPromptFromServer). */
+          const notionBacked = sourceId !== '';
+          const dailyDuplicateQuoteKeys = new Set([
+            'what_if',
+            'whatIf',
+            'art_recs',
+            'artRecs',
+            'communityPrompt',
+            'community_prompt',
+            'reflectionPrompt',
+            'reflection_prompt',
+            'communityPromptSnapshot',
+            'reflectionPromptSnapshot'
+          ]);
+          const stripDailyDuplicates =
+            notionBacked && sourceId !== dateKey && byDate && bySource;
+          const data = stripDailyDuplicates
+            ? {
+                ...Object.fromEntries(
+                  Object.entries(byDate).filter(([k]) => !dailyDuplicateQuoteKeys.has(k))
+                ),
+                ...bySource
+              }
+            : { ...(byDate || {}), ...(bySource || {}) };
           const ref = String(data.reflection_prompt || data.reflectionPrompt || '').trim();
           const whatIf = String(data.what_if ?? data.whatIf ?? '').trim();
           const art = data.art_recs ?? data.artRecs ?? prev.art_recs ?? prev.artRecs;
