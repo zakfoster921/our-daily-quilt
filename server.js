@@ -1515,12 +1515,79 @@ async function createPendingSubmittedQuote({ text, author, submitterName, userId
 
 // --- Submitted-quote AI prefill ---------------------------------------------
 
+/** Normalize JSON object keys the same way as Notion property names (small_act ↔ smallact). */
+function normPrefillJsonKey(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\s_-]/g, '');
+}
+
+/**
+ * Read a string field from Claude JSON even when the model varies key spelling
+ * (e.g. smallAct, Small act, small-act).
+ */
+function pickPrefillStringLoose(parsed, ...aliases) {
+  if (!parsed || typeof parsed !== 'object') return '';
+  const targets = new Set(aliases.map(normPrefillJsonKey).filter(Boolean));
+  for (const [k, v] of Object.entries(parsed)) {
+    if (!targets.has(normPrefillJsonKey(k))) continue;
+    if (typeof v === 'string') return v.replace(/^\s+|\s+$/g, '');
+    if (v == null) continue;
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  }
+  return '';
+}
+
+/** First balanced `{ ... }` in text (string-aware); avoids greedy-regex JSON grabs that break on extra `}`. */
+function extractBalancedJsonObject(text) {
+  const s = String(text || '');
+  const start = s.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let esc = false;
+  for (let i = start; i < s.length; i += 1) {
+    const c = s[i];
+    if (inString) {
+      if (esc) {
+        esc = false;
+      } else if (c === '\\') {
+        esc = true;
+      } else if (c === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === '{') depth += 1;
+    else if (c === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        const slice = s.slice(start, i + 1);
+        try {
+          return JSON.parse(slice);
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function extractPrefillJsonFromText(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
   try {
     return JSON.parse(raw);
   } catch (_) {
+    const balanced = extractBalancedJsonObject(raw);
+    if (balanced && typeof balanced === 'object') return balanced;
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return null;
     try {
@@ -1541,7 +1608,7 @@ async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt }) {
     },
     body: {
       model,
-      max_tokens: 1400,
+      max_tokens: 4096,
       temperature: 0.4,
       messages: [{ role: 'user', content: prompt }]
     }
@@ -1569,22 +1636,31 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
     const preview = String(firstText || '').replace(/\s+/g, ' ').trim().slice(0, 400);
     throw new Error(`Claude returned no parseable prefill JSON. Preview: ${preview || '[empty]'}`);
   }
-  const pickString = (key) => {
-    const v = parsed[key];
-    if (typeof v !== 'string') return '';
-    return v.replace(/^\s+|\s+$/g, '');
-  };
-  return {
-    author: pickString('author'),
-    community_prompt: pickString('community_prompt') || pickString('community_prompt '),
-    blessing: pickString('blessing'),
-    notification_text: pickString('notification_text'),
-    ig_caption: pickString('ig_caption'),
-    what_if: pickString('what_if'),
-    speaker_guide_line: pickString('speaker_guide_line'),
-    art_recs: pickString('art_recs'),
+  const out = {
+    author: pickPrefillStringLoose(parsed, 'author'),
+    community_prompt: pickPrefillStringLoose(parsed, 'community_prompt', 'communityPrompt', 'community_prompt '),
+    small_act: pickPrefillStringLoose(
+      parsed,
+      'small_act',
+      'smallAct',
+      'small_action',
+      'small act',
+      'smallact'
+    ),
+    blessing: pickPrefillStringLoose(parsed, 'blessing'),
+    notification_text: pickPrefillStringLoose(parsed, 'notification_text', 'notificationText'),
+    ig_caption: pickPrefillStringLoose(parsed, 'ig_caption', 'igCaption'),
+    what_if: pickPrefillStringLoose(parsed, 'what_if', 'whatIf'),
+    speaker_guide_line: pickPrefillStringLoose(parsed, 'speaker_guide_line', 'speakerGuideLine', 'guide_line'),
+    art_recs: pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations'),
     _model: model
   };
+  if (!out.small_act) {
+    console.warn(
+      `[prefill] small_act empty after Claude parse (model=${model}). Top-level JSON keys: ${Object.keys(parsed).join(', ')}`
+    );
+  }
+  return out;
 }
 
 // --- Wikipedia / Wikimedia speaker lookup -----------------------------------
@@ -1920,6 +1996,10 @@ function buildPrefillNotionProperties(schema, ai, wiki, speakerReuse) {
 
   if (ai?.author) set('author', ai.author);
   if (ai?.community_prompt) set('community_prompt', ai.community_prompt, 'community_prompt ', 'communityPrompt', 'Community prompt');
+  {
+    const smallActText = String(ai?.small_act || '').trim();
+    if (smallActText) set('small_act', smallActText);
+  }
   if (ai?.blessing) set('blessing', ai.blessing, 'Daily blessing', 'daily_blessing');
   if (ai?.notification_text) set('notification_text', ai.notification_text, 'notificationText');
   if (ai?.ig_caption) set('ig_caption', ai.ig_caption, 'igCaption', 'IG Caption');
@@ -1985,6 +2065,13 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   if (ai?.community_prompt) {
     payload.communityPrompt = ai.community_prompt;
     payload.community_prompt = ai.community_prompt;
+  }
+  {
+    const smallActText = String(ai?.small_act || '').trim();
+    if (smallActText) {
+      payload.smallAct = smallActText;
+      payload.small_act = smallActText;
+    }
   }
   if (ai?.blessing) {
     payload.blessing = ai.blessing;

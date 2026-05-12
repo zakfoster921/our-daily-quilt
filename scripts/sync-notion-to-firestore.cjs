@@ -398,6 +398,7 @@ function parseNotionRow(page) {
     'Explore'
   );
   const communityPrompt = getCommunityPromptFromProps(props, page?.id);
+  const smallAct = getMappedText(props, 'small_act', 'smallAct', 'Small act', 'Small Act');
   const whatIf = getMappedText(props, 'what_if', 'What if', 'What If');
   const igCaption = getMappedText(props, 'ig_caption', 'IG Caption', 'Ig Caption');
   const mood = getMappedText(props, 'mood', 'Mood');
@@ -525,6 +526,10 @@ function parseNotionRow(page) {
       art_recs: artRecs,
       communityPrompt,
       community_prompt: communityPrompt,
+      // Omit when empty so merge does not wipe `small_act` prefilled by Claude before this column exists in Notion.
+      ...(String(smallAct || '').trim()
+        ? { smallAct: String(smallAct).trim(), small_act: String(smallAct).trim() }
+        : {}),
       whatIf,
       what_if: whatIf,
       igCaption,

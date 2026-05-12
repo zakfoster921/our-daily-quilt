@@ -42,6 +42,7 @@ npm run sync:quotes
 - `author` -> `author`
 - `reflection_prompt` -> `reflectionPrompt`
 - `community_prompt` -> `communityPrompt` and `community_prompt`
+- `small_act` -> `smallAct` and `small_act`
 - `what_if` -> `whatIf` and `what_if`
 - `mood` -> `mood`
 - `blessing` -> `blessing`
