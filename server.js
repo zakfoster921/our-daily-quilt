@@ -1613,6 +1613,100 @@ function parseSpeakerDatesFromExtract(extract) {
   return '';
 }
 
+/**
+ * Wikidata structured dates (P569 birth, P570 death) when Wikipedia REST extract
+ * has no parseable years — needed for Notion `speaker_dates` without manual entry.
+ */
+function yearFromWikidataTimeValue(value) {
+  if (!value || typeof value !== 'object') return null;
+  const t = String(value.time || '').replace(/^\+/, '');
+  const y = parseInt(t.slice(0, 4), 10);
+  return Number.isFinite(y) && y >= 1000 && y <= 2100 ? y : null;
+}
+
+function yearFromWikidataClaim(claimArray) {
+  if (!Array.isArray(claimArray) || !claimArray.length) return null;
+  const rankOrder = (r) => (r === 'preferred' ? 0 : r === 'normal' ? 1 : 2);
+  const sorted = [...claimArray].sort(
+    (a, b) => rankOrder(a?.rank) - rankOrder(b?.rank)
+  );
+  for (const c of sorted) {
+    if (c?.mainsnak?.datatype !== 'time') continue;
+    const sn = c?.mainsnak?.datavalue?.value;
+    const y = yearFromWikidataTimeValue(sn);
+    if (y) return y;
+  }
+  return null;
+}
+
+function wikidataEntityIsHuman(claims) {
+  const p31 = claims?.P31;
+  if (!Array.isArray(p31)) return false;
+  return p31.some((c) => c?.mainsnak?.datavalue?.value?.id === 'Q5');
+}
+
+function formatLifeSpanYears(birthY, deathY) {
+  if (birthY && deathY) return `${birthY} \u2013 ${deathY}`;
+  if (birthY) return `born ${birthY}`;
+  if (deathY) return `died ${deathY}`;
+  return '';
+}
+
+async function fetchWikidataSpeakerDates(authorName) {
+  const q = String(authorName || '').trim();
+  if (!q) return '';
+  const searchParams = new URLSearchParams({
+    action: 'wbsearchentities',
+    search: q,
+    language: 'en',
+    type: 'item',
+    format: 'json',
+    limit: '10'
+  });
+  let searchJson;
+  try {
+    const res = await fetch(`https://www.wikidata.org/w/api.php?${searchParams}`, {
+      headers: { 'User-Agent': WIKIPEDIA_USER_AGENT }
+    });
+    if (!res.ok) return '';
+    searchJson = await res.json();
+  } catch (e) {
+    console.warn(`⚠️ Wikidata search failed for "${q}":`, e.message);
+    return '';
+  }
+  const hits = searchJson?.search || [];
+  for (const h of hits) {
+    const id = h?.id;
+    if (!id || !/^Q\d+$/.test(id)) continue;
+    let entityJson;
+    try {
+      const ep = new URLSearchParams({
+        action: 'wbgetentities',
+        ids: id,
+        format: 'json',
+        props: 'claims'
+      });
+      const er = await fetch(`https://www.wikidata.org/w/api.php?${ep}`, {
+        headers: { 'User-Agent': WIKIPEDIA_USER_AGENT }
+      });
+      if (!er.ok) continue;
+      entityJson = await er.json();
+    } catch {
+      continue;
+    }
+    const claims = entityJson?.entities?.[id]?.claims;
+    if (!claims || !wikidataEntityIsHuman(claims)) continue;
+    const birthY = yearFromWikidataClaim(claims.P569);
+    const deathY = yearFromWikidataClaim(claims.P570);
+    const span = formatLifeSpanYears(birthY, deathY);
+    if (span) {
+      console.log(`ℹ️ speaker_dates from Wikidata ${id} for "${q}": ${span}`);
+      return span;
+    }
+  }
+  return '';
+}
+
 function stripHtml(value) {
   return String(value || '')
     .replace(/<[^>]*>/g, ' ')
@@ -1672,42 +1766,57 @@ async function fetchCommonsImageAttribution(imageUrl) {
 async function fetchWikipediaSpeakerInfo(authorName) {
   const name = String(authorName || '').trim();
   if (!name) return null;
-  const title = encodeURIComponent(name.replace(/\s+/g, '_'));
-  let summary;
+
+  let summary = null;
   try {
+    const title = encodeURIComponent(name.replace(/\s+/g, '_'));
     const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${title}`, {
       headers: { 'User-Agent': WIKIPEDIA_USER_AGENT, Accept: 'application/json' },
       redirect: 'follow'
     });
-    if (!res.ok) {
+    if (res.ok) {
+      summary = await res.json();
+    } else {
       console.warn(`⚠️ Wikipedia summary HTTP ${res.status} for "${name}"`);
-      return null;
     }
-    summary = await res.json();
   } catch (e) {
     console.warn(`⚠️ Wikipedia summary fetch failed for "${name}":`, e.message);
-    return null;
-  }
-  if (!summary) return null;
-  if (summary.type === 'disambiguation') {
-    console.warn(`⚠️ Wikipedia returned disambiguation page for "${name}" — speaker_dates/image not auto-fillable`);
-    return null;
   }
 
-  const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || '';
-  const extract = String(summary?.extract || '');
-  // REST `extract` is often shortened and drops the lead "(YYYY–YYYY)"; `description`
-  // still has it (e.g. "American inventor (1955–2011)"). Parsing `extract` alone then
-  // falls back to min/max of every year in the body → wrong lifespans (e.g. 1976–2011).
-  const desc = String(summary?.description || '').trim();
-  const dates = parseSpeakerDatesFromExtract(desc ? `${desc} ${extract}` : extract);
-  if (!dates) {
-    const preview = String(desc ? `${desc} ${extract}` : extract)
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 220);
-    console.warn(`⚠️ No speaker_dates parsed from Wikipedia for "${name}". Preview: ${preview || '(empty)'}`);
+  let imageUrl = '';
+  let extract = '';
+  let desc = '';
+  let isDisambiguation = false;
+
+  if (summary) {
+    if (summary.type === 'disambiguation') {
+      isDisambiguation = true;
+      console.warn(`⚠️ Wikipedia disambiguation for "${name}" — trying Wikidata for speaker_dates`);
+    } else {
+      imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || '';
+      extract = String(summary?.extract || '');
+      desc = String(summary?.description || '').trim();
+    }
   }
+
+  let dates = '';
+  if (!isDisambiguation && (extract || desc)) {
+    dates = parseSpeakerDatesFromExtract(desc ? `${desc} ${extract}` : extract) || '';
+    if (!dates) {
+      const preview = String(desc ? `${desc} ${extract}` : extract)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 220);
+      console.warn(
+        `⚠️ No speaker_dates from Wikipedia extract for "${name}". Preview: ${preview || '(empty)'}`
+      );
+    }
+  }
+
+  if (!dates) {
+    dates = (await fetchWikidataSpeakerDates(name)) || '';
+  }
+
   let attribution = '';
   if (imageUrl) {
     try {
@@ -1716,6 +1825,8 @@ async function fetchWikipediaSpeakerInfo(authorName) {
       console.warn(`⚠️ Commons attribution fetch failed for "${name}":`, e.message);
     }
   }
+
+  if (!imageUrl && !dates) return null;
   return {
     speaker_image_url: imageUrl || '',
     speaker_dates: dates || '',
