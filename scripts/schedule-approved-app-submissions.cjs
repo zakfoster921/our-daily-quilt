@@ -71,7 +71,18 @@ function isApprovedQuoteData(d) {
   return String(d.approved ?? d.active ?? '').trim().toLowerCase() !== 'false';
 }
 
+function artRecsSnapshotValue(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  try {
+    return JSON.stringify(value);
+  } catch (_) {
+    return '';
+  }
+}
+
 function assignmentPayloadForQuote(q, dateKey, assignedBy) {
+  const artRecs = q.artRecs ?? q.art_recs ?? '';
   return {
     dateKey,
     sourceId: q.sourceId || null,
@@ -81,6 +92,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     blessingSnapshot: q.blessing.slice(0, 240),
     communityPromptSnapshot: q.communityPrompt.slice(0, 500),
     whatIfSnapshot: q.whatIf.slice(0, 240),
+    artRecsSnapshot: artRecsSnapshotValue(artRecs).slice(0, 1200),
     igCaptionSnapshot: q.igCaption.slice(0, 400),
     speakerImageUrlSnapshot: q.speakerImageUrl.slice(0, 500),
     speakerCutoutUrlSnapshot: q.speakerCutoutUrl.slice(0, 500),
@@ -95,6 +107,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
 }
 
 function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
+  const artRecs = q.artRecs ?? q.art_recs ?? '';
   return {
     dateKey,
     text: q.text,
@@ -106,6 +119,8 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     community_prompt: q.communityPrompt || '',
     whatIf: q.whatIf || '',
     what_if: q.whatIf || '',
+    artRecs,
+    art_recs: artRecs,
     igCaption: q.igCaption || '',
     ig_caption: q.igCaption || '',
     speakerImageUrl: q.speakerImageUrl || '',
@@ -179,6 +194,8 @@ async function main() {
       blessing: String(d.blessing ?? d.dailyBlessing ?? d.daily_blessing ?? '').trim(),
       communityPrompt: String(d.communityPrompt ?? d.community_prompt ?? '').trim(),
       whatIf: String(d.whatIf ?? d.what_if ?? '').trim(),
+      artRecs: d.artRecs ?? d.art_recs ?? '',
+      art_recs: d.art_recs ?? d.artRecs ?? '',
       igCaption: String(d.igCaption ?? d.ig_caption ?? '').trim(),
       speakerImageUrl: String(d.speakerImageUrl ?? d.speaker_image_url ?? '').trim(),
       speakerCutoutUrl: String(d.speakerCutoutUrl ?? d.speaker_cutout_url ?? '').trim(),

@@ -208,7 +208,8 @@ try {
     @font-face {
       font-family: 'Zakarack';
       src: url('assets/fonts/Zakarack-Regular.woff2') format('woff2');
-      font-weight: 400;
+      /* Single master file — widen range so heavier `font-weight` resolves to Zakarack + synthesis */
+      font-weight: 400 1000;
       font-style: normal;
       font-display: swap;
     }
@@ -1949,7 +1950,7 @@ try {
       font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
       font-size: 2em;
       font-style: normal;
-      font-weight: 400;
+      font-weight: 600;
       line-height: 1.08;
       letter-spacing: 0.005em;
     }
@@ -2109,7 +2110,7 @@ try {
       margin-bottom: 0.55rem;
       font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
       font-size: clamp(1.85rem, 7.2vw, 2.65rem);
-      font-weight: 400;
+      font-weight: 600;
       line-height: 1.18;
       padding: clamp(1.05rem, 3.2vh, 1.45rem) clamp(0.85rem, 3.5vw, 1.15rem);
       min-height: clamp(4.25rem, 14vw, 5.5rem);
@@ -3061,18 +3062,19 @@ try {
         /* Bottom safe-area lives on `.quilt-scroll-icon-footer` below the transparent gap. */
         padding: 0.75rem max(24px, calc(var(--odq-safe-right) + 18px)) 0.85rem max(24px, calc(var(--odq-safe-left) + 18px)) !important;
         box-sizing: border-box !important;
-        background: #ebe8e3 !important;
-        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08) !important;
+        /* Card chrome lives on `.quilt-contributor-panel` so the panel fully wraps title + names. */
+        background: transparent !important;
+        box-shadow: none !important;
         z-index: 10 !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
-        min-height: var(--quilt-contributors-band-height);
+        /* Height follows the contributor card; vertical lift uses measured height via `--quilt-contributors-band-measured` when set. */
+        min-height: 0 !important;
         pointer-events: none;
         opacity: 1;
         visibility: visible;
-        /* Keep the band short, but place it in the vertical center of the final scroll viewport. */
         transform: translateY(calc(-1 * var(--quilt-contributors-final-screen-lift)));
       }
 
@@ -3112,21 +3114,25 @@ try {
         pointer-events: none !important;
       }
 
+      #screen-quilt .quilt-fixed-quote-strips.quilt-fixed-contributors:has(.quilt-contributor-list:empty) {
+        display: none !important;
+      }
+
       #screen-quilt .quilt-contributor-panel {
+        container-type: inline-size;
+        container-name: quilt-contributors;
         pointer-events: none;
         width: min(88vw, 380px);
-        /* Shrink to content when the list is short so the outer band can center the whole card vertically. */
-        height: auto;
-        min-height: 0;
-        max-height: var(--quilt-contributors-panel-max);
         margin: 0 auto;
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        /* safe: when content exceeds max-height, align to start so the list scrolls predictably. */
-        justify-content: center;
-        justify-content: safe center;
-        gap: 0;
+        display: block;
+        min-height: 0;
+        box-sizing: border-box;
+        padding: 0.75rem 0.7rem 0.88rem;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.93);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 6px 28px rgba(15, 12, 10, 0.12);
         color: rgba(0, 0, 0, 0.42);
         font-family: inherit;
         font-size: calc(clamp(1.4rem, 3.5vw, 2rem) * 0.75);
@@ -3141,33 +3147,41 @@ try {
         display: flex;
         flex-direction: column;
         align-items: stretch;
-        justify-content: center;
-        justify-content: safe center;
         gap: 0.42rem;
-        flex: 0 1 auto;
-        min-height: 0;
-        max-height: 100%;
         width: 100%;
       }
 
       #screen-quilt .quilt-contributor-title {
         margin: 0;
-        font: inherit;
-        font-weight: 420;
+        font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
+        /* Fallback when container query length units are unavailable */
+        font-size: clamp(0.75rem, 3.7vw, 1.62rem);
+        font-weight: 520;
+        line-height: 1;
+        text-align: center;
         text-transform: uppercase;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
         position: relative;
         z-index: 1;
         filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.14));
       }
 
+      @supports (font-size: 1cqi) {
+        #screen-quilt .quilt-contributor-title {
+          /* Tracks panel width; cap + nowrap keep a single line */
+          font-size: clamp(0.75rem, 7.25cqi, 1.64rem);
+        }
+      }
+
       #screen-quilt .quilt-contributor-list {
         --quilt-contributor-gutter: 0.75rem;
+        --quilt-contributor-list-cap: calc(var(--quilt-contributors-panel-max) - 4.9rem);
         pointer-events: auto;
         margin: 0 auto;
         width: 100%;
         min-height: 0;
-        /* Do not grow: flex-grow was stealing vertical space and sitting the title+grid low in the band. */
-        flex: 0 1 auto;
+        max-height: max(5.5rem, var(--quilt-contributor-list-cap));
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         column-gap: var(--quilt-contributor-gutter);
@@ -3176,9 +3190,7 @@ try {
         /* Horizontal padding matches column-gap so edge inset equals space between columns. */
         padding: 0.55rem var(--quilt-contributor-gutter) 0.55rem;
         align-items: start;
-        /* Center short lists vertically in the panel; long lists still scroll normally. */
-        align-content: center;
-        align-content: safe center;
+        align-content: start;
         justify-items: start;
         font: inherit;
         font-size: 0.86em;
@@ -3299,11 +3311,18 @@ try {
         --quilt-fixed-top: calc(var(--quilt-edge-bleed) * -1);
         --quilt-fixed-height: calc(100dvh + (var(--quilt-edge-bleed) * 2));
         --quilt-contributors-panel-max: min(42vh, 19rem);
+        /* Used only for final-screen vertical lift (stable value — do not use translate % of self height; breaks on WebKit). */
         --quilt-contributors-band-height: min(44vh, 24rem);
         --quilt-icon-strip-pad-v: clamp(0rem, 0.2vh, 0.15rem);
         --quilt-contributor-footer-gap-height: clamp(0.15rem, 0.6vw, 0.35rem);
         --quilt-scroll-icon-footer-height: calc(44px + (2 * var(--quilt-icon-strip-pad-v)) + max(0px, env(safe-area-inset-bottom, 0px)));
-        --quilt-contributors-final-screen-lift: calc((100dvh - var(--quilt-scroll-icon-footer-height) - var(--quilt-contributor-footer-gap-height) - var(--quilt-contributors-band-height)) / 2);
+        /* Fallback band height before JS measures the real strip; `syncQuiltContributorsBandLift` sets `--quilt-contributors-band-measured`. */
+        --quilt-contributors-final-screen-lift: calc(
+          (
+              100dvh - var(--quilt-scroll-icon-footer-height) - var(--quilt-contributor-footer-gap-height) -
+                var(--quilt-contributors-band-measured, var(--quilt-contributors-band-height))
+            ) / 2
+        );
         /* Do not zero out safe-area; parent .screen also insets — keep horizontal flush for quilt art */
         padding-top: 0 !important;
         padding-bottom: 0 !important;
@@ -6044,6 +6063,7 @@ try {
       display: none !important;
       font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
       font-size: clamp(1.7rem, 6vw, 2.08rem);
+      font-weight: 600;
       line-height: 1;
       margin: 0 0 0.62rem;
       color: var(--reflection-fabric-ink);
@@ -6243,7 +6263,7 @@ try {
       flex-direction: column;
       gap: 0.64rem;
       width: 100%;
-      height: 6.85rem;
+      height: calc(6.85rem * 1.5);
       padding: 0;
       box-sizing: border-box;
       overflow: hidden;
@@ -6272,7 +6292,7 @@ try {
     #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-carousel-viewport {
       box-sizing: border-box;
       padding: 0.65rem;
-      height: calc(6.85rem + 1.3rem);
+      height: calc(6.85rem * 1.5 + 1.3rem);
     }
 
     /* Slide gap = 2 × border overhang (0.65rem on each side) so the next card's
@@ -6283,8 +6303,8 @@ try {
 
     #screen-quilt .quilt-reflection-carousel-slide {
       position: relative;
-      flex: 0 0 6.85rem;
-      min-height: 6.85rem;
+      flex: 0 0 calc(6.85rem * 1.5);
+      min-height: calc(6.85rem * 1.5);
       width: 100%;
       padding: 1rem 1.05rem;
       box-sizing: border-box;
@@ -6323,7 +6343,7 @@ try {
       margin: 0;
       color: #2f2b24;
       font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
-      font-size: clamp(0.96rem, 3.45vw, 1.08rem);
+      font-size: clamp(1.152rem, 4.14vw, 1.296rem);
       font-style: normal;
       font-weight: 350;
       line-height: 1.32;
@@ -6344,7 +6364,7 @@ try {
       text-align: center;
       color: #2f2b24;
       font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
-      font-weight: 400;
+      font-weight: 600;
       font-style: normal;
       font-size: clamp(1.8rem, 7.2vw, 2.385rem);
       line-height: 1.0;
@@ -6455,11 +6475,35 @@ try {
       z-index: 10;
     }
 
+    /* Tall vertical band + JS class `quote-speaker-stage--visible` so scrolling can momentarily frame only the card. */
+    #screen-quilt .quote-speaker-stage {
+      display: none;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    #screen-quilt .quote-speaker-stage.quote-speaker-stage--visible {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      box-sizing: border-box;
+      width: 100%;
+      padding-inline: 0;
+      /* ~½ viewport slack above + below the card (class toggled in refreshQuoteSpeakerWidget). */
+      padding-top: clamp(1.25rem, 23vh, 16rem);
+      padding-top: clamp(1.25rem, 23svh, 16rem);
+      padding-top: clamp(1.25rem, 23dvh, 16rem);
+      padding-bottom: clamp(1.25rem, 23vh, 16rem);
+      padding-bottom: clamp(1.25rem, 23svh, 16rem);
+      padding-bottom: clamp(1.25rem, 23dvh, 16rem);
+    }
+
     #screen-quilt .quote-speaker-widget {
       width: calc(100% - 32px);
       max-width: 460px;
       box-sizing: border-box;
-      margin: 54px auto 54px;
+      margin: 0 auto;
       padding: 26px 16px 48px;
       display: flex;
       flex-direction: column;
@@ -6673,7 +6717,7 @@ try {
       /* Default cap; JS (fitQuoteSpeakerNameToOneLine) shrinks so the full name fits on one line. */
       font-size: 5.75rem;
       line-height: 1.05;
-      font-weight: 700;
+      font-weight: 1000;
       color: #241f19;
       white-space: nowrap;
       overflow: visible;
@@ -6702,6 +6746,12 @@ try {
       line-height: 1.25;
       color: rgba(47, 39, 31, 0.48);
       text-align: right;
+    }
+
+    /* When portrait credit is omitted, preserve the vertical rhythm of a one-line attribution
+       so the portrait block does not sit flush against the name. */
+    #screen-quilt .quote-speaker-widget--no-image-attribution .quote-speaker-image-wrap:not([hidden]) {
+      margin-bottom: calc(8px + (0.68rem * 1.25) + 28px);
     }
 
     #screen-quilt .quilt-fortune-reveal:focus-visible {
@@ -7191,7 +7241,7 @@ try {
 
       #screen-quilt .quote-speaker-widget {
         width: calc(100% - 40px);
-        margin: 54px 20px 54px;
+        margin: 0 20px;
       }
 
       #screen-quilt .quilt-reflection-scrap-widget {
@@ -7221,7 +7271,7 @@ try {
 
       #screen-quilt .quote-speaker-widget {
         width: calc(100% - 50px);
-        margin: 54px 25px 54px;
+        margin: 0 25px;
         padding: 26px 16px 48px;
       }
 
@@ -7284,10 +7334,10 @@ try {
       background: #f0ece8;
     }
 
-    /* Same vertical rhythm as quote Layout B card margin-bottom + reflection fabric margin-top + padding-top. */
+    /* Extra air between story preview and Before you go (4.5× outer rhythm = 50% more than the prior 3× gap). */
     #screen-quilt .quilt-layout-b-preview-before-gap {
       width: 100%;
-      min-height: var(--quilt-before-you-go-outer-y);
+      min-height: calc(4.5 * var(--quilt-before-you-go-outer-y));
       flex-shrink: 0;
       pointer-events: none;
     }
@@ -7385,6 +7435,7 @@ try {
 
     /* Before You Go — warm neutral “paper” card (layout inspired by mockup, not dark theme) */
     #screen-quilt .quilt-before-you-go {
+      container-type: inline-size;
       width: min(380px, calc(100% - 2.25rem));
       max-width: 100%;
       box-sizing: border-box;
@@ -7400,15 +7451,19 @@ try {
     }
 
     #screen-quilt .quilt-before-you-go__title {
-      margin: 0 0 1.05rem;
+      margin: 0;
+      /* Fallback when container query units are unavailable */
       font-size: 2.55rem;
-      font-weight: 700;
+      /* Scale with card width so “BEFORE YOU GO” + tracking stays one line */
+      font-size: clamp(0.92rem, 13.8cqi, 2.55rem);
+      font-weight: 800;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: #000;
       text-align: left;
       font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
       line-height: 1.15;
+      white-space: nowrap;
     }
 
     #screen-quilt .quilt-before-you-go__block {
@@ -8244,6 +8299,7 @@ try {
         </section>
       </div>
 
+      <div class="quote-speaker-stage" id="quoteSpeakerStage">
       <aside class="quote-speaker-widget" id="quoteSpeakerWidget" aria-labelledby="quoteSpeakerName" hidden>
         <div class="quote-speaker-copy">
           <span class="quote-speaker-image-wrap" id="quoteSpeakerImageWrap" aria-hidden="true" hidden>
@@ -8270,6 +8326,7 @@ try {
           <p class="quote-speaker-guide" id="quoteSpeakerGuide" hidden></p>
         </div>
       </aside>
+      </div>
 
       <div class="quilt-fortune-sheet">
         <button
@@ -8325,6 +8382,7 @@ try {
         <div class="quilt-layout-b-preview-before-gap" aria-hidden="true"></div>
         <div class="quilt-before-you-go" id="quiltBeforeYouGoWrap" aria-labelledby="quiltBeforeYouGoHeading">
           <h2 class="quilt-before-you-go__title" id="quiltBeforeYouGoHeading">Before you go</h2>
+          <hr class="quilt-before-you-go__rule" aria-hidden="true" />
 
           <section class="quilt-before-you-go__block" aria-label="Reflection prompt">
             <p class="quilt-before-you-go__kicker">A question to take with you</p>
@@ -21852,6 +21910,8 @@ try {
             reflection_prompt: String(data.reflectionPromptSnapshot || '').trim(),
             whatIf: String(data.whatIfSnapshot || '').trim(),
             what_if: String(data.whatIfSnapshot || '').trim(),
+            artRecs: String(data.artRecsSnapshot || '').trim(),
+            art_recs: String(data.artRecsSnapshot || '').trim(),
             igCaption: String(data.igCaptionSnapshot || '').trim(),
             ig_caption: String(data.igCaptionSnapshot || '').trim(),
             blessing: String(data.blessingSnapshot || '').trim(),
@@ -21914,6 +21974,16 @@ try {
           }
         }
         return '';
+      }
+
+      _artRecsSnapshotValue(val) {
+        if (val == null) return '';
+        if (typeof val === 'string') return val.trim();
+        try {
+          return JSON.stringify(val);
+        } catch (_) {
+          return '';
+        }
       }
 
       quoteSubmitterName(q) {
@@ -22002,6 +22072,7 @@ try {
         const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
         const communityPromptSnapshot = String(quote?.communityPrompt ?? quote?.community_prompt ?? '').trim();
         const whatIfSnapshot = String(quote?.whatIf ?? quote?.what_if ?? '').trim();
+        const artRecsSnapshot = this._artRecsSnapshotValue(quote?.artRecs ?? quote?.art_recs);
         const speakerImageUrlSnapshot = String(quote?.speakerImageUrl ?? quote?.speaker_image_url ?? '').trim();
         const speakerCutoutUrlSnapshot = String(quote?.speakerCutoutUrl ?? quote?.speaker_cutout_url ?? '').trim();
         const speakerDatesSnapshot = String(quote?.speakerDates ?? quote?.speaker_dates ?? '').trim();
@@ -22017,6 +22088,7 @@ try {
           authorSnapshot: String(quote?.author || '').slice(0, 120),
           communityPromptSnapshot: communityPromptSnapshot.slice(0, 500),
           whatIfSnapshot: whatIfSnapshot.slice(0, 240),
+          artRecsSnapshot: artRecsSnapshot.slice(0, 1200),
           speakerImageUrlSnapshot: speakerImageUrlSnapshot.slice(0, 500),
           speakerCutoutUrlSnapshot: speakerCutoutUrlSnapshot.slice(0, 500),
           speakerDatesSnapshot: speakerDatesSnapshot.slice(0, 120),
@@ -22147,6 +22219,7 @@ try {
                   authorSnapshot: String(merged.author || '').slice(0, 120),
                   communityPromptSnapshot: String(merged.communityPrompt ?? merged.community_prompt ?? '').slice(0, 500),
                   whatIfSnapshot: String(merged.whatIf ?? merged.what_if ?? '').slice(0, 240),
+                  artRecsSnapshot: this._artRecsSnapshotValue(merged.artRecs ?? merged.art_recs).slice(0, 1200),
                   speakerImageUrlSnapshot: String(merged.speakerImageUrl ?? merged.speaker_image_url ?? '').slice(0, 500),
                   speakerCutoutUrlSnapshot: String(merged.speakerCutoutUrl ?? merged.speaker_cutout_url ?? '').slice(0, 500),
                   speakerDatesSnapshot: String(merged.speakerDates ?? merged.speaker_dates ?? '').slice(0, 120),
@@ -27509,11 +27582,15 @@ try {
         const datesEl = document.getElementById('quoteSpeakerDates');
         const guideEl = document.getElementById('quoteSpeakerGuide');
         const attributionEl = document.getElementById('quoteSpeakerAttribution');
+        const stage = document.getElementById('quoteSpeakerStage');
         if (!profile) {
           widget.hidden = true;
+          widget.classList.remove('quote-speaker-widget--no-image-attribution');
+          if (stage) stage.classList.remove('quote-speaker-stage--visible');
           return;
         }
 
+        if (stage) stage.classList.add('quote-speaker-stage--visible');
         widget.hidden = false;
         widget.classList.remove('quote-speaker-widget--no-image');
         const washColor = String(this.getMostPopularQuiltColor()?.color || CONFIG.APP.defaultColor || '#ea9b9a').trim();
@@ -27553,10 +27630,15 @@ try {
           guideEl.textContent = profile.guideLine;
           guideEl.hidden = !profile.guideLine;
         }
+        const imageAttribution = this.formatQuoteSpeakerImageAttribution(profile.imageAttribution);
         if (attributionEl) {
-          const imageAttribution = this.formatQuoteSpeakerImageAttribution(profile.imageAttribution);
           attributionEl.textContent = imageAttribution;
           attributionEl.hidden = !imageAttribution;
+        }
+        if (profile.imageUrl && !imageAttribution) {
+          widget.classList.add('quote-speaker-widget--no-image-attribution');
+        } else {
+          widget.classList.remove('quote-speaker-widget--no-image-attribution');
         }
         const imageToken = `${profile.name}:${profile.imageUrl}`;
         this._quoteSpeakerImageToken = imageToken;
@@ -32654,6 +32736,63 @@ try {
         });
         wrap.classList.toggle('has-content', contributors.length > 0);
         list.scrollTop = 0;
+        this._ensureContributorsStripResizeObservation(wrap);
+        this.scheduleSyncQuiltContributorsBandLift();
+      }
+
+      _ensureContributorsStripResizeObservation(wrap) {
+        if (typeof ResizeObserver === 'undefined' || !wrap) return;
+        const list = wrap.querySelector('.quilt-contributor-list');
+        if (!list?.childElementCount) {
+          this._contributorsStripResizeObserver?.disconnect();
+          return;
+        }
+        if (!this._contributorsStripResizeObserver) {
+          this._contributorsStripResizeObserver = new ResizeObserver(() => {
+            this.scheduleSyncQuiltContributorsBandLift();
+          });
+        }
+        this._contributorsStripResizeObserver.disconnect();
+        this._contributorsStripResizeObserver.observe(wrap);
+      }
+
+      scheduleSyncQuiltContributorsBandLift() {
+        if (this._syncContributorsLiftOuterRaf != null) {
+          cancelAnimationFrame(this._syncContributorsLiftOuterRaf);
+          this._syncContributorsLiftOuterRaf = null;
+        }
+        if (this._syncContributorsLiftInnerRaf != null) {
+          cancelAnimationFrame(this._syncContributorsLiftInnerRaf);
+          this._syncContributorsLiftInnerRaf = null;
+        }
+        this._syncContributorsLiftOuterRaf = requestAnimationFrame(() => {
+          this._syncContributorsLiftOuterRaf = null;
+          this._syncContributorsLiftInnerRaf = requestAnimationFrame(() => {
+            this._syncContributorsLiftInnerRaf = null;
+            this.syncQuiltContributorsBandLift();
+          });
+        });
+      }
+
+      syncQuiltContributorsBandLift() {
+        const screen = document.getElementById('screen-quilt');
+        const wrap = document.querySelector('#screen-quilt .quilt-fixed-contributors');
+        if (!screen || !wrap) return;
+        const list = wrap.querySelector('.quilt-contributor-list');
+        let hidden = false;
+        try {
+          hidden = typeof getComputedStyle === 'function' && getComputedStyle(wrap).display === 'none';
+        } catch (_) {
+          hidden = false;
+        }
+        if (hidden || !list?.childElementCount) {
+          screen.style.removeProperty('--quilt-contributors-band-measured');
+          return;
+        }
+        const h = Math.round(wrap.getBoundingClientRect().height);
+        if (h > 0) {
+          screen.style.setProperty('--quilt-contributors-band-measured', `${h}px`);
+        }
       }
 
       prepareSettingsScreen({ renderPreview = true } = {}) {
@@ -33657,8 +33796,10 @@ try {
           const dailyDuplicateQuoteKeys = new Set([
             'what_if',
             'whatIf',
+            'whatIfSnapshot',
             'art_recs',
             'artRecs',
+            'artRecsSnapshot',
             'communityPrompt',
             'community_prompt',
             'reflectionPrompt',
