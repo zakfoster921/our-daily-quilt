@@ -430,7 +430,9 @@ async function runNightlyInstagramSnapshot(options = {}) {
       lastNightlyInstagramSnapshotAt: new Date().toISOString(),
       imageStorageUrl,
       classicUrl: imageStorageUrl,
-      zapierCaption: quoteLine
+      zapierCaption: quoteLine,
+      blockCount: Array.isArray(blocks) ? blocks.length : 0,
+      contributorCount: Math.max(1, Number(quiltData.contributorCount) || 1)
     };
 
     let reelMp4Url = null;
@@ -1694,11 +1696,17 @@ async function fetchWikipediaSpeakerInfo(authorName) {
 
   const imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || '';
   const extract = String(summary?.extract || '');
-  const dates = parseSpeakerDatesFromExtract(extract);
+  // REST `extract` is often shortened and drops the lead "(YYYY–YYYY)"; `description`
+  // still has it (e.g. "American inventor (1955–2011)"). Parsing `extract` alone then
+  // falls back to min/max of every year in the body → wrong lifespans (e.g. 1976–2011).
+  const desc = String(summary?.description || '').trim();
+  const dates = parseSpeakerDatesFromExtract(desc ? `${desc} ${extract}` : extract);
   if (!dates) {
-    console.warn(
-      `⚠️ No speaker_dates parsed from Wikipedia for "${name}". Extract preview: ${extract.slice(0, 220) || '(empty)'}`
-    );
+    const preview = String(desc ? `${desc} ${extract}` : extract)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 220);
+    console.warn(`⚠️ No speaker_dates parsed from Wikipedia for "${name}". Preview: ${preview || '(empty)'}`);
   }
   let attribution = '';
   if (imageUrl) {
