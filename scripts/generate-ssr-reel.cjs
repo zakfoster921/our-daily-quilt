@@ -190,6 +190,14 @@ async function runSsrAttempt({
             dateKey
           );
         }
+        let postLayoutBSpeakerImageData = null;
+        if (arch.generateInstagramPostLayoutBSpeakerImage) {
+          postLayoutBSpeakerImageData = await arch.generateInstagramPostLayoutBSpeakerImage(
+            blocks,
+            quote,
+            dateKey
+          );
+        }
 
         const { blob, mode } = await app._buildSyntheticQuiltReelWebm(blocks, {
           width: 1080,
@@ -221,6 +229,7 @@ async function runSsrAttempt({
           dateKey,
           instagramImage,
           postLayoutBImageData,
+          postLayoutBSpeakerImageData,
           reelWebmBlob: blob,
           zapierCaption,
           quiltFingerprint

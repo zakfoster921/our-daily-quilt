@@ -7,7 +7,9 @@ try {
 }
 
 const crypto = require('crypto');
+const fs = require('fs');
 const admin = require('firebase-admin');
+const { PNG } = require('pngjs');
 
 function parseArgs(argv) {
   const args = {
@@ -16,11 +18,13 @@ function parseArgs(argv) {
     scheduled: argv.includes('--scheduled'),
     softFail: argv.includes('--soft-fail'),
     requireReviewed: argv.includes('--require-reviewed'),
+    recropExisting: argv.includes('--recrop-existing') || argv.includes('--crop-existing'),
     limit: 0,
     start: 'today',
     window: 9,
     author: '',
-    doc: ''
+    doc: '',
+    uploadFile: ''
   };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
@@ -29,6 +33,7 @@ function parseArgs(argv) {
     else if (a.startsWith('--window=')) args.window = Math.max(1, Number(a.slice('--window='.length)) || 9);
     else if (a.startsWith('--author=')) args.author = a.slice('--author='.length).trim().toLowerCase();
     else if (a.startsWith('--doc=')) args.doc = a.slice('--doc='.length).trim();
+    else if (a.startsWith('--upload-file=')) args.uploadFile = a.slice('--upload-file='.length).trim();
   }
   if (String(args.start).toLowerCase() === 'today') args.start = getAppDateKey();
   if (String(args.start).toLowerCase() === 'tomorrow') args.start = addDays(getAppDateKey(), 1);
@@ -128,6 +133,60 @@ async function removeBackgroundFromUrl(imageUrl, apiKey) {
     throw new Error(`remove.bg ${res.status}: ${body.slice(0, 500)}`);
   }
   return Buffer.from(await res.arrayBuffer());
+}
+
+async function downloadBinaryFromUrl(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`download ${res.status}: ${body.slice(0, 500)}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function cropTransparentPngWithMargin(buffer, marginRatio = 0.1) {
+  const source = PNG.sync.read(buffer);
+  const { width, height, data } = source;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = data[(y * width + x) * 4 + 3];
+      if (alpha <= 8) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    throw new Error('Existing cutout has no visible non-transparent pixels');
+  }
+
+  const subjectW = maxX - minX + 1;
+  const subjectH = maxY - minY + 1;
+  const marginX = Math.max(1, Math.ceil(subjectW * marginRatio));
+  const marginY = Math.max(1, Math.ceil(subjectH * marginRatio));
+  const outW = subjectW + marginX * 2;
+  const outH = subjectH + marginY * 2;
+  const out = new PNG({ width: outW, height: outH });
+
+  for (let y = 0; y < subjectH; y += 1) {
+    for (let x = 0; x < subjectW; x += 1) {
+      const srcIdx = ((minY + y) * width + (minX + x)) * 4;
+      const dstIdx = ((marginY + y) * outW + (marginX + x)) * 4;
+      out.data[dstIdx] = data[srcIdx];
+      out.data[dstIdx + 1] = data[srcIdx + 1];
+      out.data[dstIdx + 2] = data[srcIdx + 2];
+      out.data[dstIdx + 3] = data[srcIdx + 3];
+    }
+  }
+
+  return PNG.sync.write(out);
 }
 
 function safeName(value) {
@@ -271,7 +330,7 @@ async function patchDerivedQuoteDocs(db, quotesCollection, sourceIds, sourceData
 async function main() {
   const opts = parseArgs(process.argv);
   const apiKey = opts.dryRun ? String(process.env.REMOVE_BG_API_KEY || '').trim() : String(process.env.REMOVE_BG_API_KEY || '').trim();
-  if (!opts.dryRun && !apiKey) {
+  if (!opts.dryRun && !opts.recropExisting && !opts.uploadFile && !apiKey) {
     if (opts.softFail) {
       console.log('[cutout] REMOVE_BG_API_KEY missing; soft-fail enabled, skipping cutout processing');
       return;
@@ -306,7 +365,7 @@ async function main() {
       skipped += 1;
       continue;
     }
-    if (existing && !opts.force) {
+    if (existing && !opts.force && !opts.recropExisting) {
       console.log(`[cutout] reusing existing cutout for ${row.id} ${author}`);
       if (!opts.dryRun) {
         const derivedWrites = await patchDerivedQuoteDocs(db, collectionName, sourceIds, d, existing, imageUrl);
@@ -317,7 +376,17 @@ async function main() {
     }
     if (opts.limit && generated >= opts.limit) break;
 
-    console.log(`[cutout] ${opts.dryRun ? 'would process' : 'processing'} ${row.id} ${author}`);
+    console.log(
+      `[cutout] ${
+        opts.dryRun
+          ? 'would process'
+          : opts.uploadFile
+            ? 'uploading local cutout'
+            : opts.recropExisting
+              ? 'recropping existing'
+              : 'processing'
+      } ${row.id} ${author}`
+    );
     generated += 1;
     if (opts.dryRun) {
       processed += 1;
@@ -325,9 +394,20 @@ async function main() {
     }
 
     try {
-      const png = await removeBackgroundFromUrl(imageUrl, apiKey);
+      if (opts.recropExisting && !existing) {
+        throw new Error('Cannot recrop existing cutout because speakerCutoutUrl is empty');
+      }
+      const png = opts.uploadFile
+        ? fs.readFileSync(opts.uploadFile)
+        : opts.recropExisting
+          ? await cropTransparentPngWithMargin(await downloadBinaryFromUrl(existing), 0.1)
+          : await removeBackgroundFromUrl(imageUrl, apiKey);
       const hash = crypto.createHash('sha256').update(imageUrl).digest('hex').slice(0, 12);
-      const path = `speaker-cutouts/${safeName(author)}-${hash}.png`;
+      const path = opts.uploadFile
+        ? `speaker-cutouts/${safeName(author)}-${hash}-manual.png`
+        : opts.recropExisting
+          ? `speaker-cutouts/${safeName(author)}-${hash}-crop10.png`
+          : `speaker-cutouts/${safeName(author)}-${hash}.png`;
       const cutoutUrl = await saveDownloadableFile(path, png, 'image/png');
       await row.ref.set(
         {

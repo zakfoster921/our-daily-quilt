@@ -33,6 +33,7 @@ npx cap sync ios
 echo ""
 echo "iOS release prep finished."
 echo "Next in Xcode: open App.xcworkspace → pick a device / Any iOS Device → Product → Archive."
+echo "After exporting for App Store Connect: npm run ios:verify-push"
 echo ""
 
 if [[ "$OPEN" -eq 1 ]] && command -v open >/dev/null 2>&1; then

@@ -3070,8 +3070,9 @@ try {
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
-        /* Height follows the contributor card; vertical lift uses measured height via `--quilt-contributors-band-measured` when set. */
-        min-height: 0 !important;
+        /* Height follows the contributor card; vertical lift uses measured height via `--quilt-contributors-band-measured` when set.
+           Use min-content (not 0) so WKWebView never flex-shrinks the strip below the card — that was clipping the title glyphs. */
+        min-height: min-content !important;
         pointer-events: none;
         opacity: 1;
         visibility: visible;
@@ -3136,7 +3137,8 @@ try {
         line-height: 1.35;
         letter-spacing: 0.02em;
         text-align: center;
-        overflow: hidden;
+        /* List scrolls inside `.quilt-contributor-list`; hidden here clipped the title on iOS when flex-shrink bit. */
+        overflow: visible;
       }
 
       #screen-quilt .quilt-contributor-panel-body {
@@ -3148,6 +3150,7 @@ try {
         gap: 0.42rem;
         width: 100%;
         min-height: min-content;
+        overflow: visible;
       }
 
       #screen-quilt .quilt-contributor-title {
@@ -3156,14 +3159,17 @@ try {
         /* Fallback when container query length units are unavailable */
         font-size: clamp(0.75rem, 3.7vw, 1.62rem);
         font-weight: 520;
-        line-height: 1.18;
-        padding: 0.2em 0 0.28em;
+        line-height: 1.32;
+        padding: 0.32em 0 0.22em;
         text-align: center;
         text-transform: uppercase;
         letter-spacing: 0.02em;
         white-space: nowrap;
         position: relative;
         z-index: 1;
+        flex-shrink: 0;
+        min-height: min-content;
+        overflow: visible;
       }
 
       @supports (font-size: 1cqi) {
@@ -6369,12 +6375,6 @@ try {
       letter-spacing: 0.005em;
     }
 
-    /* Footer line "Got something to say?" is longer than any header line — shrink
-       just the footer so both sentences fit on a single line each (with the <br> between). */
-    #screen-quilt .quilt-reflection-carousel-text--footer {
-      font-size: clamp(1.45rem, 5.8vw, 1.9rem);
-    }
-
     #screen-quilt .quilt-reflection-carousel-dots {
       display: flex;
       align-items: center;
@@ -6425,7 +6425,7 @@ try {
     }
 
     #screen-quilt .quilt-fortune-reveal {
-      --fortune-container-color: #ebe8e3;
+      --fortune-container-color: transparent;
       --fortune-container-ink: #241b14;
       display: block;
       width: 100%;
@@ -6433,10 +6433,7 @@ try {
       padding: 15px 14px 14px;
       border: 0;
       border-radius: 0;
-      background:
-        radial-gradient(circle at 18% 18%, rgba(255,255,255,0.2), transparent 28%),
-        linear-gradient(135deg, rgba(255,255,255,0.14), rgba(0,0,0,0.12)),
-        var(--fortune-container-color);
+      background: transparent;
       color: var(--fortune-container-ink);
       cursor: pointer;
       font: inherit;
@@ -6450,8 +6447,8 @@ try {
       max-width: 100vw;
       box-sizing: border-box;
       margin: 0;
-      padding: 1rem 0 0.45rem;
-      background: #f6f4f1;
+      padding: 0.55rem 0 0.55rem;
+      background: transparent;
       flex-shrink: 0;
       position: relative;
       z-index: 10;
@@ -6741,17 +6738,6 @@ try {
       outline-offset: 2px;
     }
 
-    #screen-quilt .quilt-fortune-kicker {
-      display: block;
-      margin: 0 0 0.65rem;
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--fortune-container-ink);
-      opacity: 0.72;
-    }
-
     #screen-quilt .quilt-fortune-stage {
       position: relative;
       display: block;
@@ -6973,7 +6959,7 @@ try {
     /* Simplified fortune: a horizontal quilt flips over to its solid backing. */
     #screen-quilt .quilt-fortune-reveal[data-stage="0"],
     #screen-quilt .quilt-fortune-reveal[data-stage="1"] {
-      --fortune-backing-color: #ebe8e3;
+      --fortune-backing-color: #f6f4f1;
       --fortune-backing-ink: #241b14;
     }
 
@@ -6993,7 +6979,7 @@ try {
       transform: translateZ(0) rotateY(0deg);
       transition: transform 0.78s cubic-bezier(0.2, 0.8, 0.2, 1);
       will-change: transform;
-      box-shadow: 0 12px 18px rgba(45, 34, 22, 0.18);
+      box-shadow: none;
     }
 
     @keyframes quiltFortuneGentleWobble {
@@ -7026,40 +7012,22 @@ try {
       -webkit-backface-visibility: hidden;
       transform-style: preserve-3d;
       -webkit-transform-style: preserve-3d;
-      box-shadow: inset 0 0 0 1px rgba(45, 34, 22, 0.08);
+      box-shadow: none;
     }
 
     #screen-quilt .quilt-fortune-face--front {
-      background:
-        linear-gradient(100deg, rgba(255,255,255,0.58), rgba(255,255,255,0.14) 48%, rgba(190,165,126,0.12)),
-        #f7efd8;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.52),
-        inset 0 -1px 0 rgba(88, 62, 30, 0.12);
+      background: transparent;
+      box-shadow: none;
       z-index: 2;
       transform: rotateY(0deg) translateZ(1px);
     }
 
     #screen-quilt .quilt-fortune-face--front::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      box-shadow:
-        inset 0 0 0 7px #f7efd8,
-        inset 0 0 0 8px rgba(194, 159, 91, 0.42),
-        inset 0 0 0 11px #f7efd8;
-      pointer-events: none;
-      z-index: 3;
+      display: none;
     }
 
     #screen-quilt .quilt-fortune-face--front::after {
-      content: "";
-      position: absolute;
-      inset: 11px;
-      background: rgba(126, 72, 24, 0.08);
-      mix-blend-mode: multiply;
-      pointer-events: none;
-      z-index: 2;
+      display: none;
     }
 
     #screen-quilt .quilt-fortune-front-img {
@@ -7078,7 +7046,7 @@ try {
       inline-size: 80%;
       transform: translate(-50%, -50%) rotate(90deg);
       transform-origin: center;
-      background: #e3ded7;
+      background: transparent;
       border-radius: 3px;
       filter: sepia(0.08) contrast(0.98) saturate(0.96);
       z-index: 1;
@@ -7093,20 +7061,21 @@ try {
       box-sizing: border-box;
       color: var(--fortune-backing-ink);
       background:
-        radial-gradient(circle at 18% 12%, rgba(255,255,255,0.18), transparent 24%),
-        linear-gradient(135deg, rgba(255,255,255,0.18), rgba(0,0,0,0.1)),
-        var(--fortune-backing-color);
+        radial-gradient(circle at 22% 16%, rgba(255, 255, 255, 0.42), transparent 46%),
+        linear-gradient(165deg, rgba(255, 252, 247, 0.98) 0%, #f6f4f1 52%, #ebe8e3 100%);
       z-index: 1;
       transform: rotateY(180deg) translateZ(1px);
     }
 
+    /* Thin inset gold frame (warm paper like side panel / story strip). */
     #screen-quilt .quilt-fortune-face--back::before {
       content: "";
       position: absolute;
-      inset: 8px;
-      border: 1px solid rgba(194, 159, 91, 0.42);
+      inset: 9px;
+      border: 1px solid rgba(194, 159, 91, 0.72);
       border-radius: 3px;
       pointer-events: none;
+      box-sizing: border-box;
     }
 
     #screen-quilt .quilt-fortune-reveal[data-stage="1"] .quilt-fortune-card {
@@ -7172,25 +7141,17 @@ try {
       color: currentColor;
     }
 
-    #screen-quilt .quilt-fortune-reveal-line,
-    #screen-quilt .quilt-fortune-share-line {
+    #screen-quilt .quilt-fortune-reveal-line {
       display: block;
-      margin: 0;
+      margin: 0.55rem 0 0;
       font-size: 0.92rem;
       line-height: 1.35;
       color: rgba(0, 0, 0, 0.62);
-      opacity: 0;
-      max-height: 0;
-      overflow: hidden;
-      transform: translateY(-3px);
-      transition: opacity 0.22s ease, max-height 0.22s ease, transform 0.22s ease;
-    }
-
-    #screen-quilt .quilt-fortune-reveal-line {
-      margin-top: 0.55rem;
       opacity: 1;
       max-height: 1.35em;
+      overflow: hidden;
       transform: translateY(0);
+      transition: opacity 0.22s ease, max-height 0.22s ease, transform 0.22s ease;
     }
 
     #screen-quilt .quilt-fortune-reveal-line::before {
@@ -7202,13 +7163,6 @@ try {
       opacity: 0;
       max-height: 0;
       transform: translateY(-3px);
-    }
-
-    #screen-quilt .quilt-fortune-reveal[data-stage="1"] .quilt-fortune-share-line {
-      margin-top: 0.55rem;
-      opacity: 1;
-      max-height: 1.35em;
-      transform: translateY(0);
     }
 
     @media (max-width: 768px) {
@@ -7355,7 +7309,7 @@ try {
 
     #screen-quilt .quilt-layout-b-preview-label {
       margin: 0 0 0.5rem;
-      padding: 0 1rem;
+      padding: 0.15rem 1rem 0;
       font-size: 0.8rem;
       font-weight: 600;
       letter-spacing: 0.02em;
@@ -7366,7 +7320,8 @@ try {
     #screen-quilt .quilt-layout-b-preview-frame {
       width: calc(100% - 1rem);
       max-width: none;
-      margin: 0.5rem 0.5rem 1.75rem;
+      /* Tight under image: label sits here; larger rhythm lives in hint + before-gap. */
+      margin: 0.5rem 0.5rem 0.25rem;
       aspect-ratio: 9 / 16;
       border-radius: 0;
       overflow: hidden;
@@ -7640,6 +7595,17 @@ try {
       flex-shrink: 0;
       position: relative;
       z-index: 2;
+    }
+
+    /* Asymmetric scroll tunnel around the blessing: tighter below Before you go, more air above Many hands. */
+    #screen-quilt .quilt-scroll-quilt-gap.quilt-scroll-quilt-gap--before-blessing {
+      min-height: calc(50dvh * 0.67);
+      min-height: calc(50vh * 0.67);
+    }
+
+    #screen-quilt .quilt-scroll-quilt-gap.quilt-scroll-quilt-gap--after-blessing {
+      min-height: calc(50dvh * 1.33);
+      min-height: calc(50vh * 1.33);
     }
 
     /* Extra scroll past the icon strip when the reset bar is shown; keep small while the bar stays hidden. */
@@ -8310,36 +8276,6 @@ try {
       </aside>
       </div>
 
-      <div class="quilt-fortune-sheet">
-        <button
-          type="button"
-          class="quilt-fortune-reveal"
-          id="quiltFortuneReveal"
-          data-stage="0"
-          aria-label="Tap to flip today's quilt blessing"
-        >
-          <span class="quilt-fortune-kicker">a communal blessing</span>
-          <span class="quilt-fortune-stage" aria-hidden="true">
-            <span class="quilt-fortune-card">
-              <span class="quilt-fortune-face quilt-fortune-face--front">
-                <img
-                  id="quiltFortuneFrontImg"
-                  class="quilt-fortune-front-img"
-                  alt=""
-                  decoding="async"
-                  hidden
-                />
-              </span>
-              <span class="quilt-fortune-face quilt-fortune-face--back">
-                <span class="quilt-fortune-paper-text" id="quiltFortuneText"></span>
-              </span>
-            </span>
-          </span>
-          <span class="quilt-fortune-reveal-line" aria-hidden="true"></span>
-          <span class="quilt-fortune-share-line" aria-hidden="true">Long tap to share</span>
-        </button>
-      </div>
-
       <div
         class="quilt-layout-b-preview-wrap"
         id="quiltLayoutBPreviewWrap"
@@ -8347,7 +8283,6 @@ try {
         aria-busy="true"
       >
         <div class="quilt-layout-b-preview-sheet">
-          <p class="quilt-layout-b-preview-label">Long Tap to Share on Instagram</p>
           <div class="quilt-layout-b-preview-frame">
             <img
               id="quiltLayoutBPreviewImg"
@@ -8359,6 +8294,7 @@ try {
               hidden
             />
           </div>
+          <p class="quilt-layout-b-preview-label">Long Tap to Share on Instagram</p>
           <p class="quilt-layout-b-preview-hint" id="quiltLayoutBPreviewHint">Preparing preview…</p>
         </div>
         <div class="quilt-layout-b-preview-before-gap" aria-hidden="true"></div>
@@ -8366,8 +8302,8 @@ try {
           <h2 class="quilt-before-you-go__title" id="quiltBeforeYouGoHeading">Before you go</h2>
           <hr class="quilt-before-you-go__rule" aria-hidden="true" />
 
-          <section class="quilt-before-you-go__block" aria-label="Reflection prompt">
-            <p class="quilt-before-you-go__kicker">A question to take with you</p>
+          <section class="quilt-before-you-go__block" aria-label="Small practice">
+            <p class="quilt-before-you-go__kicker">A small practice</p>
             <p class="quilt-before-you-go__prompt" id="beforeYouGoWriteBody"></p>
           </section>
 
@@ -8409,7 +8345,35 @@ try {
           <p class="quilt-before-you-go__closing" id="beforeYouGoClosing" aria-live="polite"></p>
         </div>
       </div>
-      <div class="quilt-scroll-quilt-gap" aria-hidden="true"></div>
+      <div class="quilt-scroll-quilt-gap quilt-scroll-quilt-gap--before-blessing" aria-hidden="true"></div>
+      <div class="quilt-fortune-sheet">
+        <button
+          type="button"
+          class="quilt-fortune-reveal"
+          id="quiltFortuneReveal"
+          data-stage="0"
+          aria-label="Tap to flip today's quilt blessing"
+        >
+          <span class="quilt-fortune-stage" aria-hidden="true">
+            <span class="quilt-fortune-card">
+              <span class="quilt-fortune-face quilt-fortune-face--front">
+                <img
+                  id="quiltFortuneFrontImg"
+                  class="quilt-fortune-front-img"
+                  alt=""
+                  decoding="async"
+                  hidden
+                />
+              </span>
+              <span class="quilt-fortune-face quilt-fortune-face--back">
+                <span class="quilt-fortune-paper-text" id="quiltFortuneText"></span>
+              </span>
+            </span>
+          </span>
+          <span class="quilt-fortune-reveal-line" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="quilt-scroll-quilt-gap quilt-scroll-quilt-gap--after-blessing" aria-hidden="true"></div>
       <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
         <div class="quilt-contributor-panel">
           <div class="quilt-contributor-panel-body">
@@ -17442,6 +17406,9 @@ try {
       }
 
       handleError(error, context = 'Unknown') {
+        // Web Share API and other user gestures reject with AbortError when the user dismisses the sheet — not an app failure.
+        if (error && error.name === 'AbortError') return;
+
         this.logger.error(`Error in ${context}:`, error);
 
         const silentToastContexts = new Set(['shareFlow', 'shareFlowExperimental', 'testInstagramImage']);
@@ -21890,8 +21857,8 @@ try {
             community_prompt: String(data.communityPromptSnapshot || '').trim(),
             reflectionPrompt: String(data.reflectionPromptSnapshot || '').trim(),
             reflection_prompt: String(data.reflectionPromptSnapshot || '').trim(),
-            whatIf: String(data.whatIfSnapshot || '').trim(),
-            what_if: String(data.whatIfSnapshot || '').trim(),
+            smallAct: String(data.smallActSnapshot || '').trim(),
+            small_act: String(data.smallActSnapshot || '').trim(),
             artRecs: String(data.artRecsSnapshot || '').trim(),
             art_recs: String(data.artRecsSnapshot || '').trim(),
             igCaption: String(data.igCaptionSnapshot || '').trim(),
@@ -22053,7 +22020,7 @@ try {
       async saveDayAssignment(dateKey, quote) {
         const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
         const communityPromptSnapshot = String(quote?.communityPrompt ?? quote?.community_prompt ?? '').trim();
-        const whatIfSnapshot = String(quote?.whatIf ?? quote?.what_if ?? '').trim();
+        const smallActSnapshot = String(quote?.smallAct ?? quote?.small_act ?? '').trim();
         const artRecsSnapshot = this._artRecsSnapshotValue(quote?.artRecs ?? quote?.art_recs);
         const speakerImageUrlSnapshot = String(quote?.speakerImageUrl ?? quote?.speaker_image_url ?? '').trim();
         const speakerCutoutUrlSnapshot = String(quote?.speakerCutoutUrl ?? quote?.speaker_cutout_url ?? '').trim();
@@ -22069,7 +22036,7 @@ try {
           textSnapshot: String(quote?.text || '').slice(0, 160),
           authorSnapshot: String(quote?.author || '').slice(0, 120),
           communityPromptSnapshot: communityPromptSnapshot.slice(0, 500),
-          whatIfSnapshot: whatIfSnapshot.slice(0, 240),
+          smallActSnapshot: smallActSnapshot.slice(0, 240),
           artRecsSnapshot: artRecsSnapshot.slice(0, 1200),
           speakerImageUrlSnapshot: speakerImageUrlSnapshot.slice(0, 500),
           speakerCutoutUrlSnapshot: speakerCutoutUrlSnapshot.slice(0, 500),
@@ -22156,7 +22123,7 @@ try {
                   (typeof artRecsRaw === 'string'
                     ? String(artRecsRaw).trim()
                     : typeof artRecsRaw === 'object');
-                const whatIf = String(quoteData.whatIf ?? quoteData.what_if ?? '').trim();
+                const smallAct = String(quoteData.smallAct ?? quoteData.small_act ?? '').trim();
                 const igCaption = String(quoteData.igCaption ?? quoteData.ig_caption ?? '').trim();
                 const fortune = String(quoteData.fortune ?? quoteData.Fortune ?? '').trim();
                 const speakerImageUrl = String(quoteData.speakerImageUrl ?? quoteData.speaker_image_url ?? '').trim();
@@ -22173,7 +22140,7 @@ try {
                   ...(communityPrompt ? { communityPrompt, community_prompt: communityPrompt } : {}),
                   ...(reflectionPrompt ? { reflectionPrompt, reflection_prompt: reflectionPrompt } : {}),
                   ...(artRecsUseful ? { art_recs: artRecsRaw, artRecs: artRecsRaw } : {}),
-                  ...(whatIf ? { whatIf, what_if: whatIf } : {}),
+                  ...(smallAct ? { smallAct, small_act: smallAct } : {}),
                   ...(igCaption ? { igCaption, ig_caption: igCaption } : {}),
                   ...(fortune ? { fortune } : {}),
                   ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
@@ -22200,7 +22167,7 @@ try {
                   textSnapshot: String(merged.text || '').slice(0, 160),
                   authorSnapshot: String(merged.author || '').slice(0, 120),
                   communityPromptSnapshot: String(merged.communityPrompt ?? merged.community_prompt ?? '').slice(0, 500),
-                  whatIfSnapshot: String(merged.whatIf ?? merged.what_if ?? '').slice(0, 240),
+                  smallActSnapshot: String(merged.smallAct ?? merged.small_act ?? '').slice(0, 240),
                   artRecsSnapshot: this._artRecsSnapshotValue(merged.artRecs ?? merged.art_recs).slice(0, 1200),
                   speakerImageUrlSnapshot: String(merged.speakerImageUrl ?? merged.speaker_image_url ?? '').slice(0, 500),
                   speakerCutoutUrlSnapshot: String(merged.speakerCutoutUrl ?? merged.speaker_cutout_url ?? '').slice(0, 500),
@@ -23012,12 +22979,12 @@ try {
         return prompt || '[Reflection prompt coming soon for this quote.]';
       }
 
-      /** Before You Go prompt line: Firestore `what_if` / `whatIf` (not reflection_prompt). */
+      /** Before You Go prompt line: Firestore `small_act` / `smallAct` (not reflection_prompt). */
       getFreeWritePromptText(quote) {
-        const t = String(quote?.what_if ?? quote?.whatIf ?? '')
+        const t = String(quote?.small_act ?? quote?.smallAct ?? '')
           .replace(/\s+/g, ' ')
           .trim();
-        return t || 'What-if prompt for this quote is coming soon.';
+        return t || 'Small practice for this quote is coming soon.';
       }
 
       /** Art pick from Firestore `art_recs` / `artRecs` (string, object, or array). */
@@ -23371,7 +23338,8 @@ try {
               author,
               communityPrompt: String(data.communityPrompt ?? data.community_prompt ?? '').trim(),
               reflectionPrompt: String(data.reflectionPrompt || data.reflection_prompt || '').trim(),
-              whatIf: String(data.whatIf ?? data.what_if ?? '').trim(),
+              smallAct: String(data.smallAct ?? data.small_act ?? '').trim(),
+              small_act: String(data.smallAct ?? data.small_act ?? '').trim(),
               fortune: String(data.fortune ?? data.Fortune ?? '').trim(),
               blessing: blessingStr,
               speakerImageUrl: String(data.speakerImageUrl ?? data.speaker_image_url ?? '').trim(),
@@ -26322,7 +26290,7 @@ try {
           reveal.dataset.stage = String(nextStage);
           reveal.setAttribute(
             'aria-label',
-            nextStage === 1 ? "Today's quilt blessing is revealed. Long tap to share." : "Tap to flip today's quilt blessing"
+            nextStage === 1 ? "Today's quilt blessing is revealed." : "Tap to flip today's quilt blessing"
           );
         });
       }
@@ -26535,7 +26503,7 @@ try {
             `;
         const footerSlide = `
               <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--footer" data-reflection-slide="footer">
-                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">Got something to say?<br>Add yours</p>
+                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">Add yours</p>
               </article>
             `;
         const ideaSlides = ideas
@@ -27695,9 +27663,9 @@ try {
         if (textEl) {
           textEl.innerHTML = this.escapeQuiltFortuneTextWithLineBreaks(this.getQuiltBlessingText(todayQuote), 2);
         }
-        reveal.style.setProperty('--fortune-container-color', '#ebe8e3');
+        reveal.style.setProperty('--fortune-container-color', 'transparent');
         reveal.style.setProperty('--fortune-container-ink', '#241b14');
-        reveal.style.setProperty('--fortune-backing-color', '#ebe8e3');
+        reveal.style.setProperty('--fortune-backing-color', '#f6f4f1');
         reveal.style.setProperty('--fortune-backing-ink', '#241b14');
       }
 
@@ -28099,14 +28067,12 @@ try {
 
         if (savedToBackend) {
           if (status) status.textContent = 'Thank you. Your quote was sent for review. Returning to the quilt...';
-          this.uiService.showToast('Quote sent for review');
           form.reset();
           this.scheduleQuoteSubmissionReturnToQuilt(1000);
         } else {
           if (status) {
             status.textContent = 'Saved on this device, but it could not be sent yet. Please try again when you are online.';
           }
-          this.uiService.showToast('Quote saved locally');
         }
 
         if (submitBtn) submitBtn.disabled = false;
@@ -33772,13 +33738,13 @@ try {
 
           const prev = qs._pinnedByDateKey[dateKey] || todayQuote || {};
           /* `quotes/{dateKey}` is a legacy/sync duplicate. When the real doc is `quotes/{sourceId}`,
-             stale copies of prompts / what-if / art recs on the date doc overwrite catalog + source
+             stale copies of prompts / small acts / art recs on the date doc overwrite catalog + source
              after merge — same failure mode as reflection (see populateReflectionPromptFromServer). */
           const notionBacked = sourceId !== '';
           const dailyDuplicateQuoteKeys = new Set([
-            'what_if',
-            'whatIf',
-            'whatIfSnapshot',
+            'small_act',
+            'smallAct',
+            'smallActSnapshot',
             'art_recs',
             'artRecs',
             'artRecsSnapshot',
@@ -33800,13 +33766,13 @@ try {
               }
             : { ...(byDate || {}), ...(bySource || {}) };
           const ref = String(data.reflection_prompt || data.reflectionPrompt || '').trim();
-          const whatIf = String(data.what_if ?? data.whatIf ?? '').trim();
+          const smallAct = String(data.small_act ?? data.smallAct ?? '').trim();
           const art = data.art_recs ?? data.artRecs ?? prev.art_recs ?? prev.artRecs;
           qs._pinnedByDateKey[dateKey] = {
             ...prev,
             ...data,
             ...(ref ? { reflectionPrompt: ref, reflection_prompt: ref } : {}),
-            ...(whatIf ? { whatIf, what_if: whatIf } : {}),
+            ...(smallAct ? { smallAct, small_act: smallAct } : {}),
             ...(art != null ? { art_recs: data.art_recs ?? data.artRecs ?? art, artRecs: data.artRecs ?? data.art_recs ?? art } : {})
           };
           this._beforeYouGoHydratedDateKey = dateKey;
@@ -39134,7 +39100,7 @@ try {
             `;
           const footerSlide = `
               <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--footer" data-reflection-slide="footer">
-                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">Got something to say?<br>Add yours</p>
+                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">Add yours</p>
               </article>
             `;
           const themeCards = themes
