@@ -3667,6 +3667,109 @@ app.options('/api/quote-wiki-refresh', (req, res) => {
   return res.status(204).end();
 });
 
+app.options('/api/quote-wiki-refresh-bulk', (req, res) => {
+  setNotionSyncCors(res);
+  return res.status(204).end();
+});
+
+function wikiRefreshDelay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Notion filter fragment: property is empty (for bulk “missing speaker dates” query). */
+function notionIsEmptyFilter(propName, propType) {
+  if (!propName || !propType) return null;
+  if (propType === 'rich_text') return { property: propName, rich_text: { is_empty: true } };
+  if (propType === 'title') return { property: propName, title: { is_empty: true } };
+  if (propType === 'url') return { property: propName, url: { is_empty: true } };
+  return null;
+}
+
+function notionIsNotEmptyFilter(propName, propType) {
+  if (!propName || !propType) return null;
+  if (propType === 'rich_text') return { property: propName, rich_text: { is_not_empty: true } };
+  if (propType === 'title') return { property: propName, title: { is_not_empty: true } };
+  return null;
+}
+
+/**
+ * Re-run Wikipedia for one Notion quote row; patch Notion + Firestore with wiki-derived fields only.
+ * @param {string} pageId
+ * @param {{ authorNameOverride?: string, schema?: object|null, dryRun?: boolean }} opts
+ */
+async function applyQuoteWikiRefreshToPage(pageId, opts = {}) {
+  const { authorNameOverride = '', schema: schemaPreloaded = null, dryRun = false } = opts;
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!databaseId) throw new Error('NOTION_DATABASE_ID is not configured');
+
+  const page = await notionGetPage(pageId);
+  if (!page) {
+    return {
+      ok: false,
+      pageId,
+      error: 'not_found',
+      author: '',
+      wiki: null,
+      notionPropertiesPatched: [],
+      dryRun
+    };
+  }
+  const authorName = String(authorNameOverride || '').trim() || extractAuthorFromNotionPage(page);
+  if (!authorName) {
+    return {
+      ok: false,
+      pageId,
+      error: 'no_author',
+      author: '',
+      wiki: null,
+      notionPropertiesPatched: [],
+      dryRun
+    };
+  }
+
+  const wiki = await fetchWikipediaSpeakerInfo(authorName);
+  if (!wiki) {
+    return {
+      ok: true,
+      pageId,
+      author: authorName,
+      wiki: null,
+      note: 'Wikipedia returned no usable info (404 / disambiguation / network). Nothing patched.',
+      notionPropertiesPatched: [],
+      dryRun
+    };
+  }
+
+  const schema = schemaPreloaded || (await notionGetDatabaseProperties(databaseId));
+  const properties = buildPrefillNotionProperties(schema, null, wiki, null);
+  const notionKeys = Object.keys(properties);
+
+  if (!dryRun) {
+    if (notionKeys.length) {
+      await notionFetchJson(`/pages/${pageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ properties })
+      });
+    }
+    if (db) {
+      const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+      const payload = buildPrefillFirestorePayload(null, wiki, null);
+      if (Object.keys(payload).length) {
+        await db.collection(collection).doc(pageId).set(payload, { merge: true });
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    pageId,
+    author: authorName,
+    wiki,
+    notionPropertiesPatched: notionKeys,
+    dryRun
+  };
+}
+
 /**
  * Re-run Wikipedia lookup for a single Notion row and patch only the three
  * Wikipedia-derived columns (speaker_dates, speaker_image_url, image_attribution)
@@ -3690,54 +3793,191 @@ app.post('/api/quote-wiki-refresh', async (req, res) => {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const pageId = String(body.pageId || '').trim();
     if (!pageId) return res.status(400).json({ success: false, error: 'pageId is required' });
+
+    const result = await applyQuoteWikiRefreshToPage(pageId, {
+      authorNameOverride: body.authorName,
+      dryRun: !!body.dryRun
+    });
+
+    if (result.error === 'not_found') {
+      return res.status(404).json({ success: false, error: `Notion page ${pageId} not found` });
+    }
+    if (result.error === 'no_author') {
+      return res.status(400).json({
+        success: false,
+        error: 'No author name on the row and none provided in the request body'
+      });
+    }
+    if (!result.wiki) {
+      return res.json({
+        success: true,
+        pageId: result.pageId,
+        author: result.author,
+        wiki: null,
+        note: result.note,
+        dryRun: result.dryRun
+      });
+    }
+
+    return res.json({
+      success: true,
+      pageId: result.pageId,
+      author: result.author,
+      wiki: result.wiki,
+      notionPropertiesPatched: result.notionPropertiesPatched,
+      dryRun: result.dryRun
+    });
+  } catch (error) {
+    console.error('❌ Wiki refresh failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'Wiki refresh failed' });
+  }
+});
+
+/**
+ * Batch Wikipedia refresh for many quote rows (one-time backfills). Same writes as /api/quote-wiki-refresh.
+ *
+ * Body options:
+ * - `pageIds`: string[] — explicit Notion page ids to refresh
+ * - `queryEmptySpeakerDates`: true — query the quotes database for rows with empty speaker_dates,
+ *   non-empty quote title, and non-empty author (cap with `limit`)
+ * - `limit`: max rows to process (default 80, max 250)
+ * - `delayMs`: pause between rows to avoid rate limits (default 300)
+ * - `dryRun`: if true, only fetch Wikipedia and report keys; no Notion/Firestore writes
+ *
+ * Auth: same as /api/sync-notion-firestore.
+ */
+app.post('/api/quote-wiki-refresh-bulk', async (req, res) => {
+  setNotionSyncCors(res);
+  const expectedToken = process.env.NOTION_SYNC_TOKEN || process.env.RESET_TOKEN || '';
+  if (!expectedToken) {
+    return res.status(500).json({ success: false, error: 'NOTION_SYNC_TOKEN or RESET_TOKEN must be set on the server' });
+  }
+  const providedToken = req.header('x-notion-sync-token');
+  if (!providedToken || providedToken !== expectedToken) {
+    return res.status(401).json({ success: false, error: 'Invalid sync token' });
+  }
+
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
     if (!databaseId) return res.status(500).json({ success: false, error: 'NOTION_DATABASE_ID is not configured' });
 
-    const page = await notionGetPage(pageId);
-    if (!page) return res.status(404).json({ success: false, error: `Notion page ${pageId} not found` });
-    const authorName = String(body.authorName || '').trim() || extractAuthorFromNotionPage(page);
-    if (!authorName) {
-      return res.status(400).json({ success: false, error: 'No author name on the row and none provided in the request body' });
+    const limit = Math.max(1, Math.min(250, parseInt(body.limit, 10) || 80));
+    const delayMs = Math.max(0, Math.min(5000, parseInt(body.delayMs, 10) || 300));
+    const dryRun = !!body.dryRun;
+    const queryEmpty = !!body.queryEmptySpeakerDates;
+    const pageIdsRaw = Array.isArray(body.pageIds) ? body.pageIds : [];
+
+    let pageIds = pageIdsRaw.map((id) => String(id || '').trim()).filter(Boolean);
+
+    if (queryEmpty) {
+      const schema = await notionGetDatabaseProperties(databaseId);
+      const quoteTitleName = getNotionTitlePropName(schema);
+      const authorProp = findNotionPropName(schema, 'author', 'Author');
+      const speakerDatesProp = findNotionPropName(
+        schema,
+        'speaker_dates',
+        'speakerDates',
+        'Speaker dates'
+      );
+      if (!quoteTitleName || !authorProp) {
+        return res.status(500).json({
+          success: false,
+          error: 'Could not resolve quote title + author property names from Notion schema'
+        });
+      }
+      if (!speakerDatesProp) {
+        return res.status(500).json({
+          success: false,
+          error:
+            'Could not resolve speaker dates column (try naming it speaker_dates, Speaker dates, or speakerDates)'
+        });
+      }
+      const sdType = schema[speakerDatesProp]?.type;
+      const emptySd = notionIsEmptyFilter(speakerDatesProp, sdType);
+      const quoteNe = notionIsNotEmptyFilter(quoteTitleName, schema[quoteTitleName]?.type);
+      const authorNe = notionIsNotEmptyFilter(authorProp, schema[authorProp]?.type);
+      if (!emptySd || !quoteNe || !authorNe) {
+        return res.status(400).json({
+          success: false,
+          error: `Bulk query needs title/rich_text speaker_dates and title/rich_text quote + author. Got speaker_dates type="${sdType}"`
+        });
+      }
+
+      const filter = { and: [emptySd, quoteNe, authorNe] };
+      const collected = [];
+      let cursor;
+      const maxNotionPages = 15;
+      for (let p = 0; p < maxNotionPages && collected.length < limit; p += 1) {
+        const queryBody = { filter, page_size: 100 };
+        if (cursor) queryBody.start_cursor = cursor;
+        const json = await notionFetchJson(`/databases/${databaseId}/query`, {
+          method: 'POST',
+          body: JSON.stringify(queryBody)
+        });
+        for (const row of json.results || []) {
+          if (row.id) collected.push(row.id);
+          if (collected.length >= limit) break;
+        }
+        if (!json.has_more || !json.next_cursor) break;
+        cursor = json.next_cursor;
+      }
+      pageIds = collected;
     }
 
-    const wiki = await fetchWikipediaSpeakerInfo(authorName);
-    if (!wiki) {
-      return res.json({
-        success: true,
-        pageId,
-        author: authorName,
-        wiki: null,
-        note: 'Wikipedia returned no usable info (404 / disambiguation / network). Nothing patched.'
+    if (!pageIds.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide pageIds[] or set queryEmptySpeakerDates:true (no matching pages found)'
       });
     }
 
-    const schema = await notionGetDatabaseProperties(databaseId);
-    // Build a properties payload with ONLY the Wikipedia-derived fields.
-    const properties = buildPrefillNotionProperties(schema, null, wiki, null);
-    if (Object.keys(properties).length) {
-      await notionFetchJson(`/pages/${pageId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ properties })
-      });
-    }
-    if (db) {
-      const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
-      const payload = buildPrefillFirestorePayload(null, wiki, null);
-      if (Object.keys(payload).length) {
-        await db.collection(collection).doc(pageId).set(payload, { merge: true });
+    const schemaOnce = await notionGetDatabaseProperties(databaseId);
+    const results = [];
+    let patched = 0;
+    let wikiMiss = 0;
+    let errors = 0;
+    let noAuthor = 0;
+    let notFound = 0;
+
+    for (let i = 0; i < pageIds.length; i += 1) {
+      if (i > 0 && delayMs) await wikiRefreshDelay(delayMs);
+      const pid = pageIds[i];
+      try {
+        const result = await applyQuoteWikiRefreshToPage(pid, { schema: schemaOnce, dryRun });
+        results.push(result);
+        if (result.error === 'not_found') notFound += 1;
+        else if (result.error === 'no_author') noAuthor += 1;
+        else if (!result.wiki) wikiMiss += 1;
+        else patched += 1;
+      } catch (e) {
+        errors += 1;
+        results.push({
+          ok: false,
+          pageId: pid,
+          error: 'exception',
+          message: e.message || String(e)
+        });
       }
     }
 
     return res.json({
       success: true,
-      pageId,
-      author: authorName,
-      wiki,
-      notionPropertiesPatched: Object.keys(properties)
+      dryRun,
+      queryEmptySpeakerDates: queryEmpty,
+      processed: pageIds.length,
+      summary: {
+        notionPropertiesWritten: patched,
+        wikipediaNoResult: wikiMiss,
+        notFound,
+        noAuthor,
+        errors
+      },
+      results
     });
   } catch (error) {
-    console.error('❌ Wiki refresh failed:', error);
-    return res.status(500).json({ success: false, error: error.message || 'Wiki refresh failed' });
+    console.error('❌ Bulk wiki refresh failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'Bulk wiki refresh failed' });
   }
 });
 

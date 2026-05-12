@@ -8147,9 +8147,9 @@ try {
                   vector-effect="non-scaling-stroke"
                   opacity="0.72" />
           </svg>
-          <section class="quilt-reflection-wall" id="quiltReflectionWall" aria-labelledby="quiltReflectionWallTitle">
-            <p class="quilt-reflection-wall-kicker" id="quiltReflectionWallTitle">Recent ideas</p>
-            <p class="quilt-reflection-wall-helper">Helpful ideas shared back from the community.</p>
+          <section class="quilt-reflection-wall" id="quiltReflectionWall" aria-label="Reflection themes from the community">
+            <p class="quilt-reflection-wall-kicker" id="quiltReflectionWallTitle" hidden></p>
+            <p class="quilt-reflection-wall-helper" hidden></p>
             <div class="quilt-reflection-wall-notes" id="quiltReflectionWallNotes" aria-live="polite"></div>
           </section>
           <button class="quilt-reflection-archive-link" type="button" data-next="screen-reflection-themes-archive">
@@ -26405,7 +26405,7 @@ try {
             submit.disabled = false;
           }
         });
-        this.renderReflectionAnonymousWall();
+        this.renderReflectionAnonymousWall([]);
         const refreshThemes = () => this.loadReflectionThemesForToday().catch((error) => {
           this.logger?.warn?.('Reflection themes load failed:', error);
         });
@@ -26462,26 +26462,6 @@ try {
         });
       }
 
-      getFallbackReflectionThemes() {
-        return [
-          'Keep a short list of kind words nearby for a hard moment.',
-          'Step away long enough to notice what actually needs care.',
-          'Ask for one small bit of help before the day gets too heavy.',
-          'Let beginning again count, even if it is quiet.'
-        ];
-      }
-
-      getAdjacentDateKey(dateKey, dayDelta) {
-        const parts = String(dateKey || '').split('-').map((part) => parseInt(part, 10));
-        if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return '';
-        const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-        date.setUTCDate(date.getUTCDate() + dayDelta);
-        const year = date.getUTCFullYear();
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      }
-
       normalizeReflectionIdeaText(value) {
         return String(value || '')
           .replace(/\s+/g, ' ')
@@ -26492,6 +26472,7 @@ try {
 
       getReflectionCarouselMarkup(themeTexts) {
         const ideas = Array.isArray(themeTexts) ? themeTexts.filter(Boolean) : [];
+        const includeHeader = ideas.length > 0;
         const headerSlide = `
               <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--header" data-reflection-slide="header">
                 <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--header">What people<br>are sharing<span class="quilt-reflection-carousel-text-arrow" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M6 12h11M13 8l5 4-5 4"/></svg></span></p>
@@ -26511,18 +26492,22 @@ try {
             `;
           })
           .join('');
-        const slides = headerSlide + ideaSlides + footerSlide;
-        const totalSlides = ideas.length + 2;
+        const slides = (includeHeader ? headerSlide : '') + ideaSlides + footerSlide;
+        const totalSlides = ideas.length + (includeHeader ? 1 : 0) + 1;
         const dots = Array.from({ length: totalSlides })
           .map((_, index) => `<span class="quilt-reflection-carousel-dot${index === 0 ? ' is-active' : ''}" data-reflection-dot="${index}" aria-hidden="true"></span>`)
           .join('');
+        const dotsAttrs = totalSlides > 1 ? 'aria-hidden="true"' : 'hidden aria-hidden="true"';
+        const viewportAttrs = includeHeader
+          ? 'role="button" tabindex="0" aria-label="Tap to move to the next reflection idea"'
+          : 'role="region" aria-label="Invitation to add your reflection"';
         return `
           <div class="quilt-reflection-carousel" data-reflection-carousel>
-            <div class="quilt-reflection-carousel-viewport" data-reflection-carousel-viewport role="button" tabindex="0" aria-label="Tap to move to the next reflection idea">
+            <div class="quilt-reflection-carousel-viewport" data-reflection-carousel-viewport ${viewportAttrs}>
               <div class="quilt-reflection-carousel-track" data-reflection-carousel-track>${slides}</div>
             </div>
-            <div class="quilt-reflection-carousel-dots" data-reflection-carousel-dots aria-hidden="true">
-              ${dots}
+            <div class="quilt-reflection-carousel-dots" data-reflection-carousel-dots ${dotsAttrs}>
+              ${totalSlides > 1 ? dots : ''}
             </div>
           </div>
         `;
@@ -26580,6 +26565,23 @@ try {
         const title = document.getElementById('quiltReflectionWallTitle');
         const helper = wall?.querySelector?.('.quilt-reflection-wall-helper') || null;
         if (!wall || !notes) return;
+        const themeTexts = (Array.isArray(themes) ? themes : [])
+          .map((theme) => this.normalizeReflectionIdeaText(theme))
+          .filter(Boolean);
+        notes.innerHTML = this.getReflectionCarouselMarkup(themeTexts);
+        this.initReflectionCarouselLoop(notes);
+        if (!themeTexts.length) {
+          if (title) {
+            title.textContent = '';
+            title.setAttribute('hidden', 'hidden');
+          }
+          if (helper) {
+            helper.textContent = '';
+            helper.setAttribute('hidden', 'hidden');
+          }
+          wall.hidden = false;
+          return;
+        }
         const todayTitle = 'What keeps coming up';
         const todayHelper = 'Drawn from responses as they come in';
         const optTitle = String(options.title || '').trim();
@@ -26589,20 +26591,13 @@ try {
           optTitle === todayTitle &&
           (!optHelperPresent || optHelperTrim === todayHelper || optHelperTrim === '');
         const hideTodayHeadings = CONFIG?.APP?.reflectionTodayAggregateWallDisabled && isTodayAggregateCopy;
-        if (helper && !hideTodayHeadings) helper.removeAttribute('hidden');
-        const fallbackThemes = this.getFallbackReflectionThemes();
-        const themeTexts = (Array.isArray(themes) && themes.length ? themes : fallbackThemes)
-          .map((theme) => this.normalizeReflectionIdeaText(theme))
-          .filter(Boolean);
-        notes.innerHTML = this.getReflectionCarouselMarkup(themeTexts);
-        this.initReflectionCarouselLoop(notes);
         if (title) {
           if (hideTodayHeadings) {
             title.textContent = '';
             title.setAttribute('hidden', 'hidden');
           } else {
+            title.textContent = optTitle || todayTitle;
             title.removeAttribute('hidden');
-            title.textContent = options.title || 'Recent ideas';
           }
         }
         if (helper) {
@@ -26610,10 +26605,10 @@ try {
             helper.textContent = '';
             helper.setAttribute('hidden', 'hidden');
           } else {
-            helper.removeAttribute('hidden');
-            helper.textContent = optHelperPresent
-              ? options.helper
-              : 'Helpful ideas shared back from the community.';
+            const helperText = optHelperPresent ? String(options.helper ?? '').trim() : todayHelper;
+            helper.textContent = helperText;
+            if (helperText) helper.removeAttribute('hidden');
+            else helper.setAttribute('hidden', 'hidden');
           }
         }
         wall.hidden = false;
@@ -26621,7 +26616,6 @@ try {
 
       async loadReflectionThemesForToday() {
         const dateKey = Utils.getTodayKey();
-        const yesterdayKey = this.getAdjacentDateKey(dateKey, -1);
         if (!this._reflectionThemesNotFoundKeys) this._reflectionThemesNotFoundKeys = new Set();
         const readThemes = async (key) => {
           if (!key) return null;
@@ -26658,13 +26652,7 @@ try {
           });
           return;
         }
-        const recentThemes = await readThemes(yesterdayKey);
-        if (recentThemes) {
-          this.renderReflectionAnonymousWall(recentThemes.themes, {
-            title: 'Recent ideas',
-            helper: 'From the last gathered reflections, while today’s ideas take shape.'
-          });
-        }
+        this.renderReflectionAnonymousWall([]);
       }
 
       waitForReflectionFirestore(timeoutMs = 3500) {
