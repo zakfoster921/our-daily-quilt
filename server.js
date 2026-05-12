@@ -2802,6 +2802,43 @@ async function getTodayInstagramImage(options = {}) {
       console.warn(`⚠️ Could not fetch quote for ${dateUsed}:`, quoteError.message);
     }
 
+    /** For Zapier `/api/generate-instagram`: prefer denormalized fields on instagram-images, else quilts/{dateUsed}. */
+    let blockCount = null;
+    let contributorCount = null;
+    const rawBc = Number(raw.blockCount);
+    const rawCc = Number(raw.contributorCount);
+    if (Number.isFinite(rawBc) && rawBc >= 0) {
+      blockCount = Math.floor(rawBc);
+    }
+    if (Number.isFinite(rawCc) && rawCc >= 0) {
+      contributorCount = Math.floor(rawCc);
+    }
+    if (blockCount === null || contributorCount === null) {
+      try {
+        const quiltSnap = await db.collection('quilts').doc(dateUsed).get();
+        if (quiltSnap.exists) {
+          const qd = quiltSnap.data() || {};
+          const blocks = qd.blocks;
+          if (blockCount === null && Array.isArray(blocks)) {
+            blockCount = blocks.length;
+          }
+          if (contributorCount === null) {
+            const c = Number(qd.contributorCount);
+            contributorCount =
+              Number.isFinite(c) && c >= 0 ? Math.max(1, Math.floor(c)) : 1;
+          }
+        }
+      } catch (quiltMetaErr) {
+        console.warn(`⚠️ Could not load quilt meta for ${dateUsed}:`, quiltMetaErr.message);
+      }
+    }
+    if (blockCount === null) {
+      blockCount = 0;
+    }
+    if (contributorCount === null) {
+      contributorCount = 1;
+    }
+
     return {
       imageData: imageDataField,
       postLayoutBImageData: postLayoutBField || null,
@@ -2813,7 +2850,9 @@ async function getTodayInstagramImage(options = {}) {
       storageReelMp4Url,
       quote: quote,
       captionSource,
-      date: dateUsed
+      date: dateUsed,
+      blockCount,
+      contributorCount
     };
   } catch (error) { 
     console.error('Error fetching Instagram image:', error); 
@@ -2876,7 +2915,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-14-layout-b-speaker';
+    const apiVersion = 'instagram-api-15-block-contributor-counts';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = [
@@ -2911,8 +2950,10 @@ app.post('/api/generate-instagram', async (req, res) => {
       captionLength: imageData.quote.length,
       hasPostLayoutB: hasLayoutB,
       hasPostLayoutBSpeaker: hasLayoutBSpeaker,
+      blockCount: Number(imageData.blockCount) || 0,
+      contributorCount: Math.max(1, Number(imageData.contributorCount) || 1),
       note:
-        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. postLayoutBSpeakerImageUrl/layoutBSpeakerImageUrl = layout B with speaker portrait. reelVideoUrl = IG-ready MP4 when present, else WebM. After pushing assets, the app calls POST /api/transcode-instagram-reel to produce reelMp4Url.'
+        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. postLayoutBSpeakerImageUrl/layoutBSpeakerImageUrl = layout B with speaker portrait. reelVideoUrl = IG-ready MP4 when present, else WebM. After pushing assets, the app calls POST /api/transcode-instagram-reel to produce reelMp4Url. blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(
@@ -3727,6 +3768,7 @@ app.post('/api/quote-prefill-sweep', async (req, res) => {
 
 /**
  * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
+ * Uses append-only scheduling (same as the daily cron), not swap mode.
  * Auth: header x-notion-sync-token must match NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset.
  * Requires NOTION_TOKEN, NOTION_DATABASE_ID, GOOGLE_APPLICATION_CREDENTIALS_JSON on the host.
  */
@@ -3805,7 +3847,8 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const appSubmissionsResult = await runNodeScript('scripts/schedule-approved-app-submissions.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=8'
+      '--window=8',
+      '--append-only'
     ]);
     if (appSubmissionsResult.code !== 0) {
       return res.status(500).json({
@@ -3814,7 +3857,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: appSubmissionsResult.code,
         stdout: tailOutput(appSubmissionsResult.stdout, 12000),
         stderr: tailOutput(appSubmissionsResult.stderr, 12000),
-        note: 'Notion → Firestore (quotes) completed; approved app-submission scheduling failed before rolling append.',
+        note: 'Notion → Firestore (quotes) completed; approved app-submission scheduling (append-only) failed before rolling append.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -3823,7 +3866,9 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const scheduleResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=8'
+      '--window=8',
+      '--min-count=9',
+      '--append-only'
     ]);
     if (scheduleResult.code !== 0) {
       return res.status(500).json({
