@@ -38,7 +38,7 @@ function requireEnv(name) {
 function getTitle(prop) {
   if (!prop) return '';
   if (Array.isArray(prop.title)) {
-    return prop.title.map((x) => x?.plain_text || '').join('').trim();
+    return prop.title.map(plainFromRichTextSegment).join('').trim();
   }
   return '';
 }
@@ -46,7 +46,7 @@ function getTitle(prop) {
 function getRichText(prop) {
   if (!prop) return '';
   if (Array.isArray(prop.rich_text)) {
-    return prop.rich_text.map((x) => x?.plain_text || '').join('').trim();
+    return prop.rich_text.map(plainFromRichTextSegment).join('').trim();
   }
   return '';
 }
@@ -91,8 +91,23 @@ function getBoolean(prop, fallback = false) {
 /** Compare Notion property names ignoring case, spaces, underscores (e.g. what_if ↔ "What if"). */
 function normPropKey(s) {
   return String(s || '')
+    .normalize('NFKC')
     .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[\s_-]/g, '');
+}
+
+/** Plain text from one rich_text / title segment (Notion usually sets plain_text; fall back to text.content). */
+function plainFromRichTextSegment(x) {
+  if (!x || typeof x !== 'object') return '';
+  const pt = x.plain_text;
+  if (typeof pt === 'string' && pt) return pt;
+  if (x.type === 'text' && x.text && typeof x.text.content === 'string') return x.text.content;
+  if (x.type === 'mention' && typeof x.plain_text === 'string') return x.plain_text;
+  if (x.type === 'equation' && x.equation && typeof x.equation.expression === 'string') {
+    return x.equation.expression;
+  }
+  return '';
 }
 
 function findPropByBaseName(props, base) {
@@ -112,6 +127,10 @@ function textFromNotionProp(prop) {
     if (prop.formula.type === 'string') return String(prop.formula.string || '').trim();
     if (prop.formula.type === 'number' && typeof prop.formula.number === 'number') {
       return String(prop.formula.number);
+    }
+    if (prop.formula.type === 'boolean') return prop.formula.boolean ? 'true' : '';
+    if (prop.formula.type === 'date' && prop.formula.date?.start) {
+      return String(prop.formula.date.start).trim();
     }
   }
   if (prop.type === 'url' && prop.url) return String(prop.url).trim();
@@ -237,11 +256,88 @@ function findBlessingFromProps(props) {
 
 /** Resolve text from known keys first, then any Notion column whose normalized name matches `base`. */
 function getMappedText(props, base, ...directKeys) {
+  // Prefer exact `props[base]` when present (ODQ uses snake_case names that match `base`).
+  if (props && base) {
+    const tBase = textFromAnyNotionProp(props[base]);
+    if (tBase) return String(tBase).trim();
+  }
   for (const k of directKeys) {
     const t = textFromAnyNotionProp(props[k]);
     if (t) return t.trim();
   }
-  return textFromAnyNotionProp(findPropByBaseName(props, base));
+  const target = normPropKey(base);
+  if (!props || !target) return '';
+  const matchingKeys = Object.keys(props).filter((k) => normPropKey(k) === target);
+  if (!matchingKeys.length) return '';
+  // Notion allows multiple columns whose names normalize the same (e.g. "Community Prompt"
+  // formula + "community_prompt" rich text). Prefer non-empty text; then stable tie-breakers.
+  function rankKey(k) {
+    let r = 0;
+    if (k === base) r += 8;
+    if (directKeys.includes(k)) r += 4;
+    if (String(k).includes('_')) r += 2;
+    return r;
+  }
+  matchingKeys.sort((a, b) => rankKey(b) - rankKey(a) || String(a).localeCompare(String(b)));
+  for (const key of matchingKeys) {
+    const t = textFromAnyNotionProp(props[key]);
+    if (t) return String(t).trim();
+  }
+  return '';
+}
+
+/**
+ * Community prompt column names vary; after strict getMappedText, try any property whose
+ * normalized name contains both "community" and "prompt" (e.g. "Community reflection prompt").
+ */
+function getCommunityPromptFromProps(props, pageIdForLog) {
+  // ODQ uses `community_prompt`; Title Case / camelCase kept for other DB shapes.
+  const primary = getMappedText(
+    props,
+    'community_prompt',
+    'communityPrompt',
+    'Community prompt',
+    'Community Prompt',
+    'Community question',
+    'community_question'
+  );
+  if (primary) return primary;
+  if (!props) return '';
+  const loose = Object.keys(props).filter((k) => {
+    const n = normPropKey(k);
+    return n.includes('community') && n.includes('prompt');
+  });
+  function rankLoose(k) {
+    const n = normPropKey(k);
+    let r = 0;
+    if (n === 'communityprompt') r += 100;
+    if (/^community.*prompt$/.test(n)) r += 50;
+    r -= Math.min(n.length, 200) / 200;
+    return r;
+  }
+  loose.sort((a, b) => rankLoose(b) - rankLoose(a) || String(a).localeCompare(String(b)));
+  for (const key of loose) {
+    const t = textFromAnyNotionProp(props[key]);
+    if (t) return String(t).trim();
+  }
+  if (process.env.NOTION_SYNC_DEBUG) {
+    const lines = Object.keys(props)
+      .filter((k) => {
+        const n = normPropKey(k);
+        return n.includes('community') || n.includes('prompt');
+      })
+      .map(
+        (k) =>
+          `  ${k} (${props[k]?.type}): ${JSON.stringify(String(textFromAnyNotionProp(props[k]) || '').slice(0, 80))}`
+      );
+    if (lines.length) {
+      console.warn(
+        `[sync][NOTION_SYNC_DEBUG] empty communityPrompt page=${pageIdForLog || '(unknown)'}; candidate props:`
+      );
+      lines.forEach((line) => console.warn(line));
+    }
+  }
+  return '';
 }
 
 function urlFromNotionProp(prop) {
@@ -255,6 +351,10 @@ function urlFromNotionProp(prop) {
 }
 
 function getMappedUrl(props, base, ...directKeys) {
+  if (props && base) {
+    const uBase = urlFromNotionProp(props[base]);
+    if (uBase) return uBase.trim();
+  }
   for (const k of directKeys) {
     const u = urlFromNotionProp(props[k]);
     if (u) return u.trim();
@@ -275,17 +375,20 @@ function getTitleTextFromAnyTitleProp(props) {
 
 function parseNotionRow(page) {
   const props = page?.properties || {};
-  // Title column: try common aliases first, then fall back to whichever property is type=title.
-  // This survives renames like "quote_text" -> "Quote" / "Quote text" / "Name".
+  // ODQ QUOTES DATABASE uses snake_case Text/URL names (Quote is Title). Try those exact keys
+  // first, then legacy Title Case / aliases for older or forked DBs. First non-empty wins.
   const text =
-    getMappedText(props, 'quote_text', 'quote_text', 'Quote', 'quote', 'Quote Text', 'Quote text', 'Name')
+    getMappedText(props, 'quote_text', 'Quote', 'Quote Text', 'Quote text', 'Name', 'quote', 'quote_text')
     || getTitleTextFromAnyTitleProp(props);
-  const author = getMappedText(props, 'author', 'author', 'Author');
-  const reflectionPrompt =
-    getRichText(props.reflection_prompt) || getTitle(props.reflection_prompt);
+  const author = getMappedText(props, 'author', 'Author');
+  const reflectionPrompt = getMappedText(
+    props,
+    'reflection_prompt',
+    'Reflection prompt',
+    'Reflection Prompt'
+  );
   const artRecs = getMappedText(
     props,
-    'art_recs',
     'art_recs',
     'Art recs',
     'Art Recs',
@@ -294,21 +397,14 @@ function parseNotionRow(page) {
     'explore',
     'Explore'
   );
-  const communityPrompt = getMappedText(
-    props,
-    'community_prompt',
-    'community_prompt',
-    'Community prompt',
-    'Community Prompt'
-  );
-  const whatIf = getMappedText(props, 'what_if', 'what_if', 'What if', 'What If');
-  const igCaption = getMappedText(props, 'ig_caption', 'ig_caption', 'IG Caption', 'Ig Caption');
-  const mood = getMappedText(props, 'mood', 'mood', 'Mood');
-  const fortune = getMappedText(props, 'fortune', 'fortune', 'Fortune');
+  const communityPrompt = getCommunityPromptFromProps(props, page?.id);
+  const whatIf = getMappedText(props, 'what_if', 'What if', 'What If');
+  const igCaption = getMappedText(props, 'ig_caption', 'IG Caption', 'Ig Caption');
+  const mood = getMappedText(props, 'mood', 'Mood');
+  const fortune = getMappedText(props, 'fortune', 'Fortune');
   const blessing = findBlessingFromProps(props);
   const speakerImageUrl = getMappedUrl(
     props,
-    'speaker_image_url',
     'speaker_image_url',
     'speakerImageUrl',
     'Speaker image URL',
@@ -328,16 +424,30 @@ function parseNotionRow(page) {
   const speakerDates = getMappedText(
     props,
     'speaker_dates',
-    'speaker_dates',
     'speakerDates',
     'Speaker dates',
     'Speaker Dates'
   );
-  const speakerBorn = getMappedText(props, 'speaker_born', 'speaker_born', 'speakerBorn', 'Speaker born', 'Speaker Born', 'born', 'Born');
-  const speakerDied = getMappedText(props, 'speaker_died', 'speaker_died', 'speakerDied', 'Speaker died', 'Speaker Died', 'died', 'Died');
+  const speakerBorn = getMappedText(
+    props,
+    'speaker_born',
+    'speakerBorn',
+    'Speaker born',
+    'Speaker Born',
+    'born',
+    'Born'
+  );
+  const speakerDied = getMappedText(
+    props,
+    'speaker_died',
+    'speakerDied',
+    'Speaker died',
+    'Speaker Died',
+    'died',
+    'Died'
+  );
   const speakerGuideLine = getMappedText(
     props,
-    'speaker_guide_line',
     'speaker_guide_line',
     'speakerGuideLine',
     'Guide line',
@@ -351,7 +461,6 @@ function parseNotionRow(page) {
   const imageAttribution = getMappedText(
     props,
     'image_attribution',
-    'image_attribution',
     'imageAttribution',
     'Image attribution',
     'Image Attribution',
@@ -364,7 +473,6 @@ function parseNotionRow(page) {
   );
   const submittedBy = getMappedText(
     props,
-    'submitted_by',
     'submitted_by',
     'submittedBy',
     'Submitted by',
@@ -380,7 +488,6 @@ function parseNotionRow(page) {
   const submittedAt = getDateStart(props.submitted_at);
   const submittedVia = getMappedText(
     props,
-    'submitted_via',
     'submitted_via',
     'submittedVia',
     'Submitted via',
