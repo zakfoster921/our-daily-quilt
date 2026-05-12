@@ -7,13 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Schedule mode: 'swap' (newly-approved quotes take tomorrow's slot) or 'append' (tack at end of queue, matches the daily cron)."
+        description: "Schedule mode: 'append' (default — tack at end of queue, matches the daily cron) or 'swap' (newly-approved quotes take tomorrow's slot)."
         required: false
-        default: "swap"
+        default: "append"
         type: choice
         options:
-          - swap
           - append
+          - swap
 
 jobs:
   sync:
@@ -67,11 +67,16 @@ jobs:
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
         run: npm run sync:quotes
 
-      # Scheduled cron runs use --append-only (tack new approvals onto the end
-      # of the queue). Manual `workflow_dispatch` defaults to swap mode so a
-      # quote you just approved takes tomorrow's slot, displacing whatever was
-      # there back into the pool. Pick "append" from the dispatch input to
-      # match the cron behavior on demand.
+      - name: Reconcile assignments from Notion date_scheduled
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
+        run: npm run reconcile:assignment-dates
+
+      # Cron and default manual dispatch use --append-only (new approvals tack
+      # onto the end of the queue). Pick workflow_dispatch input "swap" when a
+      # newly approved quote should take tomorrow's slot and displace what was there.
       - name: Schedule approved app-submitted quotes
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
@@ -79,11 +84,11 @@ jobs:
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: |
           MODE="${{ github.event.inputs.mode }}"
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "$MODE" = "append" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "$MODE" != "swap" ]; then
             echo "[workflow] running schedule script in --append-only mode"
             node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8 --append-only
           else
-            echo "[workflow] running schedule script in swap mode (mode=${MODE:-swap})"
+            echo "[workflow] running schedule script in swap mode"
             node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8
           fi
 

@@ -4119,7 +4119,8 @@ app.post('/api/quote-prefill-sweep', async (req, res) => {
 
 /**
  * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
- * Uses append-only scheduling (same as the daily cron), not swap mode.
+ * After quotes sync, runs reconcile: apply Notion `date_scheduled` to `dailyQuoteAssignments`
+ * (clear date → unschedule; change date → move). Then append-only scheduling (same as the daily cron), not swap mode.
  * Auth: header x-notion-sync-token must match NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset.
  * Requires NOTION_TOKEN, NOTION_DATABASE_ID, GOOGLE_APPLICATION_CREDENTIALS_JSON on the host.
  */
@@ -4195,6 +4196,22 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     }
 
     const scheduleStartDate = getAppDateKey();
+    const reconcileResult = await runNodeScript('scripts/reconcile-assignment-dates-from-notion.cjs', [
+      `--start=${scheduleStartDate}`
+    ]);
+    if (reconcileResult.code !== 0) {
+      return res.status(500).json({
+        success: false,
+        step: 'schedule:reconcile-notion-dates',
+        exitCode: reconcileResult.code,
+        stdout: tailOutput(reconcileResult.stdout, 12000),
+        stderr: tailOutput(reconcileResult.stderr, 12000),
+        note: 'Notion → Firestore (quotes) completed; assignment reconcile from Notion date_scheduled failed before append scheduling.',
+        startedAt,
+        finishedAt: getUtcIsoNow()
+      });
+    }
+
     const appSubmissionsResult = await runNodeScript('scripts/schedule-approved-app-submissions.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
@@ -4208,7 +4225,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: appSubmissionsResult.code,
         stdout: tailOutput(appSubmissionsResult.stdout, 12000),
         stderr: tailOutput(appSubmissionsResult.stderr, 12000),
-        note: 'Notion → Firestore (quotes) completed; approved app-submission scheduling (append-only) failed before rolling append.',
+        note: 'Quotes sync + date reconcile completed; approved app-submission scheduling (append-only) failed before rolling append.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -4228,7 +4245,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: scheduleResult.code,
         stdout: tailOutput(scheduleResult.stdout, 12000),
         stderr: tailOutput(scheduleResult.stderr, 12000),
-        note: 'Notion → Firestore (quotes) and app-submission scheduling completed; rolling append failed before date_scheduled sync.',
+        note: 'Quotes sync, date reconcile, and app-submission scheduling completed; rolling append failed before usage sync.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -4242,7 +4259,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: usageResult.code,
         stdout: tailOutput(usageResult.stdout, 12000),
         stderr: tailOutput(usageResult.stderr, 12000),
-        note: 'Notion → Firestore (quotes), app-submission scheduling, and rolling append completed; Firestore → Notion (usage/date_scheduled) failed.',
+        note: 'Full schedule pipeline completed except Firestore → Notion (usage/date_scheduled).',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -4250,14 +4267,20 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
 
     return res.json({
       success: true,
-      steps: ['sync:quotes', 'schedule:app-submissions', 'schedule:rolling-append', 'sync:usage'],
+      steps: [
+        'sync:quotes',
+        'schedule:reconcile-notion-dates',
+        'schedule:app-submissions',
+        'schedule:rolling-append',
+        'sync:usage'
+      ],
       scheduleStartDate,
       stdout: tailOutput(
-        `${quotesResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
+        `${quotesResult.stdout}\n---\n${reconcileResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
         16000
       ),
       stderr: tailOutput(
-        `${quotesResult.stderr}\n---\n${appSubmissionsResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
+        `${quotesResult.stderr}\n---\n${reconcileResult.stderr}\n---\n${appSubmissionsResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
         8000
       ),
       startedAt,
