@@ -1598,6 +1598,40 @@ function extractPrefillJsonFromText(value) {
   }
 }
 
+function mapSubmittedQuotePrefillFields(parsed, model) {
+  return {
+    author: pickPrefillStringLoose(parsed, 'author'),
+    community_prompt: pickPrefillStringLoose(parsed, 'community_prompt', 'communityPrompt', 'community_prompt '),
+    small_act: pickPrefillStringLoose(
+      parsed,
+      'small_act',
+      'smallAct',
+      'small_action',
+      'small act',
+      'smallact'
+    ),
+    blessing: pickPrefillStringLoose(parsed, 'blessing'),
+    notification_text: pickPrefillStringLoose(parsed, 'notification_text', 'notificationText'),
+    ig_caption: pickPrefillStringLoose(parsed, 'ig_caption', 'igCaption'),
+    what_if: pickPrefillStringLoose(parsed, 'what_if', 'whatIf'),
+    speaker_guide_line: pickPrefillStringLoose(parsed, 'speaker_guide_line', 'speakerGuideLine', 'guide_line'),
+    art_recs: pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations'),
+    _model: model
+  };
+}
+
+function mergeNonEmptyPrefillFields(base, next) {
+  const merged = { ...(base || {}) };
+  for (const [key, value] of Object.entries(next || {})) {
+    if (key === '_model') {
+      merged[key] = value || merged[key];
+      continue;
+    }
+    if (String(value || '').trim()) merged[key] = value;
+  }
+  return merged;
+}
+
 async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt }) {
   const result = await postJsonWithHttps({
     hostname: 'api.anthropic.com',
@@ -1636,29 +1670,29 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
     const preview = String(firstText || '').replace(/\s+/g, ' ').trim().slice(0, 400);
     throw new Error(`Claude returned no parseable prefill JSON. Preview: ${preview || '[empty]'}`);
   }
-  const out = {
-    author: pickPrefillStringLoose(parsed, 'author'),
-    community_prompt: pickPrefillStringLoose(parsed, 'community_prompt', 'communityPrompt', 'community_prompt '),
-    small_act: pickPrefillStringLoose(
-      parsed,
-      'small_act',
-      'smallAct',
-      'small_action',
-      'small act',
-      'smallact'
-    ),
-    blessing: pickPrefillStringLoose(parsed, 'blessing'),
-    notification_text: pickPrefillStringLoose(parsed, 'notification_text', 'notificationText'),
-    ig_caption: pickPrefillStringLoose(parsed, 'ig_caption', 'igCaption'),
-    what_if: pickPrefillStringLoose(parsed, 'what_if', 'whatIf'),
-    speaker_guide_line: pickPrefillStringLoose(parsed, 'speaker_guide_line', 'speakerGuideLine', 'guide_line'),
-    art_recs: pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations'),
-    _model: model
-  };
+  let out = mapSubmittedQuotePrefillFields(parsed, model);
+  if (!out.small_act) {
+    const repairPrompt = [
+      prompt,
+      '',
+      'Your previous JSON left small_act empty or missing.',
+      'Return ONLY the full JSON object again, preserving good existing fields where possible.',
+      'small_act is required and must be one non-empty sentence: a concrete interpersonal action the reader can complete before the day ends.',
+      '',
+      'Previous JSON:',
+      JSON.stringify(parsed, null, 2)
+    ].join('\n');
+    const repairText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: repairPrompt });
+    const repairParsed = extractPrefillJsonFromText(repairText);
+    if (repairParsed && typeof repairParsed === 'object') {
+      out = mergeNonEmptyPrefillFields(out, mapSubmittedQuotePrefillFields(repairParsed, model));
+    }
+  }
   if (!out.small_act) {
     console.warn(
       `[prefill] small_act empty after Claude parse (model=${model}). Top-level JSON keys: ${Object.keys(parsed).join(', ')}`
     );
+    throw new Error(`Claude returned prefill JSON without required small_act`);
   }
   return out;
 }
@@ -2130,6 +2164,23 @@ function notionRichTextToPlain(prop) {
   return '';
 }
 
+function notionPropToPlain(prop) {
+  const text = notionRichTextToPlain(prop);
+  if (text) return text;
+  if (typeof prop?.url === 'string') return prop.url.trim();
+  if (typeof prop?.email === 'string') return prop.email.trim();
+  if (typeof prop?.phone_number === 'string') return prop.phone_number.trim();
+  if (prop?.select?.name) return String(prop.select.name).trim();
+  if (prop?.status?.name) return String(prop.status.name).trim();
+  return '';
+}
+
+function getNotionPropPlainByAliases(pageProperties, ...aliases) {
+  const targetKeys = new Set(aliases.map(normNotionPropKey).filter(Boolean));
+  const found = Object.entries(pageProperties || {}).find(([name]) => targetKeys.has(normNotionPropKey(name)));
+  return found ? notionPropToPlain(found[1]) : '';
+}
+
 function parsePrefillAttemptCount(errorText) {
   const m = String(errorText || '').match(/^\s*Attempt\s+(\d+)\s*\/\s*\d+\b/i);
   if (!m) return 0;
@@ -2204,6 +2255,21 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
   const nextAttempt = errState.attempts + 1;
 
   const schema = await notionGetDatabaseProperties(databaseId);
+  const existingCommunityPrompt = getNotionPropPlainByAliases(
+    currentProps,
+    'community_prompt',
+    'community_prompt ',
+    'communityPrompt',
+    'Community prompt'
+  );
+  const existingSmallAct = getNotionPropPlainByAliases(
+    currentProps,
+    'small_act',
+    'smallAct',
+    'Small act',
+    'Small Act'
+  );
+  const smallActOnlyBackfill = !!existingCommunityPrompt && !existingSmallAct;
 
   let ai = null;
   let claudeError = null;
@@ -2229,6 +2295,36 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
       console.warn(`⚠️ Could not write ai_prefill_error for ${notionPageId}:`, e.message);
     }
     return { status: 'failed', attempt: nextAttempt, max: MAX_PREFILL_ATTEMPTS, error: claudeError };
+  }
+
+  if (smallActOnlyBackfill) {
+    const smallActText = String(ai?.small_act || '').trim();
+    const properties = {};
+    const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
+    if (smallActName) {
+      const payload = notionTextPropertyValue(schema[smallActName], smallActText);
+      if (payload) properties[smallActName] = payload;
+    }
+    if (errState.propName) {
+      const errProp = schema[errState.propName];
+      if (errProp?.type === 'rich_text') properties[errState.propName] = { rich_text: [] };
+    }
+    if (Object.keys(properties).length) {
+      await notionFetchJson(`/pages/${notionPageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ properties })
+      });
+    }
+    if (db && smallActText) {
+      const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+      await db.collection(collection).doc(notionPageId).set({
+        smallAct: smallActText,
+        small_act: smallActText,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+    console.log(`✨ Backfilled small_act for ${notionPageId} (claude=${ai._model || 'ok'})`);
+    return { status: 'ok', attempt: nextAttempt, hasWiki: false, smallActOnly: true };
   }
 
   const resolvedAuthor = ai?.author || authorName;
@@ -2317,15 +2413,24 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
     'communityPrompt',
     'Community prompt'
   );
+  const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
   if (!quoteTextName || !communityPromptName) {
     throw new Error(`Notion DB missing required columns (need title + community_prompt rich_text)`);
   }
   const quoteProp = schema[quoteTextName];
   const communityProp = schema[communityPromptName];
+  const missingPrefillFilters = [
+    notionIsEmptyFilter(communityPromptName, communityProp.type)
+      || { property: communityPromptName, [communityProp.type]: { is_empty: true } }
+  ];
+  if (smallActName) {
+    const smallActEmpty = notionIsEmptyFilter(smallActName, schema[smallActName]?.type);
+    if (smallActEmpty) missingPrefillFilters.push(smallActEmpty);
+  }
   const filter = {
     and: [
       { property: quoteTextName, [quoteProp.type]: { is_not_empty: true } },
-      { property: communityPromptName, [communityProp.type]: { is_empty: true } }
+      missingPrefillFilters.length > 1 ? { or: missingPrefillFilters } : missingPrefillFilters[0]
     ]
   };
   const json = await notionFetchJson(`/databases/${databaseId}/query`, {
