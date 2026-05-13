@@ -400,6 +400,8 @@ function parseNotionRow(page) {
   const communityPrompt = getCommunityPromptFromProps(props, page?.id);
   const smallAct = getMappedText(props, 'small_act', 'smallAct', 'Small act', 'Small Act');
   const whatIf = getMappedText(props, 'what_if', 'What if', 'What If');
+  const goodDay = getMappedText(props, 'good_day', 'goodDay', 'Good day', 'Good Day');
+  const roughDay = getMappedText(props, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
   const igCaption = getMappedText(props, 'ig_caption', 'IG Caption', 'Ig Caption');
   const mood = getMappedText(props, 'mood', 'Mood');
   const fortune = getMappedText(props, 'fortune', 'Fortune');
@@ -532,6 +534,14 @@ function parseNotionRow(page) {
         : {}),
       whatIf,
       what_if: whatIf,
+      // Omit good_day/rough_day when empty so merge does not wipe values prefilled by Claude
+      // before these columns exist (or are populated) in Notion.
+      ...(String(goodDay || '').trim()
+        ? { goodDay: String(goodDay).trim(), good_day: String(goodDay).trim() }
+        : {}),
+      ...(String(roughDay || '').trim()
+        ? { roughDay: String(roughDay).trim(), rough_day: String(roughDay).trim() }
+        : {}),
       igCaption,
       ig_caption: igCaption,
       mood,

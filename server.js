@@ -1616,6 +1616,8 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
     what_if: pickPrefillStringLoose(parsed, 'what_if', 'whatIf'),
     speaker_guide_line: pickPrefillStringLoose(parsed, 'speaker_guide_line', 'speakerGuideLine', 'guide_line'),
     art_recs: pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations'),
+    good_day: pickPrefillStringLoose(parsed, 'good_day', 'goodDay', 'good day'),
+    rough_day: pickPrefillStringLoose(parsed, 'rough_day', 'roughDay', 'rough day'),
     _model: model
   };
 }
@@ -1653,6 +1655,31 @@ async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt }) {
     .trim();
 }
 
+// Fields that must come back non-empty from Claude. One consolidated repair pass
+// is made if any are missing; if any are still empty after the repair, we throw
+// (which surfaces to the Notion `ai_prefill_error` column via the caller).
+const REQUIRED_PREFILL_FIELDS = [
+  {
+    key: 'small_act',
+    requirement:
+      'small_act is required and must be one non-empty sentence: a concrete interpersonal action the reader can complete before the day ends.'
+  },
+  {
+    key: 'good_day',
+    requirement:
+      'good_day is required: a short, declarative push with edge — one or two short sentences, no questions, no filler.'
+  },
+  {
+    key: 'rough_day',
+    requirement:
+      'rough_day is required: a short reframe that names no emotions, makes no demands, and asks no questions. Three words to two short sentences.'
+  }
+];
+
+function findMissingRequiredPrefillFields(out) {
+  return REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(out?.[key] || '').trim());
+}
+
 async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
   const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
@@ -1671,28 +1698,31 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
     throw new Error(`Claude returned no parseable prefill JSON. Preview: ${preview || '[empty]'}`);
   }
   let out = mapSubmittedQuotePrefillFields(parsed, model);
-  if (!out.small_act) {
-    const repairPrompt = [
+  let missing = findMissingRequiredPrefillFields(out);
+  if (missing.length) {
+    const repairLines = [
       prompt,
       '',
-      'Your previous JSON left small_act empty or missing.',
-      'Return ONLY the full JSON object again, preserving good existing fields where possible.',
-      'small_act is required and must be one non-empty sentence: a concrete interpersonal action the reader can complete before the day ends.',
+      `Your previous JSON left ${missing.length === 1 ? 'this required field' : 'these required fields'} empty or missing: ${missing.map((m) => m.key).join(', ')}.`,
+      'Return ONLY the full JSON object again, preserving good existing fields where possible. Do not regenerate fields that are already strong.',
+      ...missing.map((m) => `- ${m.requirement}`),
       '',
       'Previous JSON:',
       JSON.stringify(parsed, null, 2)
-    ].join('\n');
-    const repairText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: repairPrompt });
+    ];
+    const repairText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: repairLines.join('\n') });
     const repairParsed = extractPrefillJsonFromText(repairText);
     if (repairParsed && typeof repairParsed === 'object') {
       out = mergeNonEmptyPrefillFields(out, mapSubmittedQuotePrefillFields(repairParsed, model));
     }
+    missing = findMissingRequiredPrefillFields(out);
   }
-  if (!out.small_act) {
+  if (missing.length) {
+    const stillMissing = missing.map((m) => m.key).join(', ');
     console.warn(
-      `[prefill] small_act empty after Claude parse (model=${model}). Top-level JSON keys: ${Object.keys(parsed).join(', ')}`
+      `[prefill] required fields empty after Claude parse (model=${model}). Missing: ${stillMissing}. Top-level JSON keys: ${Object.keys(parsed).join(', ')}`
     );
-    throw new Error(`Claude returned prefill JSON without required small_act`);
+    throw new Error(`Claude returned prefill JSON without required field(s): ${stillMissing}`);
   }
   return out;
 }
@@ -2040,6 +2070,8 @@ function buildPrefillNotionProperties(schema, ai, wiki, speakerReuse) {
   if (ai?.what_if) set('what_if', ai.what_if, 'whatIf', 'What if');
   if (ai?.speaker_guide_line) set('speaker_guide_line', ai.speaker_guide_line, 'speakerGuideLine', 'Guide line');
   if (ai?.art_recs) set('art_recs', ai.art_recs, 'artRecs', 'Art recs', 'explore');
+  if (ai?.good_day) set('good_day', ai.good_day, 'goodDay', 'Good day', 'Good Day');
+  if (ai?.rough_day) set('rough_day', ai.rough_day, 'roughDay', 'Rough day', 'Rough Day');
 
   // Speaker portrait: Notion "Speaker image URL" must stay a single HTTPS URL so sync → Firestore keeps working.
   // When we already have a cutout (or portrait) on another quote for this author, reuse that URL — no new Wikimedia link needed.
@@ -2129,6 +2161,14 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   if (ai?.art_recs) {
     payload.artRecs = ai.art_recs;
     payload.art_recs = ai.art_recs;
+  }
+  if (ai?.good_day) {
+    payload.goodDay = ai.good_day;
+    payload.good_day = ai.good_day;
+  }
+  if (ai?.rough_day) {
+    payload.roughDay = ai.rough_day;
+    payload.rough_day = ai.rough_day;
   }
   const reuseCutout = speakerReuse?.speakerCutoutUrl ? String(speakerReuse.speakerCutoutUrl).trim() : '';
   const reusePortrait = speakerReuse?.speakerImageUrl ? String(speakerReuse.speakerImageUrl).trim() : '';
