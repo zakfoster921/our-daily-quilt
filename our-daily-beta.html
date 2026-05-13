@@ -2184,6 +2184,46 @@ try {
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.075);
     }
 
+    /* Portal returning: salutation + name — Zakarack, black, no paper; salutation is 75% of name size (set in JS). */
+    #screen-portal .quote-layoutb-strip--portal-greeting-lead,
+    #screen-portal .quote-layoutb-strip--portal-name {
+      background: transparent !important;
+      box-shadow: none !important;
+      color: #000 !important;
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif !important;
+      font-weight: 900 !important;
+      letter-spacing: -0.02em;
+      overflow: visible;
+    }
+
+    /* Rare: one strip when comma split did not fit two lines — salutation + name spans (em sizes). */
+    #screen-portal .quote-layoutb-strip--portal-greeting-inline-name {
+      background: transparent !important;
+      box-shadow: none !important;
+      overflow: visible;
+    }
+
+    #screen-portal .quote-layoutb-strip--portal-greeting-inline-name .portal-greeting-lead {
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif !important;
+      color: #000 !important;
+      font-size: 1.5em;
+      font-weight: 900 !important;
+      letter-spacing: -0.02em;
+      background: transparent;
+    }
+
+    #screen-portal .quote-layoutb-strip--portal-greeting-inline-name .portal-greeting-name {
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif !important;
+      color: #000 !important;
+      font-size: 2em;
+      font-weight: 900 !important;
+      letter-spacing: -0.02em;
+      background: transparent;
+      display: inline-block;
+      transform: translateY(clamp(0.75rem, 10vmin, 3.5rem)) rotate(2.75deg);
+      transform-origin: center center;
+    }
+
     /* ===== QUILT ===== */
     #quilt {
       width: 100% !important;
@@ -3062,7 +3102,7 @@ try {
         /* Bottom safe-area lives on `.quilt-scroll-icon-footer` below the transparent gap. */
         padding: 0.75rem max(24px, calc(var(--odq-safe-right) + 18px)) 0.85rem max(24px, calc(var(--odq-safe-left) + 18px)) !important;
         box-sizing: border-box !important;
-        /* Card chrome lives on `.quilt-contributor-panel` so the panel fully wraps title + names. */
+        /* Card chrome on `.quilt-contributor-panel` + `.quilt-contributor-count-panel`; gap stacks the two cards. */
         background: transparent !important;
         box-shadow: none !important;
         z-index: 10 !important;
@@ -3070,6 +3110,7 @@ try {
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
+        gap: 0.5rem !important;
         /* Height follows the contributor card; vertical lift uses measured height via `--quilt-contributors-band-measured` when set.
            Use min-content (not 0) so WKWebView never flex-shrinks the strip below the card — that was clipping the title glyphs. */
         min-height: min-content !important;
@@ -3236,21 +3277,52 @@ try {
         display: none;
       }
 
+      #screen-quilt .quilt-contributor-count-panel {
+        pointer-events: none;
+        width: min(88vw, 380px);
+        margin: 0 auto;
+        display: block;
+        min-height: min-content;
+        box-sizing: border-box;
+        padding: 0.15rem 0.35rem 0.25rem;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      #screen-quilt .quilt-contributor-count-panel-body {
+        container-type: inline-size;
+        container-name: quilt-contributor-count;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        text-align: center;
+      }
+
+      #screen-quilt .quilt-contributor-count-value {
+        margin: 0;
+        padding: 0 0 0.06em;
+        font-family: 'Libreville', 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+        font-size: clamp(6.1rem, 36.4vw, 9.5rem);
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums lining-nums;
+        color: #fff;
+      }
+
+      @supports (font-size: 1cqi) {
+        #screen-quilt .quilt-contributor-count-panel-body .quilt-contributor-count-value {
+          font-size: clamp(6.1rem, 67.6cqi, 9.75rem);
+        }
+      }
+
       #screen-quilt .quilt-contributor-panel:has(.quilt-contributor-list:empty) {
         display: none;
       }
 
-      #screen-quilt .quilt-fixed-quote-card.quote-card {
-        width: min(76vw, 340px);
-        max-width: min(76vw, 340px);
-        margin: 0 auto;
-        padding: 0;
-        min-height: 0;
-        background: transparent;
-        align-items: center;
-        overflow: visible;
-      }
-      
       #quilt { 
         width: 100% !important; 
         height: 100% !important; 
@@ -3319,7 +3391,16 @@ try {
         --quilt-contributors-band-height: min(44vh, 24rem);
         --quilt-icon-strip-pad-v: clamp(0rem, 0.2vh, 0.15rem);
         --quilt-contributor-footer-gap-height: clamp(0.15rem, 0.6vw, 0.35rem);
-        --quilt-scroll-icon-footer-height: calc(44px + (2 * var(--quilt-icon-strip-pad-v)) + max(0px, env(safe-area-inset-bottom, 0px)));
+        /* `.quilt-doq-footer-header` vertical padding (0.55rem + 0.15rem) + plate padding + square logo; keep in sync with plate + img CSS. */
+        --quilt-doq-footer-header-img-size: min(24vw, 100px);
+        --quilt-doq-footer-header-plate-pad: clamp(0.22rem, 1.4vw, 0.5rem);
+        --quilt-doq-footer-header-block: calc(
+          0.7rem + var(--quilt-doq-footer-header-img-size) + (2 * var(--quilt-doq-footer-header-plate-pad))
+        );
+        --quilt-scroll-icon-footer-height: calc(
+          var(--quilt-doq-footer-header-block) + 44px + (2 * var(--quilt-icon-strip-pad-v)) +
+            max(0px, env(safe-area-inset-bottom, 0px))
+        );
         /* Fallback band height before JS measures the real strip; `syncQuiltContributorsBandLift` sets `--quilt-contributors-band-measured`. */
         --quilt-contributors-final-screen-lift: calc(
           (
@@ -3528,7 +3609,7 @@ try {
         background: #f6f4f1 !important;
         padding: 2.25rem 1rem 1rem !important;
         /* Transparent gap above lets the fixed quilt show through between this stack and the quote-card stack. */
-        margin-top: 48px !important;
+        margin-top: 96px !important;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25) !important;
         width: 100% !important;
         /* Sheet follows the scroll-revealed contributor list below the fixed quilt. */
@@ -5526,18 +5607,6 @@ try {
       mix-blend-mode: screen;
     }
 
-    #screen-quilt .quilt-quote-layoutb-card.quote-card {
-      display: none !important;
-      --quilt-quote-strip-card-bg: #e7d8bc;
-      width: calc(100% + 40px);
-      max-width: none;
-      margin: 0 -20px 30px;
-      padding: 1.85rem 0;
-      background: var(--quilt-quote-strip-card-bg);
-      box-shadow: none;
-      overflow: visible;
-    }
-
     #screen-quilt .quilt-reflection-scrap-note {
       position: relative;
       z-index: 2;
@@ -7188,11 +7257,6 @@ try {
       #screen-quilt .quilt-reflection-scrap-widget--fabric {
         margin: 0.65rem 20px 30px;
       }
-
-      #screen-quilt .quilt-quote-layoutb-card.quote-card {
-        width: calc(100% + 40px);
-        margin: 0 -20px 30px;
-      }
     }
 
     @media (max-width: 480px) {
@@ -7235,11 +7299,6 @@ try {
 
       #screen-quilt .quilt-reflection-response-submit {
         width: 100%;
-      }
-
-      #screen-quilt .quilt-quote-layoutb-card.quote-card {
-        width: calc(100% + 40px);
-        margin: 0 -20px 30px;
       }
     }
 
@@ -7286,9 +7345,42 @@ try {
       bottom: auto;
       z-index: 12;
       flex-shrink: 0;
-      background: #ebe8e3;
+      background: transparent;
       padding: 0 0 max(0.05rem, env(safe-area-inset-bottom, 0px)) 0;
-      box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.05);
+      box-shadow: none;
+    }
+
+    /* DOQ lockup: black plate so PNG transparency does not show the quilt; white type via filter on the img only. */
+    #screen-quilt .quilt-doq-footer-header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.55rem 1rem 0.15rem;
+      margin: 0;
+      background: transparent;
+    }
+
+    #screen-quilt .quilt-doq-footer-header__plate {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      background: #000;
+      border-radius: min(14px, 22%);
+      padding: var(--quilt-doq-footer-header-plate-pad, clamp(0.22rem, 1.4vw, 0.5rem));
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+    }
+
+    #screen-quilt .quilt-doq-footer-header__img {
+      display: block;
+      width: var(--quilt-doq-footer-header-img-size, min(24vw, 100px));
+      max-width: 100%;
+      height: auto;
+      aspect-ratio: 1 / 1;
+      object-fit: contain;
+      filter: brightness(0) invert(1);
     }
 
     #screen-quilt .quilt-scroll-icon-footer > .button-group:last-of-type {
@@ -7401,6 +7493,19 @@ try {
       font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
       line-height: 1.15;
       white-space: nowrap;
+    }
+
+    /* Same type scale as `.quilt-before-you-go` (container for `cqi` on shared title class). */
+    #screen-quilt .quilt-heads-together-heading {
+      container-type: inline-size;
+      width: min(380px, calc(100% - 2.25rem));
+      max-width: 100%;
+      margin: 0 auto 0.35rem;
+      box-sizing: border-box;
+    }
+
+    #screen-quilt .quilt-heads-together-heading .quilt-before-you-go__title {
+      text-align: center;
     }
 
     #screen-quilt .quilt-before-you-go__block {
@@ -8111,13 +8216,10 @@ try {
           </button>
         </div>
 
-        <div
-          class="quote-card layoutb-preview-card quilt-quote-layoutb-card"
-          id="quilt-quote-layoutb-card"
-          aria-live="polite"
-        ></div>
-
-        <section class="quilt-reflection-scrap-widget quilt-reflection-scrap-widget--fabric" id="quiltReflectionScrapWidget" aria-label="Community reflection">
+        <div class="quilt-heads-together-heading">
+          <h2 class="quilt-before-you-go__title" id="quiltHeadsTogetherHeading">Heads together</h2>
+        </div>
+        <section class="quilt-reflection-scrap-widget quilt-reflection-scrap-widget--fabric" id="quiltReflectionScrapWidget" aria-labelledby="quiltHeadsTogetherHeading">
           <p class="quilt-reflection-scrap-kicker" id="quiltReflectionScrapTitle">Share one small thought</p>
           <div class="quilt-reflection-fabric-card">
             <div class="quilt-reflection-scrap-note">
@@ -8375,6 +8477,11 @@ try {
       </div>
       <div class="quilt-scroll-quilt-gap quilt-scroll-quilt-gap--after-blessing" aria-hidden="true"></div>
       <div class="quilt-fixed-quote-strips quilt-fixed-contributors" aria-label="Today’s contributors">
+        <div class="quilt-contributor-count-panel">
+          <div class="quilt-contributor-count-panel-body">
+            <p class="quilt-contributor-count-value" id="quiltContributorCount">0</p>
+          </div>
+        </div>
         <div class="quilt-contributor-panel">
           <div class="quilt-contributor-panel-body">
             <p class="quilt-contributor-title">MANY HANDS MADE THIS QUILT</p>
@@ -8384,6 +8491,18 @@ try {
       </div>
       <div class="quilt-contributor-footer-gap" aria-hidden="true"></div>
       <div class="quilt-scroll-icon-footer" aria-label="OUR DAILY QUILT — links and settings">
+        <div class="quilt-doq-footer-header">
+          <span class="quilt-doq-footer-header__plate">
+            <img
+              class="quilt-doq-footer-header__img"
+              src="assets/portal-our-daily-quilt.png"
+              alt="OUR DAILY QUILT"
+              width="705"
+              height="705"
+              decoding="async"
+            />
+          </span>
+        </div>
         <div class="button-group" hidden aria-hidden="true">
           <button
             type="button"
@@ -10950,6 +11069,30 @@ try {
         return lo + Math.random() * (hi - lo);
       }
 
+      /**
+       * First starter-axis split used to keep `CONFIG.APP.defaultColor` on the non-contributor half.
+       * That made every quilt start with the same pink. Use a tonal companion of the first pick instead.
+       */
+      _starterAxisNonContributorColor(firstPickHex) {
+        if (typeof firstPickHex !== 'string' || !firstPickHex.match(/^#[0-9A-Fa-f]{6}$/)) {
+          return typeof CONFIG !== 'undefined' && CONFIG.APP?.defaultColor
+            ? CONFIG.APP.defaultColor
+            : '#ea9b9a';
+        }
+        const hsl = this.hexToHsl(firstPickHex);
+        const preferLighten = hsl.l < 58;
+        const primary = preferLighten ? this.lightenColorHsl(hsl, 0.16) : this.darkenColorHsl(hsl, 0.11);
+        let out = Utils.hslToHex(primary.h, primary.s, primary.l);
+        if (typeof Utils.validateHexColor === 'function' && !Utils.validateHexColor(out)) {
+          return firstPickHex;
+        }
+        if (this.getColorSimilarity(out, firstPickHex) > 0.88) {
+          const alt = preferLighten ? this.darkenColorHsl(hsl, 0.11) : this.lightenColorHsl(hsl, 0.14);
+          out = Utils.hslToHex(alt.h, alt.s, alt.l);
+        }
+        return typeof Utils.validateHexColor === 'function' && Utils.validateHexColor(out) ? out : firstPickHex;
+      }
+
       _inferStarterAxisOrientation() {
         if (!Array.isArray(this.blocks) || this.blocks.length !== 2) return null;
         const [a, b] = this.blocks;
@@ -10981,9 +11124,11 @@ try {
         if (this.macroStructureFrozen) return null;
         if (this.submissionCount === 0 && this.blocks.length === 1) {
           const parent = this.blocks[0];
+          const axisBase = this._starterAxisNonContributorColor(newColor);
+          const parentTinted = { ...parent, color: axisBase };
           const nextSubmission = this.submissionCount + 1;
           this.submissionCount = nextSubmission;
-          const axisBlocks = this.createDiagonalAxisPattern(parent, newColor);
+          const axisBlocks = this.createDiagonalAxisPattern(parentTinted, newColor);
           if (
             Array.isArray(axisBlocks) &&
             axisBlocks.length === 2 &&
@@ -11004,7 +11149,7 @@ try {
           const ratio = this._starterAxisRatio();
           const children = vertical
             ? [
-                this._makeStarterAxisChild(parent, { width: parent.width * ratio }, parent.color, nextSubmission, 'a'),
+                this._makeStarterAxisChild(parent, { width: parent.width * ratio }, axisBase, nextSubmission, 'a'),
                 this._makeStarterAxisChild(
                   parent,
                   { x: parent.x + parent.width * ratio, width: parent.width * (1 - ratio) },
@@ -11014,7 +11159,7 @@ try {
                 )
               ]
             : [
-                this._makeStarterAxisChild(parent, { height: parent.height * ratio }, parent.color, nextSubmission, 'a'),
+                this._makeStarterAxisChild(parent, { height: parent.height * ratio }, axisBase, nextSubmission, 'a'),
                 this._makeStarterAxisChild(
                   parent,
                   { y: parent.y + parent.height * ratio, height: parent.height * (1 - ratio) },
@@ -11122,7 +11267,8 @@ try {
           y: 0,
           width: initialWidth,
           height: initialHeight,
-          color: CONFIG.APP.defaultColor,
+          // Warm neutral (matches color-screen idle); first real hue comes from the first contributor’s pick.
+          color: '#f6f4f1',
           contributorId: this.deviceId,
           submissionIndex: 0,
           visualLayerIndex: 0,
@@ -17953,7 +18099,9 @@ try {
           y: Number(r?.y),
           width: Number(r?.width),
           height: Number(r?.height),
-          pad: Number(r?.pad || 0)
+          pad: Number(r?.pad || 0),
+          /** Relative penalty vs default (1). Higher = stronger avoidance (e.g. eyes vs cheek). */
+          weight: Number.isFinite(Number(r?.weight)) && Number(r?.weight) > 0 ? Number(r.weight) : 1
         }))
         .filter((r) =>
           Number.isFinite(r.x) &&
@@ -17968,7 +18116,8 @@ try {
           left: r.x - r.pad,
           top: r.y - r.pad,
           right: r.x + r.width + r.pad,
-          bottom: r.y + r.height + r.pad
+          bottom: r.y + r.height + r.pad,
+          weight: r.weight
         }));
         const stripRect = (spec, cx = spec.x, cy = spec.y) => ({
           left: cx - spec.w / 2 - 12,
@@ -17986,7 +18135,9 @@ try {
         const scoreCandidate = (spec, cx, cy) => {
           const r = stripRect(spec, cx, cy);
           let overlap = 0;
-          for (const avoid of expanded) overlap += overlapArea(r, avoid);
+          for (const avoid of expanded) {
+            overlap += overlapArea(r, avoid) * (Number(avoid.weight) > 0 ? Number(avoid.weight) : 1);
+          }
           let stripOverlap = 0;
           for (const placed of placedRects) stripOverlap += overlapArea(r, placed);
           const orderPenalty = Math.max(0, readingFloorY - r.top);
@@ -21207,28 +21358,49 @@ try {
         };
         try {
           if (this.db) {
-            // Try Firestore first
             this.logger.log('🔍 Looking for quilt in Firestore with date key:', todayKey);
             // Single-doc read only — listing the whole `quilts` collection was very slow at startup.
             const quiltRef = window.firestore.doc(this.db, 'quilts', todayKey);
-            const readDoc = window.firestore.getDoc || window.firestore.getDocFromServer;
-            const quiltSnap = await withTimeout(readDoc(quiltRef), 1500, 'Firestore quilt read');
-            
-            if (quiltSnap.exists()) {
+            const getCached = window.firestore.getDoc;
+            const getFromServer = window.firestore.getDocFromServer;
+            let quiltSnap = null;
+            let firestoreReadSource = '';
+            // Server first: `getDoc` can return a stale local snapshot before the network catches up,
+            // which mis-paints the portal join line and quilt on cold open.
+            if (typeof getFromServer === 'function') {
+              try {
+                quiltSnap = await withTimeout(getFromServer(quiltRef), 10000, 'Firestore quilt read (server)');
+                firestoreReadSource = 'server';
+              } catch (e) {
+                this.logger.warn('⚠️ Firestore server quilt read failed:', e && e.message ? e.message : e);
+              }
+            }
+            if (!quiltSnap && typeof getCached === 'function') {
+              try {
+                quiltSnap = await withTimeout(getCached(quiltRef), 5000, 'Firestore quilt read (cache)');
+                firestoreReadSource = firestoreReadSource || 'cache';
+              } catch (e) {
+                this.logger.warn('⚠️ Firestore cache quilt read failed:', e && e.message ? e.message : e);
+              }
+            }
+            if (quiltSnap && quiltSnap.exists()) {
               const data = quiltSnap.data();
-              this.logger.log('📖 Loaded quilt from Firestore with', data.blocks?.length || 0, 'blocks');
-              return { 
+              this.logger.log(
+                '📖 Loaded quilt from Firestore (' + (firestoreReadSource || 'firestore') + ') with',
+                data.blocks?.length || 0,
+                'blocks'
+              );
+              return {
                 dateKey: todayKey,
                 date: data.date || todayKey,
-                blocks: data.blocks || [], 
+                blocks: data.blocks || [],
                 contributorCount: data.contributorCount || 1,
                 colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
                 contributors: Array.isArray(data.contributors) ? data.contributors : [],
                 macroStructureFrozen: data.macroStructureFrozen === true
               };
-            } else {
-              this.logger.warn('⚠️ No Firestore document found for date:', todayKey);
             }
+            this.logger.warn('⚠️ No Firestore document found for date:', todayKey);
           }
           
           // Fallback to localStorage
@@ -21250,7 +21422,7 @@ try {
         return { 
           dateKey: todayKey,
           date: todayKey,
-          blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: CONFIG.APP.defaultColor }], 
+          blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: '#f6f4f1' }], 
           contributorCount: 1,
           colorReplayEvents: [],
           contributors: [],
@@ -22427,29 +22599,6 @@ try {
         };
       }
 
-      populateFixedQuiltQuoteStrips(activeQuote = this.getTodayQuote()) {
-        const wrap = document.querySelector('.quilt-fixed-quote-strips');
-        const card = document.querySelector('#screen-quilt .quilt-fixed-quote-card');
-        if (!wrap || !card || typeof this._mountLayoutBQuoteStrips !== 'function') return;
-
-        const text = String(activeQuote?.text ?? activeQuote?.body ?? '').trim();
-        const author = String(activeQuote?.author ?? '').trim();
-        card.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => n.remove());
-        wrap.classList.toggle('has-content', !!text);
-        if (!text) return;
-
-        const paint = () => {
-          if ((card.clientWidth || 0) < 80) {
-            requestAnimationFrame(paint);
-            return;
-          }
-          this._mountLayoutBQuoteStrips(card, text, author, {
-            scaleMultiplier: 0.82
-          });
-        };
-        requestAnimationFrame(paint);
-      }
-
       /**
        * Rebuild Layout B strip stage using current wrapper width. Call after #screen-quote is visible —
        * displayQuote() runs at init while the screen is display:none, so clientWidth was wrong until now.
@@ -22564,6 +22713,21 @@ try {
               if (best) greetingLines = [best.left, best.right];
             }
           }
+          /* Returning portal: split "Salutation, Name" onto two strips when both fit so the name can use its own typography. */
+          if (greetingLines.length === 1) {
+            const commaPortal = greetingText.lastIndexOf(',');
+            if (commaPortal > 0 && commaPortal < greetingText.length - 1) {
+              const leadPortal = greetingText.slice(0, commaPortal).trim();
+              const tailPortal = greetingText.slice(commaPortal + 1).trim();
+              if (leadPortal && tailPortal) {
+                const wLeadPortal = measureCtx.measureText(leadPortal).width;
+                const wTailPortal = measureCtx.measureText(tailPortal).width;
+                if (wLeadPortal <= maxSingleLinePx && wTailPortal <= maxSingleLinePx) {
+                  greetingLines = [leadPortal, tailPortal];
+                }
+              }
+            }
+          }
           const lineWidths = greetingLines.map((ln) =>
             Math.ceil(measureCtx.measureText(ln || ' ').width)
           );
@@ -22582,7 +22746,9 @@ try {
             h: stripH,
             x: planW / 2,
             y: Math.round(clusterTopY + idx * (stripH + lineGap) + stripH / 2),
-            angle: idx % 2 === 0 ? -0.015 : 0.01
+            angle: idx % 2 === 0 ? -0.015 : 0.01,
+            isPortalGreetingLead: greetingLines.length > 1 && idx === 0,
+            isPortalNameLine: greetingLines.length > 1 && idx === greetingLines.length - 1
           }));
         } else {
           strips = getLayoutBStoryQuotePlan(document.createElement('canvas').getContext('2d'), {
@@ -22667,29 +22833,68 @@ try {
         const cy = (minTop + maxBottom) / 2;
         for (const s of strips) {
           const el = document.createElement('div');
-          el.className = `quote-layoutb-strip${s.role === 'author' ? ' quote-layoutb-strip--author' : ''}`;
           const lines = Array.isArray(s.lines) && s.lines.length ? s.lines : [String(s.text || '').trim()];
-          el.innerHTML = lines.map((ln) => String(ln || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')).join('<br>');
+          const escStrip = (t) => String(t || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          let portalInlineNameClass = '';
+          let innerHtml = lines.map((ln) => escStrip(ln)).join('<br>');
+          if (options.portalGreeting && lines.length === 1) {
+            const one = lines[0];
+            const ci = one.lastIndexOf(',');
+            if (ci > 0 && ci < one.length - 1) {
+              const lead = one.slice(0, ci).trim();
+              const tail = one.slice(ci + 1).trim();
+              if (lead && tail) {
+                innerHtml = `<span class="portal-greeting-lead">${escStrip(lead)},</span> <span class="portal-greeting-name">${escStrip(tail)}</span>`;
+                portalInlineNameClass = ' quote-layoutb-strip--portal-greeting-inline-name';
+              }
+            }
+          }
+          el.className = `quote-layoutb-strip${s.role === 'author' ? ' quote-layoutb-strip--author' : ''}${
+            s.isPortalGreetingLead ? ' quote-layoutb-strip--portal-greeting-lead' : ''
+          }${s.isPortalNameLine ? ' quote-layoutb-strip--portal-name' : ''}${portalInlineNameClass}`;
+          el.innerHTML = innerHtml;
           const localX = (stageW / 2) + ((Number(s.x || 0) - cx) * xScale);
           const localY = (stageH / 2) + ((Number(s.y || 0) - cy) * yScale);
-          const wPx = Math.max(20, Number(s.w || 20) * xScale);
-          const hPx = Math.max(20, Number(s.h || 20) * yScale);
-          const lhPx = Math.max(1, Number(s.lh || 0) * yScale);
+          let wPx = Math.max(20, Number(s.w || 20) * xScale);
+          let hPx = Math.max(20, Number(s.h || 20) * yScale);
+          let lhPx = Math.max(1, Number(s.lh || 0) * yScale);
           const fontPxMatch = /(\d+)px/.exec(String(s.font || ''));
           const minStripFontPx = options.portalGreeting ? 25 : 10;
           let fontPx = fontPxMatch
             ? Math.max(minStripFontPx, parseInt(fontPxMatch[1], 10) * yScale)
             : Math.max(minStripFontPx, 16 * yScale);
           fontPx = Math.max(minStripFontPx, Math.round(fontPx));
+          if (options.portalGreeting && s.isPortalNameLine) {
+            fontPx = Math.max(minStripFontPx, Math.round(fontPx * 2));
+            lhPx = Math.max(1, Math.round(lhPx * 2));
+            hPx = Math.max(hPx, Math.round(hPx * 1.85));
+            wPx = Math.max(wPx, Math.round(wPx * 1.15));
+          } else if (options.portalGreeting && s.isPortalGreetingLead) {
+            /* Salutation: 75% of name size (name uses 2× base). */
+            fontPx = Math.max(minStripFontPx, Math.round(fontPx * 1.5));
+            lhPx = Math.max(1, Math.round(lhPx * 1.5));
+            hPx = Math.max(hPx, Math.round(hPx * 1.28));
+            wPx = Math.max(20, Math.round(wPx * 1.04));
+          }
           const rotDeg = (Number(s.angle || 0) * 180) / Math.PI;
           el.style.width = `${wPx}px`;
           el.style.height = `${hPx}px`;
           el.style.lineHeight = `${lhPx}px`;
           el.style.fontSize = `${fontPx}px`;
-          if (s.role === 'author') el.style.fontStyle = 'italic';
+          if (options.portalGreeting && (s.isPortalNameLine || s.isPortalGreetingLead)) {
+            el.style.fontWeight = '900';
+          } else if (s.role === 'author') {
+            el.style.fontStyle = 'italic';
+          }
           el.style.left = `${localX}px`;
           el.style.top = `${localY}px`;
-          el.style.transform = `translate(-50%, -50%) rotate(${rotDeg.toFixed(3)}deg)`;
+          let stripTransform = `translate(-50%, -50%) rotate(${rotDeg.toFixed(3)}deg)`;
+          if (options.portalGreeting && s.isPortalNameLine) {
+            const portalNameNudgeY = Math.round(stageH * 0.1);
+            const portalNameTiltDeg = rotDeg + 2.75;
+            stripTransform = `translate(-50%, calc(-50% + ${portalNameNudgeY}px)) rotate(${portalNameTiltDeg.toFixed(3)}deg)`;
+          }
+          el.style.transform = stripTransform;
           stage.appendChild(el);
         }
         quoteCard.appendChild(stage);
@@ -22740,30 +22945,6 @@ try {
         card.classList.add('layoutb-preview-card');
         this._mountLayoutBQuoteStrips(card, text, author, {
           preferFullWidthScale: false
-        });
-      }
-
-      refreshQuiltScreenQuoteStrips(quote = null) {
-        const card = document.getElementById('quilt-quote-layoutb-card');
-        if (!card || typeof getLayoutBStoryQuotePlan !== 'function') return;
-        const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
-        const text = String(todayQuote?.text ?? todayQuote?.body ?? '').trim();
-        const author = String(todayQuote?.author ?? '').trim();
-        card.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => n.remove());
-        card.hidden = !text;
-        if (!text) return;
-        if (window.app?.getContrastingQuiltColorExcludingDominant) {
-          card.style.setProperty('--quilt-quote-strip-card-bg', window.app.getContrastingQuiltColorExcludingDominant());
-        }
-        card.classList.add('layoutb-preview-card');
-        requestAnimationFrame(() => {
-          if ((card.clientWidth || 0) <= 80) {
-            requestAnimationFrame(() => this.refreshQuiltScreenQuoteStrips(todayQuote));
-            return;
-          }
-          this._mountLayoutBQuoteStrips(card, text, author, {
-            preferFullWidthScale: false
-          });
         });
       }
 
@@ -22941,7 +23122,6 @@ try {
           window.app?.renderQuiltContributorList?.();
 
           this.populateReflectionPromptCard();
-          this.refreshQuiltScreenQuoteStrips(activeQuote);
           window.app?.refreshQuoteSpeakerWidget?.(activeQuote);
           window.app?.refreshQuiltReflectionScrapWidget?.(activeQuote);
           window.app?.refreshQuiltFortuneReveal?.(activeQuote);
@@ -32682,10 +32862,47 @@ try {
           item.textContent = entry.name || 'Friend';
           list.appendChild(item);
         });
+        this._setQuiltContributorCountDisplay(contributors.length);
         wrap.classList.toggle('has-content', contributors.length > 0);
         list.scrollTop = 0;
         this._ensureContributorsStripResizeObservation(wrap);
         this.scheduleSyncQuiltContributorsBandLift();
+      }
+
+      _setQuiltContributorCountDisplay(target) {
+        const el = document.getElementById('quiltContributorCount');
+        if (!el) return;
+        const n = Math.max(0, Math.floor(Number(target) || 0));
+        const readShown = () => {
+          const raw = String(el.textContent || '').replace(/[^\d-]/g, '');
+          const v = parseInt(raw, 10);
+          return Number.isFinite(v) ? v : 0;
+        };
+        if (this._contributorCountAnimRaf != null) {
+          cancelAnimationFrame(this._contributorCountAnimRaf);
+          this._contributorCountAnimRaf = null;
+        }
+        const from = readShown();
+        if (from === n) {
+          el.textContent = String(n);
+          return;
+        }
+        const delta = Math.abs(n - from);
+        const duration = Math.min(1100, 160 + delta * 38);
+        const t0 = performance.now();
+        const easeOutCubic = (u) => 1 - (1 - u) ** 3;
+        const tick = (now) => {
+          const u = Math.min(1, (now - t0) / duration);
+          const shown = Math.round(from + (n - from) * easeOutCubic(u));
+          el.textContent = String(shown);
+          if (u < 1) {
+            this._contributorCountAnimRaf = requestAnimationFrame(tick);
+          } else {
+            el.textContent = String(n);
+            this._contributorCountAnimRaf = null;
+          }
+        };
+        this._contributorCountAnimRaf = requestAnimationFrame(tick);
       }
 
       _ensureContributorsStripResizeObservation(wrap) {
@@ -39492,6 +39709,21 @@ try {
             typeof Utils !== 'undefined' && Utils.FIRST_NAME_SKIPPED_KEY
               ? Utils.FIRST_NAME_SKIPPED_KEY
               : 'ourDailyFirstNameSkipped';
+          localStorage.removeItem(nameKey);
+          localStorage.removeItem(skipKey);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+      console.log('OUR DAILY QUILT: cleared first-visit and name keys. Reloading…');
+      location.reload();
+    };
+
+    // Firebase initialization moved to earlier in the file
+  </script>
+  </body>
+</html>
+: 'ourDailyFirstNameSkipped';
           localStorage.removeItem(nameKey);
           localStorage.removeItem(skipKey);
         }
