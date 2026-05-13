@@ -5378,21 +5378,35 @@ try {
       min-height: 54px !important;
     }
 
-    /* "What kind of day is it?" — two tappable tiles between the quote sheet and the
-       Heads-together reflection block. Deliberately understated: no card chrome, hairline
-       borders, plenty of tap area, smooth expand-to-fill on selection. */
+    /* "What kind of day is it?" — its own sheet between the quote-card-stack and the
+       button-container (Heads together). The card matches the existing sheet pattern
+       (off-white background, hairline shadow). The tiles inside are deliberately quiet:
+       large tap area, faint border, no chrome until selected. When a tile is tapped the
+       other collapses to zero, the active tile fills the row, and its text expands
+       inside the tile. */
     #screen-quilt .quilt-mood-widget {
+      position: relative;
       width: 100%;
-      max-width: 28rem;
-      margin: 0 auto 1.25rem;
+      background: #f6f4f1;
+      padding: 1.4rem 1rem 1.6rem;
+      margin-top: 32px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      z-index: 10;
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
-      gap: 0.55rem;
-      box-sizing: border-box;
+      align-items: center;
+      gap: 0.75rem;
     }
 
     #screen-quilt .quilt-mood-widget[hidden] {
       display: none !important;
+    }
+
+    /* Tighten the gap below this card so the existing 96px button-container gap above
+       Heads together doesn't double up visually. */
+    #screen-quilt .quilt-mood-widget + .button-container {
+      margin-top: 32px !important;
     }
 
     #screen-quilt .quilt-mood-widget__label {
@@ -5408,6 +5422,8 @@ try {
       display: flex;
       gap: 0.5rem;
       width: 100%;
+      max-width: 28rem;
+      align-items: stretch;
       transition: gap 240ms ease;
     }
 
@@ -5427,9 +5443,10 @@ try {
       align-items: center;
       justify-content: center;
       flex: 1 1 50%;
-      min-height: 56px;
-      padding: 0.75rem 0;
+      min-height: 64px;
+      padding: 0.85rem 0.9rem;
       overflow: hidden;
+      text-align: center;
       -webkit-tap-highlight-color: transparent;
       transition:
         flex-basis 320ms ease,
@@ -5468,25 +5485,49 @@ try {
       color: rgba(36, 27, 20, 0.85);
     }
 
+    #screen-quilt .quilt-mood-widget__tile-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      gap: 0;
+      transition: gap 260ms ease;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__tile[aria-pressed="true"] .quilt-mood-widget__tile-inner {
+      gap: 0.65rem;
+    }
+
     #screen-quilt .quilt-mood-widget__arrow {
       width: 30px;
       height: 30px;
       display: block;
+      flex-shrink: 0;
     }
 
-    #screen-quilt .quilt-mood-widget__text {
-      margin: 0.2rem 0 0;
+    #screen-quilt .quilt-mood-widget__tile-text {
+      display: block;
+      width: 100%;
+      max-width: 24rem;
+      margin: 0 auto;
+      padding: 0 0.25rem;
       font-size: 1.02rem;
       line-height: 1.45;
       color: rgba(36, 27, 20, 0.88);
       text-align: center;
-      max-width: 26rem;
-      padding: 0 0.25rem;
-      align-self: center;
+      box-sizing: border-box;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition:
+        max-height 320ms ease,
+        opacity 240ms ease;
     }
 
-    #screen-quilt .quilt-mood-widget__text[hidden] {
-      display: none;
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__tile[aria-pressed="true"] .quilt-mood-widget__tile-text {
+      max-height: 240px;
+      opacity: 1;
     }
 
     #screen-quilt .quilt-popular-color-panel {
@@ -8261,6 +8302,41 @@ try {
         </div>
       </div>
 
+      <!-- "What kind of day is it?" — own sheet between the quote and Heads together. -->
+      <section class="quilt-mood-widget" id="quiltMoodWidget" aria-labelledby="quiltMoodWidgetLabel" hidden>
+        <p class="quilt-mood-widget__label" id="quiltMoodWidgetLabel">What kind of day is it?</p>
+        <div class="quilt-mood-widget__tiles" role="group" aria-labelledby="quiltMoodWidgetLabel">
+          <button
+            type="button"
+            class="quilt-mood-widget__tile"
+            data-mood="good"
+            aria-pressed="false"
+            aria-label="A good day"
+          >
+            <span class="quilt-mood-widget__tile-inner">
+              <svg class="quilt-mood-widget__arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 4 L12 20 M5 11 L12 4 L19 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="quilt-mood-widget__tile-text" data-mood-text="good" aria-live="polite"></span>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="quilt-mood-widget__tile"
+            data-mood="rough"
+            aria-pressed="false"
+            aria-label="A rough day"
+          >
+            <span class="quilt-mood-widget__tile-inner">
+              <svg class="quilt-mood-widget__arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 4 L12 20 M5 13 L12 20 L19 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="quilt-mood-widget__tile-text" data-mood-text="rough" aria-live="polite"></span>
+            </span>
+          </button>
+        </div>
+      </section>
+
       <!-- Button container - side panel on desktop -->
       <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); padding: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: none;">
 
@@ -8284,35 +8360,6 @@ try {
             </span>
           </button>
         </div>
-
-        <section class="quilt-mood-widget" id="quiltMoodWidget" aria-labelledby="quiltMoodWidgetLabel" hidden>
-          <p class="quilt-mood-widget__label" id="quiltMoodWidgetLabel">What kind of day is it?</p>
-          <div class="quilt-mood-widget__tiles" role="group" aria-labelledby="quiltMoodWidgetLabel">
-            <button
-              type="button"
-              class="quilt-mood-widget__tile"
-              data-mood="good"
-              aria-pressed="false"
-              aria-label="A good day"
-            >
-              <svg class="quilt-mood-widget__arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 4 L12 20 M5 11 L12 4 L19 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="quilt-mood-widget__tile"
-              data-mood="rough"
-              aria-pressed="false"
-              aria-label="A rough day"
-            >
-              <svg class="quilt-mood-widget__arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 4 L12 20 M5 13 L12 20 L19 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-          </div>
-          <p class="quilt-mood-widget__text" id="quiltMoodWidgetText" aria-live="polite" hidden></p>
-        </section>
 
         <div class="quilt-heads-together-heading">
           <h2 class="quilt-before-you-go__title" id="quiltHeadsTogetherHeading">Heads together</h2>
@@ -28122,7 +28169,6 @@ try {
       refreshQuiltMoodWidget(quote = null) {
         const widget = document.getElementById('quiltMoodWidget');
         if (!widget) return;
-        const textEl = document.getElementById('quiltMoodWidgetText');
         const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
         let goodDay = String(todayQuote?.goodDay ?? todayQuote?.good_day ?? '')
           .replace(/\s+/g, ' ')
@@ -28148,14 +28194,18 @@ try {
         widget.querySelectorAll('.quilt-mood-widget__tile').forEach((tile) => {
           tile.setAttribute('aria-pressed', 'false');
         });
-        if (textEl) {
-          textEl.textContent = '';
-          textEl.setAttribute('hidden', 'hidden');
-        }
+        const setTileText = (mood, value) => {
+          const span = widget.querySelector(
+            `.quilt-mood-widget__tile-text[data-mood-text="${mood}"]`
+          );
+          if (span) span.textContent = value;
+        };
         if (!goodDay || !roughDay) {
           widget.setAttribute('hidden', 'hidden');
           delete widget.dataset.goodDay;
           delete widget.dataset.roughDay;
+          setTileText('good', '');
+          setTileText('rough', '');
           console.log('[mood-widget] hidden — missing field(s)', {
             hasGoodDay: !!goodDay,
             hasRoughDay: !!roughDay,
@@ -28166,6 +28216,8 @@ try {
         }
         widget.dataset.goodDay = goodDay;
         widget.dataset.roughDay = roughDay;
+        setTileText('good', goodDay);
+        setTileText('rough', roughDay);
         widget.removeAttribute('hidden');
         console.log('[mood-widget] visible', {
           previewForced,
@@ -28178,16 +28230,11 @@ try {
         const widget = document.getElementById('quiltMoodWidget');
         if (!widget || widget.dataset.listenerAttached === '1') return;
         widget.dataset.listenerAttached = '1';
-        const textEl = document.getElementById('quiltMoodWidgetText');
         const collapseToNeutral = () => {
           widget.classList.remove('is-active', 'is-good', 'is-rough');
           widget.querySelectorAll('.quilt-mood-widget__tile').forEach((t) => {
             t.setAttribute('aria-pressed', 'false');
           });
-          if (textEl) {
-            textEl.textContent = '';
-            textEl.setAttribute('hidden', 'hidden');
-          }
         };
         widget.addEventListener('click', (event) => {
           const tile = event.target.closest('.quilt-mood-widget__tile');
@@ -28211,10 +28258,6 @@ try {
           widget.classList.add('is-active');
           widget.classList.toggle('is-good', mood === 'good');
           widget.classList.toggle('is-rough', mood === 'rough');
-          if (textEl) {
-            textEl.textContent = text;
-            textEl.removeAttribute('hidden');
-          }
         });
       }
 
