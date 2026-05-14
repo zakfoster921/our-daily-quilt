@@ -2,15 +2,19 @@ name: Reflection Themes Archive
 
 on:
   schedule:
-    # End-of-day snapshot: app day rolls over at 07:00 UTC, so all crons must fire
-    # BEFORE 07:00 UTC — otherwise the date-resolver targets the new (empty) app day.
-    # Primary snapshot at 06:50 UTC.
-    - cron: "50 6 * * *"
-    # Backup attempts at 06:55 and 06:58 UTC. The endpoint is idempotent (skips AI
-    # when there are no new responses since the last generation), so duplicate
-    # successful runs are cheap; these only do real work if the primary failed.
-    - cron: "55 6 * * *"
-    - cron: "58 6 * * *"
+    # Hourly incremental updater. The endpoint is idempotent: it compares the
+    # latest reflection response timestamp against the last theme-generation
+    # time and short-circuits as `skipped: true` (no AI cost) when nothing is
+    # new. So hourly sweeps are cheap and only spend credits when new
+    # reflections have actually been submitted since the last run.
+    #
+    # The date resolver below picks the *current in-progress* app day:
+    #   - Before 07:00 UTC → yesterday's date key (closing app day)
+    #   - At/after 07:00 UTC → today's date key (new active app day)
+    # So :50 hourly means 06:50 UTC still captures the closing day right
+    # before the 07:00 UTC rollover, and the remaining hours incrementally
+    # update themes for the new in-progress app day as responses arrive.
+    - cron: "50 * * * *"
   workflow_dispatch:
     inputs:
       date_key:
