@@ -2129,13 +2129,11 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
     payload.author = ai.author;
   }
   if (ai?.community_prompt) {
-    payload.communityPrompt = ai.community_prompt;
     payload.community_prompt = ai.community_prompt;
   }
   {
     const smallActText = String(ai?.small_act || '').trim();
     if (smallActText) {
-      payload.smallAct = smallActText;
       payload.small_act = smallActText;
     }
   }
@@ -2147,45 +2145,35 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
     payload.notification_text = ai.notification_text;
   }
   if (ai?.ig_caption) {
-    payload.igCaption = ai.ig_caption;
     payload.ig_caption = ai.ig_caption;
   }
   if (ai?.what_if) {
-    payload.whatIf = ai.what_if;
     payload.what_if = ai.what_if;
   }
   if (ai?.speaker_guide_line) {
-    payload.speakerGuideLine = ai.speaker_guide_line;
     payload.speaker_guide_line = ai.speaker_guide_line;
   }
   if (ai?.art_recs) {
-    payload.artRecs = ai.art_recs;
     payload.art_recs = ai.art_recs;
   }
   if (ai?.good_day) {
-    payload.goodDay = ai.good_day;
     payload.good_day = ai.good_day;
   }
   if (ai?.rough_day) {
-    payload.roughDay = ai.rough_day;
     payload.rough_day = ai.rough_day;
   }
   const reuseCutout = speakerReuse?.speakerCutoutUrl ? String(speakerReuse.speakerCutoutUrl).trim() : '';
   const reusePortrait = speakerReuse?.speakerImageUrl ? String(speakerReuse.speakerImageUrl).trim() : '';
   const wikiPortrait = wiki?.speaker_image_url ? String(wiki.speaker_image_url).trim() : '';
   const portraitForRow = reusePortrait || wikiPortrait || reuseCutout || 'needs manual lookup';
-  payload.speakerImageUrl = portraitForRow;
   payload.speaker_image_url = portraitForRow;
   if (reuseCutout) {
-    payload.speakerCutoutUrl = reuseCutout;
     payload.speaker_cutout_url = reuseCutout;
   }
   const attrReuse = speakerReuse?.imageAttribution ? String(speakerReuse.imageAttribution).trim() : '';
   const attrWiki = wiki?.image_attribution ? String(wiki.image_attribution).trim() : '';
-  payload.imageAttribution = attrReuse || attrWiki || 'unavailable';
-  payload.image_attribution = payload.imageAttribution;
+  payload.image_attribution = attrReuse || attrWiki || 'unavailable';
   if (wiki?.speaker_dates) {
-    payload.speakerDates = wiki.speaker_dates;
     payload.speaker_dates = wiki.speaker_dates;
   }
   payload.updatedAt = admin.firestore.FieldValue.serverTimestamp();

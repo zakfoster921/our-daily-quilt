@@ -246,21 +246,15 @@ function isReviewedQuote(data) {
 function assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp) {
   return {
     speakerCutoutUrlSnapshot: cutoutUrl,
-    speaker_cutout_url_snapshot: cutoutUrl,
     speakerCutoutSourceUrlSnapshot: imageUrl,
-    speaker_cutout_source_url_snapshot: imageUrl,
-    speakerCutoutUpdatedAt: timestamp,
     speaker_cutout_updated_at: timestamp
   };
 }
 
 function dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp) {
   return {
-    speakerCutoutUrl: cutoutUrl,
     speaker_cutout_url: cutoutUrl,
-    speakerCutoutSourceUrl: imageUrl,
     speaker_cutout_source_url: imageUrl,
-    speakerCutoutUpdatedAt: timestamp,
     speaker_cutout_updated_at: timestamp
   };
 }
@@ -411,11 +405,8 @@ async function main() {
       const cutoutUrl = await saveDownloadableFile(path, png, 'image/png');
       await row.ref.set(
         {
-          speakerCutoutUrl: cutoutUrl,
           speaker_cutout_url: cutoutUrl,
-          speakerCutoutSourceUrl: imageUrl,
           speaker_cutout_source_url: imageUrl,
-          speakerCutoutUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
           speaker_cutout_updated_at: admin.firestore.FieldValue.serverTimestamp()
         },
         { merge: true }

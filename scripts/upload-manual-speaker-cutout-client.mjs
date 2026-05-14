@@ -55,11 +55,8 @@ function safeName(value) {
 
 function cutoutPayload(cutoutUrl, imageUrl) {
   return {
-    speakerCutoutUrl: cutoutUrl,
     speaker_cutout_url: cutoutUrl,
-    speakerCutoutSourceUrl: imageUrl,
     speaker_cutout_source_url: imageUrl,
-    speakerCutoutUpdatedAt: serverTimestamp(),
     speaker_cutout_updated_at: serverTimestamp()
   };
 }
@@ -67,10 +64,7 @@ function cutoutPayload(cutoutUrl, imageUrl) {
 function assignmentCutoutPayload(cutoutUrl, imageUrl) {
   return {
     speakerCutoutUrlSnapshot: cutoutUrl,
-    speaker_cutout_url_snapshot: cutoutUrl,
     speakerCutoutSourceUrlSnapshot: imageUrl,
-    speaker_cutout_source_url_snapshot: imageUrl,
-    speakerCutoutUpdatedAt: serverTimestamp(),
     speaker_cutout_updated_at: serverTimestamp()
   };
 }

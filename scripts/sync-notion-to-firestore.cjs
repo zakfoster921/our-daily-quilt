@@ -524,42 +524,31 @@ function parseNotionRow(page) {
       text,
       author,
       reflectionPrompt,
-      artRecs,
       art_recs: artRecs,
-      communityPrompt,
       community_prompt: communityPrompt,
       // Omit when empty so merge does not wipe `small_act` prefilled by Claude before this column exists in Notion.
       ...(String(smallAct || '').trim()
-        ? { smallAct: String(smallAct).trim(), small_act: String(smallAct).trim() }
+        ? { small_act: String(smallAct).trim() }
         : {}),
-      whatIf,
       what_if: whatIf,
       // Omit good_day/rough_day when empty so merge does not wipe values prefilled by Claude
       // before these columns exist (or are populated) in Notion.
       ...(String(goodDay || '').trim()
-        ? { goodDay: String(goodDay).trim(), good_day: String(goodDay).trim() }
+        ? { good_day: String(goodDay).trim() }
         : {}),
       ...(String(roughDay || '').trim()
-        ? { roughDay: String(roughDay).trim(), rough_day: String(roughDay).trim() }
+        ? { rough_day: String(roughDay).trim() }
         : {}),
-      igCaption,
       ig_caption: igCaption,
       mood,
       fortune,
       blessing,
-      speakerImageUrl,
       speaker_image_url: speakerImageUrl,
-      speakerDates,
       speaker_dates: speakerDates,
-      speakerBorn,
       speaker_born: speakerBorn,
-      speakerDied,
       speaker_died: speakerDied,
-      speakerGuideLine,
       speaker_guide_line: speakerGuideLine,
-      imageAttribution,
       image_attribution: imageAttribution,
-      submittedBy,
       submitted_by: submittedBy,
       notificationTitle,
       notificationText,
@@ -567,22 +556,14 @@ function parseNotionRow(page) {
       approved,
       active: approved,
       sortOrder,
-      dateScheduled,
       date_scheduled: dateScheduled,
-      itemNo,
       item_no: itemNo,
-      lastUsedDate,
       last_used_date: lastUsedDate,
       reviewed,
-      reviewed_: reviewed,
-      sourceNotes,
       source_notes: sourceNotes,
       status,
-      submittedAt,
       submitted_at: submittedAt,
-      submittedVia,
       submitted_via: submittedVia,
-      timesUsed,
       times_used: timesUsed,
       notionUniqueId,
       githubPullRequestIds,
