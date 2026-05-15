@@ -33416,85 +33416,95 @@ try {
         }
       }
 
-      // Setup long-press admin access on bottom-right corner.
+      // Setup long-press admin access on top-right corner (away from the bottom
+      // footer icon strip and horizontal swipe paths that overlapped the old
+      // bottom-right hit target).
       setupLongPressAdminAccess() {
         let pressTimer = null;
-        let isLongPress = false;
-        
+        let touchCornerStart = null;
+
+        const clearPressTimer = () => {
+          if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+          }
+          touchCornerStart = null;
+        };
+
         // Create invisible corner element for long-press detection.
-        // Keep it away from the quilt's primary tap/zoom target.
         const cornerElement = document.createElement('div');
         cornerElement.id = 'admin-corner';
         cornerElement.style.cssText = `
           position: fixed;
-          bottom: max(0px, env(safe-area-inset-bottom, 0px));
+          top: max(0px, env(safe-area-inset-top, 0px));
           right: 0;
-          width: 60px;
-          height: 60px;
+          width: 100px;
+          height: 100px;
           z-index: 9999;
           background: transparent;
           cursor: default;
           user-select: none;
           -webkit-user-select: none;
           -webkit-touch-callout: none;
+          touch-action: none;
         `;
         document.body.appendChild(cornerElement);
-        
+
         // Mouse events for desktop
         cornerElement.addEventListener('mousedown', (e) => {
           e.preventDefault();
           pressTimer = setTimeout(() => {
-            isLongPress = true;
             this.requestAdminAccess();
           }, 3000); // 3 second long press
         });
-        
+
         cornerElement.addEventListener('mouseup', () => {
-          if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-          }
-          isLongPress = false;
+          clearPressTimer();
         });
-        
+
         cornerElement.addEventListener('mouseleave', () => {
-          if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-          }
-          isLongPress = false;
+          clearPressTimer();
         });
-        
-        // Touch events for mobile
-        cornerElement.addEventListener('touchstart', (e) => {
-          e.preventDefault();
-          pressTimer = setTimeout(() => {
-            isLongPress = true;
-            this.requestAdminAccess();
-          }, 3000); // 3 second long press
-        });
-        
+
+        // Touch: do not use capture-level defaults that fight scroll; cancel the
+        // long-press timer if the finger moves (swipe) before hold completes.
+        cornerElement.addEventListener(
+          'touchstart',
+          (e) => {
+            const t = e.touches?.[0];
+            touchCornerStart = t ? { x: t.clientX, y: t.clientY } : null;
+            pressTimer = setTimeout(() => {
+              this.requestAdminAccess();
+            }, 3000);
+          },
+          { passive: true }
+        );
+
+        cornerElement.addEventListener(
+          'touchmove',
+          (e) => {
+            if (!pressTimer || !touchCornerStart) return;
+            const t = e.touches?.[0];
+            if (!t) return;
+            const moved = Math.hypot(t.clientX - touchCornerStart.x, t.clientY - touchCornerStart.y);
+            if (moved > 18) clearPressTimer();
+          },
+          { passive: true }
+        );
+
         cornerElement.addEventListener('touchend', () => {
-          if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-          }
-          isLongPress = false;
+          clearPressTimer();
         });
-        
+
         cornerElement.addEventListener('touchcancel', () => {
-          if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-          }
-          isLongPress = false;
+          clearPressTimer();
         });
-        
+
         // Prevent any text selection or context menus
         cornerElement.addEventListener('selectstart', (e) => {
           e.preventDefault();
         });
-        
+
         cornerElement.addEventListener('contextmenu', (e) => {
           e.preventDefault();
         });
