@@ -1752,7 +1752,7 @@ try {
       box-sizing: border-box;
       text-align: center;
       font-weight: 300;
-      font-size: calc(var(--portal-subtext-size) * 0.65);
+      font-size: calc(var(--portal-subtext-size) * 0.9);
       line-height: 1.35;
       letter-spacing: 0.02em;
       color: rgba(0, 0, 0, 0.42);
@@ -18515,6 +18515,10 @@ try {
        * Uploads PNGs (and optional synthetic reel WebM) to Firebase Storage and writes `instagram-images/{dateKey}` with URLs only
        * (Firestore field limit ~1 MiB — inline base64 exceeds that for layout B).
        * Uses merge so reel / MP4 URLs from a prior step are not wiped when updating images only.
+       *
+       * Storage layout (per day): stable paths `classic.png`, `layout-b.png`,
+       * `layout-b-speaker.png` overwrite on each push (matches server nightly).
+       * Optional `debug-raw-quilt-{timestamp}-….png` stays versioned for forensics.
        */
       static async writeInstagramImagesDocForZapier({
         dateKey,
@@ -18551,7 +18555,8 @@ try {
         const isImageWrite = !!(instagramImage || postLayoutBImageData || postLayoutBSpeakerImageData);
         const isReelWrite = !!(reelWebmBlob && reelWebmBlob.size > 0);
         const qfp = typeof quiltFingerprint === 'string' ? quiltFingerprint.trim() : '';
-        const assetVersion = `${Date.now()}-${(qfp || 'no-qfp').replace(/[^a-z0-9_-]/gi, '').slice(0, 48)}`;
+        const qfpSlug = (qfp || 'no-qfp').replace(/[^a-z0-9_-]/gi, '').slice(0, 48);
+        const debugAssetVersion = debugRawQuiltImage ? `${Date.now()}-${qfpSlug}` : '';
         const imageRef = window.firestore.doc(window.db, 'instagram-images', dateKey);
         const existingSnap = await window.firestore.getDoc(imageRef);
         const existing = existingSnap.exists() ? existingSnap.data() || {} : {};
@@ -18584,27 +18589,28 @@ try {
         let postLayoutBSpeakerImageStorageUrl = null;
         let reelWebmStorageUrl = null;
         let debugRawQuiltStorageUrl = null;
+        const pngCacheControl = 'public, max-age=31536000';
         if (instagramImage) {
-          const r = ref(storage, `${basePath}/classic-${assetVersion}.png`);
+          const r = ref(storage, `${basePath}/classic.png`);
           await uploadBytes(r, Utils.dataUrlToBlob(instagramImage), {
             contentType: 'image/png',
-            cacheControl: 'public, max-age=31536000, immutable'
+            cacheControl: pngCacheControl
           });
           imageStorageUrl = await getDownloadURL(r);
         }
         if (postLayoutBImageData) {
-          const r = ref(storage, `${basePath}/layout-b-${assetVersion}.png`);
+          const r = ref(storage, `${basePath}/layout-b.png`);
           await uploadBytes(r, Utils.dataUrlToBlob(postLayoutBImageData), {
             contentType: 'image/png',
-            cacheControl: 'public, max-age=31536000, immutable'
+            cacheControl: pngCacheControl
           });
           postLayoutBImageStorageUrl = await getDownloadURL(r);
         }
         if (postLayoutBSpeakerImageData) {
-          const r = ref(storage, `${basePath}/layout-b-speaker-${assetVersion}.png`);
+          const r = ref(storage, `${basePath}/layout-b-speaker.png`);
           await uploadBytes(r, Utils.dataUrlToBlob(postLayoutBSpeakerImageData), {
             contentType: 'image/png',
-            cacheControl: 'public, max-age=31536000, immutable'
+            cacheControl: pngCacheControl
           });
           postLayoutBSpeakerImageStorageUrl = await getDownloadURL(r);
         }
@@ -18614,7 +18620,7 @@ try {
           reelWebmStorageUrl = await getDownloadURL(r);
         }
         if (debugRawQuiltImage) {
-          const r = ref(storage, `${basePath}/debug-raw-quilt-${assetVersion}.png`);
+          const r = ref(storage, `${basePath}/debug-raw-quilt-${debugAssetVersion}.png`);
           await uploadBytes(r, Utils.dataUrlToBlob(debugRawQuiltImage), {
             contentType: 'image/png',
             cacheControl: 'no-store'
