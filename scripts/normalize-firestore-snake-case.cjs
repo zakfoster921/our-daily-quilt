@@ -73,6 +73,7 @@ const admin = require('firebase-admin');
 
 const FIELD_PAIRS = [
   ['artRecs', 'art_recs'],
+  ['artRecsType', 'art_recs_type'],
   ['communityPrompt', 'community_prompt'],
   ['smallAct', 'small_act'],
   ['whatIf', 'what_if'],

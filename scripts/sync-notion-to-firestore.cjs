@@ -26,6 +26,33 @@ try {
 const admin = require('firebase-admin');
 
 const NOTION_API_VERSION = '2022-06-28';
+const SNAKE_CASE_FIELD_PAIRS = [
+  ['artRecs', 'art_recs'],
+  ['artRecsType', 'art_recs_type'],
+  ['communityPrompt', 'community_prompt'],
+  ['smallAct', 'small_act'],
+  ['whatIf', 'what_if'],
+  ['goodDay', 'good_day'],
+  ['roughDay', 'rough_day'],
+  ['igCaption', 'ig_caption'],
+  ['speakerImageUrl', 'speaker_image_url'],
+  ['speakerCutoutUrl', 'speaker_cutout_url'],
+  ['speakerCutoutSourceUrl', 'speaker_cutout_source_url'],
+  ['speakerCutoutUpdatedAt', 'speaker_cutout_updated_at'],
+  ['speakerDates', 'speaker_dates'],
+  ['speakerBorn', 'speaker_born'],
+  ['speakerDied', 'speaker_died'],
+  ['speakerGuideLine', 'speaker_guide_line'],
+  ['imageAttribution', 'image_attribution'],
+  ['submittedBy', 'submitted_by'],
+  ['dateScheduled', 'date_scheduled'],
+  ['itemNo', 'item_no'],
+  ['lastUsedDate', 'last_used_date'],
+  ['sourceNotes', 'source_notes'],
+  ['submittedAt', 'submitted_at'],
+  ['submittedVia', 'submitted_via'],
+  ['timesUsed', 'times_used']
+];
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -41,6 +68,15 @@ function getTitle(prop) {
     return prop.title.map(plainFromRichTextSegment).join('').trim();
   }
   return '';
+}
+
+function withCamelCaseDeletes(data) {
+  const out = { ...data };
+  const deleteField = admin.firestore.FieldValue.delete();
+  for (const [camel, snake] of SNAKE_CASE_FIELD_PAIRS) {
+    if (Object.prototype.hasOwnProperty.call(out, snake)) out[camel] = deleteField;
+  }
+  return out;
 }
 
 function getRichText(prop) {
@@ -373,6 +409,48 @@ function getTitleTextFromAnyTitleProp(props) {
   return '';
 }
 
+/**
+ * Locate the Notion column for companion art type. Names vary ("Art rec type" vs "art_recs_type");
+ * `normPropKey('art_recs_type')` is `artrecstype`, which differs from `artrectype`.
+ */
+function findArtRecsTypeProp(props) {
+  if (!props) return null;
+  const bases = [
+    'art_recs_type',
+    'artRecsType',
+    'Art recs type',
+    'Art Recs Type',
+    'art recs type',
+    'art_rec_type',
+    'Art rec type',
+    'Art Rec Type',
+    'companion_art_type',
+    'Companion art type'
+  ];
+  for (const base of bases) {
+    const p = findPropByBaseName(props, base);
+    if (p) return p;
+  }
+  const wantedKey = 'artrecstype';
+  for (const key of Object.keys(props)) {
+    if (normPropKey(key) === wantedKey) return props[key];
+  }
+  const loose = Object.keys(props).filter((k) => {
+    const n = normPropKey(k);
+    return n.includes('artrec') && n.includes('type');
+  });
+  function rankLoose(k) {
+    const n = normPropKey(k);
+    let r = 0;
+    if (n === 'artrecstype') r += 100;
+    if (n === 'artrectype') r += 85;
+    if (n.startsWith('artrec') && n.includes('type')) r += 40;
+    return r - Math.min(n.length, 200) / 1000;
+  }
+  loose.sort((a, b) => rankLoose(b) - rankLoose(a) || String(a).localeCompare(String(b)));
+  return loose.length ? props[loose[0]] : null;
+}
+
 function parseNotionRow(page) {
   const props = page?.properties || {};
   // ODQ QUOTES DATABASE uses snake_case Text/URL names (Quote is Title). Try those exact keys
@@ -397,6 +475,34 @@ function parseNotionRow(page) {
     'explore',
     'Explore'
   );
+  // `art_recs_type` drives the companion-piece icon. Accepts Select, Multi-select (first),
+  // Status, formula/rollup (via textFromAnyNotionProp), or rich_text/title.
+  const artRecsTypeProp = findArtRecsTypeProp(props);
+  const artRecsTypeRaw =
+    (artRecsTypeProp?.select?.name) ||
+    (Array.isArray(artRecsTypeProp?.multi_select) && artRecsTypeProp.multi_select[0]?.name) ||
+    (artRecsTypeProp?.status?.name) ||
+    getRichText(artRecsTypeProp) ||
+    getTitle(artRecsTypeProp) ||
+    textFromAnyNotionProp(artRecsTypeProp) ||
+    '';
+  const artRecsType = String(artRecsTypeRaw || '').trim().toLowerCase();
+  if (process.env.SYNC_DEBUG_ART_RECS_TYPE === '1') {
+    const debugPageId = String(process.env.SYNC_DEBUG_ART_RECS_TYPE_PAGE_ID || '').trim();
+    const shouldPrintDebug = !debugPageId || debugPageId === String(page?.id || '').trim();
+    if (shouldPrintDebug) {
+      console.log('[sync] art_recs_type debug', {
+        pageId: page?.id,
+        text: text.slice(0, 80),
+        author,
+        dateScheduled: getDateStart(props.date_scheduled),
+        artRecs: String(artRecs || '').slice(0, 80),
+        hasProp: !!artRecsTypeProp,
+        propType: artRecsTypeProp ? Object.keys(artRecsTypeProp).filter((k) => k !== 'id' && k !== 'type').join(',') : null,
+        resolved: artRecsType
+      });
+    }
+  }
   const communityPrompt = getCommunityPromptFromProps(props, page?.id);
   const smallAct = getMappedText(props, 'small_act', 'smallAct', 'Small act', 'Small Act');
   const whatIf = getMappedText(props, 'what_if', 'What if', 'What If');
@@ -525,6 +631,8 @@ function parseNotionRow(page) {
       author,
       reflectionPrompt,
       art_recs: artRecs,
+      // Always set (possibly '') so every catalog doc has the key; empty select in Notion → ''.
+      art_recs_type: artRecsType,
       community_prompt: communityPrompt,
       // Omit when empty so merge does not wipe `small_act` prefilled by Claude before this column exists in Notion.
       ...(String(smallAct || '').trim()
@@ -708,7 +816,7 @@ async function run() {
         fortuneCount += 1;
       }
       if (!dryRun) {
-        await db.collection(collectionName).doc(parsed.id).set(parsed.data, { merge: true });
+        await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });
       }
       writeCount += 1;
     }

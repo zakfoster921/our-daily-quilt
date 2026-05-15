@@ -15,11 +15,51 @@
  *   node scripts/reconcile-assignment-dates-from-notion.cjs --start=today
  *   node scripts/reconcile-assignment-dates-from-notion.cjs --start=2026-05-01 --dry-run
  */
+const fs = require('fs');
+const path = require('path');
+
 try {
   require('dotenv').config();
-} catch (_) {}
+} catch (_) {
+  const envPath = path.resolve(__dirname, '..', '.env');
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!match) continue;
+      let value = match[2];
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (process.env[match[1]] == null) process.env[match[1]] = value;
+    }
+  }
+}
 
 const admin = require('firebase-admin');
+const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
+  'artRecs',
+  'artRecsType',
+  'communityPrompt',
+  'whatIf',
+  'igCaption',
+  'speakerImageUrl',
+  'speakerCutoutUrl',
+  'speakerCutoutSourceUrl',
+  'speakerCutoutUpdatedAt',
+  'speakerDates',
+  'speakerBorn',
+  'speakerDied',
+  'speakerGuideLine',
+  'imageAttribution'
+];
+
+function camelCaseDeletePayload() {
+  const deleteField = admin.firestore.FieldValue.delete();
+  return Object.fromEntries(DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE.map((key) => [key, deleteField]));
+}
 
 function isDateKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
@@ -62,6 +102,7 @@ function artRecsSnapshotValue(value) {
 
 function assignmentPayloadForQuote(q, dateKey, assignedBy) {
   const artRecs = q.artRecs ?? q.art_recs ?? '';
+  const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
   return {
     dateKey,
     sourceId: q.sourceId || null,
@@ -72,6 +113,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     communityPromptSnapshot: q.communityPrompt.slice(0, 500),
     whatIfSnapshot: q.whatIf.slice(0, 240),
     artRecsSnapshot: artRecsSnapshotValue(artRecs).slice(0, 1200),
+    artRecsTypeSnapshot: artRecsType.slice(0, 40),
     igCaptionSnapshot: q.igCaption.slice(0, 400),
     speakerImageUrlSnapshot: q.speakerImageUrl.slice(0, 500),
     speakerCutoutUrlSnapshot: q.speakerCutoutUrl.slice(0, 500),
@@ -87,7 +129,9 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
 
 function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
   const artRecs = q.artRecs ?? q.art_recs ?? '';
+  const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
   return {
+    ...camelCaseDeletePayload(),
     dateKey,
     text: q.text,
     quote: q.text,
@@ -97,6 +141,7 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     community_prompt: q.communityPrompt || '',
     what_if: q.whatIf || '',
     art_recs: artRecs,
+    art_recs_type: artRecsType,
     ig_caption: q.igCaption || '',
     speaker_image_url: q.speakerImageUrl || '',
     speaker_cutout_url: q.speakerCutoutUrl || '',
@@ -123,11 +168,20 @@ function initFirestore() {
   if (admin.apps.length) return admin.firestore();
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
     const sa = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-    admin.initializeApp({ credential: admin.credential.cert(sa) });
+    admin.initializeApp({
+      credential: admin.credential.cert(sa),
+      projectId: sa.project_id || process.env.FIREBASE_PROJECT_ID
+    });
   } else {
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    if (!projectId) {
+      throw new Error(
+        'Missing GOOGLE_APPLICATION_CREDENTIALS_JSON or FIREBASE_PROJECT_ID (load .env from project root)'
+      );
+    }
     admin.initializeApp({
       credential: admin.credential.applicationDefault(),
-      projectId: process.env.FIREBASE_PROJECT_ID
+      projectId
     });
   }
   return admin.firestore();
@@ -157,6 +211,8 @@ function quoteRowFromFirestore(docSnap) {
     whatIf: String(d.whatIf ?? d.what_if ?? '').trim(),
     artRecs: d.artRecs ?? d.art_recs ?? '',
     art_recs: d.art_recs ?? d.artRecs ?? '',
+    artRecsType: String(d.artRecsType ?? d.art_recs_type ?? '').trim().toLowerCase(),
+    art_recs_type: String(d.art_recs_type ?? d.artRecsType ?? '').trim().toLowerCase(),
     igCaption: String(d.igCaption ?? d.ig_caption ?? '').trim(),
     fortune: String(d.fortune ?? d.Fortune ?? '').trim(),
     speakerImageUrl: String(d.speakerImageUrl ?? d.speaker_image_url ?? '').trim(),
