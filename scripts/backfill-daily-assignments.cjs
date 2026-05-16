@@ -125,6 +125,10 @@ function artRecsSnapshotValue(value) {
 function assignmentPayloadForQuote(q, dateKey, assignedBy) {
   const artRecs = q.artRecs ?? q.art_recs ?? '';
   const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
+  const smallAct = String(q.small_act ?? q.smallAct ?? '').trim();
+  const watchFor = String(q.watch_for ?? '').trim();
+  const goodDay = String(q.good_day ?? q.goodDay ?? '').trim();
+  const roughDay = String(q.rough_day ?? q.roughDay ?? '').trim();
   return {
     dateKey,
     sourceId: q.sourceId || null,
@@ -132,8 +136,12 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     textSnapshot: q.text.slice(0, 160),
     authorSnapshot: q.author.slice(0, 120),
     blessingSnapshot: q.blessing.slice(0, 240),
-    communityPromptSnapshot: q.communityPrompt.slice(0, 500),
-    whatIfSnapshot: q.whatIf.slice(0, 240),
+    communityPromptSnapshot: String(q.community_prompt ?? q.communityPrompt ?? '').slice(0, 500),
+    smallActSnapshot: smallAct.slice(0, 240),
+    watch_for_snapshot: watchFor.slice(0, 280),
+    goodDaySnapshot: goodDay.slice(0, 240),
+    roughDaySnapshot: roughDay.slice(0, 240),
+    whatIfSnapshot: String(q.what_if ?? q.whatIf ?? '').slice(0, 240),
     artRecsSnapshot: artRecsSnapshotValue(artRecs).slice(0, 1200),
     artRecsTypeSnapshot: artRecsType.slice(0, 40),
     igCaptionSnapshot: q.igCaption.slice(0, 400),
@@ -261,6 +269,11 @@ async function main() {
       blessing: String(d.blessing ?? d.dailyBlessing ?? d.daily_blessing ?? '').trim(),
       communityPrompt: String(d.communityPrompt ?? d.community_prompt ?? '').trim(),
       whatIf: String(d.whatIf ?? d.what_if ?? '').trim(),
+      what_if: String(d.what_if ?? d.whatIf ?? '').trim(),
+      watch_for: String(d.watch_for ?? '').trim(),
+      small_act: String(d.small_act ?? d.smallAct ?? '').trim(),
+      good_day: String(d.good_day ?? d.goodDay ?? '').trim(),
+      rough_day: String(d.rough_day ?? d.roughDay ?? '').trim(),
       artRecs: d.artRecs ?? d.art_recs ?? '',
       art_recs: d.art_recs ?? d.artRecs ?? '',
       artRecsType: String(d.artRecsType ?? d.art_recs_type ?? '').trim().toLowerCase(),
