@@ -146,32 +146,43 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
   };
 }
 
-function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
-  const artRecs = q.artRecs ?? q.art_recs ?? '';
-  const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
+function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
+  const artRecs = q.art_recs ?? q.artRecs ?? '';
+  const artRecsType = String(q.art_recs_type ?? q.artRecsType ?? '').trim().toLowerCase();
   return {
-    ...camelCaseDeletePayload(),
     dateKey,
     text: q.text,
     quote: q.text,
     author: q.author,
     sourceId: q.sourceId || null,
-    blessing: q.blessing || '',
-    community_prompt: q.communityPrompt || '',
-    what_if: q.whatIf || '',
+    blessing: String(q.blessing ?? '').trim(),
+    community_prompt: String(q.community_prompt ?? q.communityPrompt ?? '').trim(),
+    what_if: String(q.what_if ?? q.whatIf ?? '').trim(),
+    watch_for: String(q.watch_for ?? '').trim(),
     art_recs: artRecs,
     art_recs_type: artRecsType,
-    ig_caption: q.igCaption || '',
-    speaker_image_url: q.speakerImageUrl || '',
-    speaker_cutout_url: q.speakerCutoutUrl || '',
-    speaker_dates: q.speakerDates || '',
-    speaker_born: q.speakerBorn || '',
-    speaker_died: q.speakerDied || '',
-    speaker_guide_line: q.speakerGuideLine || '',
-    image_attribution: q.imageAttribution || '',
+    ig_caption: String(q.ig_caption ?? q.igCaption ?? '').trim(),
+    small_act: String(q.small_act ?? q.smallAct ?? '').trim(),
+    good_day: String(q.good_day ?? q.goodDay ?? '').trim(),
+    rough_day: String(q.rough_day ?? q.roughDay ?? '').trim(),
+    speaker_image_url: String(q.speaker_image_url ?? q.speakerImageUrl ?? '').trim(),
+    speaker_cutout_url: String(q.speaker_cutout_url ?? q.speakerCutoutUrl ?? '').trim(),
+    speaker_dates: String(q.speaker_dates ?? q.speakerDates ?? '').trim(),
+    speaker_born: String(q.speaker_born ?? q.speakerBorn ?? '').trim(),
+    speaker_died: String(q.speaker_died ?? q.speakerDied ?? '').trim(),
+    speaker_guide_line: String(q.speaker_guide_line ?? q.speakerGuideLine ?? '').trim(),
+    image_attribution: String(q.image_attribution ?? q.imageAttribution ?? '').trim(),
     assignedBy,
     assignedAt: updatedAt,
     updatedAt
+  };
+}
+
+/** merge:true writes — strip legacy camelCase keys via FieldValue.delete(). */
+function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
+  return {
+    ...camelCaseDeletePayload(),
+    ...dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt)
   };
 }
 
@@ -235,6 +246,8 @@ async function main() {
       blessing: String(d.blessing ?? d.dailyBlessing ?? d.daily_blessing ?? '').trim(),
       communityPrompt: String(d.communityPrompt ?? d.community_prompt ?? '').trim(),
       whatIf: String(d.whatIf ?? d.what_if ?? '').trim(),
+      what_if: String(d.what_if ?? d.whatIf ?? '').trim(),
+      watch_for: String(d.watch_for ?? '').trim(),
       artRecs: d.artRecs ?? d.art_recs ?? '',
       art_recs: d.art_recs ?? d.artRecs ?? '',
       artRecsType: String(d.artRecsType ?? d.art_recs_type ?? '').trim().toLowerCase(),
@@ -510,9 +523,11 @@ async function main() {
     batchState.ops += 1;
     assignmentWrites += 1;
 
+    // Full document replace (no merge): snake_case only — FieldValue.delete() is
+    // invalid inside set() without merge:true (Firestore rejects artRecs: delete()).
     batchState.batch.set(
       db.collection(quotesCollection).doc(target),
-      dailyQuotePayloadForQuote(cand, target, swapSource, updatedAt)
+      dailyQuoteSnakePayloadForQuote(cand, target, swapSource, updatedAt)
     );
     batchState.ops += 1;
 
