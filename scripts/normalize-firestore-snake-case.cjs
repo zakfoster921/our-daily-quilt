@@ -77,6 +77,7 @@ const FIELD_PAIRS = [
   ['communityPrompt', 'community_prompt'],
   ['smallAct', 'small_act'],
   ['whatIf', 'what_if'],
+  ['watchFor', 'watch_for'],
   ['goodDay', 'good_day'],
   ['roughDay', 'rough_day'],
   ['igCaption', 'ig_caption'],

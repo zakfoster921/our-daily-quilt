@@ -32,6 +32,7 @@ const SNAKE_CASE_FIELD_PAIRS = [
   ['communityPrompt', 'community_prompt'],
   ['smallAct', 'small_act'],
   ['whatIf', 'what_if'],
+  ['watchFor', 'watch_for'],
   ['goodDay', 'good_day'],
   ['roughDay', 'rough_day'],
   ['igCaption', 'ig_caption'],
@@ -506,6 +507,7 @@ function parseNotionRow(page) {
   const communityPrompt = getCommunityPromptFromProps(props, page?.id);
   const smallAct = getMappedText(props, 'small_act', 'smallAct', 'Small act', 'Small Act');
   const whatIf = getMappedText(props, 'what_if', 'What if', 'What If');
+  const watchFor = getMappedText(props, 'watch_for', 'watchFor', 'Watch for', 'Watch For');
   const goodDay = getMappedText(props, 'good_day', 'goodDay', 'Good day', 'Good Day');
   const roughDay = getMappedText(props, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
   const igCaption = getMappedText(props, 'ig_caption', 'IG Caption', 'Ig Caption');
@@ -639,6 +641,9 @@ function parseNotionRow(page) {
         ? { small_act: String(smallAct).trim() }
         : {}),
       what_if: whatIf,
+      ...(String(watchFor || '').trim()
+        ? { watch_for: String(watchFor).trim() }
+        : {}),
       // Omit good_day/rough_day when empty so merge does not wipe values prefilled by Claude
       // before these columns exist (or are populated) in Notion.
       ...(String(goodDay || '').trim()

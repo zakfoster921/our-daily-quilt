@@ -1614,12 +1614,24 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
     notification_text: pickPrefillStringLoose(parsed, 'notification_text', 'notificationText'),
     ig_caption: pickPrefillStringLoose(parsed, 'ig_caption', 'igCaption'),
     what_if: pickPrefillStringLoose(parsed, 'what_if', 'whatIf'),
+    watch_for: normalizeWatchForPrefillValue(
+      pickPrefillStringLoose(parsed, 'watch_for', 'watchFor', 'watch for')
+    ),
     speaker_guide_line: pickPrefillStringLoose(parsed, 'speaker_guide_line', 'speakerGuideLine', 'guide_line'),
     art_recs: pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations'),
     good_day: pickPrefillStringLoose(parsed, 'good_day', 'goodDay', 'good day'),
     rough_day: pickPrefillStringLoose(parsed, 'rough_day', 'roughDay', 'rough day'),
     _model: model
   };
+}
+
+function normalizeWatchForPrefillValue(value) {
+  let s = String(value || '').trim();
+  if (!s) return '';
+  s = s.replace(/^watch\s+for\s+(?:the\s+moment\s+today\s+when\s+)?/i, '').trim();
+  if (s) s = s.charAt(0).toUpperCase() + s.slice(1);
+  if (s && !/[.!?]$/.test(s)) s = `${s}.`;
+  return s;
 }
 
 function mergeNonEmptyPrefillFields(base, next) {
@@ -1655,6 +1667,27 @@ async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt }) {
     .trim();
 }
 
+async function postSubmittedQuotePrefillToGemini({ apiKey, model, prompt }) {
+  const result = await postJsonWithHttps({
+    hostname: 'generativelanguage.googleapis.com',
+    path: `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    headers: {},
+    body: {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 4096,
+        thinkingConfig: { thinkingBudget: 0 }
+      }
+    }
+  });
+  return (result?.candidates || [])
+    .flatMap((candidate) => candidate?.content?.parts || [])
+    .map((part) => part?.text || '')
+    .join('\n')
+    .trim();
+}
+
 // Fields that must come back non-empty from Claude. One consolidated repair pass
 // is made if any are missing; if any are still empty after the repair, we throw
 // (which surfaces to the Notion `ai_prefill_error` column via the caller).
@@ -1663,6 +1696,11 @@ const REQUIRED_PREFILL_FIELDS = [
     key: 'small_act',
     requirement:
       'small_act is required and must be one non-empty sentence: a concrete interpersonal action the reader can complete before the day ends.'
+  },
+  {
+    key: 'watch_for',
+    requirement:
+      'watch_for is required: one capitalized sentence fragment (ending with .) naming a specific observable moment or behavior to notice today — no "Watch for the moment today when" prefix, no feelings, no homework.'
   },
   {
     key: 'good_day',
@@ -1680,22 +1718,34 @@ function findMissingRequiredPrefillFields(out) {
   return REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(out?.[key] || '').trim());
 }
 
-async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
-  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
-  const model = String(process.env.ANTHROPIC_PREFILL_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+async function generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, provider }) {
   const prompt = buildSubmittedQuotePrefillPrompt({ quoteText, authorName });
+  const isGemini = provider === 'gemini';
+  const apiKey = isGemini
+    ? String(process.env.GEMINI_API_KEY || '').trim()
+    : String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) {
+    throw new Error(isGemini ? 'GEMINI_API_KEY is not configured on server' : 'ANTHROPIC_API_KEY is not configured on server');
+  }
+  const model = isGemini
+    ? String(process.env.GEMINI_PREFILL_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim()
+    : String(process.env.ANTHROPIC_PREFILL_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+  const postText = (p) =>
+    isGemini
+      ? postSubmittedQuotePrefillToGemini({ apiKey, model, prompt: p })
+      : postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: p });
+  const providerLabel = isGemini ? 'Gemini' : 'Claude';
 
-  const firstText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt });
+  const firstText = await postText(prompt);
   let parsed = extractPrefillJsonFromText(firstText);
   if (!parsed || typeof parsed !== 'object') {
     const repairPrompt = `${prompt}\n\nYour previous output could not be parsed as JSON. Return ONLY the JSON object described in OUTPUT SCHEMA. No prose, no fences.`;
-    const repairText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: repairPrompt });
+    const repairText = await postText(repairPrompt);
     parsed = extractPrefillJsonFromText(repairText);
   }
   if (!parsed || typeof parsed !== 'object') {
     const preview = String(firstText || '').replace(/\s+/g, ' ').trim().slice(0, 400);
-    throw new Error(`Claude returned no parseable prefill JSON. Preview: ${preview || '[empty]'}`);
+    throw new Error(`${providerLabel} returned no parseable prefill JSON. Preview: ${preview || '[empty]'}`);
   }
   let out = mapSubmittedQuotePrefillFields(parsed, model);
   let missing = findMissingRequiredPrefillFields(out);
@@ -1710,7 +1760,7 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
       'Previous JSON:',
       JSON.stringify(parsed, null, 2)
     ];
-    const repairText = await postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: repairLines.join('\n') });
+    const repairText = await postText(repairLines.join('\n'));
     const repairParsed = extractPrefillJsonFromText(repairText);
     if (repairParsed && typeof repairParsed === 'object') {
       out = mergeNonEmptyPrefillFields(out, mapSubmittedQuotePrefillFields(repairParsed, model));
@@ -1720,11 +1770,21 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
   if (missing.length) {
     const stillMissing = missing.map((m) => m.key).join(', ');
     console.warn(
-      `[prefill] required fields empty after Claude parse (model=${model}). Missing: ${stillMissing}. Top-level JSON keys: ${Object.keys(parsed).join(', ')}`
+      `[prefill] required fields empty after ${providerLabel} parse (model=${model}). Missing: ${stillMissing}. Top-level JSON keys: ${Object.keys(parsed).join(', ')}`
     );
-    throw new Error(`Claude returned prefill JSON without required field(s): ${stillMissing}`);
+    throw new Error(`${providerLabel} returned prefill JSON without required field(s): ${stillMissing}`);
   }
   return out;
+}
+
+async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
+  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
+    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, provider: 'anthropic' });
+  }
+  if (String(process.env.GEMINI_API_KEY || '').trim()) {
+    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, provider: 'gemini' });
+  }
+  throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
 }
 
 // --- Wikipedia / Wikimedia speaker lookup -----------------------------------
@@ -2068,6 +2128,7 @@ function buildPrefillNotionProperties(schema, ai, wiki, speakerReuse) {
   if (ai?.notification_text) set('notification_text', ai.notification_text, 'notificationText');
   if (ai?.ig_caption) set('ig_caption', ai.ig_caption, 'igCaption', 'IG Caption');
   if (ai?.what_if) set('what_if', ai.what_if, 'whatIf', 'What if');
+  if (ai?.watch_for) set('watch_for', ai.watch_for, 'watchFor', 'Watch for');
   if (ai?.speaker_guide_line) set('speaker_guide_line', ai.speaker_guide_line, 'speakerGuideLine', 'Guide line');
   if (ai?.art_recs) set('art_recs', ai.art_recs, 'artRecs', 'Art recs', 'explore');
   if (ai?.good_day) set('good_day', ai.good_day, 'goodDay', 'Good day', 'Good Day');
@@ -2149,6 +2210,9 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   }
   if (ai?.what_if) {
     payload.what_if = ai.what_if;
+  }
+  if (ai?.watch_for) {
+    payload.watch_for = ai.watch_for;
   }
   if (ai?.speaker_guide_line) {
     payload.speaker_guide_line = ai.speaker_guide_line;
@@ -2472,8 +2536,9 @@ async function runQuotePrefillSweep({ limit = PREFILL_SWEEP_BATCH_LIMIT, trigger
   if (quotePrefillSweepRunning) {
     return { skipped: true, reason: 'sweep already running' };
   }
-  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!apiKey) return { skipped: true, reason: 'ANTHROPIC_API_KEY not configured' };
+  const hasPrefillAi =
+    String(process.env.ANTHROPIC_API_KEY || '').trim() || String(process.env.GEMINI_API_KEY || '').trim();
+  if (!hasPrefillAi) return { skipped: true, reason: 'ANTHROPIC_API_KEY or GEMINI_API_KEY not configured' };
   const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
   if (!databaseId) return { skipped: true, reason: 'NOTION_DATABASE_ID not configured' };
 
@@ -2531,8 +2596,10 @@ function startQuotePrefillSweepScheduler() {
     console.log('ℹ️ Quote prefill sweep disabled (set ENABLE_QUOTE_PREFILL_POLL=1 or run NODE_ENV=production to enable).');
     return;
   }
-  if (!process.env.ANTHROPIC_API_KEY || !process.env.NOTION_DATABASE_ID) {
-    console.log('ℹ️ Quote prefill sweep disabled (missing ANTHROPIC_API_KEY or NOTION_DATABASE_ID).');
+  const hasPrefillAi =
+    String(process.env.ANTHROPIC_API_KEY || '').trim() || String(process.env.GEMINI_API_KEY || '').trim();
+  if (!hasPrefillAi || !process.env.NOTION_DATABASE_ID) {
+    console.log('ℹ️ Quote prefill sweep disabled (missing ANTHROPIC_API_KEY/GEMINI_API_KEY or NOTION_DATABASE_ID).');
     return;
   }
   quotePrefillSweepTimer = setInterval(() => {

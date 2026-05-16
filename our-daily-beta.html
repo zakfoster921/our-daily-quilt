@@ -109,12 +109,14 @@ try {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-  <!-- Material Symbols (monochrome icons) for art_recs_type companion-piece glyphs.
+  <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cutive+Mono&display=swap" rel="stylesheet">
+  <!-- Material Symbols (monochrome icons) for art_recs_type + mood-pick tiles.
        `display=block` hides briefly instead of flashing the literal word ("book"/"movie"/...)
        while the font loads. `icon_names=` limits the download to only the glyphs we render.
        NOTE: Google Fonts rejects this URL with 400 if icon names aren't alphabetical —
-       keep `book,comedy_mask,headphones,movie,palette` in sorted order. -->
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=book,comedy_mask,headphones,movie,palette&display=block" rel="stylesheet">
+       keep icon_names in sorted order. -->
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=book,brightness_1,comedy_mask,contrast,headphones,movie,palette&display=block" rel="stylesheet">
   <link rel="preload" href="assets/fonts/Zakarack-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <!-- Test script to verify it's running -->
   <script>
@@ -209,6 +211,8 @@ try {
       --odq-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px));
       --odq-safe-left: max(0px, env(safe-area-inset-left, 0px));
       --odq-safe-right: max(0px, env(safe-area-inset-right, 0px));
+      /* Extra vertical breathing room on the first-visit “Here’s how it works” screen (#screen-welcome). */
+      --welcome-screen-v-gutter: clamp(0.75rem, 2.5vh, 1.75rem);
     }
 
     @font-face {
@@ -1808,10 +1812,13 @@ try {
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
-      align-items: center;
+      align-items: stretch;
       min-height: 100vh;
       min-height: 100dvh;
-      padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
+      padding-top: calc(max(1rem, env(safe-area-inset-top, 0px)) + (2 * var(--welcome-screen-v-gutter)));
+      padding-right: max(1rem, env(safe-area-inset-right, 0px));
+      padding-bottom: calc(max(1rem, env(safe-area-inset-bottom, 0px)) + var(--welcome-screen-v-gutter));
+      padding-left: max(1rem, env(safe-area-inset-left, 0px));
       background: #f6f4f1;
       box-sizing: border-box;
     }
@@ -1821,16 +1828,32 @@ try {
     }
 
     .welcome-content {
+      flex: 1 1 auto;
       width: 100%;
       max-width: min(86vw, 38rem);
-      min-height: calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)) - max(1rem, env(safe-area-inset-bottom, 0px)));
-      margin: 0 auto;
-      padding: 0 0 clamp(1rem, 3.2vh, 2rem);
+      margin-left: auto;
+      margin-right: auto;
+      min-height: calc(
+        100dvh - max(1rem, env(safe-area-inset-top, 0px)) - max(1rem, env(safe-area-inset-bottom, 0px)) -
+          (3 * var(--welcome-screen-v-gutter))
+      );
+      padding: 0;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
+      justify-content: flex-start;
+      align-items: stretch;
       text-align: center;
+    }
+
+    .welcome-content > div:first-of-type {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+      width: 100%;
     }
 
     .welcome-title-graphic {
@@ -1838,7 +1861,68 @@ try {
       width: min(34vw, 150px);
       max-width: 100%;
       height: auto;
-      margin: clamp(0.1rem, 1vh, 0.65rem) auto clamp(1.6rem, 5.2vh, 3rem);
+      margin: clamp(0.1rem, 1vh, 0.65rem) auto clamp(1.35rem, 5vh, 3rem);
+    }
+
+    /* Wrap shrink-wraps the title so the highlight can size to the text line. */
+    .welcome-how-heading-wrap {
+      box-sizing: border-box;
+      position: relative;
+      display: block;
+      width: max-content;
+      max-width: min(94vw, 34rem);
+      margin: clamp(0.75rem, 2.5vh, 1.75rem) auto clamp(1.1rem, 3.5vh, 2rem);
+      padding: 0;
+      align-self: center;
+    }
+
+    .welcome-how-heading__mark {
+      position: absolute;
+      left: 50%;
+      top: 54%;
+      transform: translate(-50%, -50%);
+      width: calc(100% + clamp(2rem, 9vw, 4.75rem));
+      height: auto;
+      max-width: none;
+      object-fit: contain;
+      object-position: center;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .welcome-how-heading {
+      position: relative;
+      z-index: 1;
+      display: inline-block;
+      margin: 0;
+      padding: 0.1em 0.35em 0.16em;
+      text-align: center;
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
+      font-weight: 900;
+      font-size: clamp(2.05rem, 8.5vw, 3.5rem);
+      letter-spacing: clamp(0.06em, 0.55vw, 0.14em);
+      color: #000;
+      line-height: 1.06;
+    }
+
+    .welcome-to-begin-arrow {
+      margin-top: auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      padding: clamp(0.35rem, 1.6vh, 1.05rem) 0 clamp(0.15rem, 0.85vh, 0.55rem);
+      flex-shrink: 0;
+    }
+
+    .welcome-to-begin-arrow__svg {
+      display: block;
+      width: clamp(26px, 6.1vw, 34px);
+      height: clamp(36px, 8.5vw, 48px);
+      overflow: visible;
+      /* Match exit-chamber `.exit-chamber-section-header__arrow` ink + tilt */
+      color: rgba(0, 0, 0, 0.42);
+      transform: rotate(-2deg);
+      transform-origin: center;
     }
 
     .welcome-hero {
@@ -1863,107 +1947,109 @@ try {
       font-weight: 400;
     }
 
+    /* How it works: same paper-strip language as quote Layout B (`.quote-layoutb-strip`). */
     .welcome-steps {
-      width: min(100%, 34rem);
+      width: 100%;
+      max-width: min(94vw, 34rem);
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: clamp(1.4rem, 4.4vh, 2.35rem);
-      text-align: left;
+      align-items: center;
+      gap: clamp(1.7rem, 5.6vh, 2.7rem);
+      text-align: center;
     }
 
     .welcome-step {
+      display: flex;
+      justify-content: center;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+    }
+
+    .welcome-step-strip {
       position: relative;
-      display: grid;
-      grid-template-columns: 2.2rem minmax(0, 1fr);
-      column-gap: clamp(0.9rem, 3vw, 1.35rem);
-      min-height: clamp(4.1rem, 11vh, 5.4rem);
-    }
-
-    .welcome-step::before {
-      content: '';
-      position: absolute;
-      left: 0.7rem;
-      top: 1.25rem;
-      bottom: calc(clamp(1.4rem, 4.4vh, 2.35rem) * -1 + 0.25rem);
-      width: 2px;
-      background: rgba(53, 48, 42, 0.16);
-    }
-
-    .welcome-step:last-child::before {
-      display: none;
-    }
-
-    .welcome-step__dot {
-      grid-column: 1;
-      width: 0.9rem;
-      height: 0.9rem;
-      margin: 0.35rem 0 0 0.27rem;
-      border: 2px solid rgba(53, 48, 42, 0.28);
-      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: max-content;
+      max-width: min(94vw, 28rem);
+      margin: 0;
+      padding: clamp(0.5rem, 2.2vw, 0.72rem) clamp(0.85rem, 4vw, 1.2rem);
       box-sizing: border-box;
-      background: #f6f4f1;
-      z-index: 1;
+      background: #ffffff;
+      color: #3f3a35;
+      box-shadow: 0 2px 7px rgba(0, 0, 0, 0.14);
+      border-radius: 1px;
+      transform: rotate(-2.25deg);
+      transform-origin: center center;
     }
 
-    .welcome-step__body {
-      grid-column: 2;
+    .welcome-step:nth-child(2) .welcome-step-strip {
+      transform: rotate(1.6deg);
+    }
+
+    .welcome-step:nth-child(3) .welcome-step-strip {
+      transform: rotate(-1.35deg);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .welcome-step-strip {
+        transform: none !important;
+      }
     }
 
     .welcome-step__title {
       margin: 0;
-      color: #24211e;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: clamp(1.55rem, 5vw, 2rem);
-      font-weight: 360;
-      line-height: 1.18;
-      letter-spacing: 0.02em;
-    }
-
-    .welcome-step__copy {
-      margin: 0.45rem 0 0;
-      color: rgba(53, 48, 42, 0.58);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: clamp(1.05rem, 3.7vw, 1.38rem);
-      font-weight: 360;
-      line-height: 1.25;
-      letter-spacing: 0.025em;
+      max-width: 100%;
+      color: inherit;
+      font-family: Georgia, "Times New Roman", Times, serif;
+      font-size: clamp(1.26rem, 4.44vw, 1.66rem);
+      font-weight: 400;
+      line-height: 1.28;
+      letter-spacing: 0;
+      text-align: center;
+      white-space: normal;
     }
 
     .welcome-footer {
       width: min(100%, 38rem);
-      margin: clamp(2.8rem, 8vh, 5rem) auto 0;
+      margin-top: auto;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 0;
+      padding: clamp(1rem, 3vh, 1.5rem) 0 0;
+      flex-shrink: 0;
+      align-self: center;
     }
 
-    /* Hero temporarily hidden: vertically center title + steps + footer as one block,
-       and pull BEGIN up flush under the last step (no footer top margin). */
-    #screen-welcome:has(.welcome-hero[hidden]) .welcome-content {
+    /* Hero hidden: keep logo + strips vertically centered above pinned footer. */
+    #screen-welcome:has(.welcome-hero[hidden]) .welcome-content > div:first-of-type {
       justify-content: center;
-    }
-
-    #screen-welcome:has(.welcome-hero[hidden]) .welcome-footer {
-      margin-top: 0;
     }
 
     #screen-welcome .welcome-begin-btn.btn {
       width: 100% !important;
+      max-width: 100% !important;
+      display: block !important;
+      box-sizing: border-box !important;
       min-height: clamp(3.35rem, 7vh, 4.1rem);
       margin: 0 !important;
       padding: 0.72rem 1.5rem !important;
-      border: none !important;
-      border-radius: 14px !important;
-      background: #242421 !important;
-      color: #fff !important;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: clamp(1.45rem, 4.6vw, 1.95rem);
-      font-weight: 440;
+      font-weight: 500;
       letter-spacing: 0.16em;
-      box-shadow: none !important;
       text-transform: uppercase;
     }
 
+    #screen-welcome .welcome-begin-btn.btn:hover,
+    #screen-welcome .welcome-begin-btn.btn:focus-visible {
+      box-shadow: none !important;
+    }
+
     .welcome-reset-note {
-      margin: clamp(0.75rem, 2.1vh, 1.15rem) 0 0;
+      margin: clamp(0.2rem, 0.65vh, 0.4rem) 0 0;
       color: rgba(53, 48, 42, 0.34);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: clamp(1rem, 3.3vw, 1.28rem);
@@ -1995,6 +2081,8 @@ try {
     #screen-exit-chamber {
       justify-content: flex-start;
       overflow: hidden;
+      /* Extra air below status / safe area (group rule still sets horizontal + bottom). */
+      padding-top: calc(max(1rem, env(safe-area-inset-top, 0px)) + clamp(0.65rem, 2.2vh, 1.2rem));
       /* Cap the chamber to exactly one viewport — the shared #screen-* block
          above sets min-height: 100dvh with no max, which lets content push
          the section taller than the viewport and forces body to scroll. */
@@ -2153,7 +2241,8 @@ try {
     #screen-first-name #firstNameContinueBtn,
     #screen-settings #settingsSaveNameBtn,
     #screen-settings #settingsDownloadPersonalQuiltBtn,
-    #screen-settings #settingsResetColorHistoryBtn {
+    #screen-settings #settingsResetColorHistoryBtn,
+    #screen-welcome .welcome-begin-btn.btn {
       background: #fff !important;
       border: none !important;
       border-radius: 0 !important;
@@ -2233,10 +2322,8 @@ try {
       justify-content: flex-start;
       flex: 1 1 auto;
       min-height: 0;
-      /* Extra breathing room above "YOUR COLORS". Lives on the inner instead
-         of the screen because `.screen { padding-top: …!important }` blocks
-         a screen-level override. */
-      padding-top: clamp(1.875rem, 6.75vh, 4.5rem);
+      /* Space below farewell kicker before "YOUR COLORS" (was 2× this). */
+      padding-top: clamp(0.9375rem, 3.375vh, 2.25rem);
     }
     .exit-chamber-stack {
       display: flex;
@@ -2247,10 +2334,8 @@ try {
       margin: 0 auto;
       flex: 0 0 auto;
     }
-    /* "See you tomorrow" lives in a footer that's a sibling of
-       `.exit-chamber-inner`. The inner has `flex: 1 1 auto` and the screen's
-       flex column starts at flex-start, so this footer lands at the bottom of
-       the chamber automatically — no `margin-top: auto` needed. */
+    /* "See you tomorrow" lives in a footer that is the first child of the screen
+       (column flex-start), so it reads as the headline at the top. */
     .exit-chamber-footer {
       width: 100%;
       max-width: min(94vw, 28rem);
@@ -2277,47 +2362,77 @@ try {
       font-size: clamp(2.475rem, 8.1vw, 3.225rem);
       font-weight: 800;
     }
-    .exit-chamber-kicker-bottom__ink {
+    /* Yellow highlighter sits on `.exit-chamber-kicker-bottom__mark` (welcome asset).
+       Hand-inked rule under the line draws L→R when `.is-revealed` fires on chamber entry. */
+    .exit-chamber-kicker-bottom__title-wrap {
+      position: relative;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: stretch;
+      max-width: 100%;
+      color: inherit;
+    }
+    /* Yellow wash behind the headline — same asset as welcome “Here’s how it works”. */
+    .exit-chamber-kicker-bottom__headline-wrap {
       position: relative;
       display: inline-block;
-      padding-bottom: 0.18em;
-      opacity: 1;
+      max-width: 100%;
+      align-self: center;
     }
-    .exit-chamber-kicker-bottom__ink::after {
-      content: '';
+    .exit-chamber-kicker-bottom__mark {
       position: absolute;
-      left: 2%;
-      right: 1%;
-      bottom: 0;
-      height: 0.18em;
-      background-color: currentColor;
-      -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 22' preserveAspectRatio='none'><path d='M 4 11 C 32 7, 61 13, 92 10 S 150 6, 184 11 S 208 14, 217 18' fill='none' stroke='white' stroke-width='4.8' stroke-linecap='round' stroke-linejoin='round'/><path d='M 7 14 C 42 11, 76 15, 112 12 S 169 9, 214 17' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='0.42'/></svg>");
-              mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 22' preserveAspectRatio='none'><path d='M 4 11 C 32 7, 61 13, 92 10 S 150 6, 184 11 S 208 14, 217 18' fill='none' stroke='white' stroke-width='4.8' stroke-linecap='round' stroke-linejoin='round'/><path d='M 7 14 C 42 11, 76 15, 112 12 S 169 9, 214 17' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='0.42'/></svg>");
-      -webkit-mask-repeat: no-repeat;
-              mask-repeat: no-repeat;
-      -webkit-mask-size: 100% 100%;
-              mask-size: 100% 100%;
-      clip-path: inset(0 100% 0 0);
-      opacity: 1;
+      left: 50%;
+      top: 54%;
+      transform: translate(-50%, -50%);
+      width: calc(100% + clamp(1.25rem, 7vw, 3.5rem));
+      height: auto;
+      max-width: none;
+      object-fit: contain;
+      object-position: center;
       pointer-events: none;
+      z-index: 0;
     }
-    .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__ink {
-      opacity: 1;
+    .exit-chamber-kicker-bottom__ink {
+      position: relative;
+      z-index: 1;
+      display: inline-block;
+      padding: 0.02em 0.12em 0;
+      text-align: center;
     }
-    .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__ink::after {
-      animation: exitChamberUnderlineDraw 620ms 80ms cubic-bezier(0.2, 0.74, 0.22, 1) both;
+    .exit-chamber-kicker-bottom__line {
+      display: block;
+      width: 90%;
+      min-width: 0;
+      align-self: center;
+      height: clamp(11px, 0.38em, 16px);
+      margin-top: 0.06em;
+      flex-shrink: 0;
+      color: inherit;
+      overflow: visible;
     }
-    @keyframes exitChamberUnderlineDraw {
-      from { clip-path: inset(0 100% 0 0); }
-      to { clip-path: inset(0 0 0 0); }
+    .exit-chamber-kicker-bottom__line path {
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+      stroke-width: clamp(2.25px, 0.085em, 3.1px);
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      /* No transition here: removing `.is-revealed` must snap the dash back to
+         hidden. If the base rule animates 0→1000, the next rAF re-adds the class
+         and a second 1000→0 run reads as a “center / restart” glitch. */
+      transition: none;
+    }
+    .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__line path {
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 0.45s cubic-bezier(0.22, 0.82, 0.28, 1);
+      transition-delay: 0.02s;
     }
     @media (prefers-reduced-motion: reduce) {
-      .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__ink {
-        opacity: 1;
-      }
-      .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__ink::after {
-        animation: none;
-        clip-path: inset(0 0 0 0);
+      .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__line path {
+        transition: none;
+        transition-delay: 0s;
       }
     }
     #screen-exit-chamber {
@@ -2470,6 +2585,95 @@ try {
       inset: 0;
       border-radius: 0;
     }
+    /* Printed good-day / rough-day receipt — static strip under the calendar (no slot). */
+    #screen-exit-chamber .exit-chamber-mood-paper {
+      width: 100%;
+      max-width: min(23.8rem, calc((100vw - 2.5rem) * 0.85));
+      margin: 0.2rem auto 0;
+      flex: 0 0 auto;
+      box-sizing: border-box;
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper[hidden] {
+      display: none !important;
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper__sheet {
+      position: relative;
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0.32rem 0.75rem 0.52rem;
+      background: #f0ece5;
+      border: none;
+      border-radius: 0;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.55),
+        0 2px 6px -2px rgba(58, 53, 48, 0.05),
+        0 8px 22px rgba(58, 53, 48, 0.07);
+      box-sizing: border-box;
+      overflow: hidden;
+      transform: rotate(-1.2deg);
+      transform-origin: center;
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper__sheet::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0.55;
+      background: repeating-linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.14) 0,
+        rgba(255, 255, 255, 0.14) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper__sheet::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      opacity: 0.075;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      background-size: 96px 96px;
+      background-repeat: repeat;
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper__body {
+      display: block;
+      position: relative;
+      z-index: 3;
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper__text,
+    #screen-exit-chamber .exit-chamber-mood-paper__stamp {
+      margin: 0;
+      font-family: 'Doto', ui-monospace, monospace;
+      font-size: 0.98rem;
+      font-weight: 400;
+      line-height: 1.32;
+      color: #1e1b17;
+      text-align: left;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      position: relative;
+      z-index: 4;
+      -webkit-font-smoothing: antialiased;
+      text-shadow:
+        0.55px 0 0 rgba(30, 27, 23, 0.5),
+        -0.35px 0 0 rgba(30, 27, 23, 0.5);
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper__text {
+      padding: 1.32em 0 0;
+    }
+    #screen-exit-chamber .exit-chamber-mood-paper__stamp {
+      padding: 0.4em 0 0.12rem;
+    }
     .exit-chamber-blessing-sheet {
       /* Sit naturally below the calendar with a small gap; the empty
          vertical slack sits between the stack and the kicker instead. */
@@ -2497,10 +2701,7 @@ try {
       gap: 0.25rem;
       flex: 0 0 auto;
     }
-    /* Hand-drawn-feel section header used above the calendar ("YOUR COLORS")
-       and above the contributor panel ("WHO WAS HERE"). Zakarack to match the
-       chamber kicker; SVG arrow uses gently uneven cubic paths so it reads as
-       sketched rather than geometric. Label and arrow share a single row. */
+    /* Section headers above calendar / contributors: label + sketched arrow. */
     #screen-exit-chamber .exit-chamber-section-header {
       display: flex;
       flex-direction: row;
@@ -2519,6 +2720,10 @@ try {
     }
     #screen-exit-chamber .exit-chamber-section-header__label {
       display: inline-block;
+    }
+    /* "YOUR COLORS" label above the calendar — disabled for now. */
+    #screen-exit-chamber .exit-chamber-section-header:has(+ .exit-chamber-calendar) {
+      display: none !important;
     }
     #screen-exit-chamber .exit-chamber-section-header__arrow {
       display: inline-block;
@@ -3284,9 +3489,9 @@ try {
     }
     
     .quilt-quote-text {
-      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
-      font-size: 1.12rem;
-      font-style: italic;
+      font-family: 'Cutive Mono', ui-monospace, monospace;
+      font-size: 0.896rem;
+      font-style: normal;
       font-weight: 300;
       margin: 0 0 8px 0;
       line-height: 1.4;
@@ -3295,22 +3500,100 @@ try {
     }
     
     .quilt-quote-author {
-      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
-      font-size: 0.96rem;
+      font-family: 'Cutive Mono', ui-monospace, monospace;
+      font-size: 0.768rem;
       font-weight: 300;
-      font-style: italic;
+      font-style: normal;
       margin: 0;
       color: #404040;
       text-align: left;
     }
 
+    /* Quote paper sits partly above the card edge — pasted-on collage layer. */
+    #screen-quilt .quote-card-stack {
+      --quilt-quote-paper-bg: #e8e2d6;
+      position: relative;
+      overflow: visible;
+      z-index: 10;
+    }
+
     #screen-quilt .quilt-quote-display {
-      padding: 30px 30px 15px;
-      margin-bottom: 0;
+      --quilt-quote-paper-cut: polygon(
+        2.4% 1.8%,
+        31% 0.2%,
+        67% 2.6%,
+        98.2% 0.8%,
+        99.4% 32%,
+        97.2% 66%,
+        99% 98.4%,
+        68% 99.6%,
+        36% 97.2%,
+        1.6% 99.8%,
+        0.4% 68%,
+        2.8% 34%,
+        1% 16%
+      );
+      position: relative;
+      z-index: 3;
+      width: min(100%, 21.5rem);
+      margin: clamp(-2.75rem, -7.5vw, -2rem) auto clamp(1.5rem, 4.5vw, 2rem);
+      padding: clamp(1.35rem, 4.5vw, 1.85rem) clamp(1.25rem, 4vw, 1.65rem) clamp(1.1rem, 3.5vw, 1.4rem);
+      box-sizing: border-box;
+      background:
+        linear-gradient(148deg, rgba(255, 255, 255, 0.5) 0%, transparent 42%),
+        linear-gradient(32deg, rgba(72, 58, 42, 0.04) 0%, transparent 55%),
+        var(--quilt-quote-paper-bg, #e8e2d6);
+      border: none;
+      clip-path: var(--quilt-quote-paper-cut);
+      -webkit-clip-path: var(--quilt-quote-paper-cut);
+      filter:
+        drop-shadow(0 2px 0 rgba(45, 36, 29, 0.08))
+        drop-shadow(0 6px 16px rgba(45, 36, 29, 0.11))
+        drop-shadow(0 18px 38px rgba(45, 36, 29, 0.09));
+      transform: translate3d(-4px, 0, 0) rotate(-2.2deg);
+      transform-origin: center center;
+      isolation: isolate;
+      overflow: hidden;
+      text-align: left;
+    }
+
+    #screen-quilt .quilt-quote-display::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      background: repeating-linear-gradient(
+        168deg,
+        rgba(255, 255, 255, 0.12) 0,
+        rgba(255, 255, 255, 0.12) 1px,
+        transparent 1px,
+        transparent 4px
+      );
+    }
+
+    #screen-quilt .quilt-quote-display::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0.09;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      background-size: 88px 88px;
+      background-repeat: repeat;
+    }
+
+    #screen-quilt .quilt-quote-text,
+    #screen-quilt .quilt-quote-author {
+      position: relative;
+      z-index: 2;
     }
 
     #screen-quilt .quilt-quote-text {
-      font-size: clamp(1.45rem, 6vw, 2.4rem) !important;
+      font-size: clamp(1.16rem, 4.8vw, 1.92rem) !important;
       line-height: 1.18;
       font-weight: 400;
       color: #2f2924;
@@ -3319,13 +3602,18 @@ try {
     }
 
     #screen-quilt .quilt-quote-author {
-      font-size: clamp(0.98rem, 3.2vw, 1.2rem) !important;
-      line-height: 1.25;
-      font-weight: 300;
-      font-style: italic;
+      font-size: clamp(1.16rem, 4.8vw, 1.92rem) !important;
+      line-height: 1.18;
+      font-weight: 400;
+      font-style: normal;
       margin-top: 0.35rem;
-      color: rgba(47, 41, 36, 0.52);
-      text-align: center;
+      margin-bottom: 0;
+      color: #2f2924;
+      text-align: right;
+    }
+
+    #screen-quilt .quilt-quote-author:not(:empty)::before {
+      content: '\2014\00a0';
     }
     
     @media (max-width: 768px) {
@@ -3335,11 +3623,11 @@ try {
       }
       
       .quilt-quote-text {
-        font-size: 1rem !important;
+        font-size: 0.8rem !important;
       }
       
       .quilt-quote-author {
-        font-size: 1rem !important;
+        font-size: 0.8rem !important;
       }
       
       /* Mobile quote marks */
@@ -3372,11 +3660,11 @@ try {
       }
       
       .quilt-quote-text {
-        font-size: 1.76rem;
+        font-size: 1.408rem;
       }
       
       .quilt-quote-author {
-        font-size: 1.44rem;
+        font-size: 1.152rem;
       }
       
       /* Small mobile quote marks */
@@ -4178,6 +4466,10 @@ try {
         box-sizing: border-box;
       }
 
+      #screen-exit-chamber {
+        padding-top: calc(var(--odq-safe-top) + clamp(0.65rem, 2.2vh, 1.2rem)) !important;
+      }
+
       #screen-about {
         padding: max(clamp(2.75rem, 9vh, 4.5rem), var(--odq-safe-top)) max(1.25rem, calc(var(--odq-safe-right) + 1.25rem)) max(0.75rem, var(--odq-safe-bottom)) max(1.25rem, calc(var(--odq-safe-left) + 1.25rem)) !important;
         overflow-y: auto !important;
@@ -4571,6 +4863,23 @@ try {
         max-height: 100vh !important;
       }
 
+      /* Welcome: fill viewport so footer can pin to bottom (group rule above uses justify-content:center). */
+      #screen-welcome {
+        justify-content: flex-start !important;
+        align-items: stretch !important;
+      }
+
+      #screen-welcome .welcome-content {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        max-width: min(86vw, 38rem);
+        min-height: 100%;
+        height: 100%;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
       #screen-settings {
         justify-content: flex-start !important;
         overflow-y: auto !important;
@@ -4684,13 +4993,13 @@ try {
 
       
       #screen-quilt .quote-card-stack {
-        position: relative;
         background: #f6f4f1;
-        padding: 1rem;
+        padding: 0.65rem 1rem 0.6rem;
         margin-top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 20px);
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
         width: 100%;
-        z-index: 10;
+        max-width: 100%;
+        overflow: visible;
         box-sizing: border-box;
       }
 
@@ -4886,7 +5195,10 @@ try {
         height: 100dvh !important;
         min-height: 100dvh !important;
         max-height: 100dvh !important;
-        padding: max(0.75rem, var(--odq-safe-top)) max(1rem, var(--odq-safe-right)) max(0.75rem, var(--odq-safe-bottom)) max(1rem, var(--odq-safe-left)) !important;
+        padding-top: calc(max(0.75rem, var(--odq-safe-top)) + (2 * var(--welcome-screen-v-gutter))) !important;
+        padding-right: max(1rem, var(--odq-safe-right)) !important;
+        padding-bottom: calc(max(0.75rem, var(--odq-safe-bottom)) + var(--welcome-screen-v-gutter)) !important;
+        padding-left: max(1rem, var(--odq-safe-left)) !important;
         overflow: hidden !important;
       }
 
@@ -5228,7 +5540,7 @@ try {
     .reflection-themes-archive-date {
       margin: 0 0 1.6rem;
       color: rgba(47, 36, 27, 0.62);
-      font-size: 1rem;
+      font-size: 0.9rem;
       font-weight: 600;
       letter-spacing: 0.08em;
       line-height: 1.2;
@@ -5302,7 +5614,7 @@ try {
       box-shadow: none;
       border-radius: 0;
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: 1.1rem;
+      font-size: 0.99rem;
       font-style: italic;
       line-height: 1.25;
     }
@@ -5325,7 +5637,7 @@ try {
     .reflection-themes-archive-prompt {
       margin: 0;
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: clamp(1.24rem, 4.1vw, 1.55rem);
+      font-size: clamp(1.116rem, 3.69vw, 1.395rem);
       font-style: italic;
       font-weight: 400;
       line-height: 1.25;
@@ -5335,7 +5647,7 @@ try {
     .reflection-themes-archive-response-count {
       margin: 0 0 1.05rem;
       color: rgba(47, 36, 27, 0.62);
-      font-size: 1.02rem;
+      font-size: 0.918rem;
       font-weight: 600;
       line-height: 1.25;
     }
@@ -5345,7 +5657,7 @@ try {
       padding: 0;
       color: #2f2b24;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: clamp(1.12rem, 4vw, 1.35rem);
+      font-size: clamp(1.008rem, 3.6vw, 1.215rem);
       font-weight: 500;
       line-height: 1.28;
       list-style: none;
@@ -6510,106 +6822,135 @@ try {
       min-height: 54px !important;
     }
 
-    /* Mood-pick lives INSIDE the quote-card-stack at the bottom, so it inherits the
-       card's background and shadow. The widget itself is flat — no card chrome.
-       margin-top + padding-bottom together (a) halve the gap between the quote text
-       and the buttons, and (b) match the card's top breathing room (1rem card padding
-       + 30px quilt-quote-display padding = ~46px). */
+    /* Mood-pick: construction-paper frame (slit + two icon tiles); strip slides out on tap. */
     #screen-quilt .quilt-mood-widget {
       position: relative;
       width: 100%;
+      max-width: 100%;
+      /* Slot + paper track ~15% narrower than min(28rem, 100vw − gutter). */
+      --mood-strip-max: min(23.8rem, calc((100vw - 2.5rem) * 0.85));
+      --mood-slot-frame: 14px;
+      --mood-slot-slit: 8px;
+      --mood-tile-size: 4rem;
+      --mood-slot-tiles-gap: 12px;
+      --mood-receipt-bg: #f9f7f4;
+      --mood-receipt-ink: #1e1b17;
+      --mood-receipt-ink-bleed: rgba(30, 27, 23, 0.5);
+      --mood-slot-glow-color: rgba(255, 232, 195, 0.5);
+      --mood-slot-glow-mid: rgba(255, 245, 225, 0.3);
+      --mood-slot-glow-spill: rgba(255, 235, 200, 0.14);
+      --mood-slot-shimmer-duration: 5s;
+      --mood-receipt-tear-depth: 2px;
+      --mood-receipt-tear-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20100%2048'%20preserveAspectRatio%3D'none'%3E%3Cpath%20fill%3D'%23000'%20d%3D'M0%2C0H100V47.699999999999996l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24l-2%2C0.24-l-2%2C-0.24L0%2C47.699999999999996Z'%2F%3E%3C%2Fsvg%3E");
       background: transparent;
-      padding: 0 0 21px;
-      margin: 0.5rem 0 0;
+      padding: 0 0 12.6px;
+      margin: clamp(0.65rem, 2vw, 0.85rem) 0 0;
       box-shadow: none;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
       align-items: center;
+      flex-shrink: 0;
+      isolation: isolate;
     }
 
     #screen-quilt .quilt-mood-widget[hidden] {
       display: none !important;
     }
 
-    #screen-quilt .quilt-mood-widget__tiles {
-      display: flex;
-      gap: 1rem;
-      width: 100%;
-      max-width: 28rem;
-      align-items: center;
-      justify-content: center;
-      /* Fixed row min-height so circles sit in a stable container; revealing copy can
-         push the row taller on long text but not below this floor. */
-      min-height: 5rem;
-      /* Match the tile expansion duration/easing so the gap collapses on the same
-         curve — keeps the whole row reading as a single coordinated motion. */
-      transition: gap 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    #screen-quilt .quilt-mood-widget__announcer {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+      clip-path: inset(50%);
     }
 
-    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__tiles {
-      gap: 0;
+    /* Grid: two fixed columns — after pick, hide the other tile but keep both cells so
+       the chosen icon never shifts horizontally. */
+    #screen-quilt .quilt-mood-widget__tiles {
+      display: grid;
+      grid-template-columns: var(--mood-tile-size) var(--mood-tile-size);
+      column-gap: 1rem;
+      justify-content: center;
+      width: 100%;
+      max-width: var(--mood-strip-max);
+      margin: calc(var(--mood-slot-slit) + var(--mood-slot-tiles-gap)) auto 0;
+      align-items: center;
+      box-sizing: border-box;
+      min-height: var(--mood-tile-size);
+      flex-shrink: 0;
+      position: relative;
+      z-index: 0;
     }
 
     #screen-quilt .quilt-mood-widget__tile {
+      position: relative;
       appearance: none;
       -webkit-appearance: none;
-      /* A darker shade of the app's warm neutral so the tiles sit visibly INSIDE the
-         lighter quote card (#f6f4f1) without competing with the quote text. */
-      background: var(--mood-tile-bg, #e3dccd);
+      background: transparent;
       border: 0;
-      /* 999px keeps the tile fully rounded in both states: at 64×64 it's a perfect
-         circle, and when expanded to fill the row it becomes a perfect pill. No
-         border-radius transition needed. */
       border-radius: 999px;
       color: rgba(36, 27, 20, 0.72);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      /* `flex-basis` alone drives the width on these flex items — no `width` rule,
-         since animating both at once made flex layout fight itself frame-by-frame
-         and produced the choppy expansion. */
-      flex: 0 0 4rem;
+      width: 100%;
+      min-width: 0;
       min-height: 4rem;
       padding: 0;
       overflow: hidden;
       text-align: center;
       box-sizing: border-box;
       -webkit-tap-highlight-color: transparent;
-      will-change: flex-basis, padding;
-      /* One shared duration + ease-out curve so every property finishes together;
-         the row no longer reads as several mismatched mini-animations. */
-      transition:
-        flex-basis 360ms cubic-bezier(0.22, 1, 0.36, 1),
-        flex-grow 360ms cubic-bezier(0.22, 1, 0.36, 1),
-        padding 360ms cubic-bezier(0.22, 1, 0.36, 1),
-        margin 360ms cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 280ms ease-out,
-        color 200ms ease,
-        filter 200ms ease;
+      touch-action: manipulation;
+      transition: color 200ms ease, filter 200ms ease, box-shadow 200ms ease;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+
+    #screen-quilt .quilt-mood-widget:not(.is-active) .quilt-mood-widget__tile {
+      width: var(--mood-tile-size);
+      min-width: var(--mood-tile-size);
+      max-width: var(--mood-tile-size);
+      height: var(--mood-tile-size);
+      min-height: var(--mood-tile-size);
+      max-height: var(--mood-tile-size);
     }
 
     #screen-quilt .quilt-mood-widget__tile:hover,
     #screen-quilt .quilt-mood-widget__tile:focus-visible {
       color: rgba(36, 27, 20, 0.88);
-      filter: brightness(0.96);
       outline: none;
     }
 
     #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__tile[aria-pressed="false"] {
-      flex: 0 0 0;
       opacity: 0;
-      padding: 0;
-      margin: 0;
       pointer-events: none;
+      visibility: hidden;
     }
 
     #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__tile[aria-pressed="true"] {
-      flex: 1 1 100%;
-      padding: 0.85rem 1.25rem;
-      color: rgba(36, 27, 20, 0.92);
-      filter: brightness(0.98);
+      position: relative;
+      z-index: 1;
+      width: var(--mood-tile-size);
+      min-width: var(--mood-tile-size);
+      max-width: var(--mood-tile-size);
+      height: var(--mood-tile-size);
+      min-height: var(--mood-tile-size);
+      max-height: var(--mood-tile-size);
+      padding: 0;
+      color: rgba(36, 27, 20, 0.78);
+      filter: none;
+      box-shadow: 0 0 0 2px rgba(36, 27, 20, 0.1);
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
     }
 
     #screen-quilt .quilt-mood-widget__tile-inner {
@@ -6622,63 +6963,427 @@ try {
     }
 
     #screen-quilt .quilt-mood-widget__arrow {
+      font-family: 'Material Symbols Outlined';
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      font-feature-settings: 'liga';
+      font-size: 30px;
+      font-style: normal;
+      line-height: 1;
       width: 30px;
       height: 30px;
       display: block;
       flex-shrink: 0;
-      max-height: 30px;
       opacity: 1;
-      overflow: hidden;
-      transition:
-        max-height 280ms cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 200ms ease-out,
-        margin 280ms cubic-bezier(0.22, 1, 0.36, 1),
-        transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+      transform: scale(1);
+      transform-origin: center;
+      user-select: none;
     }
 
-    /* On selection the arrow recedes so the revealed copy owns the box. */
-    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__tile[aria-pressed="true"] .quilt-mood-widget__arrow {
-      max-height: 0;
-      opacity: 0;
-      margin: 0;
-      transform: scale(0.85);
-    }
-
+    /* Copy is synced into hidden spans for hydration; the visible line is on the paper strip. */
     #screen-quilt .quilt-mood-widget__tile-text {
-      display: block;
-      /* Pin the text element's width so wrapping is stable regardless of the parent
-         tile's current animated width. Without this, the tile bounces taller mid-tap
-         because the text re-wraps to 2 lines while the tile is at an intermediate
-         width and then back to 1 line once the tile finishes widening. */
-      width: min(24rem, calc(100vw - 4rem));
-      max-width: 24rem;
-      margin: 0 auto;
-      padding: 0 0.25rem;
-      font-size: 1.02rem;
-      line-height: 1.45;
-      color: rgba(36, 27, 20, 0.88);
-      text-align: center;
-      box-sizing: border-box;
-      max-height: 0;
-      opacity: 0;
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
       overflow: hidden;
-      /* Closing transition (active → neutral): collapse immediately, no delay, so the
-         tile can narrow without the text element re-claiming height mid-way. */
-      transition:
-        max-height 220ms cubic-bezier(0.22, 1, 0.36, 1) 0ms,
-        opacity 180ms ease-out 0ms;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+      clip-path: inset(50%);
     }
 
-    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__tile[aria-pressed="true"] .quilt-mood-widget__tile-text {
-      max-height: 240px;
+    /* Two identical bands in the gradient tile — 0% and 100% positions match for a seamless loop. */
+    @keyframes moodSlotShimmer {
+      from {
+        background-position: 0% 50%;
+      }
+      to {
+        background-position: 100% 50%;
+      }
+    }
+
+    #screen-quilt .quilt-mood-widget:not(.is-active) .quilt-mood-widget__slot {
+      box-shadow: 0 0 12px 4px var(--mood-slot-glow-spill);
+    }
+
+    #screen-quilt .quilt-mood-widget__slot {
+      position: relative;
+      width: 100%;
+      max-width: var(--mood-strip-max);
+      margin: 0 auto;
+      flex-shrink: 0;
+      z-index: 1;
+      padding: var(--mood-slot-frame);
+      border-radius: 0;
+      background: var(--quilt-quote-paper-bg, #e8e2d6);
+      box-shadow: none;
+      box-sizing: border-box;
+      overflow: visible;
+      /* Frame wraps slit + mood tiles (buttons sit inside the bottom of the frame). */
+      min-height: calc(
+        (var(--mood-slot-frame) * 2) + var(--mood-slot-slit) + var(--mood-slot-tiles-gap) +
+          var(--mood-tile-size)
+      );
+    }
+
+    /* Thermal printer warm-up — idle slit only; above viewport shadows so the glow is visible. */
+    #screen-quilt .quilt-mood-widget:not(.is-active) .quilt-mood-widget__slot::after {
+      content: '';
+      position: absolute;
+      top: var(--mood-slot-frame);
+      left: var(--mood-slot-frame);
+      right: var(--mood-slot-frame);
+      height: var(--mood-slot-slit);
+      z-index: 4;
+      pointer-events: none;
+      overflow: hidden;
+      opacity: 0.88;
+      filter: blur(1.5px);
+      background: linear-gradient(
+        90deg,
+        transparent 0%,
+        transparent 8%,
+        var(--mood-slot-glow-mid) 18%,
+        var(--mood-slot-glow-color) 25%,
+        var(--mood-slot-glow-mid) 32%,
+        transparent 42%,
+        transparent 50%,
+        transparent 58%,
+        var(--mood-slot-glow-mid) 68%,
+        var(--mood-slot-glow-color) 75%,
+        var(--mood-slot-glow-mid) 82%,
+        transparent 92%,
+        transparent 100%
+      );
+      background-size: 200% 100%;
+      background-position: 0% 50%;
+      animation: moodSlotShimmer var(--mood-slot-shimmer-duration) linear infinite;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__slot::after {
+      opacity: 0;
+      animation: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #screen-quilt .quilt-mood-widget:not(.is-active) .quilt-mood-widget__slot::after {
+        animation: none;
+        filter: blur(1.5px);
+        background: radial-gradient(
+          ellipse 95% 120% at 50% 50%,
+          var(--mood-slot-glow-color) 0%,
+          var(--mood-slot-glow-mid) 45%,
+          transparent 72%
+        );
+        background-size: 100% 100%;
+        background-position: center;
+        opacity: 0.78;
+      }
+    }
+
+    /* Feed track — one window at the slit; strip + type scroll out together (bottom line first). */
+    #screen-quilt .quilt-mood-widget__slot-feed {
+      position: absolute;
+      top: var(--mood-slot-frame);
+      left: var(--mood-slot-frame);
+      right: var(--mood-slot-frame);
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+      max-height: var(--mood-slot-slit);
+      box-sizing: border-box;
+    }
+
+    #screen-quilt .quilt-mood-widget__slot-feed::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--mood-slot-slit);
+      pointer-events: none;
+      z-index: 0;
+      /* Soft falloff at top/bottom — avoids a hard lip where shadow meets the frame. */
+      background: linear-gradient(
+        180deg,
+        rgba(42, 37, 32, 0) 0%,
+        rgba(42, 37, 32, 0.42) 38%,
+        #2a2520 62%,
+        rgba(42, 37, 32, 0.42) 82%,
+        rgba(42, 37, 32, 0) 100%
+      );
+    }
+
+    /* Slit lip — dark throat + idle warm core (visible even when shimmer layer is subtle). */
+    #screen-quilt .quilt-mood-widget__slot-viewport {
+      position: absolute;
+      top: var(--mood-slot-frame);
+      left: var(--mood-slot-frame);
+      right: var(--mood-slot-frame);
+      width: auto;
+      height: var(--mood-slot-slit);
+      min-height: var(--mood-slot-slit);
+      max-height: var(--mood-slot-slit);
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow:
+        inset 0 6px 18px 4px rgba(0, 0, 0, 0.38),
+        inset 0 -4px 12px 2px rgba(0, 0, 0, 0.3);
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    #screen-quilt .quilt-mood-widget:not(.is-active) .quilt-mood-widget__slot-viewport {
+      box-shadow:
+        inset 0 6px 18px 4px rgba(0, 0, 0, 0.32),
+        inset 0 -4px 12px 2px rgba(0, 0, 0, 0.26),
+        inset 0 0 10px 3px rgba(255, 232, 195, 0.38);
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__slot {
+      overflow: visible;
+      box-shadow: none;
+    }
+
+    /* Receipt strip — glued to feed; no separate clip/transform (moves with the track). */
+    #screen-quilt .quilt-mood-widget__paper {
+      position: relative;
+      display: block;
+      width: 100%;
+      flex-shrink: 0;
+      margin: 0;
+      padding: 0.32rem 0.75rem calc(0.52rem + var(--mood-receipt-tear-depth, 5px));
+      background: var(--mood-receipt-bg);
+      border: none;
+      border-radius: 0;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.55),
+        0 2px 6px -2px rgba(58, 53, 48, 0.05);
+      box-sizing: border-box;
+      opacity: 0;
+      overflow: hidden;
+      transform: none;
+      transition: none;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__paper {
+      overflow: visible;
+      background-color: var(--mood-receipt-bg);
+      background-image: linear-gradient(
+        to bottom,
+        transparent calc(100% - var(--mood-receipt-tear-depth, 2px) - 3px),
+        rgba(30, 27, 23, 0.055) calc(100% - var(--mood-receipt-tear-depth, 2px) - 2px),
+        rgba(30, 27, 23, 0.04) calc(100% - var(--mood-receipt-tear-depth, 2px) - 1px),
+        transparent calc(100% - var(--mood-receipt-tear-depth, 2px))
+      );
+      -webkit-mask-image: var(--mood-receipt-tear-mask);
+      mask-image: var(--mood-receipt-tear-mask);
+      -webkit-mask-size: 100% 100%;
+      mask-size: 100% 100%;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-position: center bottom;
+      mask-position: center bottom;
+    }
+
+    /* Faint horizontal banding (heat roller / cheap stock). */
+    #screen-quilt .quilt-mood-widget__paper::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0;
+      background: repeating-linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.14) 0,
+        rgba(255, 255, 255, 0.14) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    }
+
+    /* Paper tooth — multiply grain over the strip. */
+    #screen-quilt .quilt-mood-widget__paper::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      opacity: 0;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      background-size: 96px 96px;
+      background-repeat: repeat;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__paper::before {
+      opacity: 0.55;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__paper::after {
+      opacity: 0.075;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__slot-feed {
+      overflow: visible;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__paper {
+      min-height: 100%;
+      box-sizing: border-box;
+      overflow: visible;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+      filter:
+        drop-shadow(0 6px 14px rgba(58, 53, 48, 0.05))
+        drop-shadow(0 16px 36px rgba(58, 53, 48, 0.08));
+    }
+
+    #screen-quilt .quilt-mood-widget__paper-lead {
+      display: block;
+      position: relative;
+      z-index: 3;
+    }
+
+    /* Soft haze where shadow meets the bottom edge of the strip. */
+    #screen-quilt .quilt-mood-widget__paper-lead::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 22px;
+      transform: translateY(100%);
+      pointer-events: none;
+      z-index: -1;
+      opacity: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(58, 53, 48, 0.16) 0%,
+        rgba(58, 53, 48, 0.07) 42%,
+        transparent 100%
+      );
+      filter: blur(14px);
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__paper-lead::after {
       opacity: 1;
-      /* Opening transition (neutral → active): start the copy fading in around the
-         200ms mark — late enough that the tile is past its midpoint and won't reflow
-         the wrap, but early enough that the reveal feels continuous with the
-         expansion rather than a separate stuttery step after it. */
-      transition:
-        max-height 260ms cubic-bezier(0.22, 1, 0.36, 1) 200ms,
-        opacity 240ms ease-out 200ms;
+    }
+
+    #screen-quilt .quilt-mood-widget__paper-body {
+      display: block;
+      position: relative;
+      z-index: 3;
+    }
+
+    #screen-quilt .quilt-mood-widget__paper-text,
+    #screen-quilt .quilt-mood-widget__paper-stamp {
+      margin: 0;
+      font-family: 'Doto', ui-monospace, monospace;
+      font-size: 0.98rem;
+      font-weight: 400;
+      line-height: 1.32;
+      color: var(--mood-receipt-ink);
+      text-align: left;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      position: relative;
+      z-index: 4;
+      -webkit-font-smoothing: antialiased;
+      text-shadow:
+        0.55px 0 0 var(--mood-receipt-ink-bleed),
+        -0.35px 0 0 var(--mood-receipt-ink-bleed);
+    }
+
+    #screen-quilt .quilt-mood-widget__paper-text {
+      padding: 1.32em 0 0;
+    }
+
+    #screen-quilt .quilt-mood-widget__paper-stamp {
+      padding: 0.4em 0 0.12rem;
+    }
+
+    /* MOOD_PAPER_MS in setupQuiltMoodWidget() — feed height roll uses Web Animations API in JS. */
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__slot-feed {
+      max-height: var(--mood-slot-slit);
+      transition: none;
+      z-index: 10;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__paper {
+      pointer-events: auto;
+      opacity: 1;
+      overflow: visible;
+      -webkit-mask-image: var(--mood-receipt-tear-mask);
+      mask-image: var(--mood-receipt-tear-mask);
+      -webkit-mask-size: 100% 100%;
+      mask-size: 100% 100%;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+            -webkit-mask-position: center bottom;
+      mask-position: center bottom;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__paper-text,
+    #screen-quilt .quilt-mood-widget.is-active .quilt-mood-widget__paper-stamp {
+      opacity: 1;
+      transition: none;
+    }
+
+    /* Receipt track stacks above mood tiles while dispensing (height via WAAPI in JS). */
+    #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__slot-feed {
+      max-height: none;
+      z-index: 12;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__paper {
+      position: relative;
+      z-index: 2;
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__slot {
+      z-index: 6;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__slot-feed {
+        max-height: none !important;
+        height: var(--mood-roll-height, auto) !important;
+      }
+    }
+
+    #screen-quilt .quilt-mood-widget.is-active.quilt-mood-widget--paper-out .quilt-mood-widget__slot-feed.quilt-mood-widget__slot-feed--unrolled {
+      max-height: none;
+      overflow: visible;
+      transition: none;
+    }
+
+    /* Receipt open: quote card stacks above Heads Together (.button-container uses z-index 10). */
+    #screen-quilt .quote-card-stack:has(#quiltMoodWidget.is-active) {
+      position: relative;
+      z-index: 45 !important;
+    }
+
+    @media (pointer: coarse) {
+      #screen-quilt .quilt-mood-widget__tile {
+        transition: color 160ms ease;
+      }
+
+      #screen-quilt .quilt-mood-widget__tile:hover,
+      #screen-quilt .quilt-mood-widget__tile:focus-visible {
+        filter: none;
+      }
     }
 
     #screen-quilt .quilt-popular-color-panel {
@@ -6819,6 +7524,7 @@ try {
       /* Short transparent band above the patch so the quilt shows through the side panel */
       margin: 0.65rem -48px 30px;
       padding: 0.15rem 0 1.4rem;
+      overflow: visible;
     }
 
     #screen-quilt .quilt-reflection-fabric-card {
@@ -6840,6 +7546,7 @@ try {
       justify-content: center;
       isolation: isolate;
       transform: scaleY(-1);
+      overflow: visible;
     }
 
     #screen-quilt .quilt-reflection-fabric-card::before,
@@ -6896,6 +7603,89 @@ try {
       transform: scaleY(-1);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+      overflow: visible;
+    }
+
+    /* Theme-card rim sticker: inline SVG “cut paper” star (no external asset). */
+    @keyframes odq-reflection-star-swivel {
+      0% {
+        transform: rotate(-22deg);
+      }
+      30% {
+        transform: rotate(6deg);
+      }
+      58% {
+        transform: rotate(-13deg);
+      }
+      82% {
+        transform: rotate(-6deg);
+      }
+      100% {
+        transform: rotate(-9deg);
+      }
+    }
+
+    #screen-quilt .quilt-reflection-patch-star {
+      position: absolute;
+      z-index: 10;
+      width: clamp(7.2rem, 22vw, 9.6rem);
+      height: clamp(7.2rem, 22vw, 9.6rem);
+      top: auto;
+      right: auto;
+      bottom: auto;
+      left: auto;
+      opacity: 0;
+      transform: translate(
+          calc(var(--odq-star-tx, 0%) + var(--odq-star-jx, 0px)),
+          calc(var(--odq-star-ty, 0%) + var(--odq-star-jy, 0px))
+        )
+        scale(0.252);
+      transform-origin: 50% 50%;
+      transition:
+        opacity 0.72s ease,
+        transform 0.88s cubic-bezier(0.32, 1.5, 0.55, 1);
+      pointer-events: none;
+    }
+
+    #screen-quilt .quilt-reflection-patch-star.is-visible {
+      opacity: 1;
+      transform: translate(
+          calc(var(--odq-star-tx, 0%) + var(--odq-star-jx, 0px)),
+          calc(var(--odq-star-ty, 0%) + var(--odq-star-jy, 0px))
+        )
+        scale(0.9);
+    }
+
+    #screen-quilt .quilt-reflection-patch-star__body {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      transform: rotate(-9deg);
+      transform-origin: 48% 32%;
+      animation: none;
+    }
+
+    #screen-quilt .quilt-reflection-patch-star.is-visible .quilt-reflection-patch-star__body {
+      animation: odq-reflection-star-swivel 0.78s cubic-bezier(0.34, 1.12, 0.55, 1) 0.22s both;
+    }
+
+    #screen-quilt .quilt-reflection-patch-star__svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      pointer-events: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #screen-quilt .quilt-reflection-patch-star {
+        transition-duration: 0.2s;
+      }
+
+      #screen-quilt .quilt-reflection-patch-star.is-visible .quilt-reflection-patch-star__body {
+        animation: none;
+      }
     }
 
     #screen-quilt .quilt-reflection-scrap-text {
@@ -6905,6 +7695,7 @@ try {
       font-size: clamp(1.26rem, 4.5vw, 1.44rem);
       font-style: italic;
       line-height: 1.48;
+      text-wrap: pretty;
     }
 
     #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-scrap-text {
@@ -7362,7 +8153,7 @@ try {
       display: none;
     }
 
-    /* Initial collapsed state: show only the prompt + "Add yours" button on the patch. */
+    /* Initial collapsed state: show only the prompt + "add yours?" button on the patch. */
     #screen-quilt .quilt-reflection-response-form.is-collapsed .quilt-reflection-response-input,
     #screen-quilt .quilt-reflection-response-form.is-collapsed .quilt-reflection-response-helper,
     #screen-quilt .quilt-reflection-response-form.is-collapsed .quilt-reflection-response-byline {
@@ -7585,6 +8376,25 @@ try {
     #screen-quilt .quilt-reflection-wall-notes {
       display: block;
       margin-top: 0.78rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Theme carousel + star sticker (star sits on the theme card top rim only). */
+    #screen-quilt .quilt-reflection-theme-cards-shell {
+      position: relative;
+      width: 100%;
+      overflow: visible;
+      z-index: 2;
+      padding-bottom: clamp(1.75rem, 6vw, 3rem);
+    }
+
+    #screen-quilt .quilt-reflection-scrap-widget--fabric .quilt-reflection-theme-cards-shell {
+      margin-top: 0.78rem;
+    }
+
+    #screen-quilt .quilt-reflection-theme-cards-shell .quilt-reflection-wall-notes {
+      margin-top: 0;
     }
 
     #screen-quilt .quilt-reflection-carousel {
@@ -7668,8 +8478,8 @@ try {
               mask-size: 100% 100%;
       -webkit-mask-repeat: no-repeat;
               mask-repeat: no-repeat;
-      -webkit-mask-position: center;
-              mask-position: center;
+            -webkit-mask-position: center bottom;
+      mask-position: center bottom;
       filter: blur(0.18px);
     }
 
@@ -8042,7 +8852,7 @@ try {
     #screen-quilt .quote-speaker-guide {
       margin: 0.46rem 24px 0;
       font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
-      font-size: 0.92rem;
+      font-size: calc(0.92rem * 1.1);
       font-style: italic;
       line-height: 1.4;
       color: rgba(47, 39, 31, 0.86);
@@ -8781,6 +9591,10 @@ try {
     }
 
     #screen-quilt .quilt-before-you-go__companion-desc[hidden] {
+      display: none;
+    }
+
+    #screen-quilt .quilt-before-you-go__watch-for-wrap[hidden] {
       display: none;
     }
 
@@ -9579,6 +10393,18 @@ try {
             height="705"
             decoding="async"
           />
+          <div class="welcome-how-heading-wrap welcome-screen-fade-in">
+            <img
+              class="welcome-how-heading__mark"
+              src="assets/welcome-how-highlighter.png"
+              alt=""
+              width="1846"
+              height="331"
+              decoding="async"
+              aria-hidden="true"
+            />
+            <h1 class="welcome-how-heading">Here&rsquo;s how it works</h1>
+          </div>
           <header class="welcome-hero" aria-label="One color. One day. Shared with everyone." hidden aria-hidden="true">
             <p class="welcome-hero-line welcome-screen-fade-in">One color.</p>
             <p class="welcome-hero-line welcome-hero-line--soft welcome-screen-fade-in">One day.</p>
@@ -9587,32 +10413,53 @@ try {
 
           <div class="welcome-steps" aria-label="How it works">
             <section class="welcome-step welcome-screen-fade-in">
-              <span class="welcome-step__dot" aria-hidden="true"></span>
-              <div class="welcome-step__body">
+              <div class="welcome-step-strip">
                 <h2 class="welcome-step__title">Read today&rsquo;s quote</h2>
-                <p class="welcome-step__copy">A single thought to sit with</p>
               </div>
             </section>
             <section class="welcome-step welcome-screen-fade-in">
-              <span class="welcome-step__dot" aria-hidden="true"></span>
-              <div class="welcome-step__body">
+              <div class="welcome-step-strip">
                 <h2 class="welcome-step__title">Choose your color</h2>
-                <p class="welcome-step__copy">Whichever color comes to mind</p>
               </div>
             </section>
             <section class="welcome-step welcome-screen-fade-in">
-              <span class="welcome-step__dot" aria-hidden="true"></span>
-              <div class="welcome-step__body">
+              <div class="welcome-step-strip">
                 <h2 class="welcome-step__title">Watch the quilt grow</h2>
-                <p class="welcome-step__copy">See what everyone is feeling today</p>
               </div>
             </section>
+          </div>
+
+          <div class="welcome-to-begin-arrow welcome-screen-fade-in" aria-hidden="true">
+            <svg
+              class="welcome-to-begin-arrow__svg"
+              viewBox="0 0 40 56"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              focusable="false"
+            >
+              <!-- Same paths as `.exit-chamber-section-header__arrow` on exit chamber -->
+              <path
+                d="M19.7 4.5 C 20.6 13.8, 18.4 24.6, 20.4 35.4 C 20.9 39.2, 19.9 43.6, 20.4 47.2"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                fill="none"
+              />
+              <path
+                d="M10.8 36.4 C 13.6 40.6, 16.4 44.4, 20.4 48.6 C 23.8 44.2, 26.6 40.4, 29.8 36.6"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+              />
+            </svg>
           </div>
         </div>
 
         <footer class="welcome-footer welcome-screen-fade-in">
           <button type="button" class="btn welcome-begin-btn" data-next="screen-first-quote-bridge" aria-label="Begin with today&rsquo;s quote">BEGIN</button>
-          <p class="welcome-reset-note">Resets at midnight &middot; Gone by tomorrow</p>
+          <p class="welcome-reset-note">Resets at midnight</p>
         </footer>
       </div>
     </section>
@@ -9688,10 +10535,10 @@ try {
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" tabindex="0" aria-label="OUR DAILY QUILT — community quilt with colorful blocks. Tap to find your color."></svg>
         <canvas id="quiltFilmGrainOverlay" width="1" height="1" aria-hidden="true"></canvas>
       </div>
-      <!-- Quote card stack - separate sheet above the reflection panel. Mood-pick tiles
-           live inside this card at the bottom so they read as part of the quote itself. -->
+      <!-- Quote card stack - separate sheet above the reflection panel. Mood-pick receipt slit and
+           two icon tiles share one construction-paper frame; the strip feeds through the slit. -->
       <div class="quote-card-stack">
-        <div class="quilt-quote-display" style="margin-bottom: 0;">
+        <div class="quilt-quote-display">
           <p class="quilt-quote-text"></p>
           <p class="quilt-quote-author"></p>
         </div>
@@ -9701,42 +10548,51 @@ try {
           aria-label="How this quote is landing today"
           hidden
         >
-          <div class="quilt-mood-widget__tiles" role="group" aria-label="Mood pick">
-            <button
-              type="button"
-              class="quilt-mood-widget__tile"
-              data-mood="good"
-              aria-pressed="false"
-              aria-label="This quote is landing well today"
-            >
-              <span class="quilt-mood-widget__tile-inner">
-                <svg class="quilt-mood-widget__arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.6" />
-                  <circle cx="8.6" cy="10" r="1.05" fill="currentColor" />
-                  <circle cx="15.4" cy="10" r="1.05" fill="currentColor" />
-                  <path d="M 8 14.5 Q 12 18 16 14.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                </svg>
-                <span class="quilt-mood-widget__tile-text" data-mood-text="good" aria-live="polite"></span>
-              </span>
-            </button>
-            <button
-              type="button"
-              class="quilt-mood-widget__tile"
-              data-mood="rough"
-              aria-pressed="false"
-              aria-label="This quote isn't landing today"
-            >
-              <span class="quilt-mood-widget__tile-inner">
-                <svg class="quilt-mood-widget__arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.6" />
-                  <circle cx="8.6" cy="10" r="1.05" fill="currentColor" />
-                  <circle cx="15.4" cy="10" r="1.05" fill="currentColor" />
-                  <line x1="8" y1="16" x2="16" y2="16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                </svg>
-                <span class="quilt-mood-widget__tile-text" data-mood-text="rough" aria-live="polite"></span>
-              </span>
-            </button>
+          <div class="quilt-mood-widget__slot">
+            <div class="quilt-mood-widget__slot-feed" aria-hidden="true">
+              <div class="quilt-mood-widget__paper">
+              <div class="quilt-mood-widget__paper-lead">
+                <div class="quilt-mood-widget__paper-body">
+                  <p class="quilt-mood-widget__paper-text"></p>
+                  <p class="quilt-mood-widget__paper-stamp"></p>
+                </div>
+              </div>
+            </div>
+            </div>
+            <div class="quilt-mood-widget__slot-viewport" aria-hidden="true"></div>
+            <div class="quilt-mood-widget__tiles" role="group" aria-label="Mood pick">
+              <button
+                type="button"
+                class="quilt-mood-widget__tile"
+                data-mood="good"
+                aria-pressed="false"
+                aria-label="This quote is landing well today"
+              >
+                <span class="quilt-mood-widget__tile-inner">
+                  <span class="material-symbols-outlined quilt-mood-widget__arrow" aria-hidden="true" translate="no">brightness_1</span>
+                  <span class="quilt-mood-widget__tile-text" data-mood-text="good" aria-hidden="true"></span>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="quilt-mood-widget__tile"
+                data-mood="rough"
+                aria-pressed="false"
+                aria-label="This quote isn't landing today"
+              >
+                <span class="quilt-mood-widget__tile-inner">
+                  <span class="material-symbols-outlined quilt-mood-widget__arrow" aria-hidden="true" translate="no">contrast</span>
+                  <span class="quilt-mood-widget__tile-text" data-mood-text="rough" aria-hidden="true"></span>
+                </span>
+              </button>
+            </div>
           </div>
+          <span
+            id="quiltMoodWidgetAnnouncer"
+            class="quilt-mood-widget__announcer"
+            aria-live="polite"
+            aria-atomic="true"
+          ></span>
         </section>
       </div>
 
@@ -9764,10 +10620,10 @@ try {
           </button>
         </div>
 
-        <div class="quilt-heads-together-heading">
+        <div class="quilt-heads-together-heading" hidden aria-hidden="true">
           <h2 class="quilt-before-you-go__title" id="quiltHeadsTogetherHeading">Heads together</h2>
         </div>
-        <section class="quilt-reflection-scrap-widget quilt-reflection-scrap-widget--fabric" id="quiltReflectionScrapWidget" aria-labelledby="quiltHeadsTogetherHeading">
+        <section class="quilt-reflection-scrap-widget quilt-reflection-scrap-widget--fabric" id="quiltReflectionScrapWidget" aria-label="Reflections and shared themes">
           <p class="quilt-reflection-scrap-kicker" id="quiltReflectionScrapTitle">Share one small thought</p>
           <div class="quilt-reflection-fabric-card">
             <div class="quilt-reflection-scrap-note">
@@ -9784,7 +10640,7 @@ try {
                 ></textarea>
                 <p class="quilt-reflection-response-helper" id="quiltReflectionResponseHelper" aria-live="polite" hidden></p>
                 <p class="quilt-reflection-response-byline" id="quiltReflectionResponseByline">Anonymous. Common threads are drawn from responses and shared below.</p>
-                <button class="quilt-reflection-response-submit" type="submit" aria-expanded="false" aria-controls="quiltReflectionResponseInput">Add yours</button>
+                <button class="quilt-reflection-response-submit" type="submit" aria-expanded="false" aria-controls="quiltReflectionResponseInput">add yours?</button>
               </form>
             </div>
           </div>
@@ -9803,7 +10659,22 @@ try {
           <section class="quilt-reflection-wall" id="quiltReflectionWall" aria-label="Reflection themes from the community">
             <p class="quilt-reflection-wall-kicker" id="quiltReflectionWallTitle" hidden></p>
             <p class="quilt-reflection-wall-helper" hidden></p>
-            <div class="quilt-reflection-wall-notes" id="quiltReflectionWallNotes" aria-live="polite"></div>
+            <div class="quilt-reflection-theme-cards-shell" id="quiltReflectionThemeCardsShell">
+              <div class="quilt-reflection-wall-notes" id="quiltReflectionWallNotes" aria-live="polite"></div>
+              <div class="quilt-reflection-patch-star" id="quiltReflectionPatchStar" hidden aria-hidden="true">
+                <div class="quilt-reflection-patch-star__body" aria-hidden="true">
+                  <svg
+                    class="quilt-reflection-patch-star__svg"
+                    viewBox="0 0 100 100"
+                    xmlns="http://www.w3.org/2000/svg"
+                    focusable="false">
+                    <path
+                      fill="#fbd028"
+                      d="M 48.4 2.8 L 59.2 31.4 L 90.1 35.2 L 65.8 54.1 L 72.4 88.6 L 50 69.8 L 26.9 86.4 L 35.6 52.9 L 9.9 34.8 L 41.5 30.6 Z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
           </section>
           <button class="quilt-reflection-archive-link" type="button" data-next="screen-reflection-themes-archive">
             Reflection archive
@@ -9957,7 +10828,13 @@ try {
             <p class="quilt-before-you-go__prompt" id="beforeYouGoWriteBody"></p>
           </section>
 
-          <hr class="quilt-before-you-go__rule" aria-hidden="true" />
+          <div id="beforeYouGoWatchForWrap" class="quilt-before-you-go__watch-for-wrap" hidden>
+            <hr class="quilt-before-you-go__rule" aria-hidden="true" />
+            <section class="quilt-before-you-go__block" aria-label="Watch for today">
+              <p class="quilt-before-you-go__prompt" id="beforeYouGoWatchForBody"></p>
+            </section>
+            <hr class="quilt-before-you-go__rule" aria-hidden="true" />
+          </div>
 
           <section class="quilt-before-you-go__block" aria-label="Art recommendation">
             <p class="quilt-before-you-go__kicker">A companion piece</p>
@@ -10276,12 +11153,39 @@ try {
     <section class="screen" id="screen-exit-chamber" role="main" aria-label="Exit chamber">
       <footer class="exit-chamber-footer">
         <p class="exit-chamber-kicker exit-chamber-kicker-bottom" id="exitChamberKickerBottom">
-          <span class="exit-chamber-kicker-bottom__ink">See you tomorrow</span>
+          <span class="exit-chamber-kicker-bottom__title-wrap">
+            <span class="exit-chamber-kicker-bottom__headline-wrap">
+              <img
+                class="exit-chamber-kicker-bottom__mark"
+                src="assets/welcome-how-highlighter.png"
+                alt=""
+                width="1846"
+                height="331"
+                decoding="async"
+                aria-hidden="true"
+              />
+              <span class="exit-chamber-kicker-bottom__ink">See you tomorrow</span>
+            </span>
+            <svg
+              class="exit-chamber-kicker-bottom__line"
+              viewBox="0 0 220 14"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <!-- Slight convex arc (bulge toward the text above); geometry is
+                   in viewBox space — display width is 90% of the headline via CSS. -->
+              <path
+                pathLength="1000"
+                d="M 6 8.75 C 72 5.85 148 5.85 214 8.75"
+              />
+            </svg>
+          </span>
         </p>
       </footer>
       <div class="exit-chamber-inner">
         <div class="exit-chamber-stack">
-          <h2 class="exit-chamber-section-header">
+          <h2 class="exit-chamber-section-header" hidden aria-hidden="true">
             <span class="exit-chamber-section-header__label">YOUR COLORS</span>
             <svg
               class="exit-chamber-section-header__arrow"
@@ -10339,6 +11243,19 @@ try {
               <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
             </div>
             <div class="settings-color-calendar__grid" id="exitChamberColorCalendarGrid" role="grid" aria-label="Calendar of your daily colors"></div>
+          </section>
+          <section
+            class="exit-chamber-mood-paper"
+            id="exitChamberMoodPaper"
+            hidden
+            aria-label="Your mood pick for today"
+          >
+            <div class="exit-chamber-mood-paper__sheet">
+              <div class="exit-chamber-mood-paper__body">
+                <p class="exit-chamber-mood-paper__text" id="exitChamberMoodPaperText"></p>
+                <p class="exit-chamber-mood-paper__stamp" id="exitChamberMoodPaperStamp"></p>
+              </div>
+            </div>
           </section>
           <!-- TEMP: blessing card is temporarily disabled on the exit chamber.
                Remove `hidden` / `aria-hidden` and delete the contributor panel
@@ -11292,6 +12209,44 @@ try {
         block.patternType = 'special';
         block.specialPatternType = 'insetCircle';
         return true;
+      }
+
+      /** When `rumi-colors.js` did not load; keep hues distinct from page paper. */
+      static _fallbackRumiPaletteForStarter() {
+        return [
+          '#ea9b9a', '#de6c61', '#61c9de', '#61de61', '#6182de', '#8061de',
+          '#caa22b', '#2bcaca', '#1f931f', '#bd283c', '#4024a8', '#ce2cb0',
+          '#3177d3', '#9ab125', '#df9368', '#7e7de3'
+        ];
+      }
+
+      /**
+       * Full-canvas starter must not match page paper (`#f6f4f1` / `#ebe8e3`): same hex + similarity routing
+       * makes large remnants look like UI voids and rarely win `rankByColorFit` for vivid picks.
+       */
+      static pickStarterFieldColorHex() {
+        const paperAnchors = ['#f6f4f1', '#ebe8e3'];
+        const raw = Array.isArray(window.__ODQ_RUMI_COLORS__) ? window.__ODQ_RUMI_COLORS__ : [];
+        const fromWindow = raw
+          .filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/i.test(c.trim()))
+          .map((c) => c.trim().toLowerCase());
+        const palette = fromWindow.length ? [...new Set(fromWindow)] : SimpleQuiltEngine._fallbackRumiPaletteForStarter();
+        let probe;
+        try {
+          probe = new SimpleQuiltEngine('__starter_color_probe');
+        } catch (_) {
+          return (typeof CONFIG !== 'undefined' && CONFIG.APP && CONFIG.APP.defaultColor) || '#ea9b9a';
+        }
+        const notPaperLike = (hex) => {
+          const h = String(hex).toLowerCase();
+          if (!/^#[0-9a-f]{6}$/.test(h)) return false;
+          return paperAnchors.every((p) => probe.getColorSimilarity(h, p) < 0.88);
+        };
+        const candidates = palette.filter(notPaperLike);
+        const pool = candidates.length ? candidates : palette;
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        if (typeof pick === 'string' && /^#[0-9a-f]{6}$/.test(pick)) return pick;
+        return (typeof CONFIG !== 'undefined' && CONFIG.APP && CONFIG.APP.defaultColor) || '#ea9b9a';
       }
 
       constructor(userId = null) {
@@ -12322,17 +13277,30 @@ try {
         const ordered = this._macroFreezeRenderOrder(this.blocks);
         const visibleById = new Map();
         let coveredPieces = [];
+        const cloneWorldPieces = (pieces) =>
+          (pieces || []).map((piece) => ({
+            color: piece.color,
+            points: (piece.points || []).map((p) => [Number(p[0]), Number(p[1])])
+          }));
         for (let i = ordered.length - 1; i >= 0; i--) {
           const block = ordered[i].block;
           const originalPieces = this._blockCanonicalWorldPiecesForMacroFreeze(block);
           if (!originalPieces.length) continue;
           const visiblePieces = this._subtractCoverPiecesFromPieces(originalPieces, coveredPieces);
-          if (!visiblePieces.length || this._coloredPolygonArea(visiblePieces) < 1) continue;
+          const origArea = this._coloredPolygonArea(originalPieces);
+          let finalPieces = visiblePieces;
+          let clipped = this._coloredPolygonArea(visiblePieces) < origArea - 1;
+          if (!visiblePieces.length || this._coloredPolygonArea(visiblePieces) < 1) {
+            // Subtraction can wipe a leaf when overlap math / ordering disagrees with real paint;
+            // dropping the block leaves warm-paper "voids" that never accept new splits.
+            finalPieces = cloneWorldPieces(originalPieces);
+            clipped = false;
+          }
           visibleById.set(block.id, {
-            pieces: visiblePieces,
-            clipped: this._coloredPolygonArea(visiblePieces) < this._coloredPolygonArea(originalPieces) - 1
+            pieces: finalPieces,
+            clipped
           });
-          coveredPieces = coveredPieces.concat(visiblePieces);
+          coveredPieces = coveredPieces.concat(finalPieces);
         }
 
         this.blocks = this.blocks
@@ -13057,8 +14025,8 @@ try {
           y: 0,
           width: initialWidth,
           height: initialHeight,
-          // Warm neutral (matches color-screen idle); first real hue comes from the first contributor’s pick.
-          color: '#f6f4f1',
+          // Rumi field (not page-paper) so `rankByColorFit` can target the starter; see `pickStarterFieldColorHex`.
+          color: SimpleQuiltEngine.pickStarterFieldColorHex(),
           contributorId: this.deviceId,
           submissionIndex: 0,
           visualLayerIndex: 0,
@@ -13491,8 +14459,8 @@ try {
             }
             const simA = this.getColorSimilarity(a.color, newColor);
             const simB = this.getColorSimilarity(b.color, newColor);
-            const scoreA = simA + (this._blockSizePressureScore(a) * SimpleQuiltEngine.SIZE_PRESSURE_RANK_WEIGHT);
-            const scoreB = simB + (this._blockSizePressureScore(b) * SimpleQuiltEngine.SIZE_PRESSURE_RANK_WEIGHT);
+            const scoreA = simA + this._blockSizePressureScore(a) * SimpleQuiltEngine.SIZE_PRESSURE_RANK_WEIGHT;
+            const scoreB = simB + this._blockSizePressureScore(b) * SimpleQuiltEngine.SIZE_PRESSURE_RANK_WEIGHT;
             if (Math.abs(scoreB - scoreA) > 1e-6) return scoreB - scoreA;
             if (Math.abs(simB - simA) > 1e-6) return simB - simA;
             return (b.width * b.height) - (a.width * a.height);
@@ -16904,6 +17872,20 @@ try {
         'We saved you a square, [name] !',
         'Happy [weekday], [name]'
       ];
+      static REFLECTION_THANK_YOU_INDEX_KEY = 'ourDailyReflectionThankYouPhraseIndex';
+      static REFLECTION_THANK_YOU_BANK = [
+        "It's in there, thank you, [name]",
+        'Reflection received. Thank you, [name].',
+        "Adding to today's conversation.",
+        'Someone will really appreciate that',
+        "Good one. It's in.",
+        'Sharing with everyone here today.',
+        'In the mix ! Thank you, [name]',
+        'Got it ! Thank you, [name]',
+        'Appreciate you taking the time to share, [name]'
+      ];
+      /** Lit after a reflection submit for the current app day; cleared on quilt reset. */
+      static REFLECTION_PATCH_STAR_DAY_KEY = 'ourDailyReflectionPatchStarDay';
       static _portalGreetingTemplate = '';
       static FRIEND_TERM_BANK = [
         { name: 'Tomodachi', language: 'Japanese' },
@@ -17266,6 +18248,120 @@ try {
         return Utils.formatPortalGreetingTemplate(Utils.getPortalGreetingTemplate(), displayName);
       }
 
+      /** One line after a successful reflection submit; rotates per submit via localStorage. */
+      static getNextReflectionThankYouMessage() {
+        const bank = Array.isArray(Utils.REFLECTION_THANK_YOU_BANK)
+          ? Utils.REFLECTION_THANK_YOU_BANK.filter(Boolean)
+          : [];
+        if (!bank.length) return 'Thank you.';
+        let idx = 0;
+        try {
+          const stored = Number.parseInt(
+            localStorage.getItem(Utils.REFLECTION_THANK_YOU_INDEX_KEY) || '0',
+            10
+          );
+          idx = Number.isFinite(stored) && stored >= 0 ? stored : 0;
+        } catch (_) {
+          idx = 0;
+        }
+        const phrase = bank[idx % bank.length];
+        try {
+          localStorage.setItem(
+            Utils.REFLECTION_THANK_YOU_INDEX_KEY,
+            String((idx + 1) % bank.length)
+          );
+        } catch (_) {
+          /* */
+        }
+        const displayName = Utils.getNameThanksDisplayName();
+        return String(phrase || '')
+          .replace(/\[(?:name)\]|\{(?:name)\}/gi, displayName)
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      /**
+       * Per-app-day placement on the theme-cards stack top rim (hash of date key).
+       * Star sits only along the top edge — biased away from left-aligned slide text.
+       */
+      static applyReflectionPatchStarPlacement(el, dateKey) {
+        if (!el) return;
+        const key = String(dateKey || Utils.getTodayKey() || '').trim() || 'nodate';
+        const h = Utils.hashStringToUint(`odq-reflection-patch-star:${key}`) || 1;
+        const slots = [
+          { top: '-3%', left: '5%', right: 'auto', bottom: 'auto', tx: '-50%', ty: '-52%' },
+          { top: '-2%', left: '20%', right: 'auto', bottom: 'auto', tx: '-52%', ty: '-50%' },
+          { top: '-4%', left: '36%', right: 'auto', bottom: 'auto', tx: '-50%', ty: '-54%' },
+          { top: '-2%', left: '52%', right: 'auto', bottom: 'auto', tx: '-48%', ty: '-52%' },
+          { top: '-3%', left: '68%', right: 'auto', bottom: 'auto', tx: '-50%', ty: '-50%' },
+          { top: '-4%', right: '-2%', left: 'auto', bottom: 'auto', tx: '56%', ty: '-52%' },
+          { top: '-2%', right: '10%', left: 'auto', bottom: 'auto', tx: '54%', ty: '-48%' },
+          { top: '0%', right: '24%', left: 'auto', bottom: 'auto', tx: '52%', ty: '-50%' }
+        ];
+        const s = slots[h % slots.length];
+        el.style.top = s.top;
+        el.style.right = s.right;
+        el.style.bottom = s.bottom;
+        el.style.left = s.left;
+        el.style.setProperty('--odq-star-tx', s.tx);
+        el.style.setProperty('--odq-star-ty', s.ty);
+        const jx = ((h >>> 8) % 5) - 2;
+        const jy = ((h >>> 16) % 5) - 2;
+        el.style.setProperty('--odq-star-jx', `${jx}px`);
+        el.style.setProperty('--odq-star-jy', `${jy}px`);
+      }
+
+      static syncReflectionPatchStarElement() {
+        const el = document.getElementById('quiltReflectionPatchStar');
+        if (!el) return;
+        const today = Utils.getTodayKey();
+        Utils.applyReflectionPatchStarPlacement(el, today);
+        let stored = '';
+        try {
+          stored = (localStorage.getItem(Utils.REFLECTION_PATCH_STAR_DAY_KEY) || '').trim();
+        } catch (_) {
+          stored = '';
+        }
+        if (stored && stored !== today) {
+          try {
+            localStorage.removeItem(Utils.REFLECTION_PATCH_STAR_DAY_KEY);
+          } catch (_) {
+            /* */
+          }
+          stored = '';
+        }
+        const shouldShow = Boolean(stored && stored === today);
+        if (shouldShow) {
+          el.removeAttribute('hidden');
+          if (!el.classList.contains('is-visible')) {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => el.classList.add('is-visible'));
+            });
+          }
+        } else {
+          el.classList.remove('is-visible');
+          el.setAttribute('hidden', 'hidden');
+        }
+      }
+
+      static lightReflectionPatchStarForToday() {
+        try {
+          localStorage.setItem(Utils.REFLECTION_PATCH_STAR_DAY_KEY, Utils.getTodayKey());
+        } catch (_) {
+          /* */
+        }
+        Utils.syncReflectionPatchStarElement();
+      }
+
+      static extinguishReflectionPatchStar() {
+        try {
+          localStorage.removeItem(Utils.REFLECTION_PATCH_STAR_DAY_KEY);
+        } catch (_) {
+          /* */
+        }
+        Utils.syncReflectionPatchStarElement();
+      }
+
       static refreshPortalGreeting() {
         Utils.syncPortalVisitMode();
         const line = Utils.getPortalGreetingDisplayLine();
@@ -17353,6 +18449,59 @@ try {
           month: 'long',
           day: 'numeric'
         });
+      }
+
+      /** Light desaturated thermal paper from the user's quilt color (fallback when missing). */
+      static moodReceiptPaperFromUserColor(hex) {
+        const fallback = '#f9f7f4';
+        const raw = String(hex || '').trim();
+        if (!Utils.validateHexColor(raw)) return fallback;
+        const hsv = Utils.hexToHsv(raw);
+        const sat =
+          hsv.s < 6
+            ? 4
+            : Math.min(12, Math.max(4, Math.round(hsv.s * 0.08)));
+        const val = Math.max(96, Math.min(98, Math.round(95 + (100 - hsv.v) * 0.55)));
+        const tinted = Utils.hsvToHex(hsv.h, sat, val);
+        const mix = 0.48;
+        const parse = (h) => {
+          const n = parseInt(String(h).replace('#', ''), 16);
+          return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+        };
+        const a = parse(tinted);
+        const b = parse('#fcfaf7');
+        const ch = (k) =>
+          Math.round(a[k] * (1 - mix) + b[k] * mix)
+            .toString(16)
+            .padStart(2, '0');
+        return '#' + ch('r') + ch('g') + ch('b');
+      }
+
+      /** Receipt footer stamp: — MM/DD/YY — HH:MMA (POS-style, fixed width). */
+      static formatMoodReceiptStamp(date = new Date()) {
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        const yy = String(date.getFullYear() % 100).padStart(2, '0');
+        const datePart = `${mm}/${dd}/${yy}`;
+        let hour12 = date.getHours() % 12;
+        if (hour12 === 0) hour12 = 12;
+        const min = String(date.getMinutes()).padStart(2, '0');
+        const meridiem = date.getHours() >= 12 ? 'P' : 'A';
+        const timePart = `${String(hour12).padStart(2, '0')}:${min}${meridiem}`;
+        return `— ${datePart} — ${timePart}`;
+      }
+
+      /** Receipt message body only (date/time is a separate line in the DOM). */
+      static formatMoodReceiptBody(bodyText) {
+        return String(bodyText || '').trim().replace(/\s+/g, ' ');
+      }
+
+      /** Screen-reader / announce string: message then stamp. */
+      static formatMoodReceiptLine(bodyText, date = new Date()) {
+        const body = Utils.formatMoodReceiptBody(bodyText);
+        const stamp = Utils.formatMoodReceiptStamp(date);
+        if (!body) return stamp;
+        return stamp ? `${body}. ${stamp}` : body;
       }
 
       static refreshPortalDateText() {
@@ -18993,6 +20142,13 @@ try {
           document.body?.classList?.toggle('odq-about-active', screenId === 'screen-about');
           document.documentElement?.classList?.toggle('odq-quote-submission-active', screenId === 'screen-quote-submission');
           document.body?.classList?.toggle('odq-quote-submission-active', screenId === 'screen-quote-submission');
+          if (screenId === 'screen-quilt') {
+            try {
+              Utils.syncReflectionPatchStarElement();
+            } catch (_) {
+              /* */
+            }
+          }
 
           const previousActive = document.querySelector('.screen.active');
           const previousId = previousActive ? previousActive.id : null;
@@ -19008,11 +20164,6 @@ try {
             previousActive &&
             previousId === 'screen-name-thanks' &&
             screenId === 'screen-welcome';
-
-          const welcomeToBridgeFade =
-            previousActive &&
-            previousId === 'screen-welcome' &&
-            screenId === 'screen-first-quote-bridge';
 
           const bridgeToQuoteFade =
             previousActive &&
@@ -19111,7 +20262,7 @@ try {
                 });
                 setTimeout(finishFlow, 380);
               }
-            } else if (thanksToWelcomeFade || welcomeToBridgeFade) {
+            } else if (thanksToWelcomeFade) {
               if (this._flowTransitioning) return;
               this._flowTransitioning = true;
 
@@ -19135,9 +20286,6 @@ try {
                 }
                 target.classList.remove(...flowClassCleanup);
                 this._flowTransitioning = false;
-                if (welcomeToBridgeFade) {
-                  window.app?.scheduleFirstQuoteBridgeAdvance?.(1200);
-                }
               };
 
               document.querySelectorAll('.screen').forEach(s => {
@@ -19172,7 +20320,7 @@ try {
                     settle();
                   };
                   target.addEventListener('transitionend', onTransEnd);
-                  const fallbackId = setTimeout(settle, screenId === 'screen-welcome' ? 2400 : 1300);
+                  const fallbackId = setTimeout(settle, 2400);
                 });
               });
             } else if (bridgeToQuoteFade) {
@@ -19257,7 +20405,7 @@ try {
               window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
             }
 
-            if (screenId === 'screen-first-quote-bridge' && !welcomeToBridgeFade) {
+            if (screenId === 'screen-first-quote-bridge') {
               window.app?.scheduleFirstQuoteBridgeAdvance?.(1200);
             }
             
@@ -19281,7 +20429,7 @@ try {
                   const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
 
                   if (quiltQuoteText) quiltQuoteText.innerHTML = quoteService.formatQuiltScreenPrimaryHtml(todayQ);
-                  if (quiltQuoteAuthor) quiltQuoteAuthor.innerHTML = quoteService.formatQuoteLineForQuiltDisplay(todayQ?.author);
+                  if (quiltQuoteAuthor) quiltQuoteAuthor.innerHTML = quoteService.formatQuiltAuthorForDisplay(todayQ?.author);
 
                   if (quiltQuoteDisplay && quoteService.quiltScreenHasBodyContent(todayQ)) {
                     quiltQuoteDisplay.classList.add('has-content');
@@ -23510,10 +24658,14 @@ try {
         // Default quilt
         const dimensions = Utils.getQuiltDimensions();
         this.logger.log('📖 Using default quilt');
+        const starterHex =
+          typeof SimpleQuiltEngine !== 'undefined' && typeof SimpleQuiltEngine.pickStarterFieldColorHex === 'function'
+            ? SimpleQuiltEngine.pickStarterFieldColorHex()
+            : (typeof CONFIG !== 'undefined' && CONFIG.APP && CONFIG.APP.defaultColor) || '#ea9b9a';
         return { 
           dateKey: todayKey,
           date: todayKey,
-          blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: '#f6f4f1' }], 
+          blocks: [{ x: 0, y: 0, width: dimensions.width, height: dimensions.height, color: starterHex }], 
           contributorCount: 1,
           colorReplayEvents: [],
           contributors: [],
@@ -24122,6 +25274,7 @@ try {
             reflection_prompt: String(data.reflectionPromptSnapshot || '').trim(),
             smallAct: String(data.smallActSnapshot || '').trim(),
             small_act: String(data.smallActSnapshot || '').trim(),
+            watch_for: String(data.watch_for_snapshot ?? data.watchForSnapshot ?? '').trim(),
             goodDay: String(data.goodDaySnapshot || '').trim(),
             good_day: String(data.goodDaySnapshot || '').trim(),
             roughDay: String(data.roughDaySnapshot || '').trim(),
@@ -24290,6 +25443,7 @@ try {
         const sourceId = quote?.sourceId != null && String(quote.sourceId).trim() !== '' ? String(quote.sourceId).trim() : '';
         const communityPromptSnapshot = String(quote?.communityPrompt ?? quote?.community_prompt ?? '').trim();
         const smallActSnapshot = String(quote?.smallAct ?? quote?.small_act ?? '').trim();
+        const watchForSnapshot = String(quote?.watch_for ?? '').trim();
         const goodDaySnapshot = String(quote?.goodDay ?? quote?.good_day ?? '').trim();
         const roughDaySnapshot = String(quote?.roughDay ?? quote?.rough_day ?? '').trim();
         const artRecsSnapshot = this._artRecsSnapshotValue(quote?.artRecs ?? quote?.art_recs);
@@ -24309,6 +25463,7 @@ try {
           authorSnapshot: String(quote?.author || '').slice(0, 120),
           communityPromptSnapshot: communityPromptSnapshot.slice(0, 500),
           smallActSnapshot: smallActSnapshot.slice(0, 240),
+          watch_for_snapshot: watchForSnapshot.slice(0, 280),
           goodDaySnapshot: goodDaySnapshot.slice(0, 240),
           roughDaySnapshot: roughDaySnapshot.slice(0, 240),
           artRecsSnapshot: artRecsSnapshot.slice(0, 1200),
@@ -24402,6 +25557,7 @@ try {
                   quoteData.art_recs_type ?? quoteData.artRecsType ?? ''
                 ).trim().toLowerCase();
                 const smallAct = String(quoteData.smallAct ?? quoteData.small_act ?? '').trim();
+                const watchFor = String(quoteData.watch_for ?? '').trim();
                 const goodDay = String(quoteData.goodDay ?? quoteData.good_day ?? '').trim();
                 const roughDay = String(quoteData.roughDay ?? quoteData.rough_day ?? '').trim();
                 const igCaption = String(quoteData.igCaption ?? quoteData.ig_caption ?? '').trim();
@@ -24422,6 +25578,7 @@ try {
                   ...(artRecsUseful ? { art_recs: artRecsRaw, artRecs: artRecsRaw } : {}),
                   ...(artRecsType ? { art_recs_type: artRecsType, artRecsType } : {}),
                   ...(smallAct ? { smallAct, small_act: smallAct } : {}),
+                  ...(watchFor ? { watch_for: watchFor } : {}),
                   ...(goodDay ? { goodDay, good_day: goodDay } : {}),
                   ...(roughDay ? { roughDay, rough_day: roughDay } : {}),
                   ...(igCaption ? { igCaption, ig_caption: igCaption } : {}),
@@ -24451,6 +25608,7 @@ try {
                   authorSnapshot: String(merged.author || '').slice(0, 120),
                   communityPromptSnapshot: String(merged.communityPrompt ?? merged.community_prompt ?? '').slice(0, 500),
                   smallActSnapshot: String(merged.smallAct ?? merged.small_act ?? '').slice(0, 240),
+                  watch_for_snapshot: String(merged.watch_for ?? '').slice(0, 280),
                   goodDaySnapshot: String(merged.goodDay ?? merged.good_day ?? '').slice(0, 240),
                   roughDaySnapshot: String(merged.roughDay ?? merged.rough_day ?? '').slice(0, 240),
                   artRecsSnapshot: this._artRecsSnapshotValue(merged.artRecs ?? merged.art_recs).slice(0, 1200),
@@ -25232,7 +26390,7 @@ try {
           const todayQ = activeQuote;
 
           if (quiltQuoteText) quiltQuoteText.innerHTML = this.formatQuiltScreenPrimaryHtml(todayQ);
-          if (quiltQuoteAuthor) quiltQuoteAuthor.innerHTML = this.formatQuoteLineForQuiltDisplay(todayQ?.author);
+          if (quiltQuoteAuthor) quiltQuoteAuthor.innerHTML = this.formatQuiltAuthorForDisplay(todayQ?.author);
 
           if (quiltQuoteDisplay && this.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
@@ -25284,6 +26442,19 @@ try {
           .replace(/\s+/g, ' ')
           .trim();
         return t || 'Small practice for this quote is coming soon.';
+      }
+
+      /** Before You Go watch line: `watch_for` fragment + app prefix (hidden when empty). */
+      getWatchForText(quote) {
+        let fragment = String(quote?.watch_for ?? '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!fragment) return '';
+        fragment = fragment.replace(/^watch\s+for\s+(?:the\s+moment\s+today\s+when\s+)?/i, '').trim();
+        if (!fragment) return '';
+        fragment = fragment.charAt(0).toUpperCase() + fragment.slice(1);
+        if (!/[.!?]$/.test(fragment)) fragment = `${fragment}.`;
+        return `Watch for the moment today when ${fragment}`;
       }
 
       /** Art pick from Firestore `art_recs` / `artRecs` (string, object, or array). */
@@ -25535,6 +26706,14 @@ try {
         return escaped.replace(/\s*\r?\n+\s*/g, ' ').replace(/\s{2,}/g, ' ');
       }
 
+      /** Quilt attribution line: escaped name only (leading em dash via CSS ::before). */
+      formatQuiltAuthorForDisplay(quoteAuthor) {
+        const withoutLeadDash = String(quoteAuthor || '')
+          .trim()
+          .replace(/^[—–\-]\s*/, '');
+        return this.formatQuoteLineForQuiltDisplay(withoutLeadDash);
+      }
+
       /** Quilt-only compact format: quote and author on one line. */
       formatQuiltQuoteWithAuthor(quoteText, quoteAuthor) {
         const quote = this.formatQuoteLineForQuiltDisplay(quoteText);
@@ -25682,6 +26861,7 @@ try {
               reflectionPrompt: String(data.reflectionPrompt || data.reflection_prompt || '').trim(),
               smallAct: String(data.smallAct ?? data.small_act ?? '').trim(),
               small_act: String(data.smallAct ?? data.small_act ?? '').trim(),
+              watch_for: String(data.watch_for ?? '').trim(),
               goodDay: String(data.goodDay ?? data.good_day ?? '').trim(),
               good_day: String(data.goodDay ?? data.good_day ?? '').trim(),
               roughDay: String(data.roughDay ?? data.rough_day ?? '').trim(),
@@ -27790,7 +28970,6 @@ try {
           'Off you trot!',
           "That's all for now",
           'Away you go!',
-          'Shoo, fly!',
           "Don't be a stranger"
         ];
         this.exitChamberFarewellPhraseIndex = this.getStoredExitChamberFarewellPhraseIndex();
@@ -28556,6 +29735,7 @@ try {
             // is the one the user actually sees animating.
             this._animateTodayCellOnNextRender = true;
             this.renderColorCalendar();
+            this.refreshExitChamberMoodPaper();
             if (kicker) {
               requestAnimationFrame(() => {
                 kicker.classList.add('is-revealed');
@@ -28951,8 +30131,76 @@ try {
           .replace(/'/g, '&#39;');
       }
 
+      /** @param {string} text */
+      splitQuiltPromptClauses(text) {
+        const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return [];
+
+        const clauses = [];
+        const delimiter = /,\s+|;\s+|\s+—\s+|\s+–\s+/g;
+        let start = 0;
+        let match;
+        while ((match = delimiter.exec(normalized)) !== null) {
+          const chunk = normalized.slice(start, match.index).trim();
+          const delim = match[0];
+          if (chunk) {
+            if (delim.startsWith(',') || delim.startsWith(';')) {
+              clauses.push(`${chunk}${delim.trim().charAt(0)}`);
+            } else {
+              clauses.push(chunk);
+            }
+          }
+          start = match.index + delim.length;
+        }
+        const tail = normalized.slice(start).trim();
+        if (tail) clauses.push(tail);
+        return clauses.length ? clauses : [normalized];
+      }
+
       /**
-       * Split prose into lines with roughly equal word counts (blessing + reflection UI).
+       * Reflection prompts: break at commas / semicolons / dashes first; balance only long clauses.
+       * @param {string} text
+       * @param {number} [maxLines]
+       */
+      naturalQuiltDisplayLines(text, maxLines = 4) {
+        const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return '';
+
+        const max = Math.max(1, Math.min(6, Math.floor(maxLines) || 4));
+        const wordCount = (line) => String(line || '').trim().split(/\s+/).filter(Boolean).length;
+        const longClauseWords = 11;
+
+        let lines = this.splitQuiltPromptClauses(normalized).flatMap((clause) => {
+          if (wordCount(clause) <= longClauseWords) return [clause];
+          return this.balanceQuiltDisplayLines(clause, Math.min(2, max))
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        });
+
+        while (lines.length > max) {
+          let mergeAt = 0;
+          let bestScore = Infinity;
+          for (let i = 0; i < lines.length - 1; i++) {
+            const score = wordCount(lines[i]) + wordCount(lines[i + 1]);
+            if (score < bestScore) {
+              bestScore = score;
+              mergeAt = i;
+            }
+          }
+          lines[mergeAt] = `${lines[mergeAt]} ${lines[mergeAt + 1]}`.replace(/\s+/g, ' ').trim();
+          lines.splice(mergeAt + 1, 1);
+        }
+
+        if (lines.length === 1 && wordCount(lines[0]) > longClauseWords) {
+          return this.balanceQuiltDisplayLines(lines[0], Math.min(max, 3));
+        }
+
+        return lines.join('\n');
+      }
+
+      /**
+       * Split prose into lines with roughly equal word counts (communal blessing flip).
        * @param {string} text
        * @param {number} [maxLines] When set (e.g. 2 for the flipped communal blessing), caps line count and balances words across those lines.
        */
@@ -28989,10 +30237,13 @@ try {
         return lines.filter(Boolean).join('\n');
       }
 
-      escapeQuiltFortuneTextWithLineBreaks(value, maxLines) {
-        const balanced = this.balanceQuiltDisplayLines(String(value || '').trim(), maxLines);
-        if (!balanced) return '';
-        return balanced
+      escapeQuiltFortuneTextWithLineBreaks(value, maxLines, options = {}) {
+        const text = String(value || '').trim();
+        const formatted = options.natural
+          ? this.naturalQuiltDisplayLines(text, maxLines ?? 4)
+          : this.balanceQuiltDisplayLines(text, maxLines);
+        if (!formatted) return '';
+        return formatted
           .split(/\n+/)
           .map((line) => this.escapeQuiltFortuneText(line))
           .join('<br />');
@@ -29005,7 +30256,7 @@ try {
         form.dataset.listenerAttached = '1';
         const helper = form.querySelector('.quilt-reflection-response-helper');
         const submit = form.querySelector('.quilt-reflection-response-submit');
-        const idleSubmitLabel = 'Add yours';
+        const idleSubmitLabel = 'add yours?';
         const setHelper = (message, state = '') => {
           if (!helper) return;
           const text = String(message || '');
@@ -29036,6 +30287,7 @@ try {
         document.addEventListener('firebaseReady', refreshThemes, { once: true });
         setTimeout(refreshThemes, 1200);
         setTimeout(refreshThemes, 3500);
+        Utils.syncReflectionPatchStarElement();
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
           // First click while still collapsed: reveal the response field + helper text, don't submit yet.
@@ -29070,12 +30322,13 @@ try {
           form.classList.add('is-submitted');
           input.value = '';
           input.setAttribute('readonly', 'readonly');
-          setHelper("Shared. Thank you! We'll get it below soon", 'success');
+          setHelper(Utils.getNextReflectionThankYouMessage(), 'success');
+          Utils.lightReflectionPatchStarForToday();
           setTimeout(() => {
             if (helper?.classList?.contains('is-success')) setHelper('', '');
           }, 2000);
           if (submit) {
-            submit.textContent = 'Added';
+            submit.textContent = idleSubmitLabel;
             submit.disabled = true;
           }
           setTimeout(() => {
@@ -29103,7 +30356,7 @@ try {
             `;
         const footerSlide = `
               <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--footer" data-reflection-slide="footer">
-                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">Add yours</p>
+                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">add yours?</p>
               </article>
             `;
         const ideaSlides = ideas
@@ -30281,10 +31534,37 @@ try {
         }
       }
 
+      /** Latest hex the current user placed on today's quilt (submissions, then device history). */
+      _getLatestUserQuiltColor() {
+        const stores = [
+          this.quiltEngine?.getUserContributions?.()?.submissions,
+          this.quiltEngine?.getLifetimeUserContributions?.()?.submissions
+        ];
+        for (const submissions of stores) {
+          if (!Array.isArray(submissions)) continue;
+          for (let i = submissions.length - 1; i >= 0; i--) {
+            const color = String(submissions[i]?.color || '').trim();
+            if (Utils.validateHexColor(color)) return color;
+          }
+        }
+        const personalColors =
+          typeof this.getDevicePersonalColorHistory === 'function'
+            ? this.getDevicePersonalColorHistory()
+            : [];
+        const last = String(personalColors[personalColors.length - 1] || '').trim();
+        return Utils.validateHexColor(last) ? last : '';
+      }
+
+      _applyQuiltMoodReceiptPaperTint(widget) {
+        if (!widget) return;
+        const paper = Utils.moodReceiptPaperFromUserColor(this._getLatestUserQuiltColor());
+        widget.style.setProperty('--mood-receipt-bg', paper);
+      }
+
       /**
-       * "What kind of day is it?" — two tiles (good_day ↑ / rough_day ↓) below the quote
-       * and above the community reflection question. Hidden when either field is missing
-       * so users never see a half-empty UI.
+       * "What kind of day is it?" — two icon tiles (good / rough) inside the quote-card frame;
+       * the reader's line appears on a paper strip that feeds through the slit above the tiles.
+       * Hidden when either field is missing so users never see a half-empty UI.
        */
       refreshQuiltMoodWidget(quote = null) {
         const widget = document.getElementById('quiltMoodWidget');
@@ -30311,10 +31591,6 @@ try {
           if (!roughDay) roughDay = 'Love is enough today.';
         }
 
-        // Apply the two tinted tones every refresh — cheap, idempotent, and lets the tiles
-        // re-color as the quilt palette evolves throughout the day.
-        this._applyQuiltMoodWidgetTones(widget);
-
         const setTileText = (mood, value) => {
           const span = widget.querySelector(
             `.quilt-mood-widget__tile-text[data-mood-text="${mood}"]`
@@ -30322,11 +31598,19 @@ try {
           if (span) span.textContent = value;
         };
         if (!goodDay || !roughDay) {
-          widget.classList.remove('is-active', 'is-good', 'is-rough');
+          widget.classList.remove('is-active', 'is-good', 'is-rough', 'quilt-mood-widget--paper-out');
+          this._resetQuiltMoodPaperState(widget);
+          widget.querySelectorAll('.quilt-mood-widget__tile').forEach((t) => {
+            t.style.transform = '';
+            t.style.transition = '';
+            t.style.transformOrigin = '';
+            t.style.willChange = '';
+          });
           widget.querySelectorAll('.quilt-mood-widget__tile').forEach((tile) => {
             tile.setAttribute('aria-pressed', 'false');
           });
           widget.setAttribute('hidden', 'hidden');
+          widget.style.removeProperty('--mood-receipt-bg');
           delete widget.dataset.goodDay;
           delete widget.dataset.roughDay;
           delete widget.dataset.contentSig;
@@ -30335,17 +31619,25 @@ try {
           return;
         }
 
+        this._applyQuiltMoodReceiptPaperTint(widget);
+
         // Preserve the reader's active selection when the underlying copy hasn't actually
         // changed. Without this guard, the async hydration retry loop (and pin-by-date
-        // hydration) re-fires this method after a tap and snaps the card back to neutral —
-        // visible as the card temporarily growing taller and then bouncing back to normal.
+        // hydration) re-fires this method after a tap and snaps the mood widget back to neutral.
         const sig = `${goodDay}\u0001${roughDay}`;
         const isVisible = !widget.hasAttribute('hidden');
         if (isVisible && widget.dataset.contentSig === sig) {
           return;
         }
 
-        widget.classList.remove('is-active', 'is-good', 'is-rough');
+        widget.classList.remove('is-active', 'is-good', 'is-rough', 'quilt-mood-widget--paper-out');
+        this._resetQuiltMoodPaperState(widget);
+        widget.querySelectorAll('.quilt-mood-widget__tile').forEach((t) => {
+          t.style.transform = '';
+          t.style.transition = '';
+          t.style.transformOrigin = '';
+          t.style.willChange = '';
+        });
         widget.querySelectorAll('.quilt-mood-widget__tile').forEach((tile) => {
           tile.setAttribute('aria-pressed', 'false');
         });
@@ -30357,54 +31649,285 @@ try {
         widget.removeAttribute('hidden');
       }
 
-      /**
-       * Paint both tiles in a darker shade of the app's warm neutral so they sit
-       * visibly inside the lighter quote card (#f6f4f1). Kept as a JS hook for easy
-       * tweaking; the CSS fallback (var --mood-tile-bg) ships the same value.
-       */
-      _applyQuiltMoodWidgetTones(widget) {
+      /** Snapshot of the reader's mood pick on the quilt (good / rough + receipt copy). */
+      _getQuiltMoodPickSnapshot() {
+        const widget = document.getElementById('quiltMoodWidget');
+        if (!widget || widget.hasAttribute('hidden') || !widget.classList.contains('is-active')) {
+          return null;
+        }
+        let mood = null;
+        if (widget.classList.contains('is-good')) mood = 'good';
+        else if (widget.classList.contains('is-rough')) mood = 'rough';
+        else {
+          const pressed = widget.querySelector('.quilt-mood-widget__tile[aria-pressed="true"]');
+          const m = pressed?.getAttribute('data-mood');
+          if (m === 'good' || m === 'rough') mood = m;
+        }
+        if (!mood) return null;
+
+        const paperText = widget.querySelector('.quilt-mood-widget__paper-text');
+        const paperStamp = widget.querySelector('.quilt-mood-widget__paper-stamp');
+        let body = String(paperText?.textContent || '').trim();
+        if (!body) {
+          body = String(
+            mood === 'good' ? widget.dataset.goodDay || '' : widget.dataset.roughDay || ''
+          ).trim();
+        }
+        body = Utils.formatMoodReceiptBody(body);
+        if (!body) return null;
+
+        let stamp = String(paperStamp?.textContent || '').trim();
+        if (!stamp) stamp = Utils.formatMoodReceiptStamp(new Date());
+        return { mood, body, stamp };
+      }
+
+      /** Static printed receipt under the exit-chamber calendar (no slot / animation). */
+      refreshExitChamberMoodPaper() {
+        const section = document.getElementById('exitChamberMoodPaper');
+        const textEl = document.getElementById('exitChamberMoodPaperText');
+        const stampEl = document.getElementById('exitChamberMoodPaperStamp');
+        if (!section || !textEl || !stampEl) return;
+
+        const pick = this._getQuiltMoodPickSnapshot();
+        if (!pick) {
+          section.setAttribute('hidden', 'hidden');
+          textEl.textContent = '';
+          stampEl.textContent = '';
+          return;
+        }
+
+        textEl.textContent = pick.body;
+        stampEl.textContent = pick.stamp;
+        section.removeAttribute('hidden');
+        section.setAttribute(
+          'aria-label',
+          pick.mood === 'good' ? 'Your good-day line' : 'Your rough-day line'
+        );
+      }
+
+      _populateQuiltMoodPaper(widget, bodyText, stampAt = new Date()) {
         if (!widget) return;
-        const TILE_BG = '#e3dccd';
-        const goodTile = widget.querySelector('.quilt-mood-widget__tile[data-mood="good"]');
-        const roughTile = widget.querySelector('.quilt-mood-widget__tile[data-mood="rough"]');
-        if (goodTile) goodTile.style.setProperty('--mood-tile-bg', TILE_BG);
-        if (roughTile) roughTile.style.setProperty('--mood-tile-bg', TILE_BG);
+        const line = widget.querySelector('.quilt-mood-widget__paper-text');
+        const stamp = widget.querySelector('.quilt-mood-widget__paper-stamp');
+        if (line) line.textContent = Utils.formatMoodReceiptBody(bodyText);
+        if (stamp) stamp.textContent = Utils.formatMoodReceiptStamp(stampAt);
+      }
+
+      _quiltMoodPaperAnnounceText(bodyText, stampAt = new Date()) {
+        return Utils.formatMoodReceiptLine(bodyText, stampAt);
+      }
+
+      _clearQuiltMoodPaperTimers(widget) {
+        if (!widget) return;
+        if (widget._moodPaperLineTimer != null) {
+          window.clearTimeout(widget._moodPaperLineTimer);
+          widget._moodPaperLineTimer = null;
+        }
+        if (widget._moodPaperAnnounceTimer != null) {
+          window.clearTimeout(widget._moodPaperAnnounceTimer);
+          widget._moodPaperAnnounceTimer = null;
+        }
+      }
+
+      _cancelQuiltMoodPaperRoll(widget) {
+        if (!widget) return;
+        if (widget._moodRollAnimation) {
+          try {
+            widget._moodRollAnimation.cancel();
+          } catch (_) { /* already finished */ }
+          widget._moodRollAnimation = null;
+        }
+      }
+
+      _finishQuiltMoodPaperRoll(widget) {
+        const feed = widget?.querySelector('.quilt-mood-widget__slot-feed');
+        if (feed) feed.classList.add('quilt-mood-widget__slot-feed--unrolled');
+      }
+
+      _measureQuiltMoodRollHeight(widget) {
+        const feed = widget?.querySelector('.quilt-mood-widget__slot-feed');
+        const paper = feed?.querySelector('.quilt-mood-widget__paper');
+        if (!feed || !paper) return 0;
+        const prevHeight = feed.style.height;
+        const prevMaxHeight = feed.style.maxHeight;
+        feed.style.height = 'auto';
+        feed.style.maxHeight = 'none';
+        const height = Math.ceil(paper.getBoundingClientRect().height);
+        feed.style.height = prevHeight;
+        feed.style.maxHeight = prevMaxHeight;
+        return height;
+      }
+
+      /** Feed height so the receipt strip (flex-end) reaches past the mood icon row. */
+      _quiltMoodMinRollHeightToCoverTiles(widget) {
+        const feed = widget?.querySelector('.quilt-mood-widget__slot-feed');
+        const tiles = widget?.querySelector('.quilt-mood-widget__tiles');
+        if (!feed || !tiles) return 0;
+        const feedTop = feed.getBoundingClientRect().top;
+        const tilesBottom = tiles.getBoundingClientRect().bottom;
+        const bufferPx = 8;
+        return Math.max(0, Math.ceil(tilesBottom - feedTop + bufferPx));
+      }
+
+      _quiltMoodSlitHeightPx(widget) {
+        const raw = getComputedStyle(widget).getPropertyValue('--mood-slot-slit').trim();
+        const n = parseFloat(raw);
+        return Number.isFinite(n) && n > 0 ? n : 8;
+      }
+
+      /**
+       * Roll the feed open with Web Animations API — CSS max-height transitions are
+       * skipped or truncated in WKWebView when classes batch in one frame.
+       */
+      _startQuiltMoodPaperRoll(widget, durationMs, { instant = false } = {}) {
+        const feed = widget?.querySelector('.quilt-mood-widget__slot-feed');
+        if (!feed) return;
+
+        this._cancelQuiltMoodPaperRoll(widget);
+
+        const slitPx = this._quiltMoodSlitHeightPx(widget);
+        const rollHeight = this._measureQuiltMoodRollHeight(widget);
+        const minCoverHeight = this._quiltMoodMinRollHeightToCoverTiles(widget);
+        const endHeight = Math.max(rollHeight, minCoverHeight, slitPx + 1);
+
+        widget.style.setProperty('--mood-roll-height', `${endHeight}px`);
+        widget.classList.add('quilt-mood-widget--paper-out');
+
+        feed.style.maxHeight = 'none';
+        feed.style.overflow = 'hidden';
+
+        if (instant || durationMs <= 0) {
+          feed.style.height = `${endHeight}px`;
+          this._finishQuiltMoodPaperRoll(widget);
+          return;
+        }
+
+        feed.style.height = `${slitPx}px`;
+        void feed.offsetHeight;
+
+        if (typeof feed.animate !== 'function') {
+          feed.style.height = `${endHeight}px`;
+          window.setTimeout(() => this._finishQuiltMoodPaperRoll(widget), durationMs);
+          return;
+        }
+
+        const anim = feed.animate(
+          [
+            { height: `${slitPx}px` },
+            { height: `${endHeight}px` },
+          ],
+          {
+            duration: durationMs,
+            easing: 'cubic-bezier(0.38, 0, 0.16, 1)',
+            fill: 'forwards',
+          }
+        );
+
+        widget._moodRollAnimation = anim;
+        anim.onfinish = () => {
+          if (widget._moodRollAnimation !== anim) return;
+          widget._moodRollAnimation = null;
+          feed.style.height = `${endHeight}px`;
+          this._finishQuiltMoodPaperRoll(widget);
+        };
+        anim.oncancel = () => {
+          if (widget._moodRollAnimation === anim) widget._moodRollAnimation = null;
+        };
+      }
+
+      _bindQuiltMoodPaperRollEnd(widget) {
+        const feed = widget?.querySelector('.quilt-mood-widget__slot-feed');
+        if (feed) feed.classList.remove('quilt-mood-widget__slot-feed--unrolled');
+      }
+
+      _resetQuiltMoodPaperState(widget) {
+        if (!widget) return;
+        this._clearQuiltMoodPaperTimers(widget);
+        this._cancelQuiltMoodPaperRoll(widget);
+        widget.classList.remove('quilt-mood-widget--paper-out');
+        widget.style.removeProperty('--mood-roll-height');
+        const feed = widget.querySelector('.quilt-mood-widget__slot-feed');
+        if (feed) {
+          feed.classList.remove('quilt-mood-widget__slot-feed--unrolled');
+          feed.style.height = '';
+          feed.style.maxHeight = '';
+          feed.setAttribute('aria-hidden', 'true');
+        }
+        const paperText = widget.querySelector('.quilt-mood-widget__paper-text');
+        const paperStamp = widget.querySelector('.quilt-mood-widget__paper-stamp');
+        if (paperText) paperText.textContent = '';
+        if (paperStamp) paperStamp.textContent = '';
+        const announcer = document.getElementById('quiltMoodWidgetAnnouncer');
+        if (announcer) announcer.textContent = '';
       }
 
       setupQuiltMoodWidget() {
         const widget = document.getElementById('quiltMoodWidget');
         if (!widget || widget.dataset.listenerAttached === '1') return;
         widget.dataset.listenerAttached = '1';
-        // The tiles row has a fixed min-height in CSS, so tile transitions happen
-        // inside a stable container — no JS height-locking is needed here.
-        const collapseToNeutral = () => {
-          widget.classList.remove('is-active', 'is-good', 'is-rough');
-          widget.querySelectorAll('.quilt-mood-widget__tile').forEach((t) => {
-            t.setAttribute('aria-pressed', 'false');
-          });
-        };
+        const MOOD_PAPER_MS = 5500;
+
         widget.addEventListener('click', (event) => {
+          if (widget.classList.contains('is-active')) return;
+
           const tile = event.target.closest('.quilt-mood-widget__tile');
           if (!tile || !widget.contains(tile)) return;
           const mood = tile.getAttribute('data-mood');
           if (mood !== 'good' && mood !== 'rough') return;
-          const isActive = widget.classList.contains('is-active');
-          const isThisPressed = tile.getAttribute('aria-pressed') === 'true';
-          // Tapping the already-expanded tile collapses back to the two-tile neutral state
-          // so the reader can switch their answer without leaving the screen.
-          if (isActive && isThisPressed) {
-            collapseToNeutral();
-            return;
-          }
-          const text =
+
+          const bodyText =
             mood === 'good' ? widget.dataset.goodDay || '' : widget.dataset.roughDay || '';
-          if (!text) return;
+          if (!bodyText) return;
+
+          this._clearQuiltMoodPaperTimers(widget);
+
+          const stampAt = new Date();
+          const feed = widget.querySelector('.quilt-mood-widget__slot-feed');
+          const announcer = document.getElementById('quiltMoodWidgetAnnouncer');
+
           widget.querySelectorAll('.quilt-mood-widget__tile').forEach((t) => {
             t.setAttribute('aria-pressed', t === tile ? 'true' : 'false');
           });
           widget.classList.add('is-active');
           widget.classList.toggle('is-good', mood === 'good');
           widget.classList.toggle('is-rough', mood === 'rough');
+          widget.classList.remove('quilt-mood-widget--paper-out');
+
+          this._populateQuiltMoodPaper(widget, bodyText, stampAt);
+          if (feed) feed.removeAttribute('aria-hidden');
+
+          let reduceMotion = false;
+          try {
+            reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          } catch (_) { reduceMotion = false; }
+
+          const announce = () => {
+            if (announcer) announcer.textContent = this._quiltMoodPaperAnnounceText(bodyText, stampAt);
+          };
+
+          if (reduceMotion) {
+            this._bindQuiltMoodPaperRollEnd(widget);
+            this._startQuiltMoodPaperRoll(widget, MOOD_PAPER_MS, { instant: true });
+            announce();
+            return;
+          }
+
+          this._bindQuiltMoodPaperRollEnd(widget);
+          if (feed) {
+            feed.style.height = '';
+            feed.style.maxHeight = '';
+          }
+          void widget.offsetWidth;
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (!widget.classList.contains('is-active')) return;
+              this._startQuiltMoodPaperRoll(widget, MOOD_PAPER_MS);
+              widget._moodPaperAnnounceTimer = window.setTimeout(() => {
+                widget._moodPaperAnnounceTimer = null;
+                announce();
+              }, MOOD_PAPER_MS + 120);
+            });
+          });
         });
       }
 
@@ -30414,7 +31937,11 @@ try {
         const textEl = document.getElementById('quiltReflectionScrapText');
         const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
         if (textEl) {
-          textEl.innerHTML = this.escapeQuiltFortuneTextWithLineBreaks(this.getQuiltReflectionPromptText(todayQuote));
+          textEl.innerHTML = this.escapeQuiltFortuneTextWithLineBreaks(
+            this.getQuiltReflectionPromptText(todayQuote),
+            4,
+            { natural: true }
+          );
         }
         const paletteColors = (this.getQuiltPaletteSummary()?.palette || [])
           .map((item) => item?.color)
@@ -34761,6 +36288,7 @@ try {
           // Re-render the quilt and update UI
           this.renderQuilt();
           this.updateSquareCounter();
+          Utils.extinguishReflectionPatchStar();
           
           this.logger.log('✅ New day quilt reset completed successfully');
           
@@ -34840,6 +36368,7 @@ try {
             this.updateSquareCounter();
             this._scheduleDeferredQuiltRenderForIdle();
           }
+          Utils.syncReflectionPatchStarElement();
 
           if (!this._portalToQuoteIntroScheduled) {
             this._portalToQuoteIntroScheduled = true;
@@ -36460,12 +37989,20 @@ try {
         if (!qs) return;
         const quote = qs.getTodayQuote();
         const writeEl = document.getElementById('beforeYouGoWriteBody');
+        const watchForWrap = document.getElementById('beforeYouGoWatchForWrap');
+        const watchForBodyEl = document.getElementById('beforeYouGoWatchForBody');
         const exploreTitleEl = document.getElementById('beforeYouGoExploreTitle');
         const exploreDescEl = document.getElementById('beforeYouGoExploreDesc');
         const shareLeadEl = document.getElementById('beforeYouGoShareLead');
         const shareBtn = document.getElementById('beforeYouGoShareBtn');
         const shareSoonEl = document.getElementById('beforeYouGoShareSoon');
         if (writeEl) writeEl.textContent = qs.getFreeWritePromptText(quote);
+        const watchForText = qs.getWatchForText(quote);
+        if (watchForBodyEl) watchForBodyEl.textContent = watchForText;
+        if (watchForWrap) {
+          watchForWrap.hidden = !watchForText;
+          watchForWrap.setAttribute('aria-hidden', watchForText ? 'false' : 'true');
+        }
         const { titleLine, blurb, iconName } = qs.getArtRecBeforeYouGoParts(quote);
         if (exploreTitleEl) {
           // Clear + rebuild via DOM API so titleLine (Notion-authored) is never
@@ -36570,6 +38107,9 @@ try {
             'small_act',
             'smallAct',
             'smallActSnapshot',
+            'watch_for',
+            'watch_for_snapshot',
+            'watchForSnapshot',
             'good_day',
             'goodDay',
             'goodDaySnapshot',
@@ -36598,6 +38138,7 @@ try {
             : { ...(byDate || {}), ...(bySource || {}) };
           const ref = String(data.reflection_prompt || data.reflectionPrompt || '').trim();
           const smallAct = String(data.small_act ?? data.smallAct ?? '').trim();
+          const watchFor = String(data.watch_for ?? '').trim();
           const goodDay = String(data.good_day ?? data.goodDay ?? '').trim();
           const roughDay = String(data.rough_day ?? data.roughDay ?? '').trim();
           const art = data.art_recs ?? data.artRecs ?? prev.art_recs ?? prev.artRecs;
@@ -36607,6 +38148,7 @@ try {
             ...data,
             ...(ref ? { reflectionPrompt: ref, reflection_prompt: ref } : {}),
             ...(smallAct ? { smallAct, small_act: smallAct } : {}),
+            ...(watchFor ? { watch_for: watchFor } : {}),
             ...(goodDay ? { goodDay, good_day: goodDay } : {}),
             ...(roughDay ? { roughDay, rough_day: roughDay } : {}),
             ...(art != null ? { art_recs: data.art_recs ?? data.artRecs ?? art, artRecs: data.artRecs ?? data.art_recs ?? art } : {}),
@@ -36871,7 +38413,7 @@ try {
           const todayQ = this.quoteService.getTodayQuote();
 
           if (quiltQuoteText) quiltQuoteText.innerHTML = this.quoteService.formatQuiltScreenPrimaryHtml(todayQ);
-          if (quiltQuoteAuthor) quiltQuoteAuthor.innerHTML = this.quoteService.formatQuoteLineForQuiltDisplay(todayQ?.author);
+          if (quiltQuoteAuthor) quiltQuoteAuthor.innerHTML = this.quoteService.formatQuiltAuthorForDisplay(todayQ?.author);
 
           if (quiltQuoteDisplay && this.quoteService.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
@@ -38641,14 +40183,23 @@ try {
           // overwriting its bbox with a full-size HST makes the new triangle
           // appear "behind" foreground blocks (because the bbox extends past
           // what the user actually sees). Filtering them out leaves only
-          // cells whose bbox == visible area.
+          // cells whose bbox == visible area. `diagonalAxis` is the normal organic-rect
+          // label after regular splits — excluding it left zero candidates on most quilts.
+          // Hand-cut rects also set `polygonPieces` while still filling their bbox; allow those
+          // so admin HST works after canonical handcut splits (still exclude macro-flattened shards).
           const isPlainRectCandidate = (b) => {
             if (!b) return false;
             if (!(Number(b.width) > 0 && Number(b.height) > 0)) return false;
             if (b.patternType === 'special') return false;
-            if (b.specialPatternType) return false;
+            if (b.specialPatternType && b.specialPatternType !== 'diagonalAxis') return false;
             if (b.macroVisibleFlattened === true) return false;
-            if (Array.isArray(b.polygonPieces) && b.polygonPieces.length) return false;
+            if (
+              Array.isArray(b.polygonPieces) &&
+              b.polygonPieces.length &&
+              b.specialPatternType !== 'diagonalAxis'
+            ) {
+              return false;
+            }
             if (b.axisLayerMode === 'collage') return false;
             if (b.protectedAnchorId != null) return false;
             if (typeof engine._isBlockSafelySplittableForFrozenMacro === 'function' &&
@@ -38664,13 +40215,25 @@ try {
             candidates = blocks.filter((b) => {
               if (!b) return false;
               if (!(Number(b.width) > 0 && Number(b.height) > 0)) return false;
-              if (b.specialPatternType) return false;
+              if (b.patternType === 'special') return false;
+              if (b.specialPatternType && b.specialPatternType !== 'diagonalAxis') return false;
               if (b.macroVisibleFlattened === true) return false;
-              if (Array.isArray(b.polygonPieces) && b.polygonPieces.length) return false;
+              if (
+                Array.isArray(b.polygonPieces) &&
+                b.polygonPieces.length &&
+                b.specialPatternType !== 'diagonalAxis'
+              ) {
+                return false;
+              }
               return true;
             });
           }
-          if (!candidates.length) return;
+          if (!candidates.length) {
+            this.uiService?.showToast?.(
+              'No cell available for HST (need a regular or hand-cut diagonalAxis block).'
+            );
+            return;
+          }
           // Among visible plain-rect candidates, prefer the one rendered
           // furthest "on top" — same visualLayerIndex tier, latest in the
           // array (the renderer paints later array entries above earlier
@@ -43034,6 +44597,7 @@ try {
           this.updateSquareCounter();
           this.renderQuiltContributorList();
           this.updateAdminStats();
+          Utils.extinguishReflectionPatchStar();
           this.uiService.showToast('Quilt reset successfully on server.');
           this.logger.log('🧵 Quilt reset by admin via server', data);
         });
@@ -43268,7 +44832,7 @@ try {
             `;
           const footerSlide = `
               <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--footer" data-reflection-slide="footer">
-                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">Add yours</p>
+                <p class="quilt-reflection-carousel-text quilt-reflection-carousel-text--footer">add yours?</p>
               </article>
             `;
           const themeCards = themes
