@@ -2,8 +2,9 @@ name: Notion Firestore Sync
 
 on:
   schedule:
-    # Once daily at 07:15 UTC
-    - cron: "15 7 * * *"
+    # 06:30 UTC — 30 min before daily quilt reset (07:00). Uses --start=tomorrow so
+    # scheduling + cutouts target the opening app-day before getAppDateKey() flips.
+    - cron: "30 6 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -59,6 +60,17 @@ jobs:
             exit 1
           fi
 
+      - name: Set schedule window for assignment scripts
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "START_ARG=--start=tomorrow" >> "$GITHUB_ENV"
+            echo "[workflow] scheduled cron: START_ARG=--start=tomorrow (opening app-day before 07:00 UTC reset)"
+          else
+            echo "START_ARG=--start=today" >> "$GITHUB_ENV"
+            echo "[workflow] manual dispatch: START_ARG=--start=today (live app-day)"
+          fi
+
       - name: Sync quotes (Notion -> Firestore)
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
@@ -72,7 +84,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: npm run reconcile:assignment-dates
+        run: node scripts/reconcile-assignment-dates-from-notion.cjs "${START_ARG}"
 
       # Cron and default manual dispatch use --append-only (new approvals tack
       # onto the end of the queue). Pick workflow_dispatch input "swap" when a
@@ -86,10 +98,10 @@ jobs:
           MODE="${{ github.event.inputs.mode }}"
           if [ "${{ github.event_name }}" = "schedule" ] || [ "$MODE" != "swap" ]; then
             echo "[workflow] running schedule script in --append-only mode"
-            node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8 --append-only
+            node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8 --append-only
           else
             echo "[workflow] running schedule script in swap mode"
-            node scripts/schedule-approved-app-submissions.cjs --start=today --cadence=1 --window=8
+            node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8
           fi
 
       - name: Append rolling 7-day quote window
@@ -97,7 +109,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: node scripts/backfill-daily-assignments.cjs --start=today --cadence=1 --window=8 --min-count=9 --append-only
+        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=8 --min-count=9 --append-only
 
       - name: Process speaker cutouts for scheduled quotes
         env:
@@ -106,7 +118,7 @@ jobs:
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
           REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
-        run: node scripts/process-speaker-cutouts.cjs --scheduled --require-reviewed --start=today --window=9 --limit=3 --soft-fail
+        run: node scripts/process-speaker-cutouts.cjs --scheduled --require-reviewed "${START_ARG}" --window=9 --limit=3 --soft-fail
 
       - name: Sync usage (Firestore -> Notion)
         env:

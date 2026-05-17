@@ -11,6 +11,35 @@ const fs = require('fs');
 const admin = require('firebase-admin');
 const { PNG } = require('pngjs');
 
+const WIKIMEDIA_USER_AGENT =
+  process.env.WIKIMEDIA_USER_AGENT || 'OurDailyQuilt/1.0 (https://ourdailyquilt.com; speaker-cutouts)';
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isWikimediaHost(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.endsWith('wikimedia.org') || host.endsWith('wikipedia.org');
+  } catch (_) {
+    return false;
+  }
+}
+
+function guessImageFilename(imageUrl, contentType = '') {
+  const type = String(contentType).toLowerCase();
+  if (type.includes('png')) return 'speaker.png';
+  if (type.includes('webp')) return 'speaker.webp';
+  try {
+    const base = new URL(imageUrl).pathname.split('/').pop() || '';
+    if (/\.(jpe?g|png|webp)$/i.test(base)) return base;
+  } catch (_) {
+    // ignore
+  }
+  return 'speaker.jpg';
+}
+
 function parseArgs(argv) {
   const args = {
     dryRun: argv.includes('--dry-run'),
@@ -115,9 +144,44 @@ async function saveDownloadableFile(destination, buffer, contentType) {
   return buildFirebaseDownloadUrl(bucketName, destination, token);
 }
 
-async function removeBackgroundFromUrl(imageUrl, apiKey) {
+async function downloadSpeakerImageBuffer(imageUrl, { maxAttempts = 4 } = {}) {
+  const headers = isWikimediaHost(imageUrl) ? { 'User-Agent': WIKIMEDIA_USER_AGENT } : {};
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const res = await fetch(imageUrl, { headers, redirect: 'follow' });
+      if (res.status === 429 && attempt < maxAttempts) {
+        const waitMs = 2500 * attempt;
+        console.log(`[cutout] download 429 for ${imageUrl}; retry in ${waitMs}ms (${attempt}/${maxAttempts})`);
+        await sleep(waitMs);
+        continue;
+      }
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`download ${res.status}: ${body.slice(0, 500)}`);
+      }
+      const contentType = String(res.headers.get('content-type') || '').trim() || 'image/jpeg';
+      return {
+        buffer: Buffer.from(await res.arrayBuffer()),
+        contentType
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        await sleep(1500 * attempt);
+        continue;
+      }
+    }
+  }
+
+  throw lastError || new Error(`download failed for ${imageUrl}`);
+}
+
+async function removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey) {
   const form = new FormData();
-  form.append('image_url', imageUrl);
+  const blob = new Blob([buffer], { type: contentType || 'image/jpeg' });
+  form.append('image_file', blob, guessImageFilename(imageUrl, contentType));
   form.append('size', 'auto');
   form.append('format', 'png');
   form.append('crop', 'true');
@@ -135,13 +199,42 @@ async function removeBackgroundFromUrl(imageUrl, apiKey) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function downloadBinaryFromUrl(url) {
-  const res = await fetch(url);
+/** Download portrait ourselves, then upload bytes — avoids Wikimedia 429 on remove.bg fetchers. */
+async function removeBackgroundFromUrl(imageUrl, apiKey) {
+  if (isWikimediaHost(imageUrl)) {
+    const { buffer, contentType } = await downloadSpeakerImageBuffer(imageUrl);
+    return removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey);
+  }
+
+  const form = new FormData();
+  form.append('image_url', imageUrl);
+  form.append('size', 'auto');
+  form.append('format', 'png');
+  form.append('crop', 'true');
+  form.append('crop_margin', '10%');
+
+  const res = await fetch('https://api.remove.bg/v1.0/removebg', {
+    method: 'POST',
+    headers: { 'X-Api-Key': apiKey },
+    body: form
+  });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`download ${res.status}: ${body.slice(0, 500)}`);
+    const failedDownload =
+      res.status === 400 && /failed_image_download|429/i.test(body);
+    if (failedDownload) {
+      console.log(`[cutout] remove.bg could not fetch URL; retrying with direct download`);
+      const { buffer, contentType } = await downloadSpeakerImageBuffer(imageUrl);
+      return removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey);
+    }
+    throw new Error(`remove.bg ${res.status}: ${body.slice(0, 500)}`);
   }
   return Buffer.from(await res.arrayBuffer());
+}
+
+async function downloadBinaryFromUrl(url) {
+  const { buffer } = await downloadSpeakerImageBuffer(url);
+  return buffer;
 }
 
 async function cropTransparentPngWithMargin(buffer, marginRatio = 0.1) {
