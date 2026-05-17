@@ -178,14 +178,29 @@ async function downloadSpeakerImageBuffer(imageUrl, { maxAttempts = 4 } = {}) {
   throw lastError || new Error(`download failed for ${imageUrl}`);
 }
 
-async function removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey) {
+function isUnknownForegroundError(status, body) {
+  return status === 400 && /unknown_foreground/i.test(String(body || ''));
+}
+
+/** Old sepia portraits often fail auto detection — try person + no-crop fallbacks. */
+const REMOVE_BG_STRATEGIES = [
+  { label: 'auto+crop', type: 'auto', crop: true, crop_margin: '10%' },
+  { label: 'person+crop', type: 'person', crop: true, crop_margin: '10%' },
+  { label: 'person+full', type: 'person', crop: false },
+  { label: 'auto+full', type: 'auto', crop: false }
+];
+
+async function callRemoveBg(buffer, contentType, imageUrl, apiKey, strategy) {
   const form = new FormData();
   const blob = new Blob([buffer], { type: contentType || 'image/jpeg' });
   form.append('image_file', blob, guessImageFilename(imageUrl, contentType));
   form.append('size', 'auto');
   form.append('format', 'png');
-  form.append('crop', 'true');
-  form.append('crop_margin', '10%');
+  form.append('type', strategy.type || 'auto');
+  if (strategy.crop) {
+    form.append('crop', 'true');
+    if (strategy.crop_margin) form.append('crop_margin', strategy.crop_margin);
+  }
 
   const res = await fetch('https://api.remove.bg/v1.0/removebg', {
     method: 'POST',
@@ -197,6 +212,31 @@ async function removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey)
     throw new Error(`remove.bg ${res.status}: ${body.slice(0, 500)}`);
   }
   return Buffer.from(await res.arrayBuffer());
+}
+
+async function removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey) {
+  let lastError = null;
+
+  for (let i = 0; i < REMOVE_BG_STRATEGIES.length; i += 1) {
+    const strategy = REMOVE_BG_STRATEGIES[i];
+    try {
+      const png = await callRemoveBg(buffer, contentType, imageUrl, apiKey, strategy);
+      if (i > 0) console.log(`[cutout] succeeded with ${strategy.label}`);
+      return png;
+    } catch (error) {
+      lastError = error;
+      if (/unknown_foreground/i.test(error.message || '') && i < REMOVE_BG_STRATEGIES.length - 1) {
+        console.log(`[cutout] ${strategy.label} unknown_foreground; trying ${REMOVE_BG_STRATEGIES[i + 1].label}`);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const hint =
+    'remove.bg could not find a person in this portrait (common for old paintings/sepia photos). ' +
+    'Use a clearer photo, or upload a manual PNG via scripts/upload-manual-speaker-cutout-client.mjs --upload-file=...';
+  throw new Error(lastError ? `${lastError.message}\n${hint}` : hint);
 }
 
 /** Download portrait ourselves, then upload bytes — avoids Wikimedia 429 on remove.bg fetchers. */
