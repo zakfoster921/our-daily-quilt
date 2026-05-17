@@ -1193,6 +1193,194 @@ function completeReflectionThemes(themes) {
     });
 }
 
+const REFLECTION_MODERATION_BODY_MAX = 100;
+const REFLECTION_PUBLISHED_TEXT_MAX = 240;
+const REFLECTION_REJECT_USER_MESSAGE =
+  'Something here got flagged. Try again?';
+
+function parseJsonObjectFromAiText(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[0]);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+function buildReflectionModerationPrompt({ reflectionPrompt, responseText }) {
+  const rp = String(reflectionPrompt || '').replace(/\s+/g, ' ').trim();
+  const rt = String(responseText || '').replace(/\s+/g, ' ').trim();
+  const preamble = [rp, rt].filter(Boolean).join('\n\n');
+  const instructions = [
+    'You are a two-stage moderation pipeline for ONE user reflection. Run both stages in order.',
+    '',
+    'STAGE 1 — MODERATE',
+    'If this response is offensive, hateful, sexually explicit, or personally attacking, reject it.',
+    '',
+    'STAGE 2 — FILTER & SHORTEN',
+    "If it does not answer the prompt or is absurdist, reject it.",
+    `If it passes, shorten to ${REFLECTION_MODERATION_BODY_MAX} characters max when needed. When shortening:`,
+    '- Keep first-person, descriptive, concrete language',
+    '- Bad: "My unfinished things revealed my patterns" (abstracted)',
+    '- Good: "I have so many unfinished things. Turns out I\'m not as patient as I thought" (keeps the image)',
+    '- No mandates, no aphorisms, no caption-speak',
+    '- Do not add an author name, attribution, or em dash',
+    '',
+    'OUTPUT',
+    'Return ONLY valid JSON with no markdown or commentary:',
+    '{"action":"publish"|"reject","text":"..."}',
+    '- On reject: {"action":"reject","text":""}',
+    '- On publish: {"action":"publish","text":"<shortened body only>"}'
+  ].join('\n');
+  return preamble ? `${preamble}\n\n${instructions}` : instructions;
+}
+
+function buildReflectionCurationPrompt({ reflectionPrompt, items }) {
+  const rp = String(reflectionPrompt || '').replace(/\s+/g, ' ').trim();
+  const lines = (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const id = String(item?.id || '').trim();
+      const text = String(item?.text || '').replace(/\s+/g, ' ').trim();
+      if (!id || !text) return '';
+      return `RESPONSE ${id}: ${text}`;
+    })
+    .filter(Boolean);
+  const preamble = [rp, ...lines].filter(Boolean).join('\n\n');
+  const instructions = [
+    'You curate which published reflections stay visible on a community wall.',
+    '',
+    'RULES',
+    '- Use the exact response text already shown; do not rewrite, merge, or synthesize new wording.',
+    '- When two or more responses are very similar in meaning, keep only the single most engaging and insightful id.',
+    '- Do not combine similar responses into one line.',
+    '- Keep every genuinely distinct response.',
+    '',
+    'OUTPUT',
+    'Return ONLY valid JSON with no markdown or commentary:',
+    '{"visibleIds":["<id>","<id>",...]}',
+    'Every id in visibleIds must appear in the input. Include at least one id when any responses were provided.'
+  ].join('\n');
+  return preamble ? `${preamble}\n\n${instructions}` : instructions;
+}
+
+function parseReflectionModerationResult(value) {
+  const parsed = parseJsonObjectFromAiText(value);
+  if (!parsed) return null;
+  const action = String(parsed.action || '').toLowerCase();
+  if (action === 'reject') return { action: 'reject', text: '' };
+  if (action !== 'publish') return null;
+  const text = String(parsed.text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, REFLECTION_MODERATION_BODY_MAX);
+  if (!text) return null;
+  return { action: 'publish', text };
+}
+
+function parseReflectionCurationResult(value, validIds) {
+  const parsed = parseJsonObjectFromAiText(value);
+  if (!parsed) return null;
+  const idSet = new Set(Array.isArray(validIds) ? validIds.map((id) => String(id || '').trim()).filter(Boolean) : []);
+  if (!idSet.size) return [];
+  const visibleIds = (Array.isArray(parsed.visibleIds) ? parsed.visibleIds : [])
+    .map((id) => String(id || '').trim())
+    .filter((id) => idSet.has(id));
+  return visibleIds.length ? visibleIds : null;
+}
+
+function reflectionAuthorSuffix(displayName) {
+  const name = normalizeSubmittedAuthorName(displayName);
+  if (!name || /^friend$/i.test(name)) return '';
+  return ` —${name}`;
+}
+
+function buildPublishedReflectionText(moderatedBody, displayName) {
+  const body = String(moderatedBody || '').replace(/\s+/g, ' ').trim().slice(0, REFLECTION_MODERATION_BODY_MAX);
+  if (!body) return '';
+  const suffix = reflectionAuthorSuffix(displayName);
+  const maxBodyLen = Math.max(0, REFLECTION_PUBLISHED_TEXT_MAX - suffix.length);
+  const trimmedBody = body.slice(0, maxBodyLen);
+  return `${trimmedBody}${suffix}`.slice(0, REFLECTION_PUBLISHED_TEXT_MAX);
+}
+
+async function postReflectionAiText({ provider, apiKey, model, prompt, maxTokens = 512 }) {
+  if (provider === 'anthropic') {
+    return postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens });
+  }
+  return postReflectionThemesToGemini({ apiKey, model, prompt, maxTokens });
+}
+
+async function moderateReflectionResponseWithAi({ reflectionPrompt, responseText }) {
+  const prompt = buildReflectionModerationPrompt({ reflectionPrompt, responseText });
+  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
+    const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+    const model = String(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+    const raw = await postReflectionAiText({ provider: 'anthropic', apiKey, model, prompt, maxTokens: 320 });
+    const parsed = parseReflectionModerationResult(raw);
+    if (!parsed) throw new Error(`Claude moderation returned unusable JSON. Preview: ${String(raw || '').slice(0, 240)}`);
+    return { ...parsed, model, provider: 'anthropic' };
+  }
+  if (String(process.env.GEMINI_API_KEY || '').trim()) {
+    const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+    const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+    const raw = await postReflectionAiText({ provider: 'gemini', apiKey, model, prompt, maxTokens: 320 });
+    const parsed = parseReflectionModerationResult(raw);
+    if (!parsed) throw new Error(`Gemini moderation returned unusable JSON. Preview: ${String(raw || '').slice(0, 240)}`);
+    return { ...parsed, model, provider: 'gemini' };
+  }
+  throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
+}
+
+async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
+  const list = Array.isArray(items) ? items.filter((item) => item?.id && item?.text) : [];
+  if (!list.length) return { visibleIds: [], themes: [], model: null, provider: null };
+  if (list.length === 1) {
+    return {
+      visibleIds: [list[0].id],
+      themes: [list[0].text],
+      model: null,
+      provider: 'none'
+    };
+  }
+  const validIds = list.map((item) => item.id);
+  const prompt = buildReflectionCurationPrompt({ reflectionPrompt, items: list });
+  let raw = '';
+  let model = null;
+  let provider = null;
+  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
+    const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+    model = String(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+    provider = 'anthropic';
+    raw = await postReflectionAiText({ provider: 'anthropic', apiKey, model, prompt, maxTokens: 800 });
+  } else if (String(process.env.GEMINI_API_KEY || '').trim()) {
+    const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+    model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+    provider = 'gemini';
+    raw = await postReflectionAiText({ provider: 'gemini', apiKey, model, prompt, maxTokens: 800 });
+  } else {
+    throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
+  }
+  let visibleIds = parseReflectionCurationResult(raw, validIds);
+  if (!visibleIds) {
+    console.warn('Curation AI returned unusable JSON; keeping all published responses visible.');
+    visibleIds = validIds;
+  }
+  const visibleSet = new Set(visibleIds);
+  const themes = list
+    .filter((item) => visibleSet.has(item.id))
+    .map((item) => item.text);
+  return { visibleIds, themes: completeReflectionThemes(themes), model, provider };
+}
+
 function buildReflectionThemesPrompt({ reflectionPrompt, responses }) {
   const rp = String(reflectionPrompt || '').replace(/\s+/g, ' ').trim();
   const responseParagraphs = (Array.isArray(responses) ? responses : [])
@@ -1239,10 +1427,10 @@ function buildReflectionThemesPrompt({ reflectionPrompt, responses }) {
   return preamble ? `${preamble}\n\n${instructions}` : instructions;
 }
 
-async function postReflectionThemesToGemini({ apiKey, model, prompt }) {
+async function postReflectionThemesToGemini({ apiKey, model, prompt, maxTokens = 1200 }) {
   const generationConfig = {
     temperature: 0.3,
-    maxOutputTokens: 1200,
+    maxOutputTokens: Math.max(64, Math.min(8192, Number(maxTokens) || 1200)),
     thinkingConfig: { thinkingBudget: 0 }
   };
   const result = await postJsonWithHttps({
@@ -1299,7 +1487,7 @@ async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, r
   return { themes, model, provider: 'gemini' };
 }
 
-async function postReflectionThemesToClaude({ apiKey, model, prompt }) {
+async function postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens = 1200 }) {
   const result = await postJsonWithHttps({
     hostname: 'api.anthropic.com',
     path: '/v1/messages',
@@ -1309,7 +1497,7 @@ async function postReflectionThemesToClaude({ apiKey, model, prompt }) {
     },
     body: {
       model,
-      max_tokens: 1200,
+      max_tokens: Math.max(64, Math.min(8192, Number(maxTokens) || 1200)),
       temperature: 0.3,
       messages: [{ role: 'user', content: prompt }]
     }
@@ -3619,38 +3807,99 @@ app.post('/api/reflection-response', async (req, res) => {
   try {
     if (!db) throw new Error('Firestore not initialized');
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const responseText = normalizeReflectionResponseText(body.responseText || body.text);
+    const rawText = normalizeReflectionResponseText(body.responseText || body.text);
     const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || '').trim())
       ? String(body.appDateKey).trim()
       : getAppDateKey();
     const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
     const quoteId = String(body.quoteId || '').trim().slice(0, 180);
     const reflectionPromptSnapshot = String(body.reflectionPromptSnapshot || '').trim().slice(0, 500);
+    const displayName = String(body.displayName || body.authorDisplayName || '').trim().slice(0, 80);
 
-    if (!responseText) {
+    if (!rawText) {
       return res.status(400).json({ success: false, error: 'Reflection response is required' });
     }
-    if (responseText.length > 240) {
-      return res.status(400).json({ success: false, error: 'Reflection response must be 240 characters or fewer' });
+    if (rawText.length > REFLECTION_PUBLISHED_TEXT_MAX) {
+      return res.status(400).json({
+        success: false,
+        error: `Reflection response must be ${REFLECTION_PUBLISHED_TEXT_MAX} characters or fewer`
+      });
+    }
+
+    let moderation;
+    try {
+      moderation = await moderateReflectionResponseWithAi({
+        reflectionPrompt: reflectionPromptSnapshot,
+        responseText: rawText
+      });
+    } catch (error) {
+      console.error('❌ Reflection moderation failed:', error);
+      return res.status(503).json({
+        success: false,
+        error: 'Could not review your reflection right now. Please try again in a moment.',
+        timestamp: getUtcIsoNow()
+      });
+    }
+
+    if (moderation.action === 'reject') {
+      return res.status(422).json({
+        success: false,
+        error: REFLECTION_REJECT_USER_MESSAGE,
+        rejected: true
+      });
+    }
+
+    const publishedText = buildPublishedReflectionText(moderation.text, displayName);
+    if (!publishedText) {
+      return res.status(422).json({
+        success: false,
+        error: REFLECTION_REJECT_USER_MESSAGE,
+        rejected: true
+      });
     }
 
     const deviceKey = safeReflectionDeviceKey(clientId || `${req.ip || ''}|${req.get('user-agent') || ''}`);
     const responseRef = db.collection('reflectionResponses').doc();
     const responseId = responseRef.id;
+    const authorDisplayName = reflectionAuthorSuffix(displayName).replace(/^\s*—\s*/, '') || null;
     const responsePayload = {
       appDateKey,
-      responseText,
+      rawText,
+      responseText: rawText,
+      publishedText,
+      status: 'published',
+      authorDisplayName,
       clientId: clientId || null,
       deviceKey,
       quoteId: quoteId || null,
       reflectionPromptSnapshot,
       source: 'app',
+      moderationProvider: moderation.provider || null,
+      moderationModel: moderation.model || null,
+      moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     await responseRef.set(responsePayload);
 
-    return res.json({ success: true, responseId, appDateKey, status: 'stored' });
+    const themeRef = db.collection('reflectionThemes').doc(appDateKey);
+    const themePatch = {
+      appDateKey,
+      themes: admin.firestore.FieldValue.arrayUnion(publishedText),
+      responseCount: admin.firestore.FieldValue.increment(1),
+      updatedAtIso: getUtcIsoNow(),
+      lastPublishedAtIso: getUtcIsoNow()
+    };
+    if (reflectionPromptSnapshot) themePatch.reflectionPrompt = reflectionPromptSnapshot;
+    await themeRef.set(themePatch, { merge: true });
+
+    return res.json({
+      success: true,
+      responseId,
+      appDateKey,
+      publishedText,
+      status: 'published'
+    });
   } catch (error) {
     console.error('❌ Reflection response failed:', error);
     return res.status(500).json({
@@ -3742,6 +3991,52 @@ async function countReflectionResponsesForDate(db, appDateKey) {
   }
 }
 
+function reflectionResponseWallText(data) {
+  const row = data && typeof data === 'object' ? data : {};
+  const status = String(row.status || '').toLowerCase();
+  if (status === 'hidden' || status === 'rejected') return '';
+  const published = String(row.publishedText || '').trim();
+  if (published) return published;
+  if (status && status !== 'published') return '';
+  return String(row.responseText || '').trim();
+}
+
+/** Published responses for curation, oldest first. */
+async function loadPublishedReflectionResponsesForCuration(db, appDateKey, responseLimit) {
+  const mapDoc = (doc) => {
+    const data = doc.data() || {};
+    const text = reflectionResponseWallText(data);
+    if (!text) return null;
+    return { id: doc.id, text, data };
+  };
+  try {
+    const snap = await db.collection('reflectionResponses')
+      .where('appDateKey', '==', appDateKey)
+      .orderBy('createdAt', 'asc')
+      .limit(responseLimit)
+      .get();
+    return snap.docs.map(mapDoc).filter(Boolean);
+  } catch (err) {
+    const msg = String(err?.message || err || '');
+    if (/index|FAILED_PRECONDITION|requires an index/i.test(msg)) {
+      console.warn('reflectionResponses orderBy(createdAt asc) failed; using unordered sample:', msg.slice(0, 240));
+      const snap = await db.collection('reflectionResponses')
+        .where('appDateKey', '==', appDateKey)
+        .limit(responseLimit)
+        .get();
+      return snap.docs
+        .map(mapDoc)
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aMs = a.data?.createdAt?.toMillis?.() ?? 0;
+          const bMs = b.data?.createdAt?.toMillis?.() ?? 0;
+          return aMs - bMs || String(a.id).localeCompare(String(b.id));
+        });
+    }
+    throw err;
+  }
+}
+
 /** Newest-first query when index exists; else unordered sample (same as legacy). */
 async function loadReflectionResponseTextsForGeneration(db, appDateKey, responseLimit) {
   try {
@@ -3812,6 +4107,8 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       ? String(body.appDateKey || body.date).trim()
       : getAppDateKey();
     const force = body.force === true || String(body.force || '').toLowerCase() === 'true';
+    const mode = String(body.mode || 'curate').trim().toLowerCase();
+    const isCurateMode = mode !== 'legacy';
 
     const themeDocSnap = await db.collection('reflectionThemes').doc(appDateKey).get();
     const priorThemeData = themeDocSnap.exists ? themeDocSnap.data() || {} : null;
@@ -3819,8 +4116,9 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       ? priorThemeData.themes.map((t) => String(t || '').trim()).filter(Boolean)
       : [];
 
-    const totalReflectionResponses = await countReflectionResponsesForDate(db, appDateKey);
-    if (totalReflectionResponses === 0) {
+    const responseLimit = Math.max(1, Math.min(120, Number(body.limit) || 80));
+    const publishedItems = await loadPublishedReflectionResponsesForCuration(db, appDateKey, responseLimit);
+    if (!publishedItems.length) {
       return res.status(400).json({
         success: false,
         error: 'No reflection responses found for date',
@@ -3828,11 +4126,10 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       });
     }
 
-    const responseLimit = Math.max(1, Math.min(120, Number(body.limit) || 80));
-
-    if (!force && themeDocSnap.exists && priorThemeData) {
+    if (!force && !isCurateMode && themeDocSnap.exists && priorThemeData) {
       const genMs = reflectionThemeGenerationTimeMillis(priorThemeData, themeDocSnap);
       const priorTotal = Number(priorThemeData.responseCount) || 0;
+      const totalReflectionResponses = await countReflectionResponsesForDate(db, appDateKey);
       const latestMs = await getLatestReflectionResponseCreatedMillis(db, appDateKey);
       const countOkForTimeSkip = totalReflectionResponses == null
         || totalReflectionResponses === priorTotal
@@ -3857,15 +4154,6 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
           generatedAtIso: priorThemeData.generatedAtIso || null
         });
       }
-    }
-
-    const responses = await loadReflectionResponseTextsForGeneration(db, appDateKey, responseLimit);
-    if (!responses.length) {
-      return res.status(400).json({
-        success: false,
-        error: 'No reflection responses found for date',
-        appDateKey
-      });
     }
 
     const getReflectionPromptFromQuoteData = (data) => String(
@@ -3906,25 +4194,72 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       console.warn('Reflection theme quote prompt lookup failed:', error.message);
     }
 
-    const { themes, model, provider } = await generateReflectionThemesWithAi({
-      dateKey: appDateKey,
-      reflectionPrompt,
-      responses
-    });
-    const responseCountTotal = totalReflectionResponses != null ? totalReflectionResponses : responses.length;
+    if (!reflectionPrompt) {
+      reflectionPrompt = String(priorThemeData?.reflectionPrompt || priorThemeData?.communityPrompt || '').trim();
+    }
+
+    let themes = [];
+    let model = null;
+    let provider = null;
+    let visibleIds = [];
+
+    if (isCurateMode) {
+      const curation = await curateReflectionResponsesWithAi({
+        reflectionPrompt,
+        items: publishedItems.map((item) => ({ id: item.id, text: item.text }))
+      });
+      themes = curation.themes;
+      model = curation.model;
+      provider = curation.provider;
+      visibleIds = curation.visibleIds;
+      const visibleSet = new Set(visibleIds);
+      const batch = db.batch();
+      publishedItems.forEach((item) => {
+        const ref = db.collection('reflectionResponses').doc(item.id);
+        if (visibleSet.has(item.id)) {
+          batch.update(ref, {
+            status: 'published',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } else {
+          batch.update(ref, {
+            status: 'hidden',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      });
+      await batch.commit();
+    } else {
+      const responses = publishedItems.map((item) => item.text);
+      const generated = await generateReflectionThemesWithAi({
+        dateKey: appDateKey,
+        reflectionPrompt,
+        responses
+      });
+      themes = generated.themes;
+      model = generated.model;
+      provider = generated.provider;
+    }
+
+    const responseCountTotal = publishedItems.length;
+    const curatedAtIso = getUtcIsoNow();
     const themePayload = {
       appDateKey,
       themes,
       reflectionPrompt,
       responseCount: responseCountTotal,
-      responseSampleSize: responses.length,
+      responseSampleSize: publishedItems.length,
       model,
       provider,
-      status: 'generated',
+      status: isCurateMode ? 'curated' : 'generated',
       textSnapshot: quoteSnapshot?.text || '',
       authorSnapshot: quoteSnapshot?.author || '',
       generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      generatedAtIso: getUtcIsoNow()
+      generatedAtIso: curatedAtIso,
+      curatedAtIso: isCurateMode ? curatedAtIso : (priorThemeData?.curatedAtIso || null),
+      visibleCount: themes.length,
+      curationProvider: isCurateMode ? provider : null,
+      curationModel: isCurateMode ? model : null
     };
     await db.collection('reflectionThemes').doc(appDateKey).set(themePayload);
 
@@ -3934,9 +4269,11 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       themes,
       reflectionPrompt,
       responseCount: responseCountTotal,
-      responseSampleSize: responses.length,
+      responseSampleSize: publishedItems.length,
+      visibleCount: themes.length,
       model,
-      provider
+      provider,
+      mode: isCurateMode ? 'curate' : 'legacy'
     });
   } catch (error) {
     console.error('❌ Reflection theme generation failed:', error);

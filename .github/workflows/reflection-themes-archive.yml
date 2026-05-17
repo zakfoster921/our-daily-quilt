@@ -2,11 +2,9 @@ name: Reflection Themes Archive
 
 on:
   schedule:
-    # Hourly incremental updater. The endpoint is idempotent: it compares the
-    # latest reflection response timestamp against the last theme-generation
-    # time and short-circuits as `skipped: true` (no AI cost) when nothing is
-    # new. So hourly sweeps are cheap and only spend credits when new
-    # reflections have actually been submitted since the last run.
+    # Hourly curation pass: hides very similar published reflections on the wall
+    # (no merging or rewriting). New submissions are moderated and published
+    # immediately on POST /api/reflection-response; this job only deduplicates.
     #
     # The date resolver below picks the *current in-progress* app day:
     #   - Before 07:00 UTC → yesterday's date key (closing app day)
@@ -57,7 +55,7 @@ jobs:
           fi
           echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
 
-      - name: Call reflection theme generation endpoint
+      - name: Call reflection curation endpoint
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
           REFLECTION_THEME_TOKEN: ${{ secrets.REFLECTION_THEME_TOKEN }}
@@ -116,7 +114,7 @@ jobs:
 
             if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && \
                grep -Eq '"success"[[:space:]]*:[[:space:]]*true' response.json; then
-              echo "Reflection theme generation succeeded on attempt ${attempt}."
+              echo "Reflection curation succeeded on attempt ${attempt}."
               exit 0
             fi
 
@@ -129,5 +127,5 @@ jobs:
             attempt=$((attempt + 1))
           done
 
-          echo "Reflection theme generation failed after ${MAX_ATTEMPTS} attempts (last HTTP ${last_http_code})."
+          echo "Reflection curation failed after ${MAX_ATTEMPTS} attempts (last HTTP ${last_http_code})."
           exit 1
