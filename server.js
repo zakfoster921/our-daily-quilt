@@ -17,6 +17,12 @@ try {
 }
 
 const { buildSubmittedQuotePrefillPrompt } = require('./lib/submitted-quote-prefill-prompts');
+const {
+  FIRST_RESPONSE_USER_NAME,
+  firstThemePatchFromData,
+  buildFirstResponseFirestorePatch,
+  buildFirstResponseNotionProperties
+} = require('./scripts/lib/first-response-fields.cjs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
@@ -1312,6 +1318,50 @@ function buildPublishedReflectionText(moderatedBody, displayName) {
   return `${trimmedBody}${suffix}`.slice(0, REFLECTION_PUBLISHED_TEXT_MAX);
 }
 
+async function patchFirstResponseNotionPage(notionPageId, firstResponse) {
+  const pageId = String(notionPageId || '').trim();
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!pageId || !databaseId) return;
+  const schema = await notionGetDatabaseProperties(databaseId);
+  const properties = buildFirstResponseNotionProperties(schema, {
+    firstResponse,
+    userName: FIRST_RESPONSE_USER_NAME
+  });
+  if (!Object.keys(properties).length) return;
+  await notionFetchJson(`/pages/${pageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ properties })
+  });
+}
+
+/**
+ * Mirror reflectionThemes[0] into quotes + dailyQuoteAssignments for a date (snake_case only).
+ */
+async function syncFirstResponseFieldsForDate(appDateKey, firstResponseOverride) {
+  if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(String(appDateKey || '').trim())) return;
+  let firstResponse = String(firstResponseOverride || '').replace(/\s+/g, ' ').trim();
+  if (!firstResponse) {
+    const themeSnap = await db.collection('reflectionThemes').doc(appDateKey).get();
+    firstResponse = themeSnap.exists ? firstThemePatchFromData(themeSnap.data()) : '';
+  }
+  const patch = buildFirstResponseFirestorePatch(firstResponse, {
+    deleteField: () => admin.firestore.FieldValue.delete()
+  });
+  patch.updated_at_iso = getUtcIsoNow();
+  const assignmentsCol = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const quotesCol = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  await db.collection(assignmentsCol).doc(appDateKey).set(patch, { merge: true });
+  const assignSnap = await db.collection(assignmentsCol).doc(appDateKey).get();
+  const sourceId = assignSnap.exists ? String(assignSnap.data()?.sourceId || '').trim() : '';
+  if (!sourceId) return;
+  await db.collection(quotesCol).doc(sourceId).set(patch, { merge: true });
+  setImmediate(() => {
+    patchFirstResponseNotionPage(sourceId, firstResponse).catch((err) => {
+      console.warn(`⚠️ Notion first_response patch failed for ${sourceId}:`, err?.message || err);
+    });
+  });
+}
+
 async function postReflectionAiText({ provider, apiKey, model, prompt, maxTokens = 512 }) {
   if (provider === 'anthropic') {
     return postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens });
@@ -1818,7 +1868,6 @@ function normalizeWatchForPrefillValue(value) {
   if (!s) return '';
   s = s.replace(/^watch\s+for\s+(?:the\s+moment\s+today\s+when\s+)?/i, '').trim();
   if (s) s = s.charAt(0).toUpperCase() + s.slice(1);
-  if (s && !/[.!?]$/.test(s)) s = `${s}.`;
   return s;
 }
 
@@ -1888,7 +1937,7 @@ const REQUIRED_PREFILL_FIELDS = [
   {
     key: 'watch_for',
     requirement:
-      'watch_for is required: one capitalized sentence fragment (ending with .) naming a specific observable moment or behavior to notice today — no "Watch for the moment today when" prefix, no feelings, no homework.'
+      'watch_for is required: one capitalized sentence fragment naming a specific observable moment or behavior to notice today — no "Watch for" prefix, no feelings, no homework; do not add a trailing period unless the copy needs one.'
   },
   {
     key: 'good_day',
@@ -3892,6 +3941,7 @@ app.post('/api/reflection-response', async (req, res) => {
     };
     if (reflectionPromptSnapshot) themePatch.reflectionPrompt = reflectionPromptSnapshot;
     await themeRef.set(themePatch, { merge: true });
+    await syncFirstResponseFieldsForDate(appDateKey);
 
     return res.json({
       success: true,
@@ -4243,9 +4293,12 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
 
     const responseCountTotal = publishedItems.length;
     const curatedAtIso = getUtcIsoNow();
+    const firstResponse = String(themes[0] || '').replace(/\s+/g, ' ').trim();
     const themePayload = {
       appDateKey,
       themes,
+      first_response: firstResponse,
+      user_name: FIRST_RESPONSE_USER_NAME,
       reflectionPrompt,
       responseCount: responseCountTotal,
       responseSampleSize: publishedItems.length,
@@ -4262,6 +4315,7 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       curationModel: isCurateMode ? model : null
     };
     await db.collection('reflectionThemes').doc(appDateKey).set(themePayload);
+    await syncFirstResponseFieldsForDate(appDateKey, firstResponse);
 
     return res.json({
       success: true,

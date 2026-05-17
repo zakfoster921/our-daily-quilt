@@ -6,6 +6,13 @@ try {
   // dotenv is optional in CI where env vars come from GitHub secrets.
 }
 const admin = require('firebase-admin');
+const {
+  FIRST_RESPONSE_USER_NAME,
+  isDateDocId: isReflectionDateKey,
+  firstThemePatchFromData,
+  buildFirstResponseFirestorePatch,
+  buildFirstResponseNotionProperties
+} = require('./lib/first-response-fields.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
 
@@ -204,9 +211,15 @@ async function run() {
     findSchemaPropName(notionSchema, 'date_scheduled') ||
     findSchemaPropName(notionSchema, 'datescheduled');
   const hasDateScheduled = !!dateScheduledProp;
-  if (!hasTimesUsed && !hasLastUsedDate && !hasDateScheduled) {
+  const firstResponseProp =
+    findSchemaPropName(notionSchema, 'first_response') ||
+    findSchemaPropName(notionSchema, 'firstresponse');
+  const userNameProp =
+    findSchemaPropName(notionSchema, 'user_name') || findSchemaPropName(notionSchema, 'username');
+  const hasFirstResponseFields = !!(firstResponseProp || userNameProp);
+  if (!hasTimesUsed && !hasLastUsedDate && !hasDateScheduled && !hasFirstResponseFields) {
     throw new Error(
-      "Notion DB needs at least one of these properties: 'times_used' (number), 'last_used_date' (date), 'date_scheduled' (date)"
+      "Notion DB needs at least one of: 'times_used', 'last_used_date', 'date_scheduled', 'first_response', 'user_name'"
     );
   }
 
@@ -243,6 +256,14 @@ async function run() {
 
   const assignmentCollection =
     process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const reflectionThemesSnap = await db.collection('reflectionThemes').get();
+  const firstResponseByDate = new Map();
+  for (const doc of reflectionThemesSnap.docs) {
+    if (!isReflectionDateKey(doc.id)) continue;
+    const text = firstThemePatchFromData(doc.data());
+    if (text) firstResponseByDate.set(doc.id, text);
+  }
+
   const assignmentSnap = await db.collection(assignmentCollection).get();
   const scheduledBySourceId = new Map(); // raw sourceId -> [dateKey] (legacy)
   const scheduledBySourceNorm = new Map(); // normalized id -> [dateKey]
@@ -279,7 +300,28 @@ async function run() {
 
   let updates = 0;
   let skipped = 0;
+  let firstResponseFirestoreWrites = 0;
   const patchedNormIds = new Set();
+
+  async function applyFirstResponseForDate(dateKey, sourceId, properties) {
+    if (!dateKey || !sourceId) return;
+    const firstResponse = firstResponseByDate.get(dateKey) || '';
+    if (hasFirstResponseFields) {
+      const notionProps = buildFirstResponseNotionProperties(notionSchema, {
+        firstResponse,
+        userName: FIRST_RESPONSE_USER_NAME
+      });
+      Object.assign(properties, notionProps);
+    }
+    const fsPatch = buildFirstResponseFirestorePatch(firstResponse, {
+      deleteField: () => admin.firestore.FieldValue.delete()
+    });
+    if (!dryRun) {
+      await db.collection(collectionName).doc(sourceId).set(fsPatch, { merge: true });
+      await db.collection(assignmentCollection).doc(dateKey).set(fsPatch, { merge: true });
+    }
+    firstResponseFirestoreWrites += 1;
+  }
 
   for (const q of notionDocs) {
     const u = usage.get(q.key);
@@ -287,8 +329,8 @@ async function run() {
     const properties = {};
     if (u && hasTimesUsed) properties.times_used = { number: u.count };
     if (u && hasLastUsedDate) properties.last_used_date = { date: { start: u.lastDate } };
+    let scheduledDate = q.dateScheduled && isDateDocId(q.dateScheduled) ? q.dateScheduled : '';
     if (hasDateScheduled) {
-      let scheduledDate = q.dateScheduled && isDateDocId(q.dateScheduled) ? q.dateScheduled : '';
       if (!scheduledDate) {
         const normQ = normalizeNotionPageId(q.sourceId);
         const bySourceNorm = scheduledBySourceNorm.get(normQ) || [];
@@ -300,6 +342,9 @@ async function run() {
         );
       }
       properties[dateScheduledProp] = { date: scheduledDate ? { start: scheduledDate } : null };
+    }
+    if (scheduledDate) {
+      await applyFirstResponseForDate(scheduledDate, q.sourceId, properties);
     }
     // Do not require dailyQuoteUsage rows: many quotes are scheduled but not yet "used",
     // and they still need date_scheduled written to Notion.
@@ -339,6 +384,7 @@ async function run() {
       const properties = {
         [dateScheduledProp]: { date: scheduledDate ? { start: scheduledDate } : null }
       };
+      await applyFirstResponseForDate(scheduledDate, rawPageId, properties);
 
       dateOnlyPatches += 1;
       if (!dryRun) {
@@ -361,7 +407,7 @@ async function run() {
   const applied = dryRun ? updates : updates - skipped;
   const appliedDateOnly = dryRun ? dateOnlyPatches : dateOnlyPatches - dateOnlySkipped;
   console.log(
-    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} assignmentSourceIds=${scheduledBySourceNorm.size} patchTargets=${updates} skipped=${skipped}${dryRun ? '' : ` applied=${applied}`} dateOnlyPatches=${dateOnlyPatches}${dryRun ? '' : ` dateOnlyApplied=${appliedDateOnly}`} dateOnlySkipped=${dateOnlySkipped}`
+    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} assignmentSourceIds=${scheduledBySourceNorm.size} reflectionThemeDates=${firstResponseByDate.size} firstResponseFirestoreWrites=${firstResponseFirestoreWrites} patchTargets=${updates} skipped=${skipped}${dryRun ? '' : ` applied=${applied}`} dateOnlyPatches=${dateOnlyPatches}${dryRun ? '' : ` dateOnlyApplied=${appliedDateOnly}`} dateOnlySkipped=${dateOnlySkipped}`
   );
 }
 

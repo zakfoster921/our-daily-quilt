@@ -39,6 +39,7 @@ try {
 }
 
 const admin = require('firebase-admin');
+const { catalogFieldsForAssignmentMirror } = require('./lib/first-response-fields.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
   'artRecsType',
@@ -130,6 +131,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     speakerDiedSnapshot: q.speakerDied.slice(0, 80),
     speakerGuideLineSnapshot: q.speakerGuideLine.slice(0, 260),
     imageAttributionSnapshot: q.imageAttribution.slice(0, 260),
+    ...catalogFieldsForAssignmentMirror(q),
     assignedAt: new Date().toISOString(),
     assignedBy
   };
@@ -158,6 +160,7 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     speaker_died: q.speakerDied || '',
     speaker_guide_line: q.speakerGuideLine || '',
     image_attribution: q.imageAttribution || '',
+    ...catalogFieldsForAssignmentMirror(q),
     assignedBy,
     assignedAt: updatedAt,
     updatedAt
@@ -234,7 +237,8 @@ function quoteRowFromFirestore(docSnap) {
     speakerBorn: String(d.speakerBorn ?? d.speaker_born ?? '').trim(),
     speakerDied: String(d.speakerDied ?? d.speaker_died ?? '').trim(),
     speakerGuideLine: String(d.speakerGuideLine ?? d.speaker_guide_line ?? '').trim(),
-    imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim()
+    imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
+    first_response: String(d.first_response ?? '').trim()
   };
 }
 
@@ -298,7 +302,24 @@ async function main() {
   let clearedQuoteDates = 0;
   let placed = 0;
   let displaced = 0;
+  let catalogFieldMirrors = 0;
   const updatedAt = new Date().toISOString();
+
+  // Notion → quotes sync does not move dates; still refresh first_response on stable slots.
+  for (const [dateKey, sid] of assignmentByDate) {
+    if (dateKey < start) continue;
+    const q = quoteBySourceId.get(sid);
+    if (!q) continue;
+    if (normalizeDesiredDate(q) !== dateKey) continue;
+    batchState.batch.set(
+      db.collection(assignmentsCollection).doc(dateKey),
+      catalogFieldsForAssignmentMirror(q),
+      { merge: true }
+    );
+    batchState.ops += 1;
+    catalogFieldMirrors += 1;
+    await commitBatchIfNeeded(db, batchState);
+  }
 
   for (const row of staleDates) {
     const { dateKey, sid } = row;
@@ -379,7 +400,7 @@ async function main() {
   if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[reconcile] start=${start} clearedSlots=${clearedSlots} clearedQuoteDateFields=${clearedQuoteDates} placed=${placed} displacedOccupants=${displaced} (${assignmentsCollection} / ${quotesCollection})`
+    `[reconcile] start=${start} catalogFieldMirrors=${catalogFieldMirrors} clearedSlots=${clearedSlots} clearedQuoteDateFields=${clearedQuoteDates} placed=${placed} displacedOccupants=${displaced} (${assignmentsCollection} / ${quotesCollection})`
   );
 }
 

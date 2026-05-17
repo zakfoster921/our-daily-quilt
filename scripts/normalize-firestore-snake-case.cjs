@@ -97,7 +97,9 @@ const FIELD_PAIRS = [
   ['sourceNotes', 'source_notes'],
   ['submittedAt', 'submitted_at'],
   ['submittedVia', 'submitted_via'],
-  ['timesUsed', 'times_used']
+  ['timesUsed', 'times_used'],
+  ['firstResponse', 'first_response'],
+  ['userName', 'user_name']
 ];
 
 const DEFAULT_COLLECTIONS = [

@@ -24,6 +24,7 @@ try {
   }
 }
 const admin = require('firebase-admin');
+const { mirrorCatalogFieldsToAssignment } = require('./lib/first-response-fields.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
 const SNAKE_CASE_FIELD_PAIRS = [
@@ -52,7 +53,9 @@ const SNAKE_CASE_FIELD_PAIRS = [
   ['sourceNotes', 'source_notes'],
   ['submittedAt', 'submitted_at'],
   ['submittedVia', 'submitted_via'],
-  ['timesUsed', 'times_used']
+  ['timesUsed', 'times_used'],
+  ['firstResponse', 'first_response'],
+  ['userName', 'user_name']
 ];
 
 function requireEnv(name) {
@@ -589,6 +592,7 @@ function parseNotionRow(page) {
     'Submitted by',
     'Submitted By'
   );
+  const firstResponse = getMappedText(props, 'first_response', 'First response', 'First Response');
   const notificationTitle =
     getRichText(props.notification_title) || getTitle(props.notification_title);
   const notificationText =
@@ -663,6 +667,8 @@ function parseNotionRow(page) {
       speaker_guide_line: speakerGuideLine,
       image_attribution: imageAttribution,
       submitted_by: submittedBy,
+      first_response: firstResponse,
+      user_name: 'Zak',
       notificationTitle,
       notificationText,
       notificationEnabled,
@@ -792,7 +798,10 @@ async function run() {
   const notionToken = requireEnv('NOTION_TOKEN');
   const databaseId = requireEnv('NOTION_DATABASE_ID');
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const assignmentsCollection =
+    process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
   const db = initFirestore();
+  let assignmentMirrors = 0;
 
   /** Every page id returned by the database query (including rows skipped by parse). */
   const seenNotionIds = new Set();
@@ -822,6 +831,17 @@ async function run() {
       }
       if (!dryRun) {
         await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });
+        const dateKey = String(parsed.data.date_scheduled || '').trim();
+        if (dateKey) {
+          const mirrored = await mirrorCatalogFieldsToAssignment(db, {
+            sourceId: parsed.id,
+            dateKey,
+            catalog: parsed.data,
+            assignmentsCollection,
+            dryRun: false
+          });
+          if (mirrored) assignmentMirrors += 1;
+        }
       }
       writeCount += 1;
     }
@@ -869,7 +889,7 @@ async function run() {
   }
 
   console.log(
-    `[sync] complete dryRun=${dryRun} fetched=${fetchedPages} writes=${writeCount} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
   );
 }
 
