@@ -10,7 +10,13 @@ const crypto = require('crypto');
 const fs = require('fs');
 const admin = require('firebase-admin');
 const { PNG } = require('pngjs');
-const { addDays, getAppDateKey, isDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
+const {
+  addDays,
+  getAppDateKey,
+  getOpeningAppDateKey,
+  isDateKey,
+  resolveStartDateKey
+} = require('./lib/app-date-key.cjs');
 
 const WIKIMEDIA_USER_AGENT =
   process.env.WIKIMEDIA_USER_AGENT || 'OurDailyQuilt/1.0 (https://ourdailyquilt.com; speaker-cutouts)';
@@ -46,6 +52,7 @@ function parseArgs(argv) {
     dryRun: argv.includes('--dry-run'),
     force: argv.includes('--force'),
     scheduled: argv.includes('--scheduled'),
+    todaySpeaker: argv.includes('--today-speaker'),
     softFail: argv.includes('--soft-fail'),
     requireReviewed: argv.includes('--require-reviewed'),
     recropExisting: argv.includes('--recrop-existing') || argv.includes('--crop-existing'),
@@ -318,6 +325,18 @@ function safeName(value) {
     .slice(0, 80) || 'speaker';
 }
 
+async function resolveTodaySpeakerDocId(db) {
+  const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const dateKey = getOpeningAppDateKey();
+  const snap = await db.collection(assignmentsCollection).doc(dateKey).get();
+  if (!snap.exists) throw new Error(`No assignment for opening app-day ${dateKey}`);
+  const sourceId = String((snap.data() || {}).sourceId || '').trim();
+  if (!sourceId) throw new Error(`dailyQuoteAssignments/${dateKey} has no sourceId`);
+  const author = String((snap.data() || {}).authorSnapshot || '').trim();
+  console.log(`[cutout] today-speaker ${dateKey} ${author} -> ${sourceId}`);
+  return sourceId;
+}
+
 async function collectRows(db, collectionName, opts) {
   if (opts.doc) {
     const snap = await db.collection(collectionName).doc(opts.doc).get();
@@ -449,6 +468,10 @@ async function main() {
   }
   const db = initFirebase();
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  if (opts.todaySpeaker && !opts.doc) {
+    opts.doc = await resolveTodaySpeakerDocId(db);
+    opts.scheduled = false;
+  }
   const rows = await collectRows(db, collectionName, opts);
 
   let processed = 0;
