@@ -23,6 +23,7 @@ const {
   buildFirstResponseFirestorePatch,
   buildFirstResponseNotionProperties
 } = require('./scripts/lib/first-response-fields.cjs');
+const { repairFirstResponseFromCatalog } = require('./scripts/lib/repair-first-response-from-catalog-lib.cjs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
@@ -1234,12 +1235,15 @@ function buildReflectionModerationPrompt({ reflectionPrompt, responseText }) {
     '',
     'STAGE 2 — FILTER & SHORTEN',
     "If it does not answer the prompt or is absurdist, reject it.",
+    'Reject meta or joke responses (e.g. claiming to be an AI, bots, or assistants).',
     `If it passes, shorten to ${REFLECTION_MODERATION_BODY_MAX} characters max when needed. When shortening:`,
+    '- Preserve the submitter\'s meaning and concrete details; never invent new ideas or swap the topic',
     '- Keep first-person, descriptive, concrete language',
     '- Bad: "My unfinished things revealed my patterns" (abstracted)',
     '- Good: "I have so many unfinished things. Turns out I\'m not as patient as I thought" (keeps the image)',
     '- No mandates, no aphorisms, no caption-speak',
     '- Do not add an author name, attribution, or em dash',
+    '- End on a complete word or phrase, not a dangling "&" or "and"',
     '',
     'OUTPUT',
     'Return ONLY valid JSON with no markdown or commentary:',
@@ -1284,10 +1288,7 @@ function parseReflectionModerationResult(value) {
   const action = String(parsed.action || '').toLowerCase();
   if (action === 'reject') return { action: 'reject', text: '' };
   if (action !== 'publish') return null;
-  const text = String(parsed.text || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, REFLECTION_MODERATION_BODY_MAX);
+  const text = trimModeratedBodyAtWord(parsed.text, REFLECTION_MODERATION_BODY_MAX);
   if (!text) return null;
   return { action: 'publish', text };
 }
@@ -1309,12 +1310,66 @@ function reflectionAuthorSuffix(displayName) {
   return ` —${name}`;
 }
 
+function reflectionTextHasAuthorSuffix(text) {
+  return /\s[—–-]\s*[^\s—–-].+$/.test(String(text || '').trim());
+}
+
+function stripReflectionAuthorSuffix(text) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const match = raw.match(/^(.*?)\s+[—–-]\s*(.+)$/);
+  if (!match) return raw;
+  const body = String(match[1] || '').trim();
+  const author = String(match[2] || '').trim();
+  if (!body || !author) return raw;
+  return body;
+}
+
+function trimModeratedBodyAtWord(text, maxLen) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!s || s.length <= maxLen) return s;
+  const slice = s.slice(0, maxLen);
+  const lastSpace = slice.lastIndexOf(' ');
+  if (lastSpace >= Math.floor(maxLen * 0.55)) return slice.slice(0, lastSpace).trim();
+  return slice.trim();
+}
+
+function tokenizeReflectionFidelity(text) {
+  return new Set(
+    String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length >= 4)
+  );
+}
+
+/** Reject moderation output that drifts from the submitter's words or reads as non-human meta. */
+function moderationTextFidelityOk(rawText, moderatedBody) {
+  const raw = String(rawText || '').replace(/\s+/g, ' ').trim();
+  const mod = String(moderatedBody || '').replace(/\s+/g, ' ').trim();
+  if (!raw || !mod) return false;
+  if (/\bi\s*['']?m\s+an?\s+ai\b/i.test(mod) || /\bas an ai\b/i.test(mod)) return false;
+  if (/\bchatgpt\b|\blanguage model\b/i.test(mod)) return false;
+  const rawTokens = tokenizeReflectionFidelity(raw);
+  const modTokens = tokenizeReflectionFidelity(mod);
+  if (!modTokens.size) return false;
+  if (!rawTokens.size) return true;
+  let overlap = 0;
+  modTokens.forEach((token) => {
+    if (rawTokens.has(token)) overlap += 1;
+  });
+  const ratio = overlap / modTokens.size;
+  if (modTokens.size <= 4) return ratio >= 0.34;
+  return ratio >= 0.22;
+}
+
 function buildPublishedReflectionText(moderatedBody, displayName) {
-  const body = String(moderatedBody || '').replace(/\s+/g, ' ').trim().slice(0, REFLECTION_MODERATION_BODY_MAX);
+  const body = trimModeratedBodyAtWord(moderatedBody, REFLECTION_MODERATION_BODY_MAX);
   if (!body) return '';
   const suffix = reflectionAuthorSuffix(displayName);
   const maxBodyLen = Math.max(0, REFLECTION_PUBLISHED_TEXT_MAX - suffix.length);
-  const trimmedBody = body.slice(0, maxBodyLen);
+  const trimmedBody = trimModeratedBodyAtWord(body, maxBodyLen);
   return `${trimmedBody}${suffix}`.slice(0, REFLECTION_PUBLISHED_TEXT_MAX);
 }
 
@@ -1335,7 +1390,8 @@ async function patchFirstResponseNotionPage(notionPageId, firstResponse) {
 }
 
 /**
- * Mirror reflectionThemes[0] into quotes + dailyQuoteAssignments for a date (snake_case only).
+ * Mirror an explicit Zak first_response into quotes + dailyQuoteAssignments for a date.
+ * Do not call after community reflection posts or theme curation (themes[0] is not first_response).
  */
 async function syncFirstResponseFieldsForDate(appDateKey, firstResponseOverride) {
   if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(String(appDateKey || '').trim())) return;
@@ -1396,7 +1452,7 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   if (list.length === 1) {
     return {
       visibleIds: [list[0].id],
-      themes: [list[0].text],
+      themes: [reflectionResponseWallText(list[0].data) || list[0].text],
       model: null,
       provider: 'none'
     };
@@ -1427,7 +1483,7 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   const visibleSet = new Set(visibleIds);
   const themes = list
     .filter((item) => visibleSet.has(item.id))
-    .map((item) => item.text);
+    .map((item) => reflectionResponseWallText(item.data) || item.text);
   return { visibleIds, themes: completeReflectionThemes(themes), model, provider };
 }
 
@@ -3898,6 +3954,15 @@ app.post('/api/reflection-response', async (req, res) => {
       });
     }
 
+    if (!moderationTextFidelityOk(rawText, moderation.text)) {
+      console.warn('Reflection moderation rejected (output drifted from submitter text).');
+      return res.status(422).json({
+        success: false,
+        error: REFLECTION_REJECT_USER_MESSAGE,
+        rejected: true
+      });
+    }
+
     const publishedText = buildPublishedReflectionText(moderation.text, displayName);
     if (!publishedText) {
       return res.status(422).json({
@@ -3941,7 +4006,6 @@ app.post('/api/reflection-response', async (req, res) => {
     };
     if (reflectionPromptSnapshot) themePatch.reflectionPrompt = reflectionPromptSnapshot;
     await themeRef.set(themePatch, { merge: true });
-    await syncFirstResponseFieldsForDate(appDateKey);
 
     return res.json({
       success: true,
@@ -3988,14 +4052,25 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
     const themes = Array.isArray(data.themes)
       ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
       : [];
-    if (!themes.length) {
-      return res.json({ success: true, found: false, appDateKey, themes: [] });
+    const first_response = String(data.first_response || '').replace(/\s+/g, ' ').trim();
+    const user_name = String(data.user_name || FIRST_RESPONSE_USER_NAME).trim() || FIRST_RESPONSE_USER_NAME;
+    if (!themes.length && !first_response) {
+      return res.json({
+        success: true,
+        found: false,
+        appDateKey,
+        themes: [],
+        first_response: '',
+        user_name
+      });
     }
     return res.json({
       success: true,
       found: true,
       appDateKey,
       themes,
+      first_response,
+      user_name,
       reflectionPrompt: String(data.reflectionPrompt || data.communityPrompt || '').trim(),
       responseCount: Number(data.responseCount) || 0,
       provider: data.provider || null,
@@ -4045,10 +4120,19 @@ function reflectionResponseWallText(data) {
   const row = data && typeof data === 'object' ? data : {};
   const status = String(row.status || '').toLowerCase();
   if (status === 'hidden' || status === 'rejected') return '';
+  const author = normalizeSubmittedAuthorName(row.authorDisplayName || '');
   const published = String(row.publishedText || '').trim();
-  if (published) return published;
+  if (published) {
+    if (author && !reflectionTextHasAuthorSuffix(published)) {
+      return buildPublishedReflectionText(stripReflectionAuthorSuffix(published), author);
+    }
+    return published;
+  }
   if (status && status !== 'published') return '';
-  return String(row.responseText || '').trim();
+  const raw = String(row.responseText || '').trim();
+  if (!raw) return '';
+  if (author) return buildPublishedReflectionText(raw, author);
+  return raw;
 }
 
 /** Published responses for curation, oldest first. */
@@ -4293,12 +4377,9 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
 
     const responseCountTotal = publishedItems.length;
     const curatedAtIso = getUtcIsoNow();
-    const firstResponse = String(themes[0] || '').replace(/\s+/g, ' ').trim();
     const themePayload = {
       appDateKey,
       themes,
-      first_response: firstResponse,
-      user_name: FIRST_RESPONSE_USER_NAME,
       reflectionPrompt,
       responseCount: responseCountTotal,
       responseSampleSize: publishedItems.length,
@@ -4315,7 +4396,6 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       curationModel: isCurateMode ? model : null
     };
     await db.collection('reflectionThemes').doc(appDateKey).set(themePayload);
-    await syncFirstResponseFieldsForDate(appDateKey, firstResponse);
 
     return res.json({
       success: true,
@@ -4334,6 +4414,55 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'Reflection theme generation failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/repair-first-response', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).send('');
+});
+
+/** Restore first_response from quotes/{dateKey} catalog onto assignment + source quote. Auth: x-reset-token. */
+app.post('/api/admin/repair-first-response', async (req, res) => {
+  setResetApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const expectedToken = process.env.RESET_TOKEN || process.env.REFLECTION_THEME_TOKEN || '';
+    if (!expectedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'RESET_TOKEN or REFLECTION_THEME_TOKEN must be set on the server'
+      });
+    }
+    const providedToken = req.header('x-reset-token') || req.header('x-reflection-theme-token');
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.date || '').trim())
+      ? String(body.appDateKey || body.date).trim()
+      : '';
+    if (!appDateKey) {
+      return res.status(400).json({ success: false, error: 'appDateKey (YYYY-MM-DD) is required' });
+    }
+    const dryRun = body.dryRun === true || String(body.dryRun || '').toLowerCase() === 'true';
+
+    const result = await repairFirstResponseFromCatalog(db, appDateKey, {
+      dryRun,
+      FieldValue: admin.firestore.FieldValue
+    });
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('❌ repair-first-response failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'repair-first-response failed',
       timestamp: getUtcIsoNow()
     });
   }
