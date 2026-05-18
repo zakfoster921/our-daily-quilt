@@ -9,7 +9,6 @@ const admin = require('firebase-admin');
 const {
   FIRST_RESPONSE_USER_NAME,
   isDateDocId: isReflectionDateKey,
-  firstThemePatchFromData,
   buildFirstResponseFirestorePatch,
   buildFirstResponseNotionProperties
 } = require('./lib/first-response-fields.cjs');
@@ -256,15 +255,15 @@ async function run() {
 
   const assignmentCollection =
     process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
-  const reflectionThemesSnap = await db.collection('reflectionThemes').get();
+  const assignmentSnap = await db.collection(assignmentCollection).get();
+  /** Zak's first_response lives on assignments (and catalog), not community reflection themes. */
   const firstResponseByDate = new Map();
-  for (const doc of reflectionThemesSnap.docs) {
+  for (const doc of assignmentSnap.docs) {
     if (!isReflectionDateKey(doc.id)) continue;
-    const text = firstThemePatchFromData(doc.data());
+    const text = String(doc.data()?.first_response || '').replace(/\s+/g, ' ').trim();
     if (text) firstResponseByDate.set(doc.id, text);
   }
 
-  const assignmentSnap = await db.collection(assignmentCollection).get();
   const scheduledBySourceId = new Map(); // raw sourceId -> [dateKey] (legacy)
   const scheduledBySourceNorm = new Map(); // normalized id -> [dateKey]
   const sourceIdNormToRaw = new Map(); // normalized -> first-seen raw id for Notion PATCH

@@ -18,6 +18,11 @@ try {
 
 const { buildSubmittedQuotePrefillPrompt } = require('./lib/submitted-quote-prefill-prompts');
 const {
+  REFLECTION_MODERATION_BODY_MAX,
+  buildReflectionModerationPrompt,
+  buildReflectionCurationPrompt
+} = require('./lib/reflection-prompts');
+const {
   FIRST_RESPONSE_USER_NAME,
   firstThemePatchFromData,
   buildFirstResponseFirestorePatch,
@@ -1130,79 +1135,57 @@ function postJsonWithHttps({ hostname, path: requestPath, headers, body }) {
   });
 }
 
-/** Strip model self-verification appended after the real idea (same-line "Count: 83 ✓", "Check: …", "Fix one. Revise", etc.). */
-function stripReflectionThemeModelMeta(theme) {
-  let s = String(theme || '').replace(/\s+/g, ' ').trim();
-  if (!s) return s;
-  s = s.replace(/\s+Count:\s*\d+(?:\s*[✓✔√])?[\s\S]*$/i, '').trim();
-  s = s.replace(/\s+No idea starts[\s\S]*$/i, '').trim();
-  s = s.replace(/\s+Check:\s*(?:Improv|I[,']|same word|different words)[\s\S]*$/i, '').trim();
-  s = s.replace(/\s+Fix one\.[\s\S]*$/i, '').trim();
-  s = s.replace(/\s+Revise\s*$/i, '').trim();
-  return s.trim();
+function reflectionWallAuthorLabel(dataOrName) {
+  const name = normalizeSubmittedAuthorName(
+    dataOrName && typeof dataOrName === 'object'
+      ? dataOrName.authorDisplayName || ''
+      : dataOrName || ''
+  );
+  if (name && !/^friend$/i.test(name)) return name;
+  return 'Friend';
 }
 
-function extractReflectionThemesFromText(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return [];
-  let parsed = null;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (_) {
-    const match = raw.match(/\{[\s\S]*\}/) || raw.match(/\[[\s\S]*\]/);
-    if (match) {
-      try {
-        parsed = JSON.parse(match[0]);
-      } catch (_) {
-        parsed = null;
-      }
-    }
+function normalizeReflectionWallThemeEntry(entry) {
+  if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+    const text = String(entry.text ?? entry.body ?? entry.theme ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\.+$/g, '')
+      .trim();
+    if (!text) return null;
+    const author = String(entry.author ?? entry.authorDisplayName ?? '').replace(/\s+/g, ' ').trim()
+      || reflectionWallAuthorLabel(entry);
+    return { text, author };
   }
-  const source = Array.isArray(parsed)
-    ? parsed
-    : parsed?.themes || parsed?.ideas || parsed?.communityIdeas || parsed?.reflectionThemes || parsed?.themeStatements || parsed?.items;
-  const themes = (Array.isArray(source) ? source : [])
-    .map((theme) => {
-      if (theme && typeof theme === 'object') {
-        return theme.idea || theme.theme || theme.text || theme.statement || theme.summary || '';
-      }
-      return theme;
-    })
-    .map((theme) => stripReflectionThemeModelMeta(String(theme || '').replace(/\s+/g, ' ').trim()))
-    .filter(Boolean);
-  if (themes.length) return themes;
-  const labeledMatches = Array.from(raw.matchAll(/(?:\*\*)?\s*(?:THEME|IDEA)\s*\d+\s*(?:\*\*)?\s*[:\-.)]?\s*(?:\*\*)?\s*([\s\S]*?)(?=\s*(?:\*\*)?\s*(?:THEME|IDEA)\s*\d+\s*(?:\*\*)?\s*[:\-.)]?|$)/gi))
-    .map((match) => stripReflectionThemeModelMeta(String(match[1] || '').replace(/\*\*/g, '').trim()))
-    .filter(Boolean);
-  if (labeledMatches.length) return labeledMatches;
-  return raw
-    .split(/\n+/)
-    .map((line) => line
-      .replace(/^\s*(?:THEME|IDEA)\s*\d+\s*[:\-.)]\s*/i, '')
-      .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '')
-      .replace(/^["']|["']$/g, '')
-      .trim())
-    .map((line) => stripReflectionThemeModelMeta(line))
-    .filter((line) => line && !/^\{|\}|\[|\]|themes|ideas/i.test(line))
-    .filter((line) => !/^(?:count|check|no idea starts|fix one|revise)\b/i.test(line));
+  const text = String(entry || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.+$/g, '')
+    .trim();
+  if (!text) return null;
+  return { text, author: '' };
 }
 
-function completeReflectionThemes(themes) {
+function buildReflectionWallThemeEntry(data) {
+  const text = reflectionResponseWallBody(data);
+  if (!text) return null;
+  return { text, author: reflectionWallAuthorLabel(data) };
+}
+
+function dedupeReflectionWallThemes(themes) {
   const seen = new Set();
   return (Array.isArray(themes) ? themes : [])
-    .map((theme) => stripReflectionThemeModelMeta(String(theme || '').replace(/\s+/g, ' ').trim()))
-    .map((theme) => theme.replace(/\.+$/g, '').trim())
+    .map(normalizeReflectionWallThemeEntry)
     .filter(Boolean)
-    .filter((theme) => {
-      const key = theme.toLowerCase();
+    .filter((entry) => {
+      const key = `${entry.text.toLowerCase()}|${entry.author.toLowerCase()}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 }
 
-const REFLECTION_MODERATION_BODY_MAX = 200;
-const REFLECTION_PUBLISHED_TEXT_MAX = 240;
+const REFLECTION_PUBLISHED_TEXT_MAX = 200;
 const REFLECTION_REJECT_USER_MESSAGE =
   'Something here got flagged. Try again?';
 
@@ -1222,65 +1205,6 @@ function parseJsonObjectFromAiText(value) {
       return null;
     }
   }
-}
-
-function buildReflectionModerationPrompt({ reflectionPrompt, responseText }) {
-  const rp = String(reflectionPrompt || '').replace(/\s+/g, ' ').trim();
-  const rt = String(responseText || '').replace(/\s+/g, ' ').trim();
-  const preamble = [rp, rt].filter(Boolean).join('\n\n');
-  const instructions = [
-    'You are a two-stage moderation pipeline for ONE user reflection. Run both stages in order.',
-    '',
-    'STAGE 1 — MODERATE',
-    'If this response is offensive, hateful, sexually explicit, or personally attacking, reject it.',
-    '',
-    'STAGE 2 — FILTER & SHORTEN',
-    "If it does not answer the prompt or is absurdist, reject it.",
-    'Reject meta or joke responses (e.g. claiming to be an AI, bots, or assistants).',
-    `If it passes, shorten to ${REFLECTION_MODERATION_BODY_MAX} characters max when needed. When shortening:`,
-    '- Preserve the submitter\'s meaning and concrete details; never invent new ideas or swap the topic',
-    '- Keep first-person, descriptive, concrete language',
-    '- Bad: "My unfinished things revealed my patterns" (abstracted)',
-    '- Good: "I have so many unfinished things. Turns out I\'m not as patient as I thought" (keeps the image)',
-    '- No mandates, no aphorisms, no caption-speak',
-    '- Do not add an author name, attribution, or em dash',
-    '- End on a complete word or phrase, not a dangling "&" or "and"',
-    '',
-    'OUTPUT',
-    'Return ONLY valid JSON with no markdown or commentary:',
-    '{"action":"publish"|"reject","text":"..."}',
-    '- On reject: {"action":"reject","text":""}',
-    '- On publish: {"action":"publish","text":"<shortened body only>"}'
-  ].join('\n');
-  return preamble ? `${preamble}\n\n${instructions}` : instructions;
-}
-
-function buildReflectionCurationPrompt({ reflectionPrompt, items }) {
-  const rp = String(reflectionPrompt || '').replace(/\s+/g, ' ').trim();
-  const lines = (Array.isArray(items) ? items : [])
-    .map((item) => {
-      const id = String(item?.id || '').trim();
-      const text = String(item?.text || '').replace(/\s+/g, ' ').trim();
-      if (!id || !text) return '';
-      return `RESPONSE ${id}: ${text}`;
-    })
-    .filter(Boolean);
-  const preamble = [rp, ...lines].filter(Boolean).join('\n\n');
-  const instructions = [
-    'You curate which published reflections stay visible on a community wall.',
-    '',
-    'RULES',
-    '- Use the exact response text already shown; do not rewrite, merge, or synthesize new wording.',
-    '- When two or more responses are very similar in meaning, keep only the single most engaging and insightful id.',
-    '- Do not combine similar responses into one line.',
-    '- Keep every genuinely distinct response.',
-    '',
-    'OUTPUT',
-    'Return ONLY valid JSON with no markdown or commentary:',
-    '{"visibleIds":["<id>","<id>",...]}',
-    'Every id in visibleIds must appear in the input. Include at least one id when any responses were provided.'
-  ].join('\n');
-  return preamble ? `${preamble}\n\n${instructions}` : instructions;
 }
 
 function parseReflectionModerationResult(value) {
@@ -1451,9 +1375,13 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   const list = Array.isArray(items) ? items.filter((item) => item?.id && item?.text) : [];
   if (!list.length) return { visibleIds: [], themes: [], model: null, provider: null };
   if (list.length === 1) {
+    const solo = buildReflectionWallThemeEntry(list[0].data) || normalizeReflectionWallThemeEntry({
+      text: list[0].text,
+      author: reflectionWallAuthorLabel(list[0].data || {})
+    });
     return {
       visibleIds: [list[0].id],
-      themes: [reflectionResponseWallText(list[0].data) || list[0].text],
+      themes: solo ? [solo] : [],
       model: null,
       provider: 'none'
     };
@@ -1484,54 +1412,12 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   const visibleSet = new Set(visibleIds);
   const themes = list
     .filter((item) => visibleSet.has(item.id))
-    .map((item) => reflectionResponseWallText(item.data) || item.text);
-  return { visibleIds, themes: completeReflectionThemes(themes), model, provider };
-}
-
-function buildReflectionThemesPrompt({ reflectionPrompt, responses }) {
-  const rp = String(reflectionPrompt || '').replace(/\s+/g, ' ').trim();
-  const responseParagraphs = (Array.isArray(responses) ? responses : [])
-    .map((text) => String(text || '').replace(/\s+/g, ' ').trim())
+    .map((item) => buildReflectionWallThemeEntry(item.data) || normalizeReflectionWallThemeEntry({
+      text: item.text,
+      author: reflectionWallAuthorLabel(item.data || {})
+    }))
     .filter(Boolean);
-  /** No date key, labels, or numbering — raw prompt + responses only (experiment). */
-  const preamble = [rp, ...responseParagraphs].filter(Boolean).join('\n\n');
-  const instructions = [
-    'You are a three-stage pipeline. Run all three stages in order before writing output.',
-    '',
-    'STAGE 1 — MODERATE',
-    'Remove any response that is offensive, hateful, sexually explicit, or personally attacking. Do not reference removed responses in your output.',
-    '',
-    'STAGE 2 — FILTER & SHORTEN',
-    'Remove any response that doesn\'t answer the prompt or is absurdist.',
-    `Shorten any remaining response over ${REFLECTION_MODERATION_BODY_MAX} characters. When shortening:`,
-    '- Keep first-person, descriptive, concrete language',
-    '- Bad: "My unfinished things revealed my patterns" (abstracted)',
-    '- Good: "I have so many unfinished things. Turns out I\'m not as patient as I thought" (keeps the image)',
-    '- No mandates, no aphorisms, no caption-speak',
-    '',
-    'STAGE 3 — SYNTHESIZE',
-    'Read all surviving responses before writing anything. Ask:',
-    '- What is this person actually DOING?',
-    '- Can someone borrow this move without copying their specific example?',
-    '- Does my idea keep the concrete detail that makes it real?',
-    '',
-    'Group responses sharing the same observation or move. If two ideas lose nothing by merging, merge them. Keep the one with more specific language. Preserve original phrasing when possible — only rephrase when merging.',
-    'If multiple responses are very similar, choose the single most engaging and insightful one.',
-    'Your output must be traceable to specific language in the responses. Test each idea: which response does this come from? If you can\'t answer, discard it.',
-    '',
-    'OUTPUT RULES',
-    `- Each idea: ${REFLECTION_MODERATION_BODY_MAX} characters max`,
-    '- First person, descriptive, no mandates',
-    '- Write like a thoughtful friend, not a caption',
-    '- No em dashes',
-    '- Do not start more than one idea with the same word',
-    '- Return plain text only:',
-    '',
-    'IDEA 1: <idea>',
-    'IDEA 2: <idea>',
-    'Continue only for genuinely distinct ideas.'
-  ].join('\n');
-  return preamble ? `${preamble}\n\n${instructions}` : instructions;
+  return { visibleIds, themes: dedupeReflectionWallThemes(themes), model, provider };
 }
 
 async function postReflectionThemesToGemini({ apiKey, model, prompt, maxTokens = 1200 }) {
@@ -1559,41 +1445,6 @@ async function postReflectionThemesToGemini({ apiKey, model, prompt, maxTokens =
     .trim();
 }
 
-async function generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses }) {
-  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured on server');
-  const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
-
-  const firstText = await postReflectionThemesToGemini({ apiKey, model, prompt });
-  let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
-  const shouldRetryForMoreIdeas = responses.length >= 3 && themes.length < 2;
-  if (!themes.length || shouldRetryForMoreIdeas) {
-    console.warn(`Gemini returned ${themes.length} usable community ideas on first attempt; retrying for better range.`);
-    const repairPrompt = [
-      prompt,
-      '',
-      `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
-      'Return one idea for each genuinely distinct response or response cluster, up to 10 ideas.',
-      'Follow every instruction in the prompt above exactly.',
-      'Output nothing except IDEA lines: no counts, checkmarks, Check:, or revision notes.',
-      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels.'
-    ].join('\n');
-    const repairText = await postReflectionThemesToGemini({ apiKey, model, prompt: repairPrompt });
-    themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
-    if (!themes.length) {
-      const preview = String(repairText || firstText || '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 600);
-      const error = new Error(`Gemini returned no usable community ideas. Raw output preview: ${preview || '[empty]'}`);
-      error.geminiOutputPreview = preview;
-      throw error;
-    }
-  }
-  return { themes, model, provider: 'gemini' };
-}
-
 async function postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens = 1200 }) {
   const result = await postJsonWithHttps({
     hostname: 'api.anthropic.com',
@@ -1613,51 +1464,6 @@ async function postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens =
     .map((part) => part?.type === 'text' ? part.text : '')
     .join('\n')
     .trim();
-}
-
-async function generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses }) {
-  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not configured on server');
-  const model = String(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
-  const prompt = buildReflectionThemesPrompt({ dateKey, reflectionPrompt, responses });
-
-  const firstText = await postReflectionThemesToClaude({ apiKey, model, prompt });
-  let themes = completeReflectionThemes(extractReflectionThemesFromText(firstText));
-  const shouldRetryForMoreIdeas = responses.length >= 3 && themes.length < 2;
-  if (!themes.length || shouldRetryForMoreIdeas) {
-    console.warn(`Claude returned ${themes.length} usable community ideas on first attempt; retrying for better range.`);
-    const repairPrompt = [
-      prompt,
-      '',
-      `Your previous output produced ${themes.length} usable ideas from ${responses.length} private responses. Try again with better range.`,
-      'Return one idea for each genuinely distinct response or response cluster, up to 10 ideas.',
-      'Follow every instruction in the prompt above exactly.',
-      'Output nothing except IDEA lines: no counts, checkmarks, Check:, or revision notes.',
-      'Return plain text only with IDEA 1:, IDEA 2:, etc. labels.'
-    ].join('\n');
-    const repairText = await postReflectionThemesToClaude({ apiKey, model, prompt: repairPrompt });
-    themes = completeReflectionThemes(extractReflectionThemesFromText(repairText));
-    if (!themes.length) {
-      const preview = String(repairText || firstText || '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 600);
-      const error = new Error(`Claude returned no usable community ideas. Raw output preview: ${preview || '[empty]'}`);
-      error.claudeOutputPreview = preview;
-      throw error;
-    }
-  }
-  return { themes, model, provider: 'anthropic' };
-}
-
-async function generateReflectionThemesWithAi({ dateKey, reflectionPrompt, responses }) {
-  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
-    return generateReflectionThemesWithClaude({ dateKey, reflectionPrompt, responses });
-  }
-  if (String(process.env.GEMINI_API_KEY || '').trim()) {
-    return generateReflectionThemesWithGemini({ dateKey, reflectionPrompt, responses });
-  }
-  throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
 }
 
 function normalizeSubmittedAuthorName(value) {
@@ -4000,7 +3806,10 @@ app.post('/api/reflection-response', async (req, res) => {
     const themeRef = db.collection('reflectionThemes').doc(appDateKey);
     const themePatch = {
       appDateKey,
-      themes: admin.firestore.FieldValue.arrayUnion(publishedText),
+      themes: admin.firestore.FieldValue.arrayUnion({
+        text: trimModeratedBodyAtWord(moderation.text, REFLECTION_MODERATION_BODY_MAX),
+        author: reflectionWallAuthorLabel(authorDisplayName)
+      }),
       responseCount: admin.firestore.FieldValue.increment(1),
       updatedAtIso: getUtcIsoNow(),
       lastPublishedAtIso: getUtcIsoNow()
@@ -4050,9 +3859,7 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
       return res.json({ success: true, found: false, appDateKey, themes: [] });
     }
     const data = themeDoc.data() || {};
-    const themes = Array.isArray(data.themes)
-      ? data.themes.map((theme) => String(theme || '').trim()).filter(Boolean)
-      : [];
+    const themes = dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []);
     const first_response = String(data.first_response || '').replace(/\s+/g, ' ').trim();
     const user_name = String(data.user_name || FIRST_RESPONSE_USER_NAME).trim() || FIRST_RESPONSE_USER_NAME;
     if (!themes.length && !first_response) {
@@ -4136,11 +3943,23 @@ function reflectionResponseWallText(data) {
   return raw;
 }
 
+/** Body only for the reflection wall carousel (author lives in authorDisplayName). */
+function reflectionResponseWallBody(data) {
+  const full = reflectionResponseWallText(data);
+  if (!full) return '';
+  const author = normalizeSubmittedAuthorName((data && typeof data === 'object' ? data : {}).authorDisplayName || '');
+  if (author) {
+    const suffix = ` —${author}`;
+    if (full.endsWith(suffix)) return full.slice(0, -suffix.length).trim();
+  }
+  return stripReflectionAuthorSuffix(full);
+}
+
 /** Published responses for curation, oldest first. */
 async function loadPublishedReflectionResponsesForCuration(db, appDateKey, responseLimit) {
   const mapDoc = (doc) => {
     const data = doc.data() || {};
-    const text = reflectionResponseWallText(data);
+    const text = reflectionResponseWallBody(data);
     if (!text) return null;
     return { id: doc.id, text, data };
   };
@@ -4242,8 +4061,6 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       ? String(body.appDateKey || body.date).trim()
       : getAppDateKey();
     const force = body.force === true || String(body.force || '').toLowerCase() === 'true';
-    const mode = String(body.mode || 'curate').trim().toLowerCase();
-    const isCurateMode = mode !== 'legacy';
 
     const themeDocSnap = await db.collection('reflectionThemes').doc(appDateKey).get();
     const priorThemeData = themeDocSnap.exists ? themeDocSnap.data() || {} : null;
@@ -4261,7 +4078,7 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       });
     }
 
-    if (!force && !isCurateMode && themeDocSnap.exists && priorThemeData) {
+    if (!force && themeDocSnap.exists && priorThemeData) {
       const genMs = reflectionThemeGenerationTimeMillis(priorThemeData, themeDocSnap);
       const priorTotal = Number(priorThemeData.responseCount) || 0;
       const totalReflectionResponses = await countReflectionResponsesForDate(db, appDateKey);
@@ -4333,48 +4150,31 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       reflectionPrompt = String(priorThemeData?.reflectionPrompt || priorThemeData?.communityPrompt || '').trim();
     }
 
-    let themes = [];
-    let model = null;
-    let provider = null;
-    let visibleIds = [];
-
-    if (isCurateMode) {
-      const curation = await curateReflectionResponsesWithAi({
-        reflectionPrompt,
-        items: publishedItems.map((item) => ({ id: item.id, text: item.text }))
-      });
-      themes = curation.themes;
-      model = curation.model;
-      provider = curation.provider;
-      visibleIds = curation.visibleIds;
-      const visibleSet = new Set(visibleIds);
-      const batch = db.batch();
-      publishedItems.forEach((item) => {
-        const ref = db.collection('reflectionResponses').doc(item.id);
-        if (visibleSet.has(item.id)) {
-          batch.update(ref, {
-            status: 'published',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-        } else {
-          batch.update(ref, {
-            status: 'hidden',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-        }
-      });
-      await batch.commit();
-    } else {
-      const responses = publishedItems.map((item) => item.text);
-      const generated = await generateReflectionThemesWithAi({
-        dateKey: appDateKey,
-        reflectionPrompt,
-        responses
-      });
-      themes = generated.themes;
-      model = generated.model;
-      provider = generated.provider;
-    }
+    const curation = await curateReflectionResponsesWithAi({
+      reflectionPrompt,
+      items: publishedItems.map((item) => ({ id: item.id, text: item.text, data: item.data }))
+    });
+    const themes = curation.themes;
+    const model = curation.model;
+    const provider = curation.provider;
+    const visibleIds = curation.visibleIds;
+    const visibleSet = new Set(visibleIds);
+    const batch = db.batch();
+    publishedItems.forEach((item) => {
+      const ref = db.collection('reflectionResponses').doc(item.id);
+      if (visibleSet.has(item.id)) {
+        batch.update(ref, {
+          status: 'published',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } else {
+        batch.update(ref, {
+          status: 'hidden',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    });
+    await batch.commit();
 
     const responseCountTotal = publishedItems.length;
     const curatedAtIso = getUtcIsoNow();
@@ -4386,15 +4186,15 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       responseSampleSize: publishedItems.length,
       model,
       provider,
-      status: isCurateMode ? 'curated' : 'generated',
+      status: 'curated',
       textSnapshot: quoteSnapshot?.text || '',
       authorSnapshot: quoteSnapshot?.author || '',
       generatedAt: admin.firestore.FieldValue.serverTimestamp(),
       generatedAtIso: curatedAtIso,
-      curatedAtIso: isCurateMode ? curatedAtIso : (priorThemeData?.curatedAtIso || null),
+      curatedAtIso,
       visibleCount: themes.length,
-      curationProvider: isCurateMode ? provider : null,
-      curationModel: isCurateMode ? model : null
+      curationProvider: provider,
+      curationModel: model
     };
     await db.collection('reflectionThemes').doc(appDateKey).set(themePayload);
 
@@ -4408,7 +4208,7 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       visibleCount: themes.length,
       model,
       provider,
-      mode: isCurateMode ? 'curate' : 'legacy'
+      mode: 'curate'
     });
   } catch (error) {
     console.error('❌ Reflection theme generation failed:', error);

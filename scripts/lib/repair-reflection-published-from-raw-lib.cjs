@@ -3,7 +3,7 @@
  * (e.g. after raising REFLECTION_MODERATION_BODY_MAX).
  */
 const REFLECTION_MODERATION_BODY_MAX = 200;
-const REFLECTION_PUBLISHED_TEXT_MAX = 240;
+const REFLECTION_PUBLISHED_TEXT_MAX = 200;
 
 function isDateDocId(id) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(id || '').trim());
