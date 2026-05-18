@@ -1,0 +1,79 @@
+name: Repair reflection published text from raw
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_key:
+        description: "App date (YYYY-MM-DD)"
+        required: true
+        default: "2026-05-18"
+      response_id:
+        description: "Optional reflectionResponses doc id"
+        required: false
+        default: "LXc8IjumRqJmBBWDsJrb"
+      dry_run:
+        description: "Preview only (no Firestore writes)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  repair-reflection-published:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call repair-reflection-published endpoint
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
+          REFLECTION_THEME_TOKEN: ${{ secrets.REFLECTION_THEME_TOKEN }}
+          DATE_KEY: ${{ inputs.date_key }}
+          RESPONSE_ID: ${{ inputs.response_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RESET_URL:-}" ]; then
+            echo "Missing RESET_URL secret"
+            exit 1
+          fi
+
+          TOKEN="${REFLECTION_THEME_TOKEN:-${RESET_TOKEN:-}}"
+          if [ -z "${TOKEN:-}" ]; then
+            echo "Missing REFLECTION_THEME_TOKEN or RESET_TOKEN secret"
+            exit 1
+          fi
+
+          if ! echo "${DATE_KEY}" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            echo "Invalid date_key: ${DATE_KEY}"
+            exit 1
+          fi
+
+          API_BASE_URL="${RESET_URL%/api/daily-reset}"
+          REPAIR_URL="${API_BASE_URL}/api/admin/repair-reflection-published"
+          BODY="{\"appDateKey\":\"${DATE_KEY}\",\"dryRun\":${DRY_RUN}"
+          if [ -n "${RESPONSE_ID:-}" ]; then
+            BODY="${BODY},\"responseId\":\"${RESPONSE_ID}\""
+          fi
+          BODY="${BODY}}"
+
+          echo "POST ${REPAIR_URL} (dryRun=${DRY_RUN})"
+          http_code=$(curl -sS -o response.json -w "%{http_code}" \
+            --max-time 120 \
+            -X POST "$REPAIR_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-reset-token: $TOKEN" \
+            --data "$BODY") || http_code="000"
+
+          echo "HTTP $http_code"
+          cat response.json
+          echo
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "Repair request failed"
+            exit 1
+          fi
+
+          if ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' response.json; then
+            echo "Repair returned success=false"
+            exit 1
+          fi

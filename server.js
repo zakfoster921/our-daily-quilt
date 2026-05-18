@@ -24,6 +24,7 @@ const {
   buildFirstResponseNotionProperties
 } = require('./scripts/lib/first-response-fields.cjs');
 const { repairFirstResponseFromCatalog } = require('./scripts/lib/repair-first-response-from-catalog-lib.cjs');
+const { repairReflectionPublishedFromRaw } = require('./scripts/lib/repair-reflection-published-from-raw-lib.cjs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
@@ -1200,7 +1201,7 @@ function completeReflectionThemes(themes) {
     });
 }
 
-const REFLECTION_MODERATION_BODY_MAX = 100;
+const REFLECTION_MODERATION_BODY_MAX = 200;
 const REFLECTION_PUBLISHED_TEXT_MAX = 240;
 const REFLECTION_REJECT_USER_MESSAGE =
   'Something here got flagged. Try again?';
@@ -1502,7 +1503,7 @@ function buildReflectionThemesPrompt({ reflectionPrompt, responses }) {
     '',
     'STAGE 2 — FILTER & SHORTEN',
     'Remove any response that doesn\'t answer the prompt or is absurdist.',
-    'Shorten any remaining response over 100 characters. When shortening:',
+    `Shorten any remaining response over ${REFLECTION_MODERATION_BODY_MAX} characters. When shortening:`,
     '- Keep first-person, descriptive, concrete language',
     '- Bad: "My unfinished things revealed my patterns" (abstracted)',
     '- Good: "I have so many unfinished things. Turns out I\'m not as patient as I thought" (keeps the image)',
@@ -1519,7 +1520,7 @@ function buildReflectionThemesPrompt({ reflectionPrompt, responses }) {
     'Your output must be traceable to specific language in the responses. Test each idea: which response does this come from? If you can\'t answer, discard it.',
     '',
     'OUTPUT RULES',
-    '- Each idea: 100 characters max',
+    `- Each idea: ${REFLECTION_MODERATION_BODY_MAX} characters max`,
     '- First person, descriptive, no mandates',
     '- Write like a thoughtful friend, not a caption',
     '- No em dashes',
@@ -4463,6 +4464,58 @@ app.post('/api/admin/repair-first-response', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'repair-first-response failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/repair-reflection-published', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).send('');
+});
+
+/** Rebuild publishedText + themes entry from rawText. Auth: x-reset-token. */
+app.post('/api/admin/repair-reflection-published', async (req, res) => {
+  setResetApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const expectedToken = process.env.RESET_TOKEN || process.env.REFLECTION_THEME_TOKEN || '';
+    if (!expectedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'RESET_TOKEN or REFLECTION_THEME_TOKEN must be set on the server'
+      });
+    }
+    const providedToken = req.header('x-reset-token') || req.header('x-reflection-theme-token');
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.date || '').trim())
+      ? String(body.appDateKey || body.date).trim()
+      : '';
+    if (!appDateKey) {
+      return res.status(400).json({ success: false, error: 'appDateKey (YYYY-MM-DD) is required' });
+    }
+    const dryRun = body.dryRun === true || String(body.dryRun || '').toLowerCase() === 'true';
+    const responseId = String(body.responseId || body.response_id || '').trim();
+
+    const result = await repairReflectionPublishedFromRaw(db, {
+      appDateKey,
+      responseId,
+      publishedText: body.publishedText,
+      dryRun
+    });
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('❌ repair-reflection-published failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'repair-reflection-published failed',
       timestamp: getUtcIsoNow()
     });
   }
