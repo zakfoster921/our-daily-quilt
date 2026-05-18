@@ -1,6 +1,6 @@
 const express = require('express');
 const admin = require('firebase-admin');
-const { createCanvas } = require('canvas');
+const { createCanvas, loadImage } = require('canvas');
 const { spawn } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
@@ -2786,6 +2786,49 @@ const ARCHIVE_QUILT_PREVIEW_BG = '#f6f4f1';
 const ARCHIVE_QUILT_IMAGE_SOURCE = 'final_archive';
 const ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC = 'classic';
 
+/** Replace near-white IG card matte in classic PNGs with reflection-archive warm neutral. */
+async function applyWarmNeutralMatteToImageBuffer(inputBuffer, matteHex = ARCHIVE_QUILT_PREVIEW_BG) {
+  const img = await loadImage(inputBuffer);
+  const w = Math.max(1, img.width || 1);
+  const h = Math.max(1, img.height || 1);
+  const matteMatch = /^#([0-9a-f]{6})$/i.exec(String(matteHex || '').trim());
+  const mr = matteMatch ? parseInt(matteMatch[1].slice(0, 2), 16) : 246;
+  const mg = matteMatch ? parseInt(matteMatch[1].slice(2, 4), 16) : 244;
+  const mb = matteMatch ? parseInt(matteMatch[1].slice(4, 6), 16) : 241;
+  const canvas = createCanvas(w, h);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = matteHex;
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  const threshold = 240;
+  const maxSat = 0.14;
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const px = imageData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3];
+    if (a < 12) {
+      px[i] = mr;
+      px[i + 1] = mg;
+      px[i + 2] = mb;
+      px[i + 3] = 255;
+      continue;
+    }
+    const r = px[i];
+    const g = px[i + 1];
+    const b = px[i + 2];
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
+    if (r >= threshold && g >= threshold && b >= threshold && sat <= maxSat) {
+      px[i] = mr;
+      px[i + 1] = mg;
+      px[i + 2] = mb;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toBuffer('image/png');
+}
+
 function pickQuiltImageUrlFromDoc(data) {
   if (!data || typeof data !== 'object') return '';
   return String(data.quiltImageUrl || data.classicUrl || data.imageStorageUrl || '').trim();
@@ -3785,8 +3828,18 @@ app.get('/api/proxy-image', async (req, res) => {
     if (!contentType.startsWith('image/')) {
       return res.status(415).json({ error: `Unsupported content type: ${contentType}` });
     }
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    res.setHeader('Content-Type', contentType);
+    let buf = Buffer.from(await upstream.arrayBuffer());
+    const matte = String(req.query?.matte || '').trim().toLowerCase();
+    if (matte === 'warm' || matte === 'f6f4f1' || matte === ARCHIVE_QUILT_PREVIEW_BG.toLowerCase()) {
+      try {
+        buf = await applyWarmNeutralMatteToImageBuffer(buf, ARCHIVE_QUILT_PREVIEW_BG);
+        res.setHeader('Content-Type', 'image/png');
+      } catch (matteErr) {
+        console.warn('proxy-image warm matte failed:', matteErr.message);
+      }
+    } else {
+      res.setHeader('Content-Type', contentType);
+    }
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.send(buf);
   } catch (error) {

@@ -25184,13 +25184,33 @@ try {
         const mr = matteMatch ? parseInt(matteMatch[1].slice(0, 2), 16) : 246;
         const mg = matteMatch ? parseInt(matteMatch[1].slice(2, 4), 16) : 244;
         const mb = matteMatch ? parseInt(matteMatch[1].slice(4, 6), 16) : 241;
-        const img = await new Promise((resolve, reject) => {
-          const im = new Image();
-          im.crossOrigin = 'anonymous';
-          im.onload = () => resolve(im);
-          im.onerror = () => reject(new Error('Could not load quilt image for matte pass'));
-          im.src = url;
-        });
+        const loadCandidates = [];
+        const baseUrl =
+          typeof CONFIG !== 'undefined' && CONFIG.BACKEND?.baseUrl
+            ? String(CONFIG.BACKEND.baseUrl).replace(/\/$/, '')
+            : '';
+        if (baseUrl && /^https?:\/\//i.test(url)) {
+          loadCandidates.push(`${baseUrl}/api/proxy-image?url=${encodeURIComponent(url)}`);
+        }
+        loadCandidates.push(url);
+        let img = null;
+        let lastErr = null;
+        for (const candidate of loadCandidates) {
+          try {
+            img = await new Promise((resolve, reject) => {
+              const im = new Image();
+              im.crossOrigin = 'anonymous';
+              im.referrerPolicy = 'no-referrer';
+              im.onload = () => resolve(im);
+              im.onerror = () => reject(new Error('Could not load quilt image for matte pass'));
+              im.src = candidate;
+            });
+            break;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        if (!img) throw lastErr || new Error('Could not load quilt image for matte pass');
         const w = Math.max(1, img.naturalWidth || img.width);
         const h = Math.max(1, img.naturalHeight || img.height);
         const canvas = document.createElement('canvas');
@@ -25200,8 +25220,8 @@ try {
         ctx.fillStyle = matteHex;
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        const threshold = 246;
-        const maxSat = 0.1;
+        const threshold = 240;
+        const maxSat = 0.14;
         const imageData = ctx.getImageData(0, 0, w, h);
         const px = imageData.data;
         for (let i = 0; i < px.length; i += 4) {
@@ -33463,6 +33483,18 @@ try {
         return String(data.quiltImageUrl || data.classicImageUrl || '').trim();
       }
 
+      buildReflectionArchiveClassicQuiltImageUrl(imageUrl) {
+        const safeUrl = String(imageUrl || '').trim();
+        if (!safeUrl) return '';
+        if (/[?&]matte=warm\b/i.test(safeUrl)) return safeUrl;
+        const baseUrl =
+          typeof CONFIG !== 'undefined' && CONFIG.BACKEND?.baseUrl
+            ? String(CONFIG.BACKEND.baseUrl).replace(/\/$/, '')
+            : '';
+        if (!baseUrl) return safeUrl;
+        return `${baseUrl}/api/proxy-image?url=${encodeURIComponent(safeUrl)}&matte=warm`;
+      }
+
       async resolveQuiltImageForReflectionArchive(dateKey, themeData = null) {
         const key = String(dateKey || '').trim();
         if (!key) {
@@ -33492,21 +33524,36 @@ try {
            */
           if (classicUrl) {
             return {
-              quiltImageUrl: classicUrl,
+              quiltImageUrl: this.buildReflectionArchiveClassicQuiltImageUrl(classicUrl),
               quiltImageFallbackBlocks: null,
-              quiltImageIsClassic: true
+              quiltImageIsClassic: false
             };
           }
 
           const archiveData = archiveSnap.exists() ? archiveSnap.data() || {} : {};
           const archiveUrl = this.pickFinalArchiveQuiltImageUrlFromData(archiveData);
           if (archiveUrl) {
-            return { quiltImageUrl: archiveUrl, quiltImageFallbackBlocks: null };
+            const archiveIsClassic =
+              String(archiveData.quiltImageSource || '').trim() === 'classic';
+            return {
+              quiltImageUrl: archiveIsClassic
+                ? this.buildReflectionArchiveClassicQuiltImageUrl(archiveUrl)
+                : archiveUrl,
+              quiltImageFallbackBlocks: null,
+              quiltImageIsClassic: false
+            };
           }
 
           const fromTheme = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
           if (fromTheme) {
-            return { quiltImageUrl: fromTheme, quiltImageFallbackBlocks: null };
+            const themeIsClassic = String(themeData?.quiltImageSource || '').trim() === 'classic';
+            return {
+              quiltImageUrl: themeIsClassic
+                ? this.buildReflectionArchiveClassicQuiltImageUrl(fromTheme)
+                : fromTheme,
+              quiltImageFallbackBlocks: null,
+              quiltImageIsClassic: false
+            };
           }
 
           const archiveBlocks = archiveData.quilt?.blocks || archiveData.blocks;
