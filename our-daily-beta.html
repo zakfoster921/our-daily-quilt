@@ -33402,78 +33402,51 @@ try {
         return String(data.quiltImageUrl || data.classicImageUrl || '').trim();
       }
 
-      classicImageMatchesFinalQuilt(igData, archiveBlocks, finalBlockCount) {
-        const classicUrl = this.pickClassicImageUrlFromInstagramDoc(igData);
-        if (!classicUrl) return false;
-        const igBlockCount = Number(igData?.blockCount) || 0;
-        const finalCount = Number(finalBlockCount) || 0;
-        if (finalCount <= 1) return igBlockCount > 1;
-        if (igBlockCount <= 0) return false;
-        if (igBlockCount < finalCount) return false;
-        if (Array.isArray(archiveBlocks) && archiveBlocks.length > 1) {
-          const archiveFp = Utils.computeQuiltFingerprint(archiveBlocks);
-          const igFp = String(
-            igData?.imageQuiltFingerprint || igData?.quiltFingerprint || ''
-          ).trim();
-          if (archiveFp && igFp && igFp !== archiveFp) return false;
-        }
-        return true;
-      }
-
       async resolveQuiltImageForReflectionArchive(dateKey, themeData = null) {
         const key = String(dateKey || '').trim();
         if (!key) {
           return { quiltImageUrl: '', quiltImageFallbackBlocks: null };
         }
 
-        const fromTheme = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
-        if (fromTheme) {
-          return { quiltImageUrl: fromTheme, quiltImageFallbackBlocks: null };
-        }
-
         if (!window.db || !window.firestore?.doc || !window.firestore?.getDoc) {
-          return { quiltImageUrl: '', quiltImageFallbackBlocks: null };
+          const fromTheme = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
+          return {
+            quiltImageUrl: fromTheme,
+            quiltImageFallbackBlocks: null
+          };
         }
 
         const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
         try {
-          const [igSnap, archiveSnap, quiltSnap] = await Promise.all([
+          const [igSnap, archiveSnap] = await Promise.all([
             readDoc(window.firestore.doc(window.db, 'instagram-images', key)),
-            readDoc(window.firestore.doc(window.db, 'archives', key)),
-            readDoc(window.firestore.doc(window.db, 'quilts', key))
+            readDoc(window.firestore.doc(window.db, 'archives', key))
           ]);
-
-          const archiveData = archiveSnap.exists() ? archiveSnap.data() || {} : {};
-          const archiveBlocks = archiveData.quilt?.blocks || archiveData.blocks;
-          const archiveBlockCount = Array.isArray(archiveBlocks) ? archiveBlocks.length : 0;
-          let quiltBlockCount = 0;
-          if (quiltSnap.exists()) {
-            const qb = (quiltSnap.data() || {}).blocks;
-            if (Array.isArray(qb)) quiltBlockCount = qb.length;
-          }
-          const finalBlockCount = Math.max(archiveBlockCount, quiltBlockCount);
 
           const igData = igSnap.exists() ? igSnap.data() || {} : {};
           const classicUrl = this.pickClassicImageUrlFromInstagramDoc(igData);
-          if (this.classicImageMatchesFinalQuilt(igData, archiveBlocks, finalBlockCount)) {
+          /**
+           * Reflection archive must match the Zapier / classic card (app push).
+           * Archive block arrays often disagree on block count with classicUrl even for the same day.
+           */
+          if (classicUrl) {
             return { quiltImageUrl: classicUrl, quiltImageFallbackBlocks: null };
           }
 
+          const archiveData = archiveSnap.exists() ? archiveSnap.data() || {} : {};
           const archiveUrl = this.pickFinalArchiveQuiltImageUrlFromData(archiveData);
-          const storedBlockCount = Number(archiveData.quiltImageBlockCount) || 0;
-          if (
-            archiveUrl &&
-            String(archiveData.quiltImageSource || '').trim() === 'final_archive' &&
-            (!archiveBlockCount || !storedBlockCount || storedBlockCount >= archiveBlockCount)
-          ) {
+          if (archiveUrl) {
             return { quiltImageUrl: archiveUrl, quiltImageFallbackBlocks: null };
           }
 
-          const igBlockCount = Number(igData.blockCount) || 0;
+          const fromTheme = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
+          if (fromTheme) {
+            return { quiltImageUrl: fromTheme, quiltImageFallbackBlocks: null };
+          }
+
+          const archiveBlocks = archiveData.quilt?.blocks || archiveData.blocks;
           if (Array.isArray(archiveBlocks) && archiveBlocks.length > 1) {
-            if (archiveBlockCount > igBlockCount) {
-              return { quiltImageUrl: '', quiltImageFallbackBlocks: archiveBlocks };
-            }
+            return { quiltImageUrl: '', quiltImageFallbackBlocks: archiveBlocks };
           }
         } catch (error) {
           this.logger?.warn?.(`resolveQuiltImageForReflectionArchive(${key}):`, error);

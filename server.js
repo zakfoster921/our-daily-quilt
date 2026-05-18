@@ -2898,6 +2898,22 @@ async function resolveQuiltImageUrlForDateKey(db, dateKey, blocks = null) {
   const key = String(dateKey || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
 
+  const igSnap = await db.collection('instagram-images').doc(key).get();
+  const igData = igSnap.exists ? igSnap.data() || {} : {};
+  const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
+  if (classicUrl) {
+    await db.collection('archives').doc(key).set(
+      {
+        quiltImageUrl: classicUrl,
+        quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC,
+        quiltImageBlockCount: Number(igData.blockCount) || 0,
+        quiltImageUpdatedAt: getUtcIsoNow()
+      },
+      { merge: true }
+    );
+    return classicUrl;
+  }
+
   const archiveSnap = await db.collection('archives').doc(key).get();
   const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
   const archiveBlocks =
@@ -2905,30 +2921,6 @@ async function resolveQuiltImageUrlForDateKey(db, dateKey, blocks = null) {
     archiveData.quilt?.blocks ||
     archiveData.blocks;
   const archiveBlockCount = Array.isArray(archiveBlocks) ? archiveBlocks.length : 0;
-
-  let quiltBlockCount = 0;
-  const quiltSnap = await db.collection('quilts').doc(key).get();
-  if (quiltSnap.exists) {
-    const qb = (quiltSnap.data() || {}).blocks;
-    if (Array.isArray(qb)) quiltBlockCount = qb.length;
-  }
-  const finalBlockCount = Math.max(archiveBlockCount, quiltBlockCount);
-
-  const igSnap = await db.collection('instagram-images').doc(key).get();
-  const igData = igSnap.exists ? igSnap.data() || {} : {};
-  if (classicImageMatchesFinalBlockCount(igData, finalBlockCount)) {
-    const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
-    await db.collection('archives').doc(key).set(
-      {
-        quiltImageUrl: classicUrl,
-        quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC,
-        quiltImageBlockCount: Number(igData.blockCount) || finalBlockCount,
-        quiltImageUpdatedAt: getUtcIsoNow()
-      },
-      { merge: true }
-    );
-    return classicUrl;
-  }
 
   if (Array.isArray(blocks) && blocks.length > 1) {
     return uploadFinalArchiveQuiltPreview(db, key, blocks);
@@ -4140,25 +4132,16 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
     let quiltImageUrl = pickFinalArchiveQuiltImageUrl(data);
     let classicImageUrl = '';
     try {
-      const archiveSnap = await db.collection('archives').doc(appDateKey).get();
-      const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
-      if (!quiltImageUrl) {
-        quiltImageUrl = pickFinalArchiveQuiltImageUrl(archiveData);
-      }
-      const archiveBlocks = archiveData.quilt?.blocks || archiveData.blocks;
-      const archiveBlockCount = Array.isArray(archiveBlocks) ? archiveBlocks.length : 0;
-      let quiltBlockCount = 0;
-      const quiltSnap = await db.collection('quilts').doc(appDateKey).get();
-      if (quiltSnap.exists) {
-        const qb = (quiltSnap.data() || {}).blocks;
-        if (Array.isArray(qb)) quiltBlockCount = qb.length;
-      }
-      const finalBlockCount = Math.max(archiveBlockCount, quiltBlockCount);
       const igSnap = await db.collection('instagram-images').doc(appDateKey).get();
       const igData = igSnap.exists ? igSnap.data() || {} : {};
-      if (classicImageMatchesFinalBlockCount(igData, finalBlockCount)) {
-        classicImageUrl = pickClassicImageUrlFromInstagramDoc(igData);
-        if (!quiltImageUrl) quiltImageUrl = classicImageUrl;
+      classicImageUrl = pickClassicImageUrlFromInstagramDoc(igData);
+      if (classicImageUrl) {
+        quiltImageUrl = classicImageUrl;
+      } else if (!quiltImageUrl) {
+        const archiveSnap = await db.collection('archives').doc(appDateKey).get();
+        if (archiveSnap.exists) {
+          quiltImageUrl = pickFinalArchiveQuiltImageUrl(archiveSnap.data());
+        }
       }
     } catch (_) {
       quiltImageUrl = quiltImageUrl || '';
