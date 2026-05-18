@@ -1145,6 +1145,23 @@ function reflectionWallAuthorLabel(dataOrName) {
   return 'Friend';
 }
 
+/** Wall + Firestore label; never null (Friend when anonymous). */
+function storedReflectionAuthorName(displayName) {
+  return reflectionWallAuthorLabel(displayName);
+}
+
+/** Resolve author from authorDisplayName, else trailing " —Name" on publishedText (legacy). */
+function reflectionResponseStoredAuthor(data) {
+  const row = data && typeof data === 'object' ? data : {};
+  let name = normalizeSubmittedAuthorName(row.authorDisplayName || '');
+  if (!name) {
+    const published = String(row.publishedText || '').trim();
+    const suffixMatch = published.match(/\s+—([^\s—–-].+)$/);
+    if (suffixMatch) name = normalizeSubmittedAuthorName(suffixMatch[1]);
+  }
+  return storedReflectionAuthorName(name);
+}
+
 function normalizeReflectionWallThemeEntry(entry) {
   if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
     const text = String(entry.text ?? entry.body ?? entry.theme ?? '')
@@ -1169,7 +1186,7 @@ function normalizeReflectionWallThemeEntry(entry) {
 function buildReflectionWallThemeEntry(data) {
   const text = reflectionResponseWallBody(data);
   if (!text) return null;
-  return { text, author: reflectionWallAuthorLabel(data) };
+  return { text, author: reflectionResponseStoredAuthor(data) };
 }
 
 function dedupeReflectionWallThemes(themes) {
@@ -1377,7 +1394,7 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   if (list.length === 1) {
     const solo = buildReflectionWallThemeEntry(list[0].data) || normalizeReflectionWallThemeEntry({
       text: list[0].text,
-      author: reflectionWallAuthorLabel(list[0].data || {})
+      author: reflectionResponseStoredAuthor(list[0].data || {})
     });
     return {
       visibleIds: [list[0].id],
@@ -1414,7 +1431,7 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
     .filter((item) => visibleSet.has(item.id))
     .map((item) => buildReflectionWallThemeEntry(item.data) || normalizeReflectionWallThemeEntry({
       text: item.text,
-      author: reflectionWallAuthorLabel(item.data || {})
+      author: reflectionResponseStoredAuthor(item.data || {})
     }))
     .filter(Boolean);
   return { visibleIds, themes: dedupeReflectionWallThemes(themes), model, provider };
@@ -2746,6 +2763,195 @@ function formatNotificationTextFromQuoteData(quoteData = {}) {
   return text && author ? `${text} — ${author}` : text || author || '';
 }
 
+function pickClassicImageUrlFromInstagramDoc(data) {
+  if (!data || typeof data !== 'object') return '';
+  return String(data.classicUrl || data.imageStorageUrl || '').trim();
+}
+
+/**
+ * App Zapier push stores classicUrl + blockCount on instagram-images/{date}.
+ * Prefer that over nightly/early snapshots and over stale archive block arrays.
+ */
+function classicImageMatchesFinalBlockCount(igData, finalBlockCount) {
+  const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
+  if (!classicUrl) return false;
+  const igBlockCount = Number(igData?.blockCount) || 0;
+  const finalCount = Number(finalBlockCount) || 0;
+  if (finalCount <= 1) return igBlockCount > 1;
+  if (igBlockCount <= 0) return false;
+  return igBlockCount >= finalCount;
+}
+
+const ARCHIVE_QUILT_PREVIEW_BG = '#f6f4f1';
+const ARCHIVE_QUILT_IMAGE_SOURCE = 'final_archive';
+const ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC = 'classic';
+
+function pickQuiltImageUrlFromDoc(data) {
+  if (!data || typeof data !== 'object') return '';
+  return String(data.quiltImageUrl || data.classicUrl || data.imageStorageUrl || '').trim();
+}
+
+/** Reflection archive: stored preview from final archive render or authoritative classic push. */
+function pickFinalArchiveQuiltImageUrl(data) {
+  if (!data || typeof data !== 'object') return '';
+  const source = String(data.quiltImageSource || '').trim();
+  if (source !== ARCHIVE_QUILT_IMAGE_SOURCE && source !== ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC) {
+    return '';
+  }
+  return String(data.quiltImageUrl || '').trim();
+}
+
+/**
+ * 9:16 quilt-screen preview on warm neutral (not IG 4:5 white card).
+ * Used for reflection archive and archives/{date}/quilt-preview.png.
+ */
+async function generateArchiveQuiltPreviewFromBlocks(blocks) {
+  if (!Array.isArray(blocks) || blocks.length <= 1) {
+    throw new Error('No quilt blocks available for archive preview');
+  }
+
+  const outW = 1080;
+  const outH = 1920;
+  const quiltScreenAspect = 9 / 16;
+  const canvas = createCanvas(outW, outH);
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = ARCHIVE_QUILT_PREVIEW_BG;
+  ctx.fillRect(0, 0, outW, outH);
+
+  const minX = Math.min(...blocks.map((b) => Number(b.x)));
+  const minY = Math.min(...blocks.map((b) => Number(b.y)));
+  const maxX = Math.max(...blocks.map((b) => Number(b.x) + Number(b.width)));
+  const maxY = Math.max(...blocks.map((b) => Number(b.y) + Number(b.height)));
+  const quiltWidth = maxX - minX;
+  const quiltHeight = maxY - minY;
+  if (!(quiltWidth > 0) || !(quiltHeight > 0)) {
+    throw new Error('Invalid quilt bounds for archive preview');
+  }
+
+  let sourceX = minX;
+  let sourceY = minY;
+  let sourceWidth = quiltWidth;
+  let sourceHeight = quiltHeight;
+  const sourceAspect = quiltWidth / quiltHeight;
+  if (quiltScreenAspect > sourceAspect) {
+    sourceHeight = Math.min(quiltHeight, quiltWidth / quiltScreenAspect);
+    sourceY = minY + (quiltHeight - sourceHeight) / 2;
+  } else {
+    sourceWidth = Math.min(quiltWidth, quiltHeight * quiltScreenAspect);
+    sourceX = minX + (quiltWidth - sourceWidth) / 2;
+  }
+
+  const drawWidth = outW;
+  const drawHeight = outH;
+  const startX = 0;
+  const startY = 0;
+  const scaleX = drawWidth / sourceWidth;
+  const scaleY = drawHeight / sourceHeight;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(startX, startY, drawWidth, drawHeight);
+  ctx.clip();
+  blocks.forEach((block) => {
+    const x = startX + (Number(block.x) - sourceX) * scaleX;
+    const y = startY + (Number(block.y) - sourceY) * scaleY;
+    const width = Number(block.width) * scaleX;
+    const height = Number(block.height) * scaleY;
+    drawQuiltBlockToCtx(ctx, block, x, y, width, height);
+  });
+  ctx.restore();
+
+  const buffer = canvas.toBuffer('image/png');
+  return `data:image/png;base64,${buffer.toString('base64')}`;
+}
+
+async function uploadFinalArchiveQuiltPreview(db, dateKey, blocks) {
+  const key = String(dateKey || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
+  if (!Array.isArray(blocks) || blocks.length <= 1) return null;
+
+  const pngDataUrl = await generateArchiveQuiltPreviewFromBlocks(blocks);
+  const pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
+  const { publicUrl } = await firebaseSaveDownloadableFile(
+    `archives/${key}/quilt-preview.png`,
+    pngBuf,
+    'image/png'
+  );
+  await db.collection('archives').doc(key).set(
+    {
+      quiltImageUrl: publicUrl,
+      quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE,
+      quiltImageBlockCount: blocks.length,
+      quiltImageUpdatedAt: getUtcIsoNow()
+    },
+    { merge: true }
+  );
+  return publicUrl;
+}
+
+/**
+ * Stable quilt preview URL for reflection archive / archives.
+ * Priority: instagram-images classicUrl when blockCount matches final quilt, else render from archive blocks.
+ */
+async function resolveQuiltImageUrlForDateKey(db, dateKey, blocks = null) {
+  const key = String(dateKey || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
+
+  const archiveSnap = await db.collection('archives').doc(key).get();
+  const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
+  const archiveBlocks =
+    (Array.isArray(blocks) && blocks.length > 1 ? blocks : null) ||
+    archiveData.quilt?.blocks ||
+    archiveData.blocks;
+  const archiveBlockCount = Array.isArray(archiveBlocks) ? archiveBlocks.length : 0;
+
+  let quiltBlockCount = 0;
+  const quiltSnap = await db.collection('quilts').doc(key).get();
+  if (quiltSnap.exists) {
+    const qb = (quiltSnap.data() || {}).blocks;
+    if (Array.isArray(qb)) quiltBlockCount = qb.length;
+  }
+  const finalBlockCount = Math.max(archiveBlockCount, quiltBlockCount);
+
+  const igSnap = await db.collection('instagram-images').doc(key).get();
+  const igData = igSnap.exists ? igSnap.data() || {} : {};
+  if (classicImageMatchesFinalBlockCount(igData, finalBlockCount)) {
+    const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
+    await db.collection('archives').doc(key).set(
+      {
+        quiltImageUrl: classicUrl,
+        quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC,
+        quiltImageBlockCount: Number(igData.blockCount) || finalBlockCount,
+        quiltImageUpdatedAt: getUtcIsoNow()
+      },
+      { merge: true }
+    );
+    return classicUrl;
+  }
+
+  if (Array.isArray(blocks) && blocks.length > 1) {
+    return uploadFinalArchiveQuiltPreview(db, key, blocks);
+  }
+
+  const finalUrl = pickFinalArchiveQuiltImageUrl(archiveData);
+  const storedBlockCount = Number(archiveData.quiltImageBlockCount) || 0;
+
+  if (
+    finalUrl &&
+    String(archiveData.quiltImageSource || '').trim() === ARCHIVE_QUILT_IMAGE_SOURCE &&
+    (!archiveBlockCount || !storedBlockCount || storedBlockCount >= archiveBlockCount)
+  ) {
+    return finalUrl;
+  }
+
+  if (Array.isArray(archiveBlocks) && archiveBlocks.length > 1) {
+    return uploadFinalArchiveQuiltPreview(db, key, archiveBlocks);
+  }
+
+  return null;
+}
+
 async function runDailyResetForDate(dateKey, source = 'unknown') {
   if (!db) {
     throw new Error('Firestore not initialized');
@@ -2805,8 +3011,67 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
       resetSource: source,
       archivedAt: getUtcIsoNow()
     };
+    try {
+      const quiltImageUrl = await resolveQuiltImageUrlForDateKey(
+        db,
+        closingKey,
+        closingQuiltData.blocks
+      );
+      if (quiltImageUrl) {
+        archivePayload.quiltImageUrl = quiltImageUrl;
+        const igSnap = await db.collection('instagram-images').doc(closingKey).get();
+        const igData = igSnap.exists ? igSnap.data() || {} : {};
+        const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
+        if (
+          classicUrl &&
+          classicUrl === quiltImageUrl &&
+          classicImageMatchesFinalBlockCount(igData, closingQuiltData.blocks.length)
+        ) {
+          archivePayload.quiltImageSource = ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC;
+          archivePayload.quiltImageBlockCount =
+            Number(igData.blockCount) || closingQuiltData.blocks.length;
+        } else {
+          archivePayload.quiltImageSource = ARCHIVE_QUILT_IMAGE_SOURCE;
+          archivePayload.quiltImageBlockCount = closingQuiltData.blocks.length;
+        }
+      }
+    } catch (imgErr) {
+      console.warn(
+        `Daily reset quilt image for ${closingKey}:`,
+        String(imgErr?.message || imgErr).slice(0, 240)
+      );
+    }
     await closingArchiveRef.set(archivePayload, { merge: true });
     archived = true;
+  } else if (
+    closingArchiveSnap.exists &&
+    closingQuiltData &&
+    Array.isArray(closingQuiltData.blocks) &&
+    closingQuiltData.blocks.length > 1 &&
+    !pickQuiltImageUrlFromDoc(closingArchiveSnap.data())
+  ) {
+    try {
+      const quiltImageUrl = await resolveQuiltImageUrlForDateKey(
+        db,
+        closingKey,
+        closingQuiltData.blocks
+      );
+      if (quiltImageUrl) {
+        await closingArchiveRef.set(
+          {
+            quiltImageUrl,
+            quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE,
+            quiltImageBlockCount: closingQuiltData.blocks.length
+          },
+          { merge: true }
+        );
+      }
+    } catch (imgErr) {
+      console.warn(
+        `Daily reset quilt image backfill for ${closingKey}:`,
+        String(imgErr?.message || imgErr).slice(0, 240)
+      );
+    }
   }
 
   await newQuiltRef.set(
@@ -3782,7 +4047,7 @@ app.post('/api/reflection-response', async (req, res) => {
     const deviceKey = safeReflectionDeviceKey(clientId || `${req.ip || ''}|${req.get('user-agent') || ''}`);
     const responseRef = db.collection('reflectionResponses').doc();
     const responseId = responseRef.id;
-    const authorDisplayName = reflectionAuthorSuffix(displayName).replace(/^\s*—\s*/, '') || null;
+    const authorDisplayName = storedReflectionAuthorName(displayName);
     const responsePayload = {
       appDateKey,
       rawText,
@@ -3808,7 +4073,7 @@ app.post('/api/reflection-response', async (req, res) => {
       appDateKey,
       themes: admin.firestore.FieldValue.arrayUnion({
         text: trimModeratedBodyAtWord(moderation.text, REFLECTION_MODERATION_BODY_MAX),
-        author: reflectionWallAuthorLabel(authorDisplayName)
+        author: authorDisplayName
       }),
       responseCount: admin.firestore.FieldValue.increment(1),
       updatedAtIso: getUtcIsoNow(),
@@ -3872,6 +4137,32 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
         user_name
       });
     }
+    let quiltImageUrl = pickFinalArchiveQuiltImageUrl(data);
+    let classicImageUrl = '';
+    try {
+      const archiveSnap = await db.collection('archives').doc(appDateKey).get();
+      const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
+      if (!quiltImageUrl) {
+        quiltImageUrl = pickFinalArchiveQuiltImageUrl(archiveData);
+      }
+      const archiveBlocks = archiveData.quilt?.blocks || archiveData.blocks;
+      const archiveBlockCount = Array.isArray(archiveBlocks) ? archiveBlocks.length : 0;
+      let quiltBlockCount = 0;
+      const quiltSnap = await db.collection('quilts').doc(appDateKey).get();
+      if (quiltSnap.exists) {
+        const qb = (quiltSnap.data() || {}).blocks;
+        if (Array.isArray(qb)) quiltBlockCount = qb.length;
+      }
+      const finalBlockCount = Math.max(archiveBlockCount, quiltBlockCount);
+      const igSnap = await db.collection('instagram-images').doc(appDateKey).get();
+      const igData = igSnap.exists ? igSnap.data() || {} : {};
+      if (classicImageMatchesFinalBlockCount(igData, finalBlockCount)) {
+        classicImageUrl = pickClassicImageUrlFromInstagramDoc(igData);
+        if (!quiltImageUrl) quiltImageUrl = classicImageUrl;
+      }
+    } catch (_) {
+      quiltImageUrl = quiltImageUrl || '';
+    }
     return res.json({
       success: true,
       found: true,
@@ -3883,7 +4174,9 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
       responseCount: Number(data.responseCount) || 0,
       provider: data.provider || null,
       model: data.model || null,
-      generatedAtIso: data.generatedAtIso || null
+      generatedAtIso: data.generatedAtIso || null,
+      quiltImageUrl: quiltImageUrl || null,
+      classicImageUrl: classicImageUrl || quiltImageUrl || null
     });
   } catch (error) {
     console.error('❌ Reflection theme read failed:', error);
@@ -3943,12 +4236,12 @@ function reflectionResponseWallText(data) {
   return raw;
 }
 
-/** Body only for the reflection wall carousel (author lives in authorDisplayName). */
+/** Body only for the reflection wall carousel (author is a separate field). */
 function reflectionResponseWallBody(data) {
   const full = reflectionResponseWallText(data);
   if (!full) return '';
-  const author = normalizeSubmittedAuthorName((data && typeof data === 'object' ? data : {}).authorDisplayName || '');
-  if (author) {
+  const author = reflectionResponseStoredAuthor(data);
+  if (author && !/^friend$/i.test(author)) {
     const suffix = ` —${author}`;
     if (full.endsWith(suffix)) return full.slice(0, -suffix.length).trim();
   }
@@ -4196,6 +4489,25 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       curationProvider: provider,
       curationModel: model
     };
+    try {
+      const quiltImageUrl = await resolveQuiltImageUrlForDateKey(db, appDateKey);
+      if (quiltImageUrl) {
+        themePayload.quiltImageUrl = quiltImageUrl;
+        const archiveSnap = await db.collection('archives').doc(appDateKey).get();
+        const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
+        const imageSource =
+          String(archiveData.quiltImageSource || '').trim() || ARCHIVE_QUILT_IMAGE_SOURCE;
+        themePayload.quiltImageSource = imageSource;
+        if (imageSource === ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC) {
+          themePayload.classicImageUrl = quiltImageUrl;
+        }
+      }
+    } catch (imgErr) {
+      console.warn(
+        `Reflection themes quilt image for ${appDateKey}:`,
+        String(imgErr?.message || imgErr).slice(0, 240)
+      );
+    }
     await db.collection('reflectionThemes').doc(appDateKey).set(themePayload);
 
     return res.json({
@@ -4264,6 +4576,136 @@ app.post('/api/admin/repair-first-response', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'repair-first-response failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/backfill-archive-quilt-images', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).send('');
+});
+
+/**
+ * Backfill archives/{date}.quiltImageUrl (+ reflectionThemes) for past reflection archive days.
+ * Auth: x-reset-token. Body: { appDateKey } or { limit } (default 30, max 50).
+ */
+app.post('/api/admin/backfill-archive-quilt-images', async (req, res) => {
+  setResetApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const expectedToken = process.env.RESET_TOKEN || process.env.REFLECTION_THEME_TOKEN || '';
+    if (!expectedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'RESET_TOKEN or REFLECTION_THEME_TOKEN must be set on the server'
+      });
+    }
+    const providedToken = req.header('x-reset-token') || req.header('x-reflection-theme-token');
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dryRun = body.dryRun === true || String(body.dryRun || '').toLowerCase() === 'true';
+    const singleKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.date || '').trim())
+      ? String(body.appDateKey || body.date).trim()
+      : '';
+
+    const forceRegenerate =
+      body.force === true || String(body.force || '').toLowerCase() === 'true';
+
+    const writeUrls = async (dateKey, quiltImageUrl) => {
+      if (!quiltImageUrl || dryRun) return;
+      const archiveSnap = await db.collection('archives').doc(dateKey).get();
+      const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
+      const imageSource =
+        String(archiveData.quiltImageSource || '').trim() || ARCHIVE_QUILT_IMAGE_SOURCE;
+      await db.collection('archives').doc(dateKey).set(
+        {
+          quiltImageUrl,
+          quiltImageSource: imageSource
+        },
+        { merge: true }
+      );
+      const themeRef = db.collection('reflectionThemes').doc(dateKey);
+      const themeSnap = await themeRef.get();
+      if (themeSnap.exists) {
+        await themeRef.set(
+          {
+            quiltImageUrl,
+            quiltImageSource: imageSource,
+            classicImageUrl:
+              imageSource === ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC ? quiltImageUrl : ''
+          },
+          { merge: true }
+        );
+      }
+    };
+
+    if (singleKey) {
+      const quiltImageUrl = dryRun
+        ? null
+        : await resolveQuiltImageUrlForDateKey(db, singleKey);
+      if (!quiltImageUrl && !dryRun) {
+        return res.status(400).json({
+          success: false,
+          error: `No final quilt image or archive blocks for ${singleKey}`
+        });
+      }
+      await writeUrls(singleKey, quiltImageUrl);
+      return res.json({
+        success: true,
+        dryRun,
+        forceRegenerate,
+        results: [{ dateKey: singleKey, quiltImageUrl: quiltImageUrl || null }]
+      });
+    }
+
+    const limit = Math.min(50, Math.max(1, Number(body.limit) || 30));
+    const themesSnap = await db
+      .collection('reflectionThemes')
+      .orderBy('generatedAt', 'desc')
+      .limit(limit)
+      .get();
+
+    const results = [];
+    for (const doc of themesSnap.docs) {
+      const dateKey = String(doc.data()?.appDateKey || doc.id || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      try {
+        if (!forceRegenerate) {
+          const archiveSnap = await db.collection('archives').doc(dateKey).get();
+          const existing = pickFinalArchiveQuiltImageUrl(
+            archiveSnap.exists ? archiveSnap.data() : {}
+          );
+          if (existing) {
+            await writeUrls(dateKey, existing);
+            results.push({ dateKey, quiltImageUrl: existing, skipped: 'already_final' });
+            continue;
+          }
+        }
+        const quiltImageUrl = dryRun ? null : await resolveQuiltImageUrlForDateKey(db, dateKey);
+        if (!quiltImageUrl) {
+          results.push({ dateKey, skipped: 'no_final_image' });
+          continue;
+        }
+        await writeUrls(dateKey, quiltImageUrl);
+        results.push({ dateKey, quiltImageUrl });
+      } catch (err) {
+        results.push({
+          dateKey,
+          error: String(err?.message || err).slice(0, 200)
+        });
+      }
+    }
+
+    return res.json({ success: true, dryRun, count: results.length, results });
+  } catch (error) {
+    console.error('❌ backfill-archive-quilt-images failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'backfill-archive-quilt-images failed',
       timestamp: getUtcIsoNow()
     });
   }

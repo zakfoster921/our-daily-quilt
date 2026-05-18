@@ -4339,6 +4339,145 @@ try {
       }
     }
 
+    /* Admin: upload reflection responses (name + text per row). */
+    .admin-reflection-responses-menu {
+      position: fixed;
+      inset: 0;
+      z-index: 1002;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.35);
+      box-sizing: border-box;
+    }
+
+    .admin-reflection-responses-content {
+      width: min(580px, 100%);
+      max-height: 85vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+      background: #fff;
+      border: 2px solid #000;
+      border-radius: 8px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+      box-sizing: border-box;
+    }
+
+    .admin-reflection-responses-title {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .admin-reflection-responses-prompt,
+    .admin-reflection-responses-hint {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .admin-reflection-responses-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .admin-reflection-response-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid rgba(0, 0, 0, 0.18);
+      border-radius: 6px;
+      background: #f8f6f2;
+    }
+
+    .admin-reflection-response-row.is-over-limit {
+      border-color: #b42318;
+      background: #fff5f5;
+    }
+
+    .admin-reflection-response-row__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .admin-reflection-response-row__label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .admin-reflection-response-row__remove {
+      border: none;
+      background: transparent;
+      color: #5c4a3a;
+      font-size: 12px;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .admin-reflection-response-row__field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .admin-reflection-response-row__field-label {
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .admin-reflection-response-name,
+    .admin-reflection-response-text {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      border: 1px solid #000;
+      border-radius: 4px;
+      font: inherit;
+    }
+
+    .admin-reflection-response-text {
+      resize: vertical;
+      min-height: 4.5rem;
+    }
+
+    .admin-reflection-responses-toolbar {
+      display: flex;
+      justify-content: flex-start;
+    }
+
+    .admin-reflection-responses-toolbar button,
+    .admin-reflection-responses-actions button {
+      padding: 8px 16px;
+      border: 1px solid #000;
+      background: #fff;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+
+    .admin-reflection-responses-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .admin-reflection-responses-status {
+      margin: 0;
+      min-height: 18px;
+      font-size: 13px;
+    }
+
     /* ===== BUTTONS ===== */
     /* Global app button style (non-admin): white rectangular buttons. */
     .btn {
@@ -6244,6 +6383,42 @@ try {
     .reflection-themes-archive-quote-author {
       font-style: italic;
       white-space: nowrap;
+    }
+
+    .reflection-themes-archive-quilt-kicker {
+      margin: 0 0 0.65rem;
+      color: rgba(47, 36, 27, 0.54);
+      font-size: 0.78rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    .reflection-themes-archive-quilt-frame {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 0 1.35rem;
+      padding: 0.5rem;
+      box-sizing: border-box;
+      border-radius: 0.35rem;
+      background: #f6f4f1;
+    }
+
+    .reflection-themes-archive-quilt-image {
+      display: block;
+      width: 100%;
+      max-height: 40vh;
+      margin: 0 auto;
+      object-fit: contain;
+      object-position: center;
+      background: #f6f4f1;
+    }
+
+    .reflection-themes-archive-quilt-image--pending {
+      min-height: 8rem;
+      background: #f6f4f1;
     }
 
     .reflection-themes-archive-kicker {
@@ -8924,7 +9099,7 @@ try {
 
     #screen-quilt .quilt-reflection-carousel {
       --quilt-reflection-theme-size: calc(var(--quilt-reflection-copy-size) * 0.81);
-      --reflection-patch-w: 90vw;
+      --reflection-patch-w: 52vw;
       --reflection-patch-h-base: clamp(11rem, 36vw, 13rem);
       --reflection-patch-overlap: clamp(0.1rem, 0.38vw, 0.2rem);
       --reflection-patch-side-bleed: clamp(0.07rem, 0.26vw, 0.13rem);
@@ -20905,6 +21080,14 @@ try {
         this.logger = logger;
         /** Cleared when leaving color screen so deferred theme work cannot run on the next screen. */
         this._colorScreenEntryThemeTimer = null;
+        /** Screens reached from quilt without resetting scroll when returning. */
+        this._quiltScrollPreserveScreens = new Set([
+          'screen-settings',
+          'screen-reflection-themes-archive',
+          'screen-archive',
+          'screen-exit-chamber'
+        ]);
+        this._savedQuiltScrollPosition = null;
       }
 
       showToast(message, duration = CONFIG.APP.toastDuration, link = null) {
@@ -21171,6 +21354,72 @@ try {
         }
       }
 
+      _captureQuiltScrollForReturn() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
+        const app = document.getElementById('app');
+        this._savedQuiltScrollPosition = {
+          quiltScreen: quiltScreen?.scrollTop || 0,
+          quiltButtonPanel: quiltButtonPanel?.scrollTop || 0,
+          app: app?.scrollTop || 0,
+          window:
+            window.scrollY ||
+            document.documentElement.scrollTop ||
+            document.body.scrollTop ||
+            0
+        };
+      }
+
+      _restoreQuiltScrollIfSaved() {
+        const saved = this._savedQuiltScrollPosition;
+        if (!saved) return;
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
+        const app = document.getElementById('app');
+        const apply = () => {
+          if (quiltScreen) quiltScreen.scrollTop = saved.quiltScreen;
+          if (quiltButtonPanel) quiltButtonPanel.scrollTop = saved.quiltButtonPanel;
+          if (app) app.scrollTop = saved.app;
+          window.scrollTo(0, saved.window);
+          document.documentElement.scrollTop = saved.window;
+          document.body.scrollTop = saved.window;
+        };
+        apply();
+        requestAnimationFrame(() => {
+          apply();
+          requestAnimationFrame(apply);
+        });
+      }
+
+      _resetScreenScrollToTop(target) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        const app = document.getElementById('app');
+        if (app) {
+          app.scrollTop = 0;
+        }
+        /* The target `.screen` is itself the scroll container (overflow-y:auto on
+           #screen-quilt etc.). WebKit preserves its scrollTop across display swaps,
+           so a return visit can land mid-scroll. Pin to top now and again on the
+           next frame to cover content that streams in after activation
+           (e.g. renderQuilt() after handleAddColor → showScreen('screen-quilt')). */
+        if (target) {
+          try {
+            target.scrollTop = 0;
+          } catch (_) {
+            /* */
+          }
+          requestAnimationFrame(() => {
+            try {
+              target.scrollTop = 0;
+            } catch (_) {
+              /* */
+            }
+          });
+        }
+      }
+
       showScreen(screenId) {
         try {
           if (screenId === 'screen-quote' && window.odqPerfMark) window.odqPerfMark('show-screen-quote');
@@ -21205,6 +21454,14 @@ try {
 
           const previousActive = document.querySelector('.screen.active');
           const previousId = previousActive ? previousActive.id : null;
+          if (previousId === 'screen-quilt' && this._quiltScrollPreserveScreens.has(screenId)) {
+            this._captureQuiltScrollForReturn();
+          }
+          const restoreQuiltScroll =
+            screenId === 'screen-quilt' &&
+            previousId &&
+            this._quiltScrollPreserveScreens.has(previousId) &&
+            this._savedQuiltScrollPosition;
           if (previousId === 'screen-exit-chamber' && screenId !== 'screen-exit-chamber') {
             window.app?.clearExitChamberSpeakerTexture?.();
           }
@@ -21625,27 +21882,15 @@ try {
               }
             }
             
-            window.scrollTo(0, 0);
-            document.documentElement.scrollTop = 0;
-            document.body.scrollTop = 0;
-            
-            const app = document.getElementById('app');
-            if (app) {
-              app.scrollTop = 0;
+            if (restoreQuiltScroll) {
+              this._restoreQuiltScrollIfSaved();
+            } else {
+              if (screenId === 'screen-quilt') {
+                this._savedQuiltScrollPosition = null;
+              }
+              this._resetScreenScrollToTop(target);
             }
 
-            /* The target `.screen` is itself the scroll container (overflow-y:auto on
-               #screen-quilt etc.). WebKit preserves its scrollTop across display swaps,
-               so a return visit can land mid-scroll. Pin to top now and again on the
-               next frame to cover content that streams in after activation
-               (e.g. renderQuilt() after handleAddColor → showScreen('screen-quilt')). */
-            if (target) {
-              try { target.scrollTop = 0; } catch (_) { /* */ }
-              requestAnimationFrame(() => {
-                try { target.scrollTop = 0; } catch (_) { /* */ }
-              });
-            }
-            
             this._syncExitChamberFixedFooterLeakGuard();
             requestAnimationFrame(() => this._syncExitChamberFixedFooterLeakGuard());
 
@@ -32047,6 +32292,11 @@ try {
         return text ? text.toLowerCase() : '';
       }
 
+      /** Firestore themes are append-only (oldest → newest); wall shows newest left. */
+      orderReflectionCommunityThemesNewestFirst(themes) {
+        return Array.isArray(themes) ? themes.slice().reverse() : [];
+      }
+
       buildReflectionWallThemes(communityThemes = [], firstResponseOverride = null) {
         const firstRaw =
           firstResponseOverride != null && String(firstResponseOverride).trim()
@@ -32058,13 +32308,15 @@ try {
               author: this.constructor.REFLECTION_FIRST_PATCH_AUTHOR
             }
           : null;
-        const community = (Array.isArray(communityThemes) ? communityThemes : [])
-          .map((theme) => this.normalizeReflectionWallTheme(theme))
-          .filter((entry) => entry?.text);
+        const community = this.orderReflectionCommunityThemesNewestFirst(
+          (Array.isArray(communityThemes) ? communityThemes : [])
+            .map((theme) => this.normalizeReflectionWallTheme(theme))
+            .filter((entry) => entry?.text)
+        );
         if (!first) return community;
         const firstKey = this.reflectionThemeBodyKey(first);
         const rest = community.filter((entry) => this.reflectionThemeBodyKey(entry) !== firstKey);
-        return [first, ...rest];
+        return [...rest, first];
       }
 
       async fetchTodayFirstResponseFields() {
@@ -32187,6 +32439,29 @@ try {
         }
         const heightRem = minRem + t * (maxRem - minRem);
         return `${heightRem.toFixed(2)}rem`;
+      }
+
+      getReflectionFabricPatchContentWeight(themeEntry) {
+        if (themeEntry === 'add yours') return 0;
+        const normalized = this.normalizeReflectionWallTheme(themeEntry);
+        if (normalized?.text) {
+          const author = String(normalized.author || '').trim();
+          return normalized.text.length + (author ? author.length + 3 : 0);
+        }
+        const text = this.reflectionWallThemeText(themeEntry) || String(themeEntry || '').trim();
+        return text.length;
+      }
+
+      /** Narrow by default; only approach full width when copy needs it (~200 chars). */
+      getReflectionFabricPatchWidth(themeEntry, allThemes = []) {
+        if (themeEntry === 'add yours') return '42vw';
+        const chars = this.getReflectionFabricPatchContentWeight(themeEntry);
+        if (!chars) return '42vw';
+        if (chars <= 62) return '50vw';
+        if (chars <= 95) return '58vw';
+        if (chars <= 125) return '68vw';
+        if (chars <= 158) return '78vw';
+        return '90vw';
       }
 
       getReflectionFabricPatchTilt(index) {
@@ -32319,6 +32594,7 @@ try {
           `--reflection-fabric-rgb: ${rgb}`,
           `--reflection-fabric-text: ${textColor}`,
           `--reflection-fabric-weave: ${weaveStrength}`,
+          `--reflection-patch-w: ${this.getReflectionFabricPatchWidth(themeText, allThemes)}`,
           `--reflection-patch-h: ${this.getReflectionFabricPatchHeight(themeText, allThemes)}`,
           `--reflection-fabric-cut: polygon(${cuts[index % cuts.length]})`,
           `--reflection-fabric-tilt: ${this.getReflectionFabricPatchTilt(index)}`,
@@ -32526,6 +32802,14 @@ try {
           );
         };
 
+        // Always open with a columnar decorative patch on the left edge.
+        pushDecorRun(
+          1,
+          'leading',
+          null,
+          responseCount > 0 ? themeRgbs[0] : inviteRgb
+        );
+
         if (!responseCount) {
           pushDecorRun(
             this.getReflectionCarouselDecorCount(0, 0, dateKey, true),
@@ -32535,14 +32819,13 @@ try {
           );
         } else {
           for (let i = 0; i < responseCount; i++) {
-            const isFirst = i === 0;
             slideParts.push(
               this.buildReflectionThemePatchSlide(
                 slideIndex,
                 ideas[i],
                 ideas,
                 themeRgbs[i],
-                { left: isFirst && slideIndex === 0, right: false }
+                {}
               )
             );
             slideIndex += 1;
@@ -33022,7 +33305,10 @@ try {
             first_response: String(data.first_response || data.firstResponse || '').trim(),
             user_name: String(data.user_name || data.userName || '').trim(),
             responseCount: Number(data.responseCount) || 0,
-            reflectionPrompt: String(data.reflectionPrompt || data.communityPrompt || '').trim()
+            reflectionPrompt: String(data.reflectionPrompt || data.communityPrompt || '').trim(),
+            quiltImageUrl: String(data.quiltImageUrl || data.classicImageUrl || '').trim(),
+            quiltImageSource: String(data.quiltImageSource || '').trim(),
+            classicImageUrl: String(data.classicImageUrl || '').trim()
           };
         } catch (error) {
           this.logger?.warn?.(`Reflection themes backend read failed for ${key}:`, error);
@@ -33094,6 +33380,146 @@ try {
           .map((value) => String(value ?? '').replace(/\s+/g, ' ').trim())
           .find(Boolean) || '';
         return text ? { text, author } : null;
+      }
+
+      pickQuiltImageUrlFromData(data) {
+        if (!data || typeof data !== 'object') return '';
+        return String(
+          data.quiltImageUrl || data.classicUrl || data.imageStorageUrl || ''
+        ).trim();
+      }
+
+      /** Zapier push / generate-instagram classicImageUrl (Firestore: classicUrl, imageStorageUrl). */
+      pickClassicImageUrlFromInstagramDoc(data) {
+        if (!data || typeof data !== 'object') return '';
+        return String(data.classicUrl || data.imageStorageUrl || data.classicImageUrl || '').trim();
+      }
+
+      pickFinalArchiveQuiltImageUrlFromData(data) {
+        if (!data || typeof data !== 'object') return '';
+        const source = String(data.quiltImageSource || '').trim();
+        if (source !== 'final_archive' && source !== 'classic') return '';
+        return String(data.quiltImageUrl || data.classicImageUrl || '').trim();
+      }
+
+      classicImageMatchesFinalQuilt(igData, archiveBlocks, finalBlockCount) {
+        const classicUrl = this.pickClassicImageUrlFromInstagramDoc(igData);
+        if (!classicUrl) return false;
+        const igBlockCount = Number(igData?.blockCount) || 0;
+        const finalCount = Number(finalBlockCount) || 0;
+        if (finalCount <= 1) return igBlockCount > 1;
+        if (igBlockCount <= 0) return false;
+        if (igBlockCount < finalCount) return false;
+        if (Array.isArray(archiveBlocks) && archiveBlocks.length > 1) {
+          const archiveFp = Utils.computeQuiltFingerprint(archiveBlocks);
+          const igFp = String(
+            igData?.imageQuiltFingerprint || igData?.quiltFingerprint || ''
+          ).trim();
+          if (archiveFp && igFp && igFp !== archiveFp) return false;
+        }
+        return true;
+      }
+
+      async resolveQuiltImageForReflectionArchive(dateKey, themeData = null) {
+        const key = String(dateKey || '').trim();
+        if (!key) {
+          return { quiltImageUrl: '', quiltImageFallbackBlocks: null };
+        }
+
+        const fromTheme = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
+        if (fromTheme) {
+          return { quiltImageUrl: fromTheme, quiltImageFallbackBlocks: null };
+        }
+
+        if (!window.db || !window.firestore?.doc || !window.firestore?.getDoc) {
+          return { quiltImageUrl: '', quiltImageFallbackBlocks: null };
+        }
+
+        const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
+        try {
+          const [igSnap, archiveSnap, quiltSnap] = await Promise.all([
+            readDoc(window.firestore.doc(window.db, 'instagram-images', key)),
+            readDoc(window.firestore.doc(window.db, 'archives', key)),
+            readDoc(window.firestore.doc(window.db, 'quilts', key))
+          ]);
+
+          const archiveData = archiveSnap.exists() ? archiveSnap.data() || {} : {};
+          const archiveBlocks = archiveData.quilt?.blocks || archiveData.blocks;
+          const archiveBlockCount = Array.isArray(archiveBlocks) ? archiveBlocks.length : 0;
+          let quiltBlockCount = 0;
+          if (quiltSnap.exists()) {
+            const qb = (quiltSnap.data() || {}).blocks;
+            if (Array.isArray(qb)) quiltBlockCount = qb.length;
+          }
+          const finalBlockCount = Math.max(archiveBlockCount, quiltBlockCount);
+
+          const igData = igSnap.exists() ? igSnap.data() || {} : {};
+          const classicUrl = this.pickClassicImageUrlFromInstagramDoc(igData);
+          if (this.classicImageMatchesFinalQuilt(igData, archiveBlocks, finalBlockCount)) {
+            return { quiltImageUrl: classicUrl, quiltImageFallbackBlocks: null };
+          }
+
+          const archiveUrl = this.pickFinalArchiveQuiltImageUrlFromData(archiveData);
+          const storedBlockCount = Number(archiveData.quiltImageBlockCount) || 0;
+          if (
+            archiveUrl &&
+            String(archiveData.quiltImageSource || '').trim() === 'final_archive' &&
+            (!archiveBlockCount || !storedBlockCount || storedBlockCount >= archiveBlockCount)
+          ) {
+            return { quiltImageUrl: archiveUrl, quiltImageFallbackBlocks: null };
+          }
+
+          const igBlockCount = Number(igData.blockCount) || 0;
+          if (Array.isArray(archiveBlocks) && archiveBlocks.length > 1) {
+            if (archiveBlockCount > igBlockCount) {
+              return { quiltImageUrl: '', quiltImageFallbackBlocks: archiveBlocks };
+            }
+          }
+        } catch (error) {
+          this.logger?.warn?.(`resolveQuiltImageForReflectionArchive(${key}):`, error);
+        }
+
+        return { quiltImageUrl: '', quiltImageFallbackBlocks: null };
+      }
+
+      async ensureReflectionArchiveQuiltImage(dateKey, imgEl) {
+        const key = String(dateKey || '').trim();
+        if (!key || !imgEl || imgEl.dataset.resolved === '1') return;
+
+        const blocks = this._reflectionArchiveQuiltBlocksCache?.get(key);
+        if (!Array.isArray(blocks) || blocks.length <= 1) {
+          imgEl.remove();
+          return;
+        }
+        if (!this.archiveService?.generateQuiltRasterBlobFromBlocks) return;
+
+        try {
+          const blob = await this.archiveService.generateQuiltRasterBlobFromBlocks(blocks, {
+            targetAspect: typeof IG_QUILT_SCREEN_ASPECT === 'number' ? IG_QUILT_SCREEN_ASPECT : 9 / 16,
+            instagramTrueWhiteMatte: false,
+            backgroundColor: '#f6f4f1'
+          });
+          if (!blob) {
+            imgEl.remove();
+            return;
+          }
+          const prev = imgEl.dataset.blobUrl;
+          if (prev) {
+            try {
+              URL.revokeObjectURL(prev);
+            } catch (_) {
+              /* ignore */
+            }
+          }
+          const blobUrl = URL.createObjectURL(blob);
+          imgEl.dataset.blobUrl = blobUrl;
+          imgEl.src = blobUrl;
+          imgEl.dataset.resolved = '1';
+          imgEl.classList.remove('reflection-themes-archive-quilt-image--pending');
+        } catch (error) {
+          this.logger?.warn?.('Reflection archive quilt raster failed:', error);
+          imgEl.remove();
+        }
       }
 
       async loadReflectionArchiveContextForDate(dateKey, themeData = null) {
@@ -33237,11 +33663,13 @@ try {
           snapshots.push(snap);
           const data = snap.data() || {};
           const dateKey = String(data.appDateKey || snap.id || '').trim();
-          const themes = Array.isArray(data.themes)
-            ? data.themes
-              .map((theme) => this.normalizeReflectionWallTheme(theme))
-              .filter((entry) => entry?.text)
-            : [];
+          const themes = this.orderReflectionCommunityThemesNewestFirst(
+            Array.isArray(data.themes)
+              ? data.themes
+                .map((theme) => this.normalizeReflectionWallTheme(theme))
+                .filter((entry) => entry?.text)
+              : []
+          );
           if (dateKey && themes.length) {
             docs.push({
               dateKey,
@@ -33260,17 +33688,35 @@ try {
               author: data.author,
               quoteAuthor: data.quoteAuthor,
               authorSnapshot: data.authorSnapshot,
-              quoteAuthorSnapshot: data.quoteAuthorSnapshot
+              quoteAuthorSnapshot: data.quoteAuthorSnapshot,
+              quiltImageUrl: this.pickFinalArchiveQuiltImageUrlFromData(data),
+              quiltImageSource: String(data.quiltImageSource || '').trim(),
+              classicImageUrl: String(data.classicImageUrl || '').trim()
             });
           }
         });
 
+        if (!this._reflectionArchiveQuiltBlocksCache) {
+          this._reflectionArchiveQuiltBlocksCache = new Map();
+        }
+
         const entries = await Promise.all(docs.map(async (entry) => {
-          const context = await this.loadReflectionArchiveContextForDate(entry.dateKey, entry);
+          const [context, quiltImage] = await Promise.all([
+            this.loadReflectionArchiveContextForDate(entry.dateKey, entry),
+            this.resolveQuiltImageForReflectionArchive(entry.dateKey, entry)
+          ]);
+          if (quiltImage.quiltImageFallbackBlocks) {
+            this._reflectionArchiveQuiltBlocksCache.set(
+              entry.dateKey,
+              quiltImage.quiltImageFallbackBlocks
+            );
+          }
           return {
             ...entry,
             prompt: context.prompt,
-            quote: context.quote
+            quote: context.quote,
+            quiltImageUrl: quiltImage.quiltImageUrl || entry.quiltImageUrl || '',
+            quiltImageFallbackBlocks: quiltImage.quiltImageFallbackBlocks
           };
         }));
         return {
@@ -33394,8 +33840,21 @@ try {
             })
             .join('');
           const detailsId = `reflectionThemesArchiveDetails-${index}`;
+          const quiltImageUrl = String(entry.quiltImageUrl || '').trim();
+          const hasQuiltVisual = quiltImageUrl || entry.quiltImageFallbackBlocks;
+          const safeQuiltUrl = quiltImageUrl ? this.escapeQuiltFortuneText(quiltImageUrl) : '';
+          const quiltImageHtml = hasQuiltVisual
+            ? `<p class="reflection-themes-archive-quilt-kicker">That day&rsquo;s quilt</p>
+              <div class="reflection-themes-archive-quilt-frame">
+                ${
+                  quiltImageUrl
+                    ? `<img class="reflection-themes-archive-quilt-image" src="${safeQuiltUrl}" alt="Community quilt for ${this.escapeQuiltFortuneText(dateLabel)}" loading="lazy" data-date-key="${this.escapeQuiltFortuneText(entry.dateKey)}" />`
+                    : `<img class="reflection-themes-archive-quilt-image reflection-themes-archive-quilt-image--pending" alt="Community quilt for ${this.escapeQuiltFortuneText(dateLabel)}" data-date-key="${this.escapeQuiltFortuneText(entry.dateKey)}" data-needs-raster="1" />`
+                }
+              </div>`
+            : '';
           return `
-            <article class="reflection-themes-archive-entry">
+            <article class="reflection-themes-archive-entry" data-date-key="${this.escapeQuiltFortuneText(entry.dateKey)}">
               <button type="button" class="reflection-themes-archive-question" aria-expanded="false" aria-controls="${detailsId}">
                 <p class="reflection-themes-archive-prompt">${prompt}</p>
                 <span class="reflection-themes-archive-question-chevron" aria-hidden="true">
@@ -33407,6 +33866,7 @@ try {
               <div class="reflection-themes-archive-details" id="${detailsId}" hidden>
                 <p class="reflection-themes-archive-date">${this.escapeQuiltFortuneText(dateLabel)}</p>
                 ${quoteStrip}
+                ${quiltImageHtml}
                 <p class="reflection-themes-archive-response-count">${this.escapeQuiltFortuneText(responseLabel)}</p>
                 <ul class="reflection-themes-archive-themes">${themes}</ul>
               </div>
@@ -33416,9 +33876,37 @@ try {
         this.bindReflectionThemesArchiveAccordion();
       }
 
+      hydrateReflectionArchiveQuiltImagesInEntry(entry) {
+        if (!entry) return;
+        const dateKey = String(entry.getAttribute('data-date-key') || '').trim();
+        entry.querySelectorAll('.reflection-themes-archive-quilt-image').forEach((img) => {
+          if (img.dataset.resolved === '1') return;
+          const imgDateKey = String(img.getAttribute('data-date-key') || dateKey).trim();
+          if (img.dataset.needsRaster === '1' || !String(img.getAttribute('src') || '').trim()) {
+            void this.ensureReflectionArchiveQuiltImage(imgDateKey, img);
+          }
+        });
+      }
+
       bindReflectionThemesArchiveAccordion() {
         const feed = document.getElementById('reflectionThemesArchiveFeed');
-        if (!feed || feed.dataset.accordionBound === '1') return;
+        if (!feed) return;
+
+        if (feed.dataset.quiltImageBound !== '1') {
+          feed.dataset.quiltImageBound = '1';
+          feed.addEventListener(
+            'error',
+            (event) => {
+              const img = event.target;
+              if (!img?.classList?.contains('reflection-themes-archive-quilt-image')) return;
+              const dateKey = String(img.getAttribute('data-date-key') || '').trim();
+              if (dateKey) void this.ensureReflectionArchiveQuiltImage(dateKey, img);
+            },
+            true
+          );
+        }
+
+        if (feed.dataset.accordionBound === '1') return;
         feed.dataset.accordionBound = '1';
         feed.addEventListener('click', (event) => {
           const trigger = event.target.closest('.reflection-themes-archive-question');
@@ -33435,6 +33923,7 @@ try {
             trigger.setAttribute('aria-expanded', 'true');
             details.hidden = false;
             entry.classList.add('reflection-themes-archive-entry--open');
+            this.hydrateReflectionArchiveQuiltImagesInEntry(entry);
           }
         });
       }
@@ -33443,7 +33932,10 @@ try {
         const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
         if (!baseUrl) throw new Error('CONFIG.BACKEND.baseUrl is not set');
         const todayQuote = this.quoteService?.getTodayQuote?.() || null;
-        const displayName = Utils.getNameThanksDisplayName();
+        const displayName =
+          Object.prototype.hasOwnProperty.call(options, 'displayName')
+            ? String(options.displayName ?? '').trim()
+            : Utils.getNameThanksDisplayName();
         const payload = {
           responseText,
           appDateKey: options.appDateKey || Utils.getTodayKey(),
@@ -33452,7 +33944,7 @@ try {
           reflectionPromptSnapshot: this.getQuiltReflectionPromptText(todayQuote).slice(0, 500)
         };
         if (displayName) {
-          payload.displayName = displayName;
+          payload.displayName = displayName.slice(0, 80);
         }
         const res = await fetch(`${baseUrl}/api/reflection-response`, {
           method: 'POST',
@@ -36697,6 +37189,96 @@ try {
         return this.requestAdminAccess();
       }
 
+      buildAdminReflectionResponseRowHtml(index = 0) {
+        const rowNum = index + 1;
+        return `
+          <div class="admin-reflection-response-row" data-row-index="${index}">
+            <div class="admin-reflection-response-row__head">
+              <span class="admin-reflection-response-row__label">Response ${rowNum}</span>
+              <button type="button" class="admin-reflection-response-row__remove" aria-label="Remove response ${rowNum}">Remove</button>
+            </div>
+            <label class="admin-reflection-response-row__field">
+              <span class="admin-reflection-response-row__field-label">Name on patch</span>
+              <input
+                type="text"
+                class="admin-reflection-response-name"
+                maxlength="80"
+                placeholder="e.g. Maria"
+                autocomplete="name"
+              />
+            </label>
+            <label class="admin-reflection-response-row__field">
+              <span class="admin-reflection-response-row__field-label">Reflection (200 characters max)</span>
+              <textarea
+                class="admin-reflection-response-text"
+                rows="3"
+                maxlength="200"
+                placeholder="Paste or type the response text"
+              ></textarea>
+            </label>
+          </div>
+        `;
+      }
+
+      bindAdminReflectionResponseRow(rowEl, { rowsList, onRowsChanged }) {
+        if (!rowEl) return;
+        rowEl.querySelector('.admin-reflection-response-row__remove')?.addEventListener('click', () => {
+          const rows = rowsList?.querySelectorAll('.admin-reflection-response-row') || [];
+          if (rows.length <= 1) {
+            rowEl.querySelector('.admin-reflection-response-text')?.focus();
+            return;
+          }
+          rowEl.remove();
+          onRowsChanged?.();
+        });
+        const text = rowEl.querySelector('.admin-reflection-response-text');
+        text?.addEventListener('input', () => {
+          const len = String(text.value || '').length;
+          rowEl.classList.toggle('is-over-limit', len > 200);
+        });
+      }
+
+      addAdminReflectionResponseRow(rowsList, { onRowsChanged, focus = true } = {}) {
+        if (!rowsList) return null;
+        const index = rowsList.querySelectorAll('.admin-reflection-response-row').length;
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = this.buildAdminReflectionResponseRowHtml(index);
+        const row = wrapper.firstElementChild;
+        if (!row) return null;
+        rowsList.appendChild(row);
+        this.bindAdminReflectionResponseRow(row, { rowsList, onRowsChanged });
+        onRowsChanged?.();
+        if (focus) row.querySelector('.admin-reflection-response-name')?.focus();
+        return row;
+      }
+
+      relabelAdminReflectionResponseRows(rowsList) {
+        (rowsList?.querySelectorAll('.admin-reflection-response-row') || []).forEach((row, index) => {
+          row.dataset.rowIndex = String(index);
+          const label = row.querySelector('.admin-reflection-response-row__label');
+          if (label) label.textContent = `Response ${index + 1}`;
+          row.querySelector('.admin-reflection-response-row__remove')?.setAttribute(
+            'aria-label',
+            `Remove response ${index + 1}`
+          );
+        });
+      }
+
+      collectAdminReflectionResponseEntries(rowsList) {
+        const entries = [];
+        (rowsList?.querySelectorAll('.admin-reflection-response-row') || []).forEach((row) => {
+          const text = String(row.querySelector('.admin-reflection-response-text')?.value || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (!text) return;
+          const name = String(row.querySelector('.admin-reflection-response-name')?.value || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          entries.push({ text, displayName: name || 'Friend' });
+        });
+        return entries;
+      }
+
       handleAdminSubmitReflectionResponses() {
         if (!this.isCurrentUserAdmin()) {
           this.uiService?.showToast?.('Admin mode required');
@@ -36711,118 +37293,95 @@ try {
         menu.className = 'admin-reflection-responses-menu';
         menu.innerHTML = `
           <div class="admin-reflection-responses-content">
-            <h2 style="margin: 0; font-size: 18px;">Submit reflection responses</h2>
-            <p style="margin: 0; font-size: 13px; line-height: 1.4;">
-              <strong>Prompt:</strong> ${this.escapeQuiltFortuneText(promptText)}
+            <h2 class="admin-reflection-responses-title">Upload reflection responses</h2>
+            <p class="admin-reflection-responses-prompt">
+              <strong>Today&rsquo;s prompt:</strong> ${this.escapeQuiltFortuneText(promptText)}
             </p>
-            <textarea
-              id="adminReflectionResponsesInput"
-              rows="8"
-              maxlength="5000"
-              placeholder="Paste one response per line. Blank lines are ignored."
-              style="width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #000; border-radius: 4px; font: inherit; resize: vertical;"
-            ></textarea>
-            <p id="adminReflectionResponsesStatus" style="margin: 0; min-height: 18px; font-size: 13px;" aria-live="polite"></p>
-            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <p class="admin-reflection-responses-hint">Add one or more responses. Each needs a name (shown on the wall patch) and the response text.</p>
+            <div class="admin-reflection-responses-rows" id="adminReflectionResponsesRows" role="list"></div>
+            <div class="admin-reflection-responses-toolbar">
+              <button type="button" id="adminReflectionResponsesAdd">+ Add another response</button>
+            </div>
+            <p id="adminReflectionResponsesStatus" class="admin-reflection-responses-status" aria-live="polite"></p>
+            <div class="admin-reflection-responses-actions">
               <button type="button" id="adminReflectionResponsesCancel">Cancel</button>
-              <button type="button" id="adminReflectionResponsesSubmit">Submit responses</button>
+              <button type="button" id="adminReflectionResponsesSubmit">Publish responses</button>
             </div>
           </div>
         `;
-        menu.style.cssText = `
-          position: fixed;
-          inset: 0;
-          z-index: 1002;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-          background: rgba(0,0,0,0.35);
-        `;
-
-        const content = menu.querySelector('.admin-reflection-responses-content');
-        content.style.cssText = `
-          width: min(560px, 100%);
-          max-height: 85vh;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          padding: 16px;
-          background: #fff;
-          border: 2px solid #000;
-          border-radius: 8px;
-          box-shadow: 0 8px 16px rgba(0,0,0,0.3);
-        `;
-
-        const buttons = menu.querySelectorAll('button');
-        buttons.forEach((btn) => {
-          btn.style.cssText = `
-            padding: 8px 16px;
-            border: 1px solid #000;
-            background: #fff;
-            cursor: pointer;
-            font-size: 14px;
-            border-radius: 4px;
-          `;
-        });
 
         const close = () => menu.remove();
-        const textarea = menu.querySelector('#adminReflectionResponsesInput');
+        const rowsList = menu.querySelector('#adminReflectionResponsesRows');
         const status = menu.querySelector('#adminReflectionResponsesStatus');
         const submitBtn = menu.querySelector('#adminReflectionResponsesSubmit');
+        const onRowsChanged = () => this.relabelAdminReflectionResponseRows(rowsList);
+
+        this.addAdminReflectionResponseRow(rowsList, { onRowsChanged, focus: false });
+        this.addAdminReflectionResponseRow(rowsList, { onRowsChanged, focus: false });
+
+        menu.querySelector('#adminReflectionResponsesAdd')?.addEventListener('click', () => {
+          this.addAdminReflectionResponseRow(rowsList, { onRowsChanged, focus: true });
+        });
         menu.querySelector('#adminReflectionResponsesCancel')?.addEventListener('click', close);
         menu.addEventListener('click', (event) => {
           if (event.target === menu) close();
         });
-        submitBtn?.addEventListener('click', async () => {
-          const responses = String(textarea?.value || '')
-            .split(/\n+/)
-            .map((line) => line.replace(/\s+/g, ' ').trim())
-            .filter(Boolean);
-          const tooLong = responses.find((response) => response.length > 200);
 
-          if (!responses.length) {
-            status.textContent = 'Add at least one response first.';
-            textarea?.focus();
+        submitBtn?.addEventListener('click', async () => {
+          const entries = this.collectAdminReflectionResponseEntries(rowsList);
+          const tooLong = entries.find((entry) => entry.text.length > 200);
+
+          if (!entries.length) {
+            status.textContent = 'Add at least one response with text.';
+            rowsList?.querySelector('.admin-reflection-response-text')?.focus();
             return;
           }
           if (tooLong) {
-            status.textContent = `One response is ${tooLong.length} characters. Keep each response to 200 or fewer.`;
-            textarea?.focus();
+            status.textContent = `One response is ${tooLong.text.length} characters. Keep each to 200 or fewer.`;
             return;
           }
 
           submitBtn.disabled = true;
-          submitBtn.textContent = 'Submitting...';
-          status.textContent = `Submitting ${responses.length} ${responses.length === 1 ? 'response' : 'responses'}...`;
+          submitBtn.textContent = 'Publishing...';
+          status.textContent = `Publishing ${entries.length} ${entries.length === 1 ? 'response' : 'responses'}...`;
 
           const baseClientId = this.currentUserId || Utils.getOrCreateUserId();
           const batchId = Date.now();
           let submittedCount = 0;
           try {
-            for (let index = 0; index < responses.length; index += 1) {
-              await this.submitReflectionResponse(responses[index], {
-                clientId: `${baseClientId}:admin-reflection:${batchId}:${index}`
+            for (let index = 0; index < entries.length; index += 1) {
+              const entry = entries[index];
+              await this.submitReflectionResponse(entry.text, {
+                clientId: `${baseClientId}:admin-reflection:${batchId}:${index}`,
+                displayName: entry.displayName
               });
               submittedCount += 1;
-              status.textContent = `Submitted ${submittedCount}/${responses.length} responses...`;
+              status.textContent = `Published ${submittedCount}/${entries.length}...`;
             }
           } catch (error) {
             this.logger?.warn?.('Admin reflection response submit failed:', error);
-            status.textContent = `Submitted ${submittedCount}/${responses.length}; stopped after an error.`;
+            status.textContent =
+              error?.message ||
+              `Published ${submittedCount}/${entries.length}; stopped after an error.`;
             submitBtn.textContent = 'Try remaining again';
             submitBtn.disabled = false;
             return;
           }
 
-          status.textContent = `Submitted ${submittedCount} ${submittedCount === 1 ? 'response' : 'responses'}.`;
-          this.uiService?.showToast?.(`Submitted ${submittedCount} reflection responses`);
+          status.textContent = `Published ${submittedCount} ${submittedCount === 1 ? 'response' : 'responses'}.`;
+          this.uiService?.showToast?.(`Published ${submittedCount} reflection responses`);
+          if (typeof window.refreshReflectionThemesNow === 'function') {
+            window.refreshReflectionThemesNow();
+          } else {
+            this.loadReflectionThemesForToday?.();
+          }
           setTimeout(close, 900);
         });
 
         document.body.appendChild(menu);
-        setTimeout(() => textarea?.focus(), 0);
+        setTimeout(() => {
+          rowsList?.querySelector('.admin-reflection-response-row .admin-reflection-response-name')?.focus();
+        }, 0);
       }
 
       // Reveal image management functions
@@ -38481,7 +39040,7 @@ try {
             <button data-admin-quilt-action="true" onclick="app.handleAdd25ColorFamilyBlocks()">Add 25 Color Variations</button>
             <button data-admin-quilt-action="true" onclick="app.handleSplitLargestBlockWithPopularColor()">Split Largest Block (Popular Color)</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handleRunAsFirstTimeUser()">Run as First-Time User</button>
-            <button type="button" onclick="window.app &amp;&amp; window.app.handleAdminSubmitReflectionResponses()">Submit Reflection Responses</button>
+            <button type="button" onclick="window.app &amp;&amp; window.app.handleAdminSubmitReflectionResponses()">Upload reflection responses</button>
             <button onclick="app.handleTestInstagramSpeakerImage()">📸 Create IG post (Layout B speaker)</button>
             <button onclick="app.handleTestInstagramStorySpeakerImage()">📱 Create IG story (Layout B speaker)${speakerCutoutPresetDot}</button>
             <button type="button" onclick="window.app &amp;&amp; window.app.handleAdminTuneSpeakerCutout()">🎯 Tune today's speaker cutout (story)</button>
