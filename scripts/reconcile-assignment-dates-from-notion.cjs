@@ -40,6 +40,7 @@ try {
 
 const admin = require('firebase-admin');
 const { catalogFieldsForAssignmentMirror } = require('./lib/first-response-fields.cjs');
+const { getAppDateKey, isDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
   'artRecsType',
@@ -62,16 +63,6 @@ function camelCaseDeletePayload() {
   return Object.fromEntries(DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE.map((key) => [key, deleteField]));
 }
 
-function isDateKey(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
-}
-
-function getAppDateKey(d = new Date()) {
-  const adjusted = new Date(d);
-  if (d.getUTCHours() < 7) adjusted.setUTCDate(adjusted.getUTCDate() - 1);
-  return `${adjusted.getUTCFullYear()}-${String(adjusted.getUTCMonth() + 1).padStart(2, '0')}-${String(adjusted.getUTCDate()).padStart(2, '0')}`;
-}
-
 function parseArgs(argv) {
   const args = { start: '', dryRun: false };
   for (let i = 2; i < argv.length; i += 1) {
@@ -79,9 +70,8 @@ function parseArgs(argv) {
     if (a === '--dry-run') args.dryRun = true;
     else if (a.startsWith('--start=')) args.start = a.slice('--start='.length);
   }
-  if (!args.start) throw new Error('Missing --start=YYYY-MM-DD or --start=today');
-  if (String(args.start).toLowerCase() === 'today') args.start = getAppDateKey();
-  if (!isDateKey(args.start)) throw new Error('--start must be YYYY-MM-DD or today');
+  if (!args.start) throw new Error('Missing --start=YYYY-MM-DD, today, tomorrow, or opening');
+  args.start = resolveStartDateKey(args.start);
   return args;
 }
 

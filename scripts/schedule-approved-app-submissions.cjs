@@ -24,6 +24,7 @@ try {
 }
 
 const admin = require('firebase-admin');
+const { addDays, getAppDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
   'artRecsType',
@@ -54,20 +55,6 @@ function requireDateArg(value, name) {
   return v;
 }
 
-function addDays(dateKey, deltaDays) {
-  const [y, m, d] = dateKey.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + deltaDays);
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
-}
-
-/** Same app-day rule as the client/server: before 7:00 UTC still belongs to the prior quote day. */
-function getAppDateKey(d = new Date()) {
-  const adjusted = new Date(d);
-  if (d.getUTCHours() < 7) adjusted.setUTCDate(adjusted.getUTCDate() - 1);
-  return `${adjusted.getUTCFullYear()}-${String(adjusted.getUTCMonth() + 1).padStart(2, '0')}-${String(adjusted.getUTCDate()).padStart(2, '0')}`;
-}
-
 function parseArgs(argv) {
   const args = {
     start: 'today',
@@ -84,12 +71,7 @@ function parseArgs(argv) {
     else if (a.startsWith('--cadence=')) args.cadence = Number(a.slice('--cadence='.length));
     else if (a.startsWith('--window=')) args.window = Number(a.slice('--window='.length));
   }
-  if (String(args.start).trim().toLowerCase() === 'today') {
-    args.start = getAppDateKey();
-  } else if (String(args.start).trim().toLowerCase() === 'tomorrow') {
-    args.start = addDays(getAppDateKey(), 1);
-  }
-  args.start = requireDateArg(args.start, '--start');
+  args.start = requireDateArg(resolveStartDateKey(args.start), '--start');
   if (!Number.isInteger(args.cadence) || args.cadence < 1) {
     throw new Error('--cadence must be an integer >= 1');
   }

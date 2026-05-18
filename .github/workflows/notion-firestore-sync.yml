@@ -2,8 +2,8 @@ name: Notion Firestore Sync
 
 on:
   schedule:
-    # 06:30 UTC — 30 min before daily quilt reset (07:00). Uses --start=tomorrow so
-    # scheduling + cutouts target the opening app-day before getAppDateKey() flips.
+    # 06:30 UTC — 30 min before daily quilt reset (07:00). Uses --start=opening so
+    # scheduling + cutouts target the opening app-day (stable if Actions runs late).
     - cron: "30 6 * * *"
   workflow_dispatch:
     inputs:
@@ -64,8 +64,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "START_ARG=--start=tomorrow" >> "$GITHUB_ENV"
-            echo "[workflow] scheduled cron: START_ARG=--start=tomorrow (opening app-day before 07:00 UTC reset)"
+            echo "START_ARG=--start=opening" >> "$GITHUB_ENV"
+            echo "[workflow] scheduled cron: START_ARG=--start=opening (live quilt day at 07:00 UTC reset)"
           else
             echo "START_ARG=--start=today" >> "$GITHUB_ENV"
             echo "[workflow] manual dispatch: START_ARG=--start=today (live app-day)"

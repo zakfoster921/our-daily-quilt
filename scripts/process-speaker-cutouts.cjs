@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const admin = require('firebase-admin');
 const { PNG } = require('pngjs');
+const { addDays, getAppDateKey, isDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
 
 const WIKIMEDIA_USER_AGENT =
   process.env.WIKIMEDIA_USER_AGENT || 'OurDailyQuilt/1.0 (https://ourdailyquilt.com; speaker-cutouts)';
@@ -64,8 +65,7 @@ function parseArgs(argv) {
     else if (a.startsWith('--doc=')) args.doc = a.slice('--doc='.length).trim();
     else if (a.startsWith('--upload-file=')) args.uploadFile = a.slice('--upload-file='.length).trim();
   }
-  if (String(args.start).toLowerCase() === 'today') args.start = getAppDateKey();
-  if (String(args.start).toLowerCase() === 'tomorrow') args.start = addDays(getAppDateKey(), 1);
+  args.start = resolveStartDateKey(args.start || 'today');
   return args;
 }
 
@@ -88,19 +88,6 @@ function resolveFirebaseStorageBucket(serviceAccount) {
   const pid = (serviceAccount && serviceAccount.project_id) || process.env.FIREBASE_PROJECT_ID || null;
   if (pid && pid !== 'your-project-id') return `${pid}.firebasestorage.app`;
   return undefined;
-}
-
-function addDays(dateKey, deltaDays) {
-  const [y, m, d] = String(dateKey).split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + deltaDays);
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
-}
-
-function getAppDateKey(d = new Date()) {
-  const adjusted = new Date(d);
-  if (d.getUTCHours() < 7) adjusted.setUTCDate(adjusted.getUTCDate() - 1);
-  return `${adjusted.getUTCFullYear()}-${String(adjusted.getUTCMonth() + 1).padStart(2, '0')}-${String(adjusted.getUTCDate()).padStart(2, '0')}`;
 }
 
 function initFirebase() {
@@ -362,10 +349,6 @@ async function collectRows(db, collectionName, opts) {
   const rows = [];
   snap.forEach((docSnap) => rows.push({ id: docSnap.id, ref: docSnap.ref, data: docSnap.data() || {} }));
   return rows;
-}
-
-function isDateKey(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 }
 
 function isReviewedQuote(data) {
