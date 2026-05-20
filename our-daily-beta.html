@@ -245,10 +245,9 @@ try {
           metaUpdateTimer = null;
           // Picker uses debounced meta updates; if the user already left the color screen,
           // applying a stale hex would leave iOS Safari chrome stuck on the old swatch.
-          const colorScreen = document.getElementById('screen-color');
           if (
             !document.body?.classList?.contains('color-mode-active') ||
-            !colorScreen?.classList.contains('active')
+            !(typeof window.app?.isColorPickerActive === 'function' && window.app.isColorPickerActive())
           ) {
             return;
           }
@@ -281,7 +280,7 @@ try {
       <div class="portal-main">
         <div class="portal-header">
           <div class="title-container">
-            <p class="odq-boot-splash__message">Getting today&rsquo;s quilt ready for you</p>
+            <p class="odq-boot-splash__message">Getting today&rsquo;s quilt ready</p>
           </div>
         </div>
       </div>
@@ -1772,13 +1771,12 @@ try {
       }
     }
 
-    body.intro-flow-active .screen:not(#screen-portal):not(#screen-quote):not(#screen-color):not(#screen-welcome):not(#screen-first-name):not(#screen-name-thanks):not(#screen-first-quote-bridge) {
+    body.intro-flow-active .screen:not(#screen-portal):not(#screen-quote):not(#screen-welcome):not(#screen-first-name):not(#screen-name-thanks):not(#screen-first-quote-bridge) {
       display: none !important;
     }
 
     body.intro-flow-active #screen-portal,
-    body.intro-flow-active #screen-quote,
-    body.intro-flow-active #screen-color {
+    body.intro-flow-active #screen-quote {
       position: relative !important;
       display: flex !important;
       opacity: 1 !important;
@@ -1877,25 +1875,6 @@ try {
       gap: 1.5rem;
     }
     
-    /* Add color: same white circle cue as quote screen (no text) */
-    #screen-color #addColorBtn {
-      margin: clamp(1.25rem, 4vh, 2rem) auto 0 !important;
-      width: 70px !important;
-      height: 70px !important;
-      max-width: none !important;
-      min-height: 0 !important;
-      padding: 0 !important;
-      background: transparent !important;
-      border: none !important;
-      box-shadow: none !important;
-      border-radius: 50% !important;
-      transform: translate3d(0, 0, 0) rotate(-5deg) scale(1);
-      opacity: 1;
-    }
-    #screen-color #addColorBtn:hover,
-    #screen-color #addColorBtn:focus-visible {
-      box-shadow: none !important;
-    }
     
     /* Canvas-backed HSV disk (see JS): pixels match screen fill + slider model. */
     .css-color-wheel {
@@ -1987,15 +1966,8 @@ try {
       display: none !important;
     }
     
-    #screen-color {
-      transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
-      justify-content: center;
-      align-items: center;
-      display: flex;
-      flex-direction: column;
-    }
-    
     #screen-quote {
+      transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
       /* Flex host: child .quote-content-wrapper fills height; .quote-vspace rails split slack. */
       --portal-subtext-size: clamp(1.4rem, 3.5vw, 2rem);
       display: flex;
@@ -2014,6 +1986,123 @@ try {
       padding-right: max(0.5rem, var(--odq-safe-right));
       box-sizing: border-box;
       height: auto;
+    }
+
+    #screen-quote.quote-has-color-picker {
+      background-color: var(--current-color, #f6f4f1);
+      transition: background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .quote-color-combined {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 0;
+      height: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .quote-color-combined__quote {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      overflow: hidden;
+      transition: transform 1.35s cubic-bezier(0.4, 0, 0.15, 1);
+    }
+
+    #screen-quote.quote-has-color-picker .quote-color-combined__quote {
+      transform: translate3d(0, -4vh, 0);
+    }
+
+    .quote-color-combined__quote .quote-content-wrapper {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    /* Picker rises from below the viewport (not max-height swipe). */
+    .quote-color-combined__picker {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      width: 100%;
+      box-sizing: border-box;
+      padding-top: clamp(0.35rem, 1.2vh, 0.65rem);
+      padding-bottom: max(0.75rem, calc(var(--odq-safe-bottom) + 0.4rem));
+      padding-left: max(0.5rem, var(--odq-safe-left));
+      padding-right: max(0.5rem, var(--odq-safe-right));
+      background: transparent;
+      transform: translate3d(0, 100%, 0);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      overflow: visible;
+      transition:
+        transform 1.35s cubic-bezier(0.4, 0, 0.15, 1),
+        opacity 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .quote-color-combined__picker.quote-color-picker--revealed {
+      transform: translate3d(0, 0, 0);
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    .quote-color-combined__picker .color-picker-container {
+      gap: clamp(0.75rem, 2vh, 1.25rem);
+      flex-shrink: 0;
+    }
+
+    #screen-quote .quote-color-submit-btn {
+      flex-shrink: 0;
+      display: inline-block !important;
+      visibility: visible !important;
+      margin: clamp(0.75rem, 2.2vh, 1.15rem) auto 0 !important;
+      min-width: min(14rem, 72vw);
+      padding: 0.85rem 2.25rem !important;
+      background: #fff !important;
+      color: #000 !important;
+      border: none !important;
+      border-radius: 9999px !important;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+      opacity: 1 !important;
+      transform: none !important;
+      position: relative;
+      z-index: 5;
+      letter-spacing: 0.06em;
+      text-transform: uppercase !important;
+      font-weight: 400 !important;
+    }
+
+    #screen-quote .quote-color-submit-btn:hover,
+    #screen-quote .quote-color-submit-btn:focus-visible {
+      box-shadow: 0 3px 14px rgba(0, 0, 0, 0.12);
+      transform: translateY(-1px) !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .quote-color-combined__quote,
+      .quote-color-combined__picker {
+        transition: none !important;
+        transform: none !important;
+      }
+      #screen-quote.quote-has-color-picker .quote-color-combined__quote {
+        transform: none !important;
+      }
+      .quote-color-combined__picker.quote-color-picker--revealed {
+        transform: none !important;
+      }
     }
 
     #screen-quote .quote-content-wrapper {
@@ -2049,7 +2138,7 @@ try {
       min-height: clamp(0.5rem, 1.8vmin, 1.15rem);
     }
 
-    /* Quote block: scroll inside when very tall so prompt + CTA stay reachable. */
+    /* Quote block: scroll inside when very tall so picker + CTA stay reachable. */
     #screen-quote .quote-stage {
       width: 100%;
       min-height: 0;
@@ -2149,24 +2238,15 @@ try {
         }
       }
       
-      #screen-color {
-        padding: 0 !important;
-        min-height: 100vh !important;
-        justify-content: center !important;
-        align-items: center !important;
-        display: flex !important;
-        flex-direction: column !important;
-      }
-      
-
-      
       .css-color-wheel {
         width: 224px !important;
         height: 224px !important;
       }
-      #screen-color #addColorBtn {
-        width: 70px !important;
-        height: 70px !important;
+      #screen-quote .quote-color-submit-btn {
+        min-width: min(14rem, 86vw);
+        width: auto !important;
+        border: none !important;
+        border-radius: 9999px !important;
       }
     }
     
@@ -5279,17 +5359,17 @@ try {
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     }
     
-    /* Only on color picker screen with dark colors - make text white for readability */
-    body.dark-color-active #screen-color .btn:hover { 
+    /* Only on quote color picker with dark colors - make text white for readability */
+    body.dark-color-active #screen-quote .btn:hover { 
       background: #000; 
       color: #fff !important; 
     }
-    body.dark-color-active #screen-color #addColorBtn:hover,
-    body.dark-color-active #screen-color #addColorBtn:focus-visible {
-      background: transparent !important;
-      color: inherit;
+    body.dark-color-active #screen-quote .quote-color-submit-btn:hover,
+    body.dark-color-active #screen-quote .quote-color-submit-btn:focus-visible {
+      background: #000 !important;
+      color: #fff !important;
       border: none !important;
-      box-shadow: none !important;
+      box-shadow: 0 3px 14px rgba(0, 0, 0, 0.28);
     }
     
     .btn:active {
@@ -5800,7 +5880,7 @@ try {
       #screen-welcome .btn,
       #screen-first-name .btn,
       #screen-settings .btn,
-      #screen-quote .btn,
+      #screen-quote .btn:not(.quote-color-submit-btn),
       #screen-archive .btn,
       #screen-reflection-themes-archive .btn,
       #screen-about .btn {
@@ -5931,28 +6011,6 @@ try {
         justify-content: flex-start !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch;
-      }
-
-      /* Color picker: full-screen like other steps, with safe insets so controls stay clear of the status bar. */
-      #screen-color {
-        padding: max(1rem, var(--odq-safe-top)) max(1rem, var(--odq-safe-right)) max(1rem, var(--odq-safe-bottom)) max(1rem, var(--odq-safe-left)) !important;
-        justify-content: center !important;
-        align-items: center !important;
-        height: 100dvh !important;
-        min-height: 100dvh !important;
-        max-height: 100dvh !important;
-        overflow: hidden !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100vw !important;
-        box-sizing: border-box !important;
-        z-index: 2 !important;
-        height: 100vh !important;
-        min-height: 100vh !important;
-        max-height: 100vh !important;
       }
 
       /* Quote: flex column host + grid wrapper — only when active so `showScreen` inline display:none wins. */
@@ -6101,7 +6159,6 @@ try {
       #screen-portal .button-container,
       #screen-welcome .button-container,
       #screen-quote .button-container,
-      #screen-color .button-container,
       #screen-about .button-container {
         position: static !important;
         background: transparent !important;
@@ -6176,9 +6233,11 @@ try {
         width: 240px; 
         height: 240px; 
       }
-      #screen-color #addColorBtn {
-        width: 70px !important;
-        height: 70px !important;
+      #screen-quote .quote-color-submit-btn {
+        min-width: min(14rem, 86vw);
+        width: auto !important;
+        border: none !important;
+        border-radius: 9999px !important;
       }
       #colorPickerControls { flex-direction: column; gap: 10px; }
       
@@ -6241,23 +6300,6 @@ try {
         justify-content: flex-start !important;
       }
       
-      /* Color picker: safe insets (later blocks must not zero padding-top). */
-      #screen-color {
-        padding: max(0.5rem, var(--odq-safe-top)) max(0.5rem, var(--odq-safe-right)) max(0.5rem, var(--odq-safe-bottom)) max(0.5rem, var(--odq-safe-left)) !important;
-        overflow: hidden !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100vw !important;
-        box-sizing: border-box !important;
-        justify-content: center !important;
-        align-items: center !important;
-        display: flex !important;
-        flex-direction: column !important;
-      }
-      
       /* Welcome flow: legacy chrome offset. (Portal excluded — first-visit was leaving ~120px gap showing as a bright strip.) */
       #screen-welcome,
       #screen-first-name,
@@ -6297,26 +6339,7 @@ try {
         overflow-x: hidden !important;
       }
       
-      /* Screens that need full viewport — keep safe-area padding from block above */
-      #screen-color {
-        height: 100dvh !important;
-        min-height: 100dvh !important;
-        max-height: 100dvh !important;
-        margin-top: 0 !important;
-        top: 0 !important;
-        position: fixed !important;
-        z-index: 1000 !important;
-        justify-content: center !important;
-        align-items: center !important;
-        display: flex !important;
-        flex-direction: column !important;
-        background-color: var(--current-color, #f6f4f1) !important;
-        min-height: 100dvh !important;
-        min-height: 100svh !important;
-        min-height: 100vh !important;
-      }
-      
-      /* Let the color screen paint behind the iOS status bar */
+      /* Let the quote screen paint behind the iOS status bar when picker is active */
       body.color-mode-active {
         /* body itself takes on the live color */
         background-color: var(--current-color, #f6f4f1) !important;
@@ -6351,7 +6374,7 @@ try {
         }
       }
       
-      #screen-color.active {
+      #screen-quote.active.quote-has-color-picker {
         background-color: var(--current-color, #f6f4f1) !important;
         background-size: cover !important;
         background-position: center !important;
@@ -10861,7 +10884,8 @@ try {
     }
 
     /* Photo torn-edge mask on ::before; copy in __slab-body with safe inset */
-    #screen-quilt .quilt-before-you-go__slab {
+    #screen-quilt .quilt-before-you-go__slab,
+    #screen-quilt .quilt-user-shape-card__thanks-tape.quilt-before-you-go__slab {
       position: relative;
       z-index: 0;
       box-sizing: border-box;
@@ -10875,7 +10899,8 @@ try {
     }
 
     /* L cap + center fill on ::before, R cap on ::after — no border-image seam */
-    #screen-quilt .quilt-before-you-go__slab::before {
+    #screen-quilt .quilt-before-you-go__slab::before,
+    #screen-quilt .quilt-user-shape-card__thanks-tape.quilt-before-you-go__slab::before {
       content: '';
       position: absolute;
       z-index: 0;
@@ -10902,7 +10927,8 @@ try {
       background-repeat: no-repeat;
     }
 
-    #screen-quilt .quilt-before-you-go__slab::after {
+    #screen-quilt .quilt-before-you-go__slab::after,
+    #screen-quilt .quilt-user-shape-card__thanks-tape.quilt-before-you-go__slab::after {
       content: '';
       position: absolute;
       z-index: 0;
@@ -11109,12 +11135,15 @@ try {
     }
 
     @media (prefers-reduced-motion: reduce) {
-      #screen-quilt .quilt-before-you-go__slab {
+      #screen-quilt .quilt-before-you-go__slab,
+      #screen-quilt .quilt-user-shape-card__thanks-tape.quilt-before-you-go__slab {
         transform: none !important;
       }
 
       #screen-quilt .quilt-before-you-go__slab::before,
-      #screen-quilt .quilt-before-you-go__slab::after {
+      #screen-quilt .quilt-before-you-go__slab::after,
+      #screen-quilt .quilt-user-shape-card__thanks-tape.quilt-before-you-go__slab::before,
+      #screen-quilt .quilt-user-shape-card__thanks-tape.quilt-before-you-go__slab::after {
         transform: none !important;
       }
     }
@@ -11236,29 +11265,64 @@ try {
     }
 
     #screen-quilt .quilt-daily-colors-zone {
+      --quilt-above-shape-card: 6.5rem;
+      /* Half of swatch (5:4) + footer — used to center the card at scroll end. */
+      --quilt-color-card-half: calc(min(28.8vw, 112px) + 1.55rem);
+      --quilt-scroll-end-footer: clamp(3rem, 7.5dvh, 4rem);
       display: flex;
       flex-direction: column;
       align-items: center;
       width: 100%;
-      margin: 9.6rem auto 0;
+      margin: var(--quilt-above-shape-card) auto 0;
       box-sizing: border-box;
     }
 
-    #screen-quilt .quilt-before-you-go__closing {
-      display: grid;
-      place-items: center;
+    #screen-quilt .quilt-daily-colors-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
       box-sizing: border-box;
-      width: min(340px, calc(100% - 2.5rem));
-      min-height: 9.6rem;
+    }
+
+    /* Scroll room below the card — sized so scroll end + sticky top land the card mid-screen. */
+    #screen-quilt .quilt-daily-colors-scroll-pad {
+      flex: 0 0 auto;
+      width: 100%;
+      min-height: max(
+        4dvh,
+        calc(50dvh - var(--quilt-color-card-half) - var(--quilt-scroll-end-footer) - 2dvh)
+      );
+      pointer-events: none;
+    }
+
+    #screen-quilt .quilt-daily-colors-stage:has(#quiltUserColorCardWrap[hidden]) .quilt-daily-colors-scroll-pad {
+      display: none;
+    }
+
+    #screen-quilt .quilt-before-you-go__slab--closing {
+      transform: rotate(-0.55deg) translateX(1px);
+    }
+
+    #screen-quilt .quilt-before-you-go__slab--closing .quilt-before-you-go__slab-body {
+      padding-top: 1.05rem;
+      padding-bottom: 1rem;
+    }
+
+    #screen-quilt .quilt-before-you-go__closing {
       margin: 0;
-      padding: 0.85rem 1.25rem;
-      font-size: clamp(1rem, 3.6vw, 1.12rem);
-      line-height: 1.5;
-      color: rgba(58, 44, 30, 0.72);
-      text-align: center;
+      width: 100%;
+      min-height: 0;
+      padding: 0;
+      text-align: left;
       text-wrap: pretty;
-      font-style: italic;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow-wrap: anywhere;
+      color: #2f2924;
+      font-family: 'Cutive Mono', ui-monospace, monospace;
+      font-size: clamp(1.05rem, 3.9vw, 1.28rem);
+      font-style: normal;
+      font-weight: 400;
+      line-height: 1.1;
     }
 
     #screen-quilt .quilt-daily-colors-cta-wrap {
@@ -11267,6 +11331,21 @@ try {
       align-items: center;
       gap: 0.55rem;
       margin: 0 auto;
+      width: 100%;
+    }
+
+    /* At scroll end, pin the color card to the vertical center of the viewport. */
+    #screen-quilt .quilt-daily-colors-cta-wrap:has(#quiltUserColorCardWrap:not([hidden])) {
+      position: sticky;
+      top: calc(50dvh - var(--quilt-color-card-half, 9rem));
+      z-index: 12;
+    }
+
+    /* TEMP: exit chamber gem CTA hidden while CONFIG.APP.exitChamberCtaEnabled is false. */
+    html[data-exit-chamber-cta-disabled="1"] #screen-quilt #quiltDailyColorsCtaBtn {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
     }
 
     #screen-quilt .quilt-daily-colors-cta {
@@ -11389,6 +11468,137 @@ try {
       line-height: 1.3;
     }
 
+    /* User's color — Pantone-style swatch on handled mount (stain + crimp). */
+    #screen-quilt .quilt-user-color-card-wrap {
+      --quilt-color-card-tilt: -3.25deg;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: min(72vw, 280px);
+      max-width: 100%;
+      margin: 0.15rem auto 0;
+      box-sizing: border-box;
+      transform: rotate(var(--quilt-color-card-tilt));
+      transform-origin: center center;
+    }
+
+    #screen-quilt .quilt-user-color-card-wrap[hidden] {
+      display: none !important;
+    }
+
+    #screen-quilt .quilt-user-shape-card {
+      width: 100%;
+      margin: 0;
+      box-sizing: border-box;
+    }
+
+    #screen-quilt .quilt-user-shape-card__mount {
+      --slide-mount: #ffffff;
+      --slide-mount-edge: #f0ebe3;
+      position: relative;
+      box-sizing: border-box;
+      border-radius: 3px;
+      padding: 0;
+      background: transparent;
+      box-shadow:
+        2px 4px 12px rgba(45, 36, 29, 0.2),
+        4px 8px 22px rgba(45, 36, 29, 0.14);
+      isolation: isolate;
+    }
+
+    /* Handled-edge staining on the swatch. */
+    #screen-quilt .quilt-user-shape-card__mount::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 1;
+      background:
+        radial-gradient(ellipse 34% 28% at 0% 0%, rgba(88, 70, 48, 0.2) 0%, transparent 72%),
+        radial-gradient(ellipse 30% 24% at 100% 0%, rgba(88, 70, 48, 0.14) 0%, transparent 68%),
+        radial-gradient(ellipse 32% 28% at 100% 100%, rgba(88, 70, 48, 0.08) 0%, transparent 70%),
+        radial-gradient(ellipse 28% 24% at 0% 100%, rgba(88, 70, 48, 0.07) 0%, transparent 68%);
+      box-shadow: inset 0 0 36px rgba(92, 74, 52, 0.06);
+    }
+
+    #screen-quilt .quilt-user-shape-card__surface {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      border: none;
+      border-radius: 3px;
+      overflow: hidden;
+      box-sizing: border-box;
+      background: #fff;
+      box-shadow: none;
+    }
+
+    /* Large flat color field (~Pantone top band). */
+    #screen-quilt .quilt-user-shape-card__swatch {
+      --quilt-user-piece-color: #ea9b9a;
+      --quilt-swatch-label-color: #1a2438;
+      container-type: size;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: min(52vw, 210px);
+      aspect-ratio: 5 / 4;
+      background-color: var(--quilt-user-piece-color);
+      box-sizing: border-box;
+    }
+
+    #screen-quilt .quilt-user-shape-card__swatch-message {
+      margin: 0;
+      padding: 0 0.45rem;
+      max-width: 92%;
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
+      font-size: clamp(2.1rem, 24cqmin, 4.75rem);
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      line-height: 0.98;
+      text-align: center;
+      text-wrap: balance;
+      color: var(--quilt-swatch-label-color);
+      opacity: 0.48;
+      transform: rotate(calc(0deg - var(--quilt-color-card-tilt, -3.25deg)));
+      transform-origin: center center;
+      pointer-events: none;
+    }
+
+    #screen-quilt .quilt-user-shape-card__footer {
+      flex: 0 0 auto;
+      background: #fff;
+      padding: 0.9rem 1rem 1rem;
+      text-align: left;
+      box-sizing: border-box;
+    }
+
+    #screen-quilt .quilt-user-shape-card__color-name {
+      margin: 0 0 0.22rem;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: clamp(1.08rem, 5vw, 1.42rem);
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      line-height: 1.12;
+      color: #111;
+    }
+
+    #screen-quilt .quilt-user-shape-card__color-hex {
+      margin: 0;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: clamp(0.64rem, 2.9vw, 0.8rem);
+      font-weight: 400;
+      letter-spacing: 0.05em;
+      line-height: 1.2;
+      color: #1a1a1a;
+      text-transform: uppercase;
+    }
+
     @media (max-width: 360px) {
       #screen-quilt .quilt-before-you-go {
         width: calc(100% - 1.5rem);
@@ -11434,7 +11644,14 @@ try {
     }
 
     #screen-quilt .quilt-scroll-quilt-gap.quilt-scroll-quilt-gap--after-blessing {
-      min-height: 0.75rem;
+      min-height: 20dvh;
+      min-height: 20svh;
+    }
+
+    /* With the Pantone card, keep only a sliver before the footer so the card can center. */
+    #screen-quilt:has(#quiltUserColorCardWrap:not([hidden])) .quilt-scroll-quilt-gap--after-blessing {
+      min-height: max(0.5rem, 2dvh);
+      min-height: max(0.5rem, 2svh);
     }
 
     /* Extra scroll past the icon strip when the reset bar is shown; keep small while the bar stays hidden. */
@@ -12048,62 +12265,56 @@ try {
       <p class="name-thanks-line first-quote-bridge-line" id="firstQuoteBridgeLine" aria-live="polite">Here&rsquo;s our quote for today</p>
     </section>
 
-    <!-- Quote Screen -->
-    <section class="screen" id="screen-quote" role="main" aria-label="Daily quote screen">
-      <div class="quote-content-wrapper">
-        <div class="quote-vspace quote-vspace--above" aria-hidden="true"></div>
-        <div class="quote-stage">
-          <div class="quote-card">
-            <div class="quote-inner">
-              <p class="quote-line" aria-live="polite"></p>
-              <p class="quote-author" aria-live="polite"></p>
+    <!-- Quote + color picker (single screen: quote top, picker reveals after read pause) -->
+    <section class="screen" id="screen-quote" role="main" aria-label="Daily quote and color picker">
+      <div class="quote-color-combined">
+        <div class="quote-color-combined__quote">
+          <div class="quote-content-wrapper">
+            <div class="quote-vspace quote-vspace--above" aria-hidden="true"></div>
+            <div class="quote-stage">
+              <div class="quote-card">
+                <div class="quote-inner">
+                  <p class="quote-line" aria-live="polite"></p>
+                  <p class="quote-author" aria-live="polite"></p>
+                </div>
+              </div>
             </div>
+            <div class="quote-vspace quote-vspace--between" aria-hidden="true"></div>
+            <div class="quote-vspace quote-vspace--below" aria-hidden="true"></div>
           </div>
         </div>
-        <div class="quote-vspace quote-vspace--between" aria-hidden="true"></div>
-        <div class="quote-action-cluster" role="group" aria-label="Color prompt">
-          <p class="quote-prompt" aria-hidden="true">What color comes to mind?</p>
+        <div
+          class="quote-color-combined__picker"
+          id="quoteColorPickerPane"
+          hidden
+          aria-hidden="true"
+        >
+          <div class="color-picker-container">
+            <canvas
+              class="css-color-wheel"
+              id="colorWheelCanvas"
+              width="336"
+              height="336"
+              role="button"
+              tabindex="0"
+              aria-label="Color wheel - click or drag to select hue"
+            ></canvas>
+            <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
+            <div id="colorPickerControls">
+              <input type="range" id="valueSlider" min="25" max="90" value="90" aria-label="Adjust color brightness" />
+            </div>
+          </div>
           <button
             type="button"
-            class="quote-color-wonky-btn"
-            id="quoteColorWonkyBtn"
-            hidden
-            aria-hidden="true"
-            aria-label="Open the color picker for this quote"
+            id="addColorBtn"
+            class="btn quote-color-submit-btn"
+            aria-label="Add your color to OUR DAILY QUILT"
           >
-            <span class="quote-color-wonky-btn__disc" aria-hidden="true"></span>
+            Add your color
           </button>
         </div>
-        <div class="quote-vspace quote-vspace--below" aria-hidden="true"></div>
       </div>
       <p class="quote-submitter-thanks" id="quoteSubmitterThanks" hidden></p>
-    </section>
-
-    <!-- Color Picker Screen -->
-    <section class="screen" id="screen-color" role="main" aria-label="Color picker screen">
-      <div class="color-picker-container">
-        <canvas
-          class="css-color-wheel"
-          id="colorWheelCanvas"
-          width="336"
-          height="336"
-          role="button"
-          tabindex="0"
-          aria-label="Color wheel - click or drag to select hue"
-        ></canvas>
-        <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
-        <div id="colorPickerControls">
-          <input type="range" id="valueSlider" min="25" max="90" value="90" aria-label="Adjust color brightness" />
-        </div>
-      </div>
-      <button
-        type="button"
-        id="addColorBtn"
-        class="quote-color-wonky-btn quote-color-wonky-btn--visible quote-color-wonky-btn--static"
-        aria-label="Add your color to OUR DAILY QUILT"
-      >
-        <span class="quote-color-wonky-btn__disc" aria-hidden="true"></span>
-      </button>
     </section>
 
     <!-- Quilt Screen -->
@@ -12466,18 +12677,56 @@ try {
               </section>
             </div>
 
+            <section
+              class="quilt-before-you-go__slab quilt-before-you-go__slab--closing quilt-before-you-go__block"
+              aria-label="Quilt closes"
+            >
+              <div class="quilt-before-you-go__slab-body">
+                <p
+                  class="quilt-before-you-go__prompt quilt-before-you-go__closing"
+                  id="beforeYouGoClosing"
+                  aria-live="polite"
+                ></p>
+              </div>
+            </section>
           </div>
         </div>
         <div class="quilt-daily-colors-zone">
-          <div class="quilt-daily-colors-cta-wrap">
-            <button
+          <div class="quilt-daily-colors-stage">
+            <div class="quilt-daily-colors-cta-wrap">
+              <!-- TEMP: exit chamber entry hidden while CONFIG.APP.exitChamberCtaEnabled is false. -->
+              <button
               type="button"
               class="quilt-daily-colors-cta"
               id="quiltDailyColorsCtaBtn"
               aria-label="Open your daily colors"
-            ></button>
+              hidden
+              disabled
+              aria-hidden="true"
+              ></button>
+              <div
+                class="quilt-user-color-card-wrap"
+                id="quiltUserColorCardWrap"
+                hidden
+                aria-hidden="true"
+              >
+                <div class="quilt-user-shape-card" id="quiltUserShapeCard">
+                  <div class="quilt-user-shape-card__mount">
+                    <div class="quilt-user-shape-card__surface">
+                      <div class="quilt-user-shape-card__swatch" id="quiltUserShapeSwatch">
+                        <p class="quilt-user-shape-card__swatch-message">thank you for adding this color</p>
+                      </div>
+                      <div class="quilt-user-shape-card__footer">
+                        <p class="quilt-user-shape-card__color-name" id="quiltUserShapeColorName"></p>
+                        <p class="quilt-user-shape-card__color-hex" id="quiltUserShapeColorHex"></p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="quilt-daily-colors-scroll-pad" aria-hidden="true"></div>
           </div>
-          <p class="quilt-before-you-go__closing" id="beforeYouGoClosing" aria-live="polite"></p>
         </div>
       </div>
       <div class="quilt-scroll-quilt-gap quilt-scroll-quilt-gap--after-blessing" aria-hidden="true"></div>
@@ -13294,8 +13543,8 @@ try {
         milestoneInAppNotificationMs: 7000,
         /** Optional; falls back to generated icon if missing. */
         notificationIconUrl: 'assets/icon.png',
-        /** Delay before “What color…” prompt on quote screen. */
-        quoteColorPromptReadPauseMs: 1500,
+        /** Delay before color picker pane reveals on quote screen (ms). */
+        quoteColorPickerRevealMs: 1800,
         buildId: '2026-04-30-app-store-readiness',
         /** Public app URL for native “share with a friend”; leave empty until the listing is live. */
         shareAppUrl: '',
@@ -13309,6 +13558,8 @@ try {
         ),
         /** Temporarily hide only the “What keeps coming up” / “Drawn from responses…” headings for today’s themes; themes carousel still shows. */
         reflectionTodayAggregateWallDisabled: true,
+        /** TEMP: quilt gem that opens exit chamber (#quiltDailyColorsCtaBtn). */
+        exitChamberCtaEnabled: false,
         /** Unique display names at or above this count split across lead (above reflection) and tail (before share). */
         quiltContributorSplitMin: 14
       },
@@ -19413,7 +19664,6 @@ try {
         'Come on in, [name]',
         "Oh good, it's [name]",
         'You came back, [name] !',
-        'We saved you a square, [name] !',
         'Happy [weekday], [name]'
       ];
       static REFLECTION_THANK_YOU_MESSAGE = 'Thank you for sharing, [name]';
@@ -21225,7 +21475,11 @@ try {
         debugRawQuiltImage = null,
         /** Denormalized from `quilts/{dateKey}` so Zapier can map Firestore fields without a second lookup. */
         blockCount,
-        contributorCount
+        contributorCount,
+        /** Set by nightly GitHub images job so Zapier can filter on final assets only. */
+        markReadyForInstagram = false,
+        /** Override Storage cache (nightly uses `no-store` so IG/Zapier do not reuse cached early PNGs). */
+        storageCacheControl = null
       }) {
         if (!window.db || !window.firestore) {
           throw new Error('Firestore not ready');
@@ -21282,7 +21536,10 @@ try {
         let postLayoutBSpeakerImageStorageUrl = null;
         let reelWebmStorageUrl = null;
         let debugRawQuiltStorageUrl = null;
-        const pngCacheControl = 'public, max-age=31536000';
+        const pngCacheControl =
+          typeof storageCacheControl === 'string' && storageCacheControl.trim()
+            ? storageCacheControl.trim()
+            : 'public, max-age=31536000';
         if (instagramImage) {
           const r = ref(storage, `${basePath}/classic.png`);
           await uploadBytes(r, Utils.dataUrlToBlob(instagramImage), {
@@ -21383,6 +21640,12 @@ try {
             ...exportDebug,
             debugWrittenAt: new Date().toISOString()
           };
+        }
+        if (markReadyForInstagram) {
+          const readyAt = new Date().toISOString();
+          docPayload.readyForInstagram = true;
+          docPayload.lastNightlyIgImagesAt = readyAt;
+          docPayload.igImagesSource = 'nightly_github_images_only';
         }
         const safePayload = Utils.sanitizeForFirestore(docPayload);
         await window.firestore.setDoc(imageRef, safePayload, { merge: true });
@@ -21767,7 +22030,7 @@ try {
           window.app?.clearPortalToQuoteIntroTimer();
           window.app?.clearNameThanksAdvanceTimer?.();
           window.app?.clearFirstQuoteBridgeTimer?.();
-          window.app?.clearQuotePromptSchedule();
+          window.app?.clearQuoteColorPickerSchedule?.();
           const introIds = window.app?.getIntroScreenIds?.() || new Set();
           const inIntro = introIds.has(screenId);
           const introEnabled = !!window.app?.isIntroFlowEnabled?.();
@@ -21856,7 +22119,7 @@ try {
                 target.classList.remove(...flowClassCleanup);
                 this._flowTransitioning = false;
                 if (target.id === 'screen-quote') {
-                  window.app?.scheduleQuotePromptReveal?.(CONFIG.APP.quoteColorPromptReadPauseMs);
+                  window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
                   /* Portal→quote: strips already scheduled when fade starts (see rAF below). */
                   if (!portalToQuoteFade) {
                     window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
@@ -22001,7 +22264,7 @@ try {
                 target.classList.remove(...flowClassCleanup);
                 this._flowTransitioning = false;
                 if (target.id === 'screen-quote') {
-                  window.app?.scheduleQuotePromptReveal?.(CONFIG.APP.quoteColorPromptReadPauseMs);
+                  window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
                 }
               };
 
@@ -22054,7 +22317,7 @@ try {
             }
 
             if (screenId === 'screen-quote' && !isFlowTransition && !bridgeToQuoteFade) {
-              window.app?.scheduleQuotePromptReveal?.(CONFIG.APP.quoteColorPromptReadPauseMs);
+              window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
               window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
             }
 
@@ -22109,59 +22372,13 @@ try {
               window.app?.quoteService?.populateReflectionPromptCard?.();
             }
             
-            // Handle color picker screen transitions with proper timing
-            if (screenId === 'screen-color') {
-              // Add class to body for color mode
-              document.body.classList.add('color-mode-active');
-
-              if (this._colorScreenEntryThemeTimer) {
-                clearTimeout(this._colorScreenEntryThemeTimer);
-                this._colorScreenEntryThemeTimer = null;
+            if (screenId === 'screen-quote') {
+              if (window.app) {
+                window.app.colorHasBeenSelected = false;
+                window.app.hideQuoteColorPickerPane?.();
               }
-              
-              // Keep warm neutral on first entry; only apply picker color after user interaction.
-              this._colorScreenEntryThemeTimer = setTimeout(() => {
-                this._colorScreenEntryThemeTimer = null;
-                const colorScreenEl = document.getElementById('screen-color');
-                if (!colorScreenEl?.classList.contains('active')) return;
-
-                const appRef = window.app;
-                if (!appRef?.colorHasBeenSelected) {
-                  if (window.ODQ_onColorChange) {
-                    window.ODQ_onColorChange('#f6f4f1', true);
-                  }
-                  return;
-                }
-                const currentColor = Utils.hsvToHex(
-                  appRef.selectedHue,
-                  appRef.selectedSaturation,
-                  appRef.selectedLightness
-                );
-                if (currentColor && Utils.validateHexColor(currentColor)) {
-                  if (window.ODQ_onColorChange) {
-                    window.ODQ_onColorChange(currentColor);
-                  }
-                }
-              }, 100); // Small delay to let screen transition start
-
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  const a = window.app;
-                  if (a && typeof a.updateColorWheel === 'function') {
-                    a._hsvWheelCanvasKey = '';
-                    a.updateColorWheel();
-                  }
-                });
-              });
             } else {
-              if (this._colorScreenEntryThemeTimer) {
-                clearTimeout(this._colorScreenEntryThemeTimer);
-                this._colorScreenEntryThemeTimer = null;
-              }
-              // Remove color mode class when leaving color picker
-              document.body.classList.remove('color-mode-active');
-              
-              // Snap to neutral color immediately before screen swap
+              window.app?.clearQuoteColorPickerSchedule?.();
               if (window.ODQ_snapNeutralBeforeSwap) {
                 window.ODQ_snapNeutralBeforeSwap();
               }
@@ -22233,12 +22450,6 @@ try {
 
             this._syncExitChamberFixedFooterLeakGuard();
             requestAnimationFrame(() => this._syncExitChamberFixedFooterLeakGuard());
-
-            if (screenId === 'screen-exit-chamber') {
-              window.app?.scheduleExitChamberNotificationPrompt?.();
-            } else {
-              window.app?.clearExitChamberNotificationPromptTimer?.();
-            }
 
             // Dispatch custom event for screen change
             document.dispatchEvent(new CustomEvent('screenChange', {
@@ -31028,29 +31239,29 @@ try {
         this._quiltScrollCuePlaying = false;
         this._quiltScrollCueScroller = null;
         this._quiltScrollCuePreviousScrollBehavior = '';
-        this._exitChamberNotificationPromptTimer = null;
+        /** One-shot guard: daily push opt-in after user scrolls quilt to the bottom. */
+        this._dailyQuotePromptedFromQuiltScroll = false;
 
-        // Gesture-based screen flow: portal -> quote -> color
+        // Gesture-based screen flow: portal -> quote (picker reveals on quote screen)
         this._scrollNavTouchStartY = null;
         this._scrollNavLastTriggerAt = 0;
         this._scrollNavCooldownMs = 550;
         this._flowScreenOrder = {
           'screen-portal': 0,
-          'screen-quote': 1,
-          'screen-color': 2
+          'screen-quote': 1
         };
         // UIService.showScreen() reads this map; it lives on App but must be reachable from uiService.
         this.uiService._flowScreenOrder = this._flowScreenOrder;
         this._flowTransitioning = false;
-        this._introScreenIds = new Set(['screen-portal', 'screen-quote', 'screen-color']);
+        this._introScreenIds = new Set(['screen-portal', 'screen-quote']);
         this._introFlowEnabled = false;
         this._introFlowScrollListener = null;
         this._lastIntroSnapSectionId = null;
         this._portalToQuoteTimer = null;
         this._introQuoteLandTimer = null;
         this._blockPortalScrollNav = false;
-        this._quotePromptRevealTimer = null;
-        this._quoteColorWonkyTimer = null;
+        this._quoteColorPickerRevealTimer = null;
+        this._colorPickerEntryThemeTimer = null;
         /** False until server confirms today's quilt + quote (hard block — no synthetic fallbacks). */
         this._liveDailyDataConfirmed = false;
         this._liveDailySyncInFlight = false;
@@ -31960,9 +32171,11 @@ try {
         const settingsBackBtn = document.getElementById('settingsBackBtn');
         const settingsResetColorHistoryBtn = document.getElementById('settingsResetColorHistoryBtn');
         const settingsDownloadPersonalQuiltBtn = document.getElementById('settingsDownloadPersonalQuiltBtn');
+        this.ensureExitChamberCtaDisabled();
         const quiltDailyColorsCtaBtn = document.getElementById('quiltDailyColorsCtaBtn');
         if (quiltDailyColorsCtaBtn) {
           quiltDailyColorsCtaBtn.addEventListener('click', (e) => {
+            if (!this.isExitChamberCtaEnabled()) return;
             e.preventDefault();
             e.stopPropagation();
             this.openExitChamberClassic();
@@ -32011,51 +32224,6 @@ try {
             e.preventDefault();
             e.stopPropagation();
             await this.handleDownloadPersonalQuilt();
-          });
-        }
-
-        const quoteColorWonkyBtn = document.getElementById('quoteColorWonkyBtn');
-        if (quoteColorWonkyBtn) {
-          quoteColorWonkyBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            quoteColorWonkyBtn.classList.add('quote-color-wonky-btn--pulse-off');
-            this.hideColorSubmitTransition?.();
-            const colorScreen = document.getElementById('screen-color');
-            if (colorScreen) {
-              colorScreen.style.display = '';
-              colorScreen.classList.remove('flow-fade-enter', 'flow-fade-enter-active', 'flow-fade-exit', 'flow-fade-exit-active');
-            }
-            if (this.isIntroFlowEnabled?.()) {
-              this.disableIntroFlow();
-              document.querySelectorAll('.screen').forEach((screen) => {
-                screen.classList.remove('active');
-                screen.style.display = 'none';
-              });
-            }
-            if (this.uiService) {
-              this.uiService._flowTransitioning = false;
-            }
-            this.uiService.showScreen('screen-color');
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                const activeColorScreen = document.getElementById('screen-color');
-                if (activeColorScreen?.classList.contains('active')) return;
-                document.querySelectorAll('.screen').forEach((screen) => {
-                  screen.classList.remove('active');
-                  screen.style.display = 'none';
-                });
-                document.body.classList.add('color-mode-active');
-                if (activeColorScreen) {
-                  activeColorScreen.style.display = 'flex';
-                  activeColorScreen.classList.add('active');
-                }
-                if (typeof this.updateColorWheel === 'function') {
-                  this._hsvWheelCanvasKey = '';
-                  this.updateColorWheel();
-                }
-              });
-            });
           });
         }
 
@@ -36141,23 +36309,18 @@ try {
           }, 1000);
         }
 
-        const quotePromptEl = document.querySelector('#screen-quote .quote-prompt');
-        if (quotePromptEl) {
-          if (nextId === 'screen-quote' && prevSnap !== 'screen-quote') {
-            this.scheduleQuotePromptReveal(CONFIG.APP.quoteColorPromptReadPauseMs);
-            this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
-          } else if (nextId !== 'screen-quote') {
-            quotePromptEl.classList.remove('quote-prompt--visible');
-            quotePromptEl.setAttribute('aria-hidden', 'true');
-          }
+        if (nextId === 'screen-quote' && prevSnap !== 'screen-quote') {
+          this.scheduleQuoteColorPickerReveal(CONFIG.APP.quoteColorPickerRevealMs);
+          this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+        } else if (nextId !== 'screen-quote') {
+          this.clearQuoteColorPickerSchedule();
         }
       }
 
       setupScreenScrollNavigation() {
         if (this.isIntroFlowEnabled()) return;
         const nextByScreen = {
-          'screen-portal': 'screen-quote',
-          'screen-quote': 'screen-color'
+          'screen-portal': 'screen-quote'
         };
 
         const triggerNext = () => {
@@ -36341,21 +36504,15 @@ try {
         
         const hexColor = Utils.hsvToHex(this.selectedHue, this.selectedSaturation, this.selectedLightness);
         
-        const colorScreen = document.getElementById('screen-color');
-        if (colorScreen && this.colorHasBeenSelected) {
-          colorScreen.style.backgroundColor = hexColor;
-          // Set CSS custom property for status bar extension
+        const quoteScreen = document.getElementById('screen-quote');
+        if (quoteScreen && this.colorHasBeenSelected && this.isColorPickerActive()) {
+          quoteScreen.style.backgroundColor = hexColor;
           document.documentElement.style.setProperty('--current-color', hexColor);
         }
         
-        // Update color directly (no parent communication needed)
-        if (this.colorHasBeenSelected && hexColor && Utils.validateHexColor(hexColor)) {
-          const colorScreen = document.getElementById('screen-color');
-          if (colorScreen && colorScreen.classList.contains('active')) {
-            // Update color directly
-            if (window.ODQ_onColorChange) {
-              window.ODQ_onColorChange(hexColor);
-            }
+        if (this.colorHasBeenSelected && hexColor && Utils.validateHexColor(hexColor) && this.isColorPickerActive()) {
+          if (window.ODQ_onColorChange) {
+            window.ODQ_onColorChange(hexColor);
           }
         }
         
@@ -36474,8 +36631,7 @@ try {
         if (event.key === 'ArrowDown' || event.key === 'PageDown') {
           const currentScreen = document.querySelector('.screen.active');
           const nextByScreen = {
-            'screen-portal': 'screen-quote',
-            'screen-quote': 'screen-color'
+            'screen-portal': 'screen-quote'
           };
           const next =
             currentScreen?.id === 'screen-portal'
@@ -36495,11 +36651,13 @@ try {
           if (currentScreen) {
             const currentId = currentScreen.id;
             if (currentId === 'screen-quote') {
-              this.uiService.showScreen('screen-portal');
-            } else if (currentId === 'screen-color') {
-              this.uiService.showScreen('screen-quote');
+              if (this.isColorPickerActive()) {
+                this.clearQuoteColorPickerSchedule();
+              } else {
+                this.uiService.showScreen('screen-portal');
+              }
             } else if (currentId === 'screen-quilt') {
-              this.uiService.showScreen('screen-color');
+              this.uiService.showScreen('screen-quote');
             }
           }
         }
@@ -36517,8 +36675,7 @@ try {
             this.quiltEngine.recalculateDimensionsForCurrentViewport();
             this.renderQuilt();
           }
-          const colorScreen = document.getElementById('screen-color');
-          if (colorScreen && colorScreen.classList.contains('active')) {
+          if (this.isColorPickerActive()) {
             this._hsvWheelCanvasKey = '';
             this.updateColorWheel();
           }
@@ -37200,6 +37357,7 @@ try {
         document.addEventListener('screenChange', (e) => {
           if (e.detail.screenId === 'screen-quilt') {
             this.parallaxAnchorScrollTop = this.getCurrentQuiltScrollPosition();
+            this._dailyQuotePromptedFromQuiltScroll = false;
             this.resetQuiltParallaxVisualState();
             this.handleParallaxScroll();
             this.scheduleQuiltScrollCue();
@@ -37383,6 +37541,51 @@ try {
         const rawShift = scrollDelta * this.parallaxBaseRate;
         this.parallaxTargetShift = Math.max(-this.parallaxMaxShift, Math.min(this.parallaxMaxShift, rawShift));
         this.requestParallaxFrame();
+        this.handleQuiltNotificationPromptOnScroll();
+      }
+
+      /** True when the quilt screen's scroll container is within thresholdPx of the bottom. */
+      isQuiltScrolledNearBottom(thresholdPx = 72) {
+        const quiltScreen = document.getElementById('screen-quilt');
+        if (!quiltScreen?.classList.contains('active')) return false;
+
+        const candidates = [quiltScreen];
+        const panel = document.querySelector('#screen-quilt .button-container');
+        if (panel && panel.scrollHeight > panel.clientHeight + 8) {
+          candidates.push(panel);
+        }
+
+        let anyScrollable = false;
+        for (const el of candidates) {
+          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+          if (maxScroll < 32) continue;
+          anyScrollable = true;
+          if (maxScroll - el.scrollTop > thresholdPx) return false;
+        }
+        return anyScrollable;
+      }
+
+      /**
+       * First-time (or re-promptable) daily push opt-in: after the user scrolls the
+       * quilt screen to the bottom — not on launch, not on tiny nudges.
+       */
+      handleQuiltNotificationPromptOnScroll() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        if (!quiltScreen?.classList.contains('active')) return;
+        if (this._quiltScrollCuePlaying) return;
+        if (this._dailyQuotePromptedFromQuiltScroll) return;
+        if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') === '1') return;
+
+        const scrollSinceLand =
+          this.getCurrentQuiltScrollPosition() - (this.parallaxAnchorScrollTop || 0);
+        const MIN_SCROLL_BEFORE_PROMPT_PX = 80;
+        if (scrollSinceLand < MIN_SCROLL_BEFORE_PROMPT_PX) return;
+        if (!this.isQuiltScrolledNearBottom()) return;
+
+        this._dailyQuotePromptedFromQuiltScroll = true;
+        this.maybePromptForDailyQuoteNotifications().catch((error) => {
+          this.logger.warn('Daily quote push prompt failed:', error);
+        });
       }
 
       requestParallaxFrame() {
@@ -39690,60 +39893,116 @@ try {
         return 'screen-quote';
       }
 
-      clearQuotePromptSchedule() {
-        if (this._quotePromptRevealTimer) {
-          clearTimeout(this._quotePromptRevealTimer);
-          this._quotePromptRevealTimer = null;
+      isColorPickerActive() {
+        const quoteScreen = document.getElementById('screen-quote');
+        const pane = document.getElementById('quoteColorPickerPane');
+        return !!(
+          quoteScreen?.classList.contains('active') &&
+          pane?.classList.contains('quote-color-picker--revealed')
+        );
+      }
+
+      hideQuoteColorPickerPane() {
+        const quoteScreen = document.getElementById('screen-quote');
+        const pane = document.getElementById('quoteColorPickerPane');
+        if (pane) {
+          pane.classList.remove('quote-color-picker--revealed');
+          pane.hidden = true;
+          pane.setAttribute('aria-hidden', 'true');
+          pane.style.backgroundColor = '';
         }
-        if (this._quoteColorWonkyTimer) {
-          clearTimeout(this._quoteColorWonkyTimer);
-          this._quoteColorWonkyTimer = null;
+        if (quoteScreen) {
+          quoteScreen.classList.remove('quote-has-color-picker');
+          quoteScreen.style.backgroundColor = '';
         }
-        const el = document.querySelector('#screen-quote .quote-prompt');
-        if (el) {
-          el.classList.remove('quote-prompt--visible');
-          el.setAttribute('aria-hidden', 'true');
-        }
-        const wonky = document.getElementById('quoteColorWonkyBtn');
-        if (wonky) {
-          wonky.classList.remove(
-            'quote-color-wonky-btn--visible',
-            'quote-color-wonky-btn--pulse-off'
-          );
-          wonky.hidden = true;
-          wonky.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('color-mode-active');
+        if (this._colorPickerEntryThemeTimer) {
+          clearTimeout(this._colorPickerEntryThemeTimer);
+          this._colorPickerEntryThemeTimer = null;
         }
       }
 
+      clearQuoteColorPickerSchedule() {
+        if (this._quoteColorPickerRevealTimer) {
+          clearTimeout(this._quoteColorPickerRevealTimer);
+          this._quoteColorPickerRevealTimer = null;
+        }
+        this.hideQuoteColorPickerPane();
+      }
+
+      applyColorPickerEntryTheme() {
+        if (this._colorPickerEntryThemeTimer) {
+          clearTimeout(this._colorPickerEntryThemeTimer);
+          this._colorPickerEntryThemeTimer = null;
+        }
+        this._colorPickerEntryThemeTimer = setTimeout(() => {
+          this._colorPickerEntryThemeTimer = null;
+          if (!this.isColorPickerActive()) return;
+          if (!this.colorHasBeenSelected) {
+            if (window.ODQ_onColorChange) {
+              window.ODQ_onColorChange('#f6f4f1', true);
+            }
+            return;
+          }
+          const currentColor = Utils.hsvToHex(
+            this.selectedHue,
+            this.selectedSaturation,
+            this.selectedLightness
+          );
+          if (currentColor && Utils.validateHexColor(currentColor)) {
+            if (window.ODQ_onColorChange) {
+              window.ODQ_onColorChange(currentColor);
+            }
+          }
+        }, 100);
+      }
+
+      revealQuoteColorPickerPane() {
+        if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+        const quoteScreen = document.getElementById('screen-quote');
+        const pane = document.getElementById('quoteColorPickerPane');
+        if (!quoteScreen || !pane) return;
+
+        pane.classList.remove('quote-color-picker--revealed');
+        pane.hidden = false;
+        pane.setAttribute('aria-hidden', 'false');
+        quoteScreen.classList.add('quote-has-color-picker');
+        document.body.classList.add('color-mode-active');
+        void pane.offsetWidth;
+
+        requestAnimationFrame(() => {
+          pane.classList.add('quote-color-picker--revealed');
+          this.applyColorPickerEntryTheme();
+          requestAnimationFrame(() => {
+            if (!this.isColorPickerActive()) return;
+            this._hsvWheelCanvasKey = '';
+            if (typeof this.updateColorWheel === 'function') {
+              this.updateColorWheel();
+            }
+          });
+        });
+      }
+
       /**
-       * After the quote screen is up: wait `readPauseMs` so the line can be read, then show the
-       * “What color…” prompt and the color cue in the same frame (CSS uses matching fade duration).
+       * After the quote screen is up: wait `readPauseMs`, then reveal wheel + slider + submit.
        */
-      scheduleQuotePromptReveal(readPauseMs = CONFIG.APP.quoteColorPromptReadPauseMs) {
-        this.clearQuotePromptSchedule();
-        const el = document.querySelector('#screen-quote .quote-prompt');
-        if (!el) return;
+      scheduleQuoteColorPickerReveal(readPauseMs = CONFIG.APP.quoteColorPickerRevealMs) {
+        if (this._quoteColorPickerRevealTimer) {
+          clearTimeout(this._quoteColorPickerRevealTimer);
+          this._quoteColorPickerRevealTimer = null;
+        }
+        this.hideQuoteColorPickerPane();
 
-        const revealPromptAndColorCue = () => {
-          if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
-          const btn = document.getElementById('quoteColorWonkyBtn');
-          if (!btn) return;
-          btn.classList.remove('quote-color-wonky-btn--pulse-off');
-          btn.hidden = false;
-          btn.setAttribute('aria-hidden', 'false');
-          btn.classList.add('quote-color-wonky-btn--visible');
-          el.classList.add('quote-prompt--visible');
-          el.setAttribute('aria-hidden', 'false');
-        };
+        const reveal = () => this.revealQuoteColorPickerPane();
 
-        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-          revealPromptAndColorCue();
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+          reveal();
           return;
         }
         const wait = Math.max(0, readPauseMs);
-        this._quotePromptRevealTimer = setTimeout(() => {
-          this._quotePromptRevealTimer = null;
-          revealPromptAndColorCue();
+        this._quoteColorPickerRevealTimer = setTimeout(() => {
+          this._quoteColorPickerRevealTimer = null;
+          reveal();
         }, wait);
       }
 
@@ -40234,8 +40493,7 @@ try {
         const ms = end.getTime() - n.getTime();
         const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
         if (totalSeconds < 60) {
-          el.textContent =
-            "Today's quilt closes in less than a minute. Thank you for being here ♡";
+          el.textContent = "Today's quilt closes in less than a minute.";
           return;
         }
         const hours = Math.floor(totalSeconds / 3600);
@@ -40249,7 +40507,7 @@ try {
           const mu = minutes === 1 ? 'minute' : 'minutes';
           timePart = `${minutes} ${mu}`;
         }
-        el.textContent = `Today's quilt closes in ${timePart}. Thank you for being here ♡`;
+        el.textContent = `Today's quilt closes in ${timePart}.`;
       }
 
       setupQuiltResetCountdown() {
@@ -41290,6 +41548,80 @@ try {
         return 'magenta';
       }
 
+      /** Stable seed from hex so the same color always gets the same paint-chip name. */
+      _paintSampleColorSeed(hex) {
+        const raw = String(hex || '').replace(/^#/, '').toUpperCase();
+        let h = 2166136261;
+        for (let i = 0; i < raw.length; i++) {
+          h ^= raw.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+      }
+
+      /** Poetic paint-sample style label from hex (offline, deterministic). */
+      getPaintSampleColorName(hex) {
+        const normalized = this.normalizeHexColor(hex);
+        if (!normalized) return 'Worn Linen';
+        const seed = this._paintSampleColorSeed(normalized);
+        const r = parseInt(normalized.slice(1, 3), 16) / 255;
+        const g = parseInt(normalized.slice(3, 5), 16) / 255;
+        const b = parseInt(normalized.slice(5, 7), 16) / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const lightness = (max + min) / 2;
+        const delta = max - min;
+        const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+        let hue = 0;
+        if (delta !== 0) {
+          if (max === r) hue = ((g - b) / delta) % 6;
+          else if (max === g) hue = (b - r) / delta + 2;
+          else hue = (r - g) / delta + 4;
+          hue = Math.round(hue * 60);
+          if (hue < 0) hue += 360;
+        }
+
+        const moodLight = ['Sunwashed', 'Morning', 'Pale', 'Chalked', 'Misted', 'Hushed', 'Quiet'];
+        const moodMid = ['Quiet', 'Worn', 'Faded', 'Dusted', 'Toasted', 'Overcast', 'Misted'];
+        const moodDark = ['Spent', 'Dusky', 'Worn', 'Weathered', 'Late', 'Faded'];
+        const moodPool =
+          lightness > 0.64 ? moodLight : lightness < 0.36 ? moodDark : moodMid;
+        const mood = moodPool[(seed + Math.round(saturation * 6)) % moodPool.length];
+
+        const hueNouns = {
+          neutral: ['Linen', 'Clay', 'Mist', 'Stone', 'Dusk', 'Haze', 'Drift'],
+          red: ['Ember', 'Plum Wine', 'Clay', 'Blush', 'Ember'],
+          orange: ['Ember', 'Clay', 'Ember', 'Harbor'],
+          yellow: ['Linen', 'Meadow', 'Sun', 'Linen'],
+          chartreuse: ['Chartreuse', 'Garden', 'Sedge', 'Meadow', 'Patina'],
+          green: ['Meadow', 'Sage', 'Sedge', 'Garden', 'Patina'],
+          teal: ['Tide', 'Harbor', 'Patina', 'Mist', 'Sage'],
+          cyan: ['Tide', 'Patina', 'Harbor', 'Mist'],
+          blue: ['Tide', 'Dusk', 'Harbor', 'Patina'],
+          indigo: ['Dusk', 'Harbor', 'Tide', 'Mist'],
+          purple: ['Dusk', 'Plum Wine', 'Amythest', 'Mist'],
+          magenta: ['Plum Wine', 'Amythest', 'Blush', 'Dusk']
+        };
+
+        let bucket = 'green';
+        if (saturation < 0.12) bucket = 'neutral';
+        else if (hue < 16 || hue >= 345) bucket = lightness > 0.58 ? 'magenta' : 'red';
+        else if (hue < 38) bucket = 'orange';
+        else if (hue < 72) bucket = 'yellow';
+        else if (hue < 95) bucket = 'chartreuse';
+        else if (hue < 155) bucket = 'green';
+        else if (hue < 185) bucket = 'teal';
+        else if (hue < 205) bucket = 'cyan';
+        else if (hue < 245) bucket = 'blue';
+        else if (hue < 275) bucket = 'indigo';
+        else if (hue < 315) bucket = 'purple';
+        else bucket = 'magenta';
+
+        const nouns = hueNouns[bucket] || hueNouns.green;
+        const noun = nouns[(seed >>> 8) % nouns.length];
+        return `${mood} ${noun}`;
+      }
+
       hasSavedPopularColorResponseToday(dateKey = Utils.getTodayKey()) {
         return this._popularColorResponseSavedDateKey === dateKey;
       }
@@ -41473,6 +41805,7 @@ try {
         this.refreshQuoteSpeakerWidget();
         this.refreshQuiltMoodWidget();
         this.refreshQuiltReflectionScrapWidget();
+        this.refreshQuiltUserShapeCard();
       }
 
       resetQuiltParallaxVisualState() {
@@ -42310,25 +42643,6 @@ try {
         return text;
       }
 
-      clearExitChamberNotificationPromptTimer() {
-        if (this._exitChamberNotificationPromptTimer != null) {
-          window.clearTimeout(this._exitChamberNotificationPromptTimer);
-          this._exitChamberNotificationPromptTimer = null;
-        }
-      }
-
-      scheduleExitChamberNotificationPrompt() {
-        this.clearExitChamberNotificationPromptTimer();
-        this._exitChamberNotificationPromptTimer = window.setTimeout(() => {
-          this._exitChamberNotificationPromptTimer = null;
-          const exit = document.getElementById('screen-exit-chamber');
-          if (!exit?.classList.contains('active')) return;
-          this.maybePromptForDailyQuoteNotifications().catch((error) => {
-            this.logger.warn('Daily quote push prompt failed:', error);
-          });
-        }, 1000);
-      }
-
       async maybePromptForDailyQuoteNotifications() {
         if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') === '1') return;
         if (localStorage.getItem('ourDailyPushDailyQuotePrompted_v2') === '1') {
@@ -43092,8 +43406,7 @@ try {
           }
 
           // Update color directly (no parent communication needed)
-          const colorScreen = document.getElementById('screen-color');
-          if (colorScreen && colorScreen.classList.contains('active')) {
+          if (this.isColorPickerActive()) {
             if (window.ODQ_onColorChange) {
               try {
                 window.ODQ_onColorChange(selectedColor);
@@ -47592,6 +47905,24 @@ try {
         this.handleShowMyBlock();
       }
 
+      isExitChamberCtaEnabled() {
+        return CONFIG.APP.exitChamberCtaEnabled === true;
+      }
+
+      ensureExitChamberCtaDisabled() {
+        if (this.isExitChamberCtaEnabled()) return;
+        document.documentElement.dataset.exitChamberCtaDisabled = '1';
+        const btn = document.getElementById('quiltDailyColorsCtaBtn');
+        if (btn) {
+          btn.hidden = true;
+          btn.disabled = true;
+          btn.setAttribute('aria-hidden', 'true');
+          btn.style.display = 'none';
+          btn.style.visibility = 'hidden';
+          btn.style.pointerEvents = 'none';
+        }
+      }
+
       ensureDedicateBlockButton() {
         // Temporarily disabled; keep the dedication code path intact so it can be restored later.
         const dedicateBtn = document.getElementById('dedicateBlockBtn');
@@ -47735,6 +48066,7 @@ try {
       }
 
       openExitChamberClassic() {
+        if (!this.isExitChamberCtaEnabled()) return;
         this.applyExitChamberBackgroundFromTodayColor();
         this._exitChamberScrapSeed = 0;
         this.bindExitChamberTextureCycleGestures();
@@ -47769,17 +48101,63 @@ try {
             snapshot.innerHTML = '';
             snapshot.hidden = true;
           }
+          this.refreshQuiltUserShapeCard();
           return;
         }
         section.hidden = false;
         section.setAttribute('aria-label', `Your piece today, ${data.color}`);
         mount.style.setProperty('--exit-chamber-piece-color', data.color);
-        this.renderExitChamberTodayPieceSvg(mount, data.block, data.color);
+        this.renderExitChamberTodayPieceSvg(mount, data.block, data.color, 'exit');
         this.renderExitChamberFullQuiltSnapshotSvg(document.getElementById('exitChamberQuiltSnapshot'));
         this.scheduleExitChamberCollageLayout(data.block);
+        this.refreshQuiltUserShapeCard();
       }
 
-      renderExitChamberTodayPieceSvg(mount, block, color) {
+      refreshQuiltUserShapeCard() {
+        const wrap = document.getElementById('quiltUserColorCardWrap');
+        const card = document.getElementById('quiltUserShapeCard');
+        const swatch = document.getElementById('quiltUserShapeSwatch');
+        const colorNameEl = document.getElementById('quiltUserShapeColorName');
+        const colorHexEl = document.getElementById('quiltUserShapeColorHex');
+        if (!wrap || !card) return;
+        const data = this.getExitChamberTodayPieceData();
+        if (!data) {
+          wrap.hidden = true;
+          wrap.setAttribute('aria-hidden', 'true');
+          if (colorNameEl) colorNameEl.textContent = '';
+          if (colorHexEl) colorHexEl.textContent = '';
+          return;
+        }
+        const displayName = Utils.getNameThanksDisplayName();
+        const safeHex = this.normalizeHexColor(data.color) || String(data.color || '').trim();
+        const colorSampleName = this.getPaintSampleColorName(safeHex);
+        const rr = parseInt(safeHex.slice(1, 3), 16);
+        const rg = parseInt(safeHex.slice(3, 5), 16);
+        const rb = parseInt(safeHex.slice(5, 7), 16);
+        const pieceLuminance = (0.299 * rr + 0.587 * rg + 0.114 * rb) / 255;
+        const swatchLabelColor = pieceLuminance > 0.56 ? '#1a2438' : '#f7f4ee';
+        if (swatch) {
+          swatch.style.setProperty('--quilt-user-piece-color', safeHex);
+          swatch.style.setProperty('--quilt-swatch-label-color', swatchLabelColor);
+        }
+        if (colorNameEl) colorNameEl.textContent = colorSampleName;
+        if (colorHexEl) colorHexEl.textContent = safeHex;
+        wrap.hidden = false;
+        wrap.removeAttribute('aria-hidden');
+        card.setAttribute(
+          'aria-label',
+          `${displayName}'s color today, thank you for adding this color, ${colorSampleName}, ${safeHex}`
+        );
+      }
+
+      renderExitChamberTodayPieceSvg(
+        mount,
+        block,
+        color,
+        gradientIdPrefix = 'exit',
+        overlayName = '',
+        overlayColorName = ''
+      ) {
         if (!mount) return;
         const NS = 'http://www.w3.org/2000/svg';
         const make = (tag) => document.createElementNS(NS, tag);
@@ -47808,7 +48186,10 @@ try {
         if (Number.isFinite(Number(sourceBlock.insetCx))) previewBlock.insetCx = Number(sourceBlock.insetCx) - sourceX;
         if (Number.isFinite(Number(sourceBlock.insetCy))) previewBlock.insetCy = Number(sourceBlock.insetCy) - sourceY;
 
-        const pad = Math.max(8, Math.min(w, h) * 0.2);
+        const isQuiltDeboss = gradientIdPrefix === 'quilt';
+        const pad = isQuiltDeboss
+          ? Math.max(3, Math.min(w, h) * 0.06)
+          : Math.max(8, Math.min(w, h) * 0.2);
         const svg = make('svg');
         svg.setAttribute('viewBox', `${-pad} ${-pad} ${w + pad * 2} ${h + pad * 2}`);
         svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -47816,8 +48197,12 @@ try {
         svg.setAttribute('aria-label', `Your piece today, ${safeColor}`);
 
         const defs = make('defs');
+        const grainId = `${gradientIdPrefix}TodayPieceGrain`;
+        const washId = `${gradientIdPrefix}TodayPieceColorWash`;
+        const liftId = `${gradientIdPrefix}TodayPieceLiftShadow`;
+        const cornerId = `${gradientIdPrefix}TodayPieceLiftedCorner`;
         const grainPattern = make('pattern');
-        grainPattern.setAttribute('id', 'exitTodayPieceGrain');
+        grainPattern.setAttribute('id', grainId);
         grainPattern.setAttribute('patternUnits', 'userSpaceOnUse');
         grainPattern.setAttribute('width', '17');
         grainPattern.setAttribute('height', '17');
@@ -47836,8 +48221,95 @@ try {
         });
         defs.appendChild(grainPattern);
 
+        const innerShadowFilterId = `${gradientIdPrefix}TodayPieceInnerShadow`;
+        if (isQuiltDeboss) {
+          /* Light from top-left → soft inner shadow on bottom + right edges only. */
+          const innerRimRadius = Math.max(0.9, Math.min(w, h) * 0.018);
+          const innerShadowFilter = make('filter');
+          innerShadowFilter.setAttribute('id', innerShadowFilterId);
+          innerShadowFilter.setAttribute('x', '-35%');
+          innerShadowFilter.setAttribute('y', '-35%');
+          innerShadowFilter.setAttribute('width', '170%');
+          innerShadowFilter.setAttribute('height', '170%');
+          innerShadowFilter.setAttribute('color-interpolation-filters', 'sRGB');
+
+          const shadowLightMaskSvg = [
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1" preserveAspectRatio="none">',
+            '<defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">',
+            '<stop offset="0%" stop-color="#fff" stop-opacity="0"/>',
+            '<stop offset="48%" stop-color="#fff" stop-opacity="0"/>',
+            '<stop offset="100%" stop-color="#fff" stop-opacity="1"/>',
+            '</linearGradient></defs>',
+            '<rect width="1" height="1" fill="url(#lg)"/>',
+            '</svg>'
+          ].join('');
+          const lightMaskImage = make('feImage');
+          lightMaskImage.setAttribute('href', `data:image/svg+xml,${encodeURIComponent(shadowLightMaskSvg)}`);
+          lightMaskImage.setAttribute('preserveAspectRatio', 'none');
+          lightMaskImage.setAttribute('result', 'lightMask');
+
+          const erode = make('feMorphology');
+          erode.setAttribute('in', 'SourceAlpha');
+          erode.setAttribute('operator', 'erode');
+          erode.setAttribute('radius', String(innerRimRadius));
+          erode.setAttribute('result', 'eroded');
+
+          const rimMask = make('feComposite');
+          rimMask.setAttribute('in', 'SourceAlpha');
+          rimMask.setAttribute('in2', 'eroded');
+          rimMask.setAttribute('operator', 'out');
+          rimMask.setAttribute('result', 'innerRim');
+
+          const directionalRim = make('feComposite');
+          directionalRim.setAttribute('in', 'innerRim');
+          directionalRim.setAttribute('in2', 'lightMask');
+          directionalRim.setAttribute('operator', 'in');
+          directionalRim.setAttribute('result', 'directionalRim');
+
+          const softRim = make('feGaussianBlur');
+          softRim.setAttribute('in', 'directionalRim');
+          softRim.setAttribute('stdDeviation', '1.65');
+          softRim.setAttribute('result', 'softRim');
+
+          const clipInside = make('feComposite');
+          clipInside.setAttribute('in', 'softRim');
+          clipInside.setAttribute('in2', 'SourceAlpha');
+          clipInside.setAttribute('operator', 'in');
+          clipInside.setAttribute('result', 'softRimInside');
+
+          const flood = make('feFlood');
+          flood.setAttribute('flood-color', '#2d241d');
+          flood.setAttribute('flood-opacity', '0.07');
+          flood.setAttribute('result', 'shadowColor');
+
+          const innerShadow = make('feComposite');
+          innerShadow.setAttribute('in', 'shadowColor');
+          innerShadow.setAttribute('in2', 'softRimInside');
+          innerShadow.setAttribute('operator', 'in');
+          innerShadow.setAttribute('result', 'innerShadow');
+
+          const merge = make('feMerge');
+          const mergeGraphic = make('feMergeNode');
+          mergeGraphic.setAttribute('in', 'SourceGraphic');
+          const mergeShadow = make('feMergeNode');
+          mergeShadow.setAttribute('in', 'innerShadow');
+          merge.appendChild(mergeGraphic);
+          merge.appendChild(mergeShadow);
+
+          innerShadowFilter.appendChild(lightMaskImage);
+          innerShadowFilter.appendChild(erode);
+          innerShadowFilter.appendChild(rimMask);
+          innerShadowFilter.appendChild(directionalRim);
+          innerShadowFilter.appendChild(softRim);
+          innerShadowFilter.appendChild(clipInside);
+          innerShadowFilter.appendChild(flood);
+          innerShadowFilter.appendChild(innerShadow);
+          innerShadowFilter.appendChild(merge);
+          defs.appendChild(innerShadowFilter);
+        }
+
         const washGradient = make('linearGradient');
-        washGradient.setAttribute('id', 'exitTodayPieceColorWash');
+        washGradient.setAttribute('id', washId);
         washGradient.setAttribute('x1', '0%');
         washGradient.setAttribute('y1', '0%');
         washGradient.setAttribute('x2', '100%');
@@ -47855,7 +48327,7 @@ try {
         defs.appendChild(washGradient);
 
         const liftGradient = make('linearGradient');
-        liftGradient.setAttribute('id', 'exitTodayPieceLiftShadow');
+        liftGradient.setAttribute('id', liftId);
         liftGradient.setAttribute('x1', '0%');
         liftGradient.setAttribute('y1', '0%');
         liftGradient.setAttribute('x2', '100%');
@@ -47873,7 +48345,7 @@ try {
         defs.appendChild(liftGradient);
 
         const liftedCorner = make('radialGradient');
-        liftedCorner.setAttribute('id', 'exitTodayPieceLiftedCorner');
+        liftedCorner.setAttribute('id', cornerId);
         liftedCorner.setAttribute('cx', '88%');
         liftedCorner.setAttribute('cy', '90%');
         liftedCorner.setAttribute('r', '46%');
@@ -47907,7 +48379,13 @@ try {
         pencilLayer.setAttribute('class', 'exit-chamber-today-piece__pencil-outline');
         svg.appendChild(contactShadowLayer);
         svg.appendChild(edgeLayer);
-        svg.appendChild(mainLayer);
+        const pieceVisual = make('g');
+        pieceVisual.setAttribute('class', 'exit-chamber-today-piece__visual');
+        if (isQuiltDeboss) {
+          pieceVisual.setAttribute('filter', `url(#${innerShadowFilterId})`);
+        }
+        pieceVisual.appendChild(mainLayer);
+        svg.appendChild(pieceVisual);
         svg.appendChild(washLayer);
         svg.appendChild(grainLayer);
         svg.appendChild(bevelLayer);
@@ -47942,41 +48420,45 @@ try {
           shape.setAttribute('fill', fillColor);
           shape.setAttribute('stroke', 'none');
 
-          const contact = shape.cloneNode(true);
-          contact.setAttribute('fill', 'rgba(45, 36, 29, 0.18)');
-          contact.setAttribute('stroke', 'none');
-          contact.setAttribute('transform', 'translate(2.2 3.2)');
-          contactShadowLayer.appendChild(contact);
+          if (!isQuiltDeboss) {
+            const contact = shape.cloneNode(true);
+            contact.setAttribute('fill', 'rgba(45, 36, 29, 0.18)');
+            contact.setAttribute('stroke', 'none');
+            contact.setAttribute('transform', 'translate(2.2 3.2)');
+            contactShadowLayer.appendChild(contact);
 
-          const edge = shape.cloneNode(true);
-          edge.setAttribute('fill', 'rgba(232, 219, 191, 0.98)');
-          edge.setAttribute('stroke', 'rgba(92, 74, 54, 0.2)');
-          edge.setAttribute('stroke-width', String(Math.max(1, Math.min(w, h) * 0.018)));
-          edge.setAttribute('stroke-linejoin', 'round');
-          edge.setAttribute('transform', 'translate(1.9 2.1)');
-          edgeLayer.appendChild(edge);
+            const edge = shape.cloneNode(true);
+            edge.setAttribute('fill', 'rgba(232, 219, 191, 0.98)');
+            edge.setAttribute('stroke', 'rgba(92, 74, 54, 0.2)');
+            edge.setAttribute('stroke-width', String(Math.max(1, Math.min(w, h) * 0.018)));
+            edge.setAttribute('stroke-linejoin', 'round');
+            edge.setAttribute('transform', 'translate(1.9 2.1)');
+            edgeLayer.appendChild(edge);
+          }
 
           mainLayer.appendChild(shape);
 
-          const wash = shape.cloneNode(true);
-          wash.setAttribute('fill', 'url(#exitTodayPieceColorWash)');
-          wash.setAttribute('stroke', 'none');
-          washLayer.appendChild(wash);
+          if (!isQuiltDeboss) {
+            const wash = shape.cloneNode(true);
+            wash.setAttribute('fill', `url(#${washId})`);
+            wash.setAttribute('stroke', 'none');
+            washLayer.appendChild(wash);
+
+            const bevel = shape.cloneNode(true);
+            bevel.setAttribute('fill', `url(#${liftId})`);
+            bevel.setAttribute('stroke', 'none');
+            bevelLayer.appendChild(bevel);
+
+            const liftedCornerHighlight = shape.cloneNode(true);
+            liftedCornerHighlight.setAttribute('fill', `url(#${cornerId})`);
+            liftedCornerHighlight.setAttribute('stroke', 'none');
+            bevelLayer.appendChild(liftedCornerHighlight);
+          }
 
           const grain = shape.cloneNode(true);
-          grain.setAttribute('fill', 'url(#exitTodayPieceGrain)');
+          grain.setAttribute('fill', `url(#${grainId})`);
           grain.setAttribute('stroke', 'none');
           grainLayer.appendChild(grain);
-
-          const bevel = shape.cloneNode(true);
-          bevel.setAttribute('fill', 'url(#exitTodayPieceLiftShadow)');
-          bevel.setAttribute('stroke', 'none');
-          bevelLayer.appendChild(bevel);
-
-          const liftedCornerHighlight = shape.cloneNode(true);
-          liftedCornerHighlight.setAttribute('fill', 'url(#exitTodayPieceLiftedCorner)');
-          liftedCornerHighlight.setAttribute('stroke', 'none');
-          bevelLayer.appendChild(liftedCornerHighlight);
 
           return shape;
         };
@@ -48032,6 +48514,91 @@ try {
               appendPolygon(spec.points, innerColor, 'exit-chamber-today-piece__shape-part');
             }
           }
+        }
+
+        const nameOnPiece = String(overlayName || '').trim();
+        const colorNameOnPiece = String(overlayColorName || '').trim();
+        if (isQuiltDeboss && (nameOnPiece || colorNameOnPiece)) {
+          const cx = w * 0.5;
+          const cy = h * 0.5;
+          const fontSize = Math.max(13, Math.min(w, h) * 0.26);
+          const colorFontSize = Math.max(9, fontSize * 0.4);
+          const rr = parseInt(safeColor.slice(1, 3), 16);
+          const rg = parseInt(safeColor.slice(3, 5), 16);
+          const rb = parseInt(safeColor.slice(5, 7), 16);
+          const pieceLuminance = (0.299 * rr + 0.587 * rg + 0.114 * rb) / 255;
+          const labelColor = pieceLuminance > 0.56 ? '#1a2438' : '#f7f4ee';
+          const labelOpacity = 0.72;
+          const nameLayer = make('g');
+          nameLayer.setAttribute('class', 'quilt-user-shape-card__name-label');
+          nameLayer.setAttribute('opacity', String(labelOpacity));
+          nameLayer.setAttribute('transform', `rotate(-5 ${cx} ${cy})`);
+          let labelStackOffset = 0;
+          if (nameOnPiece) {
+            const nameText = make('text');
+            nameText.setAttribute('class', 'quilt-user-shape-card__name-user');
+            nameText.setAttribute('x', String(cx));
+            nameText.setAttribute('y', String(cy - fontSize * 0.62));
+            nameText.setAttribute('text-anchor', 'middle');
+            nameText.setAttribute('dominant-baseline', 'middle');
+            nameText.setAttribute('fill', labelColor);
+            nameText.setAttribute('font-size', String(fontSize));
+            nameText.setAttribute(
+              'font-family',
+              "'Zakarack', Georgia, 'Times New Roman', serif"
+            );
+            nameText.textContent = nameOnPiece;
+            nameLayer.appendChild(nameText);
+            labelStackOffset = fontSize * 0.34;
+          }
+          if (colorNameOnPiece) {
+            const colorText = make('text');
+            colorText.setAttribute('class', 'quilt-user-shape-card__name-color');
+            colorText.setAttribute('x', String(cx));
+            colorText.setAttribute(
+              'y',
+              String(cy - fontSize * 0.2 + (nameOnPiece ? 0 : colorFontSize * 0.15))
+            );
+            colorText.setAttribute('text-anchor', 'middle');
+            colorText.setAttribute('dominant-baseline', 'middle');
+            colorText.setAttribute('fill', labelColor);
+            colorText.setAttribute('font-size', String(colorFontSize));
+            colorText.setAttribute(
+              'font-family',
+              "Georgia, 'Times New Roman', Times, serif"
+            );
+            colorText.setAttribute('font-style', 'italic');
+            colorText.textContent = colorNameOnPiece;
+            nameLayer.appendChild(colorText);
+            labelStackOffset = Math.max(labelStackOffset, fontSize * 0.22 + colorFontSize * 0.5);
+          }
+
+          const heartSize = fontSize * 0.36;
+          const heartCy = cy + fontSize * 0.38 + labelStackOffset * 0.35;
+          const heart = make('path');
+          heart.setAttribute('class', 'quilt-user-shape-card__name-heart');
+          heart.setAttribute(
+            'd',
+            [
+              `M ${cx - heartSize * 0.06} ${heartCy + heartSize * 0.12}`,
+              `C ${cx - heartSize * 1.02} ${heartCy - heartSize * 0.42}`,
+              `${cx - heartSize * 0.58} ${heartCy + heartSize * 1.02}`,
+              `${cx} ${heartCy + heartSize * 1.08}`,
+              `C ${cx + heartSize * 0.62} ${heartCy + heartSize * 0.96}`,
+              `${cx + heartSize * 1.05} ${heartCy - heartSize * 0.34}`,
+              `${cx + heartSize * 0.1} ${heartCy + heartSize * 0.16}`,
+              `C ${cx - heartSize * 0.38} ${heartCy - heartSize * 0.1}`,
+              `${cx - heartSize * 0.04} ${heartCy + heartSize * 0.02}`,
+              `${cx - heartSize * 0.06} ${heartCy + heartSize * 0.12}`
+            ].join(' ')
+          );
+          heart.setAttribute('fill', 'none');
+          heart.setAttribute('stroke', labelColor);
+          heart.setAttribute('stroke-width', String(Math.max(0.7, fontSize * 0.032)));
+          heart.setAttribute('stroke-linecap', 'round');
+          heart.setAttribute('stroke-linejoin', 'round');
+          nameLayer.appendChild(heart);
+          svg.appendChild(nameLayer);
         }
 
         mount.appendChild(svg);

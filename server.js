@@ -2786,6 +2786,43 @@ const ARCHIVE_QUILT_PREVIEW_BG = '#f6f4f1';
 const ARCHIVE_QUILT_IMAGE_SOURCE = 'final_archive';
 const ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC = 'classic';
 
+async function refreshStaleClassicImageFromLiveQuilt(dateKey, raw = {}) {
+  if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ''))) return raw || {};
+  const quiltSnap = await db.collection('quilts').doc(dateKey).get();
+  if (!quiltSnap.exists) return raw || {};
+
+  const quiltData = quiltSnap.data() || {};
+  const blocks = quiltData.blocks;
+  if (!Array.isArray(blocks) || blocks.length <= 1) return raw || {};
+
+  const existingBlockCount = Number(raw?.blockCount) || 0;
+  if (pickClassicImageUrlFromInstagramDoc(raw) && existingBlockCount >= blocks.length) {
+    return raw || {};
+  }
+
+  console.log(
+    `♻️ Refreshing stale classic IG image for ${dateKey}: instagram-images blockCount ${existingBlockCount}, live quilt ${blocks.length}`
+  );
+  const pngDataUrl = await generateInstagramImageFromQuilt(blocks, '');
+  const pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
+  const { publicUrl } = await firebaseSaveDownloadableFile(
+    `instagram-zapier/${dateKey}/classic.png`,
+    pngBuf,
+    'image/png'
+  );
+  const mergePayload = {
+    date: dateKey,
+    lastUpdated: getUtcIsoNow(),
+    refreshedClassicFromLiveQuiltAt: getUtcIsoNow(),
+    imageStorageUrl: publicUrl,
+    classicUrl: publicUrl,
+    blockCount: blocks.length,
+    contributorCount: Math.max(1, Number(quiltData.contributorCount) || 1)
+  };
+  await db.collection('instagram-images').doc(dateKey).set(mergePayload, { merge: true });
+  return { ...(raw || {}), ...mergePayload };
+}
+
 /** Replace near-white IG card matte in classic PNGs with reflection-archive warm neutral. */
 async function applyWarmNeutralMatteToImageBuffer(inputBuffer, matteHex = ARCHIVE_QUILT_PREVIEW_BG) {
   const img = await loadImage(inputBuffer);
@@ -2944,7 +2981,8 @@ async function resolveQuiltImageUrlForDateKey(db, dateKey, blocks = null) {
   const igSnap = await db.collection('instagram-images').doc(key).get();
   const igData = igSnap.exists ? igSnap.data() || {} : {};
   const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
-  if (classicUrl) {
+  const finalBlockCount = Array.isArray(blocks) && blocks.length > 1 ? blocks.length : 0;
+  if (classicUrl && (!finalBlockCount || classicImageMatchesFinalBlockCount(igData, finalBlockCount))) {
     await db.collection('archives').doc(key).set(
       {
         quiltImageUrl: classicUrl,
@@ -3489,6 +3527,8 @@ async function getTodayInstagramImage(options = {}) {
       );
     }
 
+    raw = await refreshStaleClassicImageFromLiveQuilt(dateUsed, raw);
+
     // If today's doc exists but was saved without layout B, fill from previous day (common when keys misaligned before this fix).
     if (
       primarySnap.exists &&
@@ -3655,7 +3695,9 @@ async function getTodayInstagramImage(options = {}) {
       captionSource,
       date: dateUsed,
       blockCount,
-      contributorCount
+      contributorCount,
+      readyForInstagram: raw.readyForInstagram === true,
+      lastNightlyIgImagesAt: raw.lastNightlyIgImagesAt || null
     };
   } catch (error) { 
     console.error('Error fetching Instagram image:', error); 
@@ -3711,6 +3753,7 @@ app.post('/api/generate-instagram', async (req, res) => {
 
     const hasLayoutB = !!postLayoutBImageUrl;
     const hasLayoutBSpeaker = !!postLayoutBSpeakerImageUrl;
+    const primaryLayoutBImageUrl = postLayoutBSpeakerImageUrl || postLayoutBImageUrl || '';
     const reelWebmUrl = imageData.storageReelWebmUrl || '';
     const reelMp4Url = imageData.storageReelMp4Url || '';
     /** Instagram Reels accept MP4 (H.264); WebM is a fallback until /api/transcode-instagram-reel runs. */
@@ -3718,13 +3761,15 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-15-block-contributor-counts';
+    const apiVersion = 'instagram-api-16-final-classic-speaker-layoutb';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = [
       imageUrl,
-      hasLayoutB ? postLayoutBImageUrl : '',
-      hasLayoutBSpeaker ? postLayoutBSpeakerImageUrl : ''
+      primaryLayoutBImageUrl,
+      postLayoutBImageUrl && postLayoutBImageUrl !== primaryLayoutBImageUrl
+        ? postLayoutBImageUrl
+        : ''
     ].filter(Boolean);
     const mediaUrls = [...imageUrls];
     if (reelVideoUrl) mediaUrls.push(reelVideoUrl);
@@ -3732,11 +3777,13 @@ app.post('/api/generate-instagram', async (req, res) => {
       apiVersion,
       success: true,
       imageUrl,
-      postLayoutBImageUrl: postLayoutBImageUrl || '',
+      postLayoutBImageUrl: primaryLayoutBImageUrl,
       postLayoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
+      postLayoutBPlainImageUrl: postLayoutBImageUrl || '',
       classicImageUrl: imageUrl,
-      layoutBImageUrl: postLayoutBImageUrl || '',
+      layoutBImageUrl: primaryLayoutBImageUrl,
       layoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
+      layoutBPlainImageUrl: postLayoutBImageUrl || '',
       imageUrls,
       reelWebmUrl,
       reelMp4Url,
@@ -3751,12 +3798,15 @@ app.post('/api/generate-instagram', async (req, res) => {
       captionSource: imageData.captionSource || 'default',
       date: imageData.date,
       captionLength: imageData.quote.length,
-      hasPostLayoutB: hasLayoutB,
+      hasPostLayoutB: !!primaryLayoutBImageUrl,
+      hasPostLayoutBPlain: hasLayoutB,
       hasPostLayoutBSpeaker: hasLayoutBSpeaker,
       blockCount: Number(imageData.blockCount) || 0,
       contributorCount: Math.max(1, Number(imageData.contributorCount) || 1),
+      readyForInstagram: imageData.readyForInstagram === true,
+      lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl = layout B 4:5. postLayoutBSpeakerImageUrl/layoutBSpeakerImageUrl = layout B with speaker portrait. reelVideoUrl = IG-ready MP4 when present, else WebM. After pushing assets, the app calls POST /api/transcode-instagram-reel to produce reelMp4Url. blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
+        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl keeps the no-speaker variant. postLayoutBSpeakerImageUrl/layoutBSpeakerImageUrl = Layout B with speaker portrait. reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(

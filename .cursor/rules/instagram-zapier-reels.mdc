@@ -15,15 +15,17 @@ alwaysApply: true
 
 ## Automation status
 
-- Automatic daily reel generation is **disabled for now** to avoid daily video storage growth.
-- App “Push IG images to Firestore (Zapier)” currently uploads **Classic + Layout B images only**; it does not record/upload `reel.webm` or call MP4 transcode.
-- **`.github/workflows/nightly-instagram-snapshot.yml`** has no cron schedule; it can still be run manually via **workflow_dispatch** if an animated reel is needed for a specific `date_key`.
-- `POST /api/nightly-instagram-snapshot` still exists on the server for **manual** use if you ever need a static `reel-nightly.mp4`.
+- Automatic daily **reel** generation is **disabled** to avoid daily video storage growth.
+- **Nightly Instagram images (no reel)** — GitHub workflow `nightly-instagram-snapshot.yml` at **23:30 UTC** runs `npm run nightly:ig-images`: rebuilds **classic + layout B + layout B speaker** from `quilts/{dateKey}`, uploads to Storage, sets `instagram-images/{dateKey}.readyForInstagram = true`. Zapier should post **after** this succeeds (or filter on `readyForInstagram`).
+- App “Push IG images to Firestore (Zapier)” still works for manual fixes; daytime auto-push after each save is **not** the final Zapier source of truth.
+- `POST /api/nightly-instagram-snapshot` (classic + optional static MP4) remains for manual use; the scheduled workflow does **not** call it.
+- **`ssr:reel` / Playwright reel** — manual only (`workflow_dispatch` on old SSR path if needed); not on cron.
 
 ## Zapier / debugging
 
 - If a Zap’s `video` URL ends in **`reel-nightly.mp4`**, Instagram received the **nightly still-hold** file, not the app transcode, even when many blocks existed that day.
 - Prefer **transcoded `reel.mp4`** (from WebM) for the true animated reel when both exist; see Firestore / `reelSource` and `reelVideoUrl` resolution in `server.js` (`/api/generate-instagram`).
+- Stale carousel quilt with correct date: check `blockCount` vs live quilt, `readyForInstagram`, and whether Zap ran before the nightly images job.
 
 ## How to answer the user
 
