@@ -45,12 +45,22 @@ try {
         if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
           return window.Capacitor.isNativePlatform() === true;
         }
-        var href = window.location && String(window.location.href);
-        return href && href.indexOf('capacitor://') === 0;
+        var loc = window.location || {};
+        var href = String(loc.href || '');
+        var protocol = String(loc.protocol || '');
+        if (href.indexOf('capacitor://') === 0 || protocol === 'capacitor:' || protocol === 'file:') {
+          return true;
+        }
+        var host = String(loc.hostname || '');
+        var ua = String(window.navigator && window.navigator.userAgent || '');
+        var platform = String(window.navigator && window.navigator.platform || '');
+        var isIos = /\b(iPad|iPhone|iPod)\b/.test(ua) || (platform === 'MacIntel' && (window.navigator?.maxTouchPoints || 0) > 1);
+        return isIos && /AppleWebKit/i.test(ua) && !/Safari\//i.test(ua) && (host === 'localhost' || host === '127.0.0.1');
       } catch (_) {
         return false;
       }
     }
+    window.odqIsCapacitorNative = odqIsCapacitorNative;
     try {
       if (odqIsCapacitorNative()) {
         document.documentElement.classList.add('odq-capacitor-native');
@@ -147,14 +157,15 @@ try {
       margin: 0 auto;
       text-align: center;
     }
-    #odq-boot-splash .portal-title-graphic {
-      display: block;
-      width: min(69vw, 300px);
-      max-width: 100%;
-      height: auto;
-      aspect-ratio: 1 / 1;
-      object-fit: contain;
+    #odq-boot-splash .odq-boot-splash__message {
+      width: min(80vw, 22rem);
       margin: 0 auto;
+      color: #3f3a35;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: clamp(1.35rem, 5vw, 1.65rem);
+      font-weight: 300;
+      line-height: 1.25;
+      text-align: center;
     }
     body.odq-boot-active #screen-portal .portal-title-graphic { visibility: hidden; }
   </style>
@@ -270,16 +281,7 @@ try {
       <div class="portal-main">
         <div class="portal-header">
           <div class="title-container">
-            <img
-              class="portal-title-graphic"
-              src="assets/portal-our-daily-quilt.png"
-              alt=""
-              width="705"
-              height="705"
-              decoding="sync"
-              fetchpriority="high"
-              aria-hidden="true"
-            />
+            <p class="odq-boot-splash__message">Getting today&rsquo;s quilt ready for you</p>
           </div>
         </div>
       </div>
@@ -290,6 +292,32 @@ try {
     var BOOT_MAX_MS = 8000;
     var BOOT_MIN_MS = 320;
     var nativeSplashHidden = false;
+
+    function isCapacitorNative() {
+      try {
+        if (typeof window.odqIsCapacitorNative === 'function') {
+          return window.odqIsCapacitorNative();
+        }
+        if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
+          return window.Capacitor.isNativePlatform() === true;
+        }
+        var loc = window.location || {};
+        var href = String(loc.href || '');
+        var protocol = String(loc.protocol || '');
+        if (href.indexOf('capacitor://') === 0 || protocol === 'capacitor:' || protocol === 'file:') {
+          return true;
+        }
+        var host = String(loc.hostname || '');
+        var ua = String(window.navigator && window.navigator.userAgent || '');
+        var platform = String(window.navigator && window.navigator.platform || '');
+        var isIos = /\b(iPad|iPhone|iPod)\b/.test(ua) || (platform === 'MacIntel' && (window.navigator?.maxTouchPoints || 0) > 1);
+        return isIos && /AppleWebKit/i.test(ua) && !/Safari\//i.test(ua) && (host === 'localhost' || host === '127.0.0.1');
+      } catch (_) {
+        return false;
+      }
+    }
+
+    var nativeApp = isCapacitorNative();
 
     function hideNativeLaunchSplash() {
       if (nativeSplashHidden) return;
@@ -304,18 +332,17 @@ try {
     }
 
     var bootEl = document.getElementById('odq-boot-splash');
-    var bootImg = bootEl && bootEl.querySelector('.portal-title-graphic');
-    if (bootEl && typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(function () {
-        requestAnimationFrame(hideNativeLaunchSplash);
-      });
-    } else {
-      hideNativeLaunchSplash();
-    }
+    var bootImg = null;
     var portalImg = null;
     var shownAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     var dismissed = false;
     var dismissPromise = null;
+
+    function removeBoot() {
+      if (!bootEl) return;
+      bootEl.remove();
+      bootEl = null;
+    }
 
     function whenImageReady(img) {
       if (!img) return Promise.resolve();
@@ -336,6 +363,23 @@ try {
       });
     }
 
+    function afterNextPaint(fn) {
+      if (typeof requestAnimationFrame !== 'function') {
+        fn();
+        return;
+      }
+      requestAnimationFrame(function () {
+        requestAnimationFrame(fn);
+      });
+    }
+
+    if (nativeApp) {
+      dismissed = true;
+      document.body.classList.remove('odq-boot-active');
+      removeBoot();
+      afterNextPaint(hideNativeLaunchSplash);
+    }
+
     function whenPortalGraphicReady() {
       portalImg = portalImg || document.querySelector('#screen-portal .portal-title-graphic');
       return Promise.all([whenImageReady(bootImg), whenImageReady(portalImg)]);
@@ -346,12 +390,13 @@ try {
       dismissed = true;
       bootEl.setAttribute('aria-busy', 'false');
       document.body.classList.remove('odq-boot-active');
-      bootEl.classList.add('odq-boot-splash--dismissed');
       if (window.odqPerfMark) window.odqPerfMark('boot-splash-dismissed');
-      var removeBoot = function () {
-        bootEl.remove();
-        bootEl = null;
-      };
+      if (nativeApp) {
+        removeBoot();
+        afterNextPaint(hideNativeLaunchSplash);
+        return;
+      }
+      bootEl.classList.add('odq-boot-splash--dismissed');
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         removeBoot();
         return;
@@ -2039,7 +2084,7 @@ try {
     #screen-quote #quoteColorWonkyBtn {
       pointer-events: auto;
       position: relative;
-      z-index: 4;
+      z-index: 5;
     }
 
     /* Spacing between card / prompt / CTA comes from wrapper gap — drop card’s global bottom margin here. */
@@ -2646,12 +2691,12 @@ try {
     }
     .exit-chamber-inner {
       width: 100%;
-      max-width: min(94vw, 28rem);
+      max-width: none;
       text-align: center;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: center;
       flex: 1 1 auto;
       min-height: 0;
       overflow-x: hidden;
@@ -2660,39 +2705,44 @@ try {
       overscroll-behavior-y: contain;
       touch-action: pan-y;
       -webkit-overflow-scrolling: touch;
-      padding-top: clamp(0.65rem, 2.4vh, 1.35rem);
+      padding: 0 0 calc(44px + 0.85rem);
+      box-sizing: border-box;
     }
     .exit-chamber-stack {
       display: flex;
       flex-direction: column;
-      align-items: stretch;
+      align-items: center;
+      justify-content: center;
       width: 100%;
       max-width: 100%;
       gap: 0.7rem;
       margin: 0 auto;
-      flex: 0 0 auto;
+      flex: 1 1 auto;
       overflow-x: hidden;
     }
     /* "See you tomorrow" — pinned to the bottom of the chamber (above icon row). */
     .exit-chamber-footer {
       width: 100%;
-      max-width: min(94vw, 28rem);
-      margin: auto auto 0;
+      max-width: none;
+      margin: auto 0 0;
       flex: 0 0 auto;
       display: flex;
-      justify-content: center;
+      justify-content: flex-end;
       align-items: center;
-      padding: 0.35rem 0 calc(44px + 0.85rem);
+      padding: 0.35rem max(0.35rem, env(safe-area-inset-right, 0px)) calc(44px + 0.85rem)
+        clamp(1.1rem, 5.4vw, 1.5rem);
       box-sizing: border-box;
     }
     /* Selector intentionally chains both classes (`.exit-chamber-kicker` is
        defined AFTER this rule in source and would otherwise win on equal
        specificity, reverting font-size/font-weight to the base kicker values). */
     .exit-chamber-kicker.exit-chamber-kicker-bottom {
-      width: 100%;
-      margin: 0;
+      width: auto;
+      max-width: 100%;
+      margin: 0 0 0 auto;
       padding: 0;
       pointer-events: none;
+      text-align: right;
       /* 50% larger than the base `.exit-chamber-kicker` clamp
          (1.65/5.4vw/2.15rem × 1.5 = 2.475/8.1vw/3.225rem) and heavier weight
          (800) so the strokes visually match the OUR DAILY QUILT wordmark in
@@ -2701,45 +2751,30 @@ try {
       font-weight: 800;
       color: #000;
     }
-    /* Yellow highlighter sits on `.exit-chamber-kicker-bottom__mark` (welcome asset).
-       Hand-inked rule under the line draws L→R when `.is-revealed` fires on chamber entry. */
-    .exit-chamber-kicker-bottom__title-wrap {
-      position: relative;
-      display: inline-flex;
-      flex-direction: column;
-      align-items: stretch;
+    /* Farewell + hand rule: one inline-grid column sizes to the text; rule is 100% wide. */
+    .exit-chamber-farewell {
+      display: inline-grid;
+      grid-template-columns: minmax(0, max-content);
+      justify-items: stretch;
       max-width: 100%;
+      margin-left: auto;
+      text-align: right;
       color: inherit;
     }
-    /* Yellow wash behind the headline — same asset as welcome “Here’s how it works”. */
-    .exit-chamber-kicker-bottom__headline-wrap {
-      position: relative;
-      display: inline-block;
-      max-width: 100%;
-      align-self: center;
-    }
-    .exit-chamber-kicker-bottom__mark {
-      display: none;
-    }
-    .exit-chamber-kicker-bottom__ink {
-      position: relative;
-      z-index: 1;
-      display: inline-block;
-      padding: 0.02em 0.12em 0;
-      text-align: center;
-    }
-    .exit-chamber-kicker-bottom__line {
+    .exit-chamber-farewell__text {
       display: block;
-      width: 90%;
-      min-width: 0;
-      align-self: center;
+      white-space: nowrap;
+      padding: 0.02em 0.12em 0;
+    }
+    .exit-chamber-farewell__rule {
+      display: block;
+      width: 100%;
       height: clamp(11px, 0.38em, 16px);
       margin-top: 0.06em;
-      flex-shrink: 0;
       color: inherit;
       overflow: visible;
     }
-    .exit-chamber-kicker-bottom__line path {
+    .exit-chamber-farewell__rule path {
       fill: none;
       stroke: currentColor;
       stroke-linecap: round;
@@ -2748,22 +2783,18 @@ try {
       stroke-width: clamp(2.25px, 0.085em, 3.1px);
       stroke-dasharray: 1000;
       stroke-dashoffset: 1000;
-      /* No transition here: removing `.is-revealed` must snap the dash back to
-         hidden. If the base rule animates 0→1000, the next rAF re-adds the class
-         and a second 1000→0 run reads as a “center / restart” glitch. */
       transition: none;
     }
-    .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__line path {
+    .exit-chamber-kicker-bottom.is-revealed .exit-chamber-farewell__rule path {
       stroke-dashoffset: 0;
       transition: stroke-dashoffset 0.32s cubic-bezier(0.28, 0.92, 0.32, 1);
-      transition-delay: 0s;
     }
     @media (prefers-reduced-motion: reduce) {
-      .exit-chamber-kicker-bottom.is-revealed .exit-chamber-kicker-bottom__line path {
+      .exit-chamber-kicker-bottom.is-revealed .exit-chamber-farewell__rule path {
         transition: none;
-        transition-delay: 0s;
       }
     }
+
     #screen-exit-chamber {
       position: relative;
       isolation: isolate;
@@ -2782,6 +2813,7 @@ try {
       z-index: 0;
       pointer-events: none;
       overflow: hidden;
+      display: block;
       opacity: 0;
       transition: opacity 800ms ease;
     }
@@ -2792,6 +2824,127 @@ try {
       overflow: hidden;
       pointer-events: none;
       isolation: isolate;
+      display: none;
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-cutout {
+      position: fixed;
+      left: var(--exit-speaker-x, 50%);
+      top: var(--exit-speaker-y, 47%);
+      width: var(--exit-speaker-size, min(72vw, 46dvh));
+      aspect-ratio: 1 / 1;
+      z-index: 1;
+      pointer-events: none;
+      isolation: isolate;
+      overflow: visible;
+      background: transparent;
+      filter: drop-shadow(3px 10px 10px rgba(45, 34, 22, 0.12));
+      transform: translate(-50%, -50%) rotate(var(--exit-speaker-rot, -0.8deg));
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-cutout[hidden] {
+      display: none !important;
+    }
+
+    #screen-exit-chamber .exit-chamber-footer {
+      position: relative;
+      z-index: 18;
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-cutout::before,
+    #screen-exit-chamber .exit-chamber-speaker-cutout .exit-chamber-speaker-halo,
+    #screen-exit-chamber .exit-chamber-speaker-cutout .exit-chamber-speaker-neutral-silhouette,
+    #screen-exit-chamber .exit-chamber-speaker-cutout .exit-chamber-speaker-color-wash,
+    #screen-exit-chamber .exit-chamber-speaker-cutout .exit-chamber-speaker-xerox-grain {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-cutout::before {
+      inset: 0;
+      z-index: 5;
+      background-image: var(--speaker-image-url, none);
+      background-size: 100% auto;
+      background-position: top center;
+      background-repeat: no-repeat;
+      filter:
+        grayscale(1)
+        contrast(1.48)
+        brightness(1.56)
+        drop-shadow(-2px 3px 0 rgba(255, 250, 236, 0.72));
+      mix-blend-mode: multiply;
+      opacity: 0.86;
+      transform: rotate(0.6deg);
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-halo {
+      inset: 5%;
+      z-index: 1;
+      background: var(--speaker-halo-color, rgba(214, 151, 126, 0.32));
+      clip-path: polygon(9% 10%, 77% 5%, 96% 25%, 90% 84%, 66% 96%, 15% 90%, 4% 52%);
+      opacity: 0.34;
+      filter: blur(0.25px) saturate(1.08);
+      transform: rotate(1.25deg);
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-neutral-silhouette,
+    #screen-exit-chamber .exit-chamber-speaker-color-wash {
+      inset: 0;
+      background-image: var(--speaker-image-url, none);
+      background-size: 100% auto;
+      background-position: top center;
+      background-repeat: no-repeat;
+      mix-blend-mode: normal;
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-neutral-silhouette {
+      z-index: 2;
+      opacity: 1;
+      filter:
+        brightness(0)
+        saturate(100%)
+        invert(92%)
+        sepia(10%)
+        saturate(324%)
+        hue-rotate(349deg)
+        brightness(102%)
+        contrast(93%);
+      transform: translate(0.7%, 0.6%) rotate(0.18deg) scale(1.004);
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-color-wash {
+      z-index: 3;
+      opacity: 0.34;
+      filter:
+        brightness(0)
+        saturate(100%)
+        invert(76%)
+        sepia(28%)
+        saturate(1018%)
+        hue-rotate(var(--speaker-wash-hue-rotate, 304deg))
+        brightness(97%)
+        contrast(91%);
+      transform: translate(-2.2%, 1.9%) rotate(-0.55deg) scale(1.012);
+    }
+
+    #screen-exit-chamber .exit-chamber-speaker-xerox-grain {
+      inset: 0;
+      z-index: 5;
+      background:
+        repeating-radial-gradient(circle at 13% 21%, rgba(35, 27, 20, 0.18) 0 0.55px, transparent 0.65px 4px),
+        repeating-linear-gradient(92deg, rgba(35, 27, 20, 0.08) 0 1px, transparent 1px 7px);
+      -webkit-mask-image: var(--speaker-image-url, none);
+      mask-image: var(--speaker-image-url, none);
+      -webkit-mask-size: 100% auto;
+      mask-size: 100% auto;
+      -webkit-mask-position: top center;
+      mask-position: top center;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      mix-blend-mode: multiply;
+      opacity: 0.18;
+      transform: translate(0.6%, -0.4%) rotate(0.35deg);
     }
 
     #screen-exit-chamber .exit-chamber-scrap {
@@ -2935,7 +3088,7 @@ try {
       opacity: 1;
     }
 
-    #screen-exit-chamber > *:not(.quilt-footer-icon-row):not(.exit-chamber-texture) {
+    #screen-exit-chamber > *:not(.quilt-footer-icon-row):not(.exit-chamber-texture):not(.exit-chamber-speaker-cutout):not(.exit-chamber-shape-thanks) {
       position: relative;
       z-index: 1;
     }
@@ -2953,6 +3106,7 @@ try {
     .exit-chamber-calendar {
       position: relative;
       align-self: stretch;
+      --exit-chamber-rect-bg: #ebe8e3;
       /* 10% smaller than full-bleed; centered on the chamber. */
       width: 90vw !important;
       max-width: none !important;
@@ -2971,30 +3125,53 @@ try {
       isolation: isolate;
     }
 
-    #screen-exit-chamber .exit-chamber-calendar > * {
+    #screen-exit-chamber .exit-chamber-calendar::after,
+    #screen-settings .exit-chamber-calendar::after {
+      content: '';
+      position: absolute;
+      inset: 0.2rem clamp(0.5rem, 2.6vw, 0.95rem) 0.72rem;
+      z-index: 0;
+      pointer-events: none;
+      background: var(--exit-chamber-rect-bg);
+      transform: rotate(-0.6deg);
+      transform-origin: center;
+    }
+
+    #screen-exit-chamber .exit-chamber-calendar > *,
+    #screen-settings .exit-chamber-calendar > * {
       position: relative;
       z-index: 1;
     }
+
     #screen-exit-chamber .settings-color-calendar__weekdays,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__weekdays,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__summary,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__cell-date,
     #screen-exit-chamber .settings-color-calendar__cell-date {
       display: none;
     }
     /* Hide the month/year label on the exit-chamber calendar; the header
        collapses to nothing in flow so the grid sits flush at the top. */
-    #screen-exit-chamber .exit-chamber-calendar .settings-color-calendar__month {
+    #screen-exit-chamber .exit-chamber-calendar .settings-color-calendar__month,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__month {
       display: none;
     }
-    #screen-exit-chamber .exit-chamber-calendar .settings-color-calendar__header {
+    #screen-exit-chamber .exit-chamber-calendar .settings-color-calendar__header,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__header {
       display: none;
     }
     #screen-exit-chamber .settings-color-calendar__cell,
-    #screen-exit-chamber .settings-color-calendar__cell--filled {
+    #screen-exit-chamber .settings-color-calendar__cell--filled,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__cell,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__cell--filled {
       border: none;
     }
-    #screen-exit-chamber .settings-color-calendar__grid {
+    #screen-exit-chamber .settings-color-calendar__grid,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__grid {
       gap: 0;
     }
-    #screen-exit-chamber .settings-color-calendar__cell {
+    #screen-exit-chamber .settings-color-calendar__cell,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__cell {
       transform:
         translate(var(--cell-shift-x, 0px), var(--cell-shift-y, 0px))
         rotate(var(--cell-rotate, 0deg))
@@ -3004,11 +3181,13 @@ try {
       overflow: hidden;
       will-change: transform;
     }
-    #screen-exit-chamber .settings-color-calendar__cell--placeholder {
+    #screen-exit-chamber .settings-color-calendar__cell--placeholder,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__cell--placeholder {
       transform: none;
       background: transparent;
     }
-    #screen-exit-chamber .settings-color-calendar__cell-fill {
+    #screen-exit-chamber .settings-color-calendar__cell-fill,
+    #screen-settings .exit-chamber-calendar .settings-color-calendar__cell-fill {
       inset: 0;
       border-radius: 0;
     }
@@ -3060,33 +3239,203 @@ try {
       margin: 0 auto 0.2rem;
     }
 
+    #screen-exit-chamber .exit-chamber-today-piece {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      color: #000;
+      overflow: visible;
+      isolation: isolate;
+      pointer-events: none;
+      z-index: 2;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece[hidden] {
+      display: none !important;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__label {
+      margin: 0;
+      font-family: 'Doto', ui-monospace, monospace;
+      font-size: clamp(0.7rem, 2.4vw, 0.82rem);
+      line-height: 1.1;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(0, 0, 0, 0.72);
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__patch {
+      --exit-chamber-piece-color: #ea9b9a;
+      position: fixed;
+      left: var(--exit-shape-x, 50vw);
+      top: var(--exit-shape-y, 50dvh);
+      display: grid;
+      place-items: center;
+      width: var(--exit-shape-size, min(48vw, 38dvh));
+      height: var(--exit-shape-size, min(48vw, 38dvh));
+      transform: translate(-50%, -50%) rotate(-3.5deg);
+      transform-origin: center;
+      isolation: isolate;
+      pointer-events: none;
+      filter:
+        drop-shadow(0 2px 1px rgba(45, 36, 29, 0.22))
+        drop-shadow(0 16px 24px rgba(45, 36, 29, 0.18));
+      z-index: 6;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__patch::before {
+      display: none;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__patch svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    /* Hand circle — match nearby “thanks” Zakarack (color + rule stroke scale). */
+    #screen-exit-chamber .exit-chamber-today-piece__pencil-outline {
+      color: rgba(0, 0, 0, 0.92);
+      opacity: 1;
+      pointer-events: none;
+      font-size: var(--exit-shape-thanks-size, clamp(1.8rem, 7vw, 3.2rem));
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__pencil-outline path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: clamp(2.25px, 0.085em, 3.1px);
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__grain {
+      opacity: 0.34;
+      mix-blend-mode: multiply;
+      pointer-events: none;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__contact-shadow,
+    #screen-exit-chamber .exit-chamber-today-piece__edge {
+      pointer-events: none;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__wash {
+      opacity: 0.2;
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+    }
+    #screen-exit-chamber .exit-chamber-today-piece__bevel {
+      opacity: 0.32;
+      mix-blend-mode: overlay;
+      pointer-events: none;
+    }
+    #screen-exit-chamber .exit-chamber-shape-thanks {
+      position: fixed;
+      left: var(--exit-shape-thanks-x, 1.5rem);
+      top: var(--exit-shape-thanks-y, 5rem);
+      width: var(--exit-shape-thanks-w, 12rem);
+      font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
+      font-size: var(--exit-shape-thanks-size, clamp(1.8rem, 7vw, 3.2rem));
+      line-height: 0.92;
+      letter-spacing: 0.01em;
+      color: rgba(0, 0, 0, 0.92);
+      text-align: center;
+      text-wrap: balance;
+      transform: rotate(var(--exit-shape-thanks-rot, -2deg));
+      transform-origin: center;
+      z-index: 8;
+      pointer-events: none;
+      filter: drop-shadow(0 1px 0 rgba(255, 250, 236, 0.62));
+    }
+    #screen-exit-chamber .exit-chamber-quilt-snapshot {
+      position: absolute;
+      left: var(--exit-collage-x, 58%);
+      top: var(--exit-collage-y, 12%);
+      width: var(--exit-collage-w, 34%);
+      min-width: 135px;
+      max-width: 360px;
+      aspect-ratio: 9 / 16;
+      padding: 0;
+      box-sizing: border-box;
+      background: transparent;
+      transform: rotate(var(--exit-collage-rot, 3deg));
+      transform-origin: center;
+      filter:
+        drop-shadow(0 2px 1px rgba(45, 36, 29, 0.22))
+        drop-shadow(0 12px 18px rgba(45, 36, 29, 0.16));
+      z-index: 14;
+    }
+    #screen-exit-chamber .exit-chamber-quilt-snapshot::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+    #screen-exit-chamber .exit-chamber-quilt-snapshot::before {
+      opacity: 0.16;
+      mix-blend-mode: multiply;
+      background:
+        repeating-radial-gradient(circle at 17% 21%, rgba(35, 27, 20, 0.18) 0 0.5px, transparent 0.6px 4px),
+        repeating-linear-gradient(94deg, rgba(35, 27, 20, 0.06) 0 1px, transparent 1px 8px);
+    }
+    #screen-exit-chamber .exit-chamber-quilt-snapshot[hidden] {
+      display: none !important;
+    }
+    #screen-exit-chamber .exit-chamber-quilt-snapshot svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #ebe8e3;
+      overflow: hidden;
+      position: relative;
+      z-index: 1;
+    }
+
     /* Printed good-day / rough-day receipt — static strip under the calendar (no slot). */
     #screen-exit-chamber .exit-chamber-mood-paper {
-      --exit-mood-receipt-tear-depth: 2px;
+      --exit-mood-receipt-tear-depth: 3px;
       --exit-mood-receipt-shadow: rgba(58, 38, 24, 0.34);
       --exit-mood-receipt-shadow-soft: rgba(58, 38, 24, 0.2);
-      --exit-mood-receipt-tear-clip: polygon(0% 2px, 2.5% 0%, 5% 2px, 7.5% 0%, 10% 2px, 12.5% 0%, 15% 2px, 17.5% 0%, 20% 2px, 22.5% 0%, 25% 2px, 27.5% 0%, 30% 2px, 32.5% 0%, 35% 2px, 37.5% 0%, 40% 2px, 42.5% 0%, 45% 2px, 47.5% 0%, 50% 2px, 52.5% 0%, 55% 2px, 57.5% 0%, 60% 2px, 62.5% 0%, 65% 2px, 67.5% 0%, 70% 2px, 72.5% 0%, 75% 2px, 77.5% 0%, 80% 2px, 82.5% 0%, 85% 2px, 87.5% 0%, 90% 2px, 92.5% 0%, 95% 2px, 97.5% 0%, 100% 2px, 100% calc(100% - 2px), 97.5% 100%, 95% calc(100% - 2px), 92.5% 100%, 90% calc(100% - 2px), 87.5% 100%, 85% calc(100% - 2px), 82.5% 100%, 80% calc(100% - 2px), 77.5% 100%, 75% calc(100% - 2px), 72.5% 100%, 70% calc(100% - 2px), 67.5% 100%, 65% calc(100% - 2px), 62.5% 100%, 60% calc(100% - 2px), 57.5% 100%, 55% calc(100% - 2px), 52.5% 100%, 50% calc(100% - 2px), 47.5% 100%, 45% calc(100% - 2px), 42.5% 100%, 40% calc(100% - 2px), 37.5% 100%, 35% calc(100% - 2px), 32.5% 100%, 30% calc(100% - 2px), 27.5% 100%, 25% calc(100% - 2px), 22.5% 100%, 20% calc(100% - 2px), 17.5% 100%, 15% calc(100% - 2px), 12.5% 100%, 10% calc(100% - 2px), 7.5% 100%, 5% calc(100% - 2px), 2.5% 100%, 0% calc(100% - 2px));
-      width: 100%;
-      max-width: min(23.8rem, calc((100vw - 2.5rem) * 0.85));
-      margin: 0.35rem auto 0.15rem;
-      padding: 0 6px 10px;
+      --exit-chamber-rect-bg: #ebe8e3;
+      --exit-mood-receipt-tear-clip: polygon(0% 0%, 100% 0%, 100% calc(100% - 2px), 97.5% 100%, 95% calc(100% - 2px), 92.5% 100%, 90% calc(100% - 2px), 87.5% 100%, 85% calc(100% - 2px), 82.5% 100%, 80% calc(100% - 2px), 77.5% 100%, 75% calc(100% - 2px), 72.5% 100%, 70% calc(100% - 2px), 67.5% 100%, 65% calc(100% - 2px), 62.5% 100%, 60% calc(100% - 2px), 57.5% 100%, 55% calc(100% - 2px), 52.5% 100%, 50% calc(100% - 2px), 47.5% 100%, 45% calc(100% - 2px), 42.5% 100%, 40% calc(100% - 2px), 37.5% 100%, 35% calc(100% - 2px), 32.5% 100%, 30% calc(100% - 2px), 27.5% 100%, 25% calc(100% - 2px), 22.5% 100%, 20% calc(100% - 2px), 17.5% 100%, 15% calc(100% - 2px), 12.5% 100%, 10% calc(100% - 2px), 7.5% 100%, 5% calc(100% - 2px), 2.5% 100%, 0% calc(100% - 2px));
+      width: var(--exit-collage-w, 54%);
+      max-width: none;
+      margin: 0;
+      padding: 0;
       flex: 0 0 auto;
       box-sizing: border-box;
       overflow: visible;
+      position: absolute;
+      left: var(--exit-collage-x, 8%);
+      top: var(--exit-collage-y, 58%);
+      isolation: isolate;
+      transform: rotate(var(--exit-collage-rot, -4deg));
+      transform-origin: center;
+      z-index: 12;
     }
     #screen-exit-chamber .exit-chamber-mood-paper[hidden] {
       display: none !important;
     }
+
+    #screen-exit-chamber .exit-chamber-mood-paper::before {
+      display: none;
+    }
+
+    #screen-exit-chamber .exit-chamber-mood-paper > * {
+      position: relative;
+      z-index: 1;
+    }
+
     #screen-exit-chamber .exit-chamber-mood-paper__sheet {
       position: relative;
       display: block;
       width: 100%;
       margin: 0;
-      padding: calc(0.32rem + var(--exit-mood-receipt-tear-depth, 2px)) 0.75rem
-        calc(0.52rem + var(--exit-mood-receipt-tear-depth, 2px));
+      padding:
+        0.5rem
+        var(--quilt-card-text-pad-x, clamp(1rem, 3.5vw, 1.25rem))
+        calc(0.65rem + var(--exit-mood-receipt-tear-depth, 2px));
       background:
-        linear-gradient(148deg, rgba(255, 255, 255, 0.5) 0%, transparent 42%),
-        linear-gradient(32deg, rgba(72, 58, 42, 0.04) 0%, transparent 55%),
+        linear-gradient(148deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.08) 42%),
+        linear-gradient(32deg, rgba(72, 58, 42, 0.035) 0%, transparent 55%),
         var(--exit-mood-receipt-paper-bg, #e8e2d6);
       border: none;
       border-radius: 0;
@@ -3099,10 +3448,11 @@ try {
         drop-shadow(0 1px 2px var(--exit-mood-receipt-shadow))
         drop-shadow(0 2px 0 var(--exit-mood-receipt-shadow-mid))
         drop-shadow(0 6px 16px var(--exit-mood-receipt-shadow-soft))
-        drop-shadow(0 14px 32px rgba(45, 36, 29, 0.08));
+        drop-shadow(0 16px 28px rgba(45, 36, 29, 0.14));
       transform: rotate(-1.2deg);
       transform-origin: center;
     }
+
     #screen-exit-chamber .exit-chamber-mood-paper__sheet::before {
       content: '';
       position: absolute;
@@ -3234,7 +3584,8 @@ try {
         drop-shadow(0 2px 6px rgba(45, 36, 29, 0.05));
     }
     /* Exit chamber: no calendar panel — grid floats on chamber texture. */
-    #screen-exit-chamber .exit-chamber-calendar.settings-color-calendar {
+    #screen-exit-chamber .exit-chamber-calendar.settings-color-calendar,
+    #screen-settings .exit-chamber-calendar.settings-color-calendar {
       background: transparent !important;
       clip-path: none !important;
       -webkit-clip-path: none !important;
@@ -3242,7 +3593,8 @@ try {
       filter: none !important;
     }
 
-    #screen-exit-chamber .exit-chamber-calendar.settings-color-calendar::before {
+    #screen-exit-chamber .exit-chamber-calendar.settings-color-calendar::before,
+    #screen-settings .exit-chamber-calendar.settings-color-calendar::before {
       display: none;
     }
     .settings-color-calendar__header {
@@ -4016,7 +4368,8 @@ try {
     }
 
     #screen-quilt .quilt-contributors-stage {
-      --contributor-name-cream: rgba(246, 244, 241, 0.78);
+      --contributor-name-color: rgba(0, 0, 0, 0.68);
+      --contributor-name-current-color: rgba(0, 0, 0, 0.86);
       width: 100%;
       display: flex;
       flex-direction: column;
@@ -4038,7 +4391,7 @@ try {
       background: transparent;
       border: none;
       box-shadow: none;
-      color: var(--contributor-name-cream);
+      color: var(--contributor-name-color);
       font-family: inherit;
       font-size: calc(clamp(1.4rem, 3.5vw, 2rem) * 0.75);
       font-weight: 400;
@@ -4093,7 +4446,7 @@ try {
       padding: 0 0.08em;
       margin: -0.04em 0.06em;
       font-size: calc(var(--cloud-size, 1) * 1em);
-      color: var(--contributor-name-cream);
+      color: var(--contributor-name-color);
       transform:
         translate(var(--tag-nudge-x, 0), var(--tag-nudge-y, 0))
         rotate(var(--cloud-rot, 0deg));
@@ -4105,7 +4458,7 @@ try {
     }
 
     #screen-quilt .quilt-contributors-stage .quilt-contributor-list .quilt-contributor-name--current {
-      color: rgba(246, 244, 241, 0.92);
+      color: var(--contributor-name-current-color);
       font-weight: 800;
     }
 
@@ -6385,35 +6738,32 @@ try {
       white-space: nowrap;
     }
 
-    .reflection-themes-archive-quilt-kicker {
-      margin: 0 0 0.65rem;
-      color: rgba(47, 36, 27, 0.54);
-      font-size: 0.78rem;
-      font-weight: 500;
-      letter-spacing: 0.14em;
-      line-height: 1.2;
-      text-transform: uppercase;
-    }
-
     .reflection-themes-archive-quilt-frame {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       width: 100%;
       max-width: 100%;
-      margin: 0 0 1.35rem;
-      padding: 0.5rem;
+      aspect-ratio: 5 / 4;
+      margin: 0.35rem 0 1.35rem;
+      padding: 0;
       box-sizing: border-box;
       border-radius: 0.35rem;
       background: #f6f4f1;
+      overflow: hidden;
     }
 
     .reflection-themes-archive-quilt-image {
       display: block;
-      width: 100%;
-      max-height: 40vh;
+      width: 80%;
+      max-width: none;
+      max-height: none;
       margin: 0 auto;
       object-fit: contain;
       object-position: center;
       background: #f6f4f1;
+      transform: rotate(90deg);
+      transform-origin: center;
     }
 
     .reflection-themes-archive-quilt-image--pending {
@@ -6464,6 +6814,11 @@ try {
       margin: 0 0 0.62rem;
       padding: 0.2rem 0 0.56rem 1.05rem;
       border-left: 3px solid rgba(47, 36, 27, 0.18);
+    }
+
+    .reflection-themes-archive-themes li:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0.22rem;
     }
 
     .reflection-themes-archive-controls {
@@ -11164,6 +11519,7 @@ try {
        becomes the active screen — so the fixed row only renders during the
        chamber's lifetime. */
     #screen-exit-chamber > .quilt-footer-icon-row {
+      --exit-footer-protect-pad: 0.32rem;
       position: fixed;
       left: 0;
       right: 0;
@@ -11171,8 +11527,26 @@ try {
       width: auto;
       max-width: none;
       margin-inline: 0;
+      isolation: isolate;
       /* Above calendar chrome / inner content so taps reach the icon strip. */
       z-index: 200;
+    }
+
+    #screen-exit-chamber > .quilt-footer-icon-row::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(-1 * var(--exit-footer-protect-pad));
+      bottom: calc(-1 * var(--exit-footer-protect-pad));
+      z-index: 0;
+      pointer-events: none;
+      background: var(--exit-chamber-bg, #ebe8e3);
+    }
+
+    #screen-exit-chamber > .quilt-footer-icon-row > * {
+      position: relative;
+      z-index: 1;
     }
 
     /* Belt-and-suspenders: when the chamber is NOT the active screen, force the
@@ -11495,8 +11869,8 @@ try {
   
   <main id="app">
 
-    <!-- Shown until Firestore confirms today's quilt + quote (no synthetic fallbacks). -->
-    <section class="screen active" id="screen-connection-problem" role="alertdialog" aria-labelledby="connectionProblemHeading">
+    <!-- Shown only if live data cannot load (no synthetic fallbacks). -->
+    <section class="screen" id="screen-connection-problem" role="alertdialog" aria-labelledby="connectionProblemHeading">
       <div class="connection-problem-inner">
         <img
           class="connection-problem-wordmark"
@@ -11514,7 +11888,7 @@ try {
     </section>
 
     <!-- Portal: `portal-mode--first-visit` vs `portal-mode--returning` set in JS (greeting + spacing). -->
-    <section class="screen portal-mode portal-mode--first-visit" id="screen-portal" role="main" aria-label="Welcome screen">
+    <section class="screen active portal-mode portal-mode--first-visit" id="screen-portal" role="main" aria-label="Welcome screen">
       <div class="portal-top-cluster">
         <div class="portal-main">
           <div class="portal-header" id="portalHeader">
@@ -12286,6 +12660,37 @@ try {
             <span class="settings-milestone-quilts-link__label">YOUR MILESTONE QUILTS</span>
             <span class="settings-milestone-quilts-link__sub">Archived over time, sent at milestones</span>
           </button>
+          <section class="settings-color-calendar exit-chamber-calendar" aria-label="Your daily colors">
+            <header class="settings-color-calendar__header">
+              <h2 class="settings-color-calendar__title">Your daily colors</h2>
+              <div class="settings-color-calendar__nav">
+                <button
+                  type="button"
+                  class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--prev"
+                  aria-label="Previous month"
+                >
+                  <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                    <path d="M15 5l-7 7 7 7"></path>
+                  </svg>
+                </button>
+                <span class="settings-color-calendar__month" aria-live="polite"></span>
+                <button
+                  type="button"
+                  class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--next"
+                  aria-label="Next month"
+                >
+                  <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                    <path d="M9 5l7 7-7 7"></path>
+                  </svg>
+                </button>
+              </div>
+            </header>
+            <div class="settings-color-calendar__weekdays" aria-hidden="true">
+              <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+            </div>
+            <div class="settings-color-calendar__grid" role="grid" aria-label="Calendar of your daily colors"></div>
+            <p class="settings-color-calendar__summary" aria-live="polite"></p>
+          </section>
           <section class="settings-personal-quilt" aria-label="Your colors over time" hidden aria-hidden="true">
             <div class="settings-personal-quilt__frame">
               <svg
@@ -12375,106 +12780,35 @@ try {
       ><div class="exit-chamber-scraps" id="exitChamberScraps"><span class="exit-chamber-scrap exit-chamber-scrap--1" aria-hidden="true"></span><span class="exit-chamber-scrap exit-chamber-scrap--2" aria-hidden="true"></span><span class="exit-chamber-scrap exit-chamber-scrap--3" aria-hidden="true"></span><span class="exit-chamber-scrap exit-chamber-scrap--4" aria-hidden="true"></span><span class="exit-chamber-scrap exit-chamber-scrap--5" aria-hidden="true"></span><span class="exit-chamber-scrap exit-chamber-scrap--6" aria-hidden="true"></span></div></div>
       <div class="exit-chamber-inner">
         <div class="exit-chamber-stack">
-          <p class="exit-chamber-mood-cue exit-chamber-colors-cue" aria-hidden="true">
-            <span class="exit-chamber-mood-cue__label">YOUR COLORS</span>
-            <svg
-              class="exit-chamber-mood-cue__arrow"
-              viewBox="0 0 40 56"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              focusable="false"
-              aria-hidden="true"
-            >
-              <path
-                d="M19.7 4.5 C 20.6 13.8, 18.4 24.6, 20.4 35.4 C 20.9 39.2, 19.9 43.6, 20.4 47.2"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                fill="none"
-              />
-              <path
-                d="M10.8 36.4 C 13.6 40.6, 16.4 44.4, 20.4 48.6 C 23.8 44.2, 26.6 40.4, 29.8 36.6"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                fill="none"
-              />
-            </svg>
-          </p>
-          <section class="settings-color-calendar exit-chamber-calendar" aria-label="Your daily colors">
-            <header class="settings-color-calendar__header">
-              <div class="settings-color-calendar__nav">
-                <button
-                  type="button"
-                  class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--prev"
-                  id="exitChamberColorCalendarPrev"
-                  aria-label="Previous month"
-                >
-                  <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-                    <path d="M15 5l-7 7 7 7"></path>
-                  </svg>
-                </button>
-                <span class="settings-color-calendar__month" id="exitChamberColorCalendarMonthLabel" aria-live="polite"></span>
-                <button
-                  type="button"
-                  class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--next"
-                  id="exitChamberColorCalendarNext"
-                  aria-label="Next month"
-                >
-                  <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-                    <path d="M9 5l7 7-7 7"></path>
-                  </svg>
-                </button>
-              </div>
-            </header>
-            <div class="settings-color-calendar__weekdays" aria-hidden="true">
-              <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
-            </div>
-            <div class="settings-color-calendar__grid" id="exitChamberColorCalendarGrid" role="grid" aria-label="Calendar of your daily colors"></div>
-          </section>
           <section
-            class="exit-chamber-mood-paper"
-            id="exitChamberMoodPaper"
+            class="exit-chamber-today-piece"
+            id="exitChamberTodayPiece"
             hidden
-            aria-label="Your mood pick for today"
+            aria-label="Your piece today"
           >
-            <p class="exit-chamber-mood-cue" aria-hidden="true">
-              <span class="exit-chamber-mood-cue__label">(And don't forget)</span>
-              <svg
-                class="exit-chamber-mood-cue__arrow"
-                viewBox="0 0 40 56"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                focusable="false"
-                aria-hidden="true"
-              >
-                <path
-                  d="M19.7 4.5 C 20.6 13.8, 18.4 24.6, 20.4 35.4 C 20.9 39.2, 19.9 43.6, 20.4 47.2"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                  fill="none"
-                />
-                <path
-                  d="M10.8 36.4 C 13.6 40.6, 16.4 44.4, 20.4 48.6 C 23.8 44.2, 26.6 40.4, 29.8 36.6"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  fill="none"
-                />
-              </svg>
-            </p>
-            <div class="exit-chamber-mood-paper__sheet">
-              <div class="exit-chamber-mood-paper__body">
-                <p class="exit-chamber-mood-paper__rule" aria-hidden="true"></p>
-                <p class="exit-chamber-mood-paper__text" id="exitChamberMoodPaperText"></p>
-                <p class="exit-chamber-mood-paper__rule" aria-hidden="true"></p>
-                <p class="exit-chamber-mood-paper__label" id="exitChamberMoodPaperLabel"></p>
-                <p class="exit-chamber-mood-paper__stamp" id="exitChamberMoodPaperStamp"></p>
+            <div class="exit-chamber-today-piece__patch" id="exitChamberTodayPiecePatch" aria-hidden="true"></div>
+            <div
+              class="exit-chamber-quilt-snapshot"
+              id="exitChamberQuiltSnapshot"
+              hidden
+              aria-hidden="true"
+            ></div>
+            <section
+              class="exit-chamber-mood-paper"
+              id="exitChamberMoodPaper"
+              hidden
+              aria-label="Your mood pick for today"
+            >
+              <div class="exit-chamber-mood-paper__sheet">
+                <div class="exit-chamber-mood-paper__body">
+                  <p class="exit-chamber-mood-paper__rule" aria-hidden="true"></p>
+                  <p class="exit-chamber-mood-paper__text" id="exitChamberMoodPaperText"></p>
+                  <p class="exit-chamber-mood-paper__rule" aria-hidden="true"></p>
+                  <p class="exit-chamber-mood-paper__label" id="exitChamberMoodPaperLabel"></p>
+                  <p class="exit-chamber-mood-paper__stamp" id="exitChamberMoodPaperStamp"></p>
+                </div>
               </div>
-            </div>
+            </section>
           </section>
           <!-- TEMP: blessing card is temporarily disabled on the exit chamber.
                Remove `hidden` / `aria-hidden` to restore it in place. -->
@@ -12514,23 +12848,29 @@ try {
           </div>
         </div>
       </div>
+      <div
+        class="exit-chamber-speaker-cutout"
+        id="exitChamberSpeakerCutout"
+        aria-hidden="true"
+        hidden
+      >
+        <span class="exit-chamber-speaker-halo" aria-hidden="true"></span>
+        <span class="exit-chamber-speaker-neutral-silhouette" aria-hidden="true"></span>
+        <span class="exit-chamber-speaker-color-wash" aria-hidden="true"></span>
+        <span class="exit-chamber-speaker-xerox-grain" aria-hidden="true"></span>
+      </div>
       <footer class="exit-chamber-footer">
         <p class="exit-chamber-kicker exit-chamber-kicker-bottom" id="exitChamberKickerBottom">
-          <span class="exit-chamber-kicker-bottom__title-wrap">
-            <span class="exit-chamber-kicker-bottom__headline-wrap">
-              <span class="exit-chamber-kicker-bottom__ink">See you tomorrow</span>
-            </span>
+          <span class="exit-chamber-farewell">
+            <span class="exit-chamber-farewell__text">See you tomorrow</span>
             <svg
-              class="exit-chamber-kicker-bottom__line"
+              class="exit-chamber-farewell__rule"
               viewBox="0 0 220 14"
               preserveAspectRatio="none"
               aria-hidden="true"
               focusable="false"
             >
-              <path
-                pathLength="1000"
-                d="M 6 8.75 C 72 5.85 148 5.85 214 8.75"
-              />
+              <path pathLength="1000" d="M 6 8.75 C 72 5.85 148 5.85 214 8.75" />
             </svg>
           </span>
         </p>
@@ -26477,7 +26817,7 @@ try {
                   const qs = window.app?.quoteService;
                   const todayQuote =
                     (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function'
-                      ? await qs.getQuoteResolvedForInstagramDateKey(igDateKey)
+                      ? await qs.getQuoteResolvedForInstagramDateKey(igDateKey, { requireLive: true })
                       : qs?.getTodayQuote()) || null;
                   const instagramImage = await arch.generateInstagramImage(igBlocks);
                   let postLayoutBImageData = null;
@@ -26799,17 +27139,47 @@ try {
         return merged;
       }
 
+      _mergeAssignmentArtRecSnapshotFields(quote, data) {
+        if (!quote || !data || typeof data !== 'object') return quote;
+        const snapshotArtRecs = this._artRecsSnapshotValue(data.artRecsSnapshot);
+        const artRecs =
+          snapshotArtRecs ||
+          this._artRecsSnapshotValue(data.art_recs) ||
+          this._artRecsSnapshotValue(data.artRecs);
+        const artRecsType = String(
+          data.artRecsTypeSnapshot ?? data.art_recs_type ?? data.artRecsType ?? ''
+        )
+          .trim()
+          .toLowerCase();
+        if (!artRecs && !artRecsType) return quote;
+        return {
+          ...quote,
+          ...(artRecs ? { artRecs, art_recs: artRecs } : {}),
+          ...(artRecsType ? { artRecsType: artRecsType, art_recs_type: artRecsType } : {})
+        };
+      }
+
       _findQuoteFromAssignmentPayload(data) {
         if (!data || !this.quotes?.length) return null;
         const sid = data.sourceId != null && String(data.sourceId).trim() !== '' ? String(data.sourceId).trim() : '';
         if (sid) {
           const byId = this.quotes.find((q) => String(q.sourceId || '').trim() === sid);
-          if (byId) return this._mergeAssignmentSpeakerCutout(byId, data);
+          if (byId) {
+            return this._mergeAssignmentArtRecSnapshotFields(
+              this._mergeAssignmentSpeakerCutout(byId, data),
+              data
+            );
+          }
         }
         const emb = data.embeddedStableKey != null ? String(data.embeddedStableKey).trim() : '';
         if (emb) {
           const byEmb = this.quotes.find((q) => this._embeddedStableKey(q) === emb);
-          if (byEmb) return this._mergeAssignmentSpeakerCutout(byEmb, data);
+          if (byEmb) {
+            return this._mergeAssignmentArtRecSnapshotFields(
+              this._mergeAssignmentSpeakerCutout(byEmb, data),
+              data
+            );
+          }
         }
         const snapT = String(data.textSnapshot || '').trim();
         const snapA = String(data.authorSnapshot || '').trim();
@@ -26817,7 +27187,9 @@ try {
           const byText = this.quotes.find(
             (q) => String(q.text || '').trim().startsWith(snapT) || String(q.text || '').trim() === snapT
           );
-          if (byText && (!snapA || String(byText.author || '').includes(snapA))) return byText;
+          if (byText && (!snapA || String(byText.author || '').includes(snapA))) {
+            return this._mergeAssignmentArtRecSnapshotFields(byText, data);
+          }
           return {
             text: snapT,
             author: snapA,
@@ -27215,7 +27587,7 @@ try {
        * `dailyQuoteAssignments/{dateKey}` and `/api/generate-instagram` caption priority.
        * Do not use `getTodayQuote()` for Zapier assets when `dateKey` is explicit — it keys off “now”, not that day.
        */
-      async getQuoteResolvedForInstagramDateKey(dateKey) {
+      async getQuoteResolvedForInstagramDateKey(dateKey, options = {}) {
         const dk = String(dateKey || '').trim();
         if (!dk || !/^\d{4}-\d{2}-\d{2}$/.test(dk)) {
           return this.getTodayQuote();
@@ -27223,8 +27595,9 @@ try {
         if (!this.quotes?.length) {
           return this.getTodayQuote();
         }
+        const requireLive = options?.requireLive === true;
         try {
-          const pinned = await this.resolveAndPinCalendarKey(dk);
+          const pinned = await this.resolveAndPinCalendarKey(dk, { requireLive });
           if (pinned) return pinned;
         } catch (e) {
           console.warn('getQuoteResolvedForInstagramDateKey:', e?.message || e);
@@ -28464,6 +28837,9 @@ try {
                   : typeof artRaw === 'object'
                     ? { art_recs: artRaw, artRecs: artRaw }
                     : {};
+            const artRecsType = String(data.art_recs_type ?? data.artRecsType ?? '')
+              .trim()
+              .toLowerCase();
 
             firestoreQuotes.push({
               text,
@@ -28505,6 +28881,7 @@ try {
               first_response: this._firstResponseFromPayload(data),
               user_name: String(data.user_name ?? data.userName ?? '').trim(),
               ...artRecsFields,
+              ...(artRecsType ? { art_recs_type: artRecsType, artRecsType } : {}),
               sourceId: String(data.sourceId || docSnap.id),
               sortOrder:
                 typeof data.sortOrder === 'number' && Number.isFinite(data.sortOrder)
@@ -28553,11 +28930,22 @@ try {
         this.lastAddedIndex = null;
         this.userPieces = new Set();
         this.mirrorSeamOffsetRatio = null;
+        this.mirrorSeamOffsetKey = null;
         this.backsidePreviewEnabled = false;
       }
 
       setBacksidePreviewEnabled(enabled) {
         this.backsidePreviewEnabled = enabled === true;
+      }
+
+      seededUnit(seed) {
+        let h = 2166136261 >>> 0;
+        const input = String(seed || '');
+        for (let i = 0; i < input.length; i++) {
+          h ^= input.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return (h >>> 0) / 4294967296;
       }
 
       _mirrorBacksidePoint(point, width) {
@@ -28756,11 +29144,13 @@ try {
       }
 
       getMirrorSeamOffsetRatio() {
-        if (typeof this.mirrorSeamOffsetRatio === 'number') return this.mirrorSeamOffsetRatio;
-        // Most days keep the classic full-height mirror; others let the seam land earlier.
-        this.mirrorSeamOffsetRatio = Math.random() < 0.42
-          ? 1
-          : 0.58 + Math.random() * 0.2;
+        const seamKey = 'mirror-seam:strong-symmetry';
+        if (this.mirrorSeamOffsetKey === seamKey && typeof this.mirrorSeamOffsetRatio === 'number') {
+          return this.mirrorSeamOffsetRatio;
+        }
+        // Keep the mirror fold in the overlapping, strongly symmetrical state on every load.
+        this.mirrorSeamOffsetRatio = 0.68;
+        this.mirrorSeamOffsetKey = seamKey;
         return this.mirrorSeamOffsetRatio;
       }
       
@@ -29434,9 +29824,10 @@ try {
           const groupH = Math.max(1, group.y2 - group.y);
           const jitterMultiplier = this.calculateJitterMultiplier(groupW, groupH);
           const rotationMultiplier = this.calculateRotationMultiplier(groupW, groupH);
-          group.jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
-          group.jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
-          group.jitterRotation = (Math.random() - 0.5) * 2.2 * rotationMultiplier;
+          const axisSeed = `diagonal-axis:${key}:${Math.round(group.x)}:${Math.round(group.y)}:${Math.round(groupW)}:${Math.round(groupH)}`;
+          group.jitterX = (this.seededUnit(`${axisSeed}:x`) - 0.5) * 6 * jitterMultiplier;
+          group.jitterY = (this.seededUnit(`${axisSeed}:y`) - 0.5) * 6 * jitterMultiplier;
+          group.jitterRotation = (this.seededUnit(`${axisSeed}:rot`) - 0.5) * 2.2 * rotationMultiplier;
           group.centerX = group.x + groupW / 2 + group.jitterX;
           group.centerY = group.y + groupH / 2 + group.jitterY;
           diagonalAxisRenderByKey.set(key, group);
@@ -29450,6 +29841,16 @@ try {
           }
           
           SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
+          const renderSeed = [
+            block.id || `idx_${originalIndex}`,
+            Math.round(Number(block.x) || 0),
+            Math.round(Number(block.y) || 0),
+            Math.round(Number(block.width) || 0),
+            Math.round(Number(block.height) || 0),
+            block.patternType || '',
+            block.specialPatternType || ''
+          ].join('|');
+          const randForBlock = (salt) => this.seededUnit(`quilt-render:${renderSeed}:${salt}`);
 
           // Special handling for special pattern cells - render as organic polygons
           if (
@@ -29544,9 +29945,9 @@ try {
               const h = safeHeight;
               const jitterMultiplier = this.calculateJitterMultiplier(w, h) * (isAxisCollageLayer ? 1.14 : 1);
               const rotationMultiplier = this.calculateRotationMultiplier(w, h);
-              const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
-              const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
-              const jitterRotation = (Math.random() - 0.5) * (isAxisCollageLayer ? 4.2 : 3) * rotationMultiplier;
+              const jitterX = (randForBlock('hst:x') - 0.5) * 6 * jitterMultiplier;
+              const jitterY = (randForBlock('hst:y') - 0.5) * 6 * jitterMultiplier;
+              const jitterRotation = (randForBlock('hst:rot') - 0.5) * (isAxisCollageLayer ? 4.2 : 3) * rotationMultiplier;
               const rotationRadians = (jitterRotation * Math.PI) / 180;
               const rawMaxExtension = Math.max(w, h) * Math.abs(Math.sin(rotationRadians)) * (isAxisCollageLayer ? 0.42 : 0.3);
               const maxExtension = isAxisCollageLayer
@@ -29620,9 +30021,9 @@ try {
               const h = safeHeight;
               const jitterMultiplier = this.calculateJitterMultiplier(w, h) * (isAxisCollageLayer ? 1.14 : 1);
               const rotationMultiplier = this.calculateRotationMultiplier(w, h);
-              const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
-              const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
-              const jitterRotation = (Math.random() - 0.5) * (isAxisCollageLayer ? 4.2 : 3) * rotationMultiplier;
+              const jitterX = (randForBlock('inset:x') - 0.5) * 6 * jitterMultiplier;
+              const jitterY = (randForBlock('inset:y') - 0.5) * 6 * jitterMultiplier;
+              const jitterRotation = (randForBlock('inset:rot') - 0.5) * (isAxisCollageLayer ? 4.2 : 3) * rotationMultiplier;
               const rotationRadians = (jitterRotation * Math.PI) / 180;
               const rawMaxExtension = Math.max(w, h) * Math.abs(Math.sin(rotationRadians)) * (isAxisCollageLayer ? 0.42 : 0.3);
               const maxExtension = isAxisCollageLayer
@@ -29646,7 +30047,7 @@ try {
               specialGroup.dataset.parallaxCx = String(centerX);
               specialGroup.dataset.parallaxCy = String(centerY);
 
-              const handCutPolygon = this.createHandCutPolygon(renderX, renderY, w, h, jitterMultiplier);
+              const handCutPolygon = this.createHandCutPolygon(renderX, renderY, w, h, jitterMultiplier, `${renderSeed}:inset:bg`);
               handCutPolygon.setAttribute('fill', block.color);
               handCutPolygon.setAttribute('stroke', 'none');
               handCutPolygon.setAttribute('data-block-id', block.id);
@@ -29749,7 +30150,7 @@ try {
                   );
                   return poly;
                 })()
-              : this.createHandCutPolygon(block.x, block.y, safeWidth, safeHeight, jitterMultiplier);
+              : this.createHandCutPolygon(block.x, block.y, safeWidth, safeHeight, jitterMultiplier, `${renderSeed}:special-main`);
             handCutPolygon.setAttribute('fill', block.color);
             handCutPolygon.setAttribute('stroke', 'none');
             
@@ -29815,9 +30216,9 @@ try {
           const jitterMultiplier = this.calculateJitterMultiplier(block.width, block.height) * (isRecentRegularSubmissionBlock ? 0.55 : 1);
           const rotationMultiplier = this.calculateRotationMultiplier(block.width, block.height);
           
-          const jitterX = (Math.random() - 0.5) * 6 * jitterMultiplier;
-          const jitterY = (Math.random() - 0.5) * 6 * jitterMultiplier;
-          const jitterRotation = (Math.random() - 0.5) * 3 * rotationMultiplier * (isRecentRegularSubmissionBlock ? 0.55 : 1);
+          const jitterX = (randForBlock('regular:x') - 0.5) * 6 * jitterMultiplier;
+          const jitterY = (randForBlock('regular:y') - 0.5) * 6 * jitterMultiplier;
+          const jitterRotation = (randForBlock('regular:rot') - 0.5) * 3 * rotationMultiplier * (isRecentRegularSubmissionBlock ? 0.55 : 1);
           
           // Calculate gap compensation for rotation
           const rotationRadians = jitterRotation * Math.PI / 180;
@@ -29842,7 +30243,7 @@ try {
           const scaledY = jitteredBlock.y + (jitteredBlock.height - scaledHeight) / 2;
           
           const baseUnderlayPolygon = regularVisibilityScale < 1
-            ? this.createHandCutPolygon(jitteredBlock.x, jitteredBlock.y, jitteredBlock.width, jitteredBlock.height, jitterMultiplier * 0.45)
+            ? this.createHandCutPolygon(jitteredBlock.x, jitteredBlock.y, jitteredBlock.width, jitteredBlock.height, jitterMultiplier * 0.45, `${renderSeed}:regular-base`)
             : null;
           if (baseUnderlayPolygon) {
             baseUnderlayPolygon.setAttribute('fill', jitteredBlock.color);
@@ -29859,7 +30260,8 @@ try {
                 scaledY - seamUnderpaintBleed,
                 scaledWidth + seamUnderpaintBleed * 2,
                 scaledHeight + seamUnderpaintBleed * 2,
-                jitterMultiplier * 0.28
+                jitterMultiplier * 0.28,
+                `${renderSeed}:regular-seam-underpaint`
               )
             : null;
           if (seamUnderpaintPolygon) {
@@ -29870,7 +30272,7 @@ try {
           }
 
           // Create hand-cut polygon instead of perfect rectangle
-          const handCutPolygon = this.createHandCutPolygon(scaledX, scaledY, scaledWidth, scaledHeight, jitterMultiplier);
+          const handCutPolygon = this.createHandCutPolygon(scaledX, scaledY, scaledWidth, scaledHeight, jitterMultiplier, `${renderSeed}:regular-main`);
           handCutPolygon.setAttribute('fill', jitteredBlock.color);
           
                    // Create individual pattern elements for this block instead of using tiling patterns
@@ -29884,23 +30286,23 @@ try {
          
          // Randomly select a variation of the pattern type
          const variations = patternVariations[basePatternType];
-         const randomVariation = variations[Math.floor(Math.random() * variations.length)];
+         const randomVariation = variations[Math.floor(randForBlock('pattern:variation') * variations.length)];
          
          // Add organic randomness to pattern opacity, positioning, and scale
-         const opacityVariation = 0.7 + (Math.random() * 0.6); // 0.7 to 1.3 (more variation)
+         const opacityVariation = 0.7 + (randForBlock('pattern:opacity') * 0.6); // 0.7 to 1.3 (more variation)
          
          // Calculate safe offset limits to keep pattern within block bounds
          const maxOffsetX = Math.min(3, jitteredBlock.width * 0.1); // 10% of block width max
          const maxOffsetY = Math.min(3, jitteredBlock.height * 0.1); // 10% of block height max
-         const patternOffsetX = (Math.random() - 0.5) * maxOffsetX * 2; // -maxOffset to +maxOffset
-         const patternOffsetY = (Math.random() - 0.5) * maxOffsetY * 2; // -maxOffset to +maxOffset
+         const patternOffsetX = (randForBlock('pattern:offset-x') - 0.5) * maxOffsetX * 2; // -maxOffset to +maxOffset
+         const patternOffsetY = (randForBlock('pattern:offset-y') - 0.5) * maxOffsetY * 2; // -maxOffset to +maxOffset
          
          // Calculate safe scale to ensure pattern fills block but doesn't overflow
-         const scaleVariation = 0.9 + (Math.random() * 0.2); // 0.9 to 1.1 (smaller scale range)
+         const scaleVariation = 0.9 + (randForBlock('pattern:scale') * 0.2); // 0.9 to 1.1 (smaller scale range)
          
          // Calculate safe rotation to prevent overflow
          const maxRotation = Math.min(4, 15 / Math.max(jitteredBlock.width, jitteredBlock.height)); // Smaller blocks get less rotation
-         const rotationVariation = (Math.random() - 0.5) * maxRotation * 2; // -maxRotation to +maxRotation
+         const rotationVariation = (randForBlock('pattern:rotation') - 0.5) * maxRotation * 2; // -maxRotation to +maxRotation
 
          // Create individual pattern elements for this block
          const patternGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -30087,8 +30489,9 @@ try {
       }
       
       // Create hand-cut polygon with progressive edge variation based on size
-      createHandCutPolygon(x, y, width, height, jitterMultiplier) {
+      createHandCutPolygon(x, y, width, height, jitterMultiplier, seedKey = '') {
         const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const rand = (salt) => seedKey ? this.seededUnit(`${seedKey}:${salt}`) : Math.random();
         
         // Calculate progressive edge variation based on block size
         const blockArea = width * height;
@@ -30131,20 +30534,20 @@ try {
         const cornerOffsets = cornerNudgeAmount > 0
           ? {
               tl: {
-                x: (Math.random() - 0.5) * cornerNudgeAmount,
-                y: (Math.random() - 0.5) * cornerNudgeAmount
+                x: (rand('corner:tl:x') - 0.5) * cornerNudgeAmount,
+                y: (rand('corner:tl:y') - 0.5) * cornerNudgeAmount
               },
               tr: {
-                x: (Math.random() - 0.5) * cornerNudgeAmount,
-                y: (Math.random() - 0.5) * cornerNudgeAmount
+                x: (rand('corner:tr:x') - 0.5) * cornerNudgeAmount,
+                y: (rand('corner:tr:y') - 0.5) * cornerNudgeAmount
               },
               br: {
-                x: (Math.random() - 0.5) * cornerNudgeAmount,
-                y: (Math.random() - 0.5) * cornerNudgeAmount
+                x: (rand('corner:br:x') - 0.5) * cornerNudgeAmount,
+                y: (rand('corner:br:y') - 0.5) * cornerNudgeAmount
               },
               bl: {
-                x: (Math.random() - 0.5) * cornerNudgeAmount,
-                y: (Math.random() - 0.5) * cornerNudgeAmount
+                x: (rand('corner:bl:x') - 0.5) * cornerNudgeAmount,
+                y: (rand('corner:bl:y') - 0.5) * cornerNudgeAmount
               }
             }
           : {
@@ -30167,8 +30570,8 @@ try {
           const baseX = t * width;
           const baseY = 0;
           const cornerOffset = cornerOffsetForPoint(baseX, baseY);
-          const variationX = (Math.random() - 0.5) * handCutVariation;
-          const variationY = (Math.random() - 0.5) * handCutVariation;
+          const variationX = (rand(`top:${i}:x`) - 0.5) * handCutVariation;
+          const variationY = (rand(`top:${i}:y`) - 0.5) * handCutVariation;
           points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
@@ -30178,8 +30581,8 @@ try {
           const baseX = width;
           const baseY = t * height;
           const cornerOffset = cornerOffsetForPoint(baseX, baseY);
-          const variationX = (Math.random() - 0.5) * handCutVariation;
-          const variationY = (Math.random() - 0.5) * handCutVariation;
+          const variationX = (rand(`right:${i}:x`) - 0.5) * handCutVariation;
+          const variationY = (rand(`right:${i}:y`) - 0.5) * handCutVariation;
           points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
@@ -30189,8 +30592,8 @@ try {
           const baseX = width - (t * width);
           const baseY = height;
           const cornerOffset = cornerOffsetForPoint(baseX, baseY);
-          const variationX = (Math.random() - 0.5) * handCutVariation;
-          const variationY = (Math.random() - 0.5) * handCutVariation;
+          const variationX = (rand(`bottom:${i}:x`) - 0.5) * handCutVariation;
+          const variationY = (rand(`bottom:${i}:y`) - 0.5) * handCutVariation;
           points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
@@ -30200,8 +30603,8 @@ try {
           const baseX = 0;
           const baseY = height - (t * height);
           const cornerOffset = cornerOffsetForPoint(baseX, baseY);
-          const variationX = (Math.random() - 0.5) * handCutVariation;
-          const variationY = (Math.random() - 0.5) * handCutVariation;
+          const variationX = (rand(`left:${i}:x`) - 0.5) * handCutVariation;
+          const variationY = (rand(`left:${i}:y`) - 0.5) * handCutVariation;
           points.push(`${baseX + cornerOffset.x + variationX + x},${baseY + cornerOffset.y + variationY + y}`);
         }
         
@@ -31217,7 +31620,6 @@ try {
           if (window.odqPerfMark) window.odqPerfMark('init-start');
           this._liveDailyDataConfirmed = false;
           this._postLiveSyncInitialized = false;
-          this._showConnectionProblemConnecting();
           this.setupEventListeners();
 
           await this.dataService.initialize();
@@ -31563,34 +31965,7 @@ try {
           quiltDailyColorsCtaBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            // Always view the current app-month so today's animated cell is visible.
-            this._calendarViewMonth = this.getCurrentAppMonthDate();
-            // Stamp the exit chamber bg with today's color BEFORE showing it,
-            // so the screen fades in already wearing the user's color.
-            this.applyExitChamberBackgroundFromTodayColor();
-            this._exitChamberScrapSeed = 0;
-            this.bindExitChamberTextureCycleGestures();
-            // Restart the underline draw on each chamber visit. The farewell
-            // text itself stays visible as soon as the screen loads.
-            const kicker = document.getElementById('exitChamberKickerBottom');
-            if (kicker) {
-              window.clearTimeout(this._exitChamberKickerRevealTimer);
-              this._exitChamberKickerRevealTimer = null;
-              kicker.classList.remove('is-revealed');
-              this.setNextExitChamberFarewellPhrase();
-            }
-            this.uiService.showScreen('screen-exit-chamber');
-            // Set the flag AFTER the screen is shown so the subsequent render
-            // is the one the user actually sees animating.
-            this._animateTodayCellOnNextRender = true;
-            this.renderColorCalendar();
-            this.refreshExitChamberMoodPaper();
-            requestAnimationFrame(() => {
-              this.applyExitChamberSpeakerTexture();
-            });
-            if (kicker) {
-              this.scheduleExitChamberKickerUnderlineReveal(kicker, 140);
-            }
+            this.openExitChamberClassic();
           });
         }
         const exitChamberBackBtn = document.getElementById('exitChamberBackBtn');
@@ -31825,8 +32200,8 @@ try {
         }
 
         const kicker = document.getElementById('exitChamberKickerBottom');
-        const ink = kicker?.querySelector?.('.exit-chamber-kicker-bottom__ink');
-        if (ink) ink.textContent = phrase;
+        const textEl = kicker?.querySelector?.('.exit-chamber-farewell__text');
+        if (textEl) textEl.textContent = phrase;
       }
 
       /** L→R pen-stroke underline under the exit-chamber farewell (dashoffset reset + reveal). */
@@ -31835,10 +32210,10 @@ try {
         window.clearTimeout(this._exitChamberKickerRevealTimer);
         this._exitChamberKickerRevealTimer = null;
         kicker.classList.remove('is-revealed');
-        const path = kicker.querySelector('.exit-chamber-kicker-bottom__line path');
+        const path = kicker.querySelector('.exit-chamber-farewell__rule path');
         if (path) {
-          path.style.strokeDasharray = '1000';
-          path.style.strokeDashoffset = '1000';
+          path.style.strokeDasharray = '';
+          path.style.strokeDashoffset = '';
         }
         void kicker.offsetWidth;
         const delay = Math.max(0, Number(delayMs) || 0);
@@ -33961,8 +34336,7 @@ try {
           const hasQuiltVisual = quiltImageUrl || entry.quiltImageFallbackBlocks;
           const safeQuiltUrl = quiltImageUrl ? this.escapeQuiltFortuneText(quiltImageUrl) : '';
           const quiltImageHtml = hasQuiltVisual
-            ? `<p class="reflection-themes-archive-quilt-kicker">That day&rsquo;s quilt</p>
-              <div class="reflection-themes-archive-quilt-frame">
+            ? `<div class="reflection-themes-archive-quilt-frame">
                 ${
                   quiltImageUrl
                     ? `<img class="reflection-themes-archive-quilt-image" src="${safeQuiltUrl}" alt="Community quilt for ${this.escapeQuiltFortuneText(dateLabel)}" loading="lazy" data-date-key="${this.escapeQuiltFortuneText(entry.dateKey)}"${entry.quiltImageIsClassic ? ' data-classic-matte="1"' : ''} />`
@@ -33983,9 +34357,9 @@ try {
               <div class="reflection-themes-archive-details" id="${detailsId}" hidden>
                 <p class="reflection-themes-archive-date">${this.escapeQuiltFortuneText(dateLabel)}</p>
                 ${quoteStrip}
-                ${quiltImageHtml}
                 <p class="reflection-themes-archive-response-count">${this.escapeQuiltFortuneText(responseLabel)}</p>
                 <ul class="reflection-themes-archive-themes">${themes}</ul>
+                ${quiltImageHtml}
               </div>
             </article>
           `;
@@ -35011,6 +35385,7 @@ try {
         const body = section.querySelector('.exit-chamber-mood-paper__body');
         this._syncMoodReceiptRules(body);
         requestAnimationFrame(() => this._syncMoodReceiptRules(body));
+        this.scheduleExitChamberCollageLayout(this.getExitChamberTodayPieceData()?.block || null);
         section.setAttribute(
           'aria-label',
           pick.mood === 'good' ? 'Your good-day line' : 'Your rough-day line'
@@ -36825,7 +37200,7 @@ try {
         document.addEventListener('screenChange', (e) => {
           if (e.detail.screenId === 'screen-quilt') {
             this.parallaxAnchorScrollTop = this.getCurrentQuiltScrollPosition();
-            this.parallaxTargetShift = 0;
+            this.resetQuiltParallaxVisualState();
             this.handleParallaxScroll();
             this.scheduleQuiltScrollCue();
           } else {
@@ -40207,6 +40582,82 @@ try {
           .map(({ entry }) => entry);
       }
 
+      getQuiltAverageLuminance(blocks = this.quiltEngine?.blocks) {
+        const luminanceForHex = (hex) => {
+          const normalized = String(hex || '').trim();
+          if (!Utils.validateHexColor(normalized)) return null;
+          const r = parseInt(normalized.slice(1, 3), 16);
+          const g = parseInt(normalized.slice(3, 5), 16);
+          const b = parseInt(normalized.slice(5, 7), 16);
+          return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        };
+        const colorsForBlock = (block) => {
+          const colors = [];
+          const seen = new Set();
+          const addColor = (color) => {
+            const normalized = String(color || '').trim();
+            if (!Utils.validateHexColor(normalized)) return;
+            const key = normalized.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            colors.push(normalized);
+          };
+          addColor(block?.color);
+          addColor(block?.hstColorB);
+          addColor(block?.insetInnerColor);
+          addColor(block?.specialOriginalInnerColor);
+          addColor(block?.diagonalAxisAccentColor);
+          if (Array.isArray(block?.hstTriangles)) {
+            block.hstTriangles.forEach((piece) => addColor(piece?.color));
+          }
+          if (Array.isArray(block?.polygonPieces)) {
+            block.polygonPieces.forEach((piece) => addColor(piece?.color));
+          }
+          return colors;
+        };
+
+        let weightedLuminance = 0;
+        let totalArea = 0;
+        (Array.isArray(blocks) ? blocks : []).forEach((block) => {
+          if (!block || typeof block !== 'object') return;
+          const area = Math.max(0, Number(block.width) || 0) * Math.max(0, Number(block.height) || 0);
+          if (!Number.isFinite(area) || area <= 0) return;
+          const colors = colorsForBlock(block);
+          if (!colors.length) return;
+          const blockLuminance = colors.reduce((sum, color) => sum + luminanceForHex(color), 0) / colors.length;
+          weightedLuminance += blockLuminance * area;
+          totalArea += area;
+        });
+        return totalArea > 0 ? weightedLuminance / totalArea : 1;
+      }
+
+      getContributorNameContrastPalette() {
+        const averageLuminance = this.getQuiltAverageLuminance();
+        const quiltIsPrimarilyDark = averageLuminance < 0.5;
+        return quiltIsPrimarilyDark
+          ? {
+              tone: 'dark',
+              color: 'rgba(246, 244, 241, 0.84)',
+              currentColor: 'rgba(255, 255, 255, 0.96)'
+            }
+          : {
+              tone: 'light',
+              color: 'rgba(0, 0, 0, 0.68)',
+              currentColor: 'rgba(0, 0, 0, 0.86)'
+            };
+      }
+
+      applyContributorNameContrast() {
+        const palette = this.getContributorNameContrastPalette();
+        ['quiltContributorsLead', 'quiltContributorsTail'].forEach((id) => {
+          const stage = document.getElementById(id);
+          if (!stage) return;
+          stage.style.setProperty('--contributor-name-color', palette.color);
+          stage.style.setProperty('--contributor-name-current-color', palette.currentColor);
+          stage.dataset.quiltTone = palette.tone;
+        });
+      }
+
       renderContributorCloud(listEl, entries, variant, currentUserId) {
         if (!listEl) return;
         const sizeBuckets = [0.9, 1.0, 1.1, 1.22];
@@ -40254,6 +40705,7 @@ try {
 
         const currentUserId = String(this.currentUserId || '').trim();
         const ordered = this.getOrderedDisplayContributors();
+        this.applyContributorNameContrast();
         const splitMin = Math.max(
           2,
           Number(CONFIG?.APP?.quiltContributorSplitMin) || 14
@@ -40996,6 +41448,7 @@ try {
         } else {
           this.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
         }
+        this.resetQuiltParallaxVisualState();
         this.syncQuiltZoomAfterRender();
         requestAnimationFrame(() => this.syncQuiltFilmGrainOverlay());
         this.updateSquareCounter();
@@ -41020,6 +41473,17 @@ try {
         this.refreshQuoteSpeakerWidget();
         this.refreshQuiltMoodWidget();
         this.refreshQuiltReflectionScrapWidget();
+      }
+
+      resetQuiltParallaxVisualState() {
+        this.parallaxTargetShift = 0;
+        this.parallaxCurrentShift = 0;
+        this.parallaxAppliedSvgShift = 0;
+        document.documentElement.style.setProperty('--quilt-base-shift', '0px');
+        document.documentElement.style.setProperty('--quilt-overlay-shift', '0px');
+        document.querySelectorAll('#quilt .quilt-parallax-block').forEach((node) => {
+          node.setAttribute('transform', node.dataset.baseTransform || '');
+        });
       }
 
       ensureQuiltScreenInteractive() {
@@ -41333,6 +41797,9 @@ try {
             'art_recs',
             'artRecs',
             'artRecsSnapshot',
+            'art_recs_type',
+            'artRecsType',
+            'artRecsTypeSnapshot',
             'communityPrompt',
             'community_prompt',
             'reflectionPrompt',
@@ -41356,7 +41823,16 @@ try {
           const goodDay = String(data.good_day ?? data.goodDay ?? '').trim();
           const roughDay = String(data.rough_day ?? data.roughDay ?? '').trim();
           const art = data.art_recs ?? data.artRecs ?? prev.art_recs ?? prev.artRecs;
-          const artRecsType = String(data.art_recs_type ?? data.artRecsType ?? '').trim().toLowerCase();
+          const artRecsType = String(
+            data.art_recs_type ??
+              data.artRecsType ??
+              data.artRecsTypeSnapshot ??
+              prev.art_recs_type ??
+              prev.artRecsType ??
+              ''
+          )
+            .trim()
+            .toLowerCase();
           qs._pinnedByDateKey[dateKey] = {
             ...prev,
             ...data,
@@ -41663,6 +42139,10 @@ try {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) ? 'ios' : 'web';
       }
 
+      isNotificationPermissionPromptable(status) {
+        return !status || status === 'prompt' || status === 'prompt-with-rationale';
+      }
+
       async registerDailyQuotePushToken(token) {
         const t = String(token || '').trim();
         if (!t) throw new Error('Missing push token');
@@ -41688,7 +42168,7 @@ try {
         localStorage.setItem('ourDailyPushTokenRegisteredAt', new Date().toISOString());
       }
 
-      async enableDailyQuotePushNotifications({ showSuccess = true } = {}) {
+      async enableDailyQuotePushNotifications({ showSuccess = true, requestPermission = true } = {}) {
         const messaging = this.getFirebaseMessagingPlugin();
         if (!messaging) {
           throw new Error('Firebase Messaging plugin unavailable');
@@ -41697,6 +42177,7 @@ try {
         const checked = await messaging.checkPermissions();
         let receive = checked && checked.receive;
         if (receive !== 'granted') {
+          if (!requestPermission) return false;
           const requested = await messaging.requestPermissions();
           receive = requested && requested.receive;
         }
@@ -41715,7 +42196,7 @@ try {
         return true;
       }
 
-      async enableLocalDailyQuoteNotification({ showSuccess = true } = {}) {
+      async enableLocalDailyQuoteNotification({ showSuccess = true, requestPermission = true } = {}) {
         const localNotifications = this.getLocalNotificationsPlugin();
         if (!localNotifications) {
           throw new Error('Local Notifications plugin unavailable');
@@ -41724,6 +42205,7 @@ try {
         const checked = await localNotifications.checkPermissions();
         let display = checked && checked.display;
         if (display !== 'granted') {
+          if (!requestPermission) return false;
           const requested = await localNotifications.requestPermissions();
           display = requested && requested.display;
         }
@@ -41849,7 +42331,20 @@ try {
 
       async maybePromptForDailyQuoteNotifications() {
         if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') === '1') return;
-        if (localStorage.getItem('ourDailyPushDailyQuotePrompted_v2') === '1') return;
+        if (localStorage.getItem('ourDailyPushDailyQuotePrompted_v2') === '1') {
+          const messaging = this.getFirebaseMessagingPlugin();
+          const localNotifications = this.getLocalNotificationsPlugin();
+          try {
+            const checked = messaging
+              ? await messaging.checkPermissions()
+              : await localNotifications?.checkPermissions?.();
+            const status = messaging ? checked?.receive : checked?.display;
+            if (!this.isNotificationPermissionPromptable(status)) return;
+            localStorage.removeItem('ourDailyPushDailyQuotePrompted_v2');
+          } catch (_) {
+            return;
+          }
+        }
         if (!this.getFirebaseMessagingPlugin() && !this.getLocalNotificationsPlugin()) return;
 
         localStorage.setItem('ourDailyPushDailyQuotePrompted_v2', '1');
@@ -41878,8 +42373,20 @@ try {
 
       async refreshDailyQuotePushRegistration() {
         if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') !== '1') return;
-        if (!this.getFirebaseMessagingPlugin()) return;
-        await this.enableDailyQuotePushNotifications({ showSuccess: false });
+        const messaging = this.getFirebaseMessagingPlugin();
+        if (!messaging) return;
+
+        const checked = await messaging.checkPermissions();
+        const receive = checked && checked.receive;
+        if (receive !== 'granted') {
+          localStorage.setItem('ourDailyPushDailyQuoteEnabled', '0');
+          if (this.isNotificationPermissionPromptable(receive)) {
+            localStorage.removeItem('ourDailyPushDailyQuotePrompted_v2');
+          }
+          return;
+        }
+
+        await this.enableDailyQuotePushNotifications({ showSuccess: false, requestPermission: false });
       }
 
       getColorMilestoneMessage(count) {
@@ -46271,7 +46778,7 @@ try {
           );
           const todayQuote =
             (this.quoteService && typeof this.quoteService.getQuoteResolvedForInstagramDateKey === 'function'
-              ? await this.quoteService.getQuoteResolvedForInstagramDateKey(today)
+              ? await this.quoteService.getQuoteResolvedForInstagramDateKey(today, { requireLive: true })
               : this.quoteService?.getTodayQuote()) || null;
           this.uiService.showToast('Generating and uploading Instagram assets…');
           const instagramImage = await arch.generateInstagramImage(blocks);
@@ -47174,6 +47681,829 @@ try {
         });
       }
 
+      getDevicePersonalColorSubmissionForDate(dateKey = Utils.getTodayKey()) {
+        const targetKey = String(dateKey || '').trim();
+        if (!targetKey) return null;
+        const submissions = this.getDevicePersonalColorSubmissions();
+        return submissions
+          .filter((submission) => {
+            const date = new Date(submission?.timestamp || '');
+            if (Number.isNaN(date.getTime())) return false;
+            return Utils.getAppDateKeyForDate(date) === targetKey;
+          })
+          .sort((a, b) => {
+            const ai = Number.isFinite(Number(a.submissionIndex)) ? Number(a.submissionIndex) : -1;
+            const bi = Number.isFinite(Number(b.submissionIndex)) ? Number(b.submissionIndex) : -1;
+            if (ai !== bi) return ai - bi;
+            return (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0);
+          })
+          .pop() || null;
+      }
+
+      getExitChamberTodayPieceData(dateKey = Utils.getTodayKey()) {
+        const submission = this.getDevicePersonalColorSubmissionForDate(dateKey);
+        if (!submission) return null;
+        const blocks = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks : [];
+        const ids = new Set(
+          [this.currentUserId, this.quiltEngine?.deviceId]
+            .map((v) => (v == null ? '' : String(v).trim()))
+            .filter(Boolean)
+        );
+        const belongsToDevice = (block) => {
+          if (!block) return false;
+          if (ids.has(String(block.contributorId || '').trim())) return true;
+          const contributorIds = Array.isArray(block.contributorIds) ? block.contributorIds : [];
+          return contributorIds.some((id) => ids.has(String(id || '').trim()));
+        };
+        const subIndex = Number(submission.submissionIndex);
+        let block =
+          blocks.find((b) => String(b?.id || '') === String(submission.blockId || '')) ||
+          blocks.find((b) => String(b?.id || '') === String(this._latestDedicatedBlockId || '')) ||
+          null;
+        if (!block && Number.isFinite(subIndex)) {
+          block = blocks.find((b) => Number(b?.submissionIndex) === subIndex && belongsToDevice(b)) || null;
+        }
+        if (!block) {
+          const color = String(submission.color || '').trim().toLowerCase();
+          block = blocks
+            .filter((b) => belongsToDevice(b) && String(b?.color || '').trim().toLowerCase() === color)
+            .sort((a, b) => (Number(a.submissionIndex) || 0) - (Number(b.submissionIndex) || 0))
+            .pop() || null;
+        }
+        const color = Utils.validateHexColor(block?.color) ? block.color : submission.color;
+        return Utils.validateHexColor(color) ? { submission, block, color } : null;
+      }
+
+      openExitChamberClassic() {
+        this.applyExitChamberBackgroundFromTodayColor();
+        this._exitChamberScrapSeed = 0;
+        this.bindExitChamberTextureCycleGestures();
+        const kicker = document.getElementById('exitChamberKickerBottom');
+        if (kicker) {
+          window.clearTimeout(this._exitChamberKickerRevealTimer);
+          this._exitChamberKickerRevealTimer = null;
+          kicker.classList.remove('is-revealed');
+        }
+        this.setNextExitChamberFarewellPhrase();
+        this.uiService.showScreen('screen-exit-chamber');
+        this.refreshExitChamberTodayPiece();
+        this.refreshExitChamberMoodPaper();
+        requestAnimationFrame(() => {
+          this.applyExitChamberSpeakerTexture();
+        });
+        if (kicker) {
+          this.scheduleExitChamberKickerUnderlineReveal(kicker, 140);
+        }
+      }
+
+      refreshExitChamberTodayPiece() {
+        const section = document.getElementById('exitChamberTodayPiece');
+        const mount = document.getElementById('exitChamberTodayPiecePatch');
+        if (!section || !mount) return;
+        const data = this.getExitChamberTodayPieceData();
+        mount.innerHTML = '';
+        if (!data) {
+          section.hidden = true;
+          const snapshot = document.getElementById('exitChamberQuiltSnapshot');
+          if (snapshot) {
+            snapshot.innerHTML = '';
+            snapshot.hidden = true;
+          }
+          return;
+        }
+        section.hidden = false;
+        section.setAttribute('aria-label', `Your piece today, ${data.color}`);
+        mount.style.setProperty('--exit-chamber-piece-color', data.color);
+        this.renderExitChamberTodayPieceSvg(mount, data.block, data.color);
+        this.renderExitChamberFullQuiltSnapshotSvg(document.getElementById('exitChamberQuiltSnapshot'));
+        this.scheduleExitChamberCollageLayout(data.block);
+      }
+
+      renderExitChamberTodayPieceSvg(mount, block, color) {
+        if (!mount) return;
+        const NS = 'http://www.w3.org/2000/svg';
+        const make = (tag) => document.createElementNS(NS, tag);
+        const safeColor = Utils.validateHexColor(color) ? color : CONFIG.APP.defaultColor;
+        const sourceBlock = block || {
+          id: `today-piece-${Utils.getTodayKey()}`,
+          x: 0,
+          y: 0,
+          width: 96,
+          height: 96,
+          color: safeColor,
+          patternType: 'regular'
+        };
+        const w = Math.max(24, Number(sourceBlock.width) || 96);
+        const h = Math.max(24, Number(sourceBlock.height) || 96);
+        const previewBlock = {
+          ...sourceBlock,
+          x: 0,
+          y: 0,
+          width: w,
+          height: h,
+          color: Utils.validateHexColor(sourceBlock.color) ? sourceBlock.color : safeColor
+        };
+        const sourceX = Number(sourceBlock.x) || 0;
+        const sourceY = Number(sourceBlock.y) || 0;
+        if (Number.isFinite(Number(sourceBlock.insetCx))) previewBlock.insetCx = Number(sourceBlock.insetCx) - sourceX;
+        if (Number.isFinite(Number(sourceBlock.insetCy))) previewBlock.insetCy = Number(sourceBlock.insetCy) - sourceY;
+
+        const pad = Math.max(8, Math.min(w, h) * 0.2);
+        const svg = make('svg');
+        svg.setAttribute('viewBox', `${-pad} ${-pad} ${w + pad * 2} ${h + pad * 2}`);
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', `Your piece today, ${safeColor}`);
+
+        const defs = make('defs');
+        const grainPattern = make('pattern');
+        grainPattern.setAttribute('id', 'exitTodayPieceGrain');
+        grainPattern.setAttribute('patternUnits', 'userSpaceOnUse');
+        grainPattern.setAttribute('width', '17');
+        grainPattern.setAttribute('height', '17');
+        grainPattern.setAttribute('patternTransform', 'rotate(-13)');
+        [
+          ['path', { d: 'M 0 3.2 C 4.2 2.7, 8.6 3.8, 17 2.9', fill: 'none', stroke: 'rgba(255, 250, 236, 0.42)', 'stroke-width': '0.42' }],
+          ['path', { d: 'M 0 10.8 C 5.4 11.6, 9.6 10.4, 17 11.2', fill: 'none', stroke: 'rgba(45, 36, 29, 0.12)', 'stroke-width': '0.34' }],
+          ['circle', { cx: '3.2', cy: '4.1', r: '0.72', fill: 'rgba(255, 244, 220, 0.42)' }],
+          ['circle', { cx: '12.6', cy: '12.2', r: '0.58', fill: 'rgba(45, 36, 29, 0.13)' }],
+          ['rect', { x: '8.2', y: '2.1', width: '3.4', height: '0.48', rx: '0.24', fill: 'rgba(250, 244, 226, 0.48)' }],
+          ['rect', { x: '1.1', y: '14.1', width: '5.2', height: '0.38', rx: '0.19', fill: 'rgba(45, 36, 29, 0.08)' }]
+        ].forEach(([tag, attrs]) => {
+          const node = make(tag);
+          Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+          grainPattern.appendChild(node);
+        });
+        defs.appendChild(grainPattern);
+
+        const washGradient = make('linearGradient');
+        washGradient.setAttribute('id', 'exitTodayPieceColorWash');
+        washGradient.setAttribute('x1', '0%');
+        washGradient.setAttribute('y1', '0%');
+        washGradient.setAttribute('x2', '100%');
+        washGradient.setAttribute('y2', '100%');
+        [
+          ['0%', 'rgba(255, 255, 255, 0.48)'],
+          ['42%', 'rgba(255, 255, 255, 0)'],
+          ['100%', 'rgba(37, 29, 22, 0.26)']
+        ].forEach(([offset, colorValue]) => {
+          const stop = make('stop');
+          stop.setAttribute('offset', offset);
+          stop.setAttribute('stop-color', colorValue);
+          washGradient.appendChild(stop);
+        });
+        defs.appendChild(washGradient);
+
+        const liftGradient = make('linearGradient');
+        liftGradient.setAttribute('id', 'exitTodayPieceLiftShadow');
+        liftGradient.setAttribute('x1', '0%');
+        liftGradient.setAttribute('y1', '0%');
+        liftGradient.setAttribute('x2', '100%');
+        liftGradient.setAttribute('y2', '100%');
+        [
+          ['0%', 'rgba(255, 255, 255, 0)'],
+          ['58%', 'rgba(45, 36, 29, 0.04)'],
+          ['100%', 'rgba(45, 36, 29, 0.24)']
+        ].forEach(([offset, colorValue]) => {
+          const stop = make('stop');
+          stop.setAttribute('offset', offset);
+          stop.setAttribute('stop-color', colorValue);
+          liftGradient.appendChild(stop);
+        });
+        defs.appendChild(liftGradient);
+
+        const liftedCorner = make('radialGradient');
+        liftedCorner.setAttribute('id', 'exitTodayPieceLiftedCorner');
+        liftedCorner.setAttribute('cx', '88%');
+        liftedCorner.setAttribute('cy', '90%');
+        liftedCorner.setAttribute('r', '46%');
+        [
+          ['0%', 'rgba(255, 250, 236, 0.5)'],
+          ['44%', 'rgba(255, 250, 236, 0.15)'],
+          ['100%', 'rgba(255, 250, 236, 0)']
+        ].forEach(([offset, colorValue]) => {
+          const stop = make('stop');
+          stop.setAttribute('offset', offset);
+          stop.setAttribute('stop-color', colorValue);
+          liftedCorner.appendChild(stop);
+        });
+        defs.appendChild(liftedCorner);
+
+        svg.appendChild(defs);
+
+        const contactShadowLayer = make('g');
+        contactShadowLayer.setAttribute('class', 'exit-chamber-today-piece__contact-shadow');
+        const edgeLayer = make('g');
+        edgeLayer.setAttribute('class', 'exit-chamber-today-piece__edge');
+        const mainLayer = make('g');
+        mainLayer.setAttribute('class', 'exit-chamber-today-piece__main-layer');
+        const washLayer = make('g');
+        washLayer.setAttribute('class', 'exit-chamber-today-piece__wash');
+        const grainLayer = make('g');
+        grainLayer.setAttribute('class', 'exit-chamber-today-piece__grain');
+        const bevelLayer = make('g');
+        bevelLayer.setAttribute('class', 'exit-chamber-today-piece__bevel');
+        const pencilLayer = make('g');
+        pencilLayer.setAttribute('class', 'exit-chamber-today-piece__pencil-outline');
+        svg.appendChild(contactShadowLayer);
+        svg.appendChild(edgeLayer);
+        svg.appendChild(mainLayer);
+        svg.appendChild(washLayer);
+        svg.appendChild(grainLayer);
+        svg.appendChild(bevelLayer);
+        svg.appendChild(pencilLayer);
+
+        const pencilPath = make('path');
+        pencilPath.setAttribute(
+          'd',
+          [
+            `M ${-w * 0.1} ${h * 0.25}`,
+            `C ${w * 0.08} ${-h * 0.03}, ${w * 0.63} ${-h * 0.06}, ${w * 0.9} ${h * 0.22}`,
+            `C ${w * 1.08} ${h * 0.42}, ${w * 0.9} ${h * 0.98}, ${w * 0.48} ${h * 1.06}`,
+            `C ${w * 0.09} ${h * 1.13}, ${-w * 0.18} ${h * 0.9}, ${-w * 0.16} ${h * 0.55}`,
+            `C ${-w * 0.15} ${h * 0.4}, ${-w * 0.12} ${h * 0.31}, ${-w * 0.1} ${h * 0.25}`
+          ].join(' ')
+        );
+        pencilLayer.appendChild(pencilPath);
+
+        const pencilLeadIn = make('path');
+        pencilLeadIn.setAttribute(
+          'd',
+          [
+            `M ${-w * 0.13} ${h * 0.3}`,
+            `C ${w * 0.02} ${-h * 0.03}, ${w * 0.34} ${-h * 0.11}, ${w * 0.67} ${h * 0.03}`
+          ].join(' ')
+        );
+        pencilLayer.appendChild(pencilLeadIn);
+
+        const appendMaterialCopies = (shape, fill) => {
+          if (!shape) return null;
+          const fillColor = Utils.validateHexColor(fill) ? fill : safeColor;
+          shape.setAttribute('fill', fillColor);
+          shape.setAttribute('stroke', 'none');
+
+          const contact = shape.cloneNode(true);
+          contact.setAttribute('fill', 'rgba(45, 36, 29, 0.18)');
+          contact.setAttribute('stroke', 'none');
+          contact.setAttribute('transform', 'translate(2.2 3.2)');
+          contactShadowLayer.appendChild(contact);
+
+          const edge = shape.cloneNode(true);
+          edge.setAttribute('fill', 'rgba(232, 219, 191, 0.98)');
+          edge.setAttribute('stroke', 'rgba(92, 74, 54, 0.2)');
+          edge.setAttribute('stroke-width', String(Math.max(1, Math.min(w, h) * 0.018)));
+          edge.setAttribute('stroke-linejoin', 'round');
+          edge.setAttribute('transform', 'translate(1.9 2.1)');
+          edgeLayer.appendChild(edge);
+
+          mainLayer.appendChild(shape);
+
+          const wash = shape.cloneNode(true);
+          wash.setAttribute('fill', 'url(#exitTodayPieceColorWash)');
+          wash.setAttribute('stroke', 'none');
+          washLayer.appendChild(wash);
+
+          const grain = shape.cloneNode(true);
+          grain.setAttribute('fill', 'url(#exitTodayPieceGrain)');
+          grain.setAttribute('stroke', 'none');
+          grainLayer.appendChild(grain);
+
+          const bevel = shape.cloneNode(true);
+          bevel.setAttribute('fill', 'url(#exitTodayPieceLiftShadow)');
+          bevel.setAttribute('stroke', 'none');
+          bevelLayer.appendChild(bevel);
+
+          const liftedCornerHighlight = shape.cloneNode(true);
+          liftedCornerHighlight.setAttribute('fill', 'url(#exitTodayPieceLiftedCorner)');
+          liftedCornerHighlight.setAttribute('stroke', 'none');
+          bevelLayer.appendChild(liftedCornerHighlight);
+
+          return shape;
+        };
+
+        const appendPolygon = (points, fill, className = '') => {
+          const pts = (points || [])
+            .map((p) => {
+              const x = Number(Array.isArray(p) ? p[0] : p?.x);
+              const y = Number(Array.isArray(p) ? p[1] : p?.y);
+              return Number.isFinite(x) && Number.isFinite(y) ? `${x},${y}` : '';
+            })
+            .filter(Boolean)
+            .join(' ');
+          if (!pts) return null;
+          const poly = make('polygon');
+          poly.setAttribute('points', pts);
+          poly.setAttribute('fill', Utils.validateHexColor(fill) ? fill : safeColor);
+          poly.setAttribute('stroke', 'none');
+          if (className) poly.setAttribute('class', className);
+          return appendMaterialCopies(poly, fill);
+        };
+
+        if (Array.isArray(previewBlock.polygonPieces) && previewBlock.polygonPieces.length) {
+          previewBlock.polygonPieces.forEach((piece) => {
+            appendPolygon(piece?.points, piece?.color || previewBlock.color, 'exit-chamber-today-piece__shape-part');
+          });
+        } else if (previewBlock.patternType === 'special' && previewBlock.specialPatternType === 'hst') {
+          const triangles =
+            typeof Utils.getHstOrganicRenderTriangles === 'function'
+              ? Utils.getHstOrganicRenderTriangles(previewBlock, 0.7)
+              : [];
+          const userColor = String(previewBlock.color || safeColor).trim().toLowerCase();
+          const userTriangles = triangles.filter((tri) => String(tri?.color || '').trim().toLowerCase() === userColor);
+          (userTriangles.length ? userTriangles : triangles).forEach((tri) => {
+            appendPolygon(tri?.points, tri?.color || previewBlock.color, 'exit-chamber-today-piece__shape-part');
+          });
+        } else {
+          const main =
+            this.renderer?.createHandCutPolygon?.(0, 0, w, h, 0.72, `exit-piece:${previewBlock.id || safeColor}`) ||
+            appendPolygon([[0, 0], [w, 0], [w, h], [0, h]], previewBlock.color);
+          if (main) {
+            if (!main.parentNode) appendMaterialCopies(main, previewBlock.color);
+          }
+          if (previewBlock.patternType === 'special' && previewBlock.specialPatternType === 'insetCircle') {
+            const innerColor = Utils.validateHexColor(previewBlock.insetInnerColor)
+              ? previewBlock.insetInnerColor
+              : previewBlock.color;
+            const spec =
+              typeof Utils.insetCircleOrganicSectorPointsLocal === 'function'
+                ? Utils.insetCircleOrganicSectorPointsLocal(previewBlock, 0.7)
+                : { kind: 'none', points: [] };
+            if (spec.kind !== 'none' && spec.points?.length >= 3) {
+              appendPolygon(spec.points, innerColor, 'exit-chamber-today-piece__shape-part');
+            }
+          }
+        }
+
+        mount.appendChild(svg);
+      }
+
+      renderExitChamberFullQuiltSnapshotSvg(mount) {
+        const snapshot = mount || document.getElementById('exitChamberQuiltSnapshot');
+        if (!snapshot) return;
+        snapshot.innerHTML = '';
+        const blocks = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks : [];
+        const liveSvg = this.quiltSVG;
+        const liveHasMirroredField = !!liveSvg?.querySelector?.('#quiltMirroredFieldLayer');
+        if (liveHasMirroredField && liveSvg.childNodes.length > 0 && liveSvg.getAttribute('viewBox')) {
+          const clone = liveSvg.cloneNode(true);
+          const suffix = `exitSnapshot${Date.now().toString(36)}`;
+          const idMap = new Map();
+          clone.querySelectorAll('[id]').forEach((node) => {
+            const oldId = node.getAttribute('id');
+            if (!oldId) return;
+            const newId = `${oldId}-${suffix}`;
+            idMap.set(oldId, newId);
+            node.setAttribute('id', newId);
+          });
+          if (clone.id) clone.removeAttribute('id');
+          const replaceIdRefs = (value) => {
+            if (!value || !idMap.size) return value;
+            let next = value;
+            idMap.forEach((newId, oldId) => {
+              next = next
+                .replaceAll(`url(#${oldId})`, `url(#${newId})`)
+                .replaceAll(`href="#${oldId}"`, `href="#${newId}"`)
+                .replaceAll(`xlink:href="#${oldId}"`, `xlink:href="#${newId}"`)
+                .replaceAll(`#${oldId}`, `#${newId}`);
+            });
+            return next;
+          };
+          clone.querySelectorAll('*').forEach((node) => {
+            Array.from(node.attributes || []).forEach((attr) => {
+              const replaced = replaceIdRefs(attr.value);
+              if (replaced !== attr.value) node.setAttribute(attr.name, replaced);
+            });
+          });
+          clone.setAttribute('width', '100%');
+          clone.setAttribute('height', '100%');
+          clone.setAttribute('preserveAspectRatio', liveSvg.getAttribute('preserveAspectRatio') || 'xMidYMin slice');
+          clone.setAttribute('role', 'img');
+          clone.setAttribute('aria-label', 'Full quilt in this moment');
+          clone.style.setProperty('width', '100%', 'important');
+          clone.style.setProperty('height', '100%', 'important');
+          clone.style.setProperty('max-width', '100%', 'important');
+          clone.style.setProperty('max-height', '100%', 'important');
+          snapshot.appendChild(clone);
+          snapshot.hidden = false;
+          return;
+        }
+        const sourceBlocks = blocks.filter((block) => {
+          const x = Number(block?.x);
+          const y = Number(block?.y);
+          const width = Number(block?.width);
+          const height = Number(block?.height);
+          return [x, y, width, height].every(Number.isFinite) && width > 0 && height > 0 && Utils.validateHexColor(block.color);
+        });
+        if (!sourceBlocks.length) {
+          snapshot.hidden = true;
+          return;
+        }
+
+        const NS = 'http://www.w3.org/2000/svg';
+        const make = (tag) => document.createElementNS(NS, tag);
+        const minX = Math.min(...sourceBlocks.map((b) => Number(b.x)));
+        const minY = Math.min(...sourceBlocks.map((b) => Number(b.y)));
+        const maxX = Math.max(...sourceBlocks.map((b) => Number(b.x) + Number(b.width)));
+        const maxY = Math.max(...sourceBlocks.map((b) => Number(b.y) + Number(b.height)));
+        const quiltW = Math.max(1, maxX - minX);
+        const quiltH = Math.max(1, maxY - minY);
+        const horizontalStretch = 1.16;
+        const pad = -Math.max(6, quiltW * 0.02);
+        const mirrorSeamOffsetRatio =
+          typeof this.renderer?.getMirrorSeamOffsetRatio === 'function'
+            ? this.renderer.getMirrorSeamOffsetRatio()
+            : 0.68;
+        const mirrorSeamOffset = quiltH * mirrorSeamOffsetRatio;
+        const mirrorSeamOverlap = 8;
+        const mirroredFieldWidth = quiltW * horizontalStretch;
+        const mirroredFieldHeight = quiltH + mirrorSeamOffset;
+        const svg = make('svg');
+        svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${mirroredFieldWidth + pad * 2} ${mirroredFieldHeight + pad * 2}`);
+        svg.setAttribute('preserveAspectRatio', 'xMidYMin slice');
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', 'Full quilt in this moment');
+
+        const bg = make('rect');
+        bg.setAttribute('x', String(minX - pad));
+        bg.setAttribute('y', String(minY - pad));
+        bg.setAttribute('width', String(mirroredFieldWidth + pad * 2));
+        bg.setAttribute('height', String(mirroredFieldHeight + pad * 2));
+        bg.setAttribute('fill', '#ebe8e3');
+        svg.appendChild(bg);
+
+        const fieldLayer = make('g');
+        fieldLayer.setAttribute('transform', `translate(${minX} 0) scale(${horizontalStretch} 1) translate(${-minX} 0)`);
+        svg.appendChild(fieldLayer);
+
+        const parallaxLayer = make('g');
+        fieldLayer.appendChild(parallaxLayer);
+
+        const appendPoly = (points, fill) => {
+          const pts = (points || [])
+            .map((p) => {
+              const x = Number(Array.isArray(p) ? p[0] : p?.x);
+              const y = Number(Array.isArray(p) ? p[1] : p?.y);
+              return Number.isFinite(x) && Number.isFinite(y) ? `${x},${y}` : '';
+            })
+            .filter(Boolean)
+            .join(' ');
+          if (!pts) return;
+          const poly = make('polygon');
+          poly.setAttribute('points', pts);
+          poly.setAttribute('fill', Utils.validateHexColor(fill) ? fill : CONFIG.APP.defaultColor);
+          poly.setAttribute('stroke', 'none');
+          parallaxLayer.appendChild(poly);
+        };
+
+        sourceBlocks.forEach((block) => {
+          const x = Number(block.x);
+          const y = Number(block.y);
+          const w = Number(block.width);
+          const h = Number(block.height);
+          if (Array.isArray(block.polygonPieces) && block.polygonPieces.length) {
+            block.polygonPieces.forEach((piece) => {
+              const points = (piece.points || []).map((p) => [
+                x + Number(Array.isArray(p) ? p[0] : p?.x),
+                y + Number(Array.isArray(p) ? p[1] : p?.y)
+              ]);
+              appendPoly(points, piece.color || block.color);
+            });
+            return;
+          }
+          if (block.patternType === 'special' && block.specialPatternType === 'hst') {
+            const tris = typeof Utils.getHstOrganicRenderTriangles === 'function'
+              ? Utils.getHstOrganicRenderTriangles(block, 0.35)
+              : [];
+            tris.forEach((tri) => {
+              appendPoly((tri.points || []).map((p) => [x + Number(p[0]), y + Number(p[1])]), tri.color || block.color);
+            });
+            return;
+          }
+          const rect = make('rect');
+          rect.setAttribute('x', String(x));
+          rect.setAttribute('y', String(y));
+          rect.setAttribute('width', String(w));
+          rect.setAttribute('height', String(h));
+          rect.setAttribute('fill', block.color);
+          parallaxLayer.appendChild(rect);
+          if (block.patternType === 'special' && block.specialPatternType === 'insetCircle') {
+            const innerColor = Utils.validateHexColor(block.insetInnerColor) ? block.insetInnerColor : block.color;
+            const spec = typeof Utils.insetCircleSectorPointsWorld === 'function'
+              ? Utils.insetCircleSectorPointsWorld(block, x, y)
+              : { kind: 'none', points: [] };
+            if (spec.kind !== 'none' && spec.points?.length >= 3) appendPoly(spec.points, innerColor);
+          }
+        });
+
+        const mirroredLayer = parallaxLayer.cloneNode(true);
+        mirroredLayer.setAttribute('aria-hidden', 'true');
+        mirroredLayer.setAttribute('pointer-events', 'none');
+        mirroredLayer.setAttribute(
+          'transform',
+          `translate(${minX + quiltW} ${minY + quiltH + mirrorSeamOffset - mirrorSeamOverlap}) scale(-1 -1)`
+        );
+        fieldLayer.appendChild(mirroredLayer);
+
+        snapshot.appendChild(svg);
+        snapshot.hidden = false;
+      }
+
+      scheduleExitChamberCollageLayout(block = null) {
+        requestAnimationFrame(() => this.layoutExitChamberCollage(block));
+      }
+
+      layoutExitChamberCollage(block = null) {
+        const stage = document.getElementById('exitChamberTodayPiece');
+        if (!stage || stage.hidden) {
+          document.getElementById('exitChamberShapeThanks')?.remove();
+          return;
+        }
+        const mood = document.getElementById('exitChamberMoodPaper');
+        const snapshot = document.getElementById('exitChamberQuiltSnapshot');
+        const stageRect = stage.getBoundingClientRect();
+        const W = stageRect.width;
+        const H = stageRect.height;
+        if (!(W > 0 && H > 0)) return;
+
+        const seedKey = [
+          Utils.getTodayKey(),
+          block?.id || this._latestDedicatedBlockId || '',
+          block?.color || '',
+          'exit-collage'
+        ].join('|');
+        const baseSeed = Utils.hashStringToUint(seedKey) || 1;
+        const randomUnit = (salt) => (Utils.hashStringToUint(`${baseSeed}:${salt}`) % 10000) / 9999;
+        const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+        const applyPlacement = (el, rect, rot) => {
+          el.style.setProperty('--exit-collage-x', `${Math.round(rect.x)}px`);
+          el.style.setProperty('--exit-collage-y', `${Math.round(rect.y)}px`);
+          el.style.setProperty('--exit-collage-w', `${Math.round(rect.w)}px`);
+          el.style.setProperty('--exit-collage-rot', `${rot.toFixed(2)}deg`);
+        };
+
+        const visibleMood = mood && !mood.hidden;
+        const visibleSnapshot = snapshot && !snapshot.hidden;
+        const speakerCutout = document.getElementById('exitChamberSpeakerCutout');
+        const visibleSpeaker = speakerCutout && !speakerCutout.hidden;
+        const viewport = window.visualViewport || null;
+        const viewportW = Number(viewport?.width) || window.innerWidth || document.documentElement.clientWidth || W;
+        const viewportH = Number(viewport?.height) || window.innerHeight || document.documentElement.clientHeight || H;
+        const screenPad = 22;
+        const quiltFloatCardMax = 460;
+        const quiltFloatGutter = 16;
+        const quiltMoodFrame = clamp(viewportW * 0.032, 16, 20);
+        const quiltMoodWidgetW = Math.min(quiltFloatCardMax * 0.9, (viewportW - quiltFloatGutter * 2) * 0.9);
+        const fillScale = clamp((viewportH - 40) / 700, 0.92, 1.14);
+        const speakerSizeMax = Math.min(360, viewportW * 0.86, viewportH * 0.48);
+        const speakerSizeMin = Math.min(225, speakerSizeMax);
+        const speakerSize = visibleSpeaker
+          ? clamp(Math.min(viewportW * 0.76, viewportH * 0.44) * fillScale, speakerSizeMin, speakerSizeMax)
+          : 0;
+        if (visibleSpeaker) speakerCutout.style.setProperty('--exit-speaker-size', `${Math.round(speakerSize)}px`);
+        const quiltMoodPaperW = Math.max(162, quiltMoodWidgetW - quiltMoodFrame * 2);
+        const quiltScreenMoodPaperW = clamp(quiltMoodPaperW, 162, viewportW - screenPad * 2);
+        let moodW = visibleMood ? quiltScreenMoodPaperW : 0;
+        let snapW = visibleSnapshot ? clamp(viewportW * 0.49 * fillScale, 168, Math.min(290, viewportW - screenPad * 2)) : 0;
+        if (visibleMood) mood.style.setProperty('--exit-collage-w', `${Math.round(moodW)}px`);
+        if (visibleSnapshot) snapshot.style.setProperty('--exit-collage-w', `${Math.round(snapW)}px`);
+
+        let moodH = visibleMood ? Math.max(82, mood.getBoundingClientRect().height || moodW * 0.46) : 0;
+        let snapH = visibleSnapshot ? snapW * (16 / 9) : 0;
+        const speakerRect = visibleSpeaker ? speakerCutout.getBoundingClientRect() : null;
+        const speakerW = speakerRect?.width || 0;
+        const speakerH = speakerRect?.height || 0;
+        const footerRow = document.querySelector('#screen-exit-chamber > .quilt-footer-icon-row');
+        const footerRect = footerRow?.getBoundingClientRect?.();
+        const footerGapPx = 6;
+        const bottomLimit = footerRect && footerRect.top > 0
+          ? Math.min(viewportH, footerRect.top - footerGapPx)
+          : viewportH;
+        const quietGap = clamp(Math.min(viewportW, viewportH) * 0.045, 24, 36);
+        const clampScreenRect = (position, w, h) => {
+          const rotationBleed = 12;
+          const minX = screenPad + rotationBleed;
+          const maxX = viewportW - screenPad - rotationBleed - w;
+          const minY = screenPad + rotationBleed;
+          const maxY = bottomLimit - screenPad - rotationBleed - h;
+          return {
+            x: clamp(position.x, Math.min(minX, maxX), Math.max(minX, maxX)),
+            y: clamp(position.y, Math.min(minY, maxY), Math.max(minY, maxY))
+          };
+        };
+        const rectOverlapArea = (a, b) => {
+          const x = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+          const y = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+          return x * y;
+        };
+        const rectFromPoint = (position, w, h) => ({ x: position.x, y: position.y, w, h });
+        const zonePoint = (corner, w, h, salt) => {
+          const xJitter = (randomUnit(`${salt}:x`) - 0.5) * Math.min(18, viewportW * 0.045);
+          const yJitter = (randomUnit(`${salt}:y`) - 0.5) * Math.min(18, viewportH * 0.035);
+          const x = corner.includes('right')
+            ? viewportW - screenPad - w + xJitter
+            : screenPad + xJitter;
+          const y = corner.includes('bottom')
+            ? bottomLimit - screenPad - h + yJitter
+            : screenPad + yJitter;
+          return { x, y };
+        };
+        const rawZoneRect = (corner, w, h, salt) => clampScreenRect(zonePoint(corner, w, h, salt), w, h);
+        const speakerFaceZoneFrom = (pos) => {
+          if (!pos || !(speakerW > 0) || !(speakerH > 0)) return null;
+          return {
+            x: pos.x + speakerW * 0.3,
+            y: pos.y - speakerH * 0.02,
+            w: speakerW * 0.48,
+            h: speakerH * 0.46
+          };
+        };
+        const clampSpeakerRect = (position) => {
+          if (!(speakerW > 0) || !(speakerH > 0)) return position;
+          const face = speakerFaceZoneFrom(position);
+          if (!face) return position;
+          let x = position.x;
+          let y = position.y;
+          const minFaceX = screenPad;
+          const maxFaceX = viewportW - screenPad - face.w;
+          const minFaceY = screenPad;
+          const maxFaceY = bottomLimit - screenPad - face.h;
+          x += clamp(face.x, minFaceX, Math.max(minFaceX, maxFaceX)) - face.x;
+          y += clamp(face.y, minFaceY, Math.max(minFaceY, maxFaceY)) - face.y;
+          return { x, y };
+        };
+        const rawSpeakerRect = (corner, salt) => clampSpeakerRect(zonePoint(corner, speakerW, speakerH, salt));
+        const footerProtectedZone = footerRect && footerRect.top > 0
+          ? { x: 0, y: Math.max(screenPad, footerRect.top - footerGapPx), w: viewportW, h: viewportH - Math.max(screenPad, footerRect.top - footerGapPx) }
+          : null;
+        const speakerRot = -7.5;
+        const moodRot = -2.6;
+        const snapRot = 3.6;
+
+        const usableTop = screenPad + quietGap;
+        const usableBottom = bottomLimit - screenPad - quietGap;
+        const usableHeight = Math.max(120, usableBottom - usableTop);
+        const topBandH = clamp(usableHeight * 0.31, 190, Math.min(275, usableHeight * 0.38));
+        let shapeSize = clamp(topBandH * 1.04, 172, Math.min(285, viewportW - screenPad * 2, topBandH * 1.12));
+        const bandOverlap = quietGap * 0.35;
+        const bottomBandH = visibleMood
+          ? clamp(moodH + quietGap * 0.75, 130, Math.min(260, usableHeight * 0.34))
+          : clamp(usableHeight * 0.22, 120, 220);
+        const middleTop = usableTop + topBandH - bandOverlap;
+        const bottomBandTop = usableBottom - bottomBandH;
+        const middleBottom = bottomBandTop + bandOverlap;
+        const middleH = Math.max(120, middleBottom - middleTop);
+        const gutter = clamp(viewportW * 0.035, 14, 24);
+        const columnW = (viewportW - screenPad * 2 - gutter) / 2;
+        const leftX = screenPad;
+        const rightX = screenPad + columnW + gutter;
+        const leftCenterX = leftX + columnW * 0.5;
+        const rightCenterX = rightX + columnW * 0.5;
+        const middleMidY = middleTop + middleH * 0.5;
+        document.getElementById('exitChamberTemplateDebugZones')?.remove();
+
+
+        if (visibleSnapshot) {
+          const targetSnapW = clamp(Math.min(columnW * 0.98, middleH * 0.55), 128, Math.min(230, viewportW - screenPad * 2));
+          if (targetSnapW !== snapW) {
+            snapW = targetSnapW;
+            snapH = snapW * (16 / 9);
+            snapshot.style.setProperty('--exit-collage-w', `${Math.round(snapW)}px`);
+          }
+        }
+
+        let snapPos = visibleSnapshot
+          ? clampScreenRect({
+              x: rightCenterX - snapW * 0.5 + (randomUnit('snap-zone-x') - 0.5) * 8,
+              y: middleMidY - snapH * 0.5 + (randomUnit('snap-zone-y') - 0.5) * 10
+            }, snapW, snapH)
+          : null;
+
+        const targetSpeakerSize = visibleSpeaker
+          ? clamp(Math.min(columnW * 1.55, middleH * 0.92), 155, speakerSizeMax)
+          : 0;
+        if (visibleSpeaker) speakerCutout.style.setProperty('--exit-speaker-size', `${Math.round(targetSpeakerSize)}px`);
+        let curSpeakerW = targetSpeakerSize || speakerW;
+        let curSpeakerH = targetSpeakerSize || speakerH;
+        let speakerPos = visibleSpeaker && curSpeakerW > 0 && curSpeakerH > 0
+          ? clampSpeakerRect({
+              x: leftCenterX - curSpeakerW * 0.5 + (randomUnit('speaker-zone-x') - 0.5) * 8,
+              y: middleTop + middleH * 0.02 + (randomUnit('speaker-zone-y') - 0.5) * 8
+            })
+          : null;
+
+        let moodPos = visibleMood
+          ? clampScreenRect({
+              x: viewportW * 0.5 - moodW * 0.5 + (randomUnit('mood-zone-x') - 0.5) * 8,
+              y: bottomBandTop + bottomBandH * 0.5 - moodH * 0.5 - bandOverlap * 0.25 + (randomUnit('mood-zone-y') - 0.5) * 6
+            }, moodW, moodH)
+          : null;
+
+        const shapeX = visibleSpeaker
+          ? clamp(
+              viewportW - screenPad - shapeSize * 0.44 + (randomUnit('shape-zone-x') - 0.5) * 14,
+              screenPad + shapeSize / 2,
+              viewportW - screenPad - shapeSize / 2
+            )
+          : clamp(
+              viewportW * 0.5 + (randomUnit('shape-zone-x') - 0.5) * Math.min(18, viewportW * 0.035),
+              screenPad + shapeSize / 2,
+              viewportW - screenPad - shapeSize / 2
+            );
+        const shapeY = clamp(
+          usableTop + topBandH * 0.46 + (randomUnit('shape-zone-y') - 0.5) * Math.min(10, topBandH * 0.08),
+          usableTop + shapeSize / 2,
+          usableTop + topBandH - shapeSize / 2
+        );
+        stage.style.setProperty('--exit-shape-size', `${Math.round(shapeSize)}px`);
+        stage.style.setProperty('--exit-shape-x', `${Math.round(shapeX)}px`);
+        stage.style.setProperty('--exit-shape-y', `${Math.round(shapeY)}px`);
+
+        document.getElementById('exitChamberShapeThanksArrow')?.remove();
+        const screen = document.getElementById('screen-exit-chamber');
+        let shapeThanks = document.getElementById('exitChamberShapeThanks');
+        if (screen) {
+          if (!shapeThanks) {
+            shapeThanks = document.createElement('div');
+            shapeThanks.id = 'exitChamberShapeThanks';
+            shapeThanks.className = 'exit-chamber-shape-thanks';
+            shapeThanks.textContent = 'thanks for adding your block';
+            screen.appendChild(shapeThanks);
+          }
+          const shapeLeft = shapeX - shapeSize / 2;
+          const thanksShapeGap = 6;
+          const availableThanksW = Math.max(80, shapeLeft - screenPad - thanksShapeGap);
+          const thanksW = clamp(availableThanksW, 108, Math.min(248, viewportW * 0.48));
+          let thanksSize = clamp(Math.min(topBandH * 0.36, thanksW * 0.38), 30, 82);
+          shapeThanks.style.setProperty('--exit-shape-thanks-w', `${Math.round(thanksW)}px`);
+          shapeThanks.style.setProperty('--exit-shape-thanks-size', `${thanksSize.toFixed(1)}px`);
+          shapeThanks.style.setProperty(
+            '--exit-shape-thanks-rot',
+            `${(-2 + (randomUnit('thanks-rot') - 0.5) * 2).toFixed(2)}deg`
+          );
+          shapeThanks.style.visibility = 'hidden';
+          shapeThanks.style.setProperty('--exit-shape-thanks-x', `${screenPad}px`);
+          shapeThanks.style.setProperty('--exit-shape-thanks-y', `${usableTop}px`);
+          void shapeThanks.offsetHeight;
+          const maxThanksH = topBandH * 0.92;
+          while (thanksSize > 26 && shapeThanks.scrollHeight > maxThanksH) {
+            thanksSize -= 1.5;
+            shapeThanks.style.setProperty('--exit-shape-thanks-size', `${thanksSize.toFixed(1)}px`);
+          }
+          const thanksH = shapeThanks.offsetHeight || thanksSize * 2.2;
+          const thanksX = clamp(
+            shapeLeft - thanksW - thanksShapeGap,
+            screenPad,
+            Math.max(screenPad, shapeLeft - thanksW - thanksShapeGap)
+          );
+          const thanksY = clamp(
+            shapeY - thanksH * 0.48,
+            usableTop + 2,
+            usableTop + topBandH - thanksH - 2
+          );
+          shapeThanks.style.setProperty('--exit-shape-thanks-x', `${Math.round(thanksX)}px`);
+          shapeThanks.style.setProperty('--exit-shape-thanks-y', `${Math.round(thanksY)}px`);
+          shapeThanks.style.visibility = '';
+        }
+
+        const placedStageRect = stage.getBoundingClientRect();
+
+        const mkStageRect = (screenPosition, w, h) => {
+          const onScreen = clampScreenRect(screenPosition, w, h);
+          return {
+            x: onScreen.x - placedStageRect.left,
+            y: onScreen.y - placedStageRect.top,
+            w,
+            h
+          };
+        };
+
+        const applyMoodPlacement = () => {
+          if (!visibleMood || !moodPos) return null;
+          const moodRect = mkStageRect(moodPos, moodW, moodH);
+          applyPlacement(mood, moodRect, moodRot + (randomUnit('mood-rot') - 0.5) * 2.2);
+          return rectFromPoint(moodPos, moodW, moodH);
+        };
+        const applySpeakerPlacement = () => {
+          if (!visibleSpeaker || !speakerPos || !(curSpeakerW > 0) || !(curSpeakerH > 0)) {
+            return null;
+          }
+          speakerCutout.style.setProperty('--exit-speaker-x', `${Math.round(speakerPos.x + curSpeakerW / 2)}px`);
+          speakerCutout.style.setProperty('--exit-speaker-y', `${Math.round(speakerPos.y + curSpeakerH / 2)}px`);
+          speakerCutout.style.setProperty('--exit-speaker-rot', `${speakerRot.toFixed(2)}deg`);
+          return rectFromPoint(speakerPos, curSpeakerW, curSpeakerH);
+        };
+        const applySnapshotPlacement = () => {
+          if (!visibleSnapshot || !snapPos) return null;
+          const snapRect = mkStageRect(snapPos, snapW, snapH);
+          applyPlacement(snapshot, snapRect, snapRot + (randomUnit('snap-rot') - 0.5) * 2.4);
+          return rectFromPoint(snapPos, snapW, snapH);
+        };
+
+        applyMoodPlacement();
+        applySpeakerPlacement();
+        applySnapshotPlacement();
+      }
+
       buildColorByAppDateKey() {
         // Map of app-date-key -> { color, submissionIndex } using last-wins on submissionIndex.
         const submissions = this.getDevicePersonalColorSubmissions();
@@ -47370,6 +48700,11 @@ try {
 
       clearExitChamberSpeakerTexture() {
         const layer = this.getExitChamberTextureLayer();
+        const cutout = document.getElementById('exitChamberSpeakerCutout');
+        if (cutout) {
+          cutout.hidden = true;
+          cutout.style.removeProperty('--speaker-image-url');
+        }
         if (!layer) return;
         layer.classList.remove('is-visible');
       }
@@ -47383,10 +48718,38 @@ try {
 
       /** Paper-scrap collage on the exit chamber background. */
       applyExitChamberSpeakerTexture() {
-        if (!this._exitChamberScrapSeed && this._exitChamberScrapSeed !== 0) {
-          this._exitChamberScrapSeed = 0;
+        const layer = this.getExitChamberTextureLayer();
+        const cutout = document.getElementById('exitChamberSpeakerCutout');
+        if (!layer || !cutout) return false;
+        const quote = this.quoteService?.getTodayQuote?.() || null;
+        const profile = this.getQuoteSpeakerProfile?.(quote) || null;
+        const imageUrl = String(this._quoteSpeakerCutoutUrl || profile?.imageUrl || '').trim();
+        if (!imageUrl) {
+          this.clearExitChamberSpeakerTexture();
+          return false;
         }
-        this.revealExitChamberColorWash();
+
+        const washColor = String(this.getMostPopularQuiltColor?.()?.color || CONFIG.APP.defaultColor || '#ea9b9a').trim();
+        const safeWashColor = /^#[0-9A-Fa-f]{6}$/.test(washColor) ? washColor : '#ea9b9a';
+        const palette = this.getQuiltPaletteSummary?.()?.palette || [];
+        const haloColor =
+          palette.find((item) => {
+            const value = String(item?.color || '').trim();
+            return /^#[0-9A-Fa-f]{6}$/.test(value) && value.toLowerCase() !== safeWashColor.toLowerCase();
+          })?.color ||
+          this.getContrastingQuiltColorExcludingDominant?.() ||
+          CONFIG.APP.defaultColor ||
+          '#d6977e';
+        const safeHaloColor = /^#[0-9A-Fa-f]{6}$/.test(String(haloColor || '').trim())
+          ? String(haloColor).trim()
+          : '#d6977e';
+
+        cutout.style.setProperty('--speaker-image-url', `url("${imageUrl.replace(/"/g, '%22')}")`);
+        cutout.style.setProperty('--speaker-halo-color', safeHaloColor);
+        cutout.hidden = false;
+        layer.classList.add('is-visible');
+        this.scheduleExitChamberCollageLayout?.();
+        return true;
       }
 
       cycleExitChamberPaperScraps() {
@@ -48279,6 +49642,18 @@ try {
     // ===== INITIALIZATION =====
     document.addEventListener('DOMContentLoaded', async () => {
       if (window.odqPerfMark) window.odqPerfMark('dom-content-loaded');
+      /* If a prior build moved #screen-quilt into the experimental alt shell, put it back before init. */
+      (function restoreQuiltScreenDomHome() {
+        const quilt = document.getElementById('screen-quilt');
+        const app = document.getElementById('app');
+        if (!quilt || !app || quilt.parentElement === app) return;
+        const before = document.getElementById('screen-settings');
+        if (before?.parentNode === app) {
+          app.insertBefore(quilt, before);
+        } else {
+          app.prepend(quilt);
+        }
+      })();
       const app = new SimplifiedQuiltAppV2();
       window.app = app;
       // Expose utility class for headless automation scripts (SSR workflow).
