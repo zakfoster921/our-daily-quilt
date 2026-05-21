@@ -1224,15 +1224,50 @@ function parseJsonObjectFromAiText(value) {
   }
 }
 
+const REFLECTION_MODERATION_REJECT_ACTIONS = new Set([
+  'reject', 'rejected', 'deny', 'denied', 'block', 'blocked', 'flag', 'flagged', 'remove', 'removed'
+]);
+const REFLECTION_MODERATION_PUBLISH_ACTIONS = new Set([
+  'publish', 'published', 'approve', 'approved', 'accept', 'accepted', 'allow', 'allowed', 'pass', 'passed', 'ok'
+]);
+const REFLECTION_LOCAL_REJECT_PATTERNS = [
+  /\b(fuck|shit|bitch|asshole|cunt|nigger|faggot)\b/i,
+  /\bas an ai\b/i,
+  /\bi\s*['']?m\s+an?\s+ai\b/i,
+  /\bchatgpt\b|\blanguage model\b/i
+];
+
 function parseReflectionModerationResult(value) {
   const parsed = parseJsonObjectFromAiText(value);
   if (!parsed) return null;
-  const action = String(parsed.action || '').toLowerCase();
-  if (action === 'reject') return { action: 'reject', text: '' };
-  if (action !== 'publish') return null;
-  const text = trimModeratedBodyAtWord(parsed.text, REFLECTION_MODERATION_BODY_MAX);
-  if (!text) return null;
-  return { action: 'publish', text };
+  const action = String(parsed.action || parsed.decision || parsed.status || '').toLowerCase().trim();
+  if (REFLECTION_MODERATION_REJECT_ACTIONS.has(action)) return { action: 'reject', text: '' };
+  const publishAction = REFLECTION_MODERATION_PUBLISH_ACTIONS.has(action);
+  const bodySource = parsed.text ?? parsed.body ?? parsed.response ?? parsed.content ?? '';
+  const text = trimModeratedBodyAtWord(bodySource, REFLECTION_MODERATION_BODY_MAX);
+  if (publishAction) {
+    if (!text) return null;
+    return { action: 'publish', text };
+  }
+  if (!action && text) return { action: 'publish', text };
+  return null;
+}
+
+/** Last-resort publish path when AI moderation is unavailable (basic safety only). */
+function moderateReflectionResponseLocally(responseText) {
+  const raw = String(responseText || '').replace(/\s+/g, ' ').trim();
+  if (!raw || raw.length < 8 || raw.split(/\s+/).filter(Boolean).length < 2) {
+    return { action: 'reject', text: '', provider: 'local-fallback', model: null };
+  }
+  if (REFLECTION_LOCAL_REJECT_PATTERNS.some((pattern) => pattern.test(raw))) {
+    return { action: 'reject', text: '', provider: 'local-fallback', model: null };
+  }
+  return {
+    action: 'publish',
+    text: trimModeratedBodyAtWord(raw, REFLECTION_MODERATION_BODY_MAX),
+    provider: 'local-fallback',
+    model: null
+  };
 }
 
 function parseReflectionCurationResult(value, validIds) {
@@ -1367,25 +1402,62 @@ async function postReflectionAiText({ provider, apiKey, model, prompt, maxTokens
   return postReflectionThemesToGemini({ apiKey, model, prompt, maxTokens });
 }
 
-async function moderateReflectionResponseWithAi({ reflectionPrompt, responseText }) {
-  const prompt = buildReflectionModerationPrompt({ reflectionPrompt, responseText });
-  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
+async function moderateReflectionResponseWithProvider(provider, prompt) {
+  if (provider === 'anthropic') {
     const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
     const model = String(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
     const raw = await postReflectionAiText({ provider: 'anthropic', apiKey, model, prompt, maxTokens: 320 });
     const parsed = parseReflectionModerationResult(raw);
-    if (!parsed) throw new Error(`Claude moderation returned unusable JSON. Preview: ${String(raw || '').slice(0, 240)}`);
+    if (!parsed) {
+      throw new Error(`Claude moderation returned unusable JSON. Preview: ${String(raw || '').slice(0, 240)}`);
+    }
     return { ...parsed, model, provider: 'anthropic' };
   }
-  if (String(process.env.GEMINI_API_KEY || '').trim()) {
-    const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
-    const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-    const raw = await postReflectionAiText({ provider: 'gemini', apiKey, model, prompt, maxTokens: 320 });
-    const parsed = parseReflectionModerationResult(raw);
-    if (!parsed) throw new Error(`Gemini moderation returned unusable JSON. Preview: ${String(raw || '').slice(0, 240)}`);
-    return { ...parsed, model, provider: 'gemini' };
+  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+  const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+  const raw = await postReflectionAiText({ provider: 'gemini', apiKey, model, prompt, maxTokens: 320 });
+  const parsed = parseReflectionModerationResult(raw);
+  if (!parsed) {
+    throw new Error(`Gemini moderation returned unusable JSON. Preview: ${String(raw || '').slice(0, 240)}`);
   }
-  throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
+  return { ...parsed, model, provider: 'gemini' };
+}
+
+async function moderateReflectionResponseWithAi({ reflectionPrompt, responseText }) {
+  const prompt = buildReflectionModerationPrompt({ reflectionPrompt, responseText });
+  const providers = [];
+  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) providers.push('anthropic');
+  if (String(process.env.GEMINI_API_KEY || '').trim()) providers.push('gemini');
+  if (!providers.length) throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
+
+  let lastError = null;
+  for (let providerIndex = 0; providerIndex < providers.length; providerIndex += 1) {
+    const provider = providers[providerIndex];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await moderateReflectionResponseWithProvider(provider, prompt);
+      } catch (error) {
+        lastError = error;
+        const msg = String(error?.message || error || '');
+        const retryable = /unusable json|429|rate|timeout|timed out|503|502|500|overloaded|capacity/i.test(msg);
+        if (attempt === 0 && retryable) {
+          await new Promise((resolve) => setTimeout(resolve, 450));
+          continue;
+        }
+        break;
+      }
+    }
+  }
+  throw lastError || new Error('Reflection moderation failed');
+}
+
+function reflectionModerationPublishBody(rawText, moderation) {
+  const raw = String(rawText || '').replace(/\s+/g, ' ').trim();
+  const moderated = String(moderation?.text || '').replace(/\s+/g, ' ').trim();
+  if (moderation?.action !== 'publish') return moderated;
+  if (moderationTextFidelityOk(raw, moderated)) return moderated;
+  console.warn('Reflection moderation fidelity drift; using submitter text.');
+  return trimModeratedBodyAtWord(raw, REFLECTION_MODERATION_BODY_MAX);
 }
 
 async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
@@ -4106,11 +4178,15 @@ app.post('/api/reflection-response', async (req, res) => {
       });
     } catch (error) {
       console.error('❌ Reflection moderation failed:', error);
-      return res.status(503).json({
-        success: false,
-        error: 'Could not review your reflection right now. Please try again in a moment.',
-        timestamp: getUtcIsoNow()
-      });
+      moderation = moderateReflectionResponseLocally(rawText);
+      if (moderation.action !== 'publish') {
+        return res.status(503).json({
+          success: false,
+          error: 'Could not review your reflection right now. Please try again in a moment.',
+          timestamp: getUtcIsoNow()
+        });
+      }
+      console.warn('Reflection published via local fallback after AI moderation failure.');
     }
 
     if (moderation.action === 'reject') {
@@ -4121,16 +4197,9 @@ app.post('/api/reflection-response', async (req, res) => {
       });
     }
 
-    if (!moderationTextFidelityOk(rawText, moderation.text)) {
-      console.warn('Reflection moderation rejected (output drifted from submitter text).');
-      return res.status(422).json({
-        success: false,
-        error: REFLECTION_REJECT_USER_MESSAGE,
-        rejected: true
-      });
-    }
+    const moderatedBody = reflectionModerationPublishBody(rawText, moderation);
 
-    const publishedText = buildPublishedReflectionText(moderation.text, displayName);
+    const publishedText = buildPublishedReflectionText(moderatedBody, displayName);
     if (!publishedText) {
       return res.status(422).json({
         success: false,
@@ -4167,7 +4236,7 @@ app.post('/api/reflection-response', async (req, res) => {
     const themePatch = {
       appDateKey,
       themes: admin.firestore.FieldValue.arrayUnion({
-        text: trimModeratedBodyAtWord(moderation.text, REFLECTION_MODERATION_BODY_MAX),
+        text: trimModeratedBodyAtWord(moderatedBody, REFLECTION_MODERATION_BODY_MAX),
         author: authorDisplayName
       }),
       responseCount: admin.firestore.FieldValue.increment(1),

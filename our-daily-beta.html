@@ -33619,6 +33619,12 @@ try {
             input.focus();
             return;
           }
+          const reflectionWordCount = responseText.split(/\s+/).filter(Boolean).length;
+          if (reflectionWordCount < 2 || responseText.length < 8) {
+            setHelper('A short sentence helps — even a few words about what you noticed.', 'error');
+            input.focus();
+            return;
+          }
           if (submit) {
             submit.disabled = true;
             submit.textContent = 'Adding…';
@@ -33629,9 +33635,17 @@ try {
           } catch (error) {
             this.logger?.warn?.('Reflection response submit failed:', error);
             if (error?.rejected) {
-              setHelper(error.message || 'Something here got flagged. Try again?', 'error');
+              setHelper(
+                error.message ||
+                  'Something here got flagged. Try a short full sentence about what you noticed.',
+                'error'
+              );
             } else if (error?.status === 503) {
-              setHelper(error.message || 'Could not review your reflection right now. Please try again in a moment.', 'error');
+              setHelper(
+                error.message ||
+                  'Could not review your reflection right now. Please wait a moment and try again.',
+                'error'
+              );
             } else {
               setHelper('Could not share yet. Check your connection and try again.', 'error');
             }
@@ -34551,8 +34565,13 @@ try {
               const docRef = window.firestore.doc(window.db, 'reflectionThemes', key);
               const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
               const snap = await readDoc(docRef);
-              data = snap.exists() ? (snap.data() || {}) : null;
-              if (!snap.exists()) this._reflectionThemesNotFoundKeys.add(key);
+              if (snap.exists()) {
+                this._reflectionThemesNotFoundKeys?.delete(key);
+                data = snap.data() || {};
+              } else {
+                data = null;
+                this._reflectionThemesNotFoundKeys.add(key);
+              }
             } catch (error) {
               this.logger?.warn?.(`Reflection themes SDK read failed for ${key}:`, error);
             }
@@ -35340,12 +35359,19 @@ try {
         if (displayName) {
           payload.displayName = displayName.slice(0, 80);
         }
-        const res = await fetch(`${baseUrl}/api/reflection-response`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json().catch(() => null);
+        const postReflection = () =>
+          fetch(`${baseUrl}/api/reflection-response`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        let res = await postReflection();
+        let data = await res.json().catch(() => null);
+        if (res.status === 503) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          res = await postReflection();
+          data = await res.json().catch(() => null);
+        }
         if (!res.ok || !data?.success) {
           const err = new Error(data?.error || `Reflection response failed (${res.status})`);
           err.status = res.status;
