@@ -19,6 +19,14 @@
     return m;
   };
   window.odqPerfMark('first-html-script');
+  window.odqNotifyNativeLaunchCoverReady = function () {
+    try {
+      var h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.odqLaunchCover;
+      if (h && typeof h.postMessage === 'function') {
+        h.postMessage('portal-ready');
+      }
+    } catch (_) { /* ignore */ }
+  };
   document.addEventListener('readystatechange', function odqPerfRS() {
     if (document.readyState === 'interactive') window.odqPerfMark('dom-interactive');
     if (document.readyState === 'complete') {
@@ -175,16 +183,16 @@ try {
   <title>OUR DAILY QUILT</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Cutive+Mono&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link href="https://fonts.googleapis.com/css2?family=Cutive+Mono&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <!-- Material Symbols (monochrome icons) for art_recs_type + mood-pick tiles.
        `display=block` hides briefly instead of flashing the literal word ("book"/"movie"/...)
        while the font loads. `icon_names=` limits the download to only the glyphs we render.
        NOTE: Google Fonts rejects this URL with 400 if icon names aren't alphabetical —
        keep icon_names in sorted order. -->
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=book,brightness_1,comedy_mask,contrast,headphones,movie,palette&display=block" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=book,brightness_1,comedy_mask,contrast,headphones,movie,palette&display=block" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link rel="preload" href="assets/fonts/Zakarack-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/portal-our-daily-quilt.png" as="image" fetchpriority="high">
   <!-- Test script to verify it's running -->
@@ -270,12 +278,10 @@ try {
   })();
   </script>
 
-
-
 </head>
-<body class="odq-boot-active">
+<body>
 
-  <div id="odq-boot-splash" class="odq-boot-splash" role="status" aria-live="polite" aria-busy="true" aria-label="Opening Our Daily Quilt">
+  <div id="odq-boot-splash" class="odq-boot-splash odq-boot-splash--dismissed" role="status" aria-live="polite" aria-busy="false" aria-label="Opening Our Daily Quilt" hidden aria-hidden="true">
     <div class="odq-boot-splash__cluster portal-top-cluster">
       <div class="portal-main">
         <div class="portal-header">
@@ -291,6 +297,7 @@ try {
     var BOOT_MAX_MS = 8000;
     var BOOT_MIN_MS = 320;
     var nativeSplashHidden = false;
+    var nativeSplashHideAttempts = 0;
 
     function isCapacitorNative() {
       try {
@@ -320,13 +327,21 @@ try {
 
     function hideNativeLaunchSplash() {
       if (nativeSplashHidden) return;
-      nativeSplashHidden = true;
       try {
         var cap = window.Capacitor;
         var splash = cap && cap.Plugins && cap.Plugins.SplashScreen;
-        if (splash && typeof splash.hide === 'function') {
-          splash.hide({ fadeOutDuration: 0 });
+        if (!splash || typeof splash.hide !== 'function') {
+          nativeSplashHideAttempts += 1;
+          if (nativeSplashHideAttempts <= 80) {
+            setTimeout(hideNativeLaunchSplash, 50);
+          } else if (window.odqPerfMark) {
+            window.odqPerfMark('native-splash-hide-unavailable');
+          }
+          return;
         }
+        nativeSplashHidden = true;
+        if (window.odqPerfMark) window.odqPerfMark('native-splash-hide-called');
+        splash.hide({ fadeOutDuration: 0 });
       } catch (_) { /* ignore */ }
     }
 
@@ -372,21 +387,30 @@ try {
       });
     }
 
+    // On native, move off the static launch storyboard as soon as the lightweight
+    // web boot shell exists; the full portal DOM/app script still parse below.
     if (nativeApp) {
-      dismissed = true;
-      document.body.classList.remove('odq-boot-active');
-      removeBoot();
+      // Hand off from the native launch storyboard to this lightweight HTML layer
+      // immediately. Waiting for the full portal/app script keeps iOS on the
+      // static launch screen even though the web boot shell is already available.
       afterNextPaint(hideNativeLaunchSplash);
     }
 
     function whenPortalGraphicReady() {
-      portalImg = portalImg || document.querySelector('#screen-portal .portal-title-graphic');
-      return Promise.all([whenImageReady(bootImg), whenImageReady(portalImg)]);
+      // Do not gate native splash dismissal on image decode. The portal wordmark is
+      // a nice-to-have paint detail; waiting for it keeps launch blocked on asset IO.
+      return Promise.resolve();
     }
 
     function finishDismiss() {
-      if (dismissed || !bootEl) return;
+      if (dismissed) return;
       dismissed = true;
+      if (!bootEl) {
+        document.body.classList.remove('odq-boot-active');
+        if (window.odqPerfMark) window.odqPerfMark('boot-splash-dismissed');
+        if (nativeApp) afterNextPaint(hideNativeLaunchSplash);
+        return;
+      }
       bootEl.setAttribute('aria-busy', 'false');
       document.body.classList.remove('odq-boot-active');
       if (window.odqPerfMark) window.odqPerfMark('boot-splash-dismissed');
@@ -429,8 +453,26 @@ try {
     };
 
     setTimeout(function () {
-      window.OdqBootSplash.dismiss();
+      finishDismiss();
     }, BOOT_MAX_MS);
+
+    function tryEarlyDismiss() {
+      if (dismissed) return;
+      if (!document.getElementById('screen-portal')) return;
+      window.OdqBootSplash.dismiss();
+    }
+    document.addEventListener('readystatechange', function odqBootRS() {
+      if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        tryEarlyDismiss();
+      }
+      if (document.readyState === 'complete') {
+        document.removeEventListener('readystatechange', odqBootRS);
+      }
+    });
+    var earlyPoll = setInterval(function () {
+      tryEarlyDismiss();
+      if (dismissed || document.readyState === 'complete') clearInterval(earlyPoll);
+    }, 40);
   })();
   </script>
 
@@ -1256,7 +1298,11 @@ try {
       flex: 0 0 auto;
     }
 
-    #screen-quote .quote-layoutb-stage,
+    #screen-quote .quote-layoutb-stage {
+      opacity: 1;
+      transition: none;
+    }
+
     #screen-quilt .quote-layoutb-stage,
     #screen-reflection .quote-layoutb-stage,
     #screen-portal .quote-layoutb-stage {
@@ -1794,11 +1840,9 @@ try {
       transform: none !important;
     }
 
-    /* Let quote stack scroll inside the snap panel (mobile had overflow:hidden, which clipped the prompt). */
     body.intro-flow-active #screen-quote {
       overflow-x: hidden !important;
-      overflow-y: auto !important;
-      -webkit-overflow-scrolling: touch;
+      overflow-y: hidden !important;
       display: flex !important;
       flex-direction: column !important;
       align-items: stretch !important;
@@ -1985,7 +2029,19 @@ try {
       padding-left: max(0.5rem, var(--odq-safe-left));
       padding-right: max(0.5rem, var(--odq-safe-right));
       box-sizing: border-box;
-      height: auto;
+      height: 100dvh;
+      height: 100svh;
+      max-height: 100dvh;
+      max-height: 100svh;
+      overflow: hidden;
+    }
+
+    html:has(#screen-quote.active),
+    body:has(#screen-quote.active),
+    body:has(#screen-quote.active) #app {
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      overscroll-behavior: none;
     }
 
     #screen-quote.quote-has-color-picker {
@@ -1993,8 +2049,9 @@ try {
       transition: background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
+    /* Simple split: quote top half (fixed), color wheel bottom half (slides up). */
+    .quote-stage-clip,
     .quote-color-combined {
-      position: relative;
       display: flex;
       flex-direction: column;
       flex: 1 1 auto;
@@ -2005,70 +2062,152 @@ try {
       overflow: hidden;
     }
 
+    #screen-quote .quote-stage-quote .quote-content-wrapper {
+      animation: none !important;
+      transform: none !important;
+      opacity: 1 !important;
+    }
+
+    .quote-stage-quote,
     .quote-color-combined__quote {
-      flex: 1 1 auto;
+      flex: 1 1 50%;
+      max-height: 50%;
       min-height: 0;
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      overflow: hidden;
-      transition: transform 1.35s cubic-bezier(0.4, 0, 0.15, 1);
-    }
-
-    #screen-quote.quote-has-color-picker .quote-color-combined__quote {
-      transform: translate3d(0, -4vh, 0);
-    }
-
-    .quote-color-combined__quote .quote-content-wrapper {
-      flex: 1 1 auto;
-      min-height: 0;
-    }
-
-    /* Picker rises from below the viewport (not max-height swipe). */
-    .quote-color-combined__picker {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 4;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: center;
       width: 100%;
       box-sizing: border-box;
-      padding-top: clamp(0.35rem, 1.2vh, 0.65rem);
+      padding: clamp(0.35rem, 1vh, 0.65rem) max(0.5rem, var(--odq-safe-left))
+        clamp(0.25rem, 0.8vh, 0.5rem) max(0.5rem, var(--odq-safe-right));
+      overflow: hidden;
+    }
+
+    .quote-stage-quote .quote-content-wrapper {
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #screen-quote .quote-stage-quote .quote-stage,
+    #screen-quote .quote-color-combined__quote .quote-stage {
+      width: 100%;
+      min-height: 0;
+      flex: 1 1 auto;
+      max-height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #screen-quote .quote-card.layoutb-preview-card .quote-layoutb-stage {
+      overflow: visible;
+    }
+
+    .quote-stage-picker,
+    .quote-color-combined__picker {
+      flex: 1 1 50%;
+      max-height: 50%;
+      min-height: 0;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      box-sizing: border-box;
+      padding-top: clamp(0.15rem, 0.5vh, 0.35rem);
       padding-bottom: max(0.75rem, calc(var(--odq-safe-bottom) + 0.4rem));
       padding-left: max(0.5rem, var(--odq-safe-left));
       padding-right: max(0.5rem, var(--odq-safe-right));
       background: transparent;
+      overflow: hidden;
       transform: translate3d(0, 100%, 0);
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-      overflow: visible;
-      transition:
-        transform 1.35s cubic-bezier(0.4, 0, 0.15, 1),
-        opacity 1.1s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.85s cubic-bezier(0.22, 0.61, 0.36, 1);
+      will-change: transform;
     }
 
-    .quote-color-combined__picker.quote-color-picker--revealed {
-      transform: translate3d(0, 0, 0);
-      opacity: 1;
+    #screen-quote.quote-picker-revealed .quote-stage-clip,
+    #screen-quote.quote-picker-revealed .quote-color-combined {
+      overflow: visible;
+    }
+
+    #screen-quote.quote-picker-revealed .quote-stage-picker:not([hidden]),
+    #screen-quote.quote-picker-revealed .quote-color-combined__picker:not([hidden]) {
       visibility: visible;
+      pointer-events: auto;
+      overflow: visible;
+      transform: translate3d(0, 0, 0);
+    }
+
+    #screen-quote.quote-picker-revealed .quote-color-combined__picker .color-picker-container {
+      overflow: visible;
+    }
+
+    /* Keep bottom-half slot reserved while picker is not yet shown. */
+    .quote-stage-picker[hidden],
+    .quote-color-combined__picker[hidden] {
+      display: flex !important;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translate3d(0, 100%, 0);
+    }
+
+    .quote-stage-picker.quote-color-picker--measuring,
+    .quote-color-combined__picker.quote-color-picker--measuring {
+      position: fixed !important;
+      left: -10000px !important;
+      right: auto !important;
+      bottom: 0 !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translate3d(0, 0, 0) !important;
+    }
+
+    .quote-stage-picker.quote-color-picker--reveal-pending,
+    .quote-color-combined__picker.quote-color-picker--reveal-pending {
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+    .quote-stage-picker.quote-color-picker--revealed,
+    .quote-color-combined__picker.quote-color-picker--revealed {
       pointer-events: auto;
     }
 
     .quote-color-combined__picker .color-picker-container {
-      gap: clamp(0.75rem, 2vh, 1.25rem);
+      gap: clamp(0.45rem, 1.2vh, 0.75rem);
       flex-shrink: 0;
+    }
+
+    #screen-quote #colorPickerControls {
+      margin-top: clamp(0.81rem, 2.16vh, 1.26rem);
+      margin-bottom: clamp(0.81rem, 2.16vh, 1.26rem);
+      padding-top: clamp(0.225rem, 0.72vh, 0.45rem);
+      padding-bottom: clamp(0.225rem, 0.72vh, 0.45rem);
+    }
+
+    #screen-quote .quote-color-combined__picker .css-color-wheel {
+      width: min(234px, 65vw, 31dvh, 31svh) !important;
+      height: min(234px, 65vw, 31dvh, 31svh) !important;
+    }
+
+    #screen-quote .quote-color-combined__picker .css-color-wheel:hover {
+      transform: none;
     }
 
     #screen-quote .quote-color-submit-btn {
       flex-shrink: 0;
       display: inline-block !important;
       visibility: visible !important;
-      margin: clamp(0.75rem, 2.2vh, 1.15rem) auto 0 !important;
+      margin: clamp(0.4rem, 1.08vh, 0.68rem) auto 0 !important;
       min-width: min(14rem, 72vw);
       padding: 0.85rem 2.25rem !important;
       background: #fff !important;
@@ -2092,16 +2231,12 @@ try {
     }
 
     @media (prefers-reduced-motion: reduce) {
+      .quote-stage-quote,
       .quote-color-combined__quote,
+      .quote-stage-picker,
       .quote-color-combined__picker {
         transition: none !important;
-        transform: none !important;
-      }
-      #screen-quote.quote-has-color-picker .quote-color-combined__quote {
-        transform: none !important;
-      }
-      .quote-color-combined__picker.quote-color-picker--revealed {
-        transform: none !important;
+        transition-delay: 0s !important;
       }
     }
 
@@ -5106,7 +5241,7 @@ try {
       text-align: center;
     }
 
-    /* Push notification opt-in (custom dialog — softer than native confirm) */
+    /* Push notification opt-in (custom dialog — soft fade, not a hard pop) */
     .odq-push-optin-overlay {
       position: fixed;
       inset: 0;
@@ -5117,7 +5252,7 @@ try {
       padding: max(16px, var(--odq-safe-top)) max(16px, var(--odq-safe-right)) max(16px, var(--odq-safe-bottom)) max(16px, var(--odq-safe-left));
       box-sizing: border-box;
       opacity: 0;
-      transition: opacity 0.45s ease;
+      transition: opacity 0.72s ease-out;
       pointer-events: none;
     }
     .odq-push-optin-overlay.odq-push-optin--shown {
@@ -5127,7 +5262,9 @@ try {
     .odq-push-optin-overlay .odq-push-optin-scrim {
       position: absolute;
       inset: 0;
-      background: rgba(15, 12, 10, 0.4);
+      background: rgba(15, 12, 10, 0.24);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
     }
     .odq-push-optin-overlay .odq-push-optin-dialog {
       position: relative;
@@ -5137,29 +5274,56 @@ try {
       border: none;
       border-radius: 14px;
       padding: 1.5rem 1.35rem 1.3rem;
-      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.12);
+      box-shadow: 0 18px 48px rgba(15, 12, 10, 0.1);
       box-sizing: border-box;
       opacity: 0;
-      transform: translateY(20px) scale(0.97);
+      transform: translateY(12px) scale(0.992);
       transition:
-        opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
-        transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+        opacity 0.82s cubic-bezier(0.19, 1, 0.22, 1),
+        transform 0.82s cubic-bezier(0.19, 1, 0.22, 1);
     }
     .odq-push-optin-overlay.odq-push-optin--shown .odq-push-optin-dialog {
       opacity: 1;
       transform: translateY(0) scale(1);
     }
+    .odq-push-optin-overlay .odq-push-optin-dialog > * {
+      opacity: 0;
+      transform: translateY(5px);
+      transition:
+        opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .odq-push-optin-overlay.odq-push-optin--shown .odq-push-optin-dialog > * {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .odq-push-optin-overlay.odq-push-optin--shown .odq-push-optin-dialog > *:nth-child(1) {
+      transition-delay: 0.14s;
+    }
+    .odq-push-optin-overlay.odq-push-optin--shown .odq-push-optin-dialog > *:nth-child(2) {
+      transition-delay: 0.24s;
+    }
+    .odq-push-optin-overlay.odq-push-optin--shown .odq-push-optin-dialog > *:nth-child(3) {
+      transition-delay: 0.34s;
+    }
+    .odq-push-optin-overlay.odq-push-optin--shown .odq-push-optin-dialog > *:nth-child(4) {
+      transition-delay: 0.44s;
+    }
     .odq-push-optin-overlay.odq-push-optin--leaving {
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.38s ease;
+      transition: opacity 0.48s ease-in;
     }
     .odq-push-optin-overlay.odq-push-optin--leaving .odq-push-optin-dialog {
       opacity: 0;
-      transform: translateY(12px) scale(0.99);
+      transform: translateY(8px) scale(0.996);
       transition:
-        opacity 0.38s ease,
-        transform 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+        opacity 0.48s ease-in,
+        transform 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .odq-push-optin-overlay.odq-push-optin--leaving .odq-push-optin-dialog > * {
+      opacity: 0;
+      transition-delay: 0s;
     }
     .odq-push-optin-preview-label {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -5284,9 +5448,61 @@ try {
     }
     @media (prefers-reduced-motion: reduce) {
       .odq-push-optin-overlay,
-      .odq-push-optin-overlay .odq-push-optin-dialog {
+      .odq-push-optin-overlay .odq-push-optin-dialog,
+      .odq-push-optin-overlay .odq-push-optin-dialog > * {
         transition-duration: 0.01ms !important;
+        transition-delay: 0s !important;
       }
+    }
+
+    /* In-app notification debug (enable: ?odqNotifyDebug=1 or localStorage odqNotifyDebug=1) */
+    .odq-notify-debug {
+      position: fixed;
+      left: 8px;
+      right: 8px;
+      bottom: max(8px, env(safe-area-inset-bottom, 0px));
+      z-index: 100060;
+      max-height: 42vh;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      background: rgba(20, 18, 16, 0.94);
+      color: #f6f4f1;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: 12px/1.4 ui-monospace, Menlo, monospace;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    }
+    .odq-notify-debug[hidden] { display: none !important; }
+    .odq-notify-debug__title {
+      font: 600 11px/1.2 system-ui, sans-serif;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin: 0 0 8px;
+      color: #e8dcc8;
+    }
+    .odq-notify-debug__status {
+      margin: 0 0 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .odq-notify-debug__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .odq-notify-debug__btn {
+      border: 1px solid rgba(246, 244, 241, 0.45);
+      background: transparent;
+      color: #f6f4f1;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font: 600 11px/1 system-ui, sans-serif;
+      cursor: pointer;
+    }
+    .odq-notify-debug__btn--primary {
+      background: #f6f4f1;
+      color: #141210;
+      border-color: #f6f4f1;
     }
 
     /* Reusable quilt-stack visual style for non-admin buttons. */
@@ -6027,7 +6243,7 @@ try {
         height: 100dvh !important;
         min-height: 100dvh !important;
         max-height: 100dvh !important;
-        overflow-y: auto !important;
+        overflow: hidden !important;
         overflow-x: hidden !important;
         position: fixed !important;
         top: 0 !important;
@@ -6335,7 +6551,7 @@ try {
         max-height: 100dvh !important;
         min-height: 100svh !important;
         min-height: 100dvh !important;
-        overflow-y: auto !important;
+        overflow: hidden !important;
         overflow-x: hidden !important;
       }
       
@@ -9272,7 +9488,6 @@ try {
     }
 
     #screen-quilt .quilt-reflection-response-label,
-    #screen-quilt .quilt-reflection-wall-kicker,
     #screen-quilt .quilt-reflection-scrap-kicker {
       display: block;
       margin: 0 0 0.45rem;
@@ -9284,7 +9499,6 @@ try {
       text-transform: uppercase;
     }
 
-    #screen-quilt .quilt-reflection-wall-kicker,
     #screen-quilt .quilt-reflection-scrap-kicker {
       margin-bottom: 0.18rem;
       font-size: 1.02rem;
@@ -9349,17 +9563,11 @@ try {
       box-shadow: none;
     }
 
-    #screen-quilt .quilt-reflection-response-helper,
-    #screen-quilt .quilt-reflection-wall-helper {
+    #screen-quilt .quilt-reflection-response-helper {
       margin: 0.48rem 0 0;
       color: rgba(0, 0, 0, 0.48);
       font-size: 0.72rem;
       line-height: 1.35;
-    }
-
-    #screen-quilt .quilt-reflection-wall-helper {
-      margin-top: 0.12rem;
-      font-size: 0.82rem;
     }
 
     #screen-quilt .quilt-reflection-response-helper {
@@ -9452,6 +9660,19 @@ try {
 
     #screen-quilt .quilt-reflection-wall[hidden] {
       display: none !important;
+    }
+
+    /* Retired headings — strip from DOM in JS; hide if a stale WebView bundle still ships them. */
+    #quiltReflectionWallTitle,
+    #screen-quilt .quilt-reflection-wall-kicker,
+    #screen-quilt .quilt-reflection-wall-helper {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      pointer-events: none !important;
     }
 
     #screen-quilt .quilt-reflection-wall-notes {
@@ -12265,12 +12486,11 @@ try {
       <p class="name-thanks-line first-quote-bridge-line" id="firstQuoteBridgeLine" aria-live="polite">Here&rsquo;s our quote for today</p>
     </section>
 
-    <!-- Quote + color picker (single screen: quote top, picker reveals after read pause) -->
+    <!-- Quote + color picker: quote centered in clip; picker slides up from bottom (two layers). -->
     <section class="screen" id="screen-quote" role="main" aria-label="Daily quote and color picker">
-      <div class="quote-color-combined">
-        <div class="quote-color-combined__quote">
+      <div class="quote-stage-clip quote-color-combined">
+        <div class="quote-stage-quote quote-color-combined__quote" id="quoteStageQuote">
           <div class="quote-content-wrapper">
-            <div class="quote-vspace quote-vspace--above" aria-hidden="true"></div>
             <div class="quote-stage">
               <div class="quote-card">
                 <div class="quote-inner">
@@ -12279,39 +12499,37 @@ try {
                 </div>
               </div>
             </div>
-            <div class="quote-vspace quote-vspace--between" aria-hidden="true"></div>
-            <div class="quote-vspace quote-vspace--below" aria-hidden="true"></div>
           </div>
         </div>
         <div
-          class="quote-color-combined__picker"
+          class="quote-stage-picker quote-color-combined__picker"
           id="quoteColorPickerPane"
           hidden
           aria-hidden="true"
         >
-          <div class="color-picker-container">
-            <canvas
-              class="css-color-wheel"
-              id="colorWheelCanvas"
-              width="336"
-              height="336"
-              role="button"
-              tabindex="0"
-              aria-label="Color wheel - click or drag to select hue"
-            ></canvas>
-            <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
-            <div id="colorPickerControls">
-              <input type="range" id="valueSlider" min="25" max="90" value="90" aria-label="Adjust color brightness" />
-            </div>
-          </div>
-          <button
-            type="button"
-            id="addColorBtn"
-            class="btn quote-color-submit-btn"
-            aria-label="Add your color to OUR DAILY QUILT"
-          >
-            Add your color
-          </button>
+            <div class="color-picker-container">
+              <canvas
+                class="css-color-wheel"
+                id="colorWheelCanvas"
+                  width="336"
+                  height="336"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Color wheel - click or drag to select hue"
+                ></canvas>
+                <div class="color-picker-indicator" id="colorIndicator" aria-hidden="true"></div>
+                <div id="colorPickerControls">
+                  <input type="range" id="valueSlider" min="25" max="90" value="90" aria-label="Adjust color brightness" />
+                </div>
+              </div>
+              <button
+                type="button"
+                id="addColorBtn"
+                class="btn quote-color-submit-btn"
+                aria-label="Add your color to OUR DAILY QUILT"
+              >
+              Add your color
+            </button>
         </div>
       </div>
       <p class="quote-submitter-thanks" id="quoteSubmitterThanks" hidden></p>
@@ -12478,8 +12696,6 @@ try {
             </form>
           </div>
           <section class="quilt-reflection-wall" id="quiltReflectionWall" aria-label="Reflection themes from the community">
-            <p class="quilt-reflection-wall-kicker" id="quiltReflectionWallTitle" hidden></p>
-            <p class="quilt-reflection-wall-helper" hidden></p>
             <div class="quilt-reflection-theme-cards-shell" id="quiltReflectionThemeCardsShell">
               <div class="quilt-reflection-wall-notes" id="quiltReflectionWallNotes" aria-live="polite"></div>
             </div>
@@ -13516,9 +13732,7 @@ try {
     
 
 
-  <!-- External dependencies -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+  <!-- rumi-colors is local; QR + html2canvas load on demand (were blocking launch on CDN). -->
   <script src="rumi-colors.js"></script>
   <script>
     if (typeof rumiColors !== 'undefined' && Array.isArray(rumiColors)) {
@@ -13543,8 +13757,10 @@ try {
         milestoneInAppNotificationMs: 7000,
         /** Optional; falls back to generated icon if missing. */
         notificationIconUrl: 'assets/icon.png',
+        /** Pause after scroll-end before push opt-in fades in (ms). */
+        pushOptInRevealDelayMs: 520,
         /** Delay before color picker pane reveals on quote screen (ms). */
-        quoteColorPickerRevealMs: 1800,
+        quoteColorPickerRevealMs: 1500,
         buildId: '2026-04-30-app-store-readiness',
         /** Public app URL for native “share with a friend”; leave empty until the listing is live. */
         shareAppUrl: '',
@@ -13556,8 +13772,6 @@ try {
           window.location.hostname === 'localhost' ||
           window.location.hostname === '127.0.0.1'
         ),
-        /** Temporarily hide only the “What keeps coming up” / “Drawn from responses…” headings for today’s themes; themes carousel still shows. */
-        reflectionTodayAggregateWallDisabled: true,
         /** TEMP: quilt gem that opens exit chamber (#quiltDailyColorsCtaBtn). */
         exitChamberCtaEnabled: false,
         /** Unique display names at or above this count split across lead (above reflection) and tail (before share). */
@@ -19696,7 +19910,6 @@ try {
         { name: 'Ystavae', language: 'Finnish' },
         { name: 'Barat', language: 'Hungarian' },
         { name: 'Przyjaciel', language: 'Polish' },
-        { name: 'Sober', language: 'Estonian' },
         { name: 'Draugs', language: 'Latvian' },
         { name: 'Draugas', language: 'Lithuanian' },
         { name: 'Prieten', language: 'Romanian' },
@@ -20071,6 +20284,13 @@ try {
         const jy = ((h >>> 16) % 5) - 2;
         el.style.setProperty('--odq-star-jx', `${jx}px`);
         el.style.setProperty('--odq-star-jy', `${jy}px`);
+      }
+
+      static removeLegacyReflectionWallHeadings() {
+        document.getElementById('quiltReflectionWallTitle')?.remove();
+        const wall = document.getElementById('quiltReflectionWall');
+        if (!wall) return;
+        wall.querySelectorAll('.quilt-reflection-wall-kicker, .quilt-reflection-wall-helper').forEach((el) => el.remove());
       }
 
       static syncReflectionPatchStarElement() {
@@ -21859,7 +22079,7 @@ try {
           overlay.innerHTML = `
             <div class="odq-push-optin-scrim" data-odq-dismiss="1" aria-hidden="true"></div>
             <div class="odq-push-optin-dialog">
-              <p id="odq-push-optin-title" class="odq-push-optin-copy">The quilt closes every night at midnight. A reminder means you won't miss a day.</p>
+              <p id="odq-push-optin-title" class="odq-push-optin-copy">Something gets made here every day. Don't miss tomorrow's ♡</p>
               <p class="odq-push-optin-preview-label">↓ Today's notification ↓</p>
               <div class="odq-push-optin-preview">
                 <div class="odq-push-optin-preview__stack">
@@ -21900,7 +22120,7 @@ try {
             overlay._odqPushOptinFinishing = true;
             overlay.classList.remove('odq-push-optin--shown');
             overlay.classList.add('odq-push-optin--leaving');
-            window.setTimeout(() => cleanup(accepted), 440);
+            window.setTimeout(() => cleanup(accepted), 520);
           };
 
           const onKey = (e) => {
@@ -21919,13 +22139,26 @@ try {
           document.body.appendChild(overlay);
           document.addEventListener('keydown', onKey);
           const yesBtn = overlay.querySelector('[data-odq-yes]');
-          if (yesBtn) yesBtn.focus();
+          const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+          const revealDelayMs = reducedMotion
+            ? 0
+            : Math.max(
+                0,
+                Number(options.revealDelayMs) || CONFIG.APP.pushOptInRevealDelayMs || 520
+              );
 
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              overlay.classList.add('odq-push-optin--shown');
-            });
-          });
+          window.setTimeout(() => {
+            overlay.classList.add('odq-push-optin--shown');
+            if (yesBtn) {
+              window.setTimeout(() => {
+                try {
+                  yesBtn.focus({ preventScroll: true });
+                } catch (_) {
+                  yesBtn.focus();
+                }
+              }, reducedMotion ? 0 : 480);
+            }
+          }, revealDelayMs);
         });
       }
 
@@ -22030,7 +22263,10 @@ try {
           window.app?.clearPortalToQuoteIntroTimer();
           window.app?.clearNameThanksAdvanceTimer?.();
           window.app?.clearFirstQuoteBridgeTimer?.();
-          window.app?.clearQuoteColorPickerSchedule?.();
+          const activeScreenId = document.querySelector('.screen.active')?.id;
+          if (activeScreenId === 'screen-quote' && screenId !== 'screen-quote') {
+            window.app?.clearQuoteColorPickerSchedule?.();
+          }
           const introIds = window.app?.getIntroScreenIds?.() || new Set();
           const inIntro = introIds.has(screenId);
           const introEnabled = !!window.app?.isIntroFlowEnabled?.();
@@ -22119,8 +22355,10 @@ try {
                 target.classList.remove(...flowClassCleanup);
                 this._flowTransitioning = false;
                 if (target.id === 'screen-quote') {
+                  window.app?.applyQuoteScreenInitialRestLayout?.();
+                  window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+                  window.app?.quoteService?.displayQuote?.();
                   window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
-                  /* Portal→quote: strips already scheduled when fade starts (see rAF below). */
                   if (!portalToQuoteFade) {
                     window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
                   }
@@ -22264,7 +22502,11 @@ try {
                 target.classList.remove(...flowClassCleanup);
                 this._flowTransitioning = false;
                 if (target.id === 'screen-quote') {
+                  window.app?.applyQuoteScreenInitialRestLayout?.();
+                  window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+                  window.app?.quoteService?.displayQuote?.();
                   window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
+                  window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
                 }
               };
 
@@ -22286,7 +22528,10 @@ try {
                 requestAnimationFrame(() => {
                   target.classList.add('flow-fade-enter-active');
                   previousActive.classList.add('flow-fade-exit-active');
-                  window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+                  if (target.id === 'screen-quote') {
+                    window.app?.applyQuoteScreenInitialRestLayout?.();
+                    window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+                  }
 
                   let settled = false;
                   const settle = () => {
@@ -22317,6 +22562,9 @@ try {
             }
 
             if (screenId === 'screen-quote' && !isFlowTransition && !bridgeToQuoteFade) {
+              window.app?.applyQuoteScreenInitialRestLayout?.();
+              window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+              window.app?.quoteService?.displayQuote?.();
               window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
               window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
             }
@@ -22339,24 +22587,21 @@ try {
               const quoteService = window.app?.quoteService;
               if (quoteService) {
                 const paintQuiltQuote = () => {
-                  const todayQ = quoteService.getTodayQuote();
-                  const quiltQuoteText = document.querySelector('.quilt-quote-text');
-                  const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
-                  const quiltQuoteDisplay = document.querySelector('.quilt-quote-display');
-
-                  if (quiltQuoteText) quiltQuoteText.innerHTML = quoteService.formatQuiltScreenPrimaryHtml(todayQ);
-                  if (quiltQuoteAuthor) quiltQuoteAuthor.innerHTML = quoteService.formatQuiltAuthorForDisplay(todayQ?.author);
-
-                  if (quiltQuoteDisplay && quoteService.quiltScreenHasBodyContent(todayQ)) {
-                    quiltQuoteDisplay.classList.add('has-content');
-                  }
+                  void window.app?._primeQuiltQuoteChrome?.();
                   window.app?.renderQuiltContributorList?.();
                   window.app?.updateBeforeYouGoSection?.();
                 };
+                paintQuiltQuote();
                 void quoteService
                   .hydratePinnedBlessingsForDateKeys([quoteService.getQuoteCalendarKeyNow()])
                   .then(paintQuiltQuote)
                   .catch(() => paintQuiltQuote());
+                void quoteService
+                  .hydrateMoodFieldsForCalendarKey(quoteService.getQuoteCalendarKeyNow())
+                  .then((hydrated) => {
+                    if (hydrated) window.app?.refreshQuiltMoodWidget?.(hydrated);
+                  })
+                  .catch(() => {});
               } else {
                 window.app?.updateBeforeYouGoSection?.();
               }
@@ -22373,10 +22618,12 @@ try {
             }
             
             if (screenId === 'screen-quote') {
-              if (window.app) {
-                window.app.colorHasBeenSelected = false;
-                window.app.hideQuoteColorPickerPane?.();
+              if (!window.app?.isColorPickerActive?.()) {
+                window.app?.applyQuoteScreenInitialRestLayout?.();
+                if (window.app) window.app.colorHasBeenSelected = false;
               }
+              window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+              window.app?.quoteService?.displayQuote?.();
             } else {
               window.app?.clearQuoteColorPickerSchedule?.();
               if (window.ODQ_snapNeutralBeforeSwap) {
@@ -22424,15 +22671,6 @@ try {
                 } else if (!firstNameEl.value.trim()) {
                   firstNameEl.classList.remove('first-name-input--default');
                 }
-                requestAnimationFrame(() => {
-                  requestAnimationFrame(() => {
-                    try {
-                      firstNameEl.focus({ preventScroll: true });
-                    } catch (_) {
-                      firstNameEl.focus();
-                    }
-                  });
-                });
               }
               if (defaultExplainer && pendingTerm && typeof Utils.formatFriendTermExplainerHtml === 'function') {
                 defaultExplainer.innerHTML = Utils.formatFriendTermExplainerHtml(pendingTerm);
@@ -27304,6 +27542,31 @@ try {
         ]);
       }
 
+      /** True when URL points at an existing transparent cutout in Firebase Storage (not Wikimedia portrait). */
+      _isFirebaseSpeakerCutoutUrl(url) {
+        const u = String(url || '').trim();
+        if (!u) return false;
+        return /speaker-cutouts(?:%2F|\/)/i.test(u);
+      }
+
+      _speakerPortraitFromQuoteAndAssignment(quote, data = null) {
+        const fromData = data && typeof data === 'object' ? data : {};
+        return String(
+          fromData.speakerImageUrlSnapshot ||
+            fromData.speaker_image_url_snapshot ||
+            fromData.speakerImageUrl ||
+            fromData.speaker_image_url ||
+            quote?.speakerImageUrlSnapshot ||
+            quote?.speaker_image_url_snapshot ||
+            quote?.speakerImageUrl ||
+            quote?.speaker_image_url ||
+            quote?.speakerImage ||
+            quote?.speaker_image ||
+            ''
+        ).trim();
+      }
+
+      /** Cutout fields on assignment/docs only — never the portrait URL (avoids square Wikimedia in cutout slot). */
       _speakerCutoutFromAssignmentData(data) {
         if (!data || typeof data !== 'object') return '';
         return String(
@@ -27311,12 +27574,53 @@ try {
             data.speaker_cutout_url_snapshot ||
             data.speakerCutoutUrl ||
             data.speaker_cutout_url ||
-            data.speakerImageUrlSnapshot ||
-            data.speaker_image_url_snapshot ||
-            data.speakerImageUrl ||
-            data.speaker_image_url ||
             ''
         ).trim();
+      }
+
+      /**
+       * Prefer an existing Storage cutout (catalog or assignment) over portrait mistaken for cutout.
+       * Does not call remove.bg — reuse only.
+       */
+      _resolveSpeakerCutoutForQuote(quote, assignmentData = null) {
+        if (!quote || typeof quote !== 'object') return '';
+        const assignmentCutout = this._speakerCutoutFromAssignmentData(assignmentData || {});
+        const quoteCutout = String(quote.speakerCutoutUrl || quote.speaker_cutout_url || '').trim();
+        const portrait = this._speakerPortraitFromQuoteAndAssignment(quote, assignmentData);
+        if (assignmentCutout && this._isFirebaseSpeakerCutoutUrl(assignmentCutout)) return assignmentCutout;
+        if (quoteCutout && this._isFirebaseSpeakerCutoutUrl(quoteCutout)) return quoteCutout;
+        const catalog = this._hydrateQuoteFromCatalog(quote);
+        const catalogCutout = String(catalog?.speakerCutoutUrl || catalog?.speaker_cutout_url || '').trim();
+        if (catalogCutout && this._isFirebaseSpeakerCutoutUrl(catalogCutout)) return catalogCutout;
+        if (assignmentCutout && assignmentCutout !== portrait) return assignmentCutout;
+        if (quoteCutout && quoteCutout !== portrait) return quoteCutout;
+        return '';
+      }
+
+      _applySpeakerCutoutCatalogPreference(merged, catalog, pinned) {
+        if (!merged || !catalog) return merged;
+        const catalogCutout = String(catalog.speakerCutoutUrl || catalog.speaker_cutout_url || '').trim();
+        if (!catalogCutout || !this._isFirebaseSpeakerCutoutUrl(catalogCutout)) return merged;
+        const pinnedCutout = String(merged.speakerCutoutUrl || merged.speaker_cutout_url || '').trim();
+        const portrait = this._speakerPortraitFromQuoteAndAssignment(merged, pinned);
+        if (
+          pinnedCutout &&
+          pinnedCutout !== portrait &&
+          this._isFirebaseSpeakerCutoutUrl(pinnedCutout)
+        ) {
+          return merged;
+        }
+        return {
+          ...merged,
+          speakerCutoutUrl: catalogCutout,
+          speaker_cutout_url: catalogCutout,
+          speakerCutoutUrlSnapshot: String(
+            catalog.speakerCutoutUrlSnapshot || catalog.speaker_cutout_url_snapshot || catalogCutout
+          ).trim(),
+          speaker_cutout_url_snapshot: String(
+            catalog.speaker_cutout_url_snapshot || catalog.speaker_cutout_url_snapshot || catalogCutout
+          ).trim()
+        };
       }
 
       _firstResponseFromPayload(payload) {
@@ -27328,7 +27632,7 @@ try {
       _mergeAssignmentSpeakerCutout(quote, data) {
         if (!quote) return quote;
         let merged = quote;
-        const cutout = this._speakerCutoutFromAssignmentData(data);
+        const cutout = this._resolveSpeakerCutoutForQuote(quote, data);
         if (cutout) {
           merged = {
             ...merged,
@@ -27348,6 +27652,79 @@ try {
           };
         }
         return merged;
+      }
+
+      _mergeAssignmentMoodSnapshotFields(quote, data) {
+        if (!quote || !data || typeof data !== 'object') return quote;
+        const goodDay = String(
+          data.goodDaySnapshot ?? data.goodDay ?? data.good_day ?? ''
+        ).trim();
+        const roughDay = String(
+          data.roughDaySnapshot ?? data.roughDay ?? data.rough_day ?? ''
+        ).trim();
+        if (!goodDay && !roughDay) return quote;
+        return {
+          ...quote,
+          ...(goodDay ? { goodDay, good_day: goodDay } : {}),
+          ...(roughDay ? { roughDay, rough_day: roughDay } : {})
+        };
+      }
+
+      _dailyDuplicateQuoteDocKeys() {
+        return new Set([
+          'small_act',
+          'smallAct',
+          'smallActSnapshot',
+          'watch_for',
+          'watch_for_snapshot',
+          'watchForSnapshot',
+          'good_day',
+          'goodDay',
+          'goodDaySnapshot',
+          'rough_day',
+          'roughDay',
+          'roughDaySnapshot',
+          'art_recs',
+          'artRecs',
+          'artRecsSnapshot',
+          'art_recs_type',
+          'artRecsType',
+          'artRecsTypeSnapshot',
+          'communityPrompt',
+          'community_prompt',
+          'reflectionPrompt',
+          'reflection_prompt',
+          'communityPromptSnapshot',
+          'reflectionPromptSnapshot'
+        ]);
+      }
+
+      /**
+       * Merge `quotes/{dateKey}` with `quotes/{sourceId}` like before-you-go hydration.
+       * When both exist, prefer the Notion source doc but backfill mood from the date doc if missing.
+       */
+      _mergeFirestoreQuoteDocsForDay(byDate, bySource, sourceId, dateKey) {
+        const dk = String(dateKey || '').trim();
+        const sid = String(sourceId || '').trim();
+        const notionBacked = sid !== '';
+        const strip = notionBacked && sid !== dk && byDate && bySource;
+        if (!strip) return { ...(byDate || {}), ...(bySource || {}) };
+        const keys = this._dailyDuplicateQuoteDocKeys();
+        const dateFiltered = Object.fromEntries(
+          Object.entries(byDate).filter(([k]) => !keys.has(k))
+        );
+        const data = { ...dateFiltered, ...bySource };
+        const srcMood = this._moodLinesFromQuote(bySource);
+        const dateMood = this._moodLinesFromQuote(byDate);
+        if (!srcMood.goodDay && dateMood.goodDay) {
+          data.good_day = dateMood.goodDay;
+          data.goodDay = dateMood.goodDay;
+        }
+        if (!srcMood.roughDay && dateMood.roughDay) {
+          data.rough_day = dateMood.roughDay;
+          data.roughDay = dateMood.roughDay;
+        }
+        return data;
       }
 
       _mergeAssignmentArtRecSnapshotFields(quote, data) {
@@ -27376,9 +27753,15 @@ try {
         if (sid) {
           const byId = this.quotes.find((q) => String(q.sourceId || '').trim() === sid);
           if (byId) {
-            return this._mergeAssignmentArtRecSnapshotFields(
-              this._mergeAssignmentSpeakerCutout(byId, data),
-              data
+            return this._mergePinnedWithCatalogFields(
+              byId,
+              this._mergeAssignmentMoodSnapshotFields(
+                this._mergeAssignmentArtRecSnapshotFields(
+                  this._mergeAssignmentSpeakerCutout(byId, data),
+                  data
+                ),
+                data
+              )
             );
           }
         }
@@ -27386,9 +27769,15 @@ try {
         if (emb) {
           const byEmb = this.quotes.find((q) => this._embeddedStableKey(q) === emb);
           if (byEmb) {
-            return this._mergeAssignmentArtRecSnapshotFields(
-              this._mergeAssignmentSpeakerCutout(byEmb, data),
-              data
+            return this._mergePinnedWithCatalogFields(
+              byEmb,
+              this._mergeAssignmentMoodSnapshotFields(
+                this._mergeAssignmentArtRecSnapshotFields(
+                  this._mergeAssignmentSpeakerCutout(byEmb, data),
+                  data
+                ),
+                data
+              )
             );
           }
         }
@@ -27399,7 +27788,16 @@ try {
             (q) => String(q.text || '').trim().startsWith(snapT) || String(q.text || '').trim() === snapT
           );
           if (byText && (!snapA || String(byText.author || '').includes(snapA))) {
-            return this._mergeAssignmentArtRecSnapshotFields(byText, data);
+            return this._mergePinnedWithCatalogFields(
+              byText,
+              this._mergeAssignmentMoodSnapshotFields(
+                this._mergeAssignmentArtRecSnapshotFields(
+                  this._mergeAssignmentSpeakerCutout(byText, data),
+                  data
+                ),
+                data
+              )
+            );
           }
           return {
             text: snapT,
@@ -27454,6 +27852,134 @@ try {
         const emb = this._embeddedStableKey(quote);
         const byEmb = this.quotes.find((q) => this._embeddedStableKey(q) === emb);
         return byEmb || null;
+      }
+
+      _assignmentFieldIsMeaningful(val) {
+        if (val == null) return false;
+        if (typeof val === 'string') return !!val.trim();
+        if (typeof val === 'boolean') return true;
+        if (typeof val === 'number') return Number.isFinite(val);
+        if (typeof val === 'object') {
+          if (Array.isArray(val)) return val.length > 0;
+          return Object.keys(val).length > 0;
+        }
+        return true;
+      }
+
+      /** Overlay pin/assignment fields without empty snapshots wiping Notion catalog copy. */
+      _mergePinnedWithCatalogFields(catalog, pinned) {
+        if (!catalog || !pinned) return pinned || catalog;
+        const merged = { ...catalog };
+        for (const key of Object.keys(pinned)) {
+          const val = pinned[key];
+          if (!this._assignmentFieldIsMeaningful(val)) continue;
+          merged[key] = val;
+        }
+        return this._applySpeakerCutoutCatalogPreference(merged, catalog, pinned);
+      }
+
+      _moodLinesFromQuote(quote) {
+        if (!quote || typeof quote !== 'object') return { goodDay: '', roughDay: '' };
+        let goodDay = String(quote.goodDay ?? quote.good_day ?? '').replace(/\s+/g, ' ').trim();
+        let roughDay = String(quote.roughDay ?? quote.rough_day ?? '').replace(/\s+/g, ' ').trim();
+        if (goodDay && roughDay) return { goodDay, roughDay };
+        for (const [key, val] of Object.entries(quote)) {
+          const nk = this._normFieldKeyLoose(key);
+          const t = String(val ?? '').replace(/\s+/g, ' ').trim();
+          if (!t) continue;
+          if (nk === 'goodday' && !goodDay) goodDay = t;
+          if (nk === 'roughday' && !roughDay) roughDay = t;
+        }
+        return { goodDay, roughDay };
+      }
+
+      async _readFirestoreQuoteDoc(docId) {
+        const id = String(docId || '').trim();
+        if (!id || !window.db || !window.firestore) return null;
+        try {
+          const snap = await (window.firestore.getDocFromServer || window.firestore.getDoc)(
+            window.firestore.doc(window.db, 'quotes', id)
+          );
+          return snap.exists() ? snap.data() || {} : null;
+        } catch (e) {
+          console.warn(`⚠️ quotes/${id} read failed:`, e?.message || e);
+          return null;
+        }
+      }
+
+      async _readDailyQuoteAssignmentData(dateKey) {
+        const dk = String(dateKey || '').trim();
+        if (!dk) return null;
+        const cached = this._readLocalAssignment(dk);
+        if (!window.db || !window.firestore) return cached;
+        try {
+          const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
+          const snap = await readDoc(window.firestore.doc(window.db, 'dailyQuoteAssignments', dk));
+          if (snap.exists()) return { ...(cached || {}), ...(snap.data() || {}) };
+        } catch (e) {
+          console.warn(`⚠️ dailyQuoteAssignments/${dk} read failed:`, e?.message || e);
+        }
+        return cached;
+      }
+
+      /**
+       * Mood lines often live only on `quotes/{notionPageId}`; assignment snapshots can be blank.
+       * Mirrors before-you-go / reflection server hydration.
+       */
+      async hydrateMoodFieldsForCalendarKey(dateKey, baseQuote = null) {
+        const dk = String(dateKey || this.getQuoteCalendarKeyNow()).trim();
+        const base = baseQuote || this._pinnedByDateKey[dk] || null;
+        if (!dk || !base) return base;
+
+        let { goodDay, roughDay } = this._moodLinesFromQuote(base);
+        const fresh = this._hydrateQuoteFromCatalog(base);
+        if (fresh) {
+          const fromCatalog = this._moodLinesFromQuote(fresh);
+          if (!goodDay && fromCatalog.goodDay) goodDay = fromCatalog.goodDay;
+          if (!roughDay && fromCatalog.roughDay) roughDay = fromCatalog.roughDay;
+        }
+
+        const assignData = await this._readDailyQuoteAssignmentData(dk);
+        if (assignData) {
+          const fromAssign = this._moodLinesFromQuote(assignData);
+          if (!goodDay && fromAssign.goodDay) goodDay = fromAssign.goodDay;
+          if (!roughDay && fromAssign.roughDay) roughDay = fromAssign.roughDay;
+        }
+
+        if ((!goodDay || !roughDay) && window.db && window.firestore) {
+          let sourceId = String(base.sourceId || '').trim();
+          if (!sourceId && fresh?.sourceId) sourceId = String(fresh.sourceId).trim();
+          if (!sourceId && base.text && this.quotes?.length) {
+            const snapT = String(base.text || '').trim();
+            const match = this.quotes.find((q) => String(q.text || '').trim() === snapT);
+            if (match?.sourceId) sourceId = String(match.sourceId).trim();
+          }
+          const byDate = await this._readFirestoreQuoteDoc(dk);
+          const bySource = sourceId && sourceId !== dk ? await this._readFirestoreQuoteDoc(sourceId) : null;
+          const mergedDocs = this._mergeFirestoreQuoteDocsForDay(byDate, bySource, sourceId, dk);
+          const fromDocs = this._moodLinesFromQuote(mergedDocs);
+          if (!goodDay && fromDocs.goodDay) goodDay = fromDocs.goodDay;
+          if (!roughDay && fromDocs.roughDay) roughDay = fromDocs.roughDay;
+        }
+
+        if (!goodDay && !roughDay) return base;
+
+        const merged = {
+          ...base,
+          ...(goodDay ? { goodDay, good_day: goodDay } : {}),
+          ...(roughDay ? { roughDay, rough_day: roughDay } : {})
+        };
+        const hydrated = fresh ? this._mergePinnedWithCatalogFields(fresh, merged) : merged;
+        this._pinnedByDateKey[dk] = hydrated;
+        return hydrated;
+      }
+
+      async _pinAndHydrateQuote(dateKey, quote) {
+        if (!quote) return null;
+        let merged = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, quote);
+        merged = (await this.hydrateMoodFieldsForCalendarKey(dateKey, merged)) || merged;
+        this._pinnedByDateKey[dateKey] = merged;
+        return merged;
       }
 
       _normFieldKeyLoose(s) {
@@ -27622,6 +28148,27 @@ try {
         this._pinnedByDateKey = {};
       }
 
+      /** True when today's calendar key already has a pinned quote object. */
+      hasTodayQuotePinned() {
+        const todayKey = this.getQuoteCalendarKeyNow();
+        return !!todayKey && !!this._pinnedByDateKey[todayKey];
+      }
+
+      /**
+       * Synchronously pin today from `ourDailyQuoteAssignments` localStorage (offline / fast launch).
+       * Does not replace Firestore `resolveAndPinCalendarKey`; use before first quilt paint.
+       */
+      primeTodayQuoteFromLocalAssignment() {
+        const dateKey = this.getQuoteCalendarKeyNow();
+        if (!dateKey) return false;
+        if (this._pinnedByDateKey[dateKey]) return true;
+        const data = this._readLocalAssignment(dateKey);
+        const quote = data ? this._findQuoteFromAssignmentPayload(data) : null;
+        if (!quote) return false;
+        this._pinnedByDateKey[dateKey] = quote;
+        return true;
+      }
+
       async resolveAndPinCalendarKey(dateKey, options = {}) {
         const requireLive = options.requireLive === true;
         if (!dateKey) return null;
@@ -27630,15 +28177,14 @@ try {
         const existing = this._pinnedByDateKey[dateKey];
         if (existing) {
           if (existing._canonicalDailyDoc === true) {
-            const merged = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, existing);
-            this._pinnedByDateKey[dateKey] = merged;
-            return merged;
+            return this._pinAndHydrateQuote(dateKey, existing);
           }
           const refreshed = this._hydrateQuoteFromCatalog(existing);
           if (refreshed) {
-            const merged = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, refreshed);
-            this._pinnedByDateKey[dateKey] = merged;
-            return merged;
+            return this._pinAndHydrateQuote(
+              dateKey,
+              this._mergePinnedWithCatalogFields(refreshed, existing)
+            );
           }
           delete this._pinnedByDateKey[dateKey];
         }
@@ -27667,9 +28213,7 @@ try {
 
         let quote = data ? this._findQuoteFromAssignmentPayload(data) : null;
         if (quote) {
-          quote = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, quote);
-          this._pinnedByDateKey[dateKey] = quote;
-          return quote;
+          return this._pinAndHydrateQuote(dateKey, quote);
         }
 
         // Legacy date-shaped quote docs are fallback only; stale clients have overwritten them before.
@@ -27744,11 +28288,10 @@ try {
                 };
                 const hydrated = this._hydrateQuoteFromCatalog(canonical);
                 const canonicalWithCatalogFields = hydrated ? { ...hydrated, ...canonical } : canonical;
-                const merged = {
-                  ...(await this._mergeBlessingFromDailyFirestoreDocs(dateKey, canonicalWithCatalogFields)),
+                const merged = await this._pinAndHydrateQuote(dateKey, {
+                  ...canonicalWithCatalogFields,
                   _canonicalDailyDoc: true
-                };
-                this._pinnedByDateKey[dateKey] = merged;
+                });
                 this._writeLocalAssignment(dateKey, {
                   dateKey,
                   sourceId: merged.sourceId || null,
@@ -27787,8 +28330,7 @@ try {
           if (quote) await this.saveDayAssignment(dateKey, quote);
         }
         if (quote) {
-          quote = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, quote);
-          this._pinnedByDateKey[dateKey] = quote;
+          return this._pinAndHydrateQuote(dateKey, quote);
         }
         return quote;
       }
@@ -27850,47 +28392,17 @@ try {
         const todayKey = this.getQuoteCalendarKeyNow();
         const pinnedToday = this._pinnedByDateKey[todayKey];
         if (pinnedToday) {
-          if (pinnedToday._canonicalDailyDoc === true) return pinnedToday;
           const fresh = this._hydrateQuoteFromCatalog(pinnedToday);
           if (fresh) {
-            // Preserve Firestore-only / local-assignment fields (for example
-            // art_recs_type) while refreshing embedded catalog fields.
-            const merged = { ...fresh, ...pinnedToday };
+            const merged = this._mergePinnedWithCatalogFields(fresh, pinnedToday);
             this._pinnedByDateKey[todayKey] = merged;
             return merged;
           }
-          // Catalog no longer contains this row (e.g. removed from Notion + synced); do not return stale text.
-          delete this._pinnedByDateKey[todayKey];
+          return pinnedToday;
         }
 
-        // Use UTC time for day calculation - quote changes at 7:00 AM UTC
-        const now = new Date();
-        
-        // Adjust for 7 AM UTC day boundary instead of midnight UTC
-        // If it's before 7 AM UTC, use yesterday's quote
-        const utcHours = now.getUTCHours();
-        const adjustedDate = new Date(now);
-        
-        if (utcHours < 7) {
-          // Before 7 AM UTC, use yesterday's date
-          adjustedDate.setUTCDate(adjustedDate.getUTCDate() - 1);
-        }
-        
-        const dayIndex = Math.floor(adjustedDate.getTime() / (1000 * 60 * 60 * 24));
-        const quoteIndex = this.shuffledIndexes[dayIndex % this.shuffledIndexes.length];
-        
-        // Safety check: ensure quoteIndex is valid
-        if (quoteIndex >= this.quotes.length || quoteIndex < 0) {
-          console.warn(`⚠️ Invalid quoteIndex ${quoteIndex} for ${this.quotes.length} quotes. Using fallback index.`);
-          // Use modulo fallback instead of regenerating (which is async)
-          const fallbackIndex = quoteIndex % this.quotes.length;
-          console.log(`🔍 getTodayQuote: Using fallback index ${fallbackIndex} for quoteIndex ${quoteIndex}`);
-          return this.quotes[fallbackIndex];
-        }
-        
-        // Quote selected for today
-        
-        return this.quotes[quoteIndex];
+        console.warn('getTodayQuote: live daily confirmed but today is not pinned yet');
+        return null;
       }
 
       getQuoteForDate(dateString) {
@@ -27899,11 +28411,11 @@ try {
           const pinned = this._pinnedByDateKey[dateString];
           const fresh = this._hydrateQuoteFromCatalog(pinned);
           if (fresh) {
-            const merged = { ...fresh, ...pinned };
+            const merged = this._mergePinnedWithCatalogFields(fresh, pinned);
             this._pinnedByDateKey[dateString] = merged;
             return merged;
           }
-          delete this._pinnedByDateKey[dateString];
+          return pinned;
         }
 
         // dateString format: "2025-08-18" - assumes UTC date
@@ -28029,7 +28541,15 @@ try {
 
       /** Same quote/author as the quote screen uses (today’s pinned / shuffled quote). */
       getQuoteScreenPreviewContent() {
-        const activeQuote = this.getTodayQuote();
+        let activeQuote = null;
+        if (typeof window !== 'undefined' && window.app && window.app._liveDailyDataConfirmed === true) {
+          activeQuote = this.getTodayQuote();
+        } else {
+          this.primeTodayQuoteFromLocalAssignment();
+          const todayKey = this.getQuoteCalendarKeyNow();
+          const pinned = todayKey ? this._pinnedByDateKey[todayKey] : null;
+          activeQuote = pinned ? this._hydrateQuoteFromCatalog(pinned) : null;
+        }
         return {
           activeQuote,
           text: String(activeQuote?.text ?? activeQuote?.body ?? '').trim(),
@@ -28042,22 +28562,33 @@ try {
        * displayQuote() runs at init while the screen is display:none, so clientWidth was wrong until now.
        */
       scheduleQuoteLayoutBPreviewLayoutRefresh() {
-        const run = () => {
+        if (this._quoteLayoutBRefreshRaf) {
+          cancelAnimationFrame(this._quoteLayoutBRefreshRaf);
+        }
+        this._quoteLayoutBRefreshRaf = requestAnimationFrame(() => {
+          this._quoteLayoutBRefreshRaf = 0;
           try {
             const screenEl = document.getElementById('screen-quote');
             if (!screenEl?.classList.contains('active')) return;
             const card = document.querySelector('#screen-quote .quote-card');
             if (card && card.clientWidth < 80) {
-              requestAnimationFrame(run);
-              return;
+              this._quoteLayoutBWidthRetries = (this._quoteLayoutBWidthRetries || 0) + 1;
+              if (this._quoteLayoutBWidthRetries < 20) {
+                this.scheduleQuoteLayoutBPreviewLayoutRefresh();
+                return;
+              }
             }
+            this._quoteLayoutBWidthRetries = 0;
             const { text, author } = this.getQuoteScreenPreviewContent();
             this._rebuildLayoutBQuoteCardStage(text, author);
+            const stage = document.querySelector('#screen-quote .quote-layoutb-stage');
+            if (stage) stage.classList.add('quote-layoutb-stage--revealed');
+            void stage?.offsetHeight;
+            window.app?.finalizeQuoteColorScrollLayout?.();
           } catch (e) {
             /* ignore */
           }
-        };
-        requestAnimationFrame(run);
+        });
       }
 
       /**
@@ -28471,7 +29002,11 @@ try {
       }
 
       displayQuote() {
-        if (typeof window !== 'undefined' && window.app && window.app._liveDailyDataConfirmed !== true) {
+        const canShowOnQuoteScreen =
+          (typeof window !== 'undefined' && window.app && window.app._liveDailyDataConfirmed === true) ||
+          this.hasTodayQuotePinned() ||
+          this.primeTodayQuoteFromLocalAssignment();
+        if (!canShowOnQuoteScreen) {
           return;
         }
         try {
@@ -31241,6 +31776,12 @@ try {
         this._quiltScrollCuePreviousScrollBehavior = '';
         /** One-shot guard: daily push opt-in after user scrolls quilt to the bottom. */
         this._dailyQuotePromptedFromQuiltScroll = false;
+        this._quiltNotificationPromptReady = false;
+        this._quiltNotificationScrollRaf = null;
+        this._quiltNotificationFooterObserver = null;
+        this._quiltNotificationLandTimer = null;
+        this._quiltNotificationPromptInFlight = false;
+        this._quiltScrollAnchorTop = 0;
 
         // Gesture-based screen flow: portal -> quote (picker reveals on quote screen)
         this._scrollNavTouchStartY = null;
@@ -31265,12 +31806,14 @@ try {
         /** False until server confirms today's quilt + quote (hard block — no synthetic fallbacks). */
         this._liveDailyDataConfirmed = false;
         this._liveDailySyncInFlight = false;
+        this._liveDailyQuoteSyncInFlight = false;
         this._lastAutoReconnectRetryAt = 0;
         this._postLiveSyncInitialized = false;
         /** False until first `loadQuilt()` finishes — avoids wrong portal join copy before Firestore hydrates. */
         this._portalQuiltLoaded = false;
         /** Portal→quote intro fade is scheduled once when the join line first becomes visible. */
         this._portalToQuoteIntroScheduled = false;
+        this._portalJoinWatchdogTimer = null;
         /** True while startup has queued an idle `renderQuilt()` (streamed opening). */
         this._deferredQuiltRenderQueued = false;
         this._nameThanksAdvanceTimer = null;
@@ -31463,7 +32006,27 @@ try {
         this.generateQRCode();
       }
       
-      generateQRCode() {
+      _loadQrcodeScript() {
+        if (typeof qrcode !== 'undefined') return Promise.resolve(true);
+        if (this._qrcodeScriptPromise) return this._qrcodeScriptPromise;
+        this._qrcodeScriptPromise = new Promise((resolve) => {
+          const existing = document.querySelector('script[data-odq-qrcode]');
+          if (existing) {
+            existing.addEventListener('load', () => resolve(typeof qrcode !== 'undefined'), { once: true });
+            existing.addEventListener('error', () => resolve(false), { once: true });
+            return;
+          }
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+          s.dataset.odqQrcode = '1';
+          s.onload = () => resolve(typeof qrcode !== 'undefined');
+          s.onerror = () => resolve(false);
+          document.head.appendChild(s);
+        });
+        return this._qrcodeScriptPromise;
+      }
+
+      async generateQRCode() {
         const qrContainer = document.getElementById('qr-code');
         console.log('QR Container found:', qrContainer);
         
@@ -31474,6 +32037,8 @@ try {
           
           // Clear container first
           qrContainer.innerHTML = '';
+
+          await this._loadQrcodeScript();
           
           if (typeof qrcode !== 'undefined') {
             try {
@@ -31570,20 +32135,175 @@ try {
         });
         this.uiService?.showScreen?.('screen-connection-problem');
         this._dismissBootSplash();
+        this._notifyNativeLaunchCoverReady();
       }
 
-      async syncLiveDailyData() {
-        if (this._liveDailySyncInFlight) return { ok: false, reason: 'sync_in_flight' };
-        this._liveDailySyncInFlight = true;
+      _hasCachedTodayQuilt() {
+        const todayKey = Utils.getTodayKey();
+        const loadedKey = String(this._loadedSharedQuiltDateKey || '').trim();
+        return this._portalQuiltLoaded === true && !!loadedKey && loadedKey === todayKey;
+      }
+
+      /** If portal is still waiting on join dots, route to connection UI (never stale cache). */
+      _startPortalJoinLineWatchdog() {
+        if (this._portalJoinWatchdogTimer) {
+          clearTimeout(this._portalJoinWatchdogTimer);
+        }
+        this._portalJoinWatchdogTimer = setTimeout(() => {
+          this._portalJoinWatchdogTimer = null;
+          if (this._liveDailyDataConfirmed) return;
+          const outer = document.getElementById('portalJoinLineOuter');
+          if (!outer?.classList.contains('portal-join-line-outer--awaiting')) return;
+          this.logger.warn('Portal join line watchdog: live daily never confirmed');
+          this._showConnectionProblemFailed('sync_timeout');
+        }, 15000);
+      }
+
+      _clearPortalJoinLineWatchdog() {
+        if (this._portalJoinWatchdogTimer) {
+          clearTimeout(this._portalJoinWatchdogTimer);
+          this._portalJoinWatchdogTimer = null;
+        }
+      }
+
+      _shouldShowConnectionProblemForSyncFailure(result) {
+        if (!result || result.ok) return false;
+        if (result.reason === 'sync_in_flight' || result.transient === true) return false;
+        /* Always block on failed server read — do not show yesterday's quilt/quote from cache. */
+        return true;
+      }
+
+      _isQuiltOnlyLiveDailySyncMode(mode) {
+        return mode === 'resume' || mode === 'launch-core';
+      }
+
+      async _syncLiveDailyQuotes() {
+        const catalogOk = await this.quoteService.loadQuotesFromFirestore({ requireServer: true });
+        if (!catalogOk) {
+          return { ok: false, reason: 'quote_catalog' };
+        }
+
+        const indexesOk = await this.quoteService.regenerateShuffledIndexes({ requireServer: true });
+        if (indexesOk === false) {
+          return { ok: false, reason: 'quote_indexes' };
+        }
+
+        const quoteDateKey = this.quoteService.getQuoteCalendarKeyNow();
+        const todayQuote = await this.quoteService.resolveAndPinCalendarKey(quoteDateKey, { requireLive: true });
+        if (!todayQuote) {
+          return { ok: false, reason: 'quote_assignment' };
+        }
+
+        await this.quoteService.hydrateMoodFieldsForCalendarKey(quoteDateKey, todayQuote);
+
+        await this.quoteService.primeQuoteAssignmentsNearTerm();
+        return { ok: true };
+      }
+
+      _snapshotTodayQuoteForUi() {
+        return this.quoteService?.getTodayQuote?.() || null;
+      }
+
+      /** Repaint quote screen + quilt quote widgets when today's pin changes. */
+      _refreshQuiltQuoteUiAfterPin(beforeQuote) {
+        const afterQuote = this.quoteService?.getTodayQuote?.();
+        if (!afterQuote) return;
+        const moodSig = (q) =>
+          `${String(q?.goodDay ?? q?.good_day ?? '').trim()}\u0001${String(q?.roughDay ?? q?.rough_day ?? '').trim()}`;
+        const speakerSig = (q) =>
+          String(
+            q?.speakerCutoutUrl ??
+              q?.speaker_cutout_url ??
+              q?.speakerImageUrl ??
+              q?.speaker_image_url ??
+              ''
+          ).trim();
+        const unchanged =
+          String(beforeQuote?.text || '').trim() === String(afterQuote?.text || '').trim() &&
+          moodSig(beforeQuote) === moodSig(afterQuote) &&
+          speakerSig(beforeQuote) === speakerSig(afterQuote);
+        if (unchanged) return;
+        this.quoteService.displayQuote();
+        void this._primeQuiltQuoteChrome();
+        this.scheduleLayoutBStoryPreviewRefresh?.();
+      }
+
+      async _syncLiveDailyQuotesInBackground() {
+        if (this._liveDailyQuoteSyncInFlight) return;
+        this._liveDailyQuoteSyncInFlight = true;
         try {
+          const beforeQuote = this._snapshotTodayQuoteForUi();
           const firebaseReady = await LiveDailyDataSync.waitForFirebaseReady(20000);
           if (!firebaseReady) {
-            return { ok: false, reason: 'firebase_unavailable' };
+            this.logger.warn('Background quote sync skipped: Firebase unavailable');
+            return;
           }
+          const quotes = await this._syncLiveDailyQuotes();
+          if (!quotes.ok) {
+            this.logger.warn('Background quote sync failed:', quotes.reason);
+            return;
+          }
+          this._refreshQuiltQuoteUiAfterPin(beforeQuote);
+        } catch (error) {
+          this.logger.warn('Background quote sync failed:', error?.message || error);
+        } finally {
+          this._liveDailyQuoteSyncInFlight = false;
+        }
+      }
 
-          const catalogOk = await this.quoteService.loadQuotesFromFirestore({ requireServer: true });
-          if (!catalogOk) {
-            return { ok: false, reason: 'quote_catalog' };
+      /**
+       * Pin today's quote before `_liveDailyDataConfirmed`. Uses local assignment cache, then Firestore.
+       */
+      async _ensureTodayQuotePinnedForLaunch() {
+        this.quoteService.primeTodayQuoteFromLocalAssignment();
+        if (this.quoteService.hasTodayQuotePinned()) return true;
+        const quotes = await this._syncLiveDailyQuotes();
+        if (quotes.ok) return true;
+        const hadLocal = this.quoteService.primeTodayQuoteFromLocalAssignment();
+        if (hadLocal) {
+          this.logger.warn('Quote sync failed; using cached local assignment:', quotes.reason);
+          return true;
+        }
+        return false;
+      }
+
+      async _tryBootstrapTodayQuiltFromLocalStorage() {
+        try {
+          const savedData = localStorage.getItem('ourDailyQuilt');
+          if (!savedData) return false;
+          const data = JSON.parse(savedData);
+          const todayKey = Utils.getTodayKey();
+          const savedDate = String(data.date || data.dateKey || '').trim();
+          if (savedDate && savedDate !== todayKey) return false;
+          const blocks = Array.isArray(data.blocks) ? data.blocks : [];
+          if (blocks.length === 0) return false;
+          await this.applyQuiltDataFromPayload({
+            dateKey: todayKey,
+            date: savedDate || todayKey,
+            blocks,
+            contributorCount: data.contributorCount || 1,
+            colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
+            contributors: Array.isArray(data.contributors) ? data.contributors : [],
+            macroStructureFrozen: data.macroStructureFrozen === true
+          });
+          return true;
+        } catch (error) {
+          this.logger.warn('Local quilt bootstrap failed:', error?.message || error);
+          return false;
+        }
+      }
+
+      async syncLiveDailyData(options = {}) {
+        const quiltOnly = this._isQuiltOnlyLiveDailySyncMode(options.mode);
+        if (this._liveDailySyncInFlight) {
+          return { ok: false, reason: 'sync_in_flight', transient: true };
+        }
+        this._liveDailySyncInFlight = true;
+        try {
+          const firebaseWaitMs = quiltOnly ? (options.mode === 'resume' ? 8000 : 12000) : 20000;
+          const firebaseReady = await LiveDailyDataSync.waitForFirebaseReady(firebaseWaitMs);
+          if (!firebaseReady) {
+            return { ok: false, reason: 'firebase_unavailable' };
           }
 
           const todayKey = Utils.getTodayKey();
@@ -31591,25 +32311,27 @@ try {
           if (!quiltResult.ok) {
             return { ok: false, reason: quiltResult.reason || 'quilt' };
           }
+          await this.applyQuiltDataFromPayload(quiltResult.data);
 
-          const indexesOk = await this.quoteService.regenerateShuffledIndexes({ requireServer: true });
-          if (indexesOk === false) {
-            return { ok: false, reason: 'quote_indexes' };
-          }
-
-          const quoteDateKey = this.quoteService.getQuoteCalendarKeyNow();
-          const todayQuote = await this.quoteService.resolveAndPinCalendarKey(quoteDateKey, { requireLive: true });
-          if (!todayQuote) {
+          const quotesPinned = await this._ensureTodayQuotePinnedForLaunch();
+          if (!quotesPinned) {
             return { ok: false, reason: 'quote_assignment' };
           }
 
-          await this.quoteService.primeQuoteAssignmentsNearTerm();
+          if (quiltOnly) {
+            this._liveDailyDataConfirmed = true;
+            document.body.classList.remove('odq-live-daily-pending');
+            LiveDailyDataSync.recordSuccessfulSync(todayKey);
+            this._refreshQuoteScreenIfActive();
+            void this._primeQuiltQuoteChrome();
+            return { ok: true, quiltOnly: true };
+          }
 
-          this._preparePortalJoinLineForLoad();
-          await this.applyQuiltDataFromPayload(quiltResult.data);
           this._liveDailyDataConfirmed = true;
           document.body.classList.remove('odq-live-daily-pending');
           LiveDailyDataSync.recordSuccessfulSync(todayKey);
+          this._refreshQuoteScreenIfActive();
+          void this._primeQuiltQuoteChrome();
           return { ok: true };
         } catch (error) {
           this.logger.warn('syncLiveDailyData failed:', error?.message || error);
@@ -31633,9 +32355,10 @@ try {
             this.updateSquareCounter();
             this.renderQuilt?.();
             this._dismissBootSplash();
+            this._notifyNativeLaunchCoverReady();
           }
         } else {
-          this._showConnectionProblemFailed(result.reason);
+          this._showConnectionProblemFailed(result?.reason || 'unknown');
           if (btn) btn.disabled = false;
         }
       }
@@ -31786,10 +32509,17 @@ try {
 
       async _continueAfterLiveSync() {
         this._postLiveSyncInitialized = true;
+        this._clearPortalJoinLineWatchdog();
+        this._startPortalJoinLineWatchdog();
         this.uiService?.showScreen?.('screen-portal');
         this._maybeSnapPickerToDailyFirstPalette();
         this.updateSquareCounter();
         this._dismissBootSplash();
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            this._notifyNativeLaunchCoverReady();
+          });
+        });
 
         this.setupPushNotificationListeners();
         this.refreshDailyQuotePushRegistration().catch((error) => {
@@ -31808,6 +32538,7 @@ try {
         }, 3500);
 
         this.quoteService.displayQuote();
+        void this._primeQuiltQuoteChrome();
         this.renderer.initialize();
         const fastReturningToday = this._shouldFastPathReturningSameDayQuote();
         if (fastReturningToday) {
@@ -31817,6 +32548,7 @@ try {
             this._portalToQuoteTimer = null;
             this._blockPortalScrollNav = false;
             if (window.odqPerfMark) window.odqPerfMark('fast-path-quilt-visible');
+            this._notifyNativeLaunchCoverReady();
             this.uiService.showScreen('screen-quilt');
           }, 500);
         }
@@ -31831,23 +32563,61 @@ try {
           if (window.odqPerfMark) window.odqPerfMark('init-start');
           this._liveDailyDataConfirmed = false;
           this._postLiveSyncInitialized = false;
+          this._preparePortalJoinLineForLoad();
+          this._showConnectionProblemConnecting();
           this.setupEventListeners();
+          this._dismissBootSplash();
 
           await this.dataService.initialize();
           this.quiltEngine.initialize();
 
-          const live = await this.syncLiveDailyData();
-          if (!live.ok) {
-            this._showConnectionProblemFailed(live.reason);
-            return;
+          const bootstrapped = await this._tryBootstrapTodayQuiltFromLocalStorage();
+          if (bootstrapped && window.odqPerfMark) window.odqPerfMark('bootstrap-quilt-cache');
+          if (bootstrapped) {
+            this.quoteService.primeTodayQuoteFromLocalAssignment();
           }
 
-          if (window.odqPerfMark) window.odqPerfMark('after-load-quilt');
-          await this._continueAfterLiveSync();
+          const finishLaunchAfterQuilt = async (live) => {
+            if (!live.ok) {
+              if (live.reason === 'sync_in_flight' || live.transient === true) return;
+              this._showConnectionProblemFailed(live.reason);
+              return;
+            }
+            if (window.odqPerfMark) window.odqPerfMark('after-load-quilt');
+            if (!this._postLiveSyncInitialized) {
+              await this._continueAfterLiveSync();
+            } else {
+              this.updateSquareCounter();
+              this.quoteService.displayQuote();
+              this._scheduleDeferredQuiltRenderForIdle();
+            }
+          };
+
+          if (bootstrapped) {
+            void this.syncLiveDailyData({ mode: 'launch-core' })
+              .then(finishLaunchAfterQuilt)
+              .catch((error) => {
+                this.errorHandler.handleError(error, 'App live sync (bootstrap refresh)');
+              });
+          } else {
+            void this.syncLiveDailyData({ mode: 'launch-core' })
+              .then(finishLaunchAfterQuilt)
+              .catch((error) => {
+                this.errorHandler.handleError(error, 'App live sync');
+                this.clearPortalToQuoteIntroTimer();
+                this._showConnectionProblemFailed('unknown');
+              });
+          }
         } catch (error) {
           this.errorHandler.handleError(error, 'App initialization');
           this.clearPortalToQuoteIntroTimer();
           this._showConnectionProblemFailed('unknown');
+        }
+      }
+
+      _notifyNativeLaunchCoverReady() {
+        if (typeof window.odqNotifyNativeLaunchCoverReady === 'function') {
+          window.odqNotifyNativeLaunchCoverReady();
         }
       }
 
@@ -32307,6 +33077,8 @@ try {
 
         // Subtle quilt parallax setup
         this.setupQuiltParallax();
+        this.setupQuiltNotificationScrollPrompt();
+        this.setupNotificationDebugPanel();
 
         // Pinch and pan for inspecting quilt details
         this.setupQuiltZoom();
@@ -33754,58 +34526,16 @@ try {
         window.addEventListener('resize', this._reflectionCarouselResizeHandler, { passive: true });
       }
 
-      renderReflectionAnonymousWall(themes = null, options = {}) {
+      renderReflectionAnonymousWall(themes = null) {
+        Utils.removeLegacyReflectionWallHeadings();
         const wall = document.getElementById('quiltReflectionWall');
         const notes = document.getElementById('quiltReflectionWallNotes');
-        const title = document.getElementById('quiltReflectionWallTitle');
-        const helper = wall?.querySelector?.('.quilt-reflection-wall-helper') || null;
         if (!wall || !notes) return;
         const themeEntries = (Array.isArray(themes) ? themes : [])
           .map((theme) => this.normalizeReflectionWallTheme(theme))
           .filter((entry) => entry?.text);
         notes.innerHTML = this.getReflectionCarouselMarkup(themeEntries);
         this.initReflectionCarouselLoop(notes);
-        if (!themeEntries.length) {
-          if (title) {
-            title.textContent = '';
-            title.setAttribute('hidden', 'hidden');
-          }
-          if (helper) {
-            helper.textContent = '';
-            helper.setAttribute('hidden', 'hidden');
-          }
-          wall.hidden = false;
-          return;
-        }
-        const todayTitle = 'What keeps coming up';
-        const todayHelper = 'Drawn from responses as they come in';
-        const optTitle = String(options.title || '').trim();
-        const optHelperPresent = Object.prototype.hasOwnProperty.call(options, 'helper');
-        const optHelperTrim = optHelperPresent ? String(options.helper ?? '').trim() : null;
-        const isTodayAggregateCopy =
-          optTitle === todayTitle &&
-          (!optHelperPresent || optHelperTrim === todayHelper || optHelperTrim === '');
-        const hideTodayHeadings = CONFIG?.APP?.reflectionTodayAggregateWallDisabled && isTodayAggregateCopy;
-        if (title) {
-          if (hideTodayHeadings) {
-            title.textContent = '';
-            title.setAttribute('hidden', 'hidden');
-          } else {
-            title.textContent = optTitle || todayTitle;
-            title.removeAttribute('hidden');
-          }
-        }
-        if (helper) {
-          if (hideTodayHeadings) {
-            helper.textContent = '';
-            helper.setAttribute('hidden', 'hidden');
-          } else {
-            const helperText = optHelperPresent ? String(options.helper ?? '').trim() : todayHelper;
-            helper.textContent = helperText;
-            if (helperText) helper.removeAttribute('hidden');
-            else helper.setAttribute('hidden', 'hidden');
-          }
-        }
         wall.hidden = false;
       }
 
@@ -33851,16 +34581,7 @@ try {
           user_name: todayThemes?.user_name || ''
         });
         if (wallThemes.length) {
-          const hasCommunityThemes = communityThemes.length > 0;
-          this.renderReflectionAnonymousWall(wallThemes, hasCommunityThemes
-            ? {
-                title: 'What keeps coming up',
-                helper: 'Drawn from responses as they come in'
-              }
-            : {
-                title: '',
-                helper: ''
-              });
+          this.renderReflectionAnonymousWall(wallThemes);
           return;
         }
         this.renderReflectionAnonymousWall([]);
@@ -34870,12 +35591,8 @@ try {
         const rawAuthor = this.getQuoteSpeakerField(quote, ['author', 'authorSnapshot']);
         const name = this.getQuoteSpeakerField(quote, ['speakerName', 'speaker_name']) ||
           rawAuthor.replace(/^\s*[—-]\s*/, '').trim();
-        const imageUrl = this.normalizeQuoteSpeakerImageUrl(
+        const portraitUrl = this.normalizeQuoteSpeakerImageUrl(
           this.getQuoteSpeakerField(quote, [
-            'speakerCutoutUrl',
-            'speaker_cutout_url',
-            'speakerCutoutUrlSnapshot',
-            'speaker_cutout_url_snapshot',
             'speakerImageUrl',
             'speaker_image_url',
             'speakerImage',
@@ -34884,9 +35601,21 @@ try {
             'portrait_url',
             'imageUrl',
             'image_url',
-            'speakerImageUrlSnapshot'
+            'speakerImageUrlSnapshot',
+            'speaker_image_url_snapshot'
           ])
         );
+        const cutoutUrl = this.quoteService
+          ? this.normalizeQuoteSpeakerImageUrl(this.quoteService._resolveSpeakerCutoutForQuote(quote))
+          : this.normalizeQuoteSpeakerImageUrl(
+              this.getQuoteSpeakerField(quote, [
+                'speakerCutoutUrl',
+                'speaker_cutout_url',
+                'speakerCutoutUrlSnapshot',
+                'speaker_cutout_url_snapshot'
+              ])
+            );
+        const imageUrl = cutoutUrl || portraitUrl;
         const explicitDates = this.getQuoteSpeakerField(quote, ['speakerDates', 'speaker_dates', 'dates', 'speakerDatesSnapshot']);
         const born = this.getQuoteSpeakerField(quote, ['speakerBorn', 'speaker_born', 'born', 'speakerBornSnapshot']);
         const died = this.getQuoteSpeakerField(quote, ['speakerDied', 'speaker_died', 'died', 'speakerDiedSnapshot']);
@@ -35204,16 +35933,41 @@ try {
         }
       }
 
+      _quoteForMoodWidget(quote = null) {
+        const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
+        if (!todayQuote) return null;
+        const fresh = this.quoteService?._hydrateQuoteFromCatalog?.(todayQuote);
+        if (!fresh) return todayQuote;
+        return this.quoteService._mergePinnedWithCatalogFields(fresh, todayQuote);
+      }
+
+      _scheduleQuiltMoodFieldsHydrate(quote, widget) {
+        if (!widget || widget.dataset.moodHydratePending === '1') return;
+        const qs = this.quoteService;
+        if (!qs?.hydrateMoodFieldsForCalendarKey) return;
+        widget.dataset.moodHydratePending = '1';
+        void qs
+          .hydrateMoodFieldsForCalendarKey(qs.getQuoteCalendarKeyNow(), quote)
+          .finally(() => {
+            delete widget.dataset.moodHydratePending;
+          })
+          .then((hydrated) => {
+            if (hydrated) this._refreshQuiltMoodWidgetImpl(hydrated);
+            else this._refreshQuiltMoodWidgetImpl(quote);
+          })
+          .catch(() => {
+            delete widget.dataset.moodHydratePending;
+          });
+      }
+
       _refreshQuiltMoodWidgetImpl(quote = null) {
         const widget = document.getElementById('quiltMoodWidget');
         if (!widget) return;
-        const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
-        let goodDay = String(todayQuote?.goodDay ?? todayQuote?.good_day ?? '')
-          .replace(/\s+/g, ' ')
-          .trim();
-        let roughDay = String(todayQuote?.roughDay ?? todayQuote?.rough_day ?? '')
-          .replace(/\s+/g, ' ')
-          .trim();
+        const todayQuote = this._quoteForMoodWidget(quote);
+        let { goodDay, roughDay } = this.quoteService?._moodLinesFromQuote?.(todayQuote || {}) || {
+          goodDay: '',
+          roughDay: ''
+        };
         // Debug/preview path: `?previewMoodWidget=1` (or `window.__odqPreviewMoodWidget = true`)
         // fills in placeholder copy so the UI can be validated before the catalog is backfilled.
         const previewForced = (() => {
@@ -35236,23 +35990,27 @@ try {
           if (span) span.textContent = value;
         };
         if (!goodDay || !roughDay) {
-          widget.classList.remove('is-active', 'is-good', 'is-rough', 'quilt-mood-widget--paper-out');
-          this._resetQuiltMoodPaperState(widget);
-          widget.querySelectorAll('.quilt-mood-widget__tile').forEach((t) => {
-            t.style.transform = '';
-            t.style.transition = '';
-            t.style.transformOrigin = '';
-            t.style.willChange = '';
-          });
-          widget.querySelectorAll('.quilt-mood-widget__tile').forEach((tile) => {
-            tile.setAttribute('aria-pressed', 'false');
-          });
-          widget.setAttribute('hidden', 'hidden');
-          delete widget.dataset.goodDay;
-          delete widget.dataset.roughDay;
-          delete widget.dataset.contentSig;
-          setTileText('good', '');
-          setTileText('rough', '');
+          this._scheduleQuiltMoodFieldsHydrate(todayQuote, widget);
+          if (widget.dataset.moodHydratePending === '1') return;
+          if (!goodDay || !roughDay) {
+            widget.classList.remove('is-active', 'is-good', 'is-rough', 'quilt-mood-widget--paper-out');
+            this._resetQuiltMoodPaperState(widget);
+            widget.querySelectorAll('.quilt-mood-widget__tile').forEach((t) => {
+              t.style.transform = '';
+              t.style.transition = '';
+              t.style.transformOrigin = '';
+              t.style.willChange = '';
+            });
+            widget.querySelectorAll('.quilt-mood-widget__tile').forEach((tile) => {
+              tile.setAttribute('aria-pressed', 'false');
+            });
+            widget.setAttribute('hidden', 'hidden');
+            delete widget.dataset.goodDay;
+            delete widget.dataset.roughDay;
+            delete widget.dataset.contentSig;
+            setTileText('good', '');
+            setTileText('rough', '');
+          }
           return;
         }
 
@@ -36310,9 +37068,14 @@ try {
         }
 
         if (nextId === 'screen-quote' && prevSnap !== 'screen-quote') {
-          this.scheduleQuoteColorPickerReveal(CONFIG.APP.quoteColorPickerRevealMs);
+          if (!this.isColorPickerActive()) {
+            this.applyQuoteScreenInitialRestLayout();
+            this.scheduleQuoteColorPickerReveal(CONFIG.APP.quoteColorPickerRevealMs);
+          }
+          this.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+          this.quoteService?.displayQuote?.();
           this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
-        } else if (nextId !== 'screen-quote') {
+        } else if (nextId !== 'screen-quote' && !this.isColorPickerActive()) {
           this.clearQuoteColorPickerSchedule();
         }
       }
@@ -36400,6 +37163,7 @@ try {
       handleColorWheelPointerDown(e) {
         if (e.isPrimary === false) return;
         e.preventDefault();
+        e.stopPropagation();
         this.isDragging = true;
         try {
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -36427,6 +37191,7 @@ try {
 
       handleColorWheelMouseDown(e) {
         e.preventDefault();
+        e.stopPropagation();
         this.isDragging = true;
         this.setHueFromCoords(e.clientX, e.clientY);
       }
@@ -36444,12 +37209,14 @@ try {
 
       handleColorWheelClick(e) {
         e.preventDefault();
+        e.stopPropagation();
         this.setHueFromCoords(e.clientX, e.clientY);
         this.updateColorWheel();
       }
 
       handleColorWheelTouchStart(e) {
         e.preventDefault();
+        e.stopPropagation();
         this.isDragging = true;
         const touch = e.touches[0];
         this.setHueFromCoords(touch.clientX, touch.clientY);
@@ -36583,6 +37350,7 @@ try {
         const colorWheel = document.getElementById('colorWheelCanvas');
         const indicator = document.getElementById('colorIndicator');
         const valueSlider = document.getElementById('valueSlider');
+        if (!colorWheel) return;
         const rect = colorWheel.getBoundingClientRect();
         const radiusPx = Math.min(rect.width, rect.height) / 2;
         const centerX = rect.left + rect.width / 2;
@@ -37369,6 +38137,119 @@ try {
         });
       }
 
+      /**
+       * Quilt notification opt-in: scroll + footer visibility (independent of parallax /
+       * reduced-motion, which previously skipped all scroll listeners).
+       */
+      setupQuiltNotificationScrollPrompt() {
+        if (this._quiltNotificationPromptReady) return;
+        this._quiltNotificationPromptReady = true;
+
+        const onScrollCheck = () => {
+          if (this._quiltNotificationScrollRaf != null) return;
+          this._quiltNotificationScrollRaf = requestAnimationFrame(() => {
+            this._quiltNotificationScrollRaf = null;
+            this.checkQuiltNotificationPromptFromLayout();
+          });
+        };
+        this._quiltNotificationScrollHandler = onScrollCheck;
+
+        const quiltScreen = document.getElementById('screen-quilt');
+        const app = document.getElementById('app');
+        const panel = document.querySelector('#screen-quilt .button-container');
+        [window, app, quiltScreen, panel].filter(Boolean).forEach((el) => {
+          el.addEventListener('scroll', onScrollCheck, { passive: true });
+        });
+
+        const footer = document.querySelector('#screen-quilt .quilt-scroll-icon-footer');
+        if (footer && typeof IntersectionObserver !== 'undefined') {
+          this._quiltNotificationFooterObserver = new IntersectionObserver(
+            (entries) => {
+              if (!entries.some((e) => e.isIntersecting)) return;
+              this.handleQuiltNotificationPromptOnScroll({ fromFooterVisible: true });
+            },
+            { root: null, threshold: [0, 0.05, 0.12] }
+          );
+        }
+
+        document.addEventListener('screenChange', (e) => {
+          if (e.detail.screenId !== 'screen-quilt') {
+            if (this._quiltNotificationLandTimer != null) {
+              clearTimeout(this._quiltNotificationLandTimer);
+              this._quiltNotificationLandTimer = null;
+            }
+            if (footer && this._quiltNotificationFooterObserver) {
+              try {
+                this._quiltNotificationFooterObserver.unobserve(footer);
+              } catch (_) {
+                /* ignore */
+              }
+            }
+            return;
+          }
+          const scroller = this.getQuiltScrollContainer();
+          this._quiltScrollAnchorTop = scroller ? scroller.scrollTop : 0;
+          this.parallaxAnchorScrollTop = this.getCurrentQuiltScrollPosition();
+          this._dailyQuotePromptedFromQuiltScroll = false;
+          if (footer && this._quiltNotificationFooterObserver) {
+            try {
+              this._quiltNotificationFooterObserver.observe(footer);
+            } catch (_) {
+              /* ignore */
+            }
+          }
+          if (this._quiltNotificationLandTimer != null) {
+            clearTimeout(this._quiltNotificationLandTimer);
+          }
+          this._quiltNotificationLandTimer = window.setTimeout(() => {
+            this._quiltNotificationLandTimer = null;
+            this.checkQuiltNotificationPromptFromLayout();
+          }, 600);
+        });
+      }
+
+      /** Which element actually scrolls on the quilt screen (largest scroll range). */
+      getQuiltScrollContainer() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        if (!quiltScreen) return null;
+        const candidates = [
+          quiltScreen,
+          document.querySelector('#screen-quilt .button-container'),
+          document.getElementById('app')
+        ].filter(Boolean);
+        let best = quiltScreen;
+        let bestRange = 0;
+        candidates.forEach((el) => {
+          const range = Math.max(0, el.scrollHeight - el.clientHeight);
+          if (range > bestRange) {
+            bestRange = range;
+            best = el;
+          }
+        });
+        return best;
+      }
+
+      /** Footer/wordmark strip visible in the quilt viewport (scroll-end proxy). */
+      isQuiltFooterVisibleInViewport() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        const footer = document.querySelector('#screen-quilt .quilt-scroll-icon-footer');
+        if (!quiltScreen?.classList.contains('active') || !footer) return false;
+        const viewRect = quiltScreen.getBoundingClientRect();
+        const footerRect = footer.getBoundingClientRect();
+        return footerRect.top < viewRect.bottom - 8 && footerRect.bottom <= viewRect.bottom + 96;
+      }
+
+      checkQuiltNotificationPromptFromLayout() {
+        if (!document.getElementById('screen-quilt')?.classList.contains('active')) return;
+        if (this.isQuiltFooterVisibleInViewport()) {
+          this.handleQuiltNotificationPromptOnScroll({ fromFooterVisible: true });
+          return;
+        }
+        if (this.isQuiltScrolledNearBottom()) {
+          this.handleQuiltNotificationPromptOnScroll();
+        }
+      }
+
       clearQuiltScrollCue() {
         if (this._quiltScrollCueTimer != null) {
           clearTimeout(this._quiltScrollCueTimer);
@@ -37544,48 +38425,52 @@ try {
         this.handleQuiltNotificationPromptOnScroll();
       }
 
-      /** True when the quilt screen's scroll container is within thresholdPx of the bottom. */
-      isQuiltScrolledNearBottom(thresholdPx = 72) {
+      /** True when the quilt's primary scroll container is within thresholdPx of the bottom. */
+      isQuiltScrolledNearBottom(thresholdPx = 96) {
         const quiltScreen = document.getElementById('screen-quilt');
         if (!quiltScreen?.classList.contains('active')) return false;
+        if (this.isQuiltFooterVisibleInViewport()) return true;
 
-        const candidates = [quiltScreen];
-        const panel = document.querySelector('#screen-quilt .button-container');
-        if (panel && panel.scrollHeight > panel.clientHeight + 8) {
-          candidates.push(panel);
-        }
-
-        let anyScrollable = false;
-        for (const el of candidates) {
-          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-          if (maxScroll < 32) continue;
-          anyScrollable = true;
-          if (maxScroll - el.scrollTop > thresholdPx) return false;
-        }
-        return anyScrollable;
+        const scroller = this.getQuiltScrollContainer();
+        if (!scroller) return false;
+        const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        if (maxScroll < 24) return false;
+        return maxScroll - scroller.scrollTop <= thresholdPx;
       }
 
       /**
        * First-time (or re-promptable) daily push opt-in: after the user scrolls the
        * quilt screen to the bottom — not on launch, not on tiny nudges.
        */
-      handleQuiltNotificationPromptOnScroll() {
+      handleQuiltNotificationPromptOnScroll({ fromFooterVisible = false } = {}) {
         const quiltScreen = document.getElementById('screen-quilt');
         if (!quiltScreen?.classList.contains('active')) return;
         if (this._quiltScrollCuePlaying) return;
-        if (this._dailyQuotePromptedFromQuiltScroll) return;
-        if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') === '1') return;
+        if (this._dailyQuotePromptedFromQuiltScroll || this._quiltNotificationPromptInFlight) return;
 
-        const scrollSinceLand =
-          this.getCurrentQuiltScrollPosition() - (this.parallaxAnchorScrollTop || 0);
-        const MIN_SCROLL_BEFORE_PROMPT_PX = 80;
-        if (scrollSinceLand < MIN_SCROLL_BEFORE_PROMPT_PX) return;
-        if (!this.isQuiltScrolledNearBottom()) return;
+        const scroller = this.getQuiltScrollContainer();
+        const scrollSinceLand = scroller
+          ? Math.max(0, scroller.scrollTop - (this._quiltScrollAnchorTop || 0))
+          : this.getCurrentQuiltScrollPosition() - (this.parallaxAnchorScrollTop || 0);
 
-        this._dailyQuotePromptedFromQuiltScroll = true;
-        this.maybePromptForDailyQuoteNotifications().catch((error) => {
-          this.logger.warn('Daily quote push prompt failed:', error);
-        });
+        if (fromFooterVisible || this.isQuiltFooterVisibleInViewport()) {
+          if (scrollSinceLand < 32) return;
+        } else {
+          if (scrollSinceLand < 64) return;
+          if (!this.isQuiltScrolledNearBottom()) return;
+        }
+
+        this._quiltNotificationPromptInFlight = true;
+        this.maybePromptForDailyQuoteNotifications()
+          .then((shown) => {
+            if (shown) this._dailyQuotePromptedFromQuiltScroll = true;
+          })
+          .catch((error) => {
+            this.logger.warn('Daily quote push prompt failed:', error);
+          })
+          .finally(() => {
+            this._quiltNotificationPromptInFlight = false;
+          });
       }
 
       requestParallaxFrame() {
@@ -39843,6 +40728,7 @@ try {
           clearTimeout(this._portalToQuoteTimer);
           this._portalToQuoteTimer = null;
         }
+        this._clearPortalJoinLineWatchdog();
         this._blockPortalScrollNav = false;
       }
 
@@ -39898,22 +40784,91 @@ try {
         const pane = document.getElementById('quoteColorPickerPane');
         return !!(
           quoteScreen?.classList.contains('active') &&
-          pane?.classList.contains('quote-color-picker--revealed')
+          pane?.classList.contains('quote-color-picker--revealed') &&
+          (quoteScreen?.classList.contains('quote-picker-revealed') ||
+            quoteScreen?.classList.contains('quote-has-color-picker'))
         );
       }
 
+      _getQuoteStageElements() {
+        return {
+          quoteScreen: document.getElementById('screen-quote'),
+          clip:
+            document.querySelector('#screen-quote .quote-stage-clip') ||
+            document.querySelector('#screen-quote .quote-color-combined'),
+          quoteLayer:
+            document.getElementById('quoteStageQuote') ||
+            document.querySelector('#screen-quote .quote-stage-quote'),
+          picker: document.getElementById('quoteColorPickerPane')
+        };
+      }
+
+      _refreshQuoteScreenIfActive() {
+        if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+        if (!this.isColorPickerActive()) {
+          this.applyQuoteScreenInitialRestLayout();
+        }
+        this.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+        this.quoteService?.displayQuote?.();
+        this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+      }
+
+      /** Rest: quote in top half; picker hidden in bottom half until reveal. */
+      applyQuoteScreenInitialRestLayout() {
+        if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+        const { quoteScreen, picker } = this._getQuoteStageElements();
+        if (!quoteScreen) return;
+
+        const pickerVisible = this.isColorPickerActive();
+        if (!pickerVisible) {
+          quoteScreen.classList.remove('quote-picker-revealed', 'quote-has-color-picker');
+          if (picker) {
+            picker.classList.remove('quote-color-picker--revealed', 'quote-color-picker--measuring');
+            picker.hidden = true;
+            picker.setAttribute('aria-hidden', 'true');
+          }
+          const quoteStage = quoteScreen.querySelector('.quote-stage');
+          if (quoteStage) quoteStage.style.maxHeight = '';
+        }
+
+        quoteScreen.classList.add('quote-scroll-layout--settled', 'quote-scroll-layout--ready');
+      }
+
+      /** After Layout B paints: mark layout ready (quote stays in top half). */
+      finalizeQuoteColorScrollLayout() {
+        if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+        const { quoteScreen } = this._getQuoteStageElements();
+        if (!quoteScreen) return;
+        quoteScreen.classList.add('quote-scroll-layout--settled', 'quote-scroll-layout--ready');
+      }
+
+      layoutQuoteColorScrollAtRest() {
+        this.applyQuoteScreenInitialRestLayout();
+        this.finalizeQuoteColorScrollLayout();
+      }
+
       hideQuoteColorPickerPane() {
-        const quoteScreen = document.getElementById('screen-quote');
-        const pane = document.getElementById('quoteColorPickerPane');
-        if (pane) {
-          pane.classList.remove('quote-color-picker--revealed');
-          pane.hidden = true;
-          pane.setAttribute('aria-hidden', 'true');
-          pane.style.backgroundColor = '';
+        const { quoteScreen, picker } = this._getQuoteStageElements();
+        if (picker) {
+          picker.classList.remove(
+            'quote-color-picker--revealed',
+            'quote-color-picker--measuring',
+            'quote-color-picker--reveal-pending'
+          );
+          picker.hidden = true;
+          picker.setAttribute('aria-hidden', 'true');
+          picker.style.backgroundColor = '';
         }
         if (quoteScreen) {
-          quoteScreen.classList.remove('quote-has-color-picker');
+          quoteScreen.classList.remove(
+            'quote-has-color-picker',
+            'quote-picker-revealed',
+            'quote-scroll-layout--ready',
+            'quote-scroll-layout--settled'
+          );
           quoteScreen.style.backgroundColor = '';
+          const quoteStage = quoteScreen.querySelector('.quote-stage');
+          if (quoteStage) quoteStage.style.maxHeight = '';
         }
         document.body.classList.remove('color-mode-active');
         if (this._colorPickerEntryThemeTimer) {
@@ -39959,46 +40914,80 @@ try {
 
       revealQuoteColorPickerPane() {
         if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
-        const quoteScreen = document.getElementById('screen-quote');
-        const pane = document.getElementById('quoteColorPickerPane');
-        if (!quoteScreen || !pane) return;
+        const { quoteScreen, picker } = this._getQuoteStageElements();
+        if (!quoteScreen || !picker) return;
 
-        pane.classList.remove('quote-color-picker--revealed');
-        pane.hidden = false;
-        pane.setAttribute('aria-hidden', 'false');
-        quoteScreen.classList.add('quote-has-color-picker');
-        document.body.classList.add('color-mode-active');
-        void pane.offsetWidth;
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 
-        requestAnimationFrame(() => {
-          pane.classList.add('quote-color-picker--revealed');
+        picker.hidden = false;
+        picker.setAttribute('aria-hidden', 'false');
+        picker.classList.remove('quote-color-picker--revealed');
+        quoteScreen.classList.remove('quote-has-color-picker');
+        void picker.offsetHeight;
+
+        const finishSettled = () => {
+          quoteScreen.classList.add('quote-has-color-picker');
+        };
+
+        const startSlideIn = () => {
+          document.body.classList.add('color-mode-active');
+          quoteScreen.classList.add('quote-picker-revealed');
+          picker.classList.add('quote-color-picker--revealed');
           this.applyColorPickerEntryTheme();
           requestAnimationFrame(() => {
-            if (!this.isColorPickerActive()) return;
             this._hsvWheelCanvasKey = '';
             if (typeof this.updateColorWheel === 'function') {
               this.updateColorWheel();
             }
           });
-        });
+
+          if (reducedMotion) {
+            finishSettled();
+            return;
+          }
+
+          const onDone = (ev) => {
+            if (ev.target !== picker || ev.propertyName !== 'transform') return;
+            picker.removeEventListener('transitionend', onDone);
+            clearTimeout(fallback);
+            finishSettled();
+          };
+          picker.addEventListener('transitionend', onDone);
+          const fallback = setTimeout(finishSettled, 950);
+        };
+
+        if (reducedMotion) {
+          startSlideIn();
+          return;
+        }
+        requestAnimationFrame(() => requestAnimationFrame(startSlideIn));
       }
 
       /**
-       * After the quote screen is up: wait `readPauseMs`, then reveal wheel + slider + submit.
+       * Quote in top half; after `readPauseMs` (default 1.5s) wheel slides into bottom half.
+       * Timer starts when the quote screen is shown — not when Layout B finishes (that was adding 3–5s).
        */
       scheduleQuoteColorPickerReveal(readPauseMs = CONFIG.APP.quoteColorPickerRevealMs) {
+        if (this.isColorPickerActive()) return;
+
         if (this._quoteColorPickerRevealTimer) {
           clearTimeout(this._quoteColorPickerRevealTimer);
           this._quoteColorPickerRevealTimer = null;
         }
-        this.hideQuoteColorPickerPane();
+        if (document.querySelector('.screen.active')?.id === 'screen-quote') {
+          this.hideQuoteColorPickerPane();
+        }
 
-        const reveal = () => this.revealQuoteColorPickerPane();
+        const reveal = () => {
+          if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+          this.revealQuoteColorPickerPane();
+        };
 
         if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
           reveal();
           return;
         }
+
         const wait = Math.max(0, readPauseMs);
         this._quoteColorPickerRevealTimer = setTimeout(() => {
           this._quoteColorPickerRevealTimer = null;
@@ -40330,7 +41319,9 @@ try {
             this._liveDailyDataConfirmed = false;
             const live = await this.syncLiveDailyData();
             if (!live.ok) {
-              this._showConnectionProblemFailed(live.reason);
+              if (live.reason !== 'sync_in_flight' && live.transient !== true) {
+                this._showConnectionProblemFailed(live.reason);
+              }
               return true;
             }
             this.quoteService.displayQuote();
@@ -40493,7 +41484,7 @@ try {
         const ms = end.getTime() - n.getTime();
         const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
         if (totalSeconds < 60) {
-          el.textContent = "Today's quilt closes in less than a minute.";
+          el.textContent = "Today's quilt closes in less than a minute";
           return;
         }
         const hours = Math.floor(totalSeconds / 3600);
@@ -40507,7 +41498,7 @@ try {
           const mu = minutes === 1 ? 'minute' : 'minutes';
           timePart = `${minutes} ${mu}`;
         }
-        el.textContent = `Today's quilt closes in ${timePart}.`;
+        el.textContent = `Today's quilt closes in ${timePart}`;
       }
 
       setupQuiltResetCountdown() {
@@ -40651,28 +41642,29 @@ try {
         }
       }
 
-      /** Re-fetch today's quilt + quote from the server (resume / reconnect). */
+      /** Re-fetch today's quilt from the server (resume / reconnect). */
       async syncLiveDailyDataOnResume() {
         if (!this._liveDailyDataConfirmed) {
           return;
         }
+        if (this._liveDailySyncInFlight) {
+          return;
+        }
         const beforeFp = Utils.computeQuiltFingerprint(this.quiltEngine?.blocks || []);
-        const beforeQuoteText = String(this.quoteService?.getTodayQuote?.()?.text || '');
-        const result = await this.syncLiveDailyData();
+        const beforeQuote = this._snapshotTodayQuoteForUi();
+        const result = await this.syncLiveDailyData({ mode: 'resume' });
         if (!result.ok) {
+          if (result.reason === 'sync_in_flight' || result.transient === true) return;
           this._liveDailyDataConfirmed = false;
           this._showConnectionProblemFailed(result.reason);
           return;
         }
         const afterFp = Utils.computeQuiltFingerprint(this.quiltEngine?.blocks || []);
-        const afterQuoteText = String(this.quoteService?.getTodayQuote?.()?.text || '');
         if (beforeFp !== afterFp) {
           this.logger.log('🔄 Quilt synced from Firestore after app became visible');
           this.renderQuilt();
-        }
-        if (beforeQuoteText !== afterQuoteText) {
-          this.quoteService.displayQuote();
-          this.populateQuiltQuote?.();
+        } else {
+          this._refreshQuiltQuoteUiAfterPin(beforeQuote);
         }
         this.updateSquareCounter();
       }
@@ -41591,7 +42583,7 @@ try {
         const hueNouns = {
           neutral: ['Linen', 'Clay', 'Mist', 'Stone', 'Dusk', 'Haze', 'Drift'],
           red: ['Ember', 'Plum Wine', 'Clay', 'Blush', 'Ember'],
-          orange: ['Ember', 'Clay', 'Ember', 'Harbor'],
+          orange: ['Ember', 'Clay', 'Ember', 'Copper'],
           yellow: ['Linen', 'Meadow', 'Sun', 'Linen'],
           chartreuse: ['Chartreuse', 'Garden', 'Sedge', 'Meadow', 'Patina'],
           green: ['Meadow', 'Sage', 'Sedge', 'Garden', 'Patina'],
@@ -41599,8 +42591,8 @@ try {
           cyan: ['Tide', 'Patina', 'Harbor', 'Mist'],
           blue: ['Tide', 'Dusk', 'Harbor', 'Patina'],
           indigo: ['Dusk', 'Harbor', 'Tide', 'Mist'],
-          purple: ['Dusk', 'Plum Wine', 'Amythest', 'Mist'],
-          magenta: ['Plum Wine', 'Amythest', 'Blush', 'Dusk']
+          purple: ['Dusk', 'Plum Wine', 'Blush', 'Mist'],
+          magenta: ['Plum Wine', 'Blush', 'Dawn', 'Dusk']
         };
 
         let bucket = 'green';
@@ -42110,46 +43102,7 @@ try {
           if (!byDate && !bySource) return;
 
           const prev = qs._pinnedByDateKey[dateKey] || todayQuote || {};
-          /* `quotes/{dateKey}` is a legacy/sync duplicate. When the real doc is `quotes/{sourceId}`,
-             stale copies of prompts / small acts / art recs on the date doc overwrite catalog + source
-             after merge — same failure mode as reflection (see populateReflectionPromptFromServer). */
-          const notionBacked = sourceId !== '';
-          const dailyDuplicateQuoteKeys = new Set([
-            'small_act',
-            'smallAct',
-            'smallActSnapshot',
-            'watch_for',
-            'watch_for_snapshot',
-            'watchForSnapshot',
-            'good_day',
-            'goodDay',
-            'goodDaySnapshot',
-            'rough_day',
-            'roughDay',
-            'roughDaySnapshot',
-            'art_recs',
-            'artRecs',
-            'artRecsSnapshot',
-            'art_recs_type',
-            'artRecsType',
-            'artRecsTypeSnapshot',
-            'communityPrompt',
-            'community_prompt',
-            'reflectionPrompt',
-            'reflection_prompt',
-            'communityPromptSnapshot',
-            'reflectionPromptSnapshot'
-          ]);
-          const stripDailyDuplicates =
-            notionBacked && sourceId !== dateKey && byDate && bySource;
-          const data = stripDailyDuplicates
-            ? {
-                ...Object.fromEntries(
-                  Object.entries(byDate).filter(([k]) => !dailyDuplicateQuoteKeys.has(k))
-                ),
-                ...bySource
-              }
-            : { ...(byDate || {}), ...(bySource || {}) };
+          const data = qs._mergeFirestoreQuoteDocsForDay(byDate, bySource, sourceId, dateKey);
           const ref = String(data.reflection_prompt || data.reflectionPrompt || '').trim();
           const smallAct = String(data.small_act ?? data.smallAct ?? '').trim();
           const watchFor = String(data.watch_for ?? '').trim();
@@ -42406,12 +43359,34 @@ try {
           }
           if (wasAwaiting && !this._portalToQuoteIntroScheduled) {
             this._portalToQuoteIntroScheduled = true;
+            this._clearPortalJoinLineWatchdog();
             /* Short read pause so join line can land before auto-advance; reduced-motion path ignores hold inside scheduler. */
             this.schedulePortalToQuoteIntroFade(1300);
           }
         }
       }
       
+      /**
+       * Paint quilt quote card + speaker stage without waiting for idle `renderQuilt()`.
+       * Avoids the quote card appearing first and the large speaker name popping in later.
+       */
+      async _primeQuiltQuoteChrome() {
+        if (this._isPersonalQuiltMode) return;
+        if (!this._liveDailyDataConfirmed) return;
+        let todayQ = this.quoteService?.getTodayQuote?.();
+        if (!todayQ) return;
+        const dateKey = this.quoteService?.getQuoteCalendarKeyNow?.();
+        const mood = this.quoteService?._moodLinesFromQuote?.(todayQ) || { goodDay: '', roughDay: '' };
+        if (dateKey && (!mood.goodDay || !mood.roughDay) && this.quoteService?.hydrateMoodFieldsForCalendarKey) {
+          todayQ =
+            (await this.quoteService.hydrateMoodFieldsForCalendarKey(dateKey, todayQ)) || todayQ;
+        }
+        this.populateQuiltQuote();
+        this.refreshQuoteSpeakerWidget(todayQ);
+        this.refreshQuiltMoodWidget(todayQ);
+        this.refreshQuiltReflectionScrapWidget?.(todayQ);
+      }
+
       populateQuiltQuote() {
         if (!this._isPersonalQuiltMode && !this._liveDailyDataConfirmed) {
           return;
@@ -42453,12 +43428,27 @@ try {
         }
       }
 
+      getCapacitorPlugin(name) {
+        const cap = window.Capacitor;
+        if (!cap || !name) return null;
+        const fromRegistry = cap.Plugins && cap.Plugins[name];
+        if (fromRegistry) return fromRegistry;
+        if (typeof cap.getPlugin === 'function') {
+          try {
+            return cap.getPlugin(name);
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        return null;
+      }
+
       getFirebaseMessagingPlugin() {
-        return window.Capacitor?.Plugins?.FirebaseMessaging || null;
+        return this.getCapacitorPlugin('FirebaseMessaging');
       }
 
       getLocalNotificationsPlugin() {
-        return window.Capacitor?.Plugins?.LocalNotifications || null;
+        return this.getCapacitorPlugin('LocalNotifications');
       }
 
       getPushPlatform() {
@@ -42643,8 +43633,29 @@ try {
         return text;
       }
 
+      /** True only when user opted in and iOS notification permission is actually granted. */
+      async isDailyQuoteReminderFullyEnabled() {
+        if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') !== '1') return false;
+        const messaging = this.getFirebaseMessagingPlugin();
+        const local = this.getLocalNotificationsPlugin();
+        try {
+          if (messaging) {
+            const checked = await messaging.checkPermissions();
+            if (checked?.receive === 'granted') return true;
+          }
+          if (local) {
+            const checked = await local.checkPermissions();
+            if (checked?.display === 'granted') return true;
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        localStorage.setItem('ourDailyPushDailyQuoteEnabled', '0');
+        return false;
+      }
+
       async maybePromptForDailyQuoteNotifications() {
-        if (localStorage.getItem('ourDailyPushDailyQuoteEnabled') === '1') return;
+        if (await this.isDailyQuoteReminderFullyEnabled()) return false;
         if (localStorage.getItem('ourDailyPushDailyQuotePrompted_v2') === '1') {
           const messaging = this.getFirebaseMessagingPlugin();
           const localNotifications = this.getLocalNotificationsPlugin();
@@ -42653,23 +43664,26 @@ try {
               ? await messaging.checkPermissions()
               : await localNotifications?.checkPermissions?.();
             const status = messaging ? checked?.receive : checked?.display;
-            if (!this.isNotificationPermissionPromptable(status)) return;
+            if (!this.isNotificationPermissionPromptable(status)) return false;
             localStorage.removeItem('ourDailyPushDailyQuotePrompted_v2');
           } catch (_) {
-            return;
+            return false;
           }
         }
-        if (!this.getFirebaseMessagingPlugin() && !this.getLocalNotificationsPlugin()) return;
+        if (!this.getFirebaseMessagingPlugin() && !this.getLocalNotificationsPlugin()) {
+          this.logger.warn('Daily quote push prompt skipped: notification plugins unavailable');
+          return false;
+        }
 
-        localStorage.setItem('ourDailyPushDailyQuotePrompted_v2', '1');
         const sampleBody = await this.resolveDailyQuotePushPreviewSample();
         const ok = await this.uiService.showPushNotificationOptIn({
           sampleBody,
           iconUrl: CONFIG.APP.notificationIconUrl
         });
+        localStorage.setItem('ourDailyPushDailyQuotePrompted_v2', '1');
         if (!ok) {
           localStorage.setItem('ourDailyPushDailyQuoteEnabled', '0');
-          return;
+          return true;
         }
 
         try {
@@ -42683,6 +43697,7 @@ try {
             this.uiService.showToast('Could not enable notifications yet.');
           }
         }
+        return true;
       }
 
       async refreshDailyQuotePushRegistration() {
@@ -42701,6 +43716,212 @@ try {
         }
 
         await this.enableDailyQuotePushNotifications({ showSuccess: false, requestPermission: false });
+      }
+
+      isNotificationDebugEnabled() {
+        try {
+          const params = new URLSearchParams(window.location.search || '');
+          return params.get('odqNotifyDebug') === '1' || localStorage.getItem('odqNotifyDebug') === '1';
+        } catch (_) {
+          return false;
+        }
+      }
+
+      getNotificationDebugSnapshot() {
+        const scroller = this.getQuiltScrollContainer?.();
+        const messaging = this.getFirebaseMessagingPlugin?.();
+        const local = this.getLocalNotificationsPlugin?.();
+        const platform = window.Capacitor?.getPlatform?.() || 'web';
+        const isNative =
+          typeof window.Capacitor?.isNativePlatform === 'function'
+            ? window.Capacitor.isNativePlatform()
+            : platform === 'ios' || platform === 'android';
+        const pluginsOk = !!(messaging || local);
+        const href = String(location?.href || '');
+        let inspectorHint = 'OK — native app WebView';
+        if (!isNative || !pluginsOk) {
+          inspectorHint =
+            'Wrong target: Safari is attached to a web page, not the installed app. ' +
+            'Develop → [iPhone] → OUR DAILY / capacitor://localhost (with app open on device). ' +
+            'Expect platform "ios" and plugins true.';
+        }
+        return {
+          platform,
+          isNative,
+          href,
+          inspectorHint,
+          quiltActive: !!document.getElementById('screen-quilt')?.classList.contains('active'),
+          plugins: { messaging: !!messaging, local: !!local },
+          storage: {
+            prompted: localStorage.getItem('ourDailyPushDailyQuotePrompted_v2'),
+            enabled: localStorage.getItem('ourDailyPushDailyQuoteEnabled')
+          },
+          scroll: scroller
+            ? {
+                id: scroller.id || scroller.className?.split?.(' ')?.[0] || 'scroller',
+                scrollTop: scroller.scrollTop,
+                maxScroll: Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+              }
+            : null,
+          footerVisible: !!this.isQuiltFooterVisibleInViewport?.(),
+          nearBottom: !!this.isQuiltScrolledNearBottom?.(),
+          hasNewCode: document.documentElement.innerHTML.includes('setupQuiltNotificationScrollPrompt')
+        };
+      }
+
+      refreshNotificationDebugPanel() {
+        const pre = document.getElementById('odqNotifyDebugStatus');
+        if (!pre) return;
+        try {
+          pre.textContent = JSON.stringify(this.getNotificationDebugSnapshot(), null, 2);
+        } catch (error) {
+          pre.textContent = String(error);
+        }
+      }
+
+      setupNotificationDebugPanel() {
+        if (!this.isNotificationDebugEnabled()) return;
+        if (document.getElementById('odqNotifyDebugPanel')) {
+          this.refreshNotificationDebugPanel();
+          return;
+        }
+
+        const panel = document.createElement('div');
+        panel.id = 'odqNotifyDebugPanel';
+        panel.className = 'odq-notify-debug';
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', 'Notification debug');
+        panel.innerHTML = `
+          <p class="odq-notify-debug__title">Notify debug — hide gear, use wordmark ×5 or long-press</p>
+          <pre class="odq-notify-debug__status" id="odqNotifyDebugStatus"></pre>
+          <div class="odq-notify-debug__actions">
+            <button type="button" class="odq-notify-debug__btn" data-odq-refresh>Refresh</button>
+            <button type="button" class="odq-notify-debug__btn odq-notify-debug__btn--primary" data-odq-optin-ui>Show invite UI</button>
+            <button type="button" class="odq-notify-debug__btn" data-odq-full-flow>Full flow</button>
+            <button type="button" class="odq-notify-debug__btn" data-odq-layout-check>Layout check</button>
+            <button type="button" class="odq-notify-debug__btn" data-odq-reset>Reset keys</button>
+            <button type="button" class="odq-notify-debug__btn" data-odq-hide>Hide</button>
+          </div>
+        `;
+        document.body.appendChild(panel);
+        this.refreshNotificationDebugPanel();
+
+        panel.addEventListener('click', async (e) => {
+          const btn = e.target?.closest?.('[data-odq-refresh],[data-odq-optin-ui],[data-odq-full-flow],[data-odq-layout-check],[data-odq-reset],[data-odq-hide]');
+          if (!btn) return;
+          if (btn.hasAttribute('data-odq-hide')) {
+            panel.hidden = true;
+            return;
+          }
+          if (btn.hasAttribute('data-odq-refresh')) {
+            this.refreshNotificationDebugPanel();
+            return;
+          }
+          if (btn.hasAttribute('data-odq-reset')) {
+            localStorage.removeItem('ourDailyPushDailyQuotePrompted_v2');
+            localStorage.removeItem('ourDailyPushDailyQuoteEnabled');
+            localStorage.removeItem('ourDailyLocalDailyQuoteEnabled');
+            this._dailyQuotePromptedFromQuiltScroll = false;
+            this.refreshNotificationDebugPanel();
+            return;
+          }
+          if (btn.hasAttribute('data-odq-optin-ui')) {
+            await this.uiService.showPushNotificationOptIn({
+              sampleBody: "Debug — today's quote is ready.",
+              iconUrl: CONFIG.APP.notificationIconUrl
+            });
+            this.refreshNotificationDebugPanel();
+            return;
+          }
+          if (btn.hasAttribute('data-odq-layout-check')) {
+            this.checkQuiltNotificationPromptFromLayout();
+            this.refreshNotificationDebugPanel();
+            return;
+          }
+          if (btn.hasAttribute('data-odq-full-flow')) {
+            this._dailyQuotePromptedFromQuiltScroll = false;
+            await this.maybePromptForDailyQuoteNotifications();
+            this.refreshNotificationDebugPanel();
+          }
+        });
+
+        window.__odqNotifyDebug = {
+          refresh: () => this.refreshNotificationDebugPanel(),
+          snapshot: () => this.getNotificationDebugSnapshot(),
+          showOptIn: () =>
+            this.uiService.showPushNotificationOptIn({
+              sampleBody: "Debug — today's quote is ready.",
+              iconUrl: CONFIG.APP.notificationIconUrl
+            }),
+          fullFlow: () => this.maybePromptForDailyQuoteNotifications(),
+          layoutCheck: () => this.checkQuiltNotificationPromptFromLayout(),
+          reset: () => {
+            localStorage.removeItem('ourDailyPushDailyQuotePrompted_v2');
+            localStorage.removeItem('ourDailyPushDailyQuoteEnabled');
+            localStorage.removeItem('ourDailyLocalDailyQuoteEnabled');
+            this._dailyQuotePromptedFromQuiltScroll = false;
+          }
+        };
+
+        this.bindNotificationDebugReveal(
+          document.querySelector('#screen-quilt .quilt-footer-wordmark')
+        );
+      }
+
+      /** Secret reveal: 5× tap or ~1.2s press on quilt footer wordmark (not the settings gear). */
+      bindNotificationDebugReveal(target) {
+        if (!target || target._odqNotifyDebugRevealBound) return;
+        target._odqNotifyDebugRevealBound = true;
+        target.style.cursor = 'default';
+        target.setAttribute('title', '');
+
+        const reveal = () => {
+          try {
+            localStorage.setItem('odqNotifyDebug', '1');
+          } catch (_) {
+            /* ignore */
+          }
+          const panel = document.getElementById('odqNotifyDebugPanel');
+          if (panel) {
+            panel.hidden = false;
+            this.refreshNotificationDebugPanel();
+          } else {
+            this.setupNotificationDebugPanel();
+          }
+        };
+
+        let taps = 0;
+        let tapTimer = null;
+        let longPressTimer = null;
+
+        const onTap = (e) => {
+          taps += 1;
+          clearTimeout(tapTimer);
+          if (taps >= 5) {
+            taps = 0;
+            e.preventDefault();
+            e.stopPropagation();
+            reveal();
+            return;
+          }
+          tapTimer = window.setTimeout(() => {
+            taps = 0;
+          }, 900);
+        };
+
+        const startLongPress = () => {
+          clearTimeout(longPressTimer);
+          longPressTimer = window.setTimeout(reveal, 1200);
+        };
+        const cancelLongPress = () => {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        };
+
+        target.addEventListener('click', onTap);
+        target.addEventListener('touchstart', startLongPress, { passive: true });
+        target.addEventListener('touchend', cancelLongPress, { passive: true });
+        target.addEventListener('touchcancel', cancelLongPress, { passive: true });
       }
 
       getColorMilestoneMessage(count) {
@@ -50223,22 +51444,37 @@ try {
       })();
       const app = new SimplifiedQuiltAppV2();
       window.app = app;
+      /** Safari Web Inspector helpers (always available; no wordmark gesture). */
+      window.__odqNotifyTest = {
+        snapshot: () => app.getNotificationDebugSnapshot(),
+        showInvite: () =>
+          app.uiService.showPushNotificationOptIn({
+            sampleBody: "Test — today's quote is ready.",
+            iconUrl: CONFIG.APP.notificationIconUrl
+          }),
+        fullFlow: () => app.maybePromptForDailyQuoteNotifications(),
+        layoutCheck: () => app.checkQuiltNotificationPromptFromLayout(),
+        reset: () => {
+          localStorage.removeItem('ourDailyPushDailyQuotePrompted_v2');
+          localStorage.removeItem('ourDailyPushDailyQuoteEnabled');
+          localStorage.removeItem('ourDailyLocalDailyQuoteEnabled');
+          app._dailyQuotePromptedFromQuiltScroll = false;
+        },
+        enableDebugPanel: () => {
+          localStorage.setItem('odqNotifyDebug', '1');
+          app.setupNotificationDebugPanel();
+        }
+      };
       // Expose utility class for headless automation scripts (SSR workflow).
       window.Utils = Utils;
       Utils.migrateLegacyFirstNameSkipToStorage();
+      Utils.removeLegacyReflectionWallHeadings();
 
       const applyReflectionThemesDirect = async () => {
+        Utils.removeLegacyReflectionWallHeadings();
         const notes = document.getElementById('quiltReflectionWallNotes');
-        const title = document.getElementById('quiltReflectionWallTitle');
         const wall = document.getElementById('quiltReflectionWall');
-        const helper = wall?.querySelector?.('.quilt-reflection-wall-helper') || null;
-        if (!notes || !title || !wall) return false;
-        const escapeHtml = (value) => String(value || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
+        if (!notes || !wall) return false;
         try {
           const dateKey = Utils.getTodayKey();
           const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
@@ -50258,36 +51494,13 @@ try {
                 })
               : communityThemes;
           if (!themes.length) return false;
-          const hasCommunityThemes = communityThemes.length > 0;
           if (window.app && typeof window.app.renderReflectionAnonymousWall === 'function') {
-            window.app.renderReflectionAnonymousWall(
-              themes,
-              hasCommunityThemes
-                ? {
-                    title: 'What keeps coming up',
-                    helper: 'Drawn from responses as they come in'
-                  }
-                : {
-                    title: '',
-                    helper: ''
-                  }
-            );
+            window.app.renderReflectionAnonymousWall(themes);
             return true;
           }
           notes.innerHTML = window.app?.getReflectionCarouselMarkup?.(themes) || '';
           if (window.app && typeof window.app.initReflectionCarouselLoop === 'function') {
             window.app.initReflectionCarouselLoop(notes);
-          }
-          if (CONFIG?.APP?.reflectionTodayAggregateWallDisabled) {
-            title.textContent = '';
-            title.setAttribute('hidden', 'hidden');
-            if (helper) {
-              helper.textContent = '';
-              helper.setAttribute('hidden', 'hidden');
-            }
-          } else {
-            title.textContent = 'What keeps coming up';
-            if (helper) helper.textContent = 'Drawn from responses as they come in';
           }
           wall.hidden = false;
           return true;
