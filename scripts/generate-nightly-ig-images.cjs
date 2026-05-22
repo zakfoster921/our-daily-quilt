@@ -181,19 +181,20 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         const sourceId = pickString(assignmentData?.sourceId);
         const sourceQuoteData = sourceId ? await readFirestoreDoc('quotes', sourceId) : null;
         const datedQuoteData = await readFirestoreDoc('quotes', dateKey);
-        let quote = mergeQuoteData(
-          quoteFromFirestoreData(datedQuoteData),
-          quoteFromFirestoreData(sourceQuoteData),
-          quoteFromFirestoreData(assignmentData)
-        );
+        let quote = null;
+        if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+          quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || null;
+        } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
+          quote = (await qs.resolveAndPinCalendarKey(dateKey)) || null;
+        } else if (qs && typeof qs.getQuoteForDate === 'function') {
+          quote = qs.getQuoteForDate(dateKey) || null;
+        }
         if (!quote) {
-          if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
-            quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || null;
-          } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
-            quote = (await qs.resolveAndPinCalendarKey(dateKey)) || null;
-          } else if (qs && typeof qs.getQuoteForDate === 'function') {
-            quote = qs.getQuoteForDate(dateKey) || null;
-          }
+          quote = mergeQuoteData(
+            quoteFromFirestoreData(datedQuoteData),
+            quoteFromFirestoreData(sourceQuoteData),
+            quoteFromFirestoreData(assignmentData)
+          );
         }
         quote = quote || { text: '', body: '', author: '' };
         if (strictQuote && !String(quote.text ?? quote.body ?? '').trim()) {

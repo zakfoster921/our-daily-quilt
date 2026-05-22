@@ -192,7 +192,7 @@ try {
        while the font loads. `icon_names=` limits the download to only the glyphs we render.
        NOTE: Google Fonts rejects this URL with 400 if icon names aren't alphabetical —
        keep icon_names in sorted order. -->
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=book,brightness_1,comedy_mask,contrast,headphones,movie,palette&display=block" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add_alert,book,brightness_1,comedy_mask,content_copy,contrast,headphones,movie,palette&display=block" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link rel="preload" href="assets/fonts/Zakarack-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/portal-our-daily-quilt.png" as="image" fetchpriority="high">
   <!-- Test script to verify it's running -->
@@ -2640,6 +2640,8 @@ try {
     /* No `display` here — #id would beat `.screen { display:none }` before JS sets inline styles. */
     #screen-first-name,
     #screen-settings,
+    #screen-remember-today,
+    #screen-remember-today-view,
     #screen-exit-chamber,
     #screen-name-thanks,
     #screen-first-quote-bridge {
@@ -2655,6 +2657,304 @@ try {
     #screen-settings {
       justify-content: flex-start;
       overflow-y: auto;
+    }
+    #screen-remember-today {
+      justify-content: flex-start;
+      align-items: stretch;
+      overflow-y: auto;
+      background: var(--odq-warm-paper, #f6f4f1);
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-inner {
+      width: min(100%, 26rem);
+      margin: 0 auto;
+      padding: clamp(1.25rem, 4vw, 2rem) 1.25rem 5.5rem;
+      box-sizing: border-box;
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-title {
+      margin: 0 0 0.55rem;
+      font-family: var(--font-zakarack, 'Zakarack', serif);
+      font-size: clamp(1.55rem, 5vw, 2rem);
+      font-weight: 400;
+      line-height: 1.15;
+      color: #241b14;
+      text-wrap: balance;
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-lead {
+      margin: 0 0 1.35rem;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      color: rgba(36, 27, 20, 0.78);
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-items {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 0 0 1rem;
+    }
+    #screen-remember-today .remember-today-item[hidden] {
+      display: none !important;
+    }
+    #screen-remember-today .remember-today-item__slab {
+      padding: 0.85rem 0.95rem 0.95rem;
+      background: #e8e2d6;
+      border: 1.5px solid rgba(36, 27, 20, 0.14);
+      box-shadow: 0 1px 0 rgba(36, 27, 20, 0.08);
+    }
+    #screen-remember-today .remember-today-item.is-selected .remember-today-item__slab {
+      border-color: rgba(36, 27, 20, 0.42);
+      background: #f2ece3;
+    }
+    #screen-remember-today .remember-today-item__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.65rem;
+      margin-bottom: 0.45rem;
+    }
+    #screen-remember-today .remember-today-item__kicker {
+      margin: 0;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(36, 27, 20, 0.58);
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-item__include {
+      flex: 0 0 auto;
+      margin: 0;
+      padding: 0.38rem 0.72rem;
+      border: 1.5px solid rgba(36, 27, 20, 0.22);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.45);
+      color: #241b14;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    #screen-remember-today .remember-today-item__include[aria-pressed="true"] {
+      border-color: #241b14;
+      background: #241b14;
+      color: #f6f4f1;
+    }
+    #screen-remember-today .remember-today-item__text {
+      margin: 0;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      color: #241b14;
+      white-space: pre-wrap;
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-thoughts-input {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #241b14;
+      font: inherit;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      text-align: left;
+      resize: vertical;
+      min-height: 4.5rem;
+      field-sizing: content;
+    }
+    #screen-remember-today .remember-today-thoughts-input::placeholder {
+      color: rgba(36, 27, 20, 0.42);
+    }
+    #screen-remember-today .remember-today-thoughts-input:focus {
+      outline: none;
+    }
+    #screen-remember-today .remember-today-item--thoughts .remember-today-item__include:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+    }
+    #screen-remember-today .remember-today-color-preview,
+    #screen-remember-today-view .remember-today-color-preview {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0;
+    }
+    #screen-remember-today .remember-today-color-swatch,
+    #screen-remember-today-view .remember-today-color-swatch {
+      --remember-today-swatch-color: #ccc;
+      flex: 0 0 auto;
+      width: 3.4rem;
+      height: 2.75rem;
+      border: 1.5px solid rgba(36, 27, 20, 0.2);
+      box-shadow: inset 0 -1px 0 rgba(36, 27, 20, 0.1);
+      background:
+        linear-gradient(148deg, rgba(255, 255, 255, 0.14) 0%, transparent 42%),
+        var(--remember-today-swatch-color);
+    }
+    #screen-remember-today .remember-today-color-meta,
+    #screen-remember-today-view .remember-today-color-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 0;
+    }
+    #screen-remember-today .remember-today-color-name,
+    #screen-remember-today-view .remember-today-color-name {
+      margin: 0;
+      font-size: 0.92rem;
+      font-weight: 650;
+      line-height: 1.25;
+      color: #241b14;
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-color-hex,
+    #screen-remember-today-view .remember-today-color-hex {
+      margin: 0;
+      font-size: 0.82rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      line-height: 1.2;
+      color: rgba(36, 27, 20, 0.72);
+      text-transform: uppercase;
+      text-align: left;
+    }
+    #screen-remember-today-view .remember-today-view-block__text--copy-source {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    #screen-remember-today .remember-today-status {
+      margin: 0;
+      min-height: 1.25rem;
+      font-size: 0.86rem;
+      line-height: 1.4;
+      color: rgba(36, 27, 20, 0.72);
+      text-align: left;
+    }
+    #screen-remember-today .remember-today-status.is-scheduled {
+      color: rgba(36, 27, 20, 0.9);
+    }
+    #screen-remember-today .remember-today-web-note {
+      margin: 1rem 0 0;
+      font-size: 0.86rem;
+      line-height: 1.4;
+      color: rgba(36, 27, 20, 0.65);
+    }
+    #screen-remember-today .remember-today-web-note[hidden] {
+      display: none !important;
+    }
+    #screen-remember-today-view {
+      justify-content: flex-start;
+      align-items: stretch;
+      overflow-y: auto;
+      background: var(--odq-warm-paper, #f6f4f1);
+      text-align: left;
+    }
+    #screen-remember-today-view .remember-today-view-inner {
+      width: min(100%, 26rem);
+      margin: 0 auto;
+      padding: clamp(1.25rem, 4vw, 2rem) 1.25rem 5.5rem;
+      box-sizing: border-box;
+      text-align: left;
+    }
+    #screen-remember-today-view .remember-today-view-title {
+      margin: 0 0 1.1rem;
+      font-family: var(--font-zakarack, 'Zakarack', serif);
+      font-size: clamp(1.55rem, 5vw, 2rem);
+      font-weight: 400;
+      line-height: 1.15;
+      color: #241b14;
+      text-wrap: balance;
+      text-align: left;
+    }
+    #screen-remember-today-view .remember-today-view-items {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 0;
+    }
+    #screen-remember-today-view .remember-today-view-block__slab {
+      padding: 0.85rem 0.95rem 0.95rem;
+      background: #f2ece3;
+      border: 1.5px solid rgba(36, 27, 20, 0.22);
+      box-shadow: 0 1px 0 rgba(36, 27, 20, 0.08);
+    }
+    #screen-remember-today-view .remember-today-view-block__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.45rem;
+    }
+    #screen-remember-today-view .remember-today-view-block__kicker {
+      margin: 0;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(36, 27, 20, 0.58);
+      text-align: left;
+    }
+    #screen-remember-today-view .remember-today-view-copy-btn {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: rgba(36, 27, 20, 0.52);
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    #screen-remember-today-view .remember-today-view-copy-btn .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-size: 22px;
+      line-height: 1;
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    #screen-remember-today-view .remember-today-view-copy-btn:focus-visible,
+    #screen-remember-today-view .remember-today-view-copy-btn:hover {
+      color: rgba(36, 27, 20, 0.88);
+      outline: none;
+    }
+    #screen-remember-today-view .remember-today-view-block__text {
+      margin: 0;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      color: #241b14;
+      white-space: pre-wrap;
+      text-align: left;
+    }
+    #screen-remember-today-view .remember-today-view-empty {
+      margin: 0;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      color: rgba(36, 27, 20, 0.78);
+      text-align: left;
+    }
+    #screen-remember-today-view .remember-today-view-empty[hidden] {
+      display: none !important;
     }
     #screen-exit-chamber.active {
       display: flex !important;
@@ -10996,8 +11296,24 @@ try {
       z-index: 80;
       flex-shrink: 0;
       background: transparent;
-      padding: 0 0 max(0.05rem, env(safe-area-inset-bottom, 0px)) 0;
+      padding: 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
       box-shadow: none;
+    }
+
+    /* Native app: pin icon strip to viewport bottom (same anchor as exit chamber). */
+    html.odq-capacitor-native #screen-quilt.active .quilt-scroll-icon-footer {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 200;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    html.odq-capacitor-native #screen-quilt.active {
+      scroll-padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
     }
 
     #screen-quilt .quilt-scroll-icon-footer > .button-group:last-of-type {
@@ -11489,7 +11805,7 @@ try {
       --quilt-above-shape-card: 6.5rem;
       /* Half of swatch (5:4) + footer — used to center the card at scroll end. */
       --quilt-color-card-half: calc(min(28.8vw, 112px) + 1.55rem);
-      --quilt-scroll-end-footer: clamp(3rem, 7.5dvh, 4rem);
+      --quilt-scroll-end-footer: clamp(3.75rem, 9dvh, 4.25rem);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -11519,6 +11835,23 @@ try {
 
     #screen-quilt .quilt-daily-colors-stage:has(#quiltUserColorCardWrap[hidden]) .quilt-daily-colors-scroll-pad {
       display: none;
+    }
+
+    /* Reserve space for the together note between the sticky card and icon footer. */
+    #screen-quilt .quilt-daily-colors-zone:has(+ .quilt-user-color-together-note-wrap:not([hidden])) {
+      --quilt-color-together-note-block: 5.25rem;
+    }
+
+    #screen-quilt
+      .quilt-daily-colors-zone:has(+ .quilt-user-color-together-note-wrap:not([hidden]))
+      .quilt-daily-colors-scroll-pad {
+      min-height: max(
+        4dvh,
+        calc(
+          50dvh - var(--quilt-color-card-half) - var(--quilt-scroll-end-footer)
+            - var(--quilt-color-together-note-block, 4.25rem) - 2dvh
+        )
+      );
     }
 
     #screen-quilt .quilt-before-you-go__slab--closing {
@@ -11555,11 +11888,135 @@ try {
       width: 100%;
     }
 
-    /* At scroll end, pin the color card to the vertical center of the viewport. */
-    #screen-quilt .quilt-daily-colors-cta-wrap:has(#quiltUserColorCardWrap:not([hidden])) {
+    /* At scroll end, pin only the color card (not the together note) to mid-viewport. */
+    #screen-quilt .quilt-user-color-card-wrap:not([hidden]) {
       position: sticky;
       top: calc(50dvh - var(--quilt-color-card-half, 9rem));
       z-index: 12;
+    }
+
+    /* Paper note between the color card and the icon footer. */
+    #screen-quilt .quilt-user-color-together-note-wrap {
+      position: relative;
+      z-index: 11;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      margin: 0 auto clamp(1rem, 3dvh, 1.35rem);
+      padding: 0 1rem clamp(0.35rem, 1.5dvh, 0.65rem);
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+
+    #screen-quilt .quilt-user-color-together-note-wrap[hidden] {
+      display: none !important;
+    }
+
+    #screen-quilt .quilt-user-color-together-note {
+      --quilt-together-paper-cut: polygon(
+        0% 0%,
+        100% 0%,
+        100% 100%,
+        94% 99.5%,
+        78% 100%,
+        62% 98.5%,
+        46% 100%,
+        30% 98%,
+        14% 100%,
+        0% 91%
+      );
+      --quilt-together-paper-max: min(12.6rem, 45.6vw);
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      width: min(var(--quilt-together-paper-max), 100%);
+      max-width: 100%;
+      margin: 0;
+      padding: 0 0 0.35rem;
+      box-sizing: border-box;
+      transform: rotate(-0.55deg);
+      transform-origin: center center;
+      filter:
+        drop-shadow(0 1px 0 rgba(45, 36, 29, 0.1))
+        drop-shadow(0 3px 8px rgba(45, 36, 29, 0.09))
+        drop-shadow(0 6px 14px rgba(45, 36, 29, 0.04));
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #screen-quilt .quilt-user-color-together-note {
+        transform: none;
+      }
+    }
+
+    /* Straight top/sides; torn bottom slopes lower on the right (inspired by manila scrap). */
+    #screen-quilt .quilt-user-color-together-note__paper {
+      --quilt-together-paper-bg: #ebe3d4;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: var(--quilt-together-paper-max, min(12.6rem, 45.6vw));
+      margin: 0;
+      padding: 0.58rem 0.46rem 0.95rem;
+      box-sizing: border-box;
+      isolation: isolate;
+      clip-path: var(--quilt-together-paper-cut);
+      -webkit-clip-path: var(--quilt-together-paper-cut);
+      background:
+        radial-gradient(ellipse 78% 58% at 14% 10%, rgba(255, 252, 245, 0.58) 0%, transparent 54%),
+        radial-gradient(ellipse 58% 42% at 90% 86%, rgba(98, 74, 48, 0.07) 0%, transparent 48%),
+        radial-gradient(ellipse 85% 38% at 72% 22%, rgba(168, 138, 98, 0.09) 0%, transparent 52%),
+        linear-gradient(152deg, #f7f2e8 0%, var(--quilt-together-paper-bg, #ebe3d4) 46%, #e5ddd0 100%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
+    }
+
+    #screen-quilt .quilt-user-color-together-note__paper::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: linear-gradient(
+        128deg,
+        transparent 58%,
+        rgba(72, 58, 42, 0.04) 84%,
+        rgba(58, 46, 34, 0.06) 100%
+      );
+    }
+
+    #screen-quilt .quilt-user-color-together-note__paper::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.09;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      background-size: 88px 88px;
+      background-repeat: repeat;
+    }
+
+    #screen-quilt .quilt-user-color-together-note__text {
+      position: relative;
+      z-index: 1;
+      display: block;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      max-width: 100%;
+      font-family: 'Cutive Mono', ui-monospace, monospace;
+      font-size: clamp(1.06rem, 3.52vw, 1.25rem);
+      font-style: normal;
+      font-weight: 400;
+      line-height: 1.18;
+      letter-spacing: 0;
+      color: #2f2924;
+      text-align: center;
+      text-wrap: pretty;
+      overflow-wrap: break-word;
     }
 
     /* TEMP: exit chamber gem CTA hidden while CONFIG.APP.exitChamberCtaEnabled is false. */
@@ -11708,22 +12165,26 @@ try {
     }
 
     #screen-quilt .quilt-user-shape-card {
+      --quilt-color-card-paper: var(--quilt-quote-paper-bg, #e8e2d6);
+      --quilt-color-card-stock: #e3ddd4;
       width: 100%;
       margin: 0;
       box-sizing: border-box;
     }
 
     #screen-quilt .quilt-user-shape-card__mount {
-      --slide-mount: #ffffff;
-      --slide-mount-edge: #f0ebe3;
+      --slide-mount: #ebe5dc;
+      --slide-mount-edge: #ddd6cb;
       position: relative;
       box-sizing: border-box;
       border-radius: 3px;
       padding: 0;
       background: transparent;
       box-shadow:
-        2px 4px 12px rgba(45, 36, 29, 0.2),
-        4px 8px 22px rgba(45, 36, 29, 0.14);
+        0 1px 0 rgba(45, 36, 29, 0.14),
+        0 4px 10px rgba(45, 36, 29, 0.16),
+        0 12px 28px rgba(45, 36, 29, 0.14),
+        0 20px 44px rgba(45, 36, 29, 0.08);
       isolation: isolate;
     }
 
@@ -11736,11 +12197,24 @@ try {
       pointer-events: none;
       z-index: 1;
       background:
-        radial-gradient(ellipse 34% 28% at 0% 0%, rgba(88, 70, 48, 0.2) 0%, transparent 72%),
-        radial-gradient(ellipse 30% 24% at 100% 0%, rgba(88, 70, 48, 0.14) 0%, transparent 68%),
-        radial-gradient(ellipse 32% 28% at 100% 100%, rgba(88, 70, 48, 0.08) 0%, transparent 70%),
-        radial-gradient(ellipse 28% 24% at 0% 100%, rgba(88, 70, 48, 0.07) 0%, transparent 68%);
+        radial-gradient(ellipse 34% 28% at 0% 0%, rgba(88, 70, 48, 0.18) 0%, transparent 72%),
+        radial-gradient(ellipse 30% 24% at 100% 0%, rgba(88, 70, 48, 0.12) 0%, transparent 68%),
+        radial-gradient(ellipse 32% 28% at 100% 100%, rgba(88, 70, 48, 0.07) 0%, transparent 70%),
+        radial-gradient(ellipse 28% 24% at 0% 100%, rgba(88, 70, 48, 0.06) 0%, transparent 68%);
       box-shadow: inset 0 0 36px rgba(92, 74, 52, 0.06);
+    }
+
+    /* Card edge thickness — bottom/right catch slightly darker than the face. */
+    #screen-quilt .quilt-user-shape-card__mount::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 0;
+      box-shadow:
+        inset -2px -2px 0 rgba(58, 46, 34, 0.11),
+        inset 2px 2px 0 rgba(255, 255, 255, 0.28);
     }
 
     #screen-quilt .quilt-user-shape-card__surface {
@@ -11753,11 +12227,44 @@ try {
       border-radius: 3px;
       overflow: hidden;
       box-sizing: border-box;
-      background: #fff;
-      box-shadow: none;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 18%),
+        linear-gradient(0deg, rgba(58, 46, 34, 0.05) 0%, rgba(58, 46, 34, 0.02) 100%),
+        var(--quilt-color-card-paper, var(--quilt-color-card-stock, #ebe5dc));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.62),
+        inset 0 -2px 5px rgba(58, 46, 34, 0.07),
+        inset 2px 0 0 rgba(255, 255, 255, 0.2),
+        inset -2px 0 0 rgba(58, 46, 34, 0.04);
+      isolation: isolate;
     }
 
-    /* Large flat color field (~Pantone top band). */
+    /* Stock rim + tooth across the full chip (footer included). */
+    #screen-quilt .quilt-user-shape-card__surface::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 1px rgba(58, 46, 34, 0.08);
+      opacity: 1;
+    }
+
+    #screen-quilt .quilt-user-shape-card__surface::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      opacity: 0.07;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      background-size: 96px 96px;
+      background-repeat: repeat;
+    }
+
+    /* Large color field (~Pantone top band) — ink on thick stock, not screen-fill. */
     #screen-quilt .quilt-user-shape-card__swatch {
       --quilt-user-piece-color: #ea9b9a;
       --quilt-swatch-label-color: #1a2438;
@@ -11769,11 +12276,49 @@ try {
       width: 100%;
       min-height: min(52vw, 210px);
       aspect-ratio: 5 / 4;
-      background-color: var(--quilt-user-piece-color);
       box-sizing: border-box;
+      isolation: isolate;
+      overflow: hidden;
+      background:
+        linear-gradient(148deg, rgba(255, 255, 255, 0.12) 0%, transparent 38%),
+        linear-gradient(32deg, rgba(58, 46, 34, 0.08) 0%, transparent 52%),
+        linear-gradient(180deg, rgba(235, 229, 220, 0.16) 0%, transparent 24%),
+        var(--quilt-user-piece-color);
+      box-shadow: inset 0 -1px 0 rgba(58, 46, 34, 0.1);
+    }
+
+    #screen-quilt .quilt-user-shape-card__swatch::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.42;
+      background: repeating-linear-gradient(
+        168deg,
+        rgba(255, 255, 255, 0.1) 0,
+        rgba(255, 255, 255, 0.1) 1px,
+        transparent 1px,
+        transparent 5px
+      );
+    }
+
+    #screen-quilt .quilt-user-shape-card__swatch::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0.11;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      background-size: 96px 96px;
+      background-repeat: repeat;
     }
 
     #screen-quilt .quilt-user-shape-card__swatch-message {
+      position: relative;
+      z-index: 2;
       margin: 0;
       padding: 0 0.45rem;
       max-width: 92%;
@@ -11785,18 +12330,23 @@ try {
       text-align: center;
       text-wrap: balance;
       color: var(--quilt-swatch-label-color);
-      opacity: 0.48;
+      opacity: 0.54;
       transform: rotate(calc(0deg - var(--quilt-color-card-tilt, -3.25deg)));
       transform-origin: center center;
       pointer-events: none;
     }
 
     #screen-quilt .quilt-user-shape-card__footer {
+      position: relative;
+      z-index: 2;
       flex: 0 0 auto;
-      background: #fff;
+      background:
+        linear-gradient(180deg, rgba(58, 46, 34, 0.07) 0%, transparent 10%),
+        var(--quilt-color-card-paper, var(--quilt-color-card-stock, #ebe5dc));
       padding: 0.9rem 1rem 1rem;
       text-align: left;
       box-sizing: border-box;
+      box-shadow: inset 0 1px 0 rgba(58, 46, 34, 0.09);
     }
 
     #screen-quilt .quilt-user-shape-card__color-name {
@@ -11806,7 +12356,7 @@ try {
       font-weight: 700;
       letter-spacing: 0.01em;
       line-height: 1.12;
-      color: #111;
+      color: #2f2924;
     }
 
     #screen-quilt .quilt-user-shape-card__color-hex {
@@ -11816,7 +12366,7 @@ try {
       font-weight: 400;
       letter-spacing: 0.05em;
       line-height: 1.2;
-      color: #1a1a1a;
+      color: #2f2924;
       text-transform: uppercase;
     }
 
@@ -11865,8 +12415,8 @@ try {
     }
 
     #screen-quilt .quilt-scroll-quilt-gap.quilt-scroll-quilt-gap--after-blessing {
-      min-height: 20dvh;
-      min-height: 20svh;
+      min-height: 8dvh;
+      min-height: 8svh;
     }
 
     /* With the Pantone card, keep only a sliver before the footer so the card can center. */
@@ -11901,41 +12451,59 @@ try {
       pointer-events: none;
     }
 
-    /* Shared "wordmark + icons" footer used on both `#screen-quilt` (inside
-       `.quilt-scroll-icon-footer`) and `#screen-exit-chamber` (under the
-       "See you tomorrow" line). The class names keep the `quilt-` prefix
-       (it's the OUR DAILY QUILT lockup family), but the rules are
-       intentionally not scoped to a single screen.
-
-       Wordmark anchors to the left edge and icons anchor to the right edge,
-       both with the same 0.9rem inset. The first icon uses `margin-inline-start: auto`
-       to push itself (and the rest of the icon group, glued together by `gap`)
-       all the way to the right. */
+    /* Icon footer on `#screen-quilt` scroll end and `#screen-exit-chamber` (no wordmark —
+       lockup was clipping on narrow phones once the remember bell joined the row). */
     .quilt-footer-icon-row {
       display: flex;
       flex-direction: row;
       flex-wrap: nowrap;
       align-items: center;
-      justify-content: flex-start;
-      gap: 1.5rem;
+      justify-content: center;
+      width: 100%;
+      max-width: 100%;
       margin: 0 auto;
-      padding-block: var(--quilt-icon-strip-pad-v, clamp(0rem, 0.2vh, 0.15rem));
-      padding-inline: 0.9rem;
+      padding-block: 0;
+      padding-inline: clamp(0.65rem, 3vw, 1rem);
       box-sizing: border-box;
-      line-height: 0;
+      line-height: normal;
       position: relative;
       z-index: 2;
+      overflow: visible;
     }
 
-    .quilt-footer-icon-row > .quilt-about-icon-link {
-      margin-inline-start: auto;
+    .quilt-footer-icon-cluster {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(1.02rem, 5.76vw, 1.8rem);
+      min-width: 0;
+      max-width: 100%;
     }
 
     /* Keep the gear above siblings in the same strip so stray compositor layers
        do not steal taps on the rightmost control (WKWebView + fixed footers). */
-    .quilt-footer-icon-row > .quilt-settings-icon-btn {
+    .quilt-footer-icon-cluster > .quilt-remember-icon-btn,
+    .quilt-footer-icon-cluster > .quilt-settings-icon-btn {
       position: relative;
       z-index: 20;
+    }
+
+    .quilt-remember-icon-btn[hidden] {
+      display: none !important;
+    }
+
+    .quilt-footer-icon-cluster .quilt-remember-icon-btn .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-size: 39px;
+      line-height: 1;
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+
+    .quilt-remember-icon-btn[aria-pressed="true"] {
+      color: rgba(0, 0, 0, 0.88);
     }
 
     /* Pin the chamber's wordmark + icons row to the *exact* same on-screen
@@ -11957,14 +12525,16 @@ try {
        becomes the active screen — so the fixed row only renders during the
        chamber's lifetime. */
     #screen-exit-chamber > .quilt-footer-icon-row {
-      --exit-footer-protect-pad: 0.32rem;
+      --exit-footer-protect-pad: 0.2rem;
       position: fixed;
       left: 0;
       right: 0;
-      bottom: max(0.05rem, env(safe-area-inset-bottom, 0px));
+      bottom: 0;
       width: auto;
       max-width: none;
       margin-inline: 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      box-sizing: border-box;
       isolation: isolate;
       /* Above calendar chrome / inner content so taps reach the icon strip. */
       z-index: 200;
@@ -12021,13 +12591,9 @@ try {
       padding-bottom: 0.35rem;
     }
 
-    #screen-exit-chamber .quilt-footer-wordmark {
-      color: #000;
-      opacity: 1;
-    }
-
     #screen-exit-chamber .quilt-instagram-icon-link,
     #screen-exit-chamber .quilt-about-icon-link,
+    #screen-exit-chamber .quilt-remember-icon-btn,
     #screen-exit-chamber .quilt-settings-icon-btn {
       color: #000;
     }
@@ -12038,46 +12604,16 @@ try {
       opacity: 1;
     }
 
-    /* Hand-drawn "OUR DAILY QUILT" wordmark sitting at the left of the icon row.
-       Height matches the icon SVGs (32px) and `opacity` matches the icon
-       glyph color (rgba(0,0,0,0.58)) so it reads as part of the same family. */
-    .quilt-footer-wordmark {
-      display: block;
-      /* Hand-drawn lockup rendered as live text in Zakarack so it matches
-         the visual family/weight of the "See you tomorrow" kicker and the
-         section headers without shipping a raster asset. line-height: 1
-         keeps the element height tight so the row aligns with the 32px icon
-         glyphs to its right. font-size uses clamp() so the text grows up to
-         exactly 2rem (32px — same box height as the icon SVGs) on wider
-         viewports and only steps down on the narrowest phones so the full
-         "OUR DAILY QUILT" string still fits next to the icon group without
-         clipping the trailing "T". */
-      font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
-      font-weight: 900;
-      font-size: clamp(1.5rem, 7vw, 2rem);
-      line-height: 1;
-      letter-spacing: 0.005em;
-      white-space: nowrap;
-      color: #000;
-      margin: 0;
-      /* Don't let flex shrink the wordmark — it should always render at its
-         intrinsic text width, with the icon group adapting (via gap + the
-         first icon's `margin-inline-start: auto`). */
-      flex: 0 0 auto;
-      opacity: 0.58;
-      pointer-events: none;
-      user-select: none;
-      -webkit-user-drag: none;
-    }
-
-    .quilt-instagram-icon-link,
-    .quilt-about-icon-link,
-    .quilt-settings-icon-btn {
+    .quilt-footer-icon-cluster .quilt-instagram-icon-link,
+    .quilt-footer-icon-cluster .quilt-about-icon-link,
+    .quilt-footer-icon-cluster .quilt-remember-icon-btn,
+    .quilt-footer-icon-cluster .quilt-settings-icon-btn,
+    #screen-quilt .quilt-footer-icon-cluster .quilt-backside-toggle {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 44px;
-      height: 44px;
+      width: 60px;
+      height: 60px;
       margin: 0;
       line-height: 0;
       color: rgba(0, 0, 0, 0.58);
@@ -12129,6 +12665,8 @@ try {
     .quilt-instagram-icon-link:hover,
     .quilt-about-icon-link:focus-visible,
     .quilt-about-icon-link:hover,
+    .quilt-remember-icon-btn:focus-visible,
+    .quilt-remember-icon-btn:hover,
     .quilt-settings-icon-btn:focus-visible,
     .quilt-settings-icon-btn:hover,
     #screen-quilt .quilt-backside-toggle:focus-visible,
@@ -12137,17 +12675,43 @@ try {
       outline: none;
     }
 
-    .quilt-instagram-icon-link svg,
-    .quilt-about-icon-link svg,
-    .quilt-settings-icon-btn svg {
+    .quilt-footer-icon-cluster .quilt-instagram-icon-link svg,
+    .quilt-footer-icon-cluster .quilt-about-icon-link svg,
+    .quilt-footer-icon-cluster .quilt-settings-icon-btn svg {
       display: block;
-      width: 32px;
-      height: 32px;
+      width: 42px;
+      height: 42px;
       stroke: currentColor;
       fill: none;
       stroke-width: 1.8;
       stroke-linecap: round;
       stroke-linejoin: round;
+    }
+
+    @media (max-width: 420px) {
+      .quilt-footer-icon-cluster {
+        gap: clamp(0.54rem, 3vw, 1.02rem);
+      }
+
+      .quilt-footer-icon-cluster .quilt-instagram-icon-link,
+      .quilt-footer-icon-cluster .quilt-about-icon-link,
+      .quilt-footer-icon-cluster .quilt-remember-icon-btn,
+      .quilt-footer-icon-cluster .quilt-settings-icon-btn,
+      #screen-quilt .quilt-footer-icon-cluster .quilt-backside-toggle {
+        width: 54px;
+        height: 54px;
+      }
+
+      .quilt-footer-icon-cluster .quilt-instagram-icon-link svg,
+      .quilt-footer-icon-cluster .quilt-about-icon-link svg,
+      .quilt-footer-icon-cluster .quilt-settings-icon-btn svg {
+        width: 36px;
+        height: 36px;
+      }
+
+      .quilt-footer-icon-cluster .quilt-remember-icon-btn .material-symbols-outlined {
+        font-size: 33px;
+      }
     }
 
     #screen-quilt .quilt-reset-footer {
@@ -12944,6 +13508,21 @@ try {
             <div class="quilt-daily-colors-scroll-pad" aria-hidden="true"></div>
           </div>
         </div>
+        <div
+          class="quilt-user-color-together-note-wrap"
+          id="quiltUserColorTogetherNoteWrap"
+          hidden
+          aria-hidden="true"
+        >
+          <section
+            class="quilt-user-color-together-note"
+            aria-label="What else can we do together"
+          >
+            <div class="quilt-user-color-together-note__paper">
+              <p class="quilt-user-color-together-note__text">What else can we do together?</p>
+            </div>
+          </section>
+        </div>
       </div>
       <div class="quilt-scroll-quilt-gap quilt-scroll-quilt-gap--after-blessing" aria-hidden="true"></div>
       <div class="quilt-scroll-icon-footer" aria-label="OUR DAILY QUILT — links and settings">
@@ -13005,57 +13584,67 @@ try {
           </button>
         </div>
         <div class="quilt-footer-icon-row" aria-label="OUR DAILY QUILT links and settings">
-          <span class="quilt-footer-wordmark" aria-hidden="true">OUR DAILY QUILT</span>
-          <button
-            type="button"
-            class="quilt-about-icon-link"
-            id="quiltAboutIconBtn"
-            data-next="screen-about"
-            aria-label="About this project"
-          >
-            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true" fill="none">
-              <circle cx="12" cy="12" r="9"></circle>
-              <path d="M9.8 9.2a2.2 2.2 0 1 1 3.56 1.74c-.95.7-1.36 1.2-1.36 2.26"></path>
-              <circle cx="12" cy="16.8" r="0.9"></circle>
-            </svg>
-          </button>
-          <a
-            class="quilt-instagram-icon-link"
-            href="https://www.instagram.com/ourdailyquilt/"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Follow OUR DAILY QUILT on Instagram"
-          >
-            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-              <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
-              <circle cx="12" cy="12" r="4.1"></circle>
-              <circle cx="17.2" cy="6.8" r="0.9"></circle>
-            </svg>
-          </a>
-          <button
-            type="button"
-            class="quilt-backside-toggle"
-            id="backsidePreviewToggleBtn"
-            aria-label="Show backside preview"
-            aria-pressed="false"
-            hidden
-            aria-hidden="true"
-            disabled
-          >
-            Backside
-          </button>
-          <button
-            type="button"
-            class="quilt-settings-icon-btn"
-            id="settingsGearBtn"
-            data-next="screen-settings"
-            aria-label="Open settings"
-          >
-            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-              <circle cx="12" cy="12" r="3.2"></circle>
-              <path d="M19.4 13.6a7.8 7.8 0 0 0 0-3.2l2-1.55-2-3.46-2.44.98a8 8 0 0 0-2.77-1.6L13.82 2h-4l-.37 2.77a8 8 0 0 0-2.77 1.6l-2.44-.98-2 3.46 2 1.55a7.8 7.8 0 0 0 0 3.2l-2 1.55 2 3.46 2.44-.98a8 8 0 0 0 2.77 1.6l.37 2.77h4l.37-2.77a8 8 0 0 0 2.77-1.6l2.44.98 2-3.46-2-1.55z"></path>
-            </svg>
-          </button>
+          <div class="quilt-footer-icon-cluster">
+            <button
+              type="button"
+              class="quilt-about-icon-link"
+              id="quiltAboutIconBtn"
+              data-next="screen-about"
+              aria-label="About this project"
+            >
+              <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true" fill="none">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M9.8 9.2a2.2 2.2 0 1 1 3.56 1.74c-.95.7-1.36 1.2-1.36 2.26"></path>
+                <circle cx="12" cy="16.8" r="0.9"></circle>
+              </svg>
+            </button>
+            <a
+              class="quilt-instagram-icon-link"
+              href="https://www.instagram.com/ourdailyquilt/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Follow OUR DAILY QUILT on Instagram"
+            >
+              <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
+                <circle cx="12" cy="12" r="4.1"></circle>
+                <circle cx="17.2" cy="6.8" r="0.9"></circle>
+              </svg>
+            </a>
+            <button
+              type="button"
+              class="quilt-backside-toggle"
+              id="backsidePreviewToggleBtn"
+              aria-label="Show backside preview"
+              aria-pressed="false"
+              hidden
+              aria-hidden="true"
+              disabled
+            >
+              Backside
+            </button>
+            <button
+              type="button"
+              class="quilt-remember-icon-btn"
+              id="quiltRememberTodayBtn"
+              data-next="screen-remember-today"
+              aria-label="Remember something from today"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true" translate="no">add_alert</span>
+            </button>
+            <button
+              type="button"
+              class="quilt-settings-icon-btn"
+              id="settingsGearBtn"
+              data-next="screen-settings"
+              aria-label="Open settings"
+            >
+              <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                <circle cx="12" cy="12" r="3.2"></circle>
+                <path d="M19.4 13.6a7.8 7.8 0 0 0 0-3.2l2-1.55-2-3.46-2.44.98a8 8 0 0 0-2.77-1.6L13.82 2h-4l-.37 2.77a8 8 0 0 0-2.77 1.6l-2.44-.98-2 3.46 2 1.55a7.8 7.8 0 0 0 0 3.2l-2 1.55 2 3.46 2.44-.98a8 8 0 0 0 2.77 1.6l.37 2.77h4l.37-2.77a8 8 0 0 0 2.77-1.6l2.44.98 2-3.46-2-1.55z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="button-group" hidden aria-hidden="true">
           <button class="btn" onclick="window.open('https://www.instagram.com/ourdailyquilt/', '_blank')" aria-label="Follow on Instagram" hidden aria-hidden="true">
@@ -13340,50 +13929,170 @@ try {
           </span>
         </p>
       </footer>
-      <!-- Same wordmark + icons footer used at the bottom of the quilt scroll.
-           Appears immediately on chamber load; main content scrolls in
-           `.exit-chamber-inner`. `exitChamberSettingsGearBtn` mirrors
-           `#settingsGearBtn`; navigation uses `data-next`. -->
+      <!-- Same icon footer as quilt scroll end (no wordmark — room for four icons). -->
       <div class="quilt-footer-icon-row" aria-label="OUR DAILY QUILT links and settings">
-        <span class="quilt-footer-wordmark" aria-hidden="true">OUR DAILY QUILT</span>
-        <button
-          type="button"
-          class="quilt-about-icon-link"
-          data-next="screen-about"
-          aria-label="About this project"
-        >
-          <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true" fill="none">
-            <circle cx="12" cy="12" r="9"></circle>
-            <path d="M9.8 9.2a2.2 2.2 0 1 1 3.56 1.74c-.95.7-1.36 1.2-1.36 2.26"></path>
-            <circle cx="12" cy="16.8" r="0.9"></circle>
-          </svg>
-        </button>
-        <a
-          class="quilt-instagram-icon-link"
-          href="https://www.instagram.com/ourdailyquilt/"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Follow OUR DAILY QUILT on Instagram"
-        >
-          <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-            <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
-            <circle cx="12" cy="12" r="4.1"></circle>
-            <circle cx="17.2" cy="6.8" r="0.9"></circle>
-          </svg>
-        </a>
-        <button
-          type="button"
-          class="quilt-settings-icon-btn"
-          id="exitChamberSettingsGearBtn"
-          data-next="screen-settings"
-          aria-label="Open settings"
-        >
-          <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-            <circle cx="12" cy="12" r="3.2"></circle>
-            <path d="M19.4 13.6a7.8 7.8 0 0 0 0-3.2l2-1.55-2-3.46-2.44.98a8 8 0 0 0-2.77-1.6L13.82 2h-4l-.37 2.77a8 8 0 0 0-2.77 1.6l-2.44-.98-2 3.46 2 1.55a7.8 7.8 0 0 0 0 3.2l-2 1.55 2 3.46 2.44-.98a8 8 0 0 0 2.77 1.6l.37 2.77h4l.37-2.77a8 8 0 0 0 2.77-1.6l2.44.98 2-3.46-2-1.55z"></path>
-          </svg>
-        </button>
+        <div class="quilt-footer-icon-cluster">
+          <button
+            type="button"
+            class="quilt-about-icon-link"
+            data-next="screen-about"
+            aria-label="About this project"
+          >
+            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true" fill="none">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M9.8 9.2a2.2 2.2 0 1 1 3.56 1.74c-.95.7-1.36 1.2-1.36 2.26"></path>
+              <circle cx="12" cy="16.8" r="0.9"></circle>
+            </svg>
+          </button>
+          <a
+            class="quilt-instagram-icon-link"
+            href="https://www.instagram.com/ourdailyquilt/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Follow OUR DAILY QUILT on Instagram"
+          >
+            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="17" height="17" rx="4.5"></rect>
+              <circle cx="12" cy="12" r="4.1"></circle>
+              <circle cx="17.2" cy="6.8" r="0.9"></circle>
+            </svg>
+          </a>
+          <button
+            type="button"
+            class="quilt-remember-icon-btn"
+            id="exitChamberRememberTodayBtn"
+            data-next="screen-remember-today"
+            aria-label="Remember something from today"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true" translate="no">add_alert</span>
+          </button>
+          <button
+            type="button"
+            class="quilt-settings-icon-btn"
+            id="exitChamberSettingsGearBtn"
+            data-next="screen-settings"
+            aria-label="Open settings"
+          >
+            <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+              <circle cx="12" cy="12" r="3.2"></circle>
+              <path d="M19.4 13.6a7.8 7.8 0 0 0 0-3.2l2-1.55-2-3.46-2.44.98a8 8 0 0 0-2.77-1.6L13.82 2h-4l-.37 2.77a8 8 0 0 0-2.77 1.6l-2.44-.98-2 3.46 2 1.55a7.8 7.8 0 0 0 0 3.2l-2 1.55 2 3.46 2.44-.98a8 8 0 0 0 2.77 1.6l.37 2.77h4l.37-2.77a8 8 0 0 0 2.77-1.6l2.44.98 2-3.46-2-1.55z"></path>
+            </svg>
+          </button>
+        </div>
       </div>
+    </section>
+
+    <!-- Remember today Screen -->
+    <section class="screen" id="screen-remember-today" role="main" aria-label="Remember something from today">
+      <div class="remember-today-inner">
+        <h1 class="remember-today-title" id="rememberTodayTitle">Is there anything from today you want to remember?</h1>
+        <p class="remember-today-lead" id="rememberTodayLead">Choose what to include. We&rsquo;ll send <strong>one</strong> reminder later today.</p>
+        <div class="remember-today-items" id="rememberTodayItems" role="group" aria-label="What to remember">
+          <article class="remember-today-item" data-remember-kind="quote" hidden>
+            <div class="remember-today-item__slab">
+              <div class="remember-today-item__head">
+                <p class="remember-today-item__kicker">Quote</p>
+                <button type="button" class="remember-today-item__include" aria-pressed="false">Include</button>
+              </div>
+              <p class="remember-today-item__text"></p>
+            </div>
+          </article>
+          <article class="remember-today-item" data-remember-kind="mood" hidden>
+            <div class="remember-today-item__slab">
+              <div class="remember-today-item__head">
+                <p class="remember-today-item__kicker">Mood message</p>
+                <button type="button" class="remember-today-item__include" aria-pressed="false">Include</button>
+              </div>
+              <p class="remember-today-item__text"></p>
+            </div>
+          </article>
+          <article class="remember-today-item" data-remember-kind="watch_for" hidden>
+            <div class="remember-today-item__slab">
+              <div class="remember-today-item__head">
+                <p class="remember-today-item__kicker">Watch for</p>
+                <button type="button" class="remember-today-item__include" aria-pressed="false">Include</button>
+              </div>
+              <p class="remember-today-item__text"></p>
+            </div>
+          </article>
+          <article class="remember-today-item" data-remember-kind="color" hidden>
+            <div class="remember-today-item__slab">
+              <div class="remember-today-item__head">
+                <p class="remember-today-item__kicker">Your color</p>
+                <button type="button" class="remember-today-item__include" aria-pressed="false">Include</button>
+              </div>
+              <div class="remember-today-color-preview">
+                <div class="remember-today-color-swatch" aria-hidden="true"></div>
+                <div class="remember-today-color-meta">
+                  <p class="remember-today-color-name"></p>
+                  <p class="remember-today-color-hex"></p>
+                </div>
+              </div>
+              <p class="remember-today-item__text" hidden></p>
+            </div>
+          </article>
+          <article class="remember-today-item" data-remember-kind="companion" hidden>
+            <div class="remember-today-item__slab">
+              <div class="remember-today-item__head">
+                <p class="remember-today-item__kicker">Companion piece</p>
+                <button type="button" class="remember-today-item__include" aria-pressed="false">Include</button>
+              </div>
+              <p class="remember-today-item__text"></p>
+            </div>
+          </article>
+          <article class="remember-today-item remember-today-item--thoughts" data-remember-kind="thoughts">
+            <div class="remember-today-item__slab">
+              <div class="remember-today-item__head">
+                <p class="remember-today-item__kicker">Random thought</p>
+                <button type="button" class="remember-today-item__include" aria-pressed="false">Include</button>
+              </div>
+              <textarea
+                id="rememberTodayThoughtsInput"
+                class="remember-today-thoughts-input"
+                rows="3"
+                maxlength="280"
+                placeholder="Anything else from today…"
+                aria-label="Random thought"
+              ></textarea>
+            </div>
+          </article>
+        </div>
+        <p class="remember-today-status" id="rememberTodayStatus" aria-live="polite"></p>
+        <p class="remember-today-web-note" id="rememberTodayWebNote" hidden>
+          Reminders are available in the OUR DAILY QUILT app on your phone.
+        </p>
+      </div>
+      <button class="btn back-to-quilt-btn" type="button" data-next="screen-quilt" aria-label="Back to today&rsquo;s quilt">
+        <span class="stack-btn-content">
+          <span class="stack-btn-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M15 5l-7 7 7 7"></path>
+            </svg>
+          </span>
+          <span>Back to quilt</span>
+        </span>
+      </button>
+    </section>
+
+    <!-- Remember today — read-only (notification tap) -->
+    <section class="screen" id="screen-remember-today-view" role="main" aria-label="What you wanted to remember">
+      <div class="remember-today-view-inner">
+        <h1 class="remember-today-view-title" id="rememberTodayViewTitle">From today</h1>
+        <div class="remember-today-view-items" id="rememberTodayViewItems" role="list" aria-label="What you saved"></div>
+        <p class="remember-today-view-empty" id="rememberTodayViewEmpty" hidden>
+          Nothing saved for this reminder.
+        </p>
+      </div>
+      <button class="btn back-to-quilt-btn" type="button" data-next="screen-quilt" aria-label="Back to today&rsquo;s quilt">
+        <span class="stack-btn-content">
+          <span class="stack-btn-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M15 5l-7 7 7 7"></path>
+            </svg>
+          </span>
+          <span>Back to quilt</span>
+        </span>
+      </button>
     </section>
 
     <!-- Archive Screen -->
@@ -13870,6 +14579,23 @@ try {
               patternType: 'regular', colorSlot: 1 }
           ]
         }
+      },
+      /**
+       * Remember-today: reader picks items on #screen-remember-today; one combined
+       * local notification fires later the same quote-day (native only). Tap opens
+       * read-only #screen-remember-today-view with saved segments.
+       */
+      REMEMBER_TODAY: {
+        LOCAL_NOTIF_ID: 9212088,
+        MAX_BODY_CHARS: 320,
+        MAX_SEGMENT_CHARS: 140,
+        /** Temporary: fire ~3s after Include (restore MIN/MAX window for production). */
+        INSTANT_DELAY_MS: 3000,
+        MIN_DELAY_MS: 2 * 60 * 60 * 1000,
+        MAX_DELAY_MS: 8 * 60 * 60 * 1000,
+        SEGMENT_PRIORITY: ['mood', 'watch_for', 'quote', 'color', 'companion', 'thoughts'],
+        MAX_THOUGHTS_CHARS: 280,
+        COMPANION_FALLBACK_TITLE: 'Art recommendation for this quote is coming soon.'
       }
     };
 
@@ -20459,6 +21185,23 @@ try {
         return '#' + ch('r') + ch('g') + ch('b');
       }
 
+      /** Denser warm stock for the quilt Pantone chip (footer + card face). */
+      static colorCardstockPaperFromUserColor(hex) {
+        const tinted = Utils.moodReceiptPaperFromUserColor(hex);
+        const mix = 0.42;
+        const parse = (h) => {
+          const n = parseInt(String(h).replace('#', ''), 16);
+          return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+        };
+        const a = parse(tinted);
+        const b = parse('#e3ddd4');
+        const ch = (k) =>
+          Math.round(a[k] * (1 - mix) + b[k] * mix)
+            .toString(16)
+            .padStart(2, '0');
+        return '#' + ch('r') + ch('g') + ch('b');
+      }
+
       /** Receipt footer stamp: MM/DD/YY HH:MMA (POS-style, fixed width). */
       static formatMoodReceiptStamp(date = new Date()) {
         const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -21908,7 +22651,9 @@ try {
           'screen-settings',
           'screen-reflection-themes-archive',
           'screen-archive',
-          'screen-exit-chamber'
+          'screen-exit-chamber',
+          'screen-remember-today',
+          'screen-remember-today-view'
         ]);
         this._savedQuiltScrollPosition = null;
       }
@@ -26106,6 +26851,53 @@ try {
       }
 
       /**
+       * Catalog/assignment-aware speaker URL for Layout B (transparent cutout before portrait).
+       * Matches exit chamber + `getQuoteSpeakerProfile`.
+       */
+      _resolveLayoutBSpeakerImageUrl(quote) {
+        const q = quote && typeof quote === 'object' ? quote : {};
+        const app = typeof window !== 'undefined' ? window.app : null;
+        if (app && typeof app.getQuoteSpeakerProfile === 'function') {
+          const url = app.getQuoteSpeakerProfile(q)?.imageUrl;
+          if (url) return String(url).trim();
+        }
+        const qs = app?.quoteService;
+        if (qs && typeof qs._resolveSpeakerCutoutForQuote === 'function') {
+          const cutout = String(qs._resolveSpeakerCutoutForQuote(q) || '').trim();
+          if (cutout) return cutout;
+        }
+        return String(
+          q.speakerImageUrl ??
+            q.speaker_image_url ??
+            q.speakerImageUrlSnapshot ??
+            q.speaker_image_url_snapshot ??
+            q.speakerImage ??
+            q.speaker_image ??
+            ''
+        ).trim();
+      }
+
+      /** Pinned/catalog quote for a date — same path as Zapier caption + nightly IG job. */
+      async _quoteForLayoutBSpeakerImage(quoteObj, dateKey) {
+        const dk = dateKey || Utils.getTodayKey();
+        const qs = typeof window !== 'undefined' ? window.app?.quoteService : null;
+        if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+          try {
+            const resolved = await qs.getQuoteResolvedForInstagramDateKey(dk);
+            if (resolved) return resolved;
+          } catch (e) {
+            this.logger.warn('Layout B speaker quote resolve failed:', e);
+          }
+        }
+        if (quoteObj && typeof quoteObj === 'object') return quoteObj;
+        if (qs && typeof qs.getTodayQuote === 'function') {
+          const today = qs.getTodayQuote();
+          if (today) return today;
+        }
+        return { text: '', author: '' };
+      }
+
+      /**
        * Additional Instagram feed post variant: current Layout B plus speaker portrait between quilt and strips.
        */
       async generateInstagramPostLayoutBSpeakerImage(blocks, quoteObj = null, dateKey = null) {
@@ -26115,21 +26907,8 @@ try {
             return null;
           }
           const dk = dateKey || Utils.getTodayKey();
-          const q =
-            quoteObj ||
-            (typeof window !== 'undefined' && window.app?.quoteService?.getTodayQuote?.()) ||
-            { text: '', author: '' };
-          const speakerImageUrl = String(
-            q.speakerCutoutUrl ??
-            q.speaker_cutout_url ??
-            q.speakerCutoutUrlSnapshot ??
-            q.speakerImageUrl ??
-            q.speaker_image_url ??
-            q.speakerImageUrlSnapshot ??
-            q.speakerImage ??
-            q.speaker_image ??
-            ''
-          ).trim();
+          const q = await this._quoteForLayoutBSpeakerImage(quoteObj, dk);
+          const speakerImageUrl = this._resolveLayoutBSpeakerImageUrl(q);
           if (!speakerImageUrl) return null;
 
           let highResBlob = null;
@@ -31774,6 +32553,10 @@ try {
         this._quiltScrollCuePlaying = false;
         this._quiltScrollCueScroller = null;
         this._quiltScrollCuePreviousScrollBehavior = '';
+        /** Set when user taps a remember-today local notification (before live sync finishes). */
+        this._pendingRememberTodayViewDateKey = null;
+        /** Blocks returning-user portal→quilt fast path after a remember-today notification open. */
+        this._skipFastPathForRememberToday = false;
         /** One-shot guard: daily push opt-in after user scrolls quilt to the bottom. */
         this._dailyQuotePromptedFromQuiltScroll = false;
         this._quiltNotificationPromptReady = false;
@@ -32511,7 +33294,14 @@ try {
         this._postLiveSyncInitialized = true;
         this._clearPortalJoinLineWatchdog();
         this._startPortalJoinLineWatchdog();
-        this.uiService?.showScreen?.('screen-portal');
+        this.setupPushNotificationListeners();
+        const rememberViewDateKey = await this._awaitRememberTodayNotificationOpenIntent(900);
+        if (rememberViewDateKey) {
+          this.prepareRememberTodayViewScreen(rememberViewDateKey);
+          this.uiService?.showScreen?.('screen-remember-today-view');
+        } else {
+          this.uiService?.showScreen?.('screen-portal');
+        }
         this._maybeSnapPickerToDailyFirstPalette();
         this.updateSquareCounter();
         this._dismissBootSplash();
@@ -32521,7 +33311,9 @@ try {
           });
         });
 
-        this.setupPushNotificationListeners();
+        this.refreshRememberTodayFooterVisibility();
+        window.setTimeout(() => this.refreshRememberTodayFooterVisibility(), 800);
+        void this.maybeCancelRememberTodayForStaleDay();
         this.refreshDailyQuotePushRegistration().catch((error) => {
           this.logger.warn('Daily quote push refresh skipped:', error);
         });
@@ -32540,13 +33332,20 @@ try {
         this.quoteService.displayQuote();
         void this._primeQuiltQuoteChrome();
         this.renderer.initialize();
-        const fastReturningToday = this._shouldFastPathReturningSameDayQuote();
+        const fastReturningToday =
+          !rememberViewDateKey &&
+          !this._skipFastPathForRememberToday &&
+          this._shouldFastPathReturningSameDayQuote();
         if (fastReturningToday) {
           this.clearPortalToQuoteIntroTimer();
           this._blockPortalScrollNav = true;
           this._portalToQuoteTimer = setTimeout(() => {
             this._portalToQuoteTimer = null;
             this._blockPortalScrollNav = false;
+            if (this._skipFastPathForRememberToday) return;
+            if (document.getElementById('screen-remember-today-view')?.classList.contains('active')) {
+              return;
+            }
             if (window.odqPerfMark) window.odqPerfMark('fast-path-quilt-visible');
             this._notifyNativeLaunchCoverReady();
             this.uiService.showScreen('screen-quilt');
@@ -32566,6 +33365,7 @@ try {
           this._preparePortalJoinLineForLoad();
           this._showConnectionProblemConnecting();
           this.setupEventListeners();
+          this.setupPushNotificationListeners();
           this._dismissBootSplash();
 
           await this.dataService.initialize();
@@ -32694,6 +33494,12 @@ try {
           if (targetId === 'screen-milestone-quilts') {
             this.prepareMilestoneQuiltsScreen();
           }
+          if (targetId === 'screen-remember-today') {
+            this.prepareRememberTodayScreen();
+          }
+          if (targetId === 'screen-remember-today-view') {
+            this.prepareRememberTodayViewScreen();
+          }
           this.uiService.showScreen(targetId);
           if (targetId === 'screen-quote-submission') {
             this.prepareQuoteSubmissionScreen();
@@ -32716,6 +33522,33 @@ try {
             }
             activateDataNextTarget(btn);
           });
+        });
+
+        const rememberItems = document.getElementById('rememberTodayItems');
+        if (rememberItems && !rememberItems.dataset.bound) {
+          rememberItems.dataset.bound = '1';
+          rememberItems.addEventListener('click', (e) => {
+            const includeBtn = e.target?.closest?.('.remember-today-item__include');
+            if (!includeBtn || includeBtn.disabled) return;
+            const item = includeBtn.closest('.remember-today-item');
+            const kind = item?.getAttribute('data-remember-kind');
+            const pressed = includeBtn.getAttribute('aria-pressed') === 'true';
+            void this.handleRememberTodayChipToggle(kind, !pressed);
+          });
+        }
+
+        this._bindRememberTodayViewCopy();
+
+        document.addEventListener('screenChange', (e) => {
+          if (e?.detail?.screenId === 'screen-quilt' || e?.detail?.screenId === 'screen-exit-chamber') {
+            this.refreshRememberTodayFooterVisibility();
+          }
+          if (e?.detail?.screenId === 'screen-remember-today') {
+            this.prepareRememberTodayScreen();
+          }
+          if (e?.detail?.screenId === 'screen-remember-today-view') {
+            this.prepareRememberTodayViewScreen();
+          }
         });
 
         /* WKWebView / local file: an invisible layer can sit above the gear so
@@ -36594,6 +37427,9 @@ try {
             return;
           }
           this._saveQuiltMoodPickToStorage(widget, mood, stampAt);
+          if (document.getElementById('screen-remember-today')?.classList.contains('active')) {
+            this.refreshRememberTodayScreen();
+          }
         });
       }
 
@@ -42957,15 +43793,19 @@ try {
         const qText = String(qt.text ?? qt.body ?? '').trim();
         const qAuthor = String(qt.author ?? '').trim();
         let speakerOverlay = null;
-        const speakerImageUrl = String(
-          qt.speakerCutoutUrl ??
-            qt.speaker_cutout_url ??
-            qt.speakerCutoutUrlSnapshot ??
-            qt.speakerImageUrl ??
-            qt.speaker_image_url ??
-            qt.speakerImageUrlSnapshot ??
-            ''
-        ).trim();
+        const speakerImageUrl =
+          (this.archiveService && typeof this.archiveService._resolveLayoutBSpeakerImageUrl === 'function'
+            ? this.archiveService._resolveLayoutBSpeakerImageUrl(qt)
+            : '') ||
+          String(
+            qt.speakerCutoutUrl ??
+              qt.speaker_cutout_url ??
+              qt.speakerCutoutUrlSnapshot ??
+              qt.speakerImageUrl ??
+              qt.speaker_image_url ??
+              qt.speakerImageUrlSnapshot ??
+              ''
+          ).trim();
         if (speakerImageUrl) {
           let speakerImageForCanvas = speakerImageUrl;
           if (/^https?:\/\//i.test(speakerImageUrl)) {
@@ -43890,11 +44730,11 @@ try {
         };
 
         this.bindNotificationDebugReveal(
-          document.querySelector('#screen-quilt .quilt-footer-wordmark')
+          document.querySelector('#screen-quilt .quilt-footer-icon-row')
         );
       }
 
-      /** Secret reveal: 5× tap or ~1.2s press on quilt footer wordmark (not the settings gear). */
+      /** Secret reveal: 5× tap or ~1.2s press on quilt footer icon strip (not the settings gear). */
       bindNotificationDebugReveal(target) {
         if (!target || target._odqNotifyDebugRevealBound) return;
         target._odqNotifyDebugRevealBound = true;
@@ -44481,6 +45321,1002 @@ try {
         return this.showPersonalQuiltReveal({ source: 'backfill' });
       }
 
+      isRememberTodayNativeAvailable() {
+        const localNotifications = this.getLocalNotificationsPlugin();
+        if (!localNotifications) return false;
+        try {
+          const cap = window.Capacitor;
+          if (!cap) return false;
+          if (typeof cap.isNativePlatform === 'function') {
+            return cap.isNativePlatform() === true;
+          }
+          const platform =
+            typeof cap.getPlatform === 'function' ? String(cap.getPlatform() || '') : '';
+          return platform === 'ios' || platform === 'android';
+        } catch (_) {
+          return false;
+        }
+      }
+
+      _rememberTodayDateKey() {
+        return this.quoteService?.getQuoteCalendarKeyNow?.() || Utils.getTodayKey();
+      }
+
+      _rememberTodayStorageKey(dateKey) {
+        const dk = String(dateKey || this._rememberTodayDateKey()).trim();
+        return `ourDailyRememberToday_${dk}`;
+      }
+
+      readRememberTodayState(dateKey = this._rememberTodayDateKey()) {
+        try {
+          const raw = localStorage.getItem(this._rememberTodayStorageKey(dateKey));
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object') return null;
+          if (String(parsed.dateKey || '') !== String(dateKey)) return null;
+          const kinds = Array.isArray(parsed.kinds)
+            ? parsed.kinds.map((k) => String(k).trim()).filter(Boolean)
+            : [];
+          const segments =
+            parsed.segments && typeof parsed.segments === 'object' ? parsed.segments : {};
+          return {
+            dateKey: String(dateKey),
+            kinds,
+            segments,
+            thoughtsDraft: String(parsed.thoughtsDraft ?? '').trim(),
+            fireAtIso: String(parsed.fireAtIso || '').trim()
+          };
+        } catch (_) {
+          return null;
+        }
+      }
+
+      writeRememberTodayState(state) {
+        if (!state || !state.dateKey) return;
+        try {
+          localStorage.setItem(
+            this._rememberTodayStorageKey(state.dateKey),
+            JSON.stringify({
+              dateKey: state.dateKey,
+              kinds: Array.isArray(state.kinds) ? state.kinds : [],
+              segments: state.segments && typeof state.segments === 'object' ? state.segments : {},
+              thoughtsDraft: String(state.thoughtsDraft ?? '').trim(),
+              fireAtIso: String(state.fireAtIso || '').trim()
+            })
+          );
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      async maybeCancelRememberTodayForStaleDay() {
+        const dk = this._rememberTodayDateKey();
+        const todayKey = this._rememberTodayStorageKey(dk);
+        try {
+          const keys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('ourDailyRememberToday_')) keys.push(key);
+          }
+          keys.forEach((key) => {
+            if (key !== todayKey) {
+              try {
+                localStorage.removeItem(key);
+              } catch (_) {
+                /* ignore */
+              }
+            }
+          });
+        } catch (_) {
+          /* ignore */
+        }
+        const state = this.readRememberTodayState(dk);
+        if (!state || !state.kinds.length) {
+          await this._cancelRememberTodayNotification();
+        }
+      }
+
+      _normalizeRememberTodayThoughts(value) {
+        return String(value || '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n')
+          .map((line) => line.replace(/\s+/g, ' ').trim())
+          .filter(Boolean)
+          .join('\n')
+          .trim()
+          .slice(0, Number(CONFIG.REMEMBER_TODAY?.MAX_THOUGHTS_CHARS) || 280);
+      }
+
+      _readRememberTodayThoughtsFromInput() {
+        const el = document.getElementById('rememberTodayThoughtsInput');
+        return this._normalizeRememberTodayThoughts(el?.value || '');
+      }
+
+      _getRememberTodayQuote(quote = null) {
+        const q = quote || this.quoteService?.getTodayQuote?.() || null;
+        if (!q) return null;
+        const fresh = this.quoteService?._hydrateQuoteFromCatalog?.(q);
+        if (!fresh) return q;
+        return this.quoteService._mergePinnedWithCatalogFields(fresh, q);
+      }
+
+      /**
+       * Mood copy for remember-today: only the line for the tile the reader
+       * picked (good or rough). Null when they have not picked yet.
+       */
+      _getRememberTodayMoodPick() {
+        const snap = this._getQuiltMoodPickSnapshot();
+        if (snap?.mood && snap?.body) {
+          const mood = snap.mood === 'rough' ? 'rough' : 'good';
+          return {
+            mood,
+            body: String(snap.body).trim(),
+            kicker:
+              String(snap.label || '').trim() ||
+              (mood === 'good' ? 'Good day' : 'Rough day')
+          };
+        }
+
+        const todayQuote = this._getRememberTodayQuote();
+        const { goodDay, roughDay } = this.quoteService?._moodLinesFromQuote?.(todayQuote || {}) || {
+          goodDay: '',
+          roughDay: ''
+        };
+        const saved = this._readQuiltMoodPickFromStorage('');
+        if (!saved || (saved.mood !== 'good' && saved.mood !== 'rough')) return null;
+
+        const raw =
+          saved.mood === 'good'
+            ? String(goodDay || '').trim()
+            : String(roughDay || '').trim();
+        const body = Utils.formatMoodReceiptBody(raw);
+        if (!body) return null;
+
+        const widget = document.getElementById('quiltMoodWidget');
+        const tileLabel = widget
+          ?.querySelector?.(`.quilt-mood-widget__tile-text[data-mood-text="${saved.mood}"]`)
+          ?.textContent?.trim();
+        return {
+          mood: saved.mood,
+          body,
+          kicker: tileLabel || (saved.mood === 'good' ? 'Good day' : 'Rough day')
+        };
+      }
+
+      _rememberTodayQuoteBody(quote = null) {
+        const today = this._getRememberTodayQuote(quote);
+        if (!today) return '';
+        const full = String(today.text || today.quote || '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n')
+          .map((line) => line.replace(/\s+/g, ' ').trim())
+          .filter(Boolean)
+          .join('\n')
+          .trim();
+        if (full) return full;
+        return String(this._notificationTextFromQuoteData(today) || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      _rememberTodayQuoteSpeakerName(quote = null) {
+        const today = this._getRememberTodayQuote(quote);
+        if (!today) return '';
+        const profile = this.getQuoteSpeakerProfile?.(today);
+        const fromProfile = String(profile?.name || '').trim();
+        if (fromProfile) return fromProfile;
+        const rawAuthor = String(today.author || today.authorSnapshot || '').trim();
+        return rawAuthor.replace(/^[—–\-]\s*/, '').trim();
+      }
+
+      _rememberTodayQuoteSegment(quote = null) {
+        const body = this._rememberTodayQuoteBody(quote);
+        if (!body) return '';
+        const speaker = this._rememberTodayQuoteSpeakerName(quote);
+        if (!speaker) return body;
+        return `${body}\n\n\u2014 ${speaker}`;
+      }
+
+      _getRememberTodayColorPick(dateKey = this._rememberTodayDateKey()) {
+        const dk = String(dateKey || this._rememberTodayDateKey()).trim() || this._rememberTodayDateKey();
+        const data = this.getExitChamberTodayPieceData?.(dk);
+        if (!data) return null;
+        const hex = this.normalizeHexColor?.(data.color) || String(data.color || '').trim();
+        if (!hex || !Utils.validateHexColor?.(hex)) return null;
+        const name = String(this.getPaintSampleColorName?.(hex) || '').trim();
+        return { hex, name };
+      }
+
+      _rememberTodayColorSegment(dateKey = this._rememberTodayDateKey()) {
+        const pick = this._getRememberTodayColorPick(dateKey);
+        if (!pick) return '';
+        if (pick.name) return `${pick.name}\n${pick.hex}`;
+        return pick.hex;
+      }
+
+      _syncRememberTodayColorPreview(item, pick) {
+        if (!item || !pick) return;
+        const swatch = item.querySelector('.remember-today-color-swatch');
+        const nameEl = item.querySelector('.remember-today-color-name');
+        const hexEl = item.querySelector('.remember-today-color-hex');
+        if (swatch) swatch.style.setProperty('--remember-today-swatch-color', pick.hex);
+        if (nameEl) {
+          nameEl.textContent = pick.name || '';
+          nameEl.hidden = !pick.name;
+        }
+        if (hexEl) hexEl.textContent = pick.hex;
+      }
+
+      _rememberTodaySegment(kind, quote = null) {
+        const qs = this.quoteService;
+        const today = this._getRememberTodayQuote(quote);
+        const k = String(kind || '').trim();
+        if (!today || !k) return '';
+
+        if (k === 'quote') {
+          return this._rememberTodayQuoteSegment(quote);
+        }
+        if (k === 'color') {
+          return this._rememberTodayColorSegment(this._rememberTodayDateKey());
+        }
+        if (k === 'watch_for') {
+          return qs?.getWatchForText?.(today) || '';
+        }
+        if (k === 'companion') {
+          const { titleLine, blurb } = qs?.getArtRecBeforeYouGoParts?.(today) || { titleLine: '', blurb: '' };
+          const fallback = CONFIG.REMEMBER_TODAY?.COMPANION_FALLBACK_TITLE || '';
+          if (!titleLine || titleLine === fallback) return '';
+          const b = String(blurb || '').replace(/\s+/g, ' ').trim();
+          return b ? `${titleLine}\n${b}` : titleLine;
+        }
+        if (k === 'mood') {
+          return this._getRememberTodayMoodPick()?.body || '';
+        }
+        if (k === 'thoughts') {
+          return this._readRememberTodayThoughtsFromInput();
+        }
+        return '';
+      }
+
+      isRememberTodayKindAvailable(kind, quote = null) {
+        const k = String(kind || '').trim();
+        if (k === 'mood') return !!this._getRememberTodayMoodPick();
+        if (k === 'thoughts') return !!this._readRememberTodayThoughtsFromInput();
+        if (k === 'color') return !!this._getRememberTodayColorPick();
+        return !!this._rememberTodaySegment(k, quote);
+      }
+
+      _truncateRememberTodayBody(text, maxChars, preserveLines = false) {
+        const max = Math.max(40, Number(maxChars) || 320);
+        const raw = String(text || '').trim();
+        if (!raw) return '';
+        if (preserveLines) {
+          const lines = raw.split('\n').map((ln) => ln.replace(/\s+/g, ' ').trim()).filter(Boolean);
+          let out = '';
+          for (const line of lines) {
+            const next = out ? `${out}\n${line}` : line;
+            if (next.length <= max) {
+              out = next;
+              continue;
+            }
+            const room = max - out.length - 1;
+            if (room > 12) out = `${out}\n${line.slice(0, room - 1).trim()}…`;
+            break;
+          }
+          if (out.length <= max) return out;
+        }
+        const t = raw.replace(/\s+/g, ' ').trim();
+        if (t.length <= max) return t;
+        return `${t.slice(0, max - 1).trim()}…`;
+      }
+
+      _buildRememberTodayNotificationBody(kinds, segments) {
+        const priority = CONFIG.REMEMBER_TODAY?.SEGMENT_PRIORITY || [
+          'mood',
+          'watch_for',
+          'quote',
+          'companion'
+        ];
+        const ordered = [];
+        priority.forEach((k) => {
+          if (kinds.includes(k) && segments[k]) ordered.push({ kind: k, text: segments[k] });
+        });
+        kinds.forEach((k) => {
+          if (!ordered.some((o) => o.kind === k) && segments[k]) {
+            ordered.push({ kind: k, text: segments[k] });
+          }
+        });
+        if (!ordered.length) return '';
+        const maxTotal = Number(CONFIG.REMEMBER_TODAY?.MAX_BODY_CHARS) || 320;
+        const maxSeg = Number(CONFIG.REMEMBER_TODAY?.MAX_SEGMENT_CHARS) || 140;
+        const perSeg =
+          ordered.length > 1
+            ? Math.min(maxSeg, Math.floor(maxTotal / ordered.length))
+            : maxTotal;
+        const lines = ordered
+          .map((o) => {
+            let text = String(o.text || '').trim();
+            if (o.kind === 'watch_for' && text) {
+              text = /^watch\s+for\b/i.test(text) ? text : `Watch for ${text}`;
+            }
+            return this._truncateRememberTodayBody(text, perSeg, true);
+          })
+          .filter(Boolean);
+        if (!lines.length) return '';
+        const joined = lines.join('\n');
+        if (joined.length <= maxTotal) return joined;
+        return this._truncateRememberTodayBody(joined, maxTotal, true);
+      }
+
+      _computeRememberTodayFireAt(_existingIso) {
+        const instantMs = Number(CONFIG.REMEMBER_TODAY?.INSTANT_DELAY_MS);
+        if (Number.isFinite(instantMs) && instantMs >= 0) {
+          return new Date(Date.now() + Math.max(1500, instantMs));
+        }
+        const minMs = Math.max(
+          60_000,
+          Number(CONFIG.REMEMBER_TODAY?.MIN_DELAY_MS) || 2 * 60 * 60 * 1000
+        );
+        const maxMs = Math.max(
+          minMs + 60_000,
+          Number(CONFIG.REMEMBER_TODAY?.MAX_DELAY_MS) || 8 * 60 * 60 * 1000
+        );
+        const span = maxMs - minMs;
+        const delay = minMs + Math.floor(Math.random() * (span > 0 ? span : 1));
+        return new Date(Date.now() + delay);
+      }
+
+      async _cancelRememberTodayNotification() {
+        const localNotifications = this.getLocalNotificationsPlugin();
+        if (!localNotifications) return;
+        const notifId = CONFIG.REMEMBER_TODAY?.LOCAL_NOTIF_ID || 9212088;
+        try {
+          await localNotifications.cancel({ notifications: [{ id: notifId }] });
+        } catch (_) {
+          /* no-op */
+        }
+      }
+
+      async ensureRememberTodayNotificationPermission(previewBody = '') {
+        const localNotifications = this.getLocalNotificationsPlugin();
+        if (!localNotifications) return false;
+
+        let display;
+        try {
+          const perm = await localNotifications.checkPermissions();
+          display = perm?.display;
+        } catch (error) {
+          this.logger.warn('Remember-today checkPermissions failed:', error);
+          return false;
+        }
+        if (display === 'granted') return true;
+
+        const sample = String(previewBody || '').trim() || 'Something from today you wanted to keep.';
+        const ok = await this.uiService.showPushNotificationOptIn({
+          sampleBody: sample,
+          iconUrl: CONFIG.APP.notificationIconUrl
+        });
+        if (!ok) {
+          this.uiService.showToast('Notifications are off. You can enable them in iPhone Settings.');
+          return false;
+        }
+
+        try {
+          const requested = await localNotifications.requestPermissions();
+          display = requested?.display;
+        } catch (error) {
+          this.logger.warn('Remember-today requestPermissions failed:', error);
+          return false;
+        }
+        if (display !== 'granted') {
+          this.uiService.showToast('Notifications are off. You can enable them in iPhone Settings.');
+          return false;
+        }
+        return true;
+      }
+
+      async _syncRememberTodayNotification() {
+        const dk = this._rememberTodayDateKey();
+        const state = this.readRememberTodayState(dk) || {
+          dateKey: dk,
+          kinds: [],
+          segments: {},
+          thoughtsDraft: '',
+          fireAtIso: ''
+        };
+
+        if (!state.kinds.length) {
+          await this._cancelRememberTodayNotification();
+          this.writeRememberTodayState({ dateKey: dk, kinds: [], segments: {}, fireAtIso: '' });
+          return null;
+        }
+
+        const body = this._buildRememberTodayNotificationBody(state.kinds, state.segments);
+        if (!body) {
+          await this._cancelRememberTodayNotification();
+          this.writeRememberTodayState({ dateKey: dk, kinds: [], segments: {}, fireAtIso: '' });
+          return null;
+        }
+
+        const permitted = await this.ensureRememberTodayNotificationPermission(body);
+        if (!permitted) return null;
+
+        const localNotifications = this.getLocalNotificationsPlugin();
+        if (!localNotifications) return null;
+
+        const fireAt = this._computeRememberTodayFireAt(state.fireAtIso);
+        const notifId = CONFIG.REMEMBER_TODAY?.LOCAL_NOTIF_ID || 9212088;
+
+        try {
+          await localNotifications.cancel({ notifications: [{ id: notifId }] });
+        } catch (_) {
+          /* no-op */
+        }
+
+        try {
+          await localNotifications.schedule({
+            notifications: [{
+              id: notifId,
+              title: '',
+              body,
+              schedule: { at: fireAt, allowWhileIdle: true },
+              extra: {
+                type: 'remember_today',
+                dateKey: dk,
+                kinds: JSON.stringify(state.kinds)
+              }
+            }]
+          });
+        } catch (error) {
+          this.logger.warn('Remember-today schedule failed:', error);
+          return null;
+        }
+
+        const iso = fireAt.toISOString();
+        this.writeRememberTodayState({
+          dateKey: dk,
+          kinds: state.kinds,
+          segments: state.segments,
+          fireAtIso: iso
+        });
+        return iso;
+      }
+
+      refreshRememberTodayFooterVisibility() {
+        const native = this.isRememberTodayNativeAvailable();
+        const state = native ? this.readRememberTodayState() : null;
+        const scheduled = !!(state && state.kinds && state.kinds.length);
+        ['quiltRememberTodayBtn', 'exitChamberRememberTodayBtn'].forEach((id) => {
+          const btn = document.getElementById(id);
+          if (!btn) return;
+          btn.removeAttribute('hidden');
+          btn.setAttribute('aria-pressed', native && scheduled ? 'true' : 'false');
+        });
+      }
+
+      _rememberTodayKickerLabel(kind) {
+        const k = String(kind || '').trim();
+        if (k === 'mood') {
+          const pick = this._getRememberTodayMoodPick();
+          return pick?.kicker || 'Mood message';
+        }
+        const labels = {
+          quote: 'Quote',
+          color: 'Your color',
+          watch_for: 'Watch for',
+          companion: 'Companion piece',
+          thoughts: 'Random thought'
+        };
+        return labels[k] || '';
+      }
+
+      _buildRememberTodayViewEntries(dateKey = this._rememberTodayDateKey()) {
+        const state = this.readRememberTodayState(dateKey);
+        const kinds = Array.isArray(state?.kinds) ? state.kinds : [];
+        if (!kinds.length) return [];
+
+        const priority = CONFIG.REMEMBER_TODAY?.SEGMENT_PRIORITY || [
+          'mood',
+          'watch_for',
+          'quote',
+          'color',
+          'companion',
+          'thoughts'
+        ];
+        const ordered = [];
+        priority.forEach((k) => {
+          if (kinds.includes(k)) ordered.push(k);
+        });
+        kinds.forEach((k) => {
+          if (!ordered.includes(k)) ordered.push(k);
+        });
+
+        const quote = this._getRememberTodayQuote();
+        const entries = [];
+        ordered.forEach((kind) => {
+          let text = String(state.segments?.[kind] || '').trim();
+          if (kind === 'quote') {
+            text = String(this._rememberTodayQuoteSegment(quote) || text).trim();
+          } else if (kind === 'color') {
+            text = String(this._rememberTodayColorSegment(dateKey) || text).trim();
+          } else if (!text) {
+            text = String(this._rememberTodaySegment(kind, quote) || '').trim();
+          }
+          if (!text) return;
+          entries.push({
+            kind,
+            kicker: this._rememberTodayKickerLabel(kind),
+            text
+          });
+        });
+        return entries;
+      }
+
+      prepareRememberTodayViewScreen(dateKey = this._rememberTodayDateKey()) {
+        void this.maybeCancelRememberTodayForStaleDay();
+        const dk = String(dateKey || this._rememberTodayDateKey()).trim() || this._rememberTodayDateKey();
+        const root = document.getElementById('rememberTodayViewItems');
+        const emptyEl = document.getElementById('rememberTodayViewEmpty');
+        const entries = this._buildRememberTodayViewEntries(dk);
+
+        if (!root) return;
+        root.replaceChildren('');
+        entries.forEach(({ kind, kicker, text }) => {
+          const block = document.createElement('article');
+          block.className = 'remember-today-view-block';
+          block.setAttribute('role', 'listitem');
+          block.setAttribute('data-remember-kind', kind);
+          const slab = document.createElement('div');
+          slab.className = 'remember-today-view-block__slab';
+          const head = document.createElement('div');
+          head.className = 'remember-today-view-block__head';
+          const kickerEl = document.createElement('p');
+          kickerEl.className = 'remember-today-view-block__kicker';
+          kickerEl.textContent = kicker;
+          const copyBtn = document.createElement('button');
+          copyBtn.type = 'button';
+          copyBtn.className = 'remember-today-view-copy-btn';
+          copyBtn.setAttribute('aria-label', `Copy ${kicker}`);
+          const copyIcon = document.createElement('span');
+          copyIcon.className = 'material-symbols-outlined';
+          copyIcon.setAttribute('aria-hidden', 'true');
+          copyIcon.setAttribute('translate', 'no');
+          copyIcon.textContent = 'content_copy';
+          copyBtn.append(copyIcon);
+          head.append(kickerEl, copyBtn);
+
+          if (kind === 'color') {
+            const pick = this._getRememberTodayColorPick(dk);
+            const preview = document.createElement('div');
+            preview.className = 'remember-today-color-preview';
+            const swatch = document.createElement('div');
+            swatch.className = 'remember-today-color-swatch';
+            swatch.setAttribute('aria-hidden', 'true');
+            const meta = document.createElement('div');
+            meta.className = 'remember-today-color-meta';
+            const nameEl = document.createElement('p');
+            nameEl.className = 'remember-today-color-name';
+            const hexEl = document.createElement('p');
+            hexEl.className = 'remember-today-color-hex';
+            meta.append(nameEl, hexEl);
+            preview.append(swatch, meta);
+            if (pick) this._syncRememberTodayColorPreview(preview, pick);
+            const copySource = document.createElement('p');
+            copySource.className =
+              'remember-today-view-block__text remember-today-view-block__text--copy-source';
+            copySource.textContent = text;
+            slab.append(head, preview, copySource);
+          } else {
+            const textEl = document.createElement('p');
+            textEl.className = 'remember-today-view-block__text';
+            textEl.textContent = text;
+            slab.append(head, textEl);
+          }
+
+          block.append(slab);
+          root.append(block);
+        });
+
+        if (emptyEl) emptyEl.hidden = entries.length > 0;
+        this._bindRememberTodayViewCopy();
+      }
+
+      _bindRememberTodayViewCopy() {
+        const root = document.getElementById('rememberTodayViewItems');
+        if (!root || root.dataset.copyBound === '1') return;
+        root.dataset.copyBound = '1';
+        root.addEventListener('click', (e) => {
+          const btn = e.target?.closest?.('.remember-today-view-copy-btn');
+          if (!btn || btn.disabled) return;
+          const text = btn
+            .closest('.remember-today-view-block')
+            ?.querySelector(
+              '.remember-today-view-block__text--copy-source, .remember-today-view-block__text'
+            )
+            ?.textContent
+            ?.trim();
+          if (!text) return;
+          void this._copyRememberTodayViewText(text, btn);
+        });
+      }
+
+      async _copyRememberTodayViewText(text, btn) {
+        const value = String(text || '').trim();
+        if (!value) return;
+
+        const copied = await this._writeTextToClipboard(value);
+        if (copied) {
+          this.uiService.showToast('Copied');
+          const prevLabel = btn.getAttribute('aria-label') || 'Copy';
+          btn.setAttribute('aria-label', 'Copied');
+          window.setTimeout(() => btn.setAttribute('aria-label', prevLabel), 1500);
+          return;
+        }
+        this.uiService.showToast('Couldn’t copy — try selecting the text.');
+      }
+
+      async _writeTextToClipboard(text) {
+        const value = String(text || '');
+        if (!value) return false;
+
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+            return true;
+          }
+        } catch (error) {
+          this.logger.warn('Clipboard API failed:', error);
+        }
+
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = value;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.append(ta);
+          ta.select();
+          const ok = document.execCommand('copy');
+          ta.remove();
+          return !!ok;
+        } catch (error) {
+          this.logger.warn('execCommand copy failed:', error);
+          return false;
+        }
+      }
+
+      prepareRememberTodayScreen() {
+        void this.maybeCancelRememberTodayForStaleDay();
+        this._bindRememberTodayThoughtsInput();
+        this.refreshRememberTodayScreen();
+        this.refreshRememberTodayFooterVisibility();
+      }
+
+      refreshRememberTodayScreen() {
+        const native = this.isRememberTodayNativeAvailable();
+        const webNote = document.getElementById('rememberTodayWebNote');
+        const statusEl = document.getElementById('rememberTodayStatus');
+        const itemsRoot = document.getElementById('rememberTodayItems');
+        if (webNote) webNote.hidden = native;
+
+        const quote = this._getRememberTodayQuote();
+        const dk = this._rememberTodayDateKey();
+        let state = this.readRememberTodayState(dk) || {
+          dateKey: dk,
+          kinds: [],
+          segments: {},
+          thoughtsDraft: '',
+          fireAtIso: ''
+        };
+
+        const thoughtsInput = document.getElementById('rememberTodayThoughtsInput');
+        if (thoughtsInput && document.activeElement !== thoughtsInput) {
+          thoughtsInput.value = String(
+            state.thoughtsDraft || state.segments?.thoughts || ''
+          ).trim();
+        }
+
+        if (!itemsRoot) return;
+        let mutated = false;
+        let visibleCount = 0;
+        itemsRoot.querySelectorAll('.remember-today-item').forEach((item) => {
+          const kind = String(item.getAttribute('data-remember-kind') || '').trim();
+          const textEl = item.querySelector('.remember-today-item__text');
+          const kickerEl = item.querySelector('.remember-today-item__kicker');
+          const includeBtn = item.querySelector('.remember-today-item__include');
+          let segment = this._rememberTodaySegment(kind, quote);
+          const selected = state.kinds.includes(kind);
+
+          if (kind === 'thoughts') {
+            visibleCount += 1;
+            item.hidden = false;
+            const thoughtsText = this._readRememberTodayThoughtsFromInput();
+            state.thoughtsDraft = thoughtsText;
+            if (includeBtn) {
+              includeBtn.disabled = !thoughtsText;
+              includeBtn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+              includeBtn.textContent = selected ? 'Included' : 'Include';
+            }
+            item.classList.toggle('is-selected', selected && !!thoughtsText);
+            if (!thoughtsText && selected) {
+              state.kinds = state.kinds.filter((k) => k !== 'thoughts');
+              delete state.segments.thoughts;
+              mutated = true;
+            } else if (selected && thoughtsText && state.segments.thoughts !== thoughtsText) {
+              state.segments.thoughts = thoughtsText;
+              mutated = true;
+            }
+            return;
+          }
+
+          if (kind === 'mood') {
+            const pick = this._getRememberTodayMoodPick();
+            if (!pick) {
+              item.hidden = true;
+              item.classList.remove('is-selected');
+              if (selected) {
+                state.kinds = state.kinds.filter((k) => k !== kind);
+                delete state.segments[kind];
+                mutated = true;
+              }
+              return;
+            }
+            segment = pick.body;
+            if (kickerEl) kickerEl.textContent = pick.kicker || 'Mood message';
+          }
+
+          if (kind === 'color') {
+            const pick = this._getRememberTodayColorPick(dk);
+            if (!pick) {
+              item.hidden = true;
+              item.classList.remove('is-selected');
+              if (selected) {
+                state.kinds = state.kinds.filter((k) => k !== kind);
+                delete state.segments[kind];
+                mutated = true;
+              }
+              return;
+            }
+            segment = this._rememberTodayColorSegment(dk);
+            this._syncRememberTodayColorPreview(item, pick);
+            visibleCount += 1;
+            item.hidden = false;
+            if (textEl) textEl.textContent = segment;
+            if (includeBtn) {
+              includeBtn.disabled = false;
+              includeBtn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+              includeBtn.textContent = selected ? 'Included' : 'Include';
+            }
+            item.classList.toggle('is-selected', selected);
+            if (selected && state.segments[kind] !== segment) {
+              state.segments[kind] = segment;
+              mutated = true;
+            }
+            return;
+          }
+
+          if (!segment) {
+            item.hidden = true;
+            item.classList.remove('is-selected');
+            if (selected) {
+              state.kinds = state.kinds.filter((k) => k !== kind);
+              delete state.segments[kind];
+              mutated = true;
+            }
+            return;
+          }
+
+          visibleCount += 1;
+          item.hidden = false;
+          if (textEl) textEl.textContent = segment;
+          if (includeBtn) {
+            includeBtn.disabled = false;
+            includeBtn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+            includeBtn.textContent = selected ? 'Included' : 'Include';
+          }
+          item.classList.toggle('is-selected', selected);
+          if (selected && state.segments[kind] !== segment) {
+            state.segments[kind] = segment;
+            mutated = true;
+          }
+        });
+
+        this.writeRememberTodayState(state);
+        if (mutated) {
+          void this._syncRememberTodayNotification();
+        }
+
+        if (statusEl) {
+          if (!native) {
+            statusEl.textContent = '';
+            statusEl.classList.remove('is-scheduled');
+          } else if (!visibleCount) {
+            statusEl.textContent = 'Nothing to remember yet for today.';
+            statusEl.classList.remove('is-scheduled');
+          } else if (state.kinds.length) {
+            statusEl.textContent = Number.isFinite(Number(CONFIG.REMEMBER_TODAY?.INSTANT_DELAY_MS))
+              ? 'Reminder will arrive in a few seconds.'
+              : 'One reminder is set for later today.';
+            statusEl.classList.add('is-scheduled');
+          } else {
+            statusEl.textContent = 'Tap Include on anything you want in your reminder.';
+            statusEl.classList.remove('is-scheduled');
+          }
+        }
+      }
+
+      async handleRememberTodayChipToggle(kind, shouldSelect) {
+        if (!this.isRememberTodayNativeAvailable()) {
+          this.uiService.showToast('Reminders are available in the app on your phone.');
+          return;
+        }
+
+        const k = String(kind || '').trim();
+        const dk = this._rememberTodayDateKey();
+        const quote = this._getRememberTodayQuote();
+        const state = this.readRememberTodayState(dk) || {
+          dateKey: dk,
+          kinds: [],
+          segments: {},
+          thoughtsDraft: '',
+          fireAtIso: ''
+        };
+
+        if (shouldSelect) {
+          if (!this.isRememberTodayKindAvailable(k, quote)) {
+            this.uiService.showToast(
+              k === 'thoughts'
+                ? 'Write a random thought first.'
+                : 'Nothing to remember for that yet today.'
+            );
+            this.refreshRememberTodayScreen();
+            return;
+          }
+          const segment = this._rememberTodaySegment(k, quote);
+          if (!state.kinds.includes(k)) state.kinds.push(k);
+          state.segments[k] = segment;
+        } else {
+          state.kinds = state.kinds.filter((x) => x !== k);
+          delete state.segments[k];
+        }
+
+        this.writeRememberTodayState(state);
+        this.refreshRememberTodayScreen();
+
+        const iso = await this._syncRememberTodayNotification();
+        this.refreshRememberTodayFooterVisibility();
+        if (iso && state.kinds.length) {
+          this.uiService.showToast(
+            Number.isFinite(Number(CONFIG.REMEMBER_TODAY?.INSTANT_DELAY_MS))
+              ? 'Reminder will arrive in a few seconds.'
+              : 'One reminder set for later today.'
+          );
+        } else if (!state.kinds.length) {
+          this.uiService.showToast('Reminder cleared.');
+        }
+      }
+
+      _rememberTodayDateKeyFromNotification(notification) {
+        const n = notification || {};
+        const extra = n.extra || {};
+        const data = n.data || {};
+        return (
+          String(extra.dateKey || data.dateKey || '').trim() || this._rememberTodayDateKey()
+        );
+      }
+
+      _isRememberTodayNotificationPayload(notification) {
+        const n = notification || {};
+        const extra = n.extra || {};
+        const data = n.data || {};
+        const type = String(extra.type || data.type || '').trim();
+        if (type === 'remember_today') return true;
+        const id = Number(n.id);
+        const notifId = Number(CONFIG.REMEMBER_TODAY?.LOCAL_NOTIF_ID || 9212088);
+        return Number.isFinite(id) && id === notifId;
+      }
+
+      _stashRememberTodayViewOpenIntent(dateKey) {
+        const dk = String(dateKey || '').trim();
+        if (!dk) return;
+        this._pendingRememberTodayViewDateKey = dk;
+        this._skipFastPathForRememberToday = true;
+        try {
+          sessionStorage.setItem(
+            'odqRememberTodayOpen',
+            JSON.stringify({ dateKey: dk, at: Date.now() })
+          );
+        } catch (_) {
+          /* no-op */
+        }
+      }
+
+      _takeRememberTodayViewOpenIntent() {
+        const pending = String(this._pendingRememberTodayViewDateKey || '').trim();
+        if (pending) {
+          this._pendingRememberTodayViewDateKey = null;
+          this._skipFastPathForRememberToday = true;
+          return pending;
+        }
+        try {
+          const raw = sessionStorage.getItem('odqRememberTodayOpen');
+          sessionStorage.removeItem('odqRememberTodayOpen');
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          const dk = String(parsed?.dateKey || '').trim();
+          const ageMs = Date.now() - Number(parsed?.at || 0);
+          if (!dk || !Number.isFinite(ageMs) || ageMs > 30000) return null;
+          this._skipFastPathForRememberToday = true;
+          return dk;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      async _awaitRememberTodayNotificationOpenIntent(maxWaitMs = 900) {
+        const deadline = Date.now() + Math.max(0, Number(maxWaitMs) || 0);
+        while (Date.now() < deadline) {
+          const dk = this._takeRememberTodayViewOpenIntent();
+          if (dk) return dk;
+          await this.wait(16);
+        }
+        return this._takeRememberTodayViewOpenIntent();
+      }
+
+      _openRememberTodayFromNotification(event) {
+        const notification = event?.notification || event || {};
+        const dk = this._rememberTodayDateKeyFromNotification(notification);
+        this._stashRememberTodayViewOpenIntent(dk);
+        this.clearPortalToQuoteIntroTimer();
+        this.prepareRememberTodayViewScreen(dk);
+        this.uiService.showScreen('screen-remember-today-view');
+      }
+
+      _bindRememberTodayThoughtsInput() {
+        const input = document.getElementById('rememberTodayThoughtsInput');
+        if (!input || input.dataset.bound === '1') return;
+        input.dataset.bound = '1';
+        let timer = null;
+        const flush = () => {
+          timer = null;
+          const dk = this._rememberTodayDateKey();
+          const state = this.readRememberTodayState(dk) || {
+            dateKey: dk,
+            kinds: [],
+            segments: {},
+            thoughtsDraft: '',
+            fireAtIso: ''
+          };
+          const text = this._readRememberTodayThoughtsFromInput();
+          state.thoughtsDraft = text;
+          if (state.kinds.includes('thoughts')) {
+            if (!text) {
+              state.kinds = state.kinds.filter((k) => k !== 'thoughts');
+              delete state.segments.thoughts;
+            } else {
+              state.segments.thoughts = text;
+            }
+            this.writeRememberTodayState(state);
+            void this._syncRememberTodayNotification().then(() => {
+              this.refreshRememberTodayFooterVisibility();
+            });
+          } else {
+            this.writeRememberTodayState(state);
+          }
+          const item = input.closest('.remember-today-item');
+          const includeBtn = item?.querySelector('.remember-today-item__include');
+          if (includeBtn) includeBtn.disabled = !text;
+        };
+        input.addEventListener('input', () => {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(flush, 400);
+        });
+        input.addEventListener('blur', () => {
+          if (timer) clearTimeout(timer);
+          flush();
+        });
+      }
+
       setupPushNotificationListeners() {
         const messaging = this.getFirebaseMessagingPlugin();
         const localNotifications = this.getLocalNotificationsPlugin();
@@ -44496,6 +46332,9 @@ try {
             (type === 'color_milestone' && kind === 'personal_quilt_milestone');
         };
 
+        const isRememberTodayAction = (event) =>
+          this._isRememberTodayNotificationPayload(event?.notification || event);
+
         messaging?.addListener('tokenReceived', async (event) => {
           try {
             await this.registerDailyQuotePushToken(event?.token);
@@ -44510,6 +46349,10 @@ try {
             });
             return;
           }
+          if (isRememberTodayAction(event)) {
+            this._openRememberTodayFromNotification(event);
+            return;
+          }
           this.uiService.showScreen('screen-quote');
         });
         localNotifications?.addListener('localNotificationActionPerformed', (event) => {
@@ -44517,6 +46360,10 @@ try {
             this.showPersonalQuiltReveal({ source: 'localNotificationActionPerformed' }).catch((error) => {
               this.logger.warn('Personal quilt reveal (local action) failed:', error);
             });
+            return;
+          }
+          if (isRememberTodayAction(event)) {
+            this._openRememberTodayFromNotification(event);
             return;
           }
           this.uiService.showScreen('screen-quote');
@@ -44532,23 +46379,6 @@ try {
           });
         });
 
-        // Cold-start case: app launched because the user tapped the
-        // notification while the process was killed. Some Capacitor versions
-        // do not fire `localNotificationActionPerformed` in this state, so
-        // we also scan delivered notifications on init.
-        if (localNotifications && typeof localNotifications.getDeliveredNotifications === 'function') {
-          localNotifications.getDeliveredNotifications().then((result) => {
-            const delivered = Array.isArray(result?.notifications) ? result.notifications : [];
-            const match = delivered.find((n) => isPersonalQuiltAction({ notification: n }));
-            if (match) {
-              this.showPersonalQuiltReveal({ source: 'coldStartDelivered' }).catch((error) => {
-                this.logger.warn('Personal quilt reveal (cold-start delivered) failed:', error);
-              });
-            }
-          }).catch((error) => {
-            this.logger.warn('LocalNotifications.getDeliveredNotifications failed (non-fatal):', error);
-          });
-        }
       }
 
       wait(ms) {
@@ -49363,6 +51193,8 @@ try {
       refreshQuiltUserShapeCard() {
         const wrap = document.getElementById('quiltUserColorCardWrap');
         const card = document.getElementById('quiltUserShapeCard');
+        const togetherNoteWrap = document.getElementById('quiltUserColorTogetherNoteWrap');
+        const togetherPaper = togetherNoteWrap?.querySelector('.quilt-user-color-together-note__paper');
         const swatch = document.getElementById('quiltUserShapeSwatch');
         const colorNameEl = document.getElementById('quiltUserShapeColorName');
         const colorHexEl = document.getElementById('quiltUserShapeColorHex');
@@ -49371,8 +51203,14 @@ try {
         if (!data) {
           wrap.hidden = true;
           wrap.setAttribute('aria-hidden', 'true');
+          if (togetherNoteWrap) {
+            togetherNoteWrap.hidden = true;
+            togetherNoteWrap.setAttribute('aria-hidden', 'true');
+          }
           if (colorNameEl) colorNameEl.textContent = '';
           if (colorHexEl) colorHexEl.textContent = '';
+          card.style.removeProperty('--quilt-color-card-paper');
+          togetherPaper?.style.removeProperty('--quilt-together-paper-bg');
           return;
         }
         const displayName = Utils.getNameThanksDisplayName();
@@ -49387,10 +51225,19 @@ try {
           swatch.style.setProperty('--quilt-user-piece-color', safeHex);
           swatch.style.setProperty('--quilt-swatch-label-color', swatchLabelColor);
         }
+        const cardstockPaper = Utils.colorCardstockPaperFromUserColor(safeHex);
+        card.style.setProperty('--quilt-color-card-paper', cardstockPaper);
+        if (togetherPaper) {
+          togetherPaper.style.setProperty('--quilt-together-paper-bg', cardstockPaper);
+        }
         if (colorNameEl) colorNameEl.textContent = colorSampleName;
         if (colorHexEl) colorHexEl.textContent = safeHex;
         wrap.hidden = false;
         wrap.removeAttribute('aria-hidden');
+        if (togetherNoteWrap) {
+          togetherNoteWrap.hidden = false;
+          togetherNoteWrap.removeAttribute('aria-hidden');
+        }
         card.setAttribute(
           'aria-label',
           `${displayName}'s color today, thank you for adding this color, ${colorSampleName}, ${safeHex}`

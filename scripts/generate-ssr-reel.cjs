@@ -130,55 +130,101 @@ async function runSsrAttempt({
         }
 
         const qs = app.quoteService;
-        let quote = { text: '', body: '', author: '' };
-        /**
-         * Canonical quote source for SSR date runs: Firestore `quotes/{dateKey}`.
-         * If missing and strict mode is on, fail fast instead of silently falling back to shuffled/today.
-         */
-        const getCanonicalQuoteForDateKey = async (dk) => {
+        const readFirestoreDoc = async (collection, id) => {
           try {
             if (!window.db || !window.firestore || typeof window.firestore.getDoc !== 'function') return null;
-            const qRef = window.firestore.doc(window.db, 'quotes', dk);
-            const qSnap = await window.firestore.getDoc(qRef);
-            if (!qSnap.exists()) return null;
-            const data = qSnap.data() || {};
-            const text = String(data.text || '').trim();
-            const author = String(data.author || '').trim();
-            if (!text) return null;
-            const blessing = String(data.blessing ?? data.Blessing ?? '').trim();
-            const whatIf = String(data.whatIf ?? data.what_if ?? '').trim();
-            const out = { text, author };
-            if (blessing) out.blessing = blessing;
-            if (whatIf) out.whatIf = whatIf;
-            return out;
+            const ref = window.firestore.doc(window.db, collection, id);
+            const snap = await window.firestore.getDoc(ref);
+            return snap.exists() ? snap.data() || {} : null;
           } catch (_) {
             return null;
           }
         };
-        const canonicalQuote = await getCanonicalQuoteForDateKey(dateKey);
-        if (canonicalQuote) {
-          quote = canonicalQuote;
-        } else {
-          // SSR should be date-driven for workflow runs (yesterday key), not pinned "today" state.
-          if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
-            quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || quote;
-          } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
-            quote = (await qs.resolveAndPinCalendarKey(dateKey)) || quote;
-          } else if (qs && typeof qs.getQuoteForDate === 'function') {
-            quote = qs.getQuoteForDate(dateKey) || quote;
-          } else if (qs && typeof qs.getTodayQuote === 'function') {
-            quote = qs.getTodayQuote() || quote;
+        const pickString = (...values) => {
+          for (const value of values) {
+            const s = String(value ?? '').trim();
+            if (s) return s;
           }
-          const qt = String(quote.text ?? quote.body ?? '').trim();
-          if (strictQuote && !qt) {
-            throw new Error(
-              `Missing canonical quote for ${dateKey}: quotes/${dateKey} not found (or empty text).`
-            );
+          return '';
+        };
+        const quoteFromFirestoreData = (data) => {
+          if (!data || typeof data !== 'object') return null;
+          const text = pickString(data.text, data.quote, data.body, data.textSnapshot);
+          const author = pickString(data.author, data.authorSnapshot);
+          if (!text && !author) return null;
+          const out = { text, body: text, author };
+          const fieldMap = {
+            blessing: [data.blessing, data.Blessing, data.blessingSnapshot],
+            whatIf: [data.whatIf, data.what_if, data.whatIfSnapshot],
+            speakerName: [data.speakerName, data.speaker_name, data.author, data.authorSnapshot],
+            speakerCutoutUrl: [
+              data.speakerCutoutUrl,
+              data.speaker_cutout_url,
+              data.speakerCutoutUrlSnapshot,
+              data.speaker_cutout_url_snapshot
+            ],
+            speaker_cutout_url: [
+              data.speaker_cutout_url,
+              data.speakerCutoutUrl,
+              data.speaker_cutout_url_snapshot,
+              data.speakerCutoutUrlSnapshot
+            ],
+            speakerImageUrl: [
+              data.speakerImageUrl,
+              data.speaker_image_url,
+              data.speakerImageUrlSnapshot,
+              data.speaker_image_url_snapshot
+            ],
+            speaker_image_url: [
+              data.speaker_image_url,
+              data.speakerImageUrl,
+              data.speaker_image_url_snapshot,
+              data.speakerImageUrlSnapshot
+            ]
+          };
+          for (const [key, values] of Object.entries(fieldMap)) {
+            const value = pickString(...values);
+            if (value) out[key] = value;
           }
+          return out;
+        };
+        const mergeQuoteData = (...quotes) => {
+          const out = {};
+          for (const q of quotes) {
+            if (!q || typeof q !== 'object') continue;
+            for (const [key, value] of Object.entries(q)) {
+              const s = typeof value === 'string' ? value.trim() : value;
+              if (s !== '' && s != null) out[key] = value;
+            }
+          }
+          return Object.keys(out).length ? out : null;
+        };
+        const assignmentData = await readFirestoreDoc('dailyQuoteAssignments', dateKey);
+        const sourceId = pickString(assignmentData?.sourceId);
+        const sourceQuoteData = sourceId ? await readFirestoreDoc('quotes', sourceId) : null;
+        const datedQuoteData = await readFirestoreDoc('quotes', dateKey);
+        const assignmentQuote = quoteFromFirestoreData(assignmentData);
+        const sourceQuote = quoteFromFirestoreData(sourceQuoteData);
+        const datedQuote = quoteFromFirestoreData(datedQuoteData);
+        let quote = null;
+        // SSR should be date-driven for workflow runs (yesterday key), not pinned "today" state.
+        if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+          quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || null;
+        } else if (qs && typeof qs.resolveAndPinCalendarKey === 'function') {
+          quote = (await qs.resolveAndPinCalendarKey(dateKey)) || null;
+        } else if (qs && typeof qs.getQuoteForDate === 'function') {
+          quote = qs.getQuoteForDate(dateKey) || null;
+        } else if (qs && typeof qs.getTodayQuote === 'function') {
+          quote = qs.getTodayQuote() || null;
         }
-        if (strictQuote && !canonicalQuote) {
+        if (!quote) {
+          quote = mergeQuoteData(datedQuote, sourceQuote, assignmentQuote);
+        }
+        quote = quote || { text: '', body: '', author: '' };
+        const quoteTextForStrictCheck = String(quote.text ?? quote.body ?? '').trim();
+        if (strictQuote && !quoteTextForStrictCheck) {
           throw new Error(
-            `Refusing fallback quote for ${dateKey}: quotes/${dateKey} missing. Sync or write canonical quote first.`
+            `Missing canonical quote for ${dateKey}: no dated quote, assignment, or source quote with text.`
           );
         }
         const instagramImage = await arch.generateInstagramImage(blocks);
@@ -196,6 +242,22 @@ async function runSsrAttempt({
             blocks,
             quote,
             dateKey
+          );
+        }
+        const expectedSpeakerImageUrl = String(
+          quote.speakerCutoutUrl ??
+            quote.speaker_cutout_url ??
+            quote.speakerCutoutUrlSnapshot ??
+            quote.speaker_cutout_url_snapshot ??
+            quote.speakerImageUrl ??
+            quote.speaker_image_url ??
+            quote.speakerImageUrlSnapshot ??
+            quote.speaker_image_url_snapshot ??
+            ''
+        ).trim();
+        if (expectedSpeakerImageUrl && !postLayoutBSpeakerImageData) {
+          throw new Error(
+            `Speaker image expected for ${dateKey}, but layout-b-speaker.png was not generated.`
           );
         }
 
@@ -232,8 +294,19 @@ async function runSsrAttempt({
           postLayoutBSpeakerImageData,
           reelWebmBlob: blob,
           zapierCaption,
-          quiltFingerprint
+          quiltFingerprint,
+          blockCount: Array.isArray(blocks) ? blocks.length : 0,
+          contributorCount: Math.max(1, Number(app.quiltEngine?.submissionCount) || 1)
         });
+        if (
+          expectedSpeakerImageUrl &&
+          !doc.postLayoutBSpeakerImageStorageUrl &&
+          !doc.layoutBSpeakerUrl
+        ) {
+          throw new Error(
+            `Speaker image expected for ${dateKey}, but no layout B speaker URL was written.`
+          );
+        }
 
         const tr = await fetch(`${apiBase}/api/transcode-instagram-reel`, {
           method: 'POST',
@@ -253,7 +326,9 @@ async function runSsrAttempt({
           quoteText: String(quote.text ?? quote.body ?? '').trim(),
           quoteAuthor: String(quote.author ?? '').trim(),
           reelWebmUploaded: !!doc.reelWebmStorageUrl,
-          reelMp4Url: trJson.reelMp4Url || ''
+          reelMp4Url: trJson.reelMp4Url || '',
+          speakerImageExpected: !!expectedSpeakerImageUrl,
+          layoutBSpeakerUploaded: !!(doc.postLayoutBSpeakerImageStorageUrl || doc.layoutBSpeakerUrl)
         };
       },
       { dateKey, apiBase, strictQuote, requireSplitMode }
@@ -273,6 +348,13 @@ async function runSsrAttempt({
     if (!verify.reelMp4Url) {
       throw new Error('verify failed: reelMp4Url missing after SSR generation');
     }
+    if (
+      result.speakerImageExpected &&
+      !verify.layoutBSpeakerImageUrl &&
+      !verify.postLayoutBSpeakerImageUrl
+    ) {
+      throw new Error('verify failed: layout B speaker image URL missing after SSR generation');
+    }
     return {
       success: true,
       date: dateKey,
@@ -281,6 +363,9 @@ async function runSsrAttempt({
       quoteText: result.quoteText,
       quoteAuthor: result.quoteAuthor,
       reelWebmUploaded: result.reelWebmUploaded,
+      speakerImageExpected: result.speakerImageExpected,
+      layoutBSpeakerUploaded: result.layoutBSpeakerUploaded,
+      layoutBSpeakerImageUrl: verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || '',
       reelMp4Url: verify.reelMp4Url,
       reelVideoUrl: verify.reelVideoUrl
     };
