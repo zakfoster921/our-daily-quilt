@@ -18,6 +18,13 @@ try {
 
 const { buildSubmittedQuotePrefillPrompt } = require('./lib/submitted-quote-prefill-prompts');
 const {
+  buildKeywordEmphasisPrompt,
+  parseKeywordEmphasisResponse,
+  normalizeEmphasisWords,
+  suggestKeywordsHeuristic,
+  keywordsNotInQuote
+} = require('./lib/quote-keyword-emphasis');
+const {
   REFLECTION_MODERATION_BODY_MAX,
   buildReflectionModerationPrompt,
   buildReflectionCurationPrompt
@@ -34,7 +41,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
 
-app.use(express.json());
+app.use(express.json({ limit: '35mb' }));
 app.use(express.static('.'));
 
 // In-memory storage for generated images
@@ -2112,6 +2119,64 @@ function stripHtml(value) {
     .trim();
 }
 
+/** Parse upload.wikimedia.org paths under /wikipedia/commons/ (direct or /thumb/). */
+function parseCommonsUploadPath(pathname) {
+  const parts = String(pathname || '')
+    .split('/')
+    .filter(Boolean);
+  const commonsIdx = parts.indexOf('commons');
+  if (commonsIdx < 0) return null;
+  if (parts[commonsIdx + 1] === 'thumb') {
+    const hash1 = parts[commonsIdx + 2];
+    const hash2 = parts[commonsIdx + 3];
+    const fileName = parts[commonsIdx + 4];
+    if (!hash1 || !hash2 || !fileName) return null;
+    return { hash1, hash2, fileName };
+  }
+  const hash1 = parts[commonsIdx + 1];
+  const hash2 = parts[commonsIdx + 2];
+  const fileName = parts[commonsIdx + 3];
+  if (!hash1 || !hash2 || !fileName) return null;
+  return { hash1, hash2, fileName };
+}
+
+function encodeCommonsPathSegment(segment) {
+  return encodeURIComponent(String(segment || ''));
+}
+
+/** Last path segment for a Commons thumb URL at a given width. */
+function commonsThumbFileSegment(fileName, widthPx) {
+  const name = String(fileName || '');
+  if (!name) return '';
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  const keepRaster = ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'gif';
+  if (keepRaster) return `${widthPx}px-${name}`;
+  return `${widthPx}px-${name}.png`;
+}
+
+/**
+ * Turn a full-size Commons upload URL into an embed-friendly thumb (e.g. 500px wide).
+ * Non-Commons URLs are returned unchanged.
+ */
+function commonsUploadUrlToThumbnail(imageUrl, widthPx = 500) {
+  const raw = String(imageUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    if (!/wikimedia\.org$/i.test(u.hostname) && !/wikipedia\.org$/i.test(u.hostname)) return raw;
+    const parsed = parseCommonsUploadPath(u.pathname);
+    if (!parsed) return raw;
+    const { hash1, hash2, fileName } = parsed;
+    const decodedName = decodeURIComponent(fileName);
+    const thumbLast = commonsThumbFileSegment(decodedName, widthPx);
+    if (!thumbLast) return raw;
+    u.pathname = `/wikipedia/commons/thumb/${hash1}/${hash2}/${fileName}/${encodeCommonsPathSegment(thumbLast)}`;
+    return u.toString();
+  } catch (_) {
+    return raw;
+  }
+}
+
 function extractCommonsFileTitle(imageUrl) {
   if (!imageUrl) return '';
   try {
@@ -2187,7 +2252,9 @@ async function fetchWikipediaSpeakerInfo(authorName) {
       isDisambiguation = true;
       console.warn(`⚠️ Wikipedia disambiguation for "${name}" — trying Wikidata for speaker_dates`);
     } else {
-      imageUrl = summary?.originalimage?.source || summary?.thumbnail?.source || '';
+      const wikiImage =
+        summary?.thumbnail?.source || summary?.originalimage?.source || '';
+      imageUrl = commonsUploadUrlToThumbnail(wikiImage, 500) || wikiImage;
       extract = String(summary?.extract || '');
       desc = String(summary?.description || '').trim();
     }
@@ -3878,7 +3945,7 @@ app.post('/api/generate-instagram', async (req, res) => {
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl keeps the no-speaker variant. postLayoutBSpeakerImageUrl/layoutBSpeakerImageUrl = Layout B with speaker portrait. reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
+        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(
@@ -3923,6 +3990,110 @@ app.get('/api/image/:filename', (req, res) => {
   res.setHeader('Content-Type', mime);
   res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
   res.send(buffer);
+});
+
+app.options('/api/push-instagram-assets', (req, res) => {
+  setInstagramApiCors(res);
+  res.status(204).end();
+});
+
+/**
+ * Native/admin fallback for app-side IG asset pushes.
+ * The iOS WebView can hang on Firebase Auth/Storage SDK writes; this endpoint receives the
+ * already-rendered PNG data URLs and uses Firebase Admin to upload Storage + merge Firestore.
+ */
+app.post('/api/push-instagram-assets', async (req, res) => {
+  setInstagramApiCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore admin not initialized' });
+    }
+    const body = req.body || {};
+    const dateKey = String(body.dateKey || body.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'Invalid dateKey' });
+    }
+
+    const instagramImage = typeof body.instagramImage === 'string' ? body.instagramImage : '';
+    const postLayoutBImageData =
+      typeof body.postLayoutBImageData === 'string' ? body.postLayoutBImageData : '';
+    const postLayoutBSpeakerImageData =
+      typeof body.postLayoutBSpeakerImageData === 'string' ? body.postLayoutBSpeakerImageData : '';
+    if (!instagramImage && !postLayoutBImageData && !postLayoutBSpeakerImageData) {
+      return res.status(400).json({ success: false, error: 'No image data URLs provided' });
+    }
+
+    const basePath = `instagram-zapier/${dateKey}`;
+    const docPayload = {
+      date: dateKey,
+      lastUpdated: new Date().toISOString(),
+      lastIgPushStartedAt: body.lastIgPushStartedAt || new Date().toISOString(),
+      lastIgPushCompletedAt: new Date().toISOString(),
+      igPushStatus: 'uploaded',
+      igImagesSource: 'app_backend_admin_push'
+    };
+
+    const blockCount = Number(body.blockCount);
+    if (Number.isFinite(blockCount) && blockCount >= 0) {
+      docPayload.blockCount = Math.floor(blockCount);
+    }
+    const contributorCount = Number(body.contributorCount);
+    if (Number.isFinite(contributorCount) && contributorCount >= 0) {
+      docPayload.contributorCount = Math.floor(contributorCount);
+    }
+    const caption = typeof body.zapierCaption === 'string' ? body.zapierCaption.trim() : '';
+    if (caption) docPayload.zapierCaption = caption;
+    const qfp = typeof body.quiltFingerprint === 'string' ? body.quiltFingerprint.trim() : '';
+    if (qfp) {
+      docPayload.quiltFingerprint = qfp;
+      docPayload.imageQuiltFingerprint = qfp;
+    }
+
+    if (instagramImage) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/classic.png`,
+        parsePngDataUrlToBuffer(instagramImage),
+        'image/png'
+      );
+      docPayload.imageStorageUrl = publicUrl;
+      docPayload.classicUrl = publicUrl;
+    }
+    if (postLayoutBImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/layout-b.png`,
+        parsePngDataUrlToBuffer(postLayoutBImageData),
+        'image/png'
+      );
+      docPayload.postLayoutBImageStorageUrl = publicUrl;
+      docPayload.layoutBUrl = publicUrl;
+      if (body.aliasLayoutBSpeakerUrl) {
+        docPayload.postLayoutBSpeakerImageStorageUrl = publicUrl;
+        docPayload.layoutBSpeakerUrl = publicUrl;
+      }
+    }
+    if (postLayoutBSpeakerImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/layout-b-speaker.png`,
+        parsePngDataUrlToBuffer(postLayoutBSpeakerImageData),
+        'image/png'
+      );
+      docPayload.postLayoutBSpeakerImageStorageUrl = publicUrl;
+      docPayload.layoutBSpeakerUrl = publicUrl;
+    }
+
+    await db.collection('instagram-images').doc(dateKey).set(docPayload, { merge: true });
+    console.log(
+      `✅ App backend IG push ${dateKey}: classic=${!!docPayload.imageStorageUrl} layoutB=${!!docPayload.layoutBUrl}`
+    );
+    res.json({ success: true, date: dateKey, docPayload });
+  } catch (error) {
+    console.error('❌ push-instagram-assets failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || String(error),
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // CORS-safe image proxy for canvas exports that need to read/process remote speaker portraits.
@@ -3997,6 +4168,86 @@ app.post('/api/test-instagram', (req, res) => {
     timestamp: new Date().toISOString(),
     note: 'Firestore-based image generation'
   });
+});
+
+async function suggestQuoteKeywordsWithAi(quoteText) {
+  const prompt = buildKeywordEmphasisPrompt(quoteText);
+  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
+    const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+    const model = String(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+    const raw = await postReflectionAiText({ provider: 'anthropic', apiKey, model, prompt, maxTokens: 160 });
+    const keywords = normalizeEmphasisWords(parseKeywordEmphasisResponse(raw), quoteText);
+    return { keywords, provider: 'anthropic', model, raw };
+  }
+  if (String(process.env.GEMINI_API_KEY || '').trim()) {
+    const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+    const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+    const raw = await postReflectionAiText({ provider: 'gemini', apiKey, model, prompt, maxTokens: 160 });
+    const keywords = normalizeEmphasisWords(parseKeywordEmphasisResponse(raw), quoteText);
+    return { keywords, provider: 'gemini', model, raw };
+  }
+  throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
+}
+
+app.options('/api/quote-keywords', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quote-keywords', async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const quoteText = String(body.quoteText || body.text || '').replace(/\s+/g, ' ').trim();
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    if (!quoteText) {
+      return res.status(400).json({ success: false, error: 'quoteText is required' });
+    }
+
+    let keywords = [];
+    let source = 'heuristic';
+    let provider = null;
+    let model = null;
+    let aiWarning = null;
+
+    try {
+      const ai = await suggestQuoteKeywordsWithAi(quoteText);
+      keywords = ai.keywords || [];
+      source = 'ai';
+      provider = ai.provider;
+      model = ai.model;
+      const parsed = parseKeywordEmphasisResponse(ai.raw || '');
+      const unmatched = keywordsNotInQuote(parsed.length ? parsed : keywords, quoteText);
+      if (!keywords.length) {
+        aiWarning = 'AI returned no matchable keywords; using heuristic fallback.';
+        keywords = suggestKeywordsHeuristic(quoteText, dateKey);
+        source = 'heuristic';
+      } else if (unmatched.length) {
+        aiWarning = `Some AI picks were not in quote: ${unmatched.join(', ')}`;
+      }
+    } catch (err) {
+      aiWarning = err?.message || String(err);
+      keywords = suggestKeywordsHeuristic(quoteText, dateKey);
+      source = 'heuristic';
+    }
+
+    return res.json({
+      success: true,
+      keywords,
+      source,
+      provider,
+      model,
+      warning: aiWarning || undefined,
+      timestamp: getUtcIsoNow()
+    });
+  } catch (error) {
+    console.error('❌ quote-keywords failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'quote-keywords failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
 });
 
 app.get('/api/health', (req, res) => {
@@ -4233,6 +4484,9 @@ app.post('/api/reflection-response', async (req, res) => {
     await responseRef.set(responsePayload);
 
     const themeRef = db.collection('reflectionThemes').doc(appDateKey);
+    const themeSnap = await themeRef.get();
+    const existingTheme = themeSnap.exists ? themeSnap.data() || {} : {};
+    const publishIso = getUtcIsoNow();
     const themePatch = {
       appDateKey,
       themes: admin.firestore.FieldValue.arrayUnion({
@@ -4240,10 +4494,14 @@ app.post('/api/reflection-response', async (req, res) => {
         author: authorDisplayName
       }),
       responseCount: admin.firestore.FieldValue.increment(1),
-      updatedAtIso: getUtcIsoNow(),
-      lastPublishedAtIso: getUtcIsoNow()
+      updatedAtIso: publishIso,
+      lastPublishedAtIso: publishIso
     };
     if (reflectionPromptSnapshot) themePatch.reflectionPrompt = reflectionPromptSnapshot;
+    if (!reflectionThemeGenerationTimeMillis(existingTheme)) {
+      themePatch.generatedAt = admin.firestore.FieldValue.serverTimestamp();
+      themePatch.generatedAtIso = publishIso;
+    }
     await themeRef.set(themePatch, { merge: true });
 
     return res.json({
@@ -4343,18 +4601,15 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
   }
 });
 
-function reflectionThemeGenerationTimeMillis(themeData, themeDocSnap = null) {
-  if (themeData && typeof themeData === 'object') {
-    const ts = themeData.generatedAt;
-    if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
-    const iso = String(themeData.generatedAtIso || '').trim();
-    if (iso) {
-      const ms = Date.parse(iso);
-      if (Number.isFinite(ms)) return ms;
-    }
-  }
-  if (themeDocSnap && themeDocSnap.exists && typeof themeDocSnap.updateTime?.toMillis === 'function') {
-    return themeDocSnap.updateTime.toMillis();
+/** Curated/archive timestamp only — not doc updateTime (immediate publishes must not satisfy skip). */
+function reflectionThemeGenerationTimeMillis(themeData) {
+  if (!themeData || typeof themeData !== 'object') return null;
+  const ts = themeData.generatedAt;
+  if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+  const iso = String(themeData.generatedAtIso || '').trim();
+  if (iso) {
+    const ms = Date.parse(iso);
+    if (Number.isFinite(ms)) return ms;
   }
   return null;
 }
@@ -4527,7 +4782,7 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
     }
 
     if (!force && themeDocSnap.exists && priorThemeData) {
-      const genMs = reflectionThemeGenerationTimeMillis(priorThemeData, themeDocSnap);
+      const genMs = reflectionThemeGenerationTimeMillis(priorThemeData);
       const priorTotal = Number(priorThemeData.responseCount) || 0;
       const totalReflectionResponses = await countReflectionResponsesForDate(db, appDateKey);
       const latestMs = await getLatestReflectionResponseCreatedMillis(db, appDateKey);
