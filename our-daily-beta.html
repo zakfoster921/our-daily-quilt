@@ -25632,15 +25632,50 @@ try {
           .trim()
           .toUpperCase();
         const preset = Object.prototype.hasOwnProperty.call(ODQ_SPEAKER_PRESETS, name) ? name : 'AUTO';
-        return {
+        const remote = {
           preset,
           nudgeCx: odqNormalizeSpeakerNudgeComponent(data[nudgeFields.cx]),
           nudgeCy: odqNormalizeSpeakerNudgeComponent(data[nudgeFields.cy]),
           nudgeRotateDeg: odqNormalizeSpeakerRotateDeg(data[nudgeFields.rotate])
         };
+        if (
+          remote.preset !== 'AUTO' ||
+          remote.nudgeCx ||
+          remote.nudgeCy ||
+          remote.nudgeRotateDeg
+        ) {
+          odqWriteSpeakerCutoutPreset(key, remote.preset, a, {
+            cx: remote.nudgeCx,
+            cy: remote.nudgeCy,
+            rotateDeg: remote.nudgeRotateDeg
+          });
+        }
+        return remote;
       } catch (err) {
         console.warn('odqReadSpeakerCutoutTweak Firestore read failed:', err);
         return local;
+      }
+    }
+
+    /** Pull instagram-images/{dateKey} speaker tweak into localStorage (story + post). */
+    async function odqPrefetchSpeakerCutoutTweak(dateKey) {
+      const key = String(dateKey || '').trim();
+      if (!key) return;
+      await Promise.all(
+        ['story', 'post'].map((aspect) =>
+          odqReadSpeakerCutoutTweak(key, aspect).catch((err) => {
+            console.warn(`odqPrefetchSpeakerCutoutTweak (${aspect}) failed:`, err);
+            return null;
+          })
+        )
+      );
+      try {
+        const app = typeof window !== 'undefined' ? window.app : null;
+        if (app && typeof app.refreshLayoutBStoryPreview === 'function') {
+          void app.refreshLayoutBStoryPreview();
+        }
+      } catch (_) {
+        /* ignore */
       }
     }
 
@@ -35859,6 +35894,7 @@ try {
             this._refreshQuoteScreenIfActive();
             void this._primeQuiltQuoteChrome();
             void odqPrefetchLayoutBKeywordEmphasis(todayKey);
+            void odqPrefetchSpeakerCutoutTweak(todayKey);
             // #region agent log
             this._connDebugLog('H3','our-daily-beta.html:syncLiveDailyData','sync-end',{mode,ok:true,quiltOnly:true,ms:Date.now()-syncStartedAt});
             // #endregion
@@ -35872,6 +35908,7 @@ try {
           this._refreshQuoteScreenIfActive();
           void this._primeQuiltQuoteChrome();
           void odqPrefetchLayoutBKeywordEmphasis(todayKey);
+          void odqPrefetchSpeakerCutoutTweak(todayKey);
           // #region agent log
           this._connDebugLog('H3','our-daily-beta.html:syncLiveDailyData','sync-end',{mode,ok:true,ms:Date.now()-syncStartedAt});
           // #endregion
@@ -47628,7 +47665,7 @@ try {
           const { qText, qAuthor, composeExtras } = await this.resolveLayoutBStoryQuoteAndComposeOptions(dk, blocks);
           /** Story (9:16) preview: inject today's admin speaker-cutout preset transform if any. */
           if (composeExtras?.speakerOverlay) {
-            const presetTransform = odqSpeakerCutoutTransformForDate(dk, 'story');
+            const presetTransform = await odqSpeakerCutoutTransformForDateAsync(dk, 'story');
             if (presetTransform) composeExtras.speakerOverlay.transform = presetTransform;
           }
           const lbBlob = await composeInstagramLayoutBFromQuiltBlob(
@@ -50997,7 +51034,7 @@ try {
           shareAspect
         );
         if (composeExtras?.speakerOverlay) {
-          const presetTransform = odqSpeakerCutoutTransformForDate(dk, shareAspect);
+          const presetTransform = await odqSpeakerCutoutTransformForDateAsync(dk, shareAspect);
           if (presetTransform) composeExtras.speakerOverlay.transform = presetTransform;
         }
         const outBlob = await composeInstagramLayoutBFromQuiltBlob(
@@ -53395,7 +53432,7 @@ try {
           ).trim();
           const highResBlob = await this.getHighResQuiltBlobForShare();
           const speakerCutoutPreset = odqReadSpeakerCutoutPreset(todayKey, 'story');
-          const speakerCutoutTransform = odqSpeakerCutoutTransformForDate(todayKey, 'story');
+          const speakerCutoutTransform = await odqSpeakerCutoutTransformForDateAsync(todayKey, 'story');
           const outBlob = await composeInstagramLayoutBFromQuiltBlob(
             highResBlob,
             qText,
@@ -53490,6 +53527,8 @@ try {
             (this.quoteService && typeof this.quoteService.getQuoteCalendarKeyNow === 'function'
               ? this.quoteService.getQuoteCalendarKeyNow()
               : Utils.getTodayKey());
+
+          await odqPrefetchSpeakerCutoutTweak(todayKey);
 
           document.querySelectorAll('.admin-menu').forEach((el) => el.remove());
 
