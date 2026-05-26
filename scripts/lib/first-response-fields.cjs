@@ -15,9 +15,16 @@ function firstThemePatchFromData(data) {
 }
 
 function catalogFieldsForAssignmentMirror(catalog) {
+  const portrait = String(catalog?.speaker_image_url ?? catalog?.speakerImageUrl ?? '').trim();
   return {
     first_response: String(catalog?.first_response ?? '').slice(0, 500),
-    user_name: FIRST_RESPONSE_USER_NAME
+    user_name: FIRST_RESPONSE_USER_NAME,
+    ...(portrait
+      ? {
+          speakerImageUrlSnapshot: portrait.slice(0, 500),
+          speaker_image_url_snapshot: portrait.slice(0, 500)
+        }
+      : {})
   };
 }
 

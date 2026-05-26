@@ -325,6 +325,40 @@ function safeName(value) {
     .slice(0, 80) || 'speaker';
 }
 
+function portraitUrlHash(imageUrl) {
+  return crypto.createHash('sha256').update(String(imageUrl || '').trim()).digest('hex').slice(0, 12);
+}
+
+function catalogCutoutSourceUrl(data) {
+  return String(data.speakerCutoutSourceUrl ?? data.speaker_cutout_source_url ?? '').trim();
+}
+
+/** True when Storage path was built from this portrait URL (see speaker-cutouts/{author}-{hash}.png). */
+function cutoutStorageMatchesPortraitUrl(cutoutUrl, imageUrl) {
+  const cutout = String(cutoutUrl || '').trim();
+  const portrait = String(imageUrl || '').trim();
+  if (!cutout || !portrait) return false;
+  const hash = portraitUrlHash(portrait);
+  return cutout.includes(`-${hash}.`) || cutout.includes(`-${hash}-`);
+}
+
+/**
+ * Reuse only when portrait URL still matches what the cutout was generated from.
+ * Regenerate when speaker_image_url changed in Notion (even if an old cutout URL exists).
+ */
+function shouldReuseExistingCutout(data, imageUrl, existingCutoutUrl, opts) {
+  if (opts.force || opts.recropExisting || opts.uploadFile) return false;
+  const existing = String(existingCutoutUrl || '').trim();
+  const portrait = String(imageUrl || '').trim();
+  if (!existing || !portrait) return false;
+
+  const source = catalogCutoutSourceUrl(data);
+  if (source && source !== portrait) return false;
+  // Storage filename embeds portrait hash — required even when source metadata already matches.
+  if (!cutoutStorageMatchesPortraitUrl(existing, portrait)) return false;
+  return true;
+}
+
 async function resolveTodaySpeakerDocId(db) {
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
   const dateKey = getOpeningAppDateKey();
@@ -379,17 +413,36 @@ function isReviewedQuote(data) {
 }
 
 function assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp) {
+  const portrait = String(imageUrl || '').trim();
   return {
     speakerCutoutUrlSnapshot: cutoutUrl,
-    speakerCutoutSourceUrlSnapshot: imageUrl,
+    speakerCutoutSourceUrlSnapshot: portrait,
+    ...(portrait
+      ? {
+          speakerImageUrlSnapshot: portrait.slice(0, 500),
+          speaker_image_url_snapshot: portrait.slice(0, 500)
+        }
+      : {}),
     speaker_cutout_updated_at: timestamp
   };
 }
 
 function dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp) {
+  const portrait = String(imageUrl || '').trim();
   return {
     speaker_cutout_url: cutoutUrl,
-    speaker_cutout_source_url: imageUrl,
+    speaker_cutout_source_url: portrait,
+    ...(portrait ? { speaker_image_url: portrait } : {}),
+    speaker_cutout_updated_at: timestamp
+  };
+}
+
+function catalogCutoutPayload(cutoutUrl, imageUrl, timestamp) {
+  const portrait = String(imageUrl || '').trim();
+  return {
+    speaker_cutout_url: cutoutUrl,
+    speaker_cutout_source_url: portrait,
+    ...(portrait ? { speaker_image_url: portrait } : {}),
     speaker_cutout_updated_at: timestamp
   };
 }
@@ -425,12 +478,16 @@ async function patchDerivedQuoteDocs(db, quotesCollection, sourceIds, sourceData
   if (author) {
     const assignmentByAuthorSnap = await db.collection(assignmentsCollection).where('authorSnapshot', '==', author).get();
     for (const docSnap of assignmentByAuthorSnap.docs) {
+      const assignSourceId = String((docSnap.data() || {}).sourceId || '').trim();
+      if (assignSourceId && !sourceIds.includes(assignSourceId)) continue;
       await patchRef(docSnap.ref, assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp));
     }
 
     const dailyQuoteByAuthorSnap = await db.collection(quotesCollection).where('author', '==', author).get();
     for (const docSnap of dailyQuoteByAuthorSnap.docs) {
       if (!isDateKey(docSnap.id)) continue;
+      const docSourceId = String((docSnap.data() || {}).sourceId || '').trim();
+      if (docSourceId && !sourceIds.includes(docSourceId)) continue;
       await patchRef(docSnap.ref, dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp));
     }
   }
@@ -493,21 +550,36 @@ async function main() {
     }
     const imageUrl = String(d.speakerImageUrl || d.speaker_image_url || '').trim();
     const existing = String(d.speakerCutoutUrl || d.speaker_cutout_url || '').trim();
+    const reuseCutout = shouldReuseExistingCutout(d, imageUrl, existing, opts);
+    const portraitUrlChanged = Boolean(existing && imageUrl && !reuseCutout);
     const sourceIds = Array.from(new Set([row.id, String(d.sourceId || '').trim()].filter(Boolean)));
     if (!imageUrl) {
       skipped += 1;
       continue;
     }
-    if (existing && !opts.force && !opts.recropExisting) {
+    if (reuseCutout) {
       console.log(`[cutout] reusing existing cutout for ${row.id} ${author}`);
       if (!opts.dryRun) {
+        await row.ref.set(catalogCutoutPayload(existing, imageUrl, admin.firestore.FieldValue.serverTimestamp()), {
+          merge: true
+        });
         const derivedWrites = await patchDerivedQuoteDocs(db, collectionName, sourceIds, d, existing, imageUrl);
         console.log(`[cutout] patched ${derivedWrites} derived doc(s)`);
       }
       processed += 1;
       continue;
     }
-    if (opts.limit && generated >= opts.limit) break;
+    if (portraitUrlChanged) {
+      const priorSource = catalogCutoutSourceUrl(d);
+      const priorHint = priorSource
+        ? priorSource.length > 96
+          ? `${priorSource.slice(0, 96)}…`
+          : priorSource
+        : 'legacy cutout / missing source';
+      console.log(`[cutout] portrait URL changed for ${row.id} ${author}; regenerating cutout (was ${priorHint})`);
+    }
+    // Stale portraits always regenerate; do not let --limit block URL replacements.
+    if (opts.limit && generated >= opts.limit && !portraitUrlChanged) break;
 
     console.log(
       `[cutout] ${
@@ -535,21 +607,16 @@ async function main() {
         : opts.recropExisting
           ? await cropTransparentPngWithMargin(await downloadBinaryFromUrl(existing), 0.1)
           : await removeBackgroundFromUrl(imageUrl, apiKey);
-      const hash = crypto.createHash('sha256').update(imageUrl).digest('hex').slice(0, 12);
+      const hash = portraitUrlHash(imageUrl);
       const path = opts.uploadFile
         ? `speaker-cutouts/${safeName(author)}-${hash}-manual.png`
         : opts.recropExisting
           ? `speaker-cutouts/${safeName(author)}-${hash}-crop10.png`
           : `speaker-cutouts/${safeName(author)}-${hash}.png`;
       const cutoutUrl = await saveDownloadableFile(path, png, 'image/png');
-      await row.ref.set(
-        {
-          speaker_cutout_url: cutoutUrl,
-          speaker_cutout_source_url: imageUrl,
-          speaker_cutout_updated_at: admin.firestore.FieldValue.serverTimestamp()
-        },
-        { merge: true }
-      );
+      await row.ref.set(catalogCutoutPayload(cutoutUrl, imageUrl, admin.firestore.FieldValue.serverTimestamp()), {
+        merge: true
+      });
       const derivedWrites = await patchDerivedQuoteDocs(db, collectionName, sourceIds, d, cutoutUrl, imageUrl);
       processed += 1;
       console.log(`[cutout] wrote ${path}`);
