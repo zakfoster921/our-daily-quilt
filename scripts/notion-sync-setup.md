@@ -30,11 +30,28 @@ Dry run:
 npm run sync:quotes:dry
 ```
 
-Write to Firestore:
+Write to Firestore (default: **next 7 app-days** from `--start`, not the full catalog):
 
 ```bash
 npm run sync:quotes
 ```
+
+Full catalog (slower; also deletes Firestore quotes removed from Notion):
+
+```bash
+npm run sync:quotes:full
+```
+
+Window flags (used by GitHub Actions and manual server sync):
+
+```bash
+node scripts/sync-notion-to-firestore.cjs --start=opening --window=7
+node scripts/sync-notion-to-firestore.cjs --start=2026-05-26 --window=7
+```
+
+`--start` accepts `today`, `tomorrow`, `opening` (quilt day at 07:00 UTC), or `YYYY-MM-DD`.
+
+Windowed sync also pulls **approved + no `date_scheduled`** rows (the scheduling pool) so nightly auto-scheduling still sees new approvals.
 
 ## Notion column mapping
 
@@ -68,10 +85,16 @@ Dry run:
 npm run sync:usage:dry
 ```
 
-Write usage back to Notion:
+Write usage back to Notion (same 7-day window by default):
 
 ```bash
 npm run sync:usage
+```
+
+Full catalog:
+
+```bash
+npm run sync:usage:full
 ```
 
 How it works:

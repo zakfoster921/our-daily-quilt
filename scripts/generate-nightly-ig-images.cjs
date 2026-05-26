@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Nightly Zapier stills only (no reel): classic + layout B + layout B speaker.
+ * Nightly Zapier stills only (no reel): classic + layout B (speaker URL aliased to layout-b.png when present).
  * Loads the live app in Playwright, reads quilts/{dateKey} from Firestore, uploads PNGs,
  * sets instagram-images/{dateKey}.readyForInstagram = true.
  */
@@ -206,23 +206,16 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         if (arch.generateInstagramPostLayoutBImage) {
           postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey);
         }
-        let postLayoutBSpeakerImageData = null;
-        if (arch.generateInstagramPostLayoutBSpeakerImage) {
-          postLayoutBSpeakerImageData = await arch.generateInstagramPostLayoutBSpeakerImage(
-            blocks,
-            quote,
-            dateKey
-          );
-        }
         const expectedSpeakerImageUrl = pickString(
           quote.speakerCutoutUrl,
           quote.speaker_cutout_url,
           quote.speakerImageUrl,
           quote.speaker_image_url
         );
-        if (expectedSpeakerImageUrl && !postLayoutBSpeakerImageData) {
-          throw new Error(`Speaker image expected for ${dateKey}, but layout-b-speaker was not generated`);
+        if (expectedSpeakerImageUrl && !postLayoutBImageData) {
+          throw new Error(`Speaker image expected for ${dateKey}, but layout-b.png was not generated`);
         }
+        const aliasLayoutBSpeakerUrl = !!(expectedSpeakerImageUrl && postLayoutBImageData);
 
         const zapierCaption =
           typeof Utils.formatZapierCaptionFromQuote === 'function'
@@ -245,7 +238,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           dateKey,
           instagramImage,
           postLayoutBImageData,
-          postLayoutBSpeakerImageData,
+          aliasLayoutBSpeakerUrl,
           zapierCaption,
           quiltFingerprint,
           blockCount: blocks.length,
@@ -290,8 +283,15 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
     if (!verify.classicImageUrl && !verify.imageUrl) {
       throw new Error('verify failed: classic image URL missing');
     }
-    if (!verify.layoutBSpeakerImageUrl && !verify.postLayoutBSpeakerImageUrl) {
-      throw new Error('verify failed: layout B speaker image URL missing');
+    if (result.layoutBSpeakerUrl) {
+      const speakerUrl = verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl;
+      if (!speakerUrl) {
+        throw new Error('verify failed: layout B speaker image URL missing');
+      }
+      const layoutBUrl = verify.layoutBImageUrl || verify.postLayoutBImageUrl || verify.postLayoutBPlainImageUrl;
+      if (layoutBUrl && speakerUrl !== layoutBUrl) {
+        throw new Error('verify failed: aliased layout B speaker URL must match layout-b.png URL');
+      }
     }
     const verifyBlocks = Number(verify.blockCount) || 0;
     if (verifyBlocks <= 1) {

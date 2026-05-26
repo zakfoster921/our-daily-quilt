@@ -25,6 +25,18 @@ try {
 }
 const admin = require('firebase-admin');
 const { mirrorCatalogFieldsToAssignment } = require('./lib/first-response-fields.cjs');
+const {
+  layoutBKeywordEmphasisFirestorePatch,
+  pickQuoteKeywordRaw,
+  shouldSyncNotionKeywordEmphasis
+} = require('./lib/layout-b-keyword-sync.cjs');
+const {
+  parseSyncWindowCli,
+  assignmentSourceIdsInWindow,
+  buildNotionDateScheduledFilter,
+  buildNotionSchedulingPoolFilter,
+  findSchemaPropName
+} = require('./lib/sync-window.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
 const SNAKE_CASE_FIELD_PAIRS = [
@@ -516,6 +528,7 @@ function parseNotionRow(page) {
   const igCaption = getMappedText(props, 'ig_caption', 'IG Caption', 'Ig Caption');
   const mood = getMappedText(props, 'mood', 'Mood');
   const fortune = getMappedText(props, 'fortune', 'Fortune');
+  const keyword = getMappedText(props, 'keyword', 'Keyword', 'keywords', 'Keywords');
   const blessing = findBlessingFromProps(props);
   const speakerImageUrl = getMappedUrl(
     props,
@@ -659,6 +672,7 @@ function parseNotionRow(page) {
       ig_caption: igCaption,
       mood,
       fortune,
+      keyword: String(keyword || '').trim(),
       blessing,
       speaker_image_url: speakerImageUrl,
       speaker_dates: speakerDates,
@@ -752,11 +766,42 @@ async function fetchNotionWithRetry(url, init, label) {
   throw lastErr || new Error(`${label} failed after ${MAX_NOTION_RETRIES} retries`);
 }
 
-async function notionQuery(databaseId, notionToken, startCursor) {
+async function notionGetDatabase(databaseId, notionToken) {
+  const res = await fetchNotionWithRetry(
+    `https://api.notion.com/v1/databases/${databaseId}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        'Notion-Version': NOTION_API_VERSION
+      }
+    },
+    `Notion DB schema fetch for ${databaseId}`
+  );
+  return res.json();
+}
+
+async function notionGetPage(pageId, notionToken) {
+  const res = await fetchNotionWithRetry(
+    `https://api.notion.com/v1/pages/${pageId}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        'Notion-Version': NOTION_API_VERSION
+      }
+    },
+    `Notion page fetch for ${pageId}`
+  );
+  return res.json();
+}
+
+async function notionQuery(databaseId, notionToken, startCursor, filter) {
   const body = {
     page_size: 100
   };
   if (startCursor) body.start_cursor = startCursor;
+  if (filter) body.filter = filter;
 
   const res = await fetchNotionWithRetry(
     `https://api.notion.com/v1/databases/${databaseId}/query`,
@@ -772,6 +817,46 @@ async function notionQuery(databaseId, notionToken, startCursor) {
     `Notion DB query ${databaseId}`
   );
   return res.json();
+}
+
+async function queryAllNotionPages(databaseId, notionToken, filter) {
+  const pages = [];
+  let cursor = null;
+  let pageNum = 0;
+  do {
+    pageNum += 1;
+    const payload = await notionQuery(databaseId, notionToken, cursor, filter);
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    pages.push(...results);
+    console.log(`[sync] notion-query page=${pageNum} fetched=${results.length} total=${pages.length}`);
+    cursor = payload.has_more ? payload.next_cursor : null;
+  } while (cursor);
+  return pages;
+}
+
+async function mirrorKeywordEmphasisToInstagram(db, options) {
+  const {
+    dateKey,
+    catalog,
+    updatedBy = 'notion-sync',
+    instagramCollection = process.env.FIRESTORE_INSTAGRAM_IMAGES_COLLECTION || 'instagram-images'
+  } = options || {};
+  const key = String(dateKey || '').trim();
+  if (!key) return false;
+  const ref = db.collection(instagramCollection).doc(key);
+  const snap = await ref.get();
+  if (!shouldSyncNotionKeywordEmphasis(snap.exists ? snap.data() : {})) return false;
+  const result = layoutBKeywordEmphasisFirestorePatch(
+    pickQuoteKeywordRaw(catalog),
+    catalog?.text,
+    { updatedBy }
+  );
+  if (result.deleteEmphasis) {
+    await ref.set({ layoutBKeywordEmphasis: admin.firestore.FieldValue.delete() }, { merge: true });
+  } else {
+    await ref.set(result.patch, { merge: true });
+  }
+  return true;
 }
 
 function initFirestore() {
@@ -792,66 +877,146 @@ function initFirestore() {
   return admin.firestore();
 }
 
+async function syncNotionPagesToFirestore(db, options) {
+  const {
+    rows,
+    dryRun,
+    collectionName,
+    assignmentsCollection,
+    seenNotionIds
+  } = options;
+  let writeCount = 0;
+  let fortuneCount = 0;
+  let skipCount = 0;
+  let assignmentMirrors = 0;
+  let keywordEmphasisMirrors = 0;
+
+  for (const row of rows) {
+    if (row && row.id) seenNotionIds.add(row.id);
+    const parsed = parseNotionRow(row);
+    if (!parsed) {
+      skipCount += 1;
+      continue;
+    }
+    if (String(parsed.data.fortune || '').trim()) {
+      fortuneCount += 1;
+    }
+    if (!dryRun) {
+      await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });
+      const dateKey = String(parsed.data.date_scheduled || '').trim();
+      if (dateKey) {
+        const mirrored = await mirrorCatalogFieldsToAssignment(db, {
+          sourceId: parsed.id,
+          dateKey,
+          catalog: parsed.data,
+          assignmentsCollection,
+          dryRun: false
+        });
+        if (mirrored) assignmentMirrors += 1;
+        const kwMirrored = await mirrorKeywordEmphasisToInstagram(db, {
+          dateKey,
+          catalog: parsed.data,
+          updatedBy: 'notion-sync'
+        });
+        if (kwMirrored) keywordEmphasisMirrors += 1;
+      }
+    }
+    writeCount += 1;
+  }
+
+  return { writeCount, fortuneCount, skipCount, assignmentMirrors, keywordEmphasisMirrors };
+}
+
 async function run() {
-  const dryRun = process.argv.includes('--dry-run');
-  const noDeleteOrphans = process.argv.includes('--no-delete-orphans');
+  const cli = parseSyncWindowCli(process.argv);
+  const { dryRun, noDeleteOrphans, window } = cli;
   const notionToken = requireEnv('NOTION_TOKEN');
   const databaseId = requireEnv('NOTION_DATABASE_ID');
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   const assignmentsCollection =
     process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
   const db = initFirestore();
-  let assignmentMirrors = 0;
 
   /** Every page id returned by the database query (including rows skipped by parse). */
   const seenNotionIds = new Set();
+  let rowsToSync = [];
+  let assignmentSlotIds = 0;
+  let extraPageFetches = 0;
 
-  let cursor = null;
-  let fetchedPages = 0;
-  let writeCount = 0;
-  let fortuneCount = 0;
-  let skipCount = 0;
-  let page = 0;
-
-  do {
-    page += 1;
-    const payload = await notionQuery(databaseId, notionToken, cursor);
-    const results = Array.isArray(payload.results) ? payload.results : [];
-    fetchedPages += results.length;
-
-    for (const row of results) {
-      if (row && row.id) seenNotionIds.add(row.id);
-      const parsed = parseNotionRow(row);
-      if (!parsed) {
-        skipCount += 1;
-        continue;
-      }
-      if (String(parsed.data.fortune || '').trim()) {
-        fortuneCount += 1;
-      }
-      if (!dryRun) {
-        await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });
-        const dateKey = String(parsed.data.date_scheduled || '').trim();
-        if (dateKey) {
-          const mirrored = await mirrorCatalogFieldsToAssignment(db, {
-            sourceId: parsed.id,
-            dateKey,
-            catalog: parsed.data,
-            assignmentsCollection,
-            dryRun: false
-          });
-          if (mirrored) assignmentMirrors += 1;
-        }
-      }
-      writeCount += 1;
-    }
-
+  if (window) {
     console.log(
-      `[sync] page=${page} fetched=${results.length} totalFetched=${fetchedPages} writes=${writeCount} fortunes=${fortuneCount} skipped=${skipCount}`
+      `[sync] windowed sync ${window.startKey}..${window.endKey} (${window.windowDays} days); orphan delete disabled`
     );
+    const assignmentIds = await assignmentSourceIdsInWindow(db, window, assignmentsCollection);
+    assignmentSlotIds = assignmentIds.size;
+    const dbMeta = await notionGetDatabase(databaseId, notionToken);
+    const dateScheduledProp =
+      findSchemaPropName(dbMeta.properties, 'date_scheduled') ||
+      findSchemaPropName(dbMeta.properties, 'datescheduled') ||
+      'date_scheduled';
+    const approvedProp =
+      findSchemaPropName(dbMeta.properties, 'approved') ||
+      findSchemaPropName(dbMeta.properties, 'active') ||
+      'approved';
+    const filter = buildNotionDateScheduledFilter(dateScheduledProp, window);
+    if (!filter) {
+      throw new Error('Could not build Notion date_scheduled filter for windowed sync');
+    }
+    const byId = new Map();
+    const filtered = await queryAllNotionPages(databaseId, notionToken, filter);
+    for (const row of filtered) {
+      if (row?.id) byId.set(row.id, row);
+    }
+    const poolFilter = buildNotionSchedulingPoolFilter(
+      dateScheduledProp,
+      approvedProp,
+      dbMeta.properties?.[approvedProp]
+    );
+    let poolPages = 0;
+    if (poolFilter) {
+      const poolRows = await queryAllNotionPages(databaseId, notionToken, poolFilter);
+      poolPages = poolRows.length;
+      for (const row of poolRows) {
+        if (row?.id) byId.set(row.id, row);
+      }
+    } else {
+      console.warn('[sync] could not build scheduling-pool filter; new approvals may not sync until full-catalog run');
+    }
+    for (const pageId of assignmentIds) {
+      if (byId.has(pageId)) continue;
+      try {
+        const page = await notionGetPage(pageId, notionToken);
+        if (page && page.id) {
+          byId.set(page.id, page);
+          extraPageFetches += 1;
+        }
+      } catch (e) {
+        console.warn(`[sync] skip assignment page ${pageId}: ${(e.message || e).slice(0, 200)}`);
+      }
+    }
+    rowsToSync = [...byId.values()];
+    console.log(
+      `[sync] window sources dateFilter=${filtered.length} schedulingPool=${poolPages} assignmentSlots=${assignmentSlotIds} extraPageFetches=${extraPageFetches} total=${rowsToSync.length}`
+    );
+  } else {
+    console.log('[sync] full-catalog sync (all Notion rows)');
+    rowsToSync = await queryAllNotionPages(databaseId, notionToken, null);
+  }
 
-    cursor = payload.has_more ? payload.next_cursor : null;
-  } while (cursor);
+  const fetchedPages = rowsToSync.length;
+  const {
+    writeCount,
+    fortuneCount,
+    skipCount,
+    assignmentMirrors,
+    keywordEmphasisMirrors
+  } = await syncNotionPagesToFirestore(db, {
+    rows: rowsToSync,
+    dryRun,
+    collectionName,
+    assignmentsCollection,
+    seenNotionIds
+  });
 
   let orphanDeleteCount = 0;
   if (!noDeleteOrphans) {
@@ -885,11 +1050,16 @@ async function run() {
       console.log('[sync] no orphan Notion quote docs to delete');
     }
   } else {
-    console.log('[sync] orphan delete skipped (--no-delete-orphans)');
+    console.log(
+      window
+        ? '[sync] orphan delete skipped (windowed sync)'
+        : '[sync] orphan delete skipped (--no-delete-orphans)'
+    );
   }
 
+  const windowLabel = window ? `${window.startKey}..${window.endKey}` : 'full-catalog';
   console.log(
-    `[sync] complete dryRun=${dryRun} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
   );
 }
 

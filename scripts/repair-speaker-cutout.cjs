@@ -58,9 +58,9 @@ function initFirebase() {
   return admin.firestore();
 }
 
-function cutoutClearPayload() {
+function cutoutClearPayload({ includeAssignmentSnapshots = false } = {}) {
   const del = admin.firestore.FieldValue.delete();
-  return {
+  const payload = {
     speaker_cutout_url: del,
     speaker_cutout_source_url: del,
     speakerCutoutUrl: del,
@@ -68,6 +68,12 @@ function cutoutClearPayload() {
     speakerCutoutUpdatedAt: del,
     speaker_cutout_updated_at: del
   };
+  if (includeAssignmentSnapshots) {
+    payload.speakerCutoutUrlSnapshot = del;
+    payload.speaker_cutout_url_snapshot = del;
+    payload.speakerCutoutSourceUrlSnapshot = del;
+  }
+  return payload;
 }
 
 function runNodeScript(scriptName, scriptArgs) {
@@ -152,6 +158,14 @@ async function main() {
   const clearPayload = cutoutClearPayload();
   await catalogRef.set(clearPayload, { merge: true });
   console.log(`[repair] cleared cutout fields on ${quotesCollection}/${sourceId}`);
+
+  const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const assignRef = db.collection(assignmentsCollection).doc(opts.dateKey);
+  const assignSnap = await assignRef.get();
+  if (assignSnap.exists) {
+    await assignRef.set(cutoutClearPayload({ includeAssignmentSnapshots: true }), { merge: true });
+    console.log(`[repair] cleared cutout fields on ${assignmentsCollection}/${opts.dateKey}`);
+  }
 
   const dailyRef = db.collection(quotesCollection).doc(opts.dateKey);
   const dailySnap = await dailyRef.get();

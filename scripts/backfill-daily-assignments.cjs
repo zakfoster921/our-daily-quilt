@@ -25,6 +25,7 @@ try {
 
 const admin = require('firebase-admin');
 const { addDays, getAppDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
+const { speakerCutoutUrlForPortrait } = require('./lib/speaker-cutout-portrait-match.cjs');
 const { spawn } = require('child_process');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
@@ -129,7 +130,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     igCaptionSnapshot: q.igCaption.slice(0, 400),
     fortuneSnapshot: q.fortune.slice(0, 400),
     speakerImageUrlSnapshot: q.speakerImageUrl.slice(0, 500),
-    speakerCutoutUrlSnapshot: q.speakerCutoutUrl.slice(0, 500),
+    speakerCutoutUrlSnapshot: speakerCutoutUrlForPortrait(q.speakerCutoutUrl, q.speakerImageUrl).slice(0, 500),
     speakerDatesSnapshot: q.speakerDates.slice(0, 120),
     speakerBornSnapshot: q.speakerBorn.slice(0, 80),
     speakerDiedSnapshot: q.speakerDied.slice(0, 80),
@@ -158,7 +159,7 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     ig_caption: q.igCaption || '',
     fortune: q.fortune || '',
     speaker_image_url: q.speakerImageUrl || '',
-    speaker_cutout_url: q.speakerCutoutUrl || '',
+    speaker_cutout_url: speakerCutoutUrlForPortrait(q.speakerCutoutUrl, q.speakerImageUrl) || '',
     speaker_dates: q.speakerDates || '',
     speaker_born: q.speakerBorn || '',
     speaker_died: q.speakerDied || '',

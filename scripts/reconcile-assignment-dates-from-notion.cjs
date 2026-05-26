@@ -40,7 +40,13 @@ try {
 
 const admin = require('firebase-admin');
 const { catalogFieldsForAssignmentMirror } = require('./lib/first-response-fields.cjs');
+const {
+  layoutBKeywordEmphasisFirestorePatch,
+  pickQuoteKeywordRaw,
+  shouldSyncNotionKeywordEmphasis
+} = require('./lib/layout-b-keyword-sync.cjs');
 const { getAppDateKey, isDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
+const { speakerCutoutUrlForPortrait } = require('./lib/speaker-cutout-portrait-match.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
   'artRecsType',
@@ -114,8 +120,9 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     artRecsSnapshot: artRecsSnapshotValue(artRecs).slice(0, 1200),
     artRecsTypeSnapshot: artRecsType.slice(0, 40),
     igCaptionSnapshot: q.igCaption.slice(0, 400),
+    keywordSnapshot: String(q.keyword ?? '').slice(0, 200),
     speakerImageUrlSnapshot: q.speakerImageUrl.slice(0, 500),
-    speakerCutoutUrlSnapshot: q.speakerCutoutUrl.slice(0, 500),
+    speakerCutoutUrlSnapshot: speakerCutoutUrlForPortrait(q.speakerCutoutUrl, q.speakerImageUrl).slice(0, 500),
     speakerDatesSnapshot: q.speakerDates.slice(0, 120),
     speakerBornSnapshot: q.speakerBorn.slice(0, 80),
     speakerDiedSnapshot: q.speakerDied.slice(0, 80),
@@ -143,8 +150,9 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     art_recs: artRecs,
     art_recs_type: artRecsType,
     ig_caption: q.igCaption || '',
+    keyword: String(q.keyword ?? '').trim(),
     speaker_image_url: q.speakerImageUrl || '',
-    speaker_cutout_url: q.speakerCutoutUrl || '',
+    speaker_cutout_url: speakerCutoutUrlForPortrait(q.speakerCutoutUrl, q.speakerImageUrl) || '',
     speaker_dates: q.speakerDates || '',
     speaker_born: q.speakerBorn || '',
     speaker_died: q.speakerDied || '',
@@ -163,6 +171,27 @@ function commitBatchIfNeeded(db, state, threshold = 450) {
   state.batch = db.batch();
   state.ops = 0;
   return batch.commit();
+}
+
+function queueInstagramKeywordEmphasisSync(db, batchState, igByDate, dateKey, q, updatedAt, source, deleteField) {
+  const key = String(dateKey || '').trim();
+  if (!key) return 0;
+  const existing = igByDate.get(key);
+  if (!shouldSyncNotionKeywordEmphasis(existing || {})) return 0;
+  const instagramCollection = process.env.FIRESTORE_INSTAGRAM_IMAGES_COLLECTION || 'instagram-images';
+  const ref = db.collection(instagramCollection).doc(key);
+  const result = layoutBKeywordEmphasisFirestorePatch(pickQuoteKeywordRaw(q), q.text, {
+    updatedAt,
+    updatedBy: source
+  });
+  if (result.deleteEmphasis) {
+    batchState.batch.set(ref, { layoutBKeywordEmphasis: deleteField }, { merge: true });
+  } else {
+    batchState.batch.set(ref, result.patch, { merge: true });
+    igByDate.set(key, { ...(existing || {}), ...result.patch });
+  }
+  batchState.ops += 1;
+  return 1;
 }
 
 function initFirestore() {
@@ -228,6 +257,7 @@ function quoteRowFromFirestore(docSnap) {
     speakerDied: String(d.speakerDied ?? d.speaker_died ?? '').trim(),
     speakerGuideLine: String(d.speakerGuideLine ?? d.speaker_guide_line ?? '').trim(),
     imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
+    keyword: String(d.keyword ?? '').trim(),
     first_response: String(d.first_response ?? '').trim()
   };
 }
@@ -278,6 +308,19 @@ async function main() {
   }
   placements.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.sid.localeCompare(b.sid));
 
+  const instagramCollection = process.env.FIRESTORE_INSTAGRAM_IMAGES_COLLECTION || 'instagram-images';
+  const igByDate = new Map();
+  const igDateKeys = new Set([
+    ...assignmentByDate.keys(),
+    ...placements.map((p) => p.dateKey),
+    ...staleDates.map((s) => s.dateKey)
+  ]);
+  for (const dateKey of igDateKeys) {
+    if (dateKey < start) continue;
+    const snap = await db.collection(instagramCollection).doc(dateKey).get();
+    igByDate.set(dateKey, snap.exists ? snap.data() || {} : null);
+  }
+
   if (opts.dryRun) {
     console.log(
       `[reconcile] dry-run start=${start} quotes=${quoteBySourceId.size} futureAssignments=${assignmentByDate.size} staleSlots=${staleDates.length} placements=${placements.length}`
@@ -293,6 +336,7 @@ async function main() {
   let placed = 0;
   let displaced = 0;
   let catalogFieldMirrors = 0;
+  let keywordEmphasisMirrors = 0;
   const updatedAt = new Date().toISOString();
 
   // Notion → quotes sync does not move dates; still refresh first_response on stable slots.
@@ -308,6 +352,16 @@ async function main() {
     );
     batchState.ops += 1;
     catalogFieldMirrors += 1;
+    keywordEmphasisMirrors += queueInstagramKeywordEmphasisSync(
+      db,
+      batchState,
+      igByDate,
+      dateKey,
+      q,
+      updatedAt,
+      'notion-date-reconcile',
+      deleteField
+    );
     await commitBatchIfNeeded(db, batchState);
   }
 
@@ -370,6 +424,17 @@ async function main() {
     );
     batchState.ops += 1;
 
+    keywordEmphasisMirrors += queueInstagramKeywordEmphasisSync(
+      db,
+      batchState,
+      igByDate,
+      dateKey,
+      q,
+      updatedAt,
+      'notion-date-reconcile',
+      deleteField
+    );
+
     batchState.batch.set(
       db.collection(quotesCollection).doc(sid),
       {
@@ -390,7 +455,7 @@ async function main() {
   if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[reconcile] start=${start} catalogFieldMirrors=${catalogFieldMirrors} clearedSlots=${clearedSlots} clearedQuoteDateFields=${clearedQuoteDates} placed=${placed} displacedOccupants=${displaced} (${assignmentsCollection} / ${quotesCollection})`
+    `[reconcile] start=${start} catalogFieldMirrors=${catalogFieldMirrors} keywordEmphasisMirrors=${keywordEmphasisMirrors} clearedSlots=${clearedSlots} clearedQuoteDateFields=${clearedQuoteDates} placed=${placed} displacedOccupants=${displaced} (${assignmentsCollection} / ${quotesCollection})`
   );
 }
 

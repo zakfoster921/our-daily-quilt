@@ -17,6 +17,13 @@ for arg in "$@"; do
   fi
 done
 
+if [[ -f "ios/App/App.xcodeproj/project.pbxproj" ]]; then
+  echo "==> bump iOS build number"
+  node scripts/bump-ios-build.cjs
+else
+  echo "WARN: ios/App/App.xcodeproj/project.pbxproj not found — skipping build bump"
+fi
+
 echo "==> npm run build:www"
 npm run build:www
 

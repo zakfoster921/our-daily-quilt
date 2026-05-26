@@ -5699,7 +5699,11 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
   console.log('🔄 Manual Notion–Firestore sync started');
 
   try {
-    const quotesResult = await runNodeScript('scripts/sync-notion-to-firestore.cjs');
+    const scheduleStartDate = getAppDateKey();
+    const quotesResult = await runNodeScript('scripts/sync-notion-to-firestore.cjs', [
+      `--start=${scheduleStartDate}`,
+      '--window=7'
+    ]);
     if (quotesResult.code !== 0) {
       return res.status(500).json({
         success: false,
@@ -5712,7 +5716,6 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
       });
     }
 
-    const scheduleStartDate = getAppDateKey();
     const reconcileResult = await runNodeScript('scripts/reconcile-assignment-dates-from-notion.cjs', [
       `--start=${scheduleStartDate}`
     ]);
@@ -5768,7 +5771,10 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
       });
     }
 
-    const usageResult = await runNodeScript('scripts/sync-usage-firestore-to-notion.cjs');
+    const usageResult = await runNodeScript('scripts/sync-usage-firestore-to-notion.cjs', [
+      `--start=${scheduleStartDate}`,
+      '--window=7'
+    ]);
     if (usageResult.code !== 0) {
       return res.status(500).json({
         success: false,

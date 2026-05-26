@@ -12,6 +12,7 @@ const {
   buildFirstResponseFirestorePatch,
   buildFirstResponseNotionProperties
 } = require('./lib/first-response-fields.cjs');
+const { parseSyncWindowCli, isDateInSyncWindow } = require('./lib/sync-window.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
 
@@ -194,8 +195,29 @@ async function notionGetDatabaseSchema(databaseId, notionToken) {
   return json.properties || {};
 }
 
+function quoteTouchesSyncWindow(q, window, scheduledBySourceNorm, scheduledBySourceId, scheduledByKey, todayKey) {
+  if (!window) return true;
+  const catalogDate = q.dateScheduled && isDateDocId(q.dateScheduled) ? q.dateScheduled : '';
+  if (isDateInSyncWindow(catalogDate, window)) return true;
+  const normQ = normalizeNotionPageId(q.sourceId);
+  const bySourceNorm = scheduledBySourceNorm.get(normQ) || [];
+  const bySourceRaw = scheduledBySourceId.get(q.sourceId) || [];
+  const byTextAuthor = scheduledByKey.get(q.key) || [];
+  const scheduledDate = pickScheduledDate(
+    [...bySourceNorm, ...bySourceRaw, ...byTextAuthor],
+    todayKey
+  );
+  return isDateInSyncWindow(scheduledDate, window);
+}
+
+function assignmentDatesInWindow(dateKeys, window) {
+  if (!window || !Array.isArray(dateKeys)) return false;
+  return dateKeys.some((d) => isDateInSyncWindow(d, window));
+}
+
 async function run() {
-  const dryRun = process.argv.includes('--dry-run');
+  const cli = parseSyncWindowCli(process.argv);
+  const { dryRun, window } = cli;
   const notionToken = requireEnv('NOTION_TOKEN');
   const notionDatabaseId = requireEnv('NOTION_DATABASE_ID');
   const db = initFirestore();
@@ -297,6 +319,12 @@ async function run() {
   const now = new Date();
   const todayKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
 
+  if (window) {
+    console.log(`[usage-sync] windowed sync ${window.startKey}..${window.endKey} (${window.windowDays} days)`);
+  } else {
+    console.log('[usage-sync] full-catalog sync');
+  }
+
   let updates = 0;
   let skipped = 0;
   let firstResponseFirestoreWrites = 0;
@@ -323,6 +351,19 @@ async function run() {
   }
 
   for (const q of notionDocs) {
+    if (
+      window &&
+      !quoteTouchesSyncWindow(
+        q,
+        window,
+        scheduledBySourceNorm,
+        scheduledBySourceId,
+        scheduledByKey,
+        todayKey
+      )
+    ) {
+      continue;
+    }
     const u = usage.get(q.key);
 
     const properties = {};
@@ -375,6 +416,7 @@ async function run() {
   let dateOnlySkipped = 0;
   if (hasDateScheduled && scheduledBySourceNorm.size) {
     for (const [norm, dateKeys] of scheduledBySourceNorm) {
+      if (window && !assignmentDatesInWindow(dateKeys, window)) continue;
       if (patchedNormIds.has(norm)) continue;
       const rawPageId = sourceIdNormToRaw.get(norm);
       if (!rawPageId) continue;
@@ -405,8 +447,9 @@ async function run() {
 
   const applied = dryRun ? updates : updates - skipped;
   const appliedDateOnly = dryRun ? dateOnlyPatches : dateOnlyPatches - dateOnlySkipped;
+  const scopeLabel = window ? `${window.startKey}..${window.endKey}` : 'full-catalog';
   console.log(
-    `[usage-sync] complete dryRun=${dryRun} notionDocs=${notionDocs.length} usageDates=${usage.size} assignmentSourceIds=${scheduledBySourceNorm.size} reflectionThemeDates=${firstResponseByDate.size} firstResponseFirestoreWrites=${firstResponseFirestoreWrites} patchTargets=${updates} skipped=${skipped}${dryRun ? '' : ` applied=${applied}`} dateOnlyPatches=${dateOnlyPatches}${dryRun ? '' : ` dateOnlyApplied=${appliedDateOnly}`} dateOnlySkipped=${dateOnlySkipped}`
+    `[usage-sync] complete dryRun=${dryRun} scope=${scopeLabel} notionDocs=${notionDocs.length} usageDates=${usage.size} assignmentSourceIds=${scheduledBySourceNorm.size} reflectionThemeDates=${firstResponseByDate.size} firstResponseFirestoreWrites=${firstResponseFirestoreWrites} patchTargets=${updates} skipped=${skipped}${dryRun ? '' : ` applied=${applied}`} dateOnlyPatches=${dateOnlyPatches}${dryRun ? '' : ` dateOnlyApplied=${appliedDateOnly}`} dateOnlySkipped=${dateOnlySkipped}`
   );
 }
 

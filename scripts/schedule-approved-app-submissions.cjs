@@ -24,7 +24,8 @@ try {
 }
 
 const admin = require('firebase-admin');
-const { addDays, getAppDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
+const { addDays, getAppDateKey, getOpeningAppDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
+const { speakerCutoutUrlForPortrait } = require('./lib/speaker-cutout-portrait-match.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
   'artRecsType',
@@ -125,7 +126,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     artRecsTypeSnapshot: artRecsType.slice(0, 40),
     igCaptionSnapshot: q.igCaption.slice(0, 400),
     speakerImageUrlSnapshot: q.speakerImageUrl.slice(0, 500),
-    speakerCutoutUrlSnapshot: q.speakerCutoutUrl.slice(0, 500),
+    speakerCutoutUrlSnapshot: speakerCutoutUrlForPortrait(q.speakerCutoutUrl, q.speakerImageUrl).slice(0, 500),
     speakerDatesSnapshot: q.speakerDates.slice(0, 120),
     speakerBornSnapshot: q.speakerBorn.slice(0, 80),
     speakerDiedSnapshot: q.speakerDied.slice(0, 80),
@@ -156,7 +157,11 @@ function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     good_day: String(q.good_day ?? q.goodDay ?? '').trim(),
     rough_day: String(q.rough_day ?? q.roughDay ?? '').trim(),
     speaker_image_url: String(q.speaker_image_url ?? q.speakerImageUrl ?? '').trim(),
-    speaker_cutout_url: String(q.speaker_cutout_url ?? q.speakerCutoutUrl ?? '').trim(),
+    speaker_cutout_url:
+      speakerCutoutUrlForPortrait(
+        String(q.speaker_cutout_url ?? q.speakerCutoutUrl ?? '').trim(),
+        String(q.speaker_image_url ?? q.speakerImageUrl ?? '').trim()
+      ) || '',
     speaker_dates: String(q.speaker_dates ?? q.speakerDates ?? '').trim(),
     speaker_born: String(q.speaker_born ?? q.speakerBorn ?? '').trim(),
     speaker_died: String(q.speaker_died ?? q.speakerDied ?? '').trim(),
@@ -448,10 +453,15 @@ async function main() {
     return a.sourceId.localeCompare(b.sourceId);
   });
 
-  const tomorrow = addDays(opts.start, 1);
+  // Before 07:00 UTC, --start=opening is the quilt day opening imminently — place
+  // the first swap there. Otherwise "tomorrow" is the calendar day after --start.
+  const firstSwapDate =
+    new Date().getUTCHours() < 7 && opts.start === getOpeningAppDateKey()
+      ? opts.start
+      : addDays(opts.start, 1);
   const targetByCandidate = new Map();
   candidates.forEach((cand, idx) => {
-    targetByCandidate.set(cand.sourceId, addDays(tomorrow, idx));
+    targetByCandidate.set(cand.sourceId, addDays(firstSwapDate, idx));
   });
   const candidateSourceIds = new Set(candidates.map((c) => c.sourceId));
   const targetDateSet = new Set(targetByCandidate.values());
@@ -481,7 +491,7 @@ async function main() {
 
   if (opts.dryRun) {
     console.log(
-      `[app-submissions] dry-run swap-mode candidates=${candidates.length} displaced=${displacedSourceIds.size} vacated=${datesToDelete.size} start=${opts.start} recentHours=${RECENT_CANDIDATE_MS / 3600000}`
+      `[app-submissions] dry-run swap-mode candidates=${candidates.length} displaced=${displacedSourceIds.size} vacated=${datesToDelete.size} start=${opts.start} firstSwapDate=${firstSwapDate} recentHours=${RECENT_CANDIDATE_MS / 3600000}`
     );
     for (const cand of candidates) {
       const target = targetByCandidate.get(cand.sourceId);
@@ -494,7 +504,7 @@ async function main() {
 
   if (!candidates.length) {
     console.log(
-      `[app-submissions] swap-mode no recently approved candidates to place at tomorrow+ (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
+      `[app-submissions] swap-mode no recently approved candidates to place from ${firstSwapDate}+ (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
     );
     return;
   }
@@ -567,7 +577,7 @@ async function main() {
   if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[app-submissions] swap-mode placed=${assignmentWrites} vacated=${assignmentDeletes} displaced=${displacedClears} (start=${opts.start}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
+    `[app-submissions] swap-mode placed=${assignmentWrites} vacated=${assignmentDeletes} displaced=${displacedClears} (start=${opts.start}, firstSwapDate=${firstSwapDate}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
   );
 }
 

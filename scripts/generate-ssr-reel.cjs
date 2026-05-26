@@ -236,14 +236,6 @@ async function runSsrAttempt({
             dateKey
           );
         }
-        let postLayoutBSpeakerImageData = null;
-        if (arch.generateInstagramPostLayoutBSpeakerImage) {
-          postLayoutBSpeakerImageData = await arch.generateInstagramPostLayoutBSpeakerImage(
-            blocks,
-            quote,
-            dateKey
-          );
-        }
         const expectedSpeakerImageUrl = String(
           quote.speakerCutoutUrl ??
             quote.speaker_cutout_url ??
@@ -255,11 +247,12 @@ async function runSsrAttempt({
             quote.speaker_image_url_snapshot ??
             ''
         ).trim();
-        if (expectedSpeakerImageUrl && !postLayoutBSpeakerImageData) {
+        if (expectedSpeakerImageUrl && !postLayoutBImageData) {
           throw new Error(
-            `Speaker image expected for ${dateKey}, but layout-b-speaker.png was not generated.`
+            `Speaker image expected for ${dateKey}, but layout-b.png was not generated.`
           );
         }
+        const aliasLayoutBSpeakerUrl = !!(expectedSpeakerImageUrl && postLayoutBImageData);
 
         const { blob, mode } = await app._buildSyntheticQuiltReelWebm(blocks, {
           width: 1080,
@@ -291,7 +284,7 @@ async function runSsrAttempt({
           dateKey,
           instagramImage,
           postLayoutBImageData,
-          postLayoutBSpeakerImageData,
+          aliasLayoutBSpeakerUrl,
           reelWebmBlob: blob,
           zapierCaption,
           quiltFingerprint,
@@ -354,6 +347,13 @@ async function runSsrAttempt({
       !verify.postLayoutBSpeakerImageUrl
     ) {
       throw new Error('verify failed: layout B speaker image URL missing after SSR generation');
+    }
+    if (result.speakerImageExpected) {
+      const speakerUrl = verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl;
+      const layoutBUrl = verify.layoutBImageUrl || verify.postLayoutBImageUrl || verify.postLayoutBPlainImageUrl;
+      if (layoutBUrl && speakerUrl && speakerUrl !== layoutBUrl) {
+        throw new Error('verify failed: aliased layout B speaker URL must match layout-b.png URL');
+      }
     }
     return {
       success: true,

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Schedule mode: 'append' (default — tack at end of queue, matches the daily cron) or 'swap' (newly-approved quotes take tomorrow's slot)."
+        description: "Schedule mode for manual runs only. Cron always uses swap. 'append' tacks new approvals at end of queue; 'swap' places them on the day after --start (displaces that slot)."
         required: false
         default: "append"
         type: choice
@@ -77,7 +77,7 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
-        run: npm run sync:quotes
+        run: node scripts/sync-notion-to-firestore.cjs "${START_ARG}" --window=7
 
       - name: Reconcile assignments from Notion date_scheduled
         env:
@@ -86,9 +86,9 @@ jobs:
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: node scripts/reconcile-assignment-dates-from-notion.cjs "${START_ARG}"
 
-      # Cron and default manual dispatch use --append-only (new approvals tack
-      # onto the end of the queue). Pick workflow_dispatch input "swap" when a
-      # newly approved quote should take tomorrow's slot and displace what was there.
+      # Nightly cron: swap — newly approved (recent Notion edit, no pinned date) takes
+      # the day after --start=opening and bumps the previous occupant back to the pool.
+      # Manual dispatch: append unless you pick "swap" in the workflow input.
       - name: Schedule approved app-submitted quotes
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
@@ -96,12 +96,12 @@ jobs:
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: |
           MODE="${{ github.event.inputs.mode }}"
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "$MODE" != "swap" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "$MODE" = "swap" ]; then
+            echo "[workflow] running schedule script in swap mode (new approvals → day after start)"
+            node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8
+          else
             echo "[workflow] running schedule script in --append-only mode"
             node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8 --append-only
-          else
-            echo "[workflow] running schedule script in swap mode"
-            node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8
           fi
 
       - name: Append rolling 7-day quote window
@@ -127,4 +127,4 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_DAILY_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_DAILY_QUOTES_COLLECTION }}
-        run: npm run sync:usage
+        run: node scripts/sync-usage-firestore-to-notion.cjs "${START_ARG}" --window=7
