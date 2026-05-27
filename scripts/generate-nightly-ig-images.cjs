@@ -202,6 +202,22 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         }
 
         const instagramImage = await arch.generateInstagramImage(blocks);
+        if (!arch.generateInstagramQuiltScreen9x16ImageData) {
+          throw new Error(
+            `generateInstagramQuiltScreen9x16ImageData missing on deployed app — deploy our-daily-beta.html before nightly IG`
+          );
+        }
+        let quiltScreen9x16ImageData = await arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey);
+        if (!quiltScreen9x16ImageData) {
+          throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
+        }
+        const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
+        if (quiltExportMeta && !quiltExportMeta.quiltBlobFromLiveSvg) {
+          console.warn(
+            `[nightly-ig] quilt-screen 9:16 used non-SVG path for ${dateKey}`,
+            JSON.stringify(quiltExportMeta)
+          );
+        }
         let postLayoutBImageData = null;
         if (arch.generateInstagramPostLayoutBImage) {
           postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey);
