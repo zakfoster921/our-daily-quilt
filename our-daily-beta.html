@@ -1364,9 +1364,13 @@ try {
     }
 
     #screen-quote .quote-layoutb-stage {
-      opacity: 0;
-      visibility: hidden;
+      opacity: 1;
+      visibility: visible;
       transition: none;
+    }
+
+    #screen-quote .quote-layoutb-strip {
+      overflow: visible;
     }
 
     #screen-quilt .quote-layoutb-stage,
@@ -1893,6 +1897,12 @@ try {
       transition: opacity 1.28s cubic-bezier(0.18, 0.82, 0.22, 1);
       transition-delay: 0.1s;
     }
+    #screen-quote.flow-fade-enter,
+    #screen-quote.flow-fade-enter.flow-fade-enter-active {
+      opacity: 1 !important;
+      transition: none !important;
+      transition-delay: 0s !important;
+    }
     #screen-welcome.flow-fade-enter.flow-fade-enter-active {
       transition-duration: 1.9s;
       transition-delay: 0.18s;
@@ -2214,7 +2224,7 @@ try {
       width: 100%;
       max-width: none;
       padding: 0.2rem 0.1rem;
-      align-items: stretch;
+      align-items: center;
     }
 
     #screen-quote.quote-picker-three-slider .quote-color-combined__picker {
@@ -2406,6 +2416,22 @@ try {
     }
 
     #screen-quote .quote-card.layoutb-preview-card .quote-layoutb-stage {
+      overflow: visible;
+      margin-left: auto;
+      margin-right: auto;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Layout B collage: no inner scroll box — stage sizes to strips. */
+    #screen-quote .quote-stage:has(> .quote-card.layoutb-preview-card > .quote-layoutb-stage),
+    #screen-quote .quote-stage-quote .quote-stage:has(> .quote-card.layoutb-preview-card > .quote-layoutb-stage),
+    #screen-quote .quote-color-combined__quote .quote-stage:has(> .quote-card.layoutb-preview-card > .quote-layoutb-stage) {
+      overflow: visible !important;
+      max-height: none !important;
+    }
+
+    #screen-quote .quote-content-wrapper:has(.quote-card.layoutb-preview-card > .quote-layoutb-stage) {
       overflow: visible;
     }
 
@@ -24271,9 +24297,27 @@ try {
             portalScreen &&
             (portalScreen.classList.contains('active') ||
               portalScreen.classList.contains('flow-fade-exit'));
+          const quoteScreen = document.getElementById('screen-quote');
+          const quoteScreenLayoutBVisible =
+            quoteScreen &&
+            (quoteScreen.classList.contains('active') ||
+              quoteScreen.classList.contains('flow-fade-enter') ||
+              quoteScreen.classList.contains('flow-fade-enter-active'));
           document.querySelectorAll('.quote-layoutb-strip, .quote-layoutb-stage').forEach((el) => {
             /* Portal greeting uses absolute layout + transform; leave untouched while portal is still on screen (incl. crossfade). */
             if (portalGreetingStillVisible && el.closest('#portal-greeting-layoutb-card')) {
+              return;
+            }
+            if (quoteScreenLayoutBVisible && el.closest('#screen-quote')) {
+              if (el.classList.contains('quote-layoutb-strip')) {
+                this._restoreQuoteLayoutBStripMarkup(el);
+              }
+              el.style.removeProperty('display');
+              el.style.removeProperty('visibility');
+              el.style.removeProperty('opacity');
+              el.style.removeProperty('pointer-events');
+              /* Keep strip rotate/center and stage recenter transforms — clearing breaks Layout B placement. */
+              el.style.removeProperty('clip-path');
               return;
             }
             if (reflectionArchiveActive) {
@@ -24519,15 +24563,14 @@ try {
                   window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
                   if (!portalToQuoteFade) {
                     window.app?.quoteService?.displayQuote?.();
-                    window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
                   }
-                  // #region agent log
-                  odqDbg0dfc0d('H4', 'showScreen:finishFlow', 'quote screen finishFlow paint', {
-                    previousId,
-                    portalToQuoteFade: !!portalToQuoteFade,
-                    skippedDisplayQuote: !!portalToQuoteFade
-                  });
-                  // #endregion
+                  this._syncQuoteLayoutBStripLeakGuard();
+                  if (portalToQuoteFade) {
+                    const qs = window.app?.quoteService;
+                    if (qs) qs._quoteLayoutBPortalSettlePending = false;
+                  }
+                  window.app?.quoteService?._flushDeferredQuoteScreenLayoutBPaintIfNeeded?.();
+                  window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
                 }
               };
 
@@ -24535,9 +24578,12 @@ try {
               target.classList.remove(...flowClassCleanup);
               if (portalToQuoteFade) {
                 target.classList.add('flow-fade-enter', 'active');
+                window.app?.quoteService?._markQuoteLayoutBPortalSettlePending?.();
+                window.app?.applyQuotePickerModeUI?.();
+                window.app?.applyQuoteScreenInitialRestLayout?.();
                 window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
                 window.app?.quoteService?.displayQuote?.();
-                window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
+                window.app?.quoteService?._flushDeferredQuoteScreenLayoutBPaintIfNeeded?.();
               } else {
                 const enteringClass =
                   nextOrder > prevOrder ? 'flow-enter-from-bottom' : 'flow-enter-from-top';
@@ -24672,13 +24718,9 @@ try {
                 if (target.id === 'screen-quote') {
                   window.app?.applyQuoteScreenInitialRestLayout?.();
                   window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
-                  window.app?.quoteService?.displayQuote?.();
+                  window.app?.quoteService?._scheduleQuoteLayoutBSettleRecenter?.('finishBridgeQuote');
+                  window.app?.quoteService?._ensureQuoteLayoutBFontRecenterHook?.();
                   window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
-                  // #region agent log
-                  odqDbg0dfc0d('H4', 'showScreen:finishBridgeQuote', 'quote screen bridge finish paint', {
-                    previousId
-                  });
-                  // #endregion
                 }
               };
 
@@ -24691,6 +24733,11 @@ try {
               target.style.display = 'flex';
               target.classList.remove(...flowClassCleanup);
               target.classList.add('flow-fade-enter', 'active');
+              window.app?.applyQuotePickerModeUI?.();
+              window.app?.applyQuoteScreenInitialRestLayout?.();
+              window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+              window.app?.quoteService?.displayQuote?.();
+              window.app?.quoteService?._flushDeferredQuoteScreenLayoutBPaintIfNeeded?.();
 
               previousActive.classList.remove(...flowClassCleanup);
               previousActive.classList.add('flow-fade-exit');
@@ -24741,12 +24788,8 @@ try {
               window.app?.applyQuoteScreenInitialRestLayout?.();
               window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
               window.app?.quoteService?.displayQuote?.();
+              window.app?.quoteService?._flushDeferredQuoteScreenLayoutBPaintIfNeeded?.();
               window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
-              // #region agent log
-              odqDbg0dfc0d('H4', 'showScreen:instantQuote', 'quote screen instant activation', {
-                previousId: previousId
-              });
-              // #endregion
             }
 
             if (screenId === 'screen-first-quote-bridge') {
@@ -26090,6 +26133,9 @@ try {
         if (app && typeof app.refreshLayoutBStoryPreview === 'function') {
           void app.refreshLayoutBStoryPreview();
         }
+        if (app && typeof app.refreshQuoteSpeakerWidget === 'function') {
+          void app.refreshQuoteSpeakerWidget();
+        }
       } catch (_) {
         /* ignore */
       }
@@ -26265,6 +26311,27 @@ try {
         }
       }
       return odqGetCachedLayoutBStripLayoutSeed(key, a) ?? 0;
+    }
+
+    /** Apply instagram-images Layout B tune fields into local cache; returns story-aspect tune for quote screen. */
+    function odqApplyLayoutBTuneFieldsFromInstagramDoc(dateKey, data, aspect = 'story') {
+      const key = String(dateKey || '').trim();
+      if (!key || !data || typeof data !== 'object') {
+        return { keywordEmphasis: null, stripLayoutSeed: 0 };
+      }
+      const a = odqNormalizeTuneAspect(aspect);
+      const kwField = a === 'post' ? 'layoutBKeywordEmphasisPost' : 'layoutBKeywordEmphasisStory';
+      const stripField = a === 'post' ? 'layoutBStripLayoutSeedPost' : 'layoutBStripLayoutSeedStory';
+      let rawKw = data[kwField];
+      if (!rawKw && a === 'story' && data.layoutBKeywordEmphasis) rawKw = data.layoutBKeywordEmphasis;
+      const keywordEmphasis = odqEnsureKeywordEmphasisStyles(odqNormalizeKeywordEmphasisPayload(rawKw));
+      odqSetCachedLayoutBKeywordEmphasis(key, keywordEmphasis, a);
+      let stripLayoutSeed = odqNormalizeStripLayoutSeed(data[stripField]);
+      if (!stripLayoutSeed && a === 'story' && data.layoutBStripLayoutSeed != null) {
+        stripLayoutSeed = odqNormalizeStripLayoutSeed(data.layoutBStripLayoutSeed);
+      }
+      odqSetCachedLayoutBStripLayoutSeed(key, stripLayoutSeed, a);
+      return { keywordEmphasis, stripLayoutSeed };
     }
 
     async function odqWriteLayoutBStripLayoutSeed(dateKey, seed, aspect = 'story') {
@@ -26516,21 +26583,6 @@ try {
         return false;
       }
     }
-    function odqDbg0dfc0d(hypothesisId, location, message, data) {
-      fetch('http://127.0.0.1:7433/ingest/0ed8adaa-5aed-4571-811f-aadcc7a8fddc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0dfc0d' },
-        body: JSON.stringify({
-          sessionId: '0dfc0d',
-          runId: globalThis.__ODQ_DEBUG_RUN_ID || 'pre-fix',
-          hypothesisId,
-          location,
-          message,
-          data: data || {},
-          timestamp: Date.now()
-        })
-      }).catch(() => {});
-    }
     function odqDebugLog(location, message, data, hypothesisId) {
       const payload = {
         sessionId: '004343',
@@ -26576,7 +26628,15 @@ try {
         }
         return normalized;
       }
-      return null;
+      if (!raw || typeof raw !== 'object') return null;
+      const keywords = Array.isArray(raw.keywords)
+        ? raw.keywords.map((k) => String(k).trim()).filter(Boolean)
+        : [];
+      const styles = Array.isArray(raw.styles)
+        ? raw.styles.map((s) => String(s).trim().toLowerCase()).filter(Boolean)
+        : [];
+      if (!keywords.length) return null;
+      return { keywords: keywords.slice(0, 3), styles: styles.length ? styles : ['bold'] };
     }
 
     function odqEnsureKeywordEmphasisStyles(payload) {
@@ -26615,10 +26675,25 @@ try {
       const normalized = payload ? odqNormalizeKeywordEmphasisPayload(payload) : null;
       if (normalized) {
         odqKeywordEmphasisMemoryCache[cacheId] = normalized;
-        localStorage.setItem(ODQ_KEYWORD_EMPHASIS_KEY(dateKey, aspect), JSON.stringify(normalized));
+        try {
+          const json = JSON.stringify(normalized);
+          localStorage.setItem(ODQ_KEYWORD_EMPHASIS_KEY(dateKey, aspect), json);
+          if (odqNormalizeTuneAspect(aspect) === 'story') {
+            localStorage.setItem(ODQ_KEYWORD_EMPHASIS_LEGACY_KEY(dateKey), json);
+          }
+        } catch (_) {
+          /* file:// or private mode — memory cache still updated */
+        }
       } else {
         delete odqKeywordEmphasisMemoryCache[cacheId];
-        localStorage.removeItem(ODQ_KEYWORD_EMPHASIS_KEY(dateKey, aspect));
+        try {
+          localStorage.removeItem(ODQ_KEYWORD_EMPHASIS_KEY(dateKey, aspect));
+          if (odqNormalizeTuneAspect(aspect) === 'story') {
+            localStorage.removeItem(ODQ_KEYWORD_EMPHASIS_LEGACY_KEY(dateKey));
+          }
+        } catch (_) {
+          /* ignore */
+        }
       }
     }
 
@@ -31282,8 +31357,8 @@ try {
             
             /**
              * Instagram + Zapier stills (classic + layout B) after quilt/quote writes.
-             * Reel for Zapier: GitHub → Railway POST /api/nightly-instagram-snapshot at 6:30 UTC (full-day quilt),
-             * or record from the app via “Push IG images…” (animated WebM → MP4).
+             * Final IG stills: GitHub nightly-instagram-snapshot.yml at 08:30 UTC (after 07:00 UTC reset), or manual workflow_dispatch.
+             * Reel: record from the app (animated WebM → MP4); static reel-nightly.mp4 is manual/legacy only.
              * Admin-panel quilt edits skip this path so bulk testing does not run heavy canvas work every save.
              */
             if (!options?.adminMutation) {
@@ -32683,6 +32758,92 @@ try {
       /**
        * Coalesce Layout B quote-screen paints so rapid displayQuote calls don't flash plain text then remount.
        */
+      _revealQuoteLayoutBStage() {
+        const stage = document.querySelector('#screen-quote .quote-layoutb-stage');
+        if (stage) {
+          stage.classList.add('quote-layoutb-stage--revealed');
+          void stage.offsetHeight;
+        }
+      }
+
+      _markQuoteLayoutBPortalSettlePending() {
+        this._quoteLayoutBPortalSettlePending = true;
+      }
+
+      _scheduleQuoteLayoutBSettleRecenter(source = 'scheduled') {
+        this._quoteLayoutBSettleSource = source;
+        if (this._quoteLayoutBSettleRaf) return;
+        this._quoteLayoutBSettleRaf = requestAnimationFrame(() => {
+          this._quoteLayoutBSettleRaf = 0;
+          requestAnimationFrame(() => {
+            const src = this._quoteLayoutBSettleSource || source;
+            this._quoteLayoutBSettleSource = '';
+            this._recenterQuoteScreenLayoutBStage(src);
+          });
+        });
+      }
+
+      _recenterQuoteScreenLayoutBStage(source = 'manual') {
+        const quoteCard = document.querySelector('#screen-quote .quote-card');
+        const stage = quoteCard?.querySelector(':scope > .quote-layoutb-stage');
+        if (!quoteCard || !stage) return null;
+        void stage.offsetHeight;
+        void quoteCard.offsetHeight;
+        const cardRect = quoteCard.getBoundingClientRect();
+        let minScreen = Infinity;
+        let maxScreen = -Infinity;
+        stage.querySelectorAll('.quote-layoutb-strip').forEach((el) => {
+          const r = el.getBoundingClientRect();
+          minScreen = Math.min(minScreen, r.left);
+          maxScreen = Math.max(maxScreen, r.right);
+        });
+        if (!Number.isFinite(minScreen)) return null;
+        const clusterCenter = (minScreen + maxScreen) / 2;
+        const cardCenter = cardRect.left + cardRect.width / 2;
+        let nudgeX = cardCenter - clusterCenter;
+        const maxW = Math.max(1, cardRect.width - 4);
+        const clusterW = maxScreen - minScreen;
+        const clipRightPx = maxScreen - cardRect.right;
+        const clipLeftPx = cardRect.left - minScreen;
+        let scaleExtra = clusterW > maxW + 8 || clipRightPx > 2 || clipLeftPx > 2 ? maxW / clusterW : 1;
+        if (maxScreen + nudgeX > cardRect.right - 2) nudgeX = cardRect.right - 2 - maxScreen;
+        if (minScreen + nudgeX < cardRect.left + 2) nudgeX = cardRect.left + 2 - minScreen;
+        let nextTransform = '';
+        if (scaleExtra < 0.985) {
+          const parts = [];
+          if (Math.abs(nudgeX) >= 2) parts.push(`translateX(${nudgeX.toFixed(2)}px)`);
+          parts.push(`scale(${scaleExtra.toFixed(4)})`);
+          nextTransform = parts.join(' ');
+        } else if (Math.abs(nudgeX) >= 2) {
+          nextTransform = `translateX(${nudgeX.toFixed(2)}px)`;
+        }
+        const prevTransform = stage.style.transform || '';
+        if (prevTransform !== nextTransform) {
+          if (nextTransform && scaleExtra < 0.985) {
+            stage.style.transformOrigin = '50% 50%';
+            stage.style.transform = nextTransform;
+          } else {
+            stage.style.transformOrigin = '';
+            stage.style.transform = nextTransform;
+          }
+        }
+        return { nudgeX, scaleExtra, clusterCenter, cardCenter, clusterW };
+      }
+
+      _ensureQuoteLayoutBFontRecenterHook() {
+        if (this._quoteLayoutBFontRecenterHook) return;
+        this._quoteLayoutBFontRecenterHook = true;
+        const run = () => {
+          if (!document.getElementById('screen-quote')?.classList.contains('active')) return;
+          if (this._quoteLayoutBPortalSettlePending) return;
+          this._scheduleQuoteLayoutBSettleRecenter('fonts-ready');
+        };
+        if (document.fonts?.ready) {
+          document.fonts.ready.then(run).catch(() => {});
+        }
+        document.fonts?.addEventListener?.('loadingdone', run, { once: true });
+      }
+
       _queueQuoteScreenLayoutBPaint(text, author) {
         this._pendingQuoteScreenLayoutB = {
           text: String(text || '').trim(),
@@ -32704,24 +32865,18 @@ try {
         const card = document.querySelector('#screen-quote .quote-card');
         const active = !!screenEl?.classList.contains('active');
         const cardW = card?.clientWidth || 0;
-        // #region agent log
-        odqDbg0dfc0d('H1', 'QuoteService:_flushQuoteScreenLayoutBPaint', 'flush layout B paint', {
-          retry,
-          active,
-          cardW,
-          hasPending: !!pending,
-          screenDisplay: screenEl ? getComputedStyle(screenEl).display : null
-        });
-        // #endregion
         if (!active || !card) {
           if (retry < 30) {
             this._quoteScreenLayoutBPaintRaf = requestAnimationFrame(() => {
               this._quoteScreenLayoutBPaintRaf = 0;
               this._flushQuoteScreenLayoutBPaint(retry + 1);
             });
+          } else {
+            this._quoteScreenLayoutBPaintNeedsActiveFlush = true;
           }
           return;
         }
+        this._quoteScreenLayoutBPaintNeedsActiveFlush = false;
 
         if (cardW < 80 && retry < 20) {
           this._quoteScreenLayoutBPaintRaf = requestAnimationFrame(() => {
@@ -32731,16 +32886,51 @@ try {
           return;
         }
 
+        const hasStrips = !!card.querySelector(':scope > .quote-layoutb-stage .quote-layoutb-strip');
+        this._pendingQuoteScreenLayoutB = null;
+        if (this._shouldSkipQuoteScreenLayoutBRebuild(pending.text, pending.author, hasStrips)) {
+          this._revealQuoteLayoutBStage();
+          window.app?.notifyQuoteScreenLayoutBPainted?.();
+          return;
+        }
+
         void this._rebuildLayoutBQuoteCardStage(pending.text, pending.author);
+      }
+
+      _flushDeferredQuoteScreenLayoutBPaintIfNeeded() {
+        if (!this._quoteScreenLayoutBPaintNeedsActiveFlush || !this._pendingQuoteScreenLayoutB) return;
+        if (!document.getElementById('screen-quote')?.classList.contains('active')) return;
+        this._flushQuoteScreenLayoutBPaint(0);
       }
 
       /**
        * Rebuild Layout B strip stage using current wrapper width. Call after #screen-quote is visible —
        * displayQuote() runs at init while the screen is display:none, so clientWidth was wrong until now.
        */
-      scheduleQuoteLayoutBPreviewLayoutRefresh() {
+      scheduleQuoteLayoutBPreviewLayoutRefresh(force = false) {
+        if (force) {
+          this.forceRefreshQuoteScreenLayoutBFromTuneSave();
+          return;
+        }
         const { text, author } = this.getQuoteScreenPreviewContent();
         this._queueQuoteScreenLayoutBPaint(text, author);
+      }
+
+      forceRefreshQuoteScreenLayoutBFromTuneSave() {
+        this.invalidateQuoteScreenLayoutBTunePaint();
+        const { text, author } = this.getQuoteScreenPreviewContent();
+        const trimmedText = String(text || '').trim();
+        const trimmedAuthor = String(author || '').trim();
+        if (!trimmedText) return;
+        const quoteScreenActive = document.getElementById('screen-quote')?.classList.contains('active');
+        const cardW = document.querySelector('#screen-quote .quote-card')?.clientWidth || 0;
+        if (quoteScreenActive && cardW >= 80) {
+          void this._rebuildLayoutBQuoteCardStage(trimmedText, trimmedAuthor, { forceTuneRebuild: true });
+          return;
+        }
+        this._pendingQuoteScreenLayoutB = { text: trimmedText, author: trimmedAuthor };
+        this._quoteScreenLayoutBPaintNeedsActiveFlush = true;
+        this._flushDeferredQuoteScreenLayoutBPaintIfNeeded();
       }
 
       _readPortalGreetingBasePx() {
@@ -32879,7 +33069,11 @@ try {
             isPortalNameLine: greetingLines.length > 1 && idx === greetingLines.length - 1
           }));
         } else {
-          const dateKey = Utils.getTodayKey();
+          const dateKey =
+            options.dateKey ||
+            (typeof window !== 'undefined' && window.app?.quoteService?.getQuoteCalendarKeyNow
+              ? window.app.quoteService.getQuoteCalendarKeyNow()
+              : Utils.getTodayKey());
           let keywordEmphasis;
           if (Object.prototype.hasOwnProperty.call(options, 'keywordEmphasis')) {
             keywordEmphasis = options.keywordEmphasis;
@@ -32914,6 +33108,10 @@ try {
         }
         if (options.portalGreeting && options.portalGreetingAsName && strips.length === 1) {
           strips[0].isPortalNameLine = true;
+        }
+        if (!options.portalGreeting && strips.length) {
+          const measureCtx = document.createElement('canvas').getContext('2d');
+          strips = refitLayoutBStripPlanToText(strips, measureCtx, 980, ODQ_CANVAS_SERIF_FONT);
         }
         const padX = 10;
         const padY = 10;
@@ -32975,7 +33173,8 @@ try {
             xScale *= shrink;
           }
         }
-        const stageH = contentH * yScale;
+        const scale = Math.min(xScale, yScale);
+        const stageH = contentH * scale;
         stage.style.width = `${stageW}px`;
         stage.style.height = `${stageH}px`;
         quoteCard.style.height = '';
@@ -32983,6 +33182,8 @@ try {
         const cx = (minLeft + maxRight) / 2;
         const cy = (minTop + maxBottom) / 2;
         const LBKE = globalThis.LayoutBKeywordEmphasis;
+        let visualMinL = Infinity;
+        let visualMaxR = -Infinity;
         for (const s of strips) {
           const el = document.createElement('div');
           const lines = Array.isArray(s.lines) && s.lines.length ? s.lines : [String(s.text || '').trim()];
@@ -33012,16 +33213,16 @@ try {
             s.isPortalNameLine ? ' quote-layoutb-strip--portal-name' : ''
           }${portalInlineNameClass}`;
           el.innerHTML = innerHtml;
-          const localX = (stageW / 2) + ((Number(s.x || 0) - cx) * xScale);
-          const localY = (stageH / 2) + ((Number(s.y || 0) - cy) * yScale);
-          let wPx = Math.max(20, Number(s.w || 20) * xScale);
-          let hPx = Math.max(20, Number(s.h || 20) * yScale);
-          let lhPx = Math.max(1, Number(s.lh || 0) * yScale);
+          const localX = (stageW / 2) + ((Number(s.x || 0) - cx) * scale);
+          const localY = (stageH / 2) + ((Number(s.y || 0) - cy) * scale);
+          let wPx = Math.max(20, Number(s.w || 20) * scale);
+          let hPx = Math.max(20, Number(s.h || 20) * scale);
+          let lhPx = Math.max(1, Number(s.lh || 0) * scale);
           const fontPxMatch = /(\d+)px/.exec(String(s.font || ''));
           const minStripFontPx = options.portalGreeting ? this._readPortalGreetingBasePx() : 10;
           let fontPx = fontPxMatch
-            ? Math.max(minStripFontPx, parseInt(fontPxMatch[1], 10) * yScale)
-            : Math.max(minStripFontPx, 16 * yScale);
+            ? Math.max(minStripFontPx, parseInt(fontPxMatch[1], 10) * scale)
+            : Math.max(minStripFontPx, 16 * scale);
           fontPx = Math.max(minStripFontPx, Math.round(fontPx));
           if (options.portalGreeting && s.isPortalNameLine) {
             fontPx = Math.max(minStripFontPx, Math.round(fontPx * 2));
@@ -33036,6 +33237,11 @@ try {
             wPx = Math.max(20, Math.round(wPx * 1.04));
           }
           const rotDeg = (Number(s.angle || 0) * 180) / Math.PI;
+          const rotRad = (rotDeg * Math.PI) / 180;
+          const rotHalfW =
+            Math.abs(Math.cos(rotRad)) * (wPx / 2) + Math.abs(Math.sin(rotRad)) * (hPx / 2);
+          visualMinL = Math.min(visualMinL, localX - rotHalfW);
+          visualMaxR = Math.max(visualMaxR, localX + rotHalfW);
           el.style.width = `${wPx}px`;
           el.style.height = `${hPx}px`;
           el.style.lineHeight = `${lhPx}px`;
@@ -33060,30 +33266,19 @@ try {
         quoteCard.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => {
           if (n !== stage) n.remove();
         });
-        requestAnimationFrame(() => {
-          stage.classList.add('quote-layoutb-stage--revealed');
-        });
-
-        const applyOpticalCenterX = () => {
-          const stripEls = stage.querySelectorAll('.quote-layoutb-strip');
-          if (!stripEls.length) return;
-          const sRect = stage.getBoundingClientRect();
-          let minL = Infinity;
-          let maxR = -Infinity;
-          for (let i = 0; i < stripEls.length; i++) {
-            const r = stripEls[i].getBoundingClientRect();
-            minL = Math.min(minL, r.left - sRect.left);
-            maxR = Math.max(maxR, r.right - sRect.left);
+        stage.style.width = `${stageW}px`;
+        const onQuoteScreen = quoteCard.closest('#screen-quote');
+        if (onQuoteScreen) {
+          if (!this._quoteLayoutBPortalSettlePending) {
+            this._scheduleQuoteLayoutBSettleRecenter('after-mount');
+            this._ensureQuoteLayoutBFontRecenterHook();
           }
-          if (!Number.isFinite(minL) || !Number.isFinite(maxR)) return;
-          const clusterW = maxR - minL;
-          let nudge = (stageW - clusterW) / 2 - minL;
-          nudge = Math.max(-stageW, Math.min(stageW, nudge));
-          stage.style.transform = Math.abs(nudge) < 0.35 ? '' : `translateX(${nudge.toFixed(2)}px)`;
-        };
-        requestAnimationFrame(() => {
-          requestAnimationFrame(applyOpticalCenterX);
-        });
+          stage.classList.add('quote-layoutb-stage--revealed');
+        } else {
+          requestAnimationFrame(() => {
+            stage.classList.add('quote-layoutb-stage--revealed');
+          });
+        }
       }
 
       _layoutBSpeakerAuthorInvertSync(quoteObj) {
@@ -33118,49 +33313,100 @@ try {
         }
       }
 
+      _layoutBQuoteTuneOptsSnapshot(dateKey, speakerAuthorInvert = false) {
+        const dk = String(dateKey || this.getQuoteCalendarKeyNow() || '').trim();
+        return {
+          kw: odqGetCachedLayoutBKeywordEmphasis(dk, 'story') || null,
+          speaker: !!speakerAuthorInvert,
+          stripSeed: odqGetCachedLayoutBStripLayoutSeed(dk, 'story') ?? 0
+        };
+      }
+
       _layoutBQuotePaintOptsEqual(a, b) {
         if (!a || !b) return false;
         if (!!a.speaker !== !!b.speaker) return false;
-        const aKw = a.kw?.keywords ? JSON.stringify(a.kw.keywords) : '';
-        const bKw = b.kw?.keywords ? JSON.stringify(b.kw.keywords) : '';
-        return aKw === bKw;
+        if ((a.stripSeed ?? 0) !== (b.stripSeed ?? 0)) return false;
+        const kwFingerprint = (kw) => {
+          if (!kw) return '';
+          return JSON.stringify({
+            keywords: [...(kw.keywords || [])],
+            styles: [...(kw.styles || [])].slice().sort()
+          });
+        };
+        return kwFingerprint(a.kw) === kwFingerprint(b.kw);
       }
 
-      async _enrichLayoutBQuoteCardStageLater(text, author, paintSig, startGen) {
-        const quoteCard = document.querySelector('#screen-quote .quote-card');
-        if (!quoteCard) return;
-        const dateKey = Utils.getTodayKey();
-        const hadCachedKw = !!odqGetCachedLayoutBKeywordEmphasis(dateKey);
-        if (hadCachedKw) return;
-        let keywordEmphasis = null;
-        try {
-          keywordEmphasis = await odqReadLayoutBKeywordEmphasis(dateKey);
-        } catch (_) {
-          /* optional */
+      _shouldSkipQuoteScreenLayoutBRebuild(text, author, hasStrips) {
+        if (!hasStrips) return false;
+        if ((this._quoteScreenLayoutBAppliedTuneRevision || 0) !== (this._quoteScreenLayoutBTuneRevision || 0)) {
+          return false;
         }
-        if (!keywordEmphasis) return;
+        const paintSig = `${String(text || '').trim()}\u0001${String(author || '').trim()}`;
+        if (this._quoteScreenLayoutBPaintSig !== paintSig) return false;
+        const { activeQuote } = this.getQuoteScreenPreviewContent();
+        const nextOpts = this._layoutBQuoteTuneOptsSnapshot(
+          this.getQuoteCalendarKeyNow(),
+          this._layoutBSpeakerAuthorInvertSync(activeQuote)
+        );
+        const skip = this._layoutBQuotePaintOptsEqual(this._quoteScreenLayoutBAppliedOpts, nextOpts);
+        return skip;
+      }
+
+      invalidateQuoteScreenLayoutBTunePaint() {
+        this._quoteScreenLayoutBAppliedOpts = null;
+        this._quoteScreenLayoutBPaintSig = '';
+        this._quoteScreenLayoutBTuneRevision = (this._quoteScreenLayoutBTuneRevision || 0) + 1;
+      }
+
+      /**
+       * After the fast local-cache paint, pull story-aspect tune fields from Firestore and repaint if needed.
+       * (Tune modal preview uses live form state; quote screen was cache-only and skipped strip-seed refresh.)
+       */
+      async _syncLayoutBQuoteCardTuneFromServerLater(text, author, paintSig, startGen) {
+        const quoteCard = document.querySelector('#screen-quote .quote-card');
+        if (!quoteCard || !window.db || !window.firestore) return;
+        const dateKey = this.getQuoteCalendarKeyNow();
+        let data = null;
+        try {
+          const pack = await odqPromiseWithTimeout(
+            odqReadInstagramImagesDocWithFallback(dateKey, 10000),
+            10000,
+            'Quote screen tune sync'
+          );
+          data = pack?.data || null;
+        } catch (_) {
+          return;
+        }
         if (startGen !== this._quoteLayoutBRebuildGen) return;
         if (this._quoteScreenLayoutBPaintSig !== paintSig) return;
-        const nextOpts = { kw: keywordEmphasis, speaker: this._quoteScreenLayoutBAppliedOpts?.speaker };
+        const storyTune = odqApplyLayoutBTuneFieldsFromInstagramDoc(dateKey, data, 'story');
+        const { activeQuote } = this.getQuoteScreenPreviewContent();
+        const speakerAuthorInvert = this._layoutBSpeakerAuthorInvertSync(activeQuote);
+        const nextOpts = {
+          kw: storyTune.keywordEmphasis,
+          speaker: speakerAuthorInvert,
+          stripSeed: storyTune.stripLayoutSeed
+        };
         if (this._layoutBQuotePaintOptsEqual(this._quoteScreenLayoutBAppliedOpts, nextOpts)) return;
         await this._mountLayoutBQuoteStrips(quoteCard, text, author, {
-          keywordEmphasis,
-          speakerAuthorInvert: !!this._quoteScreenLayoutBAppliedOpts?.speaker,
-          stripLayoutSeed: odqGetCachedLayoutBStripLayoutSeed(dateKey) ?? 0,
+          dateKey,
+          keywordEmphasis: storyTune.keywordEmphasis,
+          speakerAuthorInvert,
+          stripLayoutSeed: storyTune.stripLayoutSeed,
           skipAsyncLayoutBFetches: true
         });
+        if (startGen !== this._quoteLayoutBRebuildGen) return;
         if (this._quoteScreenLayoutBPaintSig !== paintSig) return;
         this._quoteScreenLayoutBAppliedOpts = nextOpts;
-        // #region agent log
-        odqDbg0dfc0d('H3', 'QuoteService:_enrichLayoutBQuoteCardStageLater', 'enriched keyword only', {
-          kwCached: true,
-          runId: 'post-fix3'
-        });
-        // #endregion
+        this._quoteScreenLayoutBAppliedTuneRevision = this._quoteScreenLayoutBTuneRevision || 0;
+        this._revealQuoteLayoutBStage();
+        if (document.getElementById('screen-quote')?.classList.contains('active')) {
+          window.app?.notifyQuoteScreenLayoutBPainted?.();
+        }
+        window.app?.uiService?._syncQuoteLayoutBStripLeakGuard?.();
       }
 
-      async _rebuildLayoutBQuoteCardStage(text, author) {
-        const t0 = Date.now();
+      async _rebuildLayoutBQuoteCardStage(text, author, options = {}) {
         const useLayoutBQuoteCardPreview = true;
         const quoteCard = document.querySelector('#screen-quote .quote-card');
         if (!useLayoutBQuoteCardPreview || !quoteCard || typeof getLayoutBStoryQuotePlan !== 'function') {
@@ -33168,56 +33414,50 @@ try {
         }
         const paintSig = `${String(text || '').trim()}\u0001${String(author || '').trim()}`;
         const hasRevealed = !!quoteCard.querySelector(':scope > .quote-layoutb-stage--revealed');
-        if (this._quoteScreenLayoutBPaintSig === paintSig && hasRevealed) {
-          // #region agent log
-          odqDbg0dfc0d('H3', 'QuoteService:_rebuildLayoutBQuoteCardStage', 'skip rebuild sig match', {
-            hasRevealed,
-            paintSigLen: paintSig.length
-          });
-          // #endregion
+        const forceTuneRebuild = options.forceTuneRebuild === true;
+        if (!forceTuneRebuild && hasRevealed && this._shouldSkipQuoteScreenLayoutBRebuild(text, author, true)) {
+          this._revealQuoteLayoutBStage();
+          if (document.getElementById('screen-quote')?.classList.contains('active')) {
+            window.app?.notifyQuoteScreenLayoutBPainted?.();
+          }
           return;
         }
-        if (this._quoteScreenLayoutBPaintInflight === paintSig) return;
+        if (!forceTuneRebuild && this._quoteScreenLayoutBPaintInflight === paintSig) return;
+        if (forceTuneRebuild) this._quoteScreenLayoutBPaintInflight = null;
         this._quoteScreenLayoutBPaintInflight = paintSig;
         const rebuildGen = (this._quoteLayoutBRebuildGen = (this._quoteLayoutBRebuildGen || 0) + 1);
-        const dateKey = Utils.getTodayKey();
-        const syncKw = odqGetCachedLayoutBKeywordEmphasis(dateKey) || null;
-        const syncSeed = odqGetCachedLayoutBStripLayoutSeed(dateKey) ?? 0;
+        const dateKey = this.getQuoteCalendarKeyNow();
+        const syncKw = odqGetCachedLayoutBKeywordEmphasis(dateKey, 'story') || null;
+        const syncSeed = odqGetCachedLayoutBStripLayoutSeed(dateKey, 'story') ?? 0;
         const { activeQuote } = this.getQuoteScreenPreviewContent();
         const speakerAuthorInvert = this._layoutBSpeakerAuthorInvertSync(activeQuote);
-        // #region agent log
-        odqDbg0dfc0d('H3', 'QuoteService:_rebuildLayoutBQuoteCardStage', 'start rebuild sync-first', {
-          rebuildGen,
-          cardW: quoteCard.clientWidth || 0,
-          kwCached: !!syncKw,
-          speakerAuthorInvert,
-          runId: 'post-fix3'
-        });
-        // #endregion
         try {
           quoteCard.classList.add('layoutb-preview-card');
           await this._mountLayoutBQuoteStrips(quoteCard, text, author, {
+            dateKey,
             keywordEmphasis: syncKw,
             speakerAuthorInvert,
             stripLayoutSeed: syncSeed,
             skipAsyncLayoutBFetches: true
           });
           if (rebuildGen !== this._quoteLayoutBRebuildGen) return;
-          this._quoteScreenLayoutBAppliedOpts = { kw: syncKw, speaker: speakerAuthorInvert };
+          this._quoteScreenLayoutBAppliedOpts = {
+            kw: syncKw,
+            speaker: speakerAuthorInvert,
+            stripSeed: syncSeed
+          };
           this._quoteScreenLayoutBPaintSig = paintSig;
+          this._quoteScreenLayoutBAppliedTuneRevision = this._quoteScreenLayoutBTuneRevision || 0;
+          this._pendingQuoteScreenLayoutB = null;
+          this._quoteScreenLayoutBPaintNeedsActiveFlush = false;
           window.app?.finalizeQuoteColorScrollLayout?.();
-          window.app?.notifyQuoteScreenLayoutBPainted?.();
-          const stripCount = quoteCard.querySelectorAll('.quote-layoutb-strip').length;
-          // #region agent log
-          odqDbg0dfc0d('H3', 'QuoteService:_rebuildLayoutBQuoteCardStage', 'rebuild complete sync', {
-            rebuildGen,
-            stripCount,
-            ms: Date.now() - t0,
-            runId: 'post-fix3'
-          });
-          // #endregion
-          if (!syncKw) {
-            void this._enrichLayoutBQuoteCardStageLater(text, author, paintSig, rebuildGen);
+          this._revealQuoteLayoutBStage();
+          if (document.getElementById('screen-quote')?.classList.contains('active')) {
+            window.app?.notifyQuoteScreenLayoutBPainted?.();
+          }
+          window.app?.uiService?._syncQuoteLayoutBStripLeakGuard?.();
+          if (!forceTuneRebuild) {
+            void this._syncLayoutBQuoteCardTuneFromServerLater(text, author, paintSig, rebuildGen);
           }
         } finally {
           if (this._quoteScreenLayoutBPaintInflight === paintSig) {
@@ -33358,14 +33598,6 @@ try {
           (typeof window !== 'undefined' && window.app && window.app._liveDailyDataConfirmed === true) ||
           this.hasTodayQuotePinned() ||
           this.primeTodayQuoteFromLocalAssignment();
-        // #region agent log
-        odqDbg0dfc0d('H2', 'QuoteService:displayQuote', 'displayQuote called', {
-          canShowOnQuoteScreen,
-          liveConfirmed: !!(window.app && window.app._liveDailyDataConfirmed),
-          pinned: this.hasTodayQuotePinned(),
-          quoteScreenActive: document.getElementById('screen-quote')?.classList.contains('active')
-        });
-        // #endregion
         if (!canShowOnQuoteScreen) {
           return;
         }
@@ -33385,8 +33617,30 @@ try {
           const isLayoutBPreviewActive = Boolean(useLayoutBQuoteCardPreview && quoteCard && typeof getLayoutBStoryQuotePlan === 'function');
           if (isLayoutBPreviewActive) {
             quoteCard.classList.add('layoutb-preview-card');
-            void odqPrefetchLayoutBKeywordEmphasis(Utils.getTodayKey());
-            this._queueQuoteScreenLayoutBPaint(text, author);
+            const layoutBDateKey = this.getQuoteCalendarKeyNow();
+            void odqPrefetchLayoutBKeywordEmphasis(layoutBDateKey);
+            void odqReadLayoutBStripLayoutSeed(layoutBDateKey, 'story').catch(() => {});
+            const paintSig = `${String(text || '').trim()}\u0001${String(author || '').trim()}`;
+            const quoteScreenActive = document.getElementById('screen-quote')?.classList.contains('active');
+            const hasStrips = !!quoteCard.querySelector(':scope > .quote-layoutb-stage .quote-layoutb-strip');
+            if (!quoteScreenActive) {
+              this._pendingQuoteScreenLayoutB = {
+                text: String(text || '').trim(),
+                author: String(author || '').trim()
+              };
+              this._quoteScreenLayoutBPaintNeedsActiveFlush = true;
+            } else if (this._shouldSkipQuoteScreenLayoutBRebuild(text, author, hasStrips)) {
+              this._pendingQuoteScreenLayoutB = null;
+              this._quoteScreenLayoutBPaintNeedsActiveFlush = false;
+              this._revealQuoteLayoutBStage();
+              if (quoteScreenActive) {
+                window.app?.notifyQuoteScreenLayoutBPainted?.();
+              }
+            } else if (quoteScreenActive && (quoteCard.clientWidth || 0) >= 80) {
+              void this._rebuildLayoutBQuoteCardStage(text, author);
+            } else {
+              this._queueQuoteScreenLayoutBPaint(text, author);
+            }
           } else {
             if (quoteInner) {
               quoteInner.classList.remove('layoutb-preview');
@@ -40908,15 +41162,8 @@ try {
                 'speaker_cutout_url_snapshot'
               ])
             );
-        // Hash in Storage path is authoritative; source metadata can lag after portrait URL changes.
-        const cutoutSnap = String(
-          this.getQuoteSpeakerField(quote, ['speakerCutoutUrlSnapshot', 'speaker_cutout_url_snapshot'])
-        ).trim();
-        if (cutoutUrl && this.quoteService?._isFirebaseSpeakerCutoutUrl?.(cutoutUrl) && !cutoutSnap) {
-          cutoutUrl = '';
-        }
-        // Never use cutout as imageUrl — avoids mistaking Storage URL for portrait during load.
-        const imageUrl = portraitUrl;
+        // Gating only — widget load uses the same resolver as Layout B story (cutout before portrait).
+        const imageUrl = portraitUrl || cutoutUrl;
         const explicitDates = this.getQuoteSpeakerField(quote, ['speakerDates', 'speaker_dates', 'dates', 'speakerDatesSnapshot']);
         const born = this.getQuoteSpeakerField(quote, ['speakerBorn', 'speaker_born', 'born', 'speakerBornSnapshot']);
         const died = this.getQuoteSpeakerField(quote, ['speakerDied', 'speaker_died', 'died', 'speakerDiedSnapshot']);
@@ -41199,11 +41446,14 @@ try {
             'speaker_cutout_url_snapshot'
           ]);
           const pickUrl = async () => {
+            const arch = this.archiveService;
+            if (arch && typeof arch.resolveLayoutBSpeakerCutoutUrl === 'function') {
+              const cutout = await arch.resolveLayoutBSpeakerCutoutUrl(resolvedQuote, profile.name);
+              if (cutout) return cutout;
+            }
             const portraitForResolve =
               profile.portraitUrl ||
-              (this.archiveService?._layoutBSpeakerPortraitUrl
-                ? this.archiveService._layoutBSpeakerPortraitUrl(resolvedQuote)
-                : '') ||
+              (arch?._layoutBSpeakerPortraitUrl ? arch._layoutBSpeakerPortraitUrl(resolvedQuote) : '') ||
               (this.quoteService?._speakerPortraitFromQuoteAndAssignment
                 ? this.quoteService._speakerPortraitFromQuoteAndAssignment(resolvedQuote)
                 : '') ||
@@ -41216,7 +41466,7 @@ try {
                 speakerName: profile.name
               });
             }
-            return portraitForResolve;
+            return portraitForResolve || profile.cutoutUrl || '';
           };
           const portraitHttps =
             profile.portraitUrl ||
@@ -42987,12 +43237,6 @@ try {
           }
           const quoteScreen = document.getElementById('screen-quote');
           if (quoteScreen && quoteScreen.classList.contains('active')) {
-            // #region agent log
-            odqDbg0dfc0d('H5', 'App:handleResizeDebounced', 'resize triggers layout B refresh', {
-              cardW: document.querySelector('#screen-quote .quote-card')?.clientWidth || 0,
-              stripCount: document.querySelectorAll('#screen-quote .quote-layoutb-strip').length
-            });
-            // #endregion
             this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
           }
           const quiltScreen = document.getElementById('screen-quilt');
@@ -46784,12 +47028,6 @@ try {
 
       revealQuoteColorPickerPane() {
         if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
-        // #region agent log
-        odqDbg0dfc0d('H5', 'App:revealQuoteColorPickerPane', 'picker reveal', {
-          stripCount: document.querySelectorAll('#screen-quote .quote-layoutb-strip').length,
-          cardW: document.querySelector('#screen-quote .quote-card')?.clientWidth || 0
-        });
-        // #endregion
         const { quoteScreen, picker } = this._getQuoteStageElements();
         if (!quoteScreen || !picker) return;
         this.applyQuotePickerModeUI();
@@ -46853,12 +47091,6 @@ try {
 
       notifyQuoteScreenLayoutBPainted() {
         if (!this._quoteColorPickerRevealWaitingLayoutB) return;
-        // #region agent log
-        odqDbg0dfc0d('H5', 'App:notifyQuoteScreenLayoutBPainted', 'layout B ready — start picker countdown', {
-          stripCount: document.querySelectorAll('#screen-quote .quote-layoutb-strip').length,
-          runId: 'post-fix'
-        });
-        // #endregion
         this._beginQuoteColorPickerRevealCountdown();
       }
 
@@ -46883,11 +47115,6 @@ try {
 
         if (!this._quoteScreenLayoutBStripsReady()) {
           this._quoteColorPickerRevealWaitingLayoutB = true;
-          // #region agent log
-          odqDbg0dfc0d('H5', 'App:_beginQuoteColorPickerRevealCountdown', 'defer picker until layout B strips', {
-            runId: 'post-fix'
-          });
-          // #endregion
           return;
         }
         this._quoteColorPickerRevealWaitingLayoutB = false;
@@ -47047,6 +47274,8 @@ try {
           localStorage.removeItem('ourDailyFriendTermPending');
           localStorage.removeItem(Utils.USER_FIRST_NAME_KEY || 'ourDailyUserFirstName');
           localStorage.removeItem(Utils.FIRST_NAME_SKIPPED_KEY || 'ourDailyFirstNameSkipped');
+          localStorage.removeItem(Utils.QUILT_MOOD_PICK_KEY || 'ourDailyQuiltMoodPick');
+          this.uiService?._clearQuiltMoodPickStorage?.();
         } catch (error) {
           this.logger?.warn?.('Could not clear first-time user state:', error);
         }
@@ -49361,9 +49590,14 @@ try {
       async _primeQuiltQuoteChrome() {
         if (this._isPersonalQuiltMode) return;
         if (!this._liveDailyDataConfirmed) return;
-        let todayQ = this.quoteService?.getTodayQuote?.();
-        if (!todayQ) return;
         const dateKey = this.quoteService?.getQuoteCalendarKeyNow?.();
+        let todayQ =
+          (dateKey &&
+          this.quoteService &&
+          typeof this.quoteService.getQuoteResolvedForInstagramDateKey === 'function'
+            ? await this.quoteService.getQuoteResolvedForInstagramDateKey(dateKey)
+            : null) || this.quoteService?.getTodayQuote?.();
+        if (!todayQ) return;
         const mood = this.quoteService?._moodLinesFromQuote?.(todayQ) || { goodDay: '', roughDay: '' };
         if (dateKey && (!mood.goodDay || !mood.roughDay) && this.quoteService?.hydrateMoodFieldsForCalendarKey) {
           todayQ =
@@ -55164,7 +55398,7 @@ try {
                 <button type="button" data-aspect="story" class="is-active">Story 9:16</button>
                 <button type="button" data-aspect="post">Post 4:5</button>
               </div>
-              <p class="odq-speaker-tune-aspect-hint" style="font-size:10px;line-height:1.3;color:#555;margin:0;">Speaker, keywords, and text layout are saved separately for Story and Post.</p>
+              <p class="odq-speaker-tune-aspect-hint" style="font-size:10px;line-height:1.3;color:#555;margin:0;">Story changes also apply to Post. Post-only changes do not affect Story.</p>
               <details class="odq-speaker-tune-details" open>
                 <summary>Speaker placement</summary>
                 <div class="odq-speaker-tune-status">Current preset: <strong data-preset-label>AUTO</strong> <span data-nudge-label></span></div>
@@ -55372,6 +55606,22 @@ try {
             }
           };
 
+          const copyStoryDraftToPost = () => {
+            const s = tuneDraftByAspect.story;
+            const p = tuneDraftByAspect.post;
+            p.preset = s.preset;
+            p.nudgeCx = s.nudgeCx;
+            p.nudgeCy = s.nudgeCy;
+            p.nudgeRotateDeg = s.nudgeRotateDeg;
+            p.stripLayoutSeed = s.stripLayoutSeed;
+            p.keywordEmphasis = s.keywordEmphasis
+              ? {
+                  keywords: [...(s.keywordEmphasis.keywords || [])],
+                  styles: [...(s.keywordEmphasis.styles || [])]
+                }
+              : null;
+          };
+
           const captureDraftFromUi = (aspect) => {
             const a = odqNormalizeTuneAspect(aspect);
             tuneDraftByAspect[a].preset = currentPreset;
@@ -55380,6 +55630,7 @@ try {
             tuneDraftByAspect[a].nudgeRotateDeg = nudgeRotateDeg;
             tuneDraftByAspect[a].stripLayoutSeed = odqNormalizeStripLayoutSeed(stripLayoutSeed);
             tuneDraftByAspect[a].keywordEmphasis = getKeywordEmphasisFromForm();
+            if (a === 'story') copyStoryDraftToPost();
           };
 
           const applyDraftToUi = (aspect) => {
@@ -55818,6 +56069,7 @@ try {
               tuneDraftByAspect[a].nudgeRotateDeg = 0;
               tuneDraftByAspect[a].stripLayoutSeed = 0;
               tuneDraftByAspect[a].keywordEmphasis = null;
+              if (a === 'story') copyStoryDraftToPost();
               currentPreset = 'AUTO';
               nudgeCx = 0;
               nudgeCy = 0;
@@ -55983,7 +56235,7 @@ try {
                     this._layoutBStoryPreviewHeavyDoneThisVisit = false;
                     this._invalidateLayoutBStoryPreviewForAppDayChange?.();
                     this.scheduleLayoutBStoryPreviewRefresh?.();
-                    this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+                    this.quoteService?.forceRefreshQuoteScreenLayoutBFromTuneSave?.();
                   } catch (invalidateErr) {
                     this.logger?.warn?.('Layout B preview invalidate after save failed:', invalidateErr);
                   }
@@ -60104,11 +60356,16 @@ try {
               : 'ourDailyFirstNameSkipped';
           localStorage.removeItem(nameKey);
           localStorage.removeItem(skipKey);
+          localStorage.removeItem(
+            typeof Utils !== 'undefined' && Utils.QUILT_MOOD_PICK_KEY
+              ? Utils.QUILT_MOOD_PICK_KEY
+              : 'ourDailyQuiltMoodPick'
+          );
         }
       } catch (e) {
         console.warn(e);
       }
-      console.log('OUR DAILY QUILT: cleared first-visit and name keys. Reloading…');
+      console.log('OUR DAILY QUILT: cleared first-visit, name, and mood-pick keys. Reloading…');
       location.reload();
     };
 
