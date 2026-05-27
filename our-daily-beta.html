@@ -5437,6 +5437,27 @@ try {
       color: inherit;
     }
 
+    #screen-quilt .quilt-contributor-list.quilt-contributor-list--picker-colors .quilt-contributor-name {
+      transition:
+        color 0.48s ease,
+        -webkit-text-stroke-color 0.48s ease;
+      transition-delay: calc(var(--picker-color-index, 0) * 38ms);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #screen-quilt .quilt-contributor-list.quilt-contributor-list--picker-colors .quilt-contributor-name {
+        transition-duration: 0.01ms;
+        transition-delay: 0ms;
+      }
+    }
+
+    #screen-quilt .quilt-user-color-together-note[role='button'] {
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
     #screen-quilt .quilt-contributors-stage .quilt-contributor-list:empty {
       display: none;
     }
@@ -9355,7 +9376,7 @@ try {
       display: none;
     }
 
-    /* Receipt strip — glued to feed; no separate clip/transform (moves with the track). */
+    /* Receipt strip — glued to feed; scroll transform on .quilt-mood-widget__paper during WAAPI roll. */
     #screen-quilt .quilt-mood-widget__paper {
       position: relative;
       display: block;
@@ -10476,13 +10497,17 @@ try {
       cursor: grab;
       touch-action: pan-x;
       overscroll-behavior-x: contain;
-      scroll-behavior: smooth;
+      scroll-behavior: auto;
       user-select: none;
       background-color: #f6f4f1;
     }
 
+    #screen-quilt .quilt-reflection-carousel-viewport.is-scrollable {
+      scroll-snap-type: x proximity;
+    }
+
     #screen-quilt .quilt-reflection-carousel-viewport.is-scroll-hinting {
-      scroll-behavior: auto;
+      scroll-snap-type: none;
     }
 
     #screen-quilt .quilt-reflection-carousel-track.is-scroll-hint-shifting {
@@ -10550,6 +10575,7 @@ try {
       text-align: left;
       overflow: visible;
       z-index: var(--reflection-slide-z, 1);
+      scroll-snap-align: center;
     }
 
     #screen-quilt .quilt-reflection-carousel-slide:not(:first-child) {
@@ -23054,7 +23080,7 @@ try {
        * (Firestore field limit ~1 MiB — inline base64 exceeds that for layout B).
        * Uses merge so reel / MP4 URLs from a prior step are not wiped when updating images only.
        *
-       * Storage layout (per day): stable paths `classic.png`, `layout-b.png` overwrite on each push.
+       * Storage layout (per day): stable paths `classic.png`, `layout-b.png`, `layout-b-story.png` overwrite on each push.
        * When Layout B includes a speaker cutout, `layoutBSpeakerUrl` aliases the same `layout-b.png` URL
        * (no separate `layout-b-speaker.png` upload). Optional `debug-raw-quilt-{timestamp}-….png` stays versioned.
        */
@@ -23063,6 +23089,7 @@ try {
         instagramImage,
         postLayoutBImageData,
         postLayoutBSpeakerImageData,
+        storyLayoutBImageData,
         zapierCaption = '',
         quiltFingerprint = '',
         blockCount,
@@ -23079,6 +23106,7 @@ try {
             instagramImage,
             postLayoutBImageData,
             postLayoutBSpeakerImageData,
+            storyLayoutBImageData,
             zapierCaption,
             quiltFingerprint,
             blockCount,
@@ -23099,6 +23127,7 @@ try {
         instagramImage,
         postLayoutBImageData,
         postLayoutBSpeakerImageData,
+        storyLayoutBImageData,
         reelWebmBlob = null,
         zapierCaption = '',
         quiltFingerprint = '',
@@ -23117,7 +23146,13 @@ try {
         if (!window.db || !window.firestore) {
           throw new Error('Firestore not ready');
         }
-        if (!instagramImage && !postLayoutBImageData && !postLayoutBSpeakerImageData && !(reelWebmBlob && reelWebmBlob.size > 0)) {
+        if (
+          !instagramImage &&
+          !postLayoutBImageData &&
+          !postLayoutBSpeakerImageData &&
+          !storyLayoutBImageData &&
+          !(reelWebmBlob && reelWebmBlob.size > 0)
+        ) {
           throw new Error('No images or reel to upload');
         }
         if (!window.app || typeof window.app.initializeFirebaseForImages !== 'function') {
@@ -23230,7 +23265,12 @@ try {
         );
         const storage = window.firebaseStorage;
         const basePath = `instagram-zapier/${dateKey}`;
-        const isImageWrite = !!(instagramImage || postLayoutBImageData || postLayoutBSpeakerImageData);
+        const isImageWrite = !!(
+          instagramImage ||
+          postLayoutBImageData ||
+          postLayoutBSpeakerImageData ||
+          storyLayoutBImageData
+        );
         const isReelWrite = !!(reelWebmBlob && reelWebmBlob.size > 0);
         const qfp = typeof quiltFingerprint === 'string' ? quiltFingerprint.trim() : '';
         const qfpSlug = (qfp || 'no-qfp').replace(/[^a-z0-9_-]/gi, '').slice(0, 48);
@@ -23285,6 +23325,7 @@ try {
         let imageStorageUrl = null;
         let postLayoutBImageStorageUrl = null;
         let postLayoutBSpeakerImageStorageUrl = null;
+        let storyLayoutBImageStorageUrl = null;
         let reelWebmStorageUrl = null;
         let debugRawQuiltStorageUrl = null;
         const pngCacheControl =
@@ -23437,6 +23478,17 @@ try {
         } else if (aliasLayoutBSpeakerUrl && postLayoutBImageStorageUrl) {
           postLayoutBSpeakerImageStorageUrl = postLayoutBImageStorageUrl;
         }
+        if (storyLayoutBImageData) {
+          storyLayoutBImageStorageUrl = await uploadDataUrlToStorage(
+            'layout B story',
+            `${basePath}/layout-b-story.png`,
+            storyLayoutBImageData,
+            {
+              contentType: 'image/png',
+              cacheControl: pngCacheControl
+            }
+          );
+        }
         if (reelWebmBlob && reelWebmBlob.size > 0) {
           const r = ref(storage, `${basePath}/reel.webm`);
           await timedStep(
@@ -23483,6 +23535,11 @@ try {
         if (postLayoutBSpeakerImageStorageUrl) {
           docPayload.postLayoutBSpeakerImageStorageUrl = postLayoutBSpeakerImageStorageUrl;
           docPayload.layoutBSpeakerUrl = postLayoutBSpeakerImageStorageUrl;
+        }
+        if (storyLayoutBImageStorageUrl) {
+          docPayload.storyLayoutBImageStorageUrl = storyLayoutBImageStorageUrl;
+          docPayload.layoutBStoryUrl = storyLayoutBImageStorageUrl;
+          docPayload.storyLayoutBUrl = storyLayoutBImageStorageUrl;
         }
         if (reelWebmStorageUrl) {
           docPayload.reelWebmStorageUrl = reelWebmStorageUrl;
@@ -28184,6 +28241,57 @@ try {
         }
       }
 
+      /**
+       * Canonical 9:16 quilt capture for Zapier (classic + Layout B). Matches Layout B speaker
+       * raster (live SVG + gap underpaint, no classic-only viewBox padding or white-matte bleach).
+       * Cached per fingerprint so classic and layout B in one push share identical pixels.
+       */
+      async getInstagramQuiltSourceBlob(blocks, options = {}) {
+        if (!blocks || blocks.length === 0) return null;
+        const fingerprint = Utils.computeQuiltFingerprint(blocks);
+        const cacheKey = `${String(options.dateKey || '').trim()}:${fingerprint}`;
+        if (
+          this._igQuiltSourceCacheKey === cacheKey &&
+          this._igQuiltSourceCacheBlob instanceof Blob &&
+          this._igQuiltSourceCacheBlob.size > 0
+        ) {
+          return this._igQuiltSourceCacheBlob;
+        }
+
+        const rasterOpts = {
+          targetAspect: IG_QUILT_SCREEN_ASPECT,
+          underpaintBlocks: blocks,
+          exportModeLabel: options.exportModeLabel || 'instagram_quilt_source_9x16_layout_b',
+          instagramTrueWhiteMatte: false,
+          quiltFingerprint: fingerprint
+        };
+
+        let quiltBlob = null;
+        const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
+        if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
+          try {
+            quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, rasterOpts);
+          } catch (e) {
+            this.logger.warn('SVG raster failed for Instagram quilt source, using blocks:', e);
+          }
+        } else if (quiltSVG) {
+          this.logger.warn('Live quilt SVG is not ready for Instagram quilt source; using block data');
+        }
+        if (!quiltBlob) {
+          quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, rasterOpts);
+        }
+        if (quiltBlob) {
+          this._igQuiltSourceCacheKey = cacheKey;
+          this._igQuiltSourceCacheBlob = quiltBlob;
+        }
+        return quiltBlob;
+      }
+
+      clearInstagramQuiltSourceCache() {
+        this._igQuiltSourceCacheKey = '';
+        this._igQuiltSourceCacheBlob = null;
+      }
+
       // Generate Instagram-ready image (4:5 portrait ratio)
       async generateInstagramImage(blocks, _quote = null) {
         try {
@@ -28192,36 +28300,9 @@ try {
             return null;
           }
 
-          /**
-           * Match the quilt screen crop first. The 4:5 Zapier canvases then place
-           * this screen-faithful raster inside the post instead of re-cropping it.
-           */
-          let quiltBlob = null;
-          const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
-          if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
-            try {
-              quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, {
-                targetAspect: IG_QUILT_SCREEN_ASPECT,
-                skipExportUnderpaint: true,
-                exportModeLabel: 'classic_9x16_padded_no_underpaint',
-                /** Tight slice so the 4:5 classic card does not show thick top/bottom white bands. */
-                viewBoxPaddingRatio: 0.02,
-                /** YMid so the quilt sits vertically centered in the 9:16 slice (YMin left a huge empty “header”). */
-                preserveAspectRatio: 'xMidYMid meet',
-                instagramTrueWhiteMatte: true
-              });
-            } catch (e) {
-              this.logger.warn('SVG raster failed for classic Instagram image, using blocks:', e);
-            }
-          } else if (quiltSVG) {
-            this.logger.warn('Live quilt SVG is not ready for classic Instagram image; using block data');
-          }
-          if (!quiltBlob) {
-            quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, {
-              targetAspect: IG_QUILT_SCREEN_ASPECT,
-              instagramTrueWhiteMatte: true
-            });
-          }
+          const quiltBlob = await this.getInstagramQuiltSourceBlob(blocks, {
+            exportModeLabel: 'classic_9x16_from_shared_source'
+          });
           if (!quiltBlob) return null;
 
           const W = 1080;
@@ -28909,11 +28990,17 @@ try {
           options.imageSmoothingQuality === 'low' ? 'low' : 'high';
         const scaleX = outW / Math.max(1, sourceW);
         const scaleY = outH / Math.max(1, sourceH);
+        const fp = String(options.quiltFingerprint || Utils.computeQuiltFingerprint(blocks) || '');
+        let jitterSeed = 1;
+        for (let i = 0; i < fp.length; i++) {
+          jitterSeed = (Math.imul(jitterSeed, 31) + fp.charCodeAt(i)) | 0;
+        }
+        const jitterRng = Utils._mulberry32(jitterSeed || 1);
         blocks.forEach((block) => {
           SimpleQuiltEngine.ensureInsetClassificationFromGeometry(block);
-          const jitterX = (Math.random() - 0.5) * 8;
-          const jitterY = (Math.random() - 0.5) * 8;
-          const jitterRotation = (Math.random() - 0.5) * 4;
+          const jitterX = (jitterRng() - 0.5) * 8;
+          const jitterY = (jitterRng() - 0.5) * 8;
+          const jitterRotation = (jitterRng() - 0.5) * 4;
           const jitteredX = block.x + jitterX;
           const jitteredY = block.y + jitterY;
           const canvasX = (jitteredX - sourceX) * scaleX;
@@ -29243,6 +29330,98 @@ try {
         return { quoteText, quoteAuthor, composeOptions, hasSpeaker: !!composeOptions.speakerOverlay };
       }
 
+      async _buildLayoutBStoryComposeOptions(blocks, quoteObj, dateKey) {
+        const dk = dateKey || Utils.getTodayKey();
+        const q = await this._quoteForLayoutBSpeakerImage(quoteObj, dk);
+        const quoteText = String(q.text ?? q.body ?? '').trim();
+        const quoteAuthor = String(q.author ?? '').trim();
+        let keywordEmphasis = null;
+        try {
+          keywordEmphasis = await odqReadLayoutBKeywordEmphasis(dk, 'story');
+        } catch (_) {
+          /* optional */
+        }
+        let stripLayoutSeed = 0;
+        try {
+          stripLayoutSeed = await odqReadLayoutBStripLayoutSeed(dk, 'story');
+        } catch (_) {
+          stripLayoutSeed = odqGetCachedLayoutBStripLayoutSeed(dk, 'story') ?? 0;
+        }
+        const composeOptions = {
+          tuneAspect: 'story',
+          keywordEmphasis: keywordEmphasis || undefined,
+          stripLayoutSeed,
+          stripLayoutSeedExplicit: true
+        };
+        const speakerPortraitUrl = this._layoutBSpeakerPortraitUrl(q);
+        const speakerCutoutUrl = await this.resolveLayoutBSpeakerCutoutUrl(q, quoteAuthor);
+        const speakerImageUrl = speakerCutoutUrl || speakerPortraitUrl;
+        if (speakerImageUrl) {
+          const speakerImageForCanvas = await this._prepareSpeakerImageUrlForCanvas(speakerImageUrl, {
+            fallbackUrl: speakerPortraitUrl !== speakerImageUrl ? speakerPortraitUrl : ''
+          });
+          const speakerName = String(q.speakerName ?? q.speaker_name ?? quoteAuthor)
+            .replace(/^\s*[—-]\s*/, '')
+            .trim();
+          const washColor = String(
+            (typeof window !== 'undefined' && window.app?.getMostPopularQuiltColor?.(blocks)?.color) ||
+              CONFIG.APP.defaultColor ||
+              '#ea9b9a'
+          ).trim();
+          const presetTransform = await odqSpeakerCutoutTransformForDateAsync(dk, 'story');
+          composeOptions.speakerOverlay = {
+            enabled: true,
+            imageUrl: speakerImageForCanvas,
+            name: speakerName,
+            washColor,
+            transform: presetTransform || undefined
+          };
+        }
+        return { quoteText, quoteAuthor, composeOptions };
+      }
+
+      async _generateInstagramStoryLayoutBImageData(blocks, quoteObj, dateKey) {
+        if (!blocks || blocks.length === 0) return null;
+        const dk = dateKey || Utils.getTodayKey();
+        const { quoteText, quoteAuthor, composeOptions } = await this._buildLayoutBStoryComposeOptions(
+          blocks,
+          quoteObj,
+          dk
+        );
+        const highResBlob = await this.getInstagramQuiltSourceBlob(blocks, {
+          dateKey: dk,
+          exportModeLabel: 'layout_b_story_9x16_source'
+        });
+        if (!highResBlob) return null;
+        const storyBlob = await composeInstagramLayoutBFromQuiltBlob(
+          highResBlob,
+          quoteText,
+          quoteAuthor,
+          1080,
+          1920,
+          dk,
+          composeOptions
+        );
+        return await new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result || null);
+          fr.onerror = () => resolve(null);
+          fr.readAsDataURL(storyBlob);
+        });
+      }
+
+      /**
+       * Instagram story (9:16, 1080×1920): Layout B collage (speaker cutout when available).
+       */
+      async generateInstagramStoryLayoutBImage(blocks, quoteObj = null, dateKey = null) {
+        try {
+          return await this._generateInstagramStoryLayoutBImageData(blocks, quoteObj, dateKey);
+        } catch (error) {
+          this.logger.error('Instagram story layout B generation failed:', error);
+          return null;
+        }
+      }
+
       async _generateInstagramPostLayoutBImageData(blocks, quoteObj, dateKey, { requireSpeaker = false } = {}) {
         if (!blocks || blocks.length === 0) return null;
         const dk = dateKey || Utils.getTodayKey();
@@ -29250,25 +29429,12 @@ try {
           await this._buildLayoutBPostComposeOptions(blocks, quoteObj, dk);
         if (requireSpeaker && !hasSpeaker) return null;
 
-        let highResBlob = null;
-        const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
-        const rasterOpts = {
-          targetAspect: IG_QUILT_SCREEN_ASPECT,
-          exportModeLabel: hasSpeaker ? 'layout_b_speaker_post_9x16_cover_source' : 'layout_b_post_9x16_cover_source',
-          instagramTrueWhiteMatte: !hasSpeaker
-        };
-        if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
-          try {
-            highResBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, rasterOpts);
-          } catch (e) {
-            this.logger.warn('SVG raster failed, falling back to blocks for layout B post:', e);
-          }
-        } else if (quiltSVG) {
-          this.logger.warn('Live quilt SVG is not ready for layout B post image; using block data');
-        }
-        if (!highResBlob) {
-          highResBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, rasterOpts);
-        }
+        const highResBlob = await this.getInstagramQuiltSourceBlob(blocks, {
+          dateKey: dk,
+          exportModeLabel: hasSpeaker
+            ? 'layout_b_speaker_post_9x16_cover_source'
+            : 'layout_b_post_9x16_cover_source'
+        });
         if (!highResBlob) return null;
 
         const postBlob = await composeInstagramLayoutBFromQuiltBlob(
@@ -30582,18 +30748,27 @@ try {
                       igDateKey
                     );
                   }
+                  let storyLayoutBImageData = null;
+                  if (arch.generateInstagramStoryLayoutBImage) {
+                    storyLayoutBImageData = await arch.generateInstagramStoryLayoutBImage(
+                      igBlocks,
+                      todayQuote,
+                      igDateKey
+                    );
+                  }
                   const layoutBAliasesSpeaker = !!(
                     postLayoutBImageData &&
                     arch._resolveLayoutBSpeakerImageUrl &&
                     String(arch._resolveLayoutBSpeakerImageUrl(todayQuote) || '').trim()
                   );
-                  if (instagramImage || postLayoutBImageData) {
+                  if (instagramImage || postLayoutBImageData || storyLayoutBImageData) {
                     if (window.app && typeof window.app.initializeFirebaseForImages === 'function') {
                       const igFingerprint = Utils.computeQuiltFingerprint(igBlocks);
                       await Utils.writeInstagramImagesDocForZapier({
                         dateKey: igDateKey,
                         instagramImage,
                         postLayoutBImageData,
+                        storyLayoutBImageData,
                         aliasLayoutBSpeakerUrl: layoutBAliasesSpeaker,
                         zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
                         quiltFingerprint: igFingerprint,
@@ -35334,6 +35509,8 @@ try {
         this._reflectionThemesArchiveHasOlder = true;
         this._reflectionThemesArchiveLoading = false;
         this._reflectionThemesArchiveControlsBound = false;
+        this._reflectionArchiveDocCache = null;
+        this._reflectionArchivePrefetchPromise = null;
         this._quoteSubmissionReturnTimer = null;
         /** App-day key for the shared quilt currently in memory. Prevents stale saves after the 07:00 UTC rollover. */
         this._loadedSharedQuiltDateKey = null;
@@ -36589,6 +36766,7 @@ try {
 
         this.setupQuiltFortuneReveal();
         this.setupQuiltUserColorTogetherNoteScrollWobble();
+        this.setupQuiltUserColorTogetherNoteLongPress();
         this.setupLayoutBStoryPreviewLongPressShare();
         this.setupReflectionResponsePrototype();
         this.setupQuiltMoodWidget();
@@ -36958,6 +37136,82 @@ try {
         });
 
         window.setTimeout(maybeWobbleIfVisible, 400);
+      }
+
+      setupQuiltUserColorTogetherNoteLongPress() {
+        const wrap = document.getElementById('quiltUserColorTogetherNoteWrap');
+        const note = wrap?.querySelector('.quilt-user-color-together-note');
+        if (!wrap || !note || note.dataset.longPressAttached === '1') return;
+        note.dataset.longPressAttached = '1';
+        note.setAttribute('role', 'button');
+        note.setAttribute('tabindex', '0');
+        note.setAttribute(
+          'aria-label',
+          'What else can we do together? Long press to show each name in the color they picked.'
+        );
+
+        const triggerGentleWobble = () => {
+          if (wrap.hidden) return;
+          if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+          note.classList.remove('is-gently-wobbling');
+          void note.offsetWidth;
+          note.classList.add('is-gently-wobbling');
+          window.setTimeout(() => {
+            note.classList.remove('is-gently-wobbling');
+          }, 1400);
+        };
+
+        let pressTimer = null;
+        let suppressClick = false;
+        const clearPressTimer = () => {
+          if (!pressTimer) return;
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        };
+
+        const onLongPress = () => {
+          pressTimer = null;
+          if (wrap.hidden) return;
+          suppressClick = true;
+          window.setTimeout(() => {
+            suppressClick = false;
+          }, 450);
+          triggerGentleWobble();
+          this.toggleContributorPickerColors();
+        };
+
+        note.addEventListener('pointerdown', (event) => {
+          if (wrap.hidden) return;
+          if (event.pointerType === 'mouse' && event.button !== 0) return;
+          clearPressTimer();
+          pressTimer = window.setTimeout(onLongPress, 650);
+        });
+        note.addEventListener('pointerup', clearPressTimer);
+        note.addEventListener('pointercancel', clearPressTimer);
+        note.addEventListener('pointerleave', clearPressTimer);
+        note.addEventListener('click', (event) => {
+          if (!suppressClick) return;
+          event.preventDefault();
+          suppressClick = false;
+        });
+        note.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          triggerGentleWobble();
+          this.toggleContributorPickerColors();
+        });
+      }
+
+      toggleContributorPickerColors() {
+        this._contributorPickerColorsRevealed = !this._contributorPickerColorsRevealed;
+        const list = document.getElementById('quiltContributorList');
+        if (list) {
+          list.classList.toggle(
+            'quilt-contributor-list--picker-colors',
+            !!this._contributorPickerColorsRevealed
+          );
+        }
+        this.renderQuiltContributorList();
       }
 
       setupQuiltFortuneReveal() {
@@ -38155,6 +38409,18 @@ try {
         let currentIndex = 0;
         let scrollHintPlayed = false;
         let userScrolledCarousel = false;
+        const cancelScrollHint = () => {
+          if (this._reflectionCarouselScrollHintFrame) {
+            cancelAnimationFrame(this._reflectionCarouselScrollHintFrame);
+            this._reflectionCarouselScrollHintFrame = null;
+          }
+          const track = viewport.querySelector('[data-reflection-carousel-track]');
+          if (track) {
+            track.style.transform = '';
+            track.classList.remove('is-scroll-hint-shifting');
+          }
+          viewport.classList.remove('is-scroll-hinting');
+        };
         const setActiveDot = (index) => {
           currentIndex = Math.max(0, Math.min(slides.length - 1, index));
         };
@@ -38186,6 +38452,7 @@ try {
           if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
           const track = viewport.querySelector('[data-reflection-carousel-track]');
           if (!track) return;
+          cancelScrollHint();
           scrollHintPlayed = true;
           const peek = getScrollHintDistance();
           const durationMs = 1680;
@@ -38234,6 +38501,11 @@ try {
             return 0;
           };
           const step = (now) => {
+            if (userScrolledCarousel) {
+              finishScrollHint();
+              this._reflectionCarouselScrollHintFrame = null;
+              return;
+            }
             const progress = Math.min(1, (now - startAt) / durationMs);
             applyTrackShift(sampleShift(progress));
             if (progress < 1) {
@@ -38268,8 +38540,24 @@ try {
         let dragStartX = 0;
         let dragStartScrollLeft = 0;
         let isDragging = false;
+        let dragScrollFrame = null;
+        let pendingDragScrollLeft = null;
         const markUserScrolled = () => {
-          userScrolledCarousel = true;
+          if (!userScrolledCarousel) {
+            userScrolledCarousel = true;
+            cancelScrollHint();
+          }
+        };
+        const flushDragScroll = () => {
+          dragScrollFrame = null;
+          if (pendingDragScrollLeft == null) return;
+          viewport.scrollLeft = pendingDragScrollLeft;
+          pendingDragScrollLeft = null;
+        };
+        const queueDragScroll = (nextLeft) => {
+          pendingDragScrollLeft = nextLeft;
+          if (dragScrollFrame != null) return;
+          dragScrollFrame = requestAnimationFrame(flushDragScroll);
         };
         viewport.addEventListener('pointerdown', (event) => {
           if (event.pointerType !== 'mouse') return;
@@ -38287,13 +38575,19 @@ try {
         viewport.addEventListener('pointermove', (event) => {
           if (!isDragging) return;
           event.preventDefault();
-          viewport.scrollLeft = dragStartScrollLeft - (event.clientX - dragStartX);
+          queueDragScroll(dragStartScrollLeft - (event.clientX - dragStartX));
         });
         const stopDrag = (event) => {
           if (!isDragging) return;
           isDragging = false;
+          if (dragScrollFrame != null) {
+            cancelAnimationFrame(dragScrollFrame);
+            dragScrollFrame = null;
+          }
+          flushDragScroll();
           viewport.releasePointerCapture?.(event.pointerId);
           syncCurrentIndex();
+          if (slides.length > 1) scrollToIndex(currentIndex, 'smooth');
         };
         viewport.addEventListener('pointerup', stopDrag);
         viewport.addEventListener('pointercancel', stopDrag);
@@ -38330,9 +38624,14 @@ try {
         } else {
           scheduleScrollHintBounce();
         }
+        let resizeTimer = null;
         this._reflectionCarouselResizeHandler = () => {
           layoutSeams();
-          scrollToIndex(currentIndex, 'auto');
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            resizeTimer = null;
+            scrollToIndex(currentIndex, 'auto');
+          }, 120);
         };
         window.addEventListener('resize', this._reflectionCarouselResizeHandler, { passive: true });
       }
@@ -38575,28 +38874,89 @@ try {
         return `${baseUrl}/api/proxy-image?url=${encodeURIComponent(safeUrl)}&matte=warm`;
       }
 
+      isUsableReflectionArchivePrompt(prompt) {
+        const text = String(prompt || '').replace(/\s+/g, ' ').trim();
+        return Boolean(text) && text !== '[Reflection prompt coming soon for this quote.]';
+      }
+
+      hasCompleteReflectionArchiveContext(themeData) {
+        if (!themeData || typeof themeData !== 'object') return false;
+        const prompt = this.getReflectionPromptFromArchiveData(themeData);
+        const quote = this.getReflectionArchiveQuoteFromData(themeData);
+        return this.isUsableReflectionArchivePrompt(prompt) && Boolean(quote?.text);
+      }
+
+      pickReflectionArchiveQuiltImageFromTheme(themeData) {
+        if (!themeData || typeof themeData !== 'object') return '';
+        const fromFinal = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
+        if (fromFinal) return fromFinal;
+        return this.pickQuiltImageUrlFromData(themeData);
+      }
+
+      resolveQuiltImageFromThemeData(themeData) {
+        const rawUrl = this.pickReflectionArchiveQuiltImageFromTheme(themeData);
+        if (!rawUrl) {
+          return { quiltImageUrl: '', quiltImageFallbackBlocks: null, quiltImageIsClassic: false };
+        }
+        const themeIsClassic = String(themeData?.quiltImageSource || '').trim() === 'classic';
+        return {
+          quiltImageUrl: themeIsClassic
+            ? this.buildReflectionArchiveClassicQuiltImageUrl(rawUrl)
+            : rawUrl,
+          quiltImageFallbackBlocks: null,
+          quiltImageIsClassic: themeIsClassic
+        };
+      }
+
+      async getReflectionArchiveFirestoreDoc(collectionId, docId) {
+        const collection = String(collectionId || '').trim();
+        const id = String(docId || '').trim();
+        if (!collection || !id || !window.db || !window.firestore?.doc || !window.firestore?.getDoc) {
+          return { exists: false, data: null };
+        }
+        const cacheKey = `${collection}/${id}`;
+        if (!this._reflectionArchiveDocCache) this._reflectionArchiveDocCache = new Map();
+        if (this._reflectionArchiveDocCache.has(cacheKey)) {
+          return this._reflectionArchiveDocCache.get(cacheKey);
+        }
+        try {
+          const snap = await window.firestore.getDoc(
+            window.firestore.doc(window.db, collection, id)
+          );
+          const result = {
+            exists: snap.exists(),
+            data: snap.exists() ? snap.data() || {} : null
+          };
+          this._reflectionArchiveDocCache.set(cacheKey, result);
+          return result;
+        } catch (error) {
+          this.logger?.warn?.(`Reflection archive doc read failed (${cacheKey}):`, error);
+          const miss = { exists: false, data: null };
+          this._reflectionArchiveDocCache.set(cacheKey, miss);
+          return miss;
+        }
+      }
+
       async resolveQuiltImageForReflectionArchive(dateKey, themeData = null) {
         const key = String(dateKey || '').trim();
         if (!key) {
           return { quiltImageUrl: '', quiltImageFallbackBlocks: null };
         }
 
+        const fromThemeOnly = this.resolveQuiltImageFromThemeData(themeData);
+        if (fromThemeOnly.quiltImageUrl) return fromThemeOnly;
+
         if (!window.db || !window.firestore?.doc || !window.firestore?.getDoc) {
-          const fromTheme = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
-          return {
-            quiltImageUrl: fromTheme,
-            quiltImageFallbackBlocks: null
-          };
+          return { quiltImageUrl: '', quiltImageFallbackBlocks: null };
         }
 
-        const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
         try {
-          const [igSnap, archiveSnap] = await Promise.all([
-            readDoc(window.firestore.doc(window.db, 'instagram-images', key)),
-            readDoc(window.firestore.doc(window.db, 'archives', key))
+          const [igResult, archiveResult] = await Promise.all([
+            this.getReflectionArchiveFirestoreDoc('instagram-images', key),
+            this.getReflectionArchiveFirestoreDoc('archives', key)
           ]);
-
-          const igData = igSnap.exists() ? igSnap.data() || {} : {};
+          const igData = igResult.data || {};
+          const archiveData = archiveResult.data || {};
           const classicUrl = this.pickClassicImageUrlFromInstagramDoc(igData);
           /**
            * Reflection archive must match the Zapier / classic card (app push).
@@ -38610,7 +38970,6 @@ try {
             };
           }
 
-          const archiveData = archiveSnap.exists() ? archiveSnap.data() || {} : {};
           const archiveUrl = this.pickFinalArchiveQuiltImageUrlFromData(archiveData);
           if (archiveUrl) {
             const archiveIsClassic =
@@ -38619,18 +38978,6 @@ try {
               quiltImageUrl: archiveIsClassic
                 ? this.buildReflectionArchiveClassicQuiltImageUrl(archiveUrl)
                 : archiveUrl,
-              quiltImageFallbackBlocks: null,
-              quiltImageIsClassic: false
-            };
-          }
-
-          const fromTheme = this.pickFinalArchiveQuiltImageUrlFromData(themeData);
-          if (fromTheme) {
-            const themeIsClassic = String(themeData?.quiltImageSource || '').trim() === 'classic';
-            return {
-              quiltImageUrl: themeIsClassic
-                ? this.buildReflectionArchiveClassicQuiltImageUrl(fromTheme)
-                : fromTheme,
               quiltImageFallbackBlocks: null,
               quiltImageIsClassic: false
             };
@@ -38721,7 +39068,7 @@ try {
       async loadReflectionArchiveContextForDate(dateKey, themeData = null) {
         const fromThemeDoc = this.getReflectionPromptFromArchiveData(themeData || {});
         const quoteFromThemeDoc = this.getReflectionArchiveQuoteFromData(themeData || {});
-        const isUsablePrompt = (prompt) => prompt && prompt !== '[Reflection prompt coming soon for this quote.]';
+        const isUsablePrompt = (prompt) => this.isUsableReflectionArchivePrompt(prompt);
         let prompt = fromThemeDoc;
         let quote = quoteFromThemeDoc;
         let first_response = this._firstResponseFromPayload(themeData || {});
@@ -38734,6 +39081,14 @@ try {
           return '';
         };
 
+        if (this.hasCompleteReflectionArchiveContext(themeData)) {
+          return {
+            prompt: isUsablePrompt(prompt) ? prompt : this.getQuiltReflectionPromptText({}),
+            quote,
+            first_response
+          };
+        }
+
         if (!window.db || !window.firestore?.doc || !window.firestore?.getDoc) {
           return {
             prompt: isUsablePrompt(prompt) ? prompt : this.getQuiltReflectionPromptText({}),
@@ -38741,21 +39096,15 @@ try {
             first_response
           };
         }
-        const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
         const readArchiveDoc = async (collectionId, docId) => {
           if (!docId) return { prompt: '', quote: null, data: null };
-          try {
-            const snap = await readDoc(window.firestore.doc(window.db, collectionId, docId));
-            const data = snap.exists() ? (snap.data() || {}) : null;
-            return {
-              prompt: data ? this.getReflectionPromptFromArchiveData(data) || this.getQuiltReflectionPromptText(data) : '',
-              quote: data ? this.getReflectionArchiveQuoteFromData(data) : null,
-              data
-            };
-          } catch (error) {
-            this.logger?.warn?.(`Could not load reflection prompt from ${collectionId}/${docId}:`, error);
-            return { prompt: '', quote: null, data: null };
-          }
+          const snap = await this.getReflectionArchiveFirestoreDoc(collectionId, docId);
+          const data = snap.exists ? snap.data : null;
+          return {
+            prompt: data ? this.getReflectionPromptFromArchiveData(data) || this.getQuiltReflectionPromptText(data) : '',
+            quote: data ? this.getReflectionArchiveQuoteFromData(data) : null,
+            data
+          };
         };
 
         const dailyQuote = await readArchiveDoc('quotes', dateKey);
@@ -38811,6 +39160,255 @@ try {
           : `<div class="reflection-themes-archive-status">${safeMessage}</div>`;
       }
 
+      reflectionThemeDocToArchiveStub(snap) {
+        const data = snap.data?.() ? snap.data() : snap.data || {};
+        const dateKey = String(data.appDateKey || snap.id || '').trim();
+        if (!dateKey) return null;
+        const communityThemes = this.orderReflectionCommunityThemesNewestFirst(
+          Array.isArray(data.themes)
+            ? data.themes
+              .map((theme) => this.normalizeReflectionWallTheme(theme))
+              .filter((entry) => entry?.text)
+            : []
+        );
+        return {
+          dateKey,
+          communityThemes,
+          responseCount: Number(data.responseCount) || communityThemes.length,
+          communityPrompt: data.communityPrompt,
+          community_prompt: data.community_prompt,
+          communityPromptSnapshot: data.communityPromptSnapshot,
+          reflectionPrompt: data.reflectionPrompt,
+          reflection_prompt: data.reflection_prompt,
+          reflectionPromptSnapshot: data.reflectionPromptSnapshot,
+          text: data.text,
+          quoteText: data.quoteText,
+          textSnapshot: data.textSnapshot,
+          quoteTextSnapshot: data.quoteTextSnapshot,
+          author: data.author,
+          quoteAuthor: data.quoteAuthor,
+          authorSnapshot: data.authorSnapshot,
+          quoteAuthorSnapshot: data.quoteAuthorSnapshot,
+          first_response: data.first_response,
+          firstResponse: data.firstResponse,
+          quiltImageUrl: this.pickReflectionArchiveQuiltImageFromTheme(data),
+          quiltImageSource: String(data.quiltImageSource || '').trim(),
+          classicImageUrl: String(data.classicImageUrl || '').trim()
+        };
+      }
+
+      buildPartialReflectionArchiveEntry(stub) {
+        if (!stub?.dateKey) return null;
+        const promptRaw = this.getReflectionPromptFromArchiveData(stub);
+        const quote = this.getReflectionArchiveQuoteFromData(stub);
+        const first_response = this._firstResponseFromPayload(stub);
+        const themes = this.buildReflectionWallThemes(stub.communityThemes, first_response);
+        if (!themes.length) return null;
+        const quiltFromTheme = this.resolveQuiltImageFromThemeData(stub);
+        const prompt = this.isUsableReflectionArchivePrompt(promptRaw)
+          ? promptRaw
+          : promptRaw || '';
+        return {
+          ...stub,
+          themes,
+          prompt,
+          quote,
+          quiltImageUrl: quiltFromTheme.quiltImageUrl || stub.quiltImageUrl || '',
+          quiltImageFallbackBlocks: null,
+          quiltImageIsClassic: !!quiltFromTheme.quiltImageIsClassic
+        };
+      }
+
+      async hydrateReflectionArchiveEntry(entry) {
+        if (!entry?.dateKey) return null;
+        if (!this._reflectionArchiveQuiltBlocksCache) {
+          this._reflectionArchiveQuiltBlocksCache = new Map();
+        }
+        const [context, quiltImage] = await Promise.all([
+          this.loadReflectionArchiveContextForDate(entry.dateKey, entry),
+          this.resolveQuiltImageForReflectionArchive(entry.dateKey, entry)
+        ]);
+        if (quiltImage.quiltImageFallbackBlocks) {
+          this._reflectionArchiveQuiltBlocksCache.set(
+            entry.dateKey,
+            quiltImage.quiltImageFallbackBlocks
+          );
+        }
+        const themes = this.buildReflectionWallThemes(
+          entry.communityThemes,
+          context.first_response || ''
+        );
+        if (!themes.length) return null;
+        return {
+          ...entry,
+          themes,
+          prompt: context.prompt,
+          quote: context.quote,
+          quiltImageUrl: quiltImage.quiltImageUrl || entry.quiltImageUrl || '',
+          quiltImageFallbackBlocks: quiltImage.quiltImageFallbackBlocks,
+          quiltImageIsClassic: !!quiltImage.quiltImageIsClassic
+        };
+      }
+
+      async fetchReflectionThemeArchivePageViaBackend(cursorDateKey = null) {
+        const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
+        if (!baseUrl || typeof fetch !== 'function') return null;
+        const limit = this._reflectionThemesArchivePageSize || 7;
+        const params = new URLSearchParams({ limit: String(limit) });
+        const cursor = String(cursorDateKey || '').trim();
+        if (cursor) params.set('cursorDateKey', cursor);
+        try {
+          const res = await fetch(`${baseUrl}/api/reflection-themes/archive?${params.toString()}`, {
+            cache: 'no-store'
+          });
+          const data = await res.json().catch(() => null);
+          if (!res.ok || !data?.success) {
+            throw new Error(data?.error || `Archive API failed (${res.status})`);
+          }
+          const entries = (Array.isArray(data.entries) ? data.entries : [])
+            .map((row) => {
+              const dateKey = String(row.dateKey || row.appDateKey || '').trim();
+              const communityThemes = this.orderReflectionCommunityThemesNewestFirst(
+                (Array.isArray(row.themes) ? row.themes : [])
+                  .map((theme) => this.normalizeReflectionWallTheme(theme))
+                  .filter((entry) => entry?.text)
+              );
+              const first_response = String(row.first_response || row.firstResponse || '').trim();
+              const themes = this.buildReflectionWallThemes(communityThemes, first_response);
+              if (!themes.length) return null;
+              const quoteText = String(row.quote?.text || row.quoteText || '').trim();
+              const quoteAuthor = String(row.quote?.author || row.quoteAuthor || '').trim();
+              const rawQuiltUrl = String(row.quiltImageUrl || '').trim();
+              const quiltImageIsClassic = row.quiltImageIsClassic === true;
+              return {
+                dateKey,
+                communityThemes,
+                themes,
+                prompt: String(row.prompt || row.reflectionPrompt || '').trim(),
+                quote: quoteText ? { text: quoteText, author: quoteAuthor } : null,
+                quiltImageUrl: quiltImageIsClassic
+                  ? this.buildReflectionArchiveClassicQuiltImageUrl(rawQuiltUrl)
+                  : rawQuiltUrl,
+                quiltImageFallbackBlocks: Array.isArray(row.quiltImageFallbackBlocks)
+                  ? row.quiltImageFallbackBlocks
+                  : null,
+                quiltImageIsClassic
+              };
+            })
+            .filter(Boolean);
+          if (entries.length) {
+            entries.forEach((entry) => {
+              if (entry.quiltImageFallbackBlocks) {
+                this._reflectionArchiveQuiltBlocksCache?.set(
+                  entry.dateKey,
+                  entry.quiltImageFallbackBlocks
+                );
+              }
+            });
+          }
+          return {
+            entries,
+            cursor: null,
+            cursorDateKey: String(data.cursorDateKey || entries[entries.length - 1]?.dateKey || '').trim(),
+            hasOlder: data.hasOlder === true
+          };
+        } catch (error) {
+          this.logger?.warn?.('Reflection archive backend page failed:', error);
+          return null;
+        }
+      }
+
+      patchReflectionArchiveEntryInDom(dateKey, entry) {
+        const key = String(dateKey || '').trim();
+        if (!key || !entry) return;
+        const feed = document.getElementById('reflectionThemesArchiveFeed');
+        const article = feed?.querySelector(
+          `.reflection-themes-archive-entry[data-date-key="${CSS.escape(key)}"]`
+        );
+        if (!article) return;
+
+        const promptEl = article.querySelector('.reflection-themes-archive-prompt');
+        if (promptEl && entry.prompt) {
+          promptEl.textContent = entry.prompt;
+        }
+
+        const details = article.querySelector('.reflection-themes-archive-details');
+        if (details) {
+          const quoteText = String(entry.quote?.text || '').trim();
+          const quoteAuthor = String(entry.quote?.author || '').trim();
+          let quoteStrip = details.querySelector('.reflection-themes-archive-quote-strip');
+          if (quoteText) {
+            const quoteHtml = `${this.escapeQuiltFortuneText(quoteText)}${
+              quoteAuthor
+                ? ` <span class="reflection-themes-archive-quote-author">— ${this.escapeQuiltFortuneText(quoteAuthor)}</span>`
+                : ''
+            }`;
+            if (quoteStrip) {
+              quoteStrip.innerHTML = quoteHtml;
+            } else {
+              quoteStrip = document.createElement('div');
+              quoteStrip.className = 'reflection-themes-archive-quote-strip';
+              quoteStrip.innerHTML = quoteHtml;
+              const dateEl = details.querySelector('.reflection-themes-archive-date');
+              if (dateEl) details.insertBefore(quoteStrip, dateEl);
+              else details.appendChild(quoteStrip);
+            }
+          }
+
+          const quiltUrl = String(entry.quiltImageUrl || '').trim();
+          let img = details.querySelector('.reflection-themes-archive-quilt-image');
+          if (quiltUrl) {
+            if (!img) {
+              const frame = document.createElement('div');
+              frame.className = 'reflection-themes-archive-quilt-frame';
+              frame.innerHTML = `<div class="reflection-themes-archive-quilt-rotate">
+                <img class="reflection-themes-archive-quilt-image" alt="" loading="lazy" data-date-key="${this.escapeQuiltFortuneText(key)}" />
+              </div>`;
+              const dateEl = details.querySelector('.reflection-themes-archive-date');
+              if (dateEl) details.insertBefore(frame, dateEl);
+              else details.appendChild(frame);
+              img = frame.querySelector('.reflection-themes-archive-quilt-image');
+            }
+            if (img) {
+              img.src = quiltUrl;
+              img.dataset.dateKey = key;
+              if (entry.quiltImageIsClassic) img.dataset.classicMatte = '1';
+              img.classList.remove('reflection-themes-archive-quilt-image--pending');
+              delete img.dataset.needsRaster;
+            }
+          } else if (entry.quiltImageFallbackBlocks && !img) {
+            const frame = document.createElement('div');
+            frame.className = 'reflection-themes-archive-quilt-frame';
+            frame.innerHTML = `<div class="reflection-themes-archive-quilt-rotate">
+              <img class="reflection-themes-archive-quilt-image reflection-themes-archive-quilt-image--pending" alt="" data-date-key="${this.escapeQuiltFortuneText(key)}" data-needs-raster="1" />
+            </div>`;
+            const dateEl = details.querySelector('.reflection-themes-archive-date');
+            if (dateEl) details.insertBefore(frame, dateEl);
+            else details.appendChild(frame);
+          }
+        }
+      }
+
+      prefetchReflectionThemesArchivePage() {
+        if (this._reflectionThemesArchiveLoaded || this._reflectionArchivePrefetchPromise) return;
+        this._reflectionArchivePrefetchPromise = this.loadReflectionThemeArchiveEntries(null, {
+          prefetchOnly: true
+        })
+          .then((page) => {
+            if (page?.entries?.length) {
+              this._reflectionThemesArchivePages = [page];
+              this._reflectionThemesArchivePageIndex = 0;
+              this._reflectionThemesArchiveHasOlder = page.hasOlder;
+            }
+          })
+          .catch((error) => {
+            this.logger?.warn?.('Reflection archive prefetch failed:', error);
+          })
+          .finally(() => {
+            this._reflectionArchivePrefetchPromise = null;
+          });
+      }
+
       async initializeReflectionThemesArchiveScreen() {
         this.uiService?._purgeReflectionArchiveGhostLayers?.();
         this.uiService?._syncQuoteLayoutBStripLeakGuard?.();
@@ -38827,15 +39425,35 @@ try {
           }
           return;
         }
+        if (this._reflectionArchivePrefetchPromise) {
+          await this._reflectionArchivePrefetchPromise.catch(() => {});
+        }
+        if (this._reflectionThemesArchivePages[0]?.entries?.length) {
+          this._reflectionThemesArchivePageIndex = 0;
+          this.renderReflectionThemeArchiveEntries(this._reflectionThemesArchivePages[0].entries);
+          this.updateReflectionThemesArchiveControls();
+          this._reflectionThemesArchiveLoaded = true;
+          return;
+        }
         this.setReflectionThemesArchiveStatus('Loading reflections...', { loading: true });
+        if (window.odqPerfMark) window.odqPerfMark('reflection-archive-screen-open');
         try {
-          const page = await this.loadReflectionThemeArchiveEntries();
+          const page = await this.loadReflectionThemeArchiveEntries(null, {
+            onFirstPaint: (partialPage) => {
+              if (window.odqPerfMark) window.odqPerfMark('reflection-archive-first-paint');
+              if (partialPage?.entries?.length) {
+                this.renderReflectionThemeArchiveEntries(partialPage.entries);
+              }
+            }
+          });
           this._reflectionThemesArchivePages = [page];
           this._reflectionThemesArchivePageIndex = 0;
           this._reflectionThemesArchiveHasOlder = page.hasOlder;
           this.renderReflectionThemeArchiveEntries(page.entries);
+          page.entries.forEach((entry) => this.patchReflectionArchiveEntryInDom(entry.dateKey, entry));
           this.updateReflectionThemesArchiveControls();
           this._reflectionThemesArchiveLoaded = true;
+          if (window.odqPerfMark) window.odqPerfMark('reflection-archive-hydrate-done');
         } catch (error) {
           this.logger?.warn?.('Reflection themes archive failed to load:', error);
           this.setReflectionThemesArchiveStatus('Reflection themes are not available right now.');
@@ -38843,7 +39461,25 @@ try {
         }
       }
 
-      async loadReflectionThemeArchiveEntries(cursor = null) {
+      async loadReflectionThemeArchiveEntries(cursorSnap = null, options = {}) {
+        const { onFirstPaint, prefetchOnly = false } = options;
+        const cursorDateKey =
+          String(options.cursorDateKey || '').trim() ||
+          (cursorSnap && typeof cursorSnap.id === 'string' ? cursorSnap.id.trim() : '');
+
+        if (window.odqPerfMark) window.odqPerfMark('reflection-archive-load-start');
+        this._reflectionArchiveDocCache = new Map();
+
+        const backendPage = await this.fetchReflectionThemeArchivePageViaBackend(cursorDateKey);
+        if (backendPage) {
+          if (window.odqPerfMark) window.odqPerfMark('reflection-archive-query-done');
+          if (!prefetchOnly && onFirstPaint && backendPage.entries.length) {
+            onFirstPaint({ entries: backendPage.entries, hasOlder: backendPage.hasOlder });
+          }
+          if (window.odqPerfMark && !prefetchOnly) window.odqPerfMark('reflection-archive-hydrate-done');
+          return backendPage;
+        }
+
         if (
           !window.db ||
           !window.firestore?.collection ||
@@ -38860,90 +39496,56 @@ try {
 
         const themesRef = window.firestore.collection(window.db, 'reflectionThemes');
         const archivePageSize = this._reflectionThemesArchivePageSize || 7;
-        const queryConstraints = [
-          window.firestore.orderBy('generatedAt', 'desc')
-        ];
-        if (cursor) {
-          queryConstraints.push(window.firestore.startAfter(cursor));
+        const queryConstraints = [window.firestore.orderBy('generatedAt', 'desc')];
+        if (cursorSnap) {
+          queryConstraints.push(window.firestore.startAfter(cursorSnap));
+        } else if (cursorDateKey) {
+          const cursorDoc = await window.firestore.getDoc(
+            window.firestore.doc(window.db, 'reflectionThemes', cursorDateKey)
+          );
+          if (cursorDoc.exists()) {
+            queryConstraints.push(window.firestore.startAfter(cursorDoc));
+          }
         }
         queryConstraints.push(window.firestore.limit(archivePageSize));
-        const themesQuery = window.firestore.query(
-          themesRef,
-          ...queryConstraints
-        );
+        const themesQuery = window.firestore.query(themesRef, ...queryConstraints);
         const themesSnapshot = await window.firestore.getDocs(themesQuery);
-        const docs = [];
+        if (window.odqPerfMark) window.odqPerfMark('reflection-archive-query-done');
+
+        const stubs = [];
         const snapshots = [];
         themesSnapshot.forEach((snap) => {
           snapshots.push(snap);
-          const data = snap.data() || {};
-          const dateKey = String(data.appDateKey || snap.id || '').trim();
-          const communityThemes = this.orderReflectionCommunityThemesNewestFirst(
-            Array.isArray(data.themes)
-              ? data.themes
-                .map((theme) => this.normalizeReflectionWallTheme(theme))
-                .filter((entry) => entry?.text)
-              : []
-          );
-          if (dateKey) {
-            docs.push({
-              dateKey,
-              communityThemes,
-              responseCount: Number(data.responseCount) || communityThemes.length,
-              communityPrompt: data.communityPrompt,
-              community_prompt: data.community_prompt,
-              communityPromptSnapshot: data.communityPromptSnapshot,
-              reflectionPrompt: data.reflectionPrompt,
-              reflection_prompt: data.reflection_prompt,
-              reflectionPromptSnapshot: data.reflectionPromptSnapshot,
-              text: data.text,
-              quoteText: data.quoteText,
-              textSnapshot: data.textSnapshot,
-              quoteTextSnapshot: data.quoteTextSnapshot,
-              author: data.author,
-              quoteAuthor: data.quoteAuthor,
-              authorSnapshot: data.authorSnapshot,
-              quoteAuthorSnapshot: data.quoteAuthorSnapshot,
-              quiltImageUrl: this.pickFinalArchiveQuiltImageUrlFromData(data),
-              quiltImageSource: String(data.quiltImageSource || '').trim(),
-              classicImageUrl: String(data.classicImageUrl || '').trim()
-            });
-          }
+          const stub = this.reflectionThemeDocToArchiveStub(snap);
+          if (stub) stubs.push(stub);
         });
+
+        const partialEntries = stubs
+          .map((stub) => this.buildPartialReflectionArchiveEntry(stub))
+          .filter(Boolean);
+
+        if (!prefetchOnly && onFirstPaint && partialEntries.length) {
+          onFirstPaint({ entries: partialEntries, hasOlder: snapshots.length === archivePageSize });
+        }
 
         if (!this._reflectionArchiveQuiltBlocksCache) {
           this._reflectionArchiveQuiltBlocksCache = new Map();
         }
 
-        const entries = (await Promise.all(docs.map(async (entry) => {
-          const [context, quiltImage] = await Promise.all([
-            this.loadReflectionArchiveContextForDate(entry.dateKey, entry),
-            this.resolveQuiltImageForReflectionArchive(entry.dateKey, entry)
-          ]);
-          if (quiltImage.quiltImageFallbackBlocks) {
-            this._reflectionArchiveQuiltBlocksCache.set(
-              entry.dateKey,
-              quiltImage.quiltImageFallbackBlocks
-            );
-          }
-          const themes = this.buildReflectionWallThemes(
-            entry.communityThemes,
-            context.first_response || ''
-          );
-          if (!themes.length) return null;
-          return {
-            ...entry,
-            themes,
-            prompt: context.prompt,
-            quote: context.quote,
-            quiltImageUrl: quiltImage.quiltImageUrl || entry.quiltImageUrl || '',
-            quiltImageFallbackBlocks: quiltImage.quiltImageFallbackBlocks,
-            quiltImageIsClassic: !!quiltImage.quiltImageIsClassic
-          };
-        }))).filter(Boolean);
+        const entries = (
+          await Promise.all(stubs.map((stub) => this.hydrateReflectionArchiveEntry(stub)))
+        ).filter(Boolean);
+
+        if (!prefetchOnly && onFirstPaint) {
+          entries.forEach((entry) => this.patchReflectionArchiveEntryInDom(entry.dateKey, entry));
+        }
+
+        if (window.odqPerfMark && !prefetchOnly) window.odqPerfMark('reflection-archive-hydrate-done');
+
         return {
           entries,
-          cursor: snapshots[snapshots.length - 1] || cursor || null,
+          cursor: snapshots[snapshots.length - 1] || cursorSnap || null,
+          cursorDateKey: entries[entries.length - 1]?.dateKey || cursorDateKey || '',
           hasOlder: snapshots.length === archivePageSize
         };
       }
@@ -39008,7 +39610,14 @@ try {
         this._reflectionThemesArchiveLoading = true;
         this.updateReflectionThemesArchiveControls();
         try {
-          const page = await this.loadReflectionThemeArchiveEntries(currentPage.cursor);
+          const page = await this.loadReflectionThemeArchiveEntries(currentPage.cursor, {
+            cursorDateKey: currentPage.cursorDateKey,
+            onFirstPaint: (partialPage) => {
+              if (partialPage?.entries?.length) {
+                this.renderReflectionThemeArchiveEntries(partialPage.entries);
+              }
+            }
+          });
           if (!page.entries.length) {
             this._reflectionThemesArchiveHasOlder = false;
             this.updateReflectionThemesArchiveControls();
@@ -40323,8 +40932,8 @@ try {
       _finishQuiltMoodPaperRoll(widget) {
         const feed = widget?.querySelector('.quilt-mood-widget__slot-feed');
         if (feed) feed.classList.add('quilt-mood-widget__slot-feed--unrolled');
-        const lead = widget?.querySelector('.quilt-mood-widget__paper-lead');
-        if (lead) lead.style.transform = '';
+        const paper = widget?.querySelector('.quilt-mood-widget__paper');
+        if (paper) paper.style.transform = '';
         this._syncQuiltMoodPaperCastPosition(widget);
       }
 
@@ -40360,25 +40969,25 @@ try {
         if (cast) cast.style.top = '';
       }
 
-      /** Keep receipt type scrolling up with the feed for the whole WAAPI roll. */
-      _bindQuiltMoodPaperScrollToRoll(widget, anim, feed, slitPx, endHeight) {
-        const lead = widget?.querySelector('.quilt-mood-widget__paper-lead');
-        if (!lead || !anim?.effect) return;
+      /** Keep receipt strip (paper + type) scrolling up with the feed for the whole WAAPI roll. */
+      _bindQuiltMoodPaperScrollToRoll(widget, anim, feed) {
+        const paper = widget?.querySelector('.quilt-mood-widget__paper');
+        if (!paper || !feed || !anim?.effect) return;
 
         const tick = () => {
           if (widget._moodRollAnimation !== anim) return;
-          const timing = anim.effect.getComputedTiming();
-          const progress = Number.isFinite(timing.progress) ? timing.progress : 1;
-          const feedH = slitPx + progress * (endHeight - slitPx);
-          const leadH = lead.getBoundingClientRect().height;
-          const offset = Math.max(0, Math.ceil(leadH - feedH));
-          lead.style.transform = offset > 0 ? `translateY(${-offset}px)` : '';
+          const feedH = feed.offsetHeight;
+          const paperH = paper.offsetHeight;
+          const offset = Math.max(0, Math.ceil(paperH - feedH));
+          paper.style.transform = offset > 0 ? `translateY(${-offset}px)` : '';
           this._syncQuiltMoodPaperCastPosition(widget);
 
+          const timing = anim.effect.getComputedTiming();
+          const progress = Number.isFinite(timing.progress) ? timing.progress : 1;
           if (anim.playState === 'running' && progress < 1) {
             requestAnimationFrame(tick);
           } else {
-            lead.style.transform = '';
+            paper.style.transform = '';
             this._syncQuiltMoodPaperCastPosition(widget);
           }
         };
@@ -40477,7 +41086,7 @@ try {
           );
 
           widget._moodRollAnimation = anim;
-          this._bindQuiltMoodPaperScrollToRoll(widget, anim, feed, slitPx, endHeight);
+          this._bindQuiltMoodPaperScrollToRoll(widget, anim, feed);
           anim.onfinish = () => {
             if (widget._moodRollAnimation !== anim) return;
             widget._moodRollAnimation = null;
@@ -40511,8 +41120,8 @@ try {
           feed.style.maxHeight = '';
           feed.setAttribute('aria-hidden', 'true');
         }
-        const paperLead = widget.querySelector('.quilt-mood-widget__paper-lead');
-        if (paperLead) paperLead.style.transform = '';
+        const paper = widget.querySelector('.quilt-mood-widget__paper');
+        if (paper) paper.style.transform = '';
         this._clearQuiltMoodPaperCastPosition(widget);
         const paperLabel = widget.querySelector('.quilt-mood-widget__paper-label');
         const paperText = widget.querySelector('.quilt-mood-widget__paper-text');
@@ -45646,6 +46255,7 @@ try {
           // Only mutate the visible quilt after the guarded server reset succeeds.
           this.quiltEngine.initialize();
           this.dailyContributors = [];
+          this._contributorPickerColorsRevealed = false;
           this.logger.log('🔄 Quilt engine reinitialized');
           try {
             this._maybeSnapPickerToDailyFirstPalette({ forceDaily: true });
@@ -46346,6 +46956,103 @@ try {
         }
       }
 
+      _hexLuminanceForContributorName(hex) {
+        const normalized = String(hex || '').trim();
+        if (!Utils.validateHexColor(normalized)) return null;
+        const r = parseInt(normalized.slice(1, 3), 16) / 255;
+        const g = parseInt(normalized.slice(3, 5), 16) / 255;
+        const b = parseInt(normalized.slice(5, 7), 16) / 255;
+        return 0.299 * r + 0.587 * g + 0.114 * b;
+      }
+
+      _contrastRatioForContributorName(lumA, lumB) {
+        const a = Number(lumA);
+        const b = Number(lumB);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) return 1;
+        const lighter = Math.max(a, b);
+        const darker = Math.min(a, b);
+        return (lighter + 0.05) / (darker + 0.05);
+      }
+
+      _nameCloudBackgroundLuminance() {
+        const tone = this.getContributorNameContrastPalette().tone;
+        return tone === 'dark' ? 0.12 : 0.94;
+      }
+
+      colorForContributorNameDisplay(pickerHex) {
+        const normalized = String(pickerHex || '').trim();
+        if (!Utils.validateHexColor(normalized)) return null;
+        const bgLum = this._nameCloudBackgroundLuminance();
+        let displayHex = normalized;
+        let lum = this._hexLuminanceForContributorName(displayHex);
+        let guard = 0;
+        while (this._contrastRatioForContributorName(lum, bgLum) < 3.05 && guard < 14) {
+          const hsl = this.hexToHsl(displayHex);
+          const delta = bgLum > 0.5 ? -0.07 : 0.07;
+          const nextL = Math.max(0.1, Math.min(0.9, hsl.l + delta));
+          displayHex = Utils.hslToHex(hsl.h, hsl.s * 100, nextL * 100);
+          lum = this._hexLuminanceForContributorName(displayHex);
+          guard += 1;
+        }
+        return displayHex;
+      }
+
+      _blockBelongsToContributor(block, userId) {
+        const uid = String(userId || '').trim();
+        if (!block || !uid) return false;
+        if (String(block.contributorId || '').trim() === uid) return true;
+        const ids = Array.isArray(block.contributorIds) ? block.contributorIds : [];
+        return ids.some((id) => String(id || '').trim() === uid);
+      }
+
+      buildContributorPickerColorMap() {
+        const map = new Map();
+        const blocks = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks : [];
+        const events = Array.isArray(this.quiltEngine?.colorReplayEvents)
+          ? this.quiltEngine.colorReplayEvents
+          : [];
+        const remember = (userId, hex) => {
+          const uid = String(userId || '').trim();
+          const color = String(hex || '').trim();
+          if (!uid || !Utils.validateHexColor(color) || map.has(uid)) return;
+          map.set(uid, color);
+        };
+
+        events.forEach((event) => {
+          const newHex = String(event?.newHex || '').trim();
+          if (!Utils.validateHexColor(newHex)) return;
+          const newHexKey = newHex.toLowerCase();
+          (Array.isArray(event?.children) ? event.children : []).forEach((child) => {
+            const uid = String(child?.contributorId || '').trim();
+            if (!uid) return;
+            const childHex = String(child?.color || '').trim().toLowerCase();
+            if (childHex === newHexKey || !map.has(uid)) {
+              remember(uid, newHex);
+            }
+          });
+        });
+
+        this.normalizeDailyContributors(this.dailyContributors).forEach((entry) => {
+          const uid = String(entry?.userId || '').trim();
+          if (!uid || map.has(uid)) return;
+          const owned = blocks.filter((block) => this._blockBelongsToContributor(block, uid));
+          if (!owned.length) return;
+          const best = owned
+            .slice()
+            .sort((a, b) => {
+              const aPrimary = String(a.contributorId || '').trim() === uid ? 1 : 0;
+              const bPrimary = String(b.contributorId || '').trim() === uid ? 1 : 0;
+              if (bPrimary !== aPrimary) return bPrimary - aPrimary;
+              return (Number(b.submissionIndex) || 0) - (Number(a.submissionIndex) || 0);
+            })[0];
+          if (best && Utils.validateHexColor(best.color)) {
+            remember(uid, best.color);
+          }
+        });
+
+        return map;
+      }
+
       renderContributorCloud(listEl, entries, variant, currentUserId) {
         if (!listEl) return;
         const sizeBuckets = [0.9, 1.0, 1.1, 1.22];
@@ -46359,8 +47066,11 @@ try {
           }
           return Math.abs(h);
         };
+        const pickerColorsActive = !!this._contributorPickerColorsRevealed;
+        const pickerMap = pickerColorsActive ? this.buildContributorPickerColorMap() : null;
+        listEl.classList.toggle('quilt-contributor-list--picker-colors', pickerColorsActive);
         listEl.innerHTML = '';
-        (Array.isArray(entries) ? entries : []).forEach((entry) => {
+        (Array.isArray(entries) ? entries : []).forEach((entry, index) => {
           const item = document.createElement('span');
           item.className = 'quilt-contributor-name';
           const entryUserId = String(entry.userId || '').trim();
@@ -46375,8 +47085,27 @@ try {
           item.style.setProperty('--cloud-rot', `${tilt}deg`);
           item.style.setProperty('--tag-nudge-x', `${nudgeX}px`);
           item.style.setProperty('--tag-nudge-y', `${nudgeY}px`);
+          if (pickerColorsActive) {
+            item.style.setProperty('--picker-color-index', String(index));
+          } else {
+            item.style.removeProperty('--picker-color-index');
+          }
+          if (entryUserId) {
+            item.dataset.userId = entryUserId;
+          }
           if (isCurrent) {
             item.classList.add('quilt-contributor-name--current');
+          }
+          if (pickerColorsActive && entryUserId) {
+            const pickerHex = pickerMap?.get(entryUserId);
+            const displayHex = pickerHex ? this.colorForContributorNameDisplay(pickerHex) : null;
+            if (displayHex) {
+              item.style.color = displayHex;
+            } else {
+              item.style.removeProperty('color');
+            }
+          } else {
+            item.style.removeProperty('color');
           }
           item.setAttribute('role', 'listitem');
           item.textContent = name;
@@ -46392,6 +47121,10 @@ try {
         const currentUserId = String(this.currentUserId || '').trim();
         const ordered = this.getOrderedDisplayContributors();
         this.applyContributorNameContrast();
+        list.classList.toggle(
+          'quilt-contributor-list--picker-colors',
+          !!this._contributorPickerColorsRevealed
+        );
         this.renderContributorCloud(list, ordered, 'cloud', currentUserId);
 
         const show = ordered.length > 0;
@@ -54829,12 +55562,20 @@ try {
               'Layout B IG image generation'
             );
           }
+          let storyLayoutBImageData = null;
+          if (arch.generateInstagramStoryLayoutBImage) {
+            storyLayoutBImageData = await odqPromiseWithTimeout(
+              arch.generateInstagramStoryLayoutBImage(blocks, todayQuote, today),
+              120000,
+              'Layout B story image generation'
+            );
+          }
           const layoutBAliasesSpeaker = !!(
             postLayoutBImageData &&
             arch._resolveLayoutBSpeakerImageUrl &&
             String(arch._resolveLayoutBSpeakerImageUrl(todayQuote) || '').trim()
           );
-          if (!instagramImage && !postLayoutBImageData) {
+          if (!instagramImage && !postLayoutBImageData && !storyLayoutBImageData) {
             this.uiService.showToast('Failed to generate images');
             return;
           }
@@ -54868,6 +55609,7 @@ try {
             dateKey: today,
             instagramImage,
             postLayoutBImageData,
+            storyLayoutBImageData,
             aliasLayoutBSpeakerUrl: layoutBAliasesSpeaker,
             zapierCaption: Utils.formatZapierCaptionFromQuote(todayQuote),
             quiltFingerprint,
@@ -58013,6 +58755,15 @@ try {
       })();
       const app = new SimplifiedQuiltAppV2();
       window.app = app;
+      if (window.db && window.firestore?.getDoc) {
+        app.prefetchReflectionThemesArchivePage();
+      } else {
+        document.addEventListener(
+          'firebaseReady',
+          () => app.prefetchReflectionThemesArchivePage(),
+          { once: true }
+        );
+      }
 
       /**
        * Quote Collage Lab iframe bridge — load quilt raster + quote + speaker cutout for a date.

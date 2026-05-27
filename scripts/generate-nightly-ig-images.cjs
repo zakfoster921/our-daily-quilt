@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Nightly Zapier stills only (no reel): classic + layout B (speaker URL aliased to layout-b.png when present).
+ * Nightly Zapier stills only (no reel): classic + layout B post + layout B story (9:16).
  * Loads the live app in Playwright, reads quilts/{dateKey} from Firestore, uploads PNGs,
  * sets instagram-images/{dateKey}.readyForInstagram = true.
  */
@@ -206,6 +206,13 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         if (arch.generateInstagramPostLayoutBImage) {
           postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey);
         }
+        let storyLayoutBImageData = null;
+        if (arch.generateInstagramStoryLayoutBImage) {
+          storyLayoutBImageData = await arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey);
+        }
+        if (!storyLayoutBImageData) {
+          throw new Error(`Layout B story image was not generated for ${dateKey}`);
+        }
         const expectedSpeakerImageUrl = pickString(
           quote.speakerCutoutUrl,
           quote.speaker_cutout_url,
@@ -238,6 +245,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           dateKey,
           instagramImage,
           postLayoutBImageData,
+          storyLayoutBImageData,
           aliasLayoutBSpeakerUrl,
           zapierCaption,
           quiltFingerprint,
@@ -256,6 +264,9 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         ) {
           throw new Error('layout B speaker URL missing after nightly upload');
         }
+        if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
+          throw new Error('layout B story URL missing after nightly upload');
+        }
         return {
           dateKey,
           blockCount: blocks.length,
@@ -263,7 +274,9 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           readyForInstagram: !!doc.readyForInstagram,
           classicUrl: doc.classicUrl || doc.imageStorageUrl || '',
           layoutBSpeakerUrl: doc.layoutBSpeakerUrl || doc.postLayoutBSpeakerImageStorageUrl || '',
-          layoutBUrl: doc.layoutBUrl || doc.postLayoutBImageStorageUrl || ''
+          layoutBUrl: doc.layoutBUrl || doc.postLayoutBImageStorageUrl || '',
+          storyLayoutBUrl:
+            doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
       { dateKey, strictQuote }
@@ -297,6 +310,11 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
     if (verifyBlocks <= 1) {
       throw new Error(`verify failed: blockCount=${verifyBlocks} (expected full quilt)`);
     }
+    const storyUrl =
+      verify.storyLayoutBImageUrl || verify.layoutBStoryImageUrl || verify.storyLayoutBUrl || '';
+    if (!storyUrl) {
+      throw new Error('verify failed: layout B story image URL missing');
+    }
 
     return {
       success: true,
@@ -308,7 +326,8 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
       classicImageUrl: verify.classicImageUrl || verify.imageUrl,
       layoutBSpeakerImageUrl:
         verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || result.layoutBSpeakerUrl,
-      layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || result.layoutBUrl
+      layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || result.layoutBUrl,
+      storyLayoutBImageUrl: storyUrl
     };
   } catch (err) {
     await writeFailureArtifacts(page, attempt, outDir);

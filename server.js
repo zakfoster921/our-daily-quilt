@@ -3700,6 +3700,8 @@ async function getTodayInstagramImage(options = {}) {
       raw.postLayoutBImageStorageUrl || raw.layoutBUrl || null;
     const storageLayoutBSpeakerUrl =
       raw.postLayoutBSpeakerImageStorageUrl || raw.layoutBSpeakerUrl || null;
+    const storageStoryLayoutBUrl =
+      raw.storyLayoutBImageStorageUrl || raw.layoutBStoryUrl || raw.storyLayoutBUrl || null;
     const storageReelWebmUrl = raw.reelWebmStorageUrl || raw.reelUrl || null;
     const storageReelMp4Url = raw.reelMp4StorageUrl || raw.reelMp4Url || null;
 
@@ -3828,6 +3830,7 @@ async function getTodayInstagramImage(options = {}) {
       storageClassicUrl,
       storageLayoutBUrl,
       storageLayoutBSpeakerUrl,
+      storageStoryLayoutBUrl,
       storageReelWebmUrl,
       storageReelMp4Url,
       quote: quote,
@@ -3865,6 +3868,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     let imageUrl = '';
     let postLayoutBImageUrl = '';
     let postLayoutBSpeakerImageUrl = '';
+    let storyLayoutBImageUrl = '';
 
     if (imageData.storageClassicUrl) {
       imageUrl = imageData.storageClassicUrl;
@@ -3890,6 +3894,10 @@ app.post('/api/generate-instagram', async (req, res) => {
       postLayoutBSpeakerImageUrl = `${baseUrl}/api/image/${postLayoutBSpeakerFilename}`;
     }
 
+    if (imageData.storageStoryLayoutBUrl) {
+      storyLayoutBImageUrl = imageData.storageStoryLayoutBUrl;
+    }
+
     const hasLayoutB = !!postLayoutBImageUrl;
     const hasLayoutBSpeaker = !!postLayoutBSpeakerImageUrl;
     const primaryLayoutBImageUrl = postLayoutBSpeakerImageUrl || postLayoutBImageUrl || '';
@@ -3900,7 +3908,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-16-final-classic-speaker-layoutb';
+    const apiVersion = 'instagram-api-17-classic-layoutb-story';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = [
@@ -3923,6 +3931,9 @@ app.post('/api/generate-instagram', async (req, res) => {
       layoutBImageUrl: primaryLayoutBImageUrl,
       layoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
       layoutBPlainImageUrl: postLayoutBImageUrl || '',
+      storyLayoutBImageUrl,
+      layoutBStoryImageUrl: storyLayoutBImageUrl,
+      storyLayoutBUrl: storyLayoutBImageUrl,
       imageUrls,
       reelWebmUrl,
       reelMp4Url,
@@ -3940,12 +3951,13 @@ app.post('/api/generate-instagram', async (req, res) => {
       hasPostLayoutB: !!primaryLayoutBImageUrl,
       hasPostLayoutBPlain: hasLayoutB,
       hasPostLayoutBSpeaker: hasLayoutBSpeaker,
+      hasStoryLayoutB: !!storyLayoutBImageUrl,
       blockCount: Number(imageData.blockCount) || 0,
       contributorCount: Math.max(1, Number(imageData.contributorCount) || 1),
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
+        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. storyLayoutBImageUrl/layoutBStoryImageUrl = layout-b-story.png (9:16). When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(
@@ -4019,7 +4031,9 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       typeof body.postLayoutBImageData === 'string' ? body.postLayoutBImageData : '';
     const postLayoutBSpeakerImageData =
       typeof body.postLayoutBSpeakerImageData === 'string' ? body.postLayoutBSpeakerImageData : '';
-    if (!instagramImage && !postLayoutBImageData && !postLayoutBSpeakerImageData) {
+    const storyLayoutBImageData =
+      typeof body.storyLayoutBImageData === 'string' ? body.storyLayoutBImageData : '';
+    if (!instagramImage && !postLayoutBImageData && !postLayoutBSpeakerImageData && !storyLayoutBImageData) {
       return res.status(400).json({ success: false, error: 'No image data URLs provided' });
     }
 
@@ -4080,10 +4094,20 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       docPayload.postLayoutBSpeakerImageStorageUrl = publicUrl;
       docPayload.layoutBSpeakerUrl = publicUrl;
     }
+    if (storyLayoutBImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/layout-b-story.png`,
+        parsePngDataUrlToBuffer(storyLayoutBImageData),
+        'image/png'
+      );
+      docPayload.storyLayoutBImageStorageUrl = publicUrl;
+      docPayload.layoutBStoryUrl = publicUrl;
+      docPayload.storyLayoutBUrl = publicUrl;
+    }
 
     await db.collection('instagram-images').doc(dateKey).set(docPayload, { merge: true });
     console.log(
-      `✅ App backend IG push ${dateKey}: classic=${!!docPayload.imageStorageUrl} layoutB=${!!docPayload.layoutBUrl}`
+      `✅ App backend IG push ${dateKey}: classic=${!!docPayload.imageStorageUrl} layoutB=${!!docPayload.layoutBUrl} story=${!!docPayload.layoutBStoryUrl}`
     );
     res.json({ success: true, date: dateKey, docPayload });
   } catch (error) {
@@ -4529,6 +4553,233 @@ app.options('/api/reflection-themes/generate', (req, res) => {
 app.options('/api/reflection-themes/:dateKey', (req, res) => {
   setReflectionApiCors(res);
   return res.status(204).end();
+});
+
+app.options('/api/reflection-themes/archive', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+function isUsableReflectionArchivePromptServer(prompt) {
+  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
+  return Boolean(text) && text !== '[Reflection prompt coming soon for this quote.]';
+}
+
+function getReflectionPromptFromArchiveDataServer(data) {
+  if (!data || typeof data !== 'object') return '';
+  return String(
+    data.communityPrompt ||
+    data.community_prompt ||
+    data.communityPromptSnapshot ||
+    data.reflectionPrompt ||
+    data.reflection_prompt ||
+    data.reflectionPromptSnapshot ||
+    ''
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getReflectionArchiveQuoteFromDataServer(data) {
+  if (!data || typeof data !== 'object') return null;
+  const text = String(
+    data.text || data.quoteText || data.textSnapshot || data.quoteTextSnapshot || ''
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  const author = String(
+    data.author || data.quoteAuthor || data.authorSnapshot || data.quoteAuthorSnapshot || ''
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text ? { text, author } : null;
+}
+
+function pickReflectionArchiveQuiltImageFromThemeServer(data) {
+  if (!data || typeof data !== 'object') return '';
+  const fromFinal = pickFinalArchiveQuiltImageUrl(data);
+  if (fromFinal) return fromFinal;
+  return pickQuiltImageUrlFromDoc(data);
+}
+
+function firstResponseFromPayloadServer(data) {
+  if (!data || typeof data !== 'object') return '';
+  return String(data.first_response || data.firstResponse || '').replace(/\s+/g, ' ').trim();
+}
+
+async function loadReflectionArchiveContextServer(db, dateKey, themeData) {
+  const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  let prompt = getReflectionPromptFromArchiveDataServer(themeData);
+  let quote = getReflectionArchiveQuoteFromDataServer(themeData);
+  let first_response = firstResponseFromPayloadServer(themeData);
+
+  if (
+    isUsableReflectionArchivePromptServer(prompt) &&
+    quote?.text
+  ) {
+    return {
+      prompt: isUsableReflectionArchivePromptServer(prompt) ? prompt : '',
+      quote,
+      first_response
+    };
+  }
+
+  const readDoc = async (collectionId, docId) => {
+    if (!docId) return { prompt: '', quote: null, data: null };
+    const snap = await db.collection(collectionId).doc(docId).get();
+    const data = snap.exists ? snap.data() || {} : null;
+    return {
+      prompt: data ? getReflectionPromptFromArchiveDataServer(data) : '',
+      quote: data ? getReflectionArchiveQuoteFromDataServer(data) : null,
+      data
+    };
+  };
+
+  const dailyQuote = await readDoc(quotesCollection, dateKey);
+  if (!quote) quote = dailyQuote.quote;
+  if (!isUsableReflectionArchivePromptServer(prompt) && isUsableReflectionArchivePromptServer(dailyQuote.prompt)) {
+    prompt = dailyQuote.prompt;
+  }
+
+  const assignment = await readDoc(assignmentsCollection, dateKey);
+  if (!quote) quote = assignment.quote;
+  if (!isUsableReflectionArchivePromptServer(prompt) && isUsableReflectionArchivePromptServer(assignment.prompt)) {
+    prompt = assignment.prompt;
+  }
+
+  const sourceId = String(assignment.data?.sourceId || assignment.data?.quoteId || '').trim();
+  let sourceQuote = { prompt: '', quote: null, data: null };
+  if (sourceId) {
+    sourceQuote = await readDoc(quotesCollection, sourceId);
+    if (!quote) quote = sourceQuote.quote;
+    if (!isUsableReflectionArchivePromptServer(prompt) && isUsableReflectionArchivePromptServer(sourceQuote.prompt)) {
+      prompt = sourceQuote.prompt;
+    }
+  }
+
+  if (!first_response) {
+    first_response =
+      firstResponseFromPayloadServer(themeData) ||
+      firstResponseFromPayloadServer(dailyQuote.data) ||
+      firstResponseFromPayloadServer(assignment.data) ||
+      firstResponseFromPayloadServer(sourceQuote.data);
+  }
+
+  return {
+    prompt: isUsableReflectionArchivePromptServer(prompt) ? prompt : '',
+    quote,
+    first_response
+  };
+}
+
+async function resolveReflectionArchiveQuiltForApi(db, dateKey, themeData) {
+  const key = String(dateKey || '').trim();
+  const fromTheme = pickReflectionArchiveQuiltImageFromThemeServer(themeData);
+  if (fromTheme) {
+    const themeIsClassic = String(themeData?.quiltImageSource || '').trim() === ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC;
+    return {
+      quiltImageUrl: fromTheme,
+      quiltImageFallbackBlocks: null,
+      quiltImageIsClassic: themeIsClassic
+    };
+  }
+
+  const igSnap = await db.collection('instagram-images').doc(key).get();
+  const igData = igSnap.exists ? igSnap.data() || {} : {};
+  const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
+  if (classicUrl) {
+    return {
+      quiltImageUrl: classicUrl,
+      quiltImageFallbackBlocks: null,
+      quiltImageIsClassic: true
+    };
+  }
+
+  const archiveSnap = await db.collection('archives').doc(key).get();
+  const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
+  const archiveUrl = pickFinalArchiveQuiltImageUrl(archiveData);
+  if (archiveUrl) {
+    const archiveIsClassic =
+      String(archiveData.quiltImageSource || '').trim() === ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC;
+    return {
+      quiltImageUrl: archiveUrl,
+      quiltImageFallbackBlocks: null,
+      quiltImageIsClassic: archiveIsClassic
+    };
+  }
+
+  const archiveBlocks = archiveData.quilt?.blocks || archiveData.blocks;
+  if (Array.isArray(archiveBlocks) && archiveBlocks.length > 1) {
+    return { quiltImageUrl: '', quiltImageFallbackBlocks: archiveBlocks, quiltImageIsClassic: false };
+  }
+
+  return { quiltImageUrl: '', quiltImageFallbackBlocks: null, quiltImageIsClassic: false };
+}
+
+app.get('/api/reflection-themes/archive', async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const pageLimit = Math.min(14, Math.max(1, Number(req.query.limit) || 7));
+    const cursorDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.cursorDateKey || '').trim())
+      ? String(req.query.cursorDateKey).trim()
+      : '';
+
+    let query = db.collection('reflectionThemes').orderBy('generatedAt', 'desc').limit(pageLimit);
+    if (cursorDateKey) {
+      const cursorDoc = await db.collection('reflectionThemes').doc(cursorDateKey).get();
+      if (cursorDoc.exists) {
+        query = db
+          .collection('reflectionThemes')
+          .orderBy('generatedAt', 'desc')
+          .startAfter(cursorDoc)
+          .limit(pageLimit);
+      }
+    }
+
+    const themesSnap = await query.get();
+    const entries = [];
+    for (const doc of themesSnap.docs) {
+      const data = doc.data() || {};
+      const dateKey = String(data.appDateKey || doc.id || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      const themes = dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []);
+      if (!themes.length) continue;
+
+      const themeData = { ...data, appDateKey: dateKey };
+      const [context, quilt] = await Promise.all([
+        loadReflectionArchiveContextServer(db, dateKey, themeData),
+        resolveReflectionArchiveQuiltForApi(db, dateKey, themeData)
+      ]);
+
+      entries.push({
+        dateKey,
+        themes,
+        prompt: context.prompt,
+        quote: context.quote,
+        first_response: context.first_response,
+        reflectionPrompt: context.prompt,
+        quiltImageUrl: quilt.quiltImageUrl,
+        quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
+        quiltImageIsClassic: quilt.quiltImageIsClassic === true
+      });
+    }
+
+    return res.json({
+      success: true,
+      entries,
+      cursorDateKey: entries.length ? entries[entries.length - 1].dateKey : cursorDateKey,
+      hasOlder: themesSnap.size === pageLimit
+    });
+  } catch (error) {
+    console.error('❌ Reflection themes archive read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection themes archive read failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
 });
 
 app.get('/api/reflection-themes/:dateKey', async (req, res) => {
