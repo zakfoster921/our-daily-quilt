@@ -33,6 +33,10 @@ async function writeFailureArtifacts(page, attempt, outDir) {
 }
 
 async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strictQuote }) {
+  const evaluateTimeoutMs = Math.max(
+    120000,
+    Number(process.env.NIGHTLY_IG_EVALUATE_TIMEOUT_MS) || 720000
+  );
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: { width: 430, height: 932 },
@@ -43,11 +47,20 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
   });
   const page = await context.newPage();
+  page.on('console', (msg) => {
+    const text = msg.text();
+    if (text.includes('[nightly-ig:page]') || msg.type() === 'warning' || msg.type() === 'error') {
+      console.log(`[nightly-ig:browser] ${text}`);
+    }
+  });
   try {
+    console.log(`[nightly-ig] loading app ${appUrl}…`);
     await page.goto(appUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    console.log('[nightly-ig] waiting for portal quilt…');
     await page.waitForFunction(() => !!window.app && window.app._portalQuiltLoaded === true, undefined, {
       timeout: 180000
     });
+    console.log('[nightly-ig] waiting for quilt blocks…');
     await page.waitForFunction(
       () =>
         !!window.app &&
@@ -58,8 +71,12 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
       { timeout: 180000 }
     );
 
+    console.log(
+      `[nightly-ig] generating images for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
+    );
     const result = await page.evaluate(
       async ({ dateKey, strictQuote }) => {
+        const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
@@ -102,6 +119,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           );
         }
 
+        log(`loaded ${blocks.length} blocks for ${dateKey}`);
         if (typeof app.applyQuiltDataFromPayload === 'function') {
           await app.applyQuiltDataFromPayload({
             blocks,
@@ -116,11 +134,17 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         } else if (quiltScreenEl) {
           quiltScreenEl.classList.add('active');
         }
-        if (typeof app.renderQuilt === 'function') {
+        log('rendering quilt SVG (blocks only, no preview chrome)…');
+        const engine = app.quiltEngine;
+        if (app.renderer?.renderBlocks && engine?.getState) {
+          app.renderer.setBacksidePreviewEnabled?.(app._isBacksidePreviewMode === true);
+          const state = engine.getState();
+          app.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
+        } else if (typeof app.renderQuilt === 'function') {
           await app.renderQuilt();
         }
         await new Promise((resolve) => {
-          const deadline = Date.now() + 90000;
+          const deadline = Date.now() + 20000;
           const tick = () => {
             const svg = document.getElementById('quilt');
             const archReady = app.archiveService;
@@ -132,6 +156,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
               return;
             }
             if (Date.now() > deadline) {
+              log('mirror wait timed out at 20s — continuing with block fallback if needed');
               resolve();
               return;
             }
@@ -242,12 +267,14 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           throw new Error(`Missing canonical quote for ${dateKey}`);
         }
 
+        log('generating classic 4:5…');
         const instagramImage = await arch.generateInstagramImage(blocks);
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
             `generateInstagramQuiltScreen9x16ImageData missing on deployed app — deploy our-daily-beta.html before nightly IG`
           );
         }
+        log('generating quilt-screen 9:16…');
         let quiltScreen9x16ImageData = await arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey);
         if (!quiltScreen9x16ImageData) {
           throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
@@ -255,16 +282,17 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
         if (quiltExportMeta && !quiltExportMeta.quiltBlobFromLiveSvg) {
           console.warn(
-            `[nightly-ig] quilt-screen 9:16 used non-SVG path for ${dateKey}`,
-            JSON.stringify(quiltExportMeta)
+            `[nightly-ig:page] quilt-screen 9:16 used non-SVG path: ${JSON.stringify(quiltExportMeta)}`
           );
         }
         let postLayoutBImageData = null;
         if (arch.generateInstagramPostLayoutBImage) {
+          log('generating layout B post 4:5…');
           postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey);
         }
         let storyLayoutBImageData = null;
         if (arch.generateInstagramStoryLayoutBImage) {
+          log('generating layout B story 9:16…');
           storyLayoutBImageData = await arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey);
         }
         if (!storyLayoutBImageData) {
@@ -298,6 +326,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           contributorCount = Math.max(1, Number(app.quiltEngine?.submissionCount) || 1);
         }
 
+        log('uploading PNGs to Storage + Firestore…');
         const doc = await Utils.writeInstagramImagesDocForZapier({
           dateKey,
           instagramImage,
@@ -344,9 +373,11 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote }
+      { dateKey, strictQuote },
+      { timeout: evaluateTimeoutMs }
     );
 
+    console.log('[nightly-ig] verifying API URLs…');
     const verifyRes = await fetch(`${apiBase}/api/generate-instagram`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
