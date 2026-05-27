@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Nightly Zapier stills only (no reel): classic + layout B post + layout B story (9:16).
+ * Nightly Zapier stills only (no reel): classic + layout B post + layout B story + quilt-screen 9:16.
  * Loads the live app in Playwright, reads quilts/{dateKey} from Firestore, uploads PNGs,
  * sets instagram-images/{dateKey}.readyForInstagram = true.
  */
@@ -244,6 +244,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         const doc = await Utils.writeInstagramImagesDocForZapier({
           dateKey,
           instagramImage,
+          quiltScreen9x16ImageData,
           postLayoutBImageData,
           storyLayoutBImageData,
           aliasLayoutBSpeakerUrl,
@@ -252,7 +253,10 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           blockCount: blocks.length,
           contributorCount,
           markReadyForInstagram: true,
-          storageCacheControl: 'no-store'
+          storageCacheControl: 'no-store',
+          exportDebug: quiltExportMeta
+            ? { quiltScreen9x16: quiltExportMeta, nightly: true }
+            : { nightly: true }
         });
         if (!doc.imageStorageUrl && !doc.classicUrl) {
           throw new Error('classic image URL missing after nightly upload');
@@ -267,12 +271,16 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
           throw new Error('layout B story URL missing after nightly upload');
         }
+        if (!doc.quiltScreen9x16Url && !doc.quiltScreen9x16ImageStorageUrl) {
+          throw new Error('quilt screen 9:16 URL missing after nightly upload');
+        }
         return {
           dateKey,
           blockCount: blocks.length,
           contributorCount,
           readyForInstagram: !!doc.readyForInstagram,
           classicUrl: doc.classicUrl || doc.imageStorageUrl || '',
+          quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
           layoutBSpeakerUrl: doc.layoutBSpeakerUrl || doc.postLayoutBSpeakerImageStorageUrl || '',
           layoutBUrl: doc.layoutBUrl || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
@@ -315,6 +323,14 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
     if (!storyUrl) {
       throw new Error('verify failed: layout B story image URL missing');
     }
+    const quiltScreen9x16Url =
+      verify.quiltScreen9x16ImageUrl ||
+      verify.quiltScreen9x16Url ||
+      result.quiltScreen9x16Url ||
+      '';
+    if (!quiltScreen9x16Url) {
+      throw new Error('verify failed: quilt screen 9:16 image URL missing');
+    }
 
     return {
       success: true,
@@ -324,6 +340,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
       contributorCount: result.contributorCount,
       readyForInstagram: result.readyForInstagram,
       classicImageUrl: verify.classicImageUrl || verify.imageUrl,
+      quiltScreen9x16ImageUrl: quiltScreen9x16Url,
       layoutBSpeakerImageUrl:
         verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || result.layoutBSpeakerUrl,
       layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || result.layoutBUrl,

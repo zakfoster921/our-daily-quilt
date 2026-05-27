@@ -3702,6 +3702,8 @@ async function getTodayInstagramImage(options = {}) {
       raw.postLayoutBSpeakerImageStorageUrl || raw.layoutBSpeakerUrl || null;
     const storageStoryLayoutBUrl =
       raw.storyLayoutBImageStorageUrl || raw.layoutBStoryUrl || raw.storyLayoutBUrl || null;
+    const storageQuiltScreen9x16Url =
+      raw.quiltScreen9x16ImageStorageUrl || raw.quiltScreen9x16Url || raw.quiltScreenUrl || null;
     const storageReelWebmUrl = raw.reelWebmStorageUrl || raw.reelUrl || null;
     const storageReelMp4Url = raw.reelMp4StorageUrl || raw.reelMp4Url || null;
 
@@ -3831,6 +3833,7 @@ async function getTodayInstagramImage(options = {}) {
       storageLayoutBUrl,
       storageLayoutBSpeakerUrl,
       storageStoryLayoutBUrl,
+      storageQuiltScreen9x16Url,
       storageReelWebmUrl,
       storageReelMp4Url,
       quote: quote,
@@ -3869,6 +3872,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     let postLayoutBImageUrl = '';
     let postLayoutBSpeakerImageUrl = '';
     let storyLayoutBImageUrl = '';
+    let quiltScreen9x16ImageUrl = '';
 
     if (imageData.storageClassicUrl) {
       imageUrl = imageData.storageClassicUrl;
@@ -3898,6 +3902,10 @@ app.post('/api/generate-instagram', async (req, res) => {
       storyLayoutBImageUrl = imageData.storageStoryLayoutBUrl;
     }
 
+    if (imageData.storageQuiltScreen9x16Url) {
+      quiltScreen9x16ImageUrl = imageData.storageQuiltScreen9x16Url;
+    }
+
     const hasLayoutB = !!postLayoutBImageUrl;
     const hasLayoutBSpeaker = !!postLayoutBSpeakerImageUrl;
     const primaryLayoutBImageUrl = postLayoutBSpeakerImageUrl || postLayoutBImageUrl || '';
@@ -3908,7 +3916,7 @@ app.post('/api/generate-instagram', async (req, res) => {
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-17-classic-layoutb-story';
+    const apiVersion = 'instagram-api-18-classic-quilt9x16-layoutb-story';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Aliases + array help Zaps that only show the first URL or need explicit picks.
     const imageUrls = [
@@ -3934,6 +3942,9 @@ app.post('/api/generate-instagram', async (req, res) => {
       storyLayoutBImageUrl,
       layoutBStoryImageUrl: storyLayoutBImageUrl,
       storyLayoutBUrl: storyLayoutBImageUrl,
+      quiltScreen9x16ImageUrl,
+      quiltScreen9x16Url: quiltScreen9x16ImageUrl,
+      quiltScreenUrl: quiltScreen9x16ImageUrl,
       imageUrls,
       reelWebmUrl,
       reelMp4Url,
@@ -3952,12 +3963,13 @@ app.post('/api/generate-instagram', async (req, res) => {
       hasPostLayoutBPlain: hasLayoutB,
       hasPostLayoutBSpeaker: hasLayoutBSpeaker,
       hasStoryLayoutB: !!storyLayoutBImageUrl,
+      hasQuiltScreen9x16: !!quiltScreen9x16ImageUrl,
       blockCount: Number(imageData.blockCount) || 0,
       contributorCount: Math.max(1, Number(imageData.contributorCount) || 1),
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'imageUrl/classicImageUrl = classic 4:5. postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. storyLayoutBImageUrl/layoutBStoryImageUrl = layout-b-story.png (9:16). When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
+        'imageUrl/classicImageUrl = classic 4:5. quiltScreen9x16ImageUrl/quiltScreen9x16Url = quilt-screen-9x16.png (quilt-only 9:16, mirror + slice). postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. storyLayoutBImageUrl/layoutBStoryImageUrl = layout-b-story.png (9:16 collage). When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(
@@ -4033,7 +4045,15 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       typeof body.postLayoutBSpeakerImageData === 'string' ? body.postLayoutBSpeakerImageData : '';
     const storyLayoutBImageData =
       typeof body.storyLayoutBImageData === 'string' ? body.storyLayoutBImageData : '';
-    if (!instagramImage && !postLayoutBImageData && !postLayoutBSpeakerImageData && !storyLayoutBImageData) {
+    const quiltScreen9x16ImageData =
+      typeof body.quiltScreen9x16ImageData === 'string' ? body.quiltScreen9x16ImageData : '';
+    if (
+      !instagramImage &&
+      !postLayoutBImageData &&
+      !postLayoutBSpeakerImageData &&
+      !storyLayoutBImageData &&
+      !quiltScreen9x16ImageData
+    ) {
       return res.status(400).json({ success: false, error: 'No image data URLs provided' });
     }
 
@@ -4104,10 +4124,20 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       docPayload.layoutBStoryUrl = publicUrl;
       docPayload.storyLayoutBUrl = publicUrl;
     }
+    if (quiltScreen9x16ImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/quilt-screen-9x16.png`,
+        parsePngDataUrlToBuffer(quiltScreen9x16ImageData),
+        'image/png'
+      );
+      docPayload.quiltScreen9x16ImageStorageUrl = publicUrl;
+      docPayload.quiltScreen9x16Url = publicUrl;
+      docPayload.quiltScreenUrl = publicUrl;
+    }
 
     await db.collection('instagram-images').doc(dateKey).set(docPayload, { merge: true });
     console.log(
-      `✅ App backend IG push ${dateKey}: classic=${!!docPayload.imageStorageUrl} layoutB=${!!docPayload.layoutBUrl} story=${!!docPayload.layoutBStoryUrl}`
+      `✅ App backend IG push ${dateKey}: classic=${!!docPayload.imageStorageUrl} layoutB=${!!docPayload.layoutBUrl} story=${!!docPayload.layoutBStoryUrl} quilt9x16=${!!docPayload.quiltScreen9x16Url}`
     );
     res.json({ success: true, date: dateKey, docPayload });
   } catch (error) {
