@@ -5682,11 +5682,16 @@ try {
       }
     }
 
-    #screen-quilt .quilt-user-color-together-note[role='button'] {
-      cursor: pointer;
-      touch-action: manipulation;
+    #screen-quilt .quilt-user-color-together-note[role='button'],
+    #screen-quilt .quilt-user-color-together-note[role='button'] * {
       -webkit-user-select: none;
       user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    #screen-quilt .quilt-user-color-together-note[role='button'] {
+      cursor: pointer;
+      touch-action: none;
     }
 
     #screen-quilt .quilt-contributors-stage .quilt-contributor-list:empty {
@@ -12665,6 +12670,23 @@ try {
       }
     }
 
+    @keyframes quiltTogetherNoteHoldThump {
+      0% { transform: scale(1); }
+      38% { transform: scale(0.93); }
+      72% { transform: scale(1.04); }
+      100% { transform: scale(1); }
+    }
+
+    #screen-quilt .quilt-user-color-together-note__paper.is-hold-thump {
+      animation: quiltTogetherNoteHoldThump 0.2s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #screen-quilt .quilt-user-color-together-note__paper.is-hold-thump {
+        animation: none;
+      }
+    }
+
     /* Straight top/sides; torn bottom slopes lower on the right (inspired by manila scrap). */
     #screen-quilt .quilt-user-color-together-note__paper {
       --quilt-together-paper-bg: #ebe3d4;
@@ -12723,6 +12745,7 @@ try {
       padding: 0;
       width: 100%;
       max-width: 100%;
+      pointer-events: none;
       font-family: var(--quilt-courier-font);
       font-size: clamp(1.06rem, 3.52vw, 1.25rem);
       font-style: normal;
@@ -23878,7 +23901,7 @@ try {
         this.logger = logger;
         /** Cleared when leaving color screen so deferred theme work cannot run on the next screen. */
         this._colorScreenEntryThemeTimer = null;
-        /** Screens reached from quilt without resetting scroll when returning. */
+        /** Screens opened from quilt scroll-end; return snaps to bottom with no scroll cue. */
         this._quiltScrollPreserveScreens = new Set([
           'screen-about',
           'screen-settings',
@@ -24323,6 +24346,37 @@ try {
         });
       }
 
+      /** Instant scroll to quilt end (icon footer) — no animation; used when returning from settings/about/etc. */
+      _snapQuiltScrollToBottomInstant() {
+        const quiltScreen = document.getElementById('screen-quilt');
+        const quiltButtonPanel = document.querySelector('#screen-quilt .button-container');
+        const app = document.getElementById('app');
+        const nodes = [quiltScreen, quiltButtonPanel, app].filter(Boolean);
+        const apply = () => {
+          nodes.forEach((el) => {
+            const prevBehavior = el.style.scrollBehavior;
+            el.style.scrollBehavior = 'auto';
+            const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+            el.scrollTop = maxScroll;
+            if (prevBehavior) el.style.scrollBehavior = prevBehavior;
+            else el.style.removeProperty('scroll-behavior');
+          });
+          const winMax = Math.max(
+            0,
+            (document.documentElement.scrollHeight || 0) - (document.documentElement.clientHeight || 0),
+            (document.body.scrollHeight || 0) - (document.body.clientHeight || 0)
+          );
+          window.scrollTo(0, winMax);
+          document.documentElement.scrollTop = winMax;
+          document.body.scrollTop = winMax;
+        };
+        apply();
+        requestAnimationFrame(() => {
+          apply();
+          requestAnimationFrame(apply);
+        });
+      }
+
       _resetScreenScrollToTop(target) {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
@@ -24661,6 +24715,11 @@ try {
                   : 'flex';
               target.classList.add("active");
 
+              if (screenId === 'screen-quilt' && restoreQuiltScroll) {
+                window.app?.clearQuiltScrollCue?.();
+                this._snapQuiltScrollToBottomInstant();
+              }
+
               target.offsetHeight;
             }
 
@@ -24794,7 +24853,9 @@ try {
             }
             
             if (restoreQuiltScroll) {
-              this._restoreQuiltScrollIfSaved();
+              window.app?.clearQuiltScrollCue?.();
+              this._snapQuiltScrollToBottomInstant();
+              this._savedQuiltScrollPosition = null;
             } else {
               if (screenId === 'screen-quilt') {
                 this._savedQuiltScrollPosition = null;
@@ -24815,7 +24876,10 @@ try {
 
             // Dispatch custom event for screen change
             document.dispatchEvent(new CustomEvent('screenChange', {
-              detail: { screenId: screenId }
+              detail: {
+                screenId: screenId,
+                skipQuiltScrollCue: restoreQuiltScroll === true
+              }
             }));
             
           } else {
@@ -27753,6 +27817,8 @@ try {
                 let focusCanvasRect = null;
                 let quiltCanvasRect = null;
                 const dedicationBox = measureDedicationMessageBox(ctx, dedicationMessage);
+                /** Speaker layouts: zoom quilt slightly so cream paper silhouette does not peek at frame edges. */
+                const layoutBQuiltBleed = odqLayoutBSpeakerActiveFromOverlay(speakerOverlay) ? 1.05 : 1;
                 if (isPostLayout) {
                   let postScale;
                   let dx;
@@ -27784,10 +27850,10 @@ try {
                     dy = Math.round((STORY_H - dh) / 2);
                   } else if (options?.quiltFit === 'cover') {
                     const rect = getAspectSafeCanvasRect(iw, ih, STORY_W, STORY_H, 'cover');
-                    dx = rect.x;
-                    dy = rect.y;
-                    dw = rect.width;
-                    dh = rect.height;
+                    dw = Math.round(rect.width * layoutBQuiltBleed);
+                    dh = Math.round(rect.height * layoutBQuiltBleed);
+                    dx = Math.round(rect.x - (dw - rect.width) / 2);
+                    dy = Math.round(rect.y - (dh - rect.height) / 2);
                   } else {
                     postScale = Math.max(STORY_W / iw, STORY_H / ih) * 1.04;
                     dw = Math.round(iw * postScale);
@@ -27821,7 +27887,7 @@ try {
                 } else {
                   // Story Layout B: one centered crop behind the quote strips.
                   // The share raster is the full quilt; zoom here so the story reads as a close crop.
-                  const scale = Math.max(STORY_W / iw, STORY_H / ih) * 1.22;
+                  const scale = Math.max(STORY_W / iw, STORY_H / ih) * 1.22 * layoutBQuiltBleed;
                   const cw = Math.round(iw * scale);
                   const ch = Math.round(ih * scale);
                   const qx = Math.round((STORY_W - cw) / 2);
@@ -37622,15 +37688,86 @@ try {
           }, 1400);
         };
 
+        const HOLD_MS_TOUCH = 480;
+        const HOLD_MS_DEFAULT = 650;
+        const HOLD_MOVE_CANCEL_PX = 14;
+        const togetherPaper = note.querySelector('.quilt-user-color-together-note__paper');
+        const AudioCtxCtor = window.AudioContext || window.webkitAudioContext;
+        let holdThumpAudioCtx = null;
+
+        const prefersReducedMotion = () =>
+          !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+        /** Unlock audio during the touch (iOS needs this before the hold timer fires). */
+        const primeHoldThumpFeedback = () => {
+          if (prefersReducedMotion() || !AudioCtxCtor) return;
+          if (!holdThumpAudioCtx) holdThumpAudioCtx = new AudioCtxCtor();
+          if (holdThumpAudioCtx.state === 'suspended') {
+            holdThumpAudioCtx.resume().catch(() => {});
+          }
+        };
+
+        const playHoldThumpSound = () => {
+          if (prefersReducedMotion() || !holdThumpAudioCtx) return;
+          const ctx = holdThumpAudioCtx;
+          if (ctx.state !== 'running') return;
+          const t0 = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(92, t0);
+          osc.frequency.exponentialRampToValueAtTime(48, t0 + 0.055);
+          gain.gain.setValueAtTime(0.0001, t0);
+          gain.gain.linearRampToValueAtTime(0.22, t0 + 0.004);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t0);
+          osc.stop(t0 + 0.075);
+        };
+
+        const triggerHoldThumpVisual = () => {
+          if (!togetherPaper || prefersReducedMotion()) return;
+          togetherPaper.classList.remove('is-hold-thump');
+          void togetherPaper.offsetWidth;
+          togetherPaper.classList.add('is-hold-thump');
+          window.setTimeout(() => {
+            togetherPaper.classList.remove('is-hold-thump');
+          }, 220);
+        };
+
+        /** Visual + quiet thump sound (iOS) + vibrate when the browser allows it (mostly Android). */
+        const feedbackHoldThump = () => {
+          if (wrap.hidden || prefersReducedMotion()) return;
+          triggerHoldThumpVisual();
+          playHoldThumpSound();
+          if (typeof navigator?.vibrate === 'function') {
+            try {
+              navigator.vibrate([22, 8, 32]);
+            } catch (_) {
+              /* Unsupported or blocked. */
+            }
+          }
+        };
+
         let pressTimer = null;
         let suppressClick = false;
         let glimmerHeld = false;
         let releaseOnWindow = null;
+        let pressPointerId = null;
+        let pressStartX = 0;
+        let pressStartY = 0;
 
         const clearPressTimer = () => {
           if (!pressTimer) return;
           clearTimeout(pressTimer);
           pressTimer = null;
+          pressPointerId = null;
+        };
+
+        const blockNativeTextGesture = (event) => {
+          if (wrap.hidden) return;
+          event.preventDefault();
         };
 
         const detachReleaseListeners = () => {
@@ -37658,6 +37795,7 @@ try {
         const onLongPress = () => {
           pressTimer = null;
           if (wrap.hidden) return;
+          feedbackHoldThump();
           suppressClick = true;
           window.setTimeout(() => {
             suppressClick = false;
@@ -37668,17 +37806,47 @@ try {
           attachReleaseListeners();
         };
 
+        note.addEventListener(
+          'touchstart',
+          (event) => {
+            primeHoldThumpFeedback();
+            blockNativeTextGesture(event);
+          },
+          { passive: false }
+        );
+        note.addEventListener('selectstart', blockNativeTextGesture);
+        note.addEventListener('contextmenu', blockNativeTextGesture);
+
         note.addEventListener('pointerdown', (event) => {
           if (wrap.hidden) return;
           if (event.pointerType === 'mouse' && event.button !== 0) return;
+          if (event.pointerType === 'touch' && event.cancelable) event.preventDefault();
+          primeHoldThumpFeedback();
           clearPressTimer();
-          pressTimer = window.setTimeout(onLongPress, 650);
+          pressPointerId = event.pointerId;
+          pressStartX = event.clientX;
+          pressStartY = event.clientY;
+          const holdMs =
+            event.pointerType === 'touch' ? HOLD_MS_TOUCH : HOLD_MS_DEFAULT;
+          pressTimer = window.setTimeout(onLongPress, holdMs);
         });
-        note.addEventListener('pointerup', () => {
+        note.addEventListener('pointermove', (event) => {
+          if (pressTimer == null || event.pointerId !== pressPointerId) return;
+          const dx = event.clientX - pressStartX;
+          const dy = event.clientY - pressStartY;
+          if (Math.hypot(dx, dy) > HOLD_MOVE_CANCEL_PX) clearPressTimer();
+        });
+        note.addEventListener('pointerup', (event) => {
+          if (event.pointerId !== pressPointerId && pressPointerId != null && !glimmerHeld) {
+            return;
+          }
           if (glimmerHeld) endGlimmerHold();
           else clearPressTimer();
         });
-        note.addEventListener('pointercancel', () => {
+        note.addEventListener('pointercancel', (event) => {
+          if (event.pointerId !== pressPointerId && pressPointerId != null && !glimmerHeld) {
+            return;
+          }
           if (glimmerHeld) endGlimmerHold();
           else clearPressTimer();
         });
@@ -43334,11 +43502,22 @@ try {
         // Update parallax anchor/target on screen changes
         document.addEventListener('screenChange', (e) => {
           if (e.detail.screenId === 'screen-quilt') {
+            if (e.detail.skipQuiltScrollCue) {
+              this.clearQuiltScrollCue();
+              const scroller = this.getQuiltScrollContainer();
+              if (scroller) {
+                const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+                scroller.scrollTop = maxScroll;
+                this._quiltScrollAnchorTop = maxScroll;
+              }
+            }
             this.parallaxAnchorScrollTop = this.getCurrentQuiltScrollPosition();
             this._dailyQuotePromptedFromQuiltScroll = false;
             this.resetQuiltParallaxVisualState();
             this.handleParallaxScroll();
-            this.scheduleQuiltScrollCue();
+            if (!e.detail.skipQuiltScrollCue) {
+              this.scheduleQuiltScrollCue();
+            }
           } else {
             this.clearQuiltScrollCue();
             this.parallaxTargetShift = 0;
