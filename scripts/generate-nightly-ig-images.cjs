@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
+/** Last archived quilt day. Intended for runs at or after 07:00 UTC (see nightly-instagram-snapshot.yml cron). */
 function getCompletedQuiltDateKey(d = new Date()) {
   const adj = new Date(d);
   if (d.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
@@ -451,7 +452,18 @@ async function main() {
   const apiBase =
     (process.env.API_BASE_URL && String(process.env.API_BASE_URL).replace(/\/$/, '')) ||
     new URL(appUrl).origin;
-  const dateKey = process.env.DATE_KEY || getCompletedQuiltDateKey();
+  const now = new Date();
+  if (
+    !process.env.DATE_KEY &&
+    process.env.NIGHTLY_IG_SKIP_SCHEDULE_GUARD !== 'true' &&
+    now.getUTCHours() < 7
+  ) {
+    throw new Error(
+      `Nightly IG must run at or after 07:00 UTC (after daily reset). Now=${now.toISOString()}. ` +
+        'Set DATE_KEY to override or NIGHTLY_IG_SKIP_SCHEDULE_GUARD=true to bypass.'
+    );
+  }
+  const dateKey = process.env.DATE_KEY || getCompletedQuiltDateKey(now);
   const strictQuote = String(process.env.NIGHTLY_IG_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);

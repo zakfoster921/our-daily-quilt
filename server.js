@@ -3969,7 +3969,7 @@ app.post('/api/generate-instagram', async (req, res) => {
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'imageUrl/classicImageUrl = classic 4:5. quiltScreen9x16ImageUrl/quiltScreen9x16Url = quilt-screen-9x16.png (quilt-only 9:16, mirror + slice). postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. storyLayoutBImageUrl/layoutBStoryImageUrl = layout-b-story.png (9:16 collage). When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (23:30 UTC). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
+        'imageUrl/classicImageUrl = classic 4:5. quiltScreen9x16ImageUrl/quiltScreen9x16Url = quilt-screen-9x16.png (quilt-only 9:16, mirror + slice). postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. storyLayoutBImageUrl/layoutBStoryImageUrl = layout-b-story.png (9:16 collage). When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (08:30 UTC, after 07:00 UTC reset). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(
