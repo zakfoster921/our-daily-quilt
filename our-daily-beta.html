@@ -1335,6 +1335,10 @@ try {
       -webkit-font-smoothing: antialiased;
     }
 
+    #screen-quote .quote-card.layoutb-preview-card > .quote-inner {
+      display: none !important;
+    }
+
     .quote-inner.layoutb-preview {
       min-height: 0;
       gap: 0;
@@ -1360,7 +1364,8 @@ try {
     }
 
     #screen-quote .quote-layoutb-stage {
-      opacity: 1;
+      opacity: 0;
+      visibility: hidden;
       transition: none;
     }
 
@@ -1375,6 +1380,7 @@ try {
     #screen-reflection .quote-layoutb-stage.quote-layoutb-stage--revealed,
     #screen-portal .quote-layoutb-stage.quote-layoutb-stage--revealed {
       opacity: 1;
+      visibility: visible;
     }
 
     .quote-layoutb-strip {
@@ -13847,7 +13853,7 @@ try {
         <div class="quote-stage-quote quote-color-combined__quote" id="quoteStageQuote">
           <div class="quote-content-wrapper">
             <div class="quote-stage">
-              <div class="quote-card">
+              <div class="quote-card layoutb-preview-card">
                 <div class="quote-inner">
                   <p class="quote-line" aria-live="polite"></p>
                   <p class="quote-author" aria-live="polite"></p>
@@ -24511,11 +24517,17 @@ try {
                 if (target.id === 'screen-quote') {
                   window.app?.applyQuoteScreenInitialRestLayout?.();
                   window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
-                  window.app?.quoteService?.displayQuote?.();
-                  window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
                   if (!portalToQuoteFade) {
-                    window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+                    window.app?.quoteService?.displayQuote?.();
+                    window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
                   }
+                  // #region agent log
+                  odqDbg0dfc0d('H4', 'showScreen:finishFlow', 'quote screen finishFlow paint', {
+                    previousId,
+                    portalToQuoteFade: !!portalToQuoteFade,
+                    skippedDisplayQuote: !!portalToQuoteFade
+                  });
+                  // #endregion
                 }
               };
 
@@ -24523,6 +24535,9 @@ try {
               target.classList.remove(...flowClassCleanup);
               if (portalToQuoteFade) {
                 target.classList.add('flow-fade-enter', 'active');
+                window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
+                window.app?.quoteService?.displayQuote?.();
+                window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
               } else {
                 const enteringClass =
                   nextOrder > prevOrder ? 'flow-enter-from-bottom' : 'flow-enter-from-top';
@@ -24546,7 +24561,6 @@ try {
                   requestAnimationFrame(() => {
                     target.classList.add('flow-fade-enter-active');
                     if (previousActive) previousActive.classList.add('flow-fade-exit-active');
-                    window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
 
                     let settled = false;
                     const settle = () => {
@@ -24660,7 +24674,11 @@ try {
                   window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
                   window.app?.quoteService?.displayQuote?.();
                   window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
-                  window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+                  // #region agent log
+                  odqDbg0dfc0d('H4', 'showScreen:finishBridgeQuote', 'quote screen bridge finish paint', {
+                    previousId
+                  });
+                  // #endregion
                 }
               };
 
@@ -24682,10 +24700,6 @@ try {
                 requestAnimationFrame(() => {
                   target.classList.add('flow-fade-enter-active');
                   previousActive.classList.add('flow-fade-exit-active');
-                  if (target.id === 'screen-quote') {
-                    window.app?.applyQuoteScreenInitialRestLayout?.();
-                    window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
-                  }
 
                   let settled = false;
                   const settle = () => {
@@ -24728,7 +24742,11 @@ try {
               window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
               window.app?.quoteService?.displayQuote?.();
               window.app?.scheduleQuoteColorPickerReveal?.(CONFIG.APP.quoteColorPickerRevealMs);
-              window.app?.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
+              // #region agent log
+              odqDbg0dfc0d('H4', 'showScreen:instantQuote', 'quote screen instant activation', {
+                previousId: previousId
+              });
+              // #endregion
             }
 
             if (screenId === 'screen-first-quote-bridge') {
@@ -24793,12 +24811,9 @@ try {
             }
             
             if (screenId === 'screen-quote') {
-              if (!window.app?.isColorPickerActive?.()) {
-                window.app?.applyQuoteScreenInitialRestLayout?.();
-                if (window.app) window.app.colorHasBeenSelected = false;
+              if (!window.app?.isColorPickerActive?.() && window.app) {
+                window.app.colorHasBeenSelected = false;
               }
-              window.app?.quoteService?.primeTodayQuoteFromLocalAssignment?.();
-              window.app?.quoteService?.displayQuote?.();
             } else {
               window.app?.clearQuoteColorPickerSchedule?.();
               if (window.ODQ_snapNeutralBeforeSwap) {
@@ -24950,6 +24965,8 @@ try {
     const ODQ_CANVAS_SERIF_FONT = '\'Libre Baskerville\', Georgia, "Times New Roman", Times, serif';
     const ODQ_LAYOUT_B_AUTHOR_INVERT_BG = '#636363';
     const ODQ_LAYOUT_B_AUTHOR_INVERT_TEXT = '#f3eee4';
+    /** Layout B speaker *post* (4:5): quote/author strip type vs story-sized plan scaled to post. */
+    const ODQ_LAYOUT_B_SPEAKER_POST_STRIP_FONT_SCALE = 1.1;
 
     function odqLayoutBSpeakerActiveFromOverlay(speakerOverlay) {
       return !!(speakerOverlay && String(speakerOverlay.imageUrl || '').trim());
@@ -25085,7 +25102,9 @@ try {
         maxQuoteCanvasCoverage = null,
         keywordEmphasis = null,
         skipKeywordEmphasis = false,
-        stripLayoutSeed = 0
+        stripLayoutSeed = 0,
+        /** Applied after layout shrink (e.g. speaker post +10%). */
+        stripFontScale = 1
       } = options || {};
       const STORY_W = layoutW;
       const STORY_H = layoutH;
@@ -25795,6 +25814,11 @@ try {
         'H3'
       );
       // #endregion
+      const stripFontScaleFactor = Math.max(1, Number(stripFontScale) || 1);
+      if (stripFontScaleFactor > 1.0001 && strips.length) {
+        const scaled = boostLayoutBStripPlanTypography(strips, stripFontScaleFactor, FONT_SERIF);
+        return refitLayoutBStripPlanToText(scaled, ctx, STRIP_MAX_W, FONT_SERIF);
+      }
       return strips;
     }
 
@@ -25822,6 +25846,29 @@ try {
           h: Math.max(20, Math.round(Number(s.h || 20) * sy)),
           lh: Math.max(1, Number(s.lh || 0) * sy),
           font: scaledFont
+        };
+      });
+    }
+
+    /** Bump strip typography/paper after story→post scale (post-only; does not move strip centers). */
+    function boostLayoutBStripPlanTypography(plan, factor, fontSerif) {
+      const f = Math.max(1, Number(factor) || 1);
+      if (f <= 1.0001) return Array.isArray(plan) ? plan : [];
+      const serif = fontSerif || ODQ_CANVAS_SERIF_FONT;
+      return (Array.isArray(plan) ? plan : []).map((s) => {
+        const fontStr = String(s.font || '');
+        const fontPxMatch = /(\d+)px/.exec(fontStr);
+        const basePx = fontPxMatch ? parseInt(fontPxMatch[1], 10) : 48;
+        const boostedPx = Math.max(18, Math.round(basePx * f));
+        const boostedFont = fontStr.includes('px')
+          ? fontStr.replace(/\d+px/, `${boostedPx}px`)
+          : `400 ${boostedPx}px ${serif}`;
+        return {
+          ...s,
+          font: boostedFont,
+          lh: Math.max(1, Number(s.lh || 0) * f),
+          w: Math.max(20, Math.round(Number(s.w || 20) * f)),
+          h: Math.max(20, Math.round(Number(s.h || 20) * f))
         };
       });
     }
@@ -26468,6 +26515,21 @@ try {
       } catch (_) {
         return false;
       }
+    }
+    function odqDbg0dfc0d(hypothesisId, location, message, data) {
+      fetch('http://127.0.0.1:7433/ingest/0ed8adaa-5aed-4571-811f-aadcc7a8fddc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0dfc0d' },
+        body: JSON.stringify({
+          sessionId: '0dfc0d',
+          runId: globalThis.__ODQ_DEBUG_RUN_ID || 'pre-fix',
+          hypothesisId,
+          location,
+          message,
+          data: data || {},
+          timestamp: Date.now()
+        })
+      }).catch(() => {});
     }
     function odqDebugLog(location, message, data, hypothesisId) {
       const payload = {
@@ -28241,9 +28303,8 @@ try {
                   odqLayoutBSpeakerActiveFromOverlay(speakerOverlay) && speakerImgs.length > 0;
                 const LAYOUT_B_STORY_REF_W = 1080;
                 const LAYOUT_B_STORY_REF_H = 1920;
-                /** Speaker layouts share one 9:16 strip plan (no avoid repositioning); post scales to 4:5. */
-                const useSpeakerUnifiedStripPlan = speakerActive;
-                const useStoryRefStripPlan = isPostLayout && useSpeakerUnifiedStripPlan;
+                /** Speaker story uses 9:16 strip plan; speaker post lays out at 4:5 with larger type. */
+                const useSpeakerUnifiedStripPlan = speakerActive && !isPostLayout;
                 let quoteStripPlan = getLayoutBStoryQuotePlan(ctx, {
                   quoteText,
                   quoteAuthor,
@@ -28273,33 +28334,10 @@ try {
                   keywordEmphasis: options.keywordEmphasisExplicit
                     ? options.keywordEmphasis || null
                     : resolvedKeywordEmphasis || null,
-                  stripLayoutSeed: resolvedStripLayoutSeed
+                  stripLayoutSeed: resolvedStripLayoutSeed,
+                  stripFontScale:
+                    speakerActive && isPostLayout ? ODQ_LAYOUT_B_SPEAKER_POST_STRIP_FONT_SCALE : 1
                 });
-                if (useStoryRefStripPlan) {
-                  quoteStripPlan = scaleLayoutBStripPlan(
-                    quoteStripPlan,
-                    LAYOUT_B_STORY_REF_W,
-                    LAYOUT_B_STORY_REF_H,
-                    STORY_W,
-                    STORY_H,
-                    FONT_SERIF
-                  );
-                  const afterScale = quoteStripPlan.map((s) => Math.round(Number(s.w || 0)));
-                  const postStripMaxW = STORY_W - 52;
-                  quoteStripPlan = refitLayoutBStripPlanToText(quoteStripPlan, ctx, postStripMaxW, FONT_SERIF);
-                  // #region agent log
-                  odqDebugLog(
-                    'compose:refitPostStrips',
-                    'post strip widths after refit',
-                    {
-                      afterScale,
-                      afterRefit: quoteStripPlan.map((s) => Math.round(Number(s.w || 0))),
-                      postStripMaxW
-                    },
-                    'H7'
-                  );
-                  // #endregion
-                }
                 // #region agent log
                 odqDebugLog(
                   'compose:quoteStripPlan',
@@ -28308,7 +28346,6 @@ try {
                     isPostLayout,
                     speakerActive,
                     useSpeakerUnifiedStripPlan,
-                    useStoryRefStripPlan,
                     stripCount: quoteStripPlan.length,
                     textRunStripCount: quoteStripPlan.filter((s) => Array.isArray(s.textRuns) && s.textRuns.some((r) => r.bold || r.italic || r.underline || r.caps)).length,
                     passedKeywords: (options.keywordEmphasisExplicit ? options.keywordEmphasis : resolvedKeywordEmphasis)?.keywords || null,
@@ -32644,44 +32681,66 @@ try {
       }
 
       /**
+       * Coalesce Layout B quote-screen paints so rapid displayQuote calls don't flash plain text then remount.
+       */
+      _queueQuoteScreenLayoutBPaint(text, author) {
+        this._pendingQuoteScreenLayoutB = {
+          text: String(text || '').trim(),
+          author: String(author || '').trim()
+        };
+        if (this._quoteScreenLayoutBPaintRaf) {
+          cancelAnimationFrame(this._quoteScreenLayoutBPaintRaf);
+        }
+        this._quoteScreenLayoutBPaintRaf = requestAnimationFrame(() => {
+          this._quoteScreenLayoutBPaintRaf = 0;
+          this._flushQuoteScreenLayoutBPaint(0);
+        });
+      }
+
+      _flushQuoteScreenLayoutBPaint(retry = 0) {
+        const pending = this._pendingQuoteScreenLayoutB;
+        if (!pending) return;
+        const screenEl = document.getElementById('screen-quote');
+        const card = document.querySelector('#screen-quote .quote-card');
+        const active = !!screenEl?.classList.contains('active');
+        const cardW = card?.clientWidth || 0;
+        // #region agent log
+        odqDbg0dfc0d('H1', 'QuoteService:_flushQuoteScreenLayoutBPaint', 'flush layout B paint', {
+          retry,
+          active,
+          cardW,
+          hasPending: !!pending,
+          screenDisplay: screenEl ? getComputedStyle(screenEl).display : null
+        });
+        // #endregion
+        if (!active || !card) {
+          if (retry < 30) {
+            this._quoteScreenLayoutBPaintRaf = requestAnimationFrame(() => {
+              this._quoteScreenLayoutBPaintRaf = 0;
+              this._flushQuoteScreenLayoutBPaint(retry + 1);
+            });
+          }
+          return;
+        }
+
+        if (cardW < 80 && retry < 20) {
+          this._quoteScreenLayoutBPaintRaf = requestAnimationFrame(() => {
+            this._quoteScreenLayoutBPaintRaf = 0;
+            this._flushQuoteScreenLayoutBPaint(retry + 1);
+          });
+          return;
+        }
+
+        void this._rebuildLayoutBQuoteCardStage(pending.text, pending.author);
+      }
+
+      /**
        * Rebuild Layout B strip stage using current wrapper width. Call after #screen-quote is visible —
        * displayQuote() runs at init while the screen is display:none, so clientWidth was wrong until now.
        */
       scheduleQuoteLayoutBPreviewLayoutRefresh() {
-        if (this._quoteLayoutBRefreshRaf) {
-          cancelAnimationFrame(this._quoteLayoutBRefreshRaf);
-        }
-        this._quoteLayoutBRefreshRaf = requestAnimationFrame(() => {
-          this._quoteLayoutBRefreshRaf = 0;
-          void (async () => {
-            try {
-              const screenEl = document.getElementById('screen-quote');
-              if (!screenEl?.classList.contains('active')) return;
-              const card = document.querySelector('#screen-quote .quote-card');
-              if (card && card.clientWidth < 80) {
-                this._quoteLayoutBWidthRetries = (this._quoteLayoutBWidthRetries || 0) + 1;
-                if (this._quoteLayoutBWidthRetries < 20) {
-                  this.scheduleQuoteLayoutBPreviewLayoutRefresh();
-                  return;
-                }
-              }
-              this._quoteLayoutBWidthRetries = 0;
-              try {
-                await odqReadLayoutBKeywordEmphasis(Utils.getTodayKey());
-              } catch (_) {
-                /* optional */
-              }
-              const { text, author } = this.getQuoteScreenPreviewContent();
-              await this._rebuildLayoutBQuoteCardStage(text, author);
-              const stage = document.querySelector('#screen-quote .quote-layoutb-stage');
-              if (stage) stage.classList.add('quote-layoutb-stage--revealed');
-              void stage?.offsetHeight;
-              window.app?.finalizeQuoteColorScrollLayout?.();
-            } catch (e) {
-              /* ignore */
-            }
-          })();
-        });
+        const { text, author } = this.getQuoteScreenPreviewContent();
+        this._queueQuoteScreenLayoutBPaint(text, author);
       }
 
       _readPortalGreetingBasePx() {
@@ -32698,7 +32757,6 @@ try {
        */
       async _mountLayoutBQuoteStrips(quoteCard, text, author, options = {}) {
         if (!quoteCard || typeof getLayoutBStoryQuotePlan !== 'function') return;
-        quoteCard.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => n.remove());
 
         const stage = document.createElement('div');
         stage.className = 'quote-layoutb-stage';
@@ -32822,17 +32880,25 @@ try {
           }));
         } else {
           const dateKey = Utils.getTodayKey();
-          let keywordEmphasis = options.keywordEmphasis || null;
-          if (!keywordEmphasis) {
+          let keywordEmphasis;
+          if (Object.prototype.hasOwnProperty.call(options, 'keywordEmphasis')) {
+            keywordEmphasis = options.keywordEmphasis;
+          } else if (options.skipAsyncLayoutBFetches) {
+            keywordEmphasis = odqGetCachedLayoutBKeywordEmphasis(dateKey) || null;
+          } else {
             keywordEmphasis =
               odqGetCachedLayoutBKeywordEmphasis(dateKey) ||
               (await odqReadLayoutBKeywordEmphasis(dateKey).catch(() => null));
           }
           let stripLayoutSeed = options.stripLayoutSeed;
           if (stripLayoutSeed == null) {
-            stripLayoutSeed =
-              odqGetCachedLayoutBStripLayoutSeed(dateKey) ??
-              (await odqReadLayoutBStripLayoutSeed(dateKey).catch(() => 0));
+            if (options.skipAsyncLayoutBFetches) {
+              stripLayoutSeed = odqGetCachedLayoutBStripLayoutSeed(dateKey) ?? 0;
+            } else {
+              stripLayoutSeed =
+                odqGetCachedLayoutBStripLayoutSeed(dateKey) ??
+                (await odqReadLayoutBStripLayoutSeed(dateKey).catch(() => 0));
+            }
           }
           strips = getLayoutBStoryQuotePlan(document.createElement('canvas').getContext('2d'), {
             quoteText: String(text || '').trim(),
@@ -32991,6 +33057,9 @@ try {
           stage.appendChild(el);
         }
         quoteCard.appendChild(stage);
+        quoteCard.querySelectorAll(':scope > .quote-layoutb-stage').forEach((n) => {
+          if (n !== stage) n.remove();
+        });
         requestAnimationFrame(() => {
           stage.classList.add('quote-layoutb-stage--revealed');
         });
@@ -33017,6 +33086,20 @@ try {
         });
       }
 
+      _layoutBSpeakerAuthorInvertSync(quoteObj) {
+        try {
+          const arch =
+            typeof window !== 'undefined' && window.app && window.app.archiveService
+              ? window.app.archiveService
+              : null;
+          if (!arch || typeof arch._resolveLayoutBSpeakerImageUrl !== 'function') return false;
+          const q = quoteObj || this.getQuoteScreenPreviewContent().activeQuote;
+          return !!String(arch._resolveLayoutBSpeakerImageUrl(q) || '').trim();
+        } catch (_) {
+          return false;
+        }
+      }
+
       async _layoutBSpeakerAuthorInvertForQuote(quoteObj) {
         try {
           const arch =
@@ -33035,30 +33118,112 @@ try {
         }
       }
 
+      _layoutBQuotePaintOptsEqual(a, b) {
+        if (!a || !b) return false;
+        if (!!a.speaker !== !!b.speaker) return false;
+        const aKw = a.kw?.keywords ? JSON.stringify(a.kw.keywords) : '';
+        const bKw = b.kw?.keywords ? JSON.stringify(b.kw.keywords) : '';
+        return aKw === bKw;
+      }
+
+      async _enrichLayoutBQuoteCardStageLater(text, author, paintSig, startGen) {
+        const quoteCard = document.querySelector('#screen-quote .quote-card');
+        if (!quoteCard) return;
+        const dateKey = Utils.getTodayKey();
+        const hadCachedKw = !!odqGetCachedLayoutBKeywordEmphasis(dateKey);
+        if (hadCachedKw) return;
+        let keywordEmphasis = null;
+        try {
+          keywordEmphasis = await odqReadLayoutBKeywordEmphasis(dateKey);
+        } catch (_) {
+          /* optional */
+        }
+        if (!keywordEmphasis) return;
+        if (startGen !== this._quoteLayoutBRebuildGen) return;
+        if (this._quoteScreenLayoutBPaintSig !== paintSig) return;
+        const nextOpts = { kw: keywordEmphasis, speaker: this._quoteScreenLayoutBAppliedOpts?.speaker };
+        if (this._layoutBQuotePaintOptsEqual(this._quoteScreenLayoutBAppliedOpts, nextOpts)) return;
+        await this._mountLayoutBQuoteStrips(quoteCard, text, author, {
+          keywordEmphasis,
+          speakerAuthorInvert: !!this._quoteScreenLayoutBAppliedOpts?.speaker,
+          stripLayoutSeed: odqGetCachedLayoutBStripLayoutSeed(dateKey) ?? 0,
+          skipAsyncLayoutBFetches: true
+        });
+        if (this._quoteScreenLayoutBPaintSig !== paintSig) return;
+        this._quoteScreenLayoutBAppliedOpts = nextOpts;
+        // #region agent log
+        odqDbg0dfc0d('H3', 'QuoteService:_enrichLayoutBQuoteCardStageLater', 'enriched keyword only', {
+          kwCached: true,
+          runId: 'post-fix3'
+        });
+        // #endregion
+      }
+
       async _rebuildLayoutBQuoteCardStage(text, author) {
+        const t0 = Date.now();
         const useLayoutBQuoteCardPreview = true;
-        const quoteInner = document.querySelector('#screen-quote .quote-inner');
         const quoteCard = document.querySelector('#screen-quote .quote-card');
         if (!useLayoutBQuoteCardPreview || !quoteCard || typeof getLayoutBStoryQuotePlan !== 'function') {
           return;
         }
-        if (quoteInner) {
-          quoteInner.classList.add('layoutb-preview');
-          quoteInner.style.display = 'none';
+        const paintSig = `${String(text || '').trim()}\u0001${String(author || '').trim()}`;
+        const hasRevealed = !!quoteCard.querySelector(':scope > .quote-layoutb-stage--revealed');
+        if (this._quoteScreenLayoutBPaintSig === paintSig && hasRevealed) {
+          // #region agent log
+          odqDbg0dfc0d('H3', 'QuoteService:_rebuildLayoutBQuoteCardStage', 'skip rebuild sig match', {
+            hasRevealed,
+            paintSigLen: paintSig.length
+          });
+          // #endregion
+          return;
         }
-        quoteCard.classList.add('layoutb-preview-card');
-        let keywordEmphasis = null;
-        try {
-          keywordEmphasis = await odqReadLayoutBKeywordEmphasis(Utils.getTodayKey());
-        } catch (_) {
-          /* optional */
-        }
+        if (this._quoteScreenLayoutBPaintInflight === paintSig) return;
+        this._quoteScreenLayoutBPaintInflight = paintSig;
+        const rebuildGen = (this._quoteLayoutBRebuildGen = (this._quoteLayoutBRebuildGen || 0) + 1);
+        const dateKey = Utils.getTodayKey();
+        const syncKw = odqGetCachedLayoutBKeywordEmphasis(dateKey) || null;
+        const syncSeed = odqGetCachedLayoutBStripLayoutSeed(dateKey) ?? 0;
         const { activeQuote } = this.getQuoteScreenPreviewContent();
-        const speakerAuthorInvert = await this._layoutBSpeakerAuthorInvertForQuote(activeQuote);
-        await this._mountLayoutBQuoteStrips(quoteCard, text, author, {
-          keywordEmphasis,
-          speakerAuthorInvert
+        const speakerAuthorInvert = this._layoutBSpeakerAuthorInvertSync(activeQuote);
+        // #region agent log
+        odqDbg0dfc0d('H3', 'QuoteService:_rebuildLayoutBQuoteCardStage', 'start rebuild sync-first', {
+          rebuildGen,
+          cardW: quoteCard.clientWidth || 0,
+          kwCached: !!syncKw,
+          speakerAuthorInvert,
+          runId: 'post-fix3'
         });
+        // #endregion
+        try {
+          quoteCard.classList.add('layoutb-preview-card');
+          await this._mountLayoutBQuoteStrips(quoteCard, text, author, {
+            keywordEmphasis: syncKw,
+            speakerAuthorInvert,
+            stripLayoutSeed: syncSeed,
+            skipAsyncLayoutBFetches: true
+          });
+          if (rebuildGen !== this._quoteLayoutBRebuildGen) return;
+          this._quoteScreenLayoutBAppliedOpts = { kw: syncKw, speaker: speakerAuthorInvert };
+          this._quoteScreenLayoutBPaintSig = paintSig;
+          window.app?.finalizeQuoteColorScrollLayout?.();
+          window.app?.notifyQuoteScreenLayoutBPainted?.();
+          const stripCount = quoteCard.querySelectorAll('.quote-layoutb-strip').length;
+          // #region agent log
+          odqDbg0dfc0d('H3', 'QuoteService:_rebuildLayoutBQuoteCardStage', 'rebuild complete sync', {
+            rebuildGen,
+            stripCount,
+            ms: Date.now() - t0,
+            runId: 'post-fix3'
+          });
+          // #endregion
+          if (!syncKw) {
+            void this._enrichLayoutBQuoteCardStageLater(text, author, paintSig, rebuildGen);
+          }
+        } finally {
+          if (this._quoteScreenLayoutBPaintInflight === paintSig) {
+            this._quoteScreenLayoutBPaintInflight = null;
+          }
+        }
       }
 
       async _rebuildReflectionLayoutBQuoteCard(text, author) {
@@ -33193,6 +33358,14 @@ try {
           (typeof window !== 'undefined' && window.app && window.app._liveDailyDataConfirmed === true) ||
           this.hasTodayQuotePinned() ||
           this.primeTodayQuoteFromLocalAssignment();
+        // #region agent log
+        odqDbg0dfc0d('H2', 'QuoteService:displayQuote', 'displayQuote called', {
+          canShowOnQuoteScreen,
+          liveConfirmed: !!(window.app && window.app._liveDailyDataConfirmed),
+          pinned: this.hasTodayQuotePinned(),
+          quoteScreenActive: document.getElementById('screen-quote')?.classList.contains('active')
+        });
+        // #endregion
         if (!canShowOnQuoteScreen) {
           return;
         }
@@ -33211,21 +33384,9 @@ try {
           const useLayoutBQuoteCardPreview = true; // Temporary quote-screen preview mode.
           const isLayoutBPreviewActive = Boolean(useLayoutBQuoteCardPreview && quoteCard && typeof getLayoutBStoryQuotePlan === 'function');
           if (isLayoutBPreviewActive) {
-            const quoteScreen = document.getElementById('screen-quote');
-            const cardW = quoteCard?.clientWidth ?? 0;
-            const layoutReady =
-              Boolean(quoteScreen?.classList.contains('active') && cardW > 80);
-            if (layoutReady) {
-              void this._rebuildLayoutBQuoteCardStage(text, author);
-            } else {
-              document.querySelector('#screen-quote .quote-layoutb-stage')?.remove();
-              if (quoteInner) {
-                quoteInner.classList.add('layoutb-preview');
-                quoteInner.style.display = 'none';
-              }
-              quoteCard.classList.add('layoutb-preview-card');
-              this.scheduleQuoteLayoutBPreviewLayoutRefresh();
-            }
+            quoteCard.classList.add('layoutb-preview-card');
+            void odqPrefetchLayoutBKeywordEmphasis(Utils.getTodayKey());
+            this._queueQuoteScreenLayoutBPaint(text, author);
           } else {
             if (quoteInner) {
               quoteInner.classList.remove('layoutb-preview');
@@ -33240,7 +33401,7 @@ try {
             if (existingStage) existingStage.remove();
           }
 
-          if (quoteLine) {
+          if (quoteLine && !isLayoutBPreviewActive) {
             delete quoteLine.dataset.lengthChecked;
             delete quoteLine.dataset.retryCount;
             quoteLine.innerHTML = this.formatQuoteLineForDisplay(text);
@@ -33251,10 +33412,10 @@ try {
               console.log('Applied long-quote class immediately based on text length:', text.length);
             } else {
               // For shorter text, check height-based measurement unless preview mode hides quote text nodes.
-              if (!isLayoutBPreviewActive) this.checkQuoteLength(quoteLine);
+              this.checkQuoteLength(quoteLine);
             }
           }
-          if (quoteAuthor) {
+          if (quoteAuthor && !isLayoutBPreviewActive) {
             quoteAuthor.textContent = author;
             // Apply same long-quote class to author if quote is long
             if (quoteLine && quoteLine.classList.contains('long-quote')) {
@@ -42344,7 +42505,6 @@ try {
           }
           this.quoteService?.primeTodayQuoteFromLocalAssignment?.();
           this.quoteService?.displayQuote?.();
-          this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
         } else if (nextId !== 'screen-quote' && !this.isColorPickerActive()) {
           this.clearQuoteColorPickerSchedule();
         }
@@ -42827,6 +42987,12 @@ try {
           }
           const quoteScreen = document.getElementById('screen-quote');
           if (quoteScreen && quoteScreen.classList.contains('active')) {
+            // #region agent log
+            odqDbg0dfc0d('H5', 'App:handleResizeDebounced', 'resize triggers layout B refresh', {
+              cardW: document.querySelector('#screen-quote .quote-card')?.clientWidth || 0,
+              stripCount: document.querySelectorAll('#screen-quote .quote-layoutb-strip').length
+            });
+            // #endregion
             this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
           }
           const quiltScreen = document.getElementById('screen-quilt');
@@ -46514,7 +46680,6 @@ try {
         }
         this.quoteService?.primeTodayQuoteFromLocalAssignment?.();
         this.quoteService?.displayQuote?.();
-        this.quoteService?.scheduleQuoteLayoutBPreviewLayoutRefresh?.();
       }
 
       /** Rest: quote in top half; picker hidden in bottom half until reveal. */
@@ -46586,6 +46751,7 @@ try {
           clearTimeout(this._quoteColorPickerRevealTimer);
           this._quoteColorPickerRevealTimer = null;
         }
+        this._quoteColorPickerRevealWaitingLayoutB = false;
         this.hideQuoteColorPickerPane();
       }
 
@@ -46618,6 +46784,12 @@ try {
 
       revealQuoteColorPickerPane() {
         if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
+        // #region agent log
+        odqDbg0dfc0d('H5', 'App:revealQuoteColorPickerPane', 'picker reveal', {
+          stripCount: document.querySelectorAll('#screen-quote .quote-layoutb-strip').length,
+          cardW: document.querySelector('#screen-quote .quote-card')?.clientWidth || 0
+        });
+        // #endregion
         const { quoteScreen, picker } = this._getQuoteStageElements();
         if (!quoteScreen || !picker) return;
         this.applyQuotePickerModeUI();
@@ -46672,9 +46844,33 @@ try {
 
       /**
        * Quote in top half; after `readPauseMs` (default 1.5s) wheel slides into bottom half.
-       * Timer starts when the quote screen is shown — not when Layout B finishes (that was adding 3–5s).
+       * Waits for Layout B strips when the quote card is in preview mode so sliders never beat the quote.
        */
       scheduleQuoteColorPickerReveal(readPauseMs = CONFIG.APP.quoteColorPickerRevealMs) {
+        this._pendingQuoteColorPickerRevealMs = readPauseMs;
+        this._beginQuoteColorPickerRevealCountdown();
+      }
+
+      notifyQuoteScreenLayoutBPainted() {
+        if (!this._quoteColorPickerRevealWaitingLayoutB) return;
+        // #region agent log
+        odqDbg0dfc0d('H5', 'App:notifyQuoteScreenLayoutBPainted', 'layout B ready — start picker countdown', {
+          stripCount: document.querySelectorAll('#screen-quote .quote-layoutb-strip').length,
+          runId: 'post-fix'
+        });
+        // #endregion
+        this._beginQuoteColorPickerRevealCountdown();
+      }
+
+      _quoteScreenLayoutBStripsReady() {
+        const card = document.querySelector('#screen-quote .quote-card');
+        return !!(
+          card?.classList.contains('layoutb-preview-card') &&
+          card.querySelector(':scope > .quote-layoutb-stage .quote-layoutb-strip')
+        );
+      }
+
+      _beginQuoteColorPickerRevealCountdown() {
         if (this.isColorPickerActive()) return;
 
         if (this._quoteColorPickerRevealTimer) {
@@ -46684,6 +46880,17 @@ try {
         if (document.querySelector('.screen.active')?.id === 'screen-quote') {
           this.hideQuoteColorPickerPane();
         }
+
+        if (!this._quoteScreenLayoutBStripsReady()) {
+          this._quoteColorPickerRevealWaitingLayoutB = true;
+          // #region agent log
+          odqDbg0dfc0d('H5', 'App:_beginQuoteColorPickerRevealCountdown', 'defer picker until layout B strips', {
+            runId: 'post-fix'
+          });
+          // #endregion
+          return;
+        }
+        this._quoteColorPickerRevealWaitingLayoutB = false;
 
         const reveal = () => {
           if (document.querySelector('.screen.active')?.id !== 'screen-quote') return;
@@ -46695,7 +46902,7 @@ try {
           return;
         }
 
-        const wait = Math.max(0, readPauseMs);
+        const wait = Math.max(0, this._pendingQuoteColorPickerRevealMs ?? CONFIG.APP.quoteColorPickerRevealMs);
         this._quoteColorPickerRevealTimer = setTimeout(() => {
           this._quoteColorPickerRevealTimer = null;
           reveal();
@@ -46709,6 +46916,9 @@ try {
        */
       schedulePortalToQuoteIntroFade(holdBeforeFadeMs = 1000) {
         this.clearPortalToQuoteIntroTimer();
+        const todayKey = Utils.getTodayKey();
+        void odqPrefetchLayoutBKeywordEmphasis(todayKey);
+        void odqReadLayoutBStripLayoutSeed(todayKey).catch(() => {});
         if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
           const activeRm = document.querySelector('.screen.active');
           if (activeRm && activeRm.id === 'screen-portal') {
