@@ -28489,16 +28489,29 @@ try {
         }
       }
 
-      /** Aspect ratio of the on-screen quilt container (slice viewport), or null. */
-      getQuiltContainerAspectRatio(quiltSVG) {
-        const container =
-          quiltSVG?.closest?.('.quilt-container') ||
-          (typeof document !== 'undefined' ? document.querySelector('#screen-quilt .quilt-container') : null);
-        const rect = container?.getBoundingClientRect?.() || quiltSVG?.getBoundingClientRect?.();
-        if (rect && rect.width > 0 && rect.height > 0) {
-          return rect.width / rect.height;
-        }
-        return null;
+      /**
+       * Mirrored-quilt viewBox for export (positive padding). Screen SVG uses negative padding for slice zoom;
+       * re-use block bounds + renderer mirror math so exports show the full field, not a tight crop.
+       */
+      viewBoxPartsForMirroredQuiltScreen(blocks, paddingRatio = 0.02) {
+        if (!Array.isArray(blocks) || blocks.length === 0) return null;
+        const minX = Math.min(...blocks.map((b) => Number(b.x)));
+        const minY = Math.min(...blocks.map((b) => Number(b.y)));
+        const maxX = Math.max(...blocks.map((b) => Number(b.x) + Number(b.width)));
+        const maxY = Math.max(...blocks.map((b) => Number(b.y) + Number(b.height)));
+        const quiltW = maxX - minX;
+        const quiltH = maxY - minY;
+        if (!(quiltW > 0) || !(quiltH > 0)) return null;
+        const horizontalStretch = 1.16;
+        const mirrorRatio =
+          typeof window !== 'undefined' && typeof window.app?.renderer?.getMirrorSeamOffsetRatio === 'function'
+            ? window.app.renderer.getMirrorSeamOffsetRatio()
+            : 0.68;
+        const mirrorSeamOffset = quiltH * mirrorRatio;
+        const mirroredFieldWidth = quiltW * horizontalStretch;
+        const mirroredFieldHeight = quiltH + mirrorSeamOffset;
+        const pad = Math.max(4, quiltW * paddingRatio);
+        return [minX - pad, minY - pad, mirroredFieldWidth + pad * 2, mirroredFieldHeight + pad * 2];
       }
 
       /**
@@ -28508,7 +28521,7 @@ try {
       async getInstagramQuiltSourceBlob(blocks, options = {}) {
         if (!blocks || blocks.length === 0) return null;
         const fingerprint = Utils.computeQuiltFingerprint(blocks);
-        const cacheKey = `${String(options.dateKey || '').trim()}:${fingerprint}:quilt-screen`;
+        const cacheKey = `${String(options.dateKey || '').trim()}:${fingerprint}:quilt-screen-v2`;
         if (
           this._igQuiltSourceCacheKey === cacheKey &&
           this._igQuiltSourceCacheBlob instanceof Blob &&
@@ -28518,10 +28531,8 @@ try {
         }
 
         const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
-        const containerAspect = this.getQuiltContainerAspectRatio(quiltSVG);
         const rasterOpts = {
           targetAspect: IG_QUILT_SCREEN_ASPECT,
-          quiltScreenSliceAspect: containerAspect || IG_QUILT_SCREEN_ASPECT,
           underpaintBlocks: blocks,
           exportMatchQuiltScreen: true,
           exportMatteFill: '#f6f4f1',
@@ -28559,7 +28570,8 @@ try {
             const mirrored = await window.app.composeMirroredQuiltFieldBlob(quiltBlob, {
               maxEdge: 2400,
               mimeType: 'image/png',
-              imageSmoothingQuality: 'high'
+              imageSmoothingQuality: 'high',
+              quiltFit: 'meet'
             });
             if (mirrored) {
               quiltBlob = mirrored;
@@ -28572,8 +28584,6 @@ try {
         this._igQuiltSourceExportMeta = {
           quiltBlobFromLiveSvg,
           usedMirroredComposeFallback,
-          containerAspect,
-          quiltScreenSliceAspect: rasterOpts.quiltScreenSliceAspect,
           exportModeLabel: rasterOpts.exportModeLabel,
           capturedAt: new Date().toISOString(),
           lastQuiltExportDebug: this.lastQuiltExportDebug ? { ...this.lastQuiltExportDebug } : null
@@ -29144,6 +29154,16 @@ try {
                 sourceWidth = Math.max(1, viewBoxParts[2]);
                 sourceHeight = Math.max(1, viewBoxParts[3]);
               }
+            } else if (
+              exportMatchQuiltScreen &&
+              exportBlocks &&
+              typeof this.viewBoxPartsForMirroredQuiltScreen === 'function'
+            ) {
+              viewBoxParts = this.viewBoxPartsForMirroredQuiltScreen(exportBlocks);
+              if (viewBoxParts) {
+                sourceWidth = Math.max(1, viewBoxParts[2]);
+                sourceHeight = Math.max(1, viewBoxParts[3]);
+              }
             } else if (viewBox) {
               const parts = viewBox.split(/\s+/).map(Number);
               if (parts.length === 4 && parts.every(Number.isFinite)) {
@@ -29177,28 +29197,13 @@ try {
               (croppedViewBoxParts || viewBoxParts)
                 ? this.padViewBoxParts(croppedViewBoxParts || viewBoxParts, Number(options.viewBoxPaddingRatio))
                 : null;
-            const sliceAspect =
-              exportMatchQuiltScreen &&
-              Number.isFinite(options.quiltScreenSliceAspect) &&
-              options.quiltScreenSliceAspect > 0
-                ? Number(options.quiltScreenSliceAspect)
-                : null;
-            let screenCropViewBoxParts = null;
             let screenExpandedViewBoxParts = null;
-            if (exportMatchQuiltScreen && viewBoxParts) {
-              let parts = viewBoxParts;
-              if (sliceAspect) {
-                screenCropViewBoxParts = this.cropViewBoxForSliceAspect(parts, sliceAspect);
-                if (screenCropViewBoxParts) parts = screenCropViewBoxParts;
-              }
-              if (targetAspect) {
-                screenExpandedViewBoxParts = this.expandViewBoxToAspect(parts, targetAspect);
-                if (screenExpandedViewBoxParts) parts = screenExpandedViewBoxParts;
-              }
+            if (exportMatchQuiltScreen && viewBoxParts && targetAspect) {
+              screenExpandedViewBoxParts = this.expandViewBoxToAspect(viewBoxParts, targetAspect);
             }
             const exportViewBoxParts =
               exportMatchQuiltScreen && viewBoxParts
-                ? screenExpandedViewBoxParts || screenCropViewBoxParts || viewBoxParts
+                ? screenExpandedViewBoxParts || viewBoxParts
                 : expandedViewBoxParts || paddedViewBoxParts || croppedViewBoxParts;
             if (exportViewBoxParts) {
               viewBoxParts = exportViewBoxParts;
@@ -29207,7 +29212,6 @@ try {
               svgClone.setAttribute('viewBox', exportViewBoxParts.join(' '));
               let par;
               if (exportMatchQuiltScreen) {
-                /** meet after slice-crop + expand — slice at 9:16 on a tall viewBox over-zooms vs the phone container. */
                 par = 'xMidYMid meet';
               } else {
                 par =
@@ -29243,10 +29247,9 @@ try {
               mode: options.exportModeLabel || (targetAspect ? 'target_aspect_crop' : 'default_svg_raster'),
               exportPrimaryQuiltOnly,
               exportMatchQuiltScreen,
-              quiltScreenSliceAspect: sliceAspect,
+              exportViewBoxFromBlocks: !!(exportMatchQuiltScreen && exportBlocks),
               originalViewBox: viewBox || '',
               croppedViewBox: croppedViewBoxParts ? croppedViewBoxParts.join(' ') : '',
-              screenCropViewBox: screenCropViewBoxParts ? screenCropViewBoxParts.join(' ') : '',
               expandedViewBox: expandedViewBoxParts ? expandedViewBoxParts.join(' ') : '',
               screenExpandedViewBox: screenExpandedViewBoxParts
                 ? screenExpandedViewBoxParts.join(' ')
@@ -52609,10 +52612,15 @@ try {
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = opts.imageSmoothingQuality || 'medium';
 
-          const scale = Math.max(outW / Math.max(1, bitmap.width), outH / (Math.max(1, bitmap.height) * 2));
-          const drawW = outW;
+          const fit = opts.quiltFit === 'cover' ? 'cover' : 'meet';
+          const scale =
+            fit === 'cover'
+              ? Math.max(outW / Math.max(1, bitmap.width), outH / (Math.max(1, bitmap.height) * 2))
+              : Math.min(outW / Math.max(1, bitmap.width), outH / (Math.max(1, bitmap.height) * 2));
+          const drawW = bitmap.width * scale;
           const drawH = bitmap.height * scale;
           const startY = (outH - drawH * 2) / 2;
+          const startX = (outW - drawW) / 2;
           const placements = [
             { y: startY, flipX: false, flipY: false },
             { y: startY + drawH, flipX: true, flipY: true }
@@ -52623,11 +52631,14 @@ try {
             ctx.rect(0, placement.y, outW, drawH);
             ctx.clip();
             if (placement.flipX || placement.flipY) {
-              ctx.translate(placement.flipX ? outW : 0, placement.flipY ? placement.y + drawH : placement.y);
+              ctx.translate(
+                placement.flipX ? startX + drawW : startX,
+                placement.flipY ? placement.y + drawH : placement.y
+              );
               ctx.scale(placement.flipX ? -1 : 1, placement.flipY ? -1 : 1);
               ctx.drawImage(bitmap, 0, 0, drawW, drawH);
             } else {
-              ctx.drawImage(bitmap, 0, placement.y, drawW, drawH);
+              ctx.drawImage(bitmap, startX, placement.y, drawW, drawH);
             }
             ctx.restore();
           });

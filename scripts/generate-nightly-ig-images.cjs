@@ -102,7 +102,48 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           );
         }
 
+        if (typeof app.applyQuiltDataFromPayload === 'function') {
+          await app.applyQuiltDataFromPayload({
+            blocks,
+            dateKey,
+            date: dateKey,
+            contributorCount: Math.max(1, blocks.length)
+          });
+        }
+        const quiltScreenEl = document.getElementById('screen-quilt');
+        if (quiltScreenEl && typeof app.showScreen === 'function') {
+          app.showScreen('screen-quilt');
+        } else if (quiltScreenEl) {
+          quiltScreenEl.classList.add('active');
+        }
+        if (typeof app.renderQuilt === 'function') {
+          await app.renderQuilt();
+        }
+        await new Promise((resolve) => {
+          const deadline = Date.now() + 90000;
+          const tick = () => {
+            const svg = document.getElementById('quilt');
+            const archReady = app.archiveService;
+            if (
+              svg?.querySelector('#quiltMirroredFieldLayer') &&
+              archReady?.hasRenderedQuiltSvgForBlocks?.(svg, blocks)
+            ) {
+              resolve();
+              return;
+            }
+            if (Date.now() > deadline) {
+              resolve();
+              return;
+            }
+            requestAnimationFrame(tick);
+          };
+          tick();
+        });
+
         const arch = app.archiveService;
+        if (arch?.clearInstagramQuiltSourceCache) {
+          arch.clearInstagramQuiltSourceCache();
+        }
         if (!arch?.generateInstagramImage) {
           throw new Error('ArchiveService.generateInstagramImage missing');
         }
