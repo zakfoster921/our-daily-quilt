@@ -27270,7 +27270,7 @@ try {
                 g.fillStyle =
                   rnd() < 0.5
                     ? `rgba(255,252,248,${0.045 + rnd() * 0.09})`
-                    : `rgba(16,14,12,${0.055 + rnd() * 0.09})`;
+                    : `rgba(16,14,12,${0.02 + rnd() * 0.035})`;
                 const px = 1 + rnd() * 3.2;
                 g.fillRect(rnd() * w, rnd() * h, px, px);
               }
@@ -28489,9 +28489,21 @@ try {
         }
       }
 
+      /** Aspect ratio of the on-screen quilt container (slice viewport), or null. */
+      getQuiltContainerAspectRatio(quiltSVG) {
+        const container =
+          quiltSVG?.closest?.('.quilt-container') ||
+          (typeof document !== 'undefined' ? document.querySelector('#screen-quilt .quilt-container') : null);
+        const rect = container?.getBoundingClientRect?.() || quiltSVG?.getBoundingClientRect?.();
+        if (rect && rect.width > 0 && rect.height > 0) {
+          return rect.width / rect.height;
+        }
+        return null;
+      }
+
       /**
        * Canonical 9:16 quilt capture for Zapier (classic + Layout B). Matches the quilt screen:
-       * primary field + mirrored fold, live viewBox, xMidYMin slice. Cached per fingerprint.
+       * primary field + mirrored fold, crop to container slice, letterboxed into 9:16. Cached per fingerprint.
        */
       async getInstagramQuiltSourceBlob(blocks, options = {}) {
         if (!blocks || blocks.length === 0) return null;
@@ -28505,8 +28517,11 @@ try {
           return this._igQuiltSourceCacheBlob;
         }
 
+        const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
+        const containerAspect = this.getQuiltContainerAspectRatio(quiltSVG);
         const rasterOpts = {
           targetAspect: IG_QUILT_SCREEN_ASPECT,
+          quiltScreenSliceAspect: containerAspect || IG_QUILT_SCREEN_ASPECT,
           underpaintBlocks: blocks,
           exportMatchQuiltScreen: true,
           exportMatteFill: '#f6f4f1',
@@ -28521,7 +28536,6 @@ try {
         let quiltBlob = null;
         let quiltBlobFromLiveSvg = false;
         let usedMirroredComposeFallback = false;
-        const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
         if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
           try {
             quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, rasterOpts);
@@ -28558,6 +28572,8 @@ try {
         this._igQuiltSourceExportMeta = {
           quiltBlobFromLiveSvg,
           usedMirroredComposeFallback,
+          containerAspect,
+          quiltScreenSliceAspect: rasterOpts.quiltScreenSliceAspect,
           exportModeLabel: rasterOpts.exportModeLabel,
           capturedAt: new Date().toISOString(),
           lastQuiltExportDebug: this.lastQuiltExportDebug ? { ...this.lastQuiltExportDebug } : null
@@ -29161,9 +29177,28 @@ try {
               (croppedViewBoxParts || viewBoxParts)
                 ? this.padViewBoxParts(croppedViewBoxParts || viewBoxParts, Number(options.viewBoxPaddingRatio))
                 : null;
+            const sliceAspect =
+              exportMatchQuiltScreen &&
+              Number.isFinite(options.quiltScreenSliceAspect) &&
+              options.quiltScreenSliceAspect > 0
+                ? Number(options.quiltScreenSliceAspect)
+                : null;
+            let screenCropViewBoxParts = null;
+            let screenExpandedViewBoxParts = null;
+            if (exportMatchQuiltScreen && viewBoxParts) {
+              let parts = viewBoxParts;
+              if (sliceAspect) {
+                screenCropViewBoxParts = this.cropViewBoxForSliceAspect(parts, sliceAspect);
+                if (screenCropViewBoxParts) parts = screenCropViewBoxParts;
+              }
+              if (targetAspect) {
+                screenExpandedViewBoxParts = this.expandViewBoxToAspect(parts, targetAspect);
+                if (screenExpandedViewBoxParts) parts = screenExpandedViewBoxParts;
+              }
+            }
             const exportViewBoxParts =
               exportMatchQuiltScreen && viewBoxParts
-                ? viewBoxParts
+                ? screenExpandedViewBoxParts || screenCropViewBoxParts || viewBoxParts
                 : expandedViewBoxParts || paddedViewBoxParts || croppedViewBoxParts;
             if (exportViewBoxParts) {
               viewBoxParts = exportViewBoxParts;
@@ -29172,7 +29207,8 @@ try {
               svgClone.setAttribute('viewBox', exportViewBoxParts.join(' '));
               let par;
               if (exportMatchQuiltScreen) {
-                par = String(quiltSVG.getAttribute('preserveAspectRatio') || '').trim() || 'xMidYMin slice';
+                /** meet after slice-crop + expand — slice at 9:16 on a tall viewBox over-zooms vs the phone container. */
+                par = 'xMidYMid meet';
               } else {
                 par =
                   typeof options.preserveAspectRatio === 'string' && options.preserveAspectRatio.trim()
@@ -29207,9 +29243,14 @@ try {
               mode: options.exportModeLabel || (targetAspect ? 'target_aspect_crop' : 'default_svg_raster'),
               exportPrimaryQuiltOnly,
               exportMatchQuiltScreen,
+              quiltScreenSliceAspect: sliceAspect,
               originalViewBox: viewBox || '',
               croppedViewBox: croppedViewBoxParts ? croppedViewBoxParts.join(' ') : '',
+              screenCropViewBox: screenCropViewBoxParts ? screenCropViewBoxParts.join(' ') : '',
               expandedViewBox: expandedViewBoxParts ? expandedViewBoxParts.join(' ') : '',
+              screenExpandedViewBox: screenExpandedViewBoxParts
+                ? screenExpandedViewBoxParts.join(' ')
+                : '',
               paddedViewBox: paddedViewBoxParts ? paddedViewBoxParts.join(' ') : '',
               viewBoxPaddingRatio: Number(options.viewBoxPaddingRatio) || null,
               targetAspect: targetAspect || null,
@@ -29378,8 +29419,17 @@ try {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality =
           options.imageSmoothingQuality === 'low' ? 'low' : 'high';
-        const scaleX = outW / Math.max(1, sourceW);
-        const scaleY = outH / Math.max(1, sourceH);
+        let scaleX = outW / Math.max(1, sourceW);
+        let scaleY = outH / Math.max(1, sourceH);
+        let offsetX = 0;
+        let offsetY = 0;
+        if (options.exportMatchQuiltScreen === true) {
+          const scale = Math.min(scaleX, scaleY);
+          scaleX = scale;
+          scaleY = scale;
+          offsetX = (outW - sourceW * scale) / 2;
+          offsetY = (outH - sourceH * scale) / 2;
+        }
         const fp = String(options.quiltFingerprint || Utils.computeQuiltFingerprint(blocks) || '');
         let jitterSeed = 1;
         for (let i = 0; i < fp.length; i++) {
@@ -29393,8 +29443,8 @@ try {
           const jitterRotation = (jitterRng() - 0.5) * 4;
           const jitteredX = block.x + jitterX;
           const jitteredY = block.y + jitterY;
-          const canvasX = (jitteredX - sourceX) * scaleX;
-          const canvasY = (jitteredY - sourceY) * scaleY;
+          const canvasX = (jitteredX - sourceX) * scaleX + offsetX;
+          const canvasY = (jitteredY - sourceY) * scaleY + offsetY;
           const canvasWidth = block.width * scaleX;
           const canvasHeight = block.height * scaleY;
           const isHst =
