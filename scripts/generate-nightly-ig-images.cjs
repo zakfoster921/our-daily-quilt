@@ -74,6 +74,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
     console.log(
       `[nightly-ig] generating images for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
+    page.setDefaultTimeout(evaluateTimeoutMs);
     const result = await page.evaluate(
       async ({ dateKey, strictQuote }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
@@ -373,8 +374,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote },
-      { timeout: evaluateTimeoutMs }
+      { dateKey, strictQuote }
     );
 
     console.log('[nightly-ig] verifying API URLs…');
