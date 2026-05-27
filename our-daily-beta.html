@@ -5437,17 +5437,116 @@ try {
       color: inherit;
     }
 
-    #screen-quilt .quilt-contributor-list.quilt-contributor-list--picker-colors .quilt-contributor-name {
-      transition:
-        color 0.48s ease,
-        -webkit-text-stroke-color 0.48s ease;
-      transition-delay: calc(var(--picker-color-index, 0) * 38ms);
+    @keyframes quiltContributorNameGlimmerLight {
+      0%, 100% {
+        filter: brightness(1) drop-shadow(0 0 0 transparent);
+      }
+      38% {
+        filter: brightness(1.1) drop-shadow(0 0 7px rgba(255, 252, 242, 0.48));
+      }
+      52% {
+        filter:
+          brightness(1.22)
+          drop-shadow(0 0 14px rgba(255, 214, 140, 0.52))
+          drop-shadow(0 0 5px rgba(255, 255, 255, 0.55));
+      }
+      68% {
+        filter: brightness(1.06) drop-shadow(0 0 6px rgba(255, 248, 230, 0.32));
+      }
+    }
+
+    @keyframes quiltContributorNameGlimmerDark {
+      0%, 100% {
+        filter: brightness(1) drop-shadow(0 0 0 transparent);
+      }
+      38% {
+        filter: brightness(1.14) drop-shadow(0 0 8px rgba(255, 252, 245, 0.42));
+      }
+      52% {
+        filter:
+          brightness(1.3)
+          drop-shadow(0 0 16px rgba(255, 230, 170, 0.48))
+          drop-shadow(0 0 6px rgba(255, 255, 255, 0.38));
+      }
+      68% {
+        filter: brightness(1.1) drop-shadow(0 0 6px rgba(255, 248, 230, 0.28));
+      }
+    }
+
+    @keyframes quiltContributorNameSparkle {
+      0%, 70%, 100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.12) rotate(0deg);
+      }
+      78% {
+        opacity: 0.92;
+        transform: translate(-54%, -62%) scale(1.05) rotate(16deg);
+      }
+      86% {
+        opacity: 0.2;
+        transform: translate(-46%, -68%) scale(0.4) rotate(32deg);
+      }
+    }
+
+    @keyframes quiltContributorNameGlimmerReduced {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.7;
+      }
+    }
+
+    #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer .quilt-contributor-name {
+      position: relative;
+      isolation: isolate;
+      animation-duration: 2.65s;
+      animation-timing-function: ease-in-out;
+      animation-iteration-count: infinite;
+      animation-delay: calc(var(--glimmer-index, 0) * 0.11s);
+    }
+
+    #screen-quilt .quilt-contributors-stage[data-quilt-tone='light']
+      .quilt-contributor-list.quilt-contributor-list--glimmer
+      .quilt-contributor-name {
+      animation-name: quiltContributorNameGlimmerLight;
+    }
+
+    #screen-quilt .quilt-contributors-stage[data-quilt-tone='dark']
+      .quilt-contributor-list.quilt-contributor-list--glimmer
+      .quilt-contributor-name {
+      animation-name: quiltContributorNameGlimmerDark;
+    }
+
+    #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer .quilt-contributor-name::before {
+      content: '';
+      position: absolute;
+      left: 78%;
+      top: 8%;
+      width: 0.44em;
+      height: 0.44em;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 1;
+      background: radial-gradient(
+        circle at 32% 32%,
+        rgba(255, 255, 255, 0.98) 0%,
+        rgba(255, 236, 190, 0.62) 40%,
+        transparent 72%
+      );
+      animation: quiltContributorNameSparkle 2.65s ease-in-out infinite;
+      animation-delay: calc(var(--glimmer-index, 0) * 0.11s + 0.5s);
     }
 
     @media (prefers-reduced-motion: reduce) {
-      #screen-quilt .quilt-contributor-list.quilt-contributor-list--picker-colors .quilt-contributor-name {
-        transition-duration: 0.01ms;
-        transition-delay: 0ms;
+      #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer .quilt-contributor-name {
+        animation-name: quiltContributorNameGlimmerReduced;
+        animation-duration: 3.4s;
+        filter: none;
+      }
+
+      #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer .quilt-contributor-name::before {
+        display: none;
       }
     }
 
@@ -28242,14 +28341,14 @@ try {
       }
 
       /**
-       * Canonical 9:16 quilt capture for Zapier (classic + Layout B). Matches Layout B speaker
-       * raster (live SVG + gap underpaint, no classic-only viewBox padding or white-matte bleach).
+       * Canonical 9:16 quilt capture for Zapier (classic + Layout B). Primary blocks only —
+       * the quilt screen mirrors the top field for presentation; IG stills must show the full quilt once.
        * Cached per fingerprint so classic and layout B in one push share identical pixels.
        */
       async getInstagramQuiltSourceBlob(blocks, options = {}) {
         if (!blocks || blocks.length === 0) return null;
         const fingerprint = Utils.computeQuiltFingerprint(blocks);
-        const cacheKey = `${String(options.dateKey || '').trim()}:${fingerprint}`;
+        const cacheKey = `${String(options.dateKey || '').trim()}:${fingerprint}:primary`;
         if (
           this._igQuiltSourceCacheKey === cacheKey &&
           this._igQuiltSourceCacheBlob instanceof Blob &&
@@ -28261,7 +28360,9 @@ try {
         const rasterOpts = {
           targetAspect: IG_QUILT_SCREEN_ASPECT,
           underpaintBlocks: blocks,
-          exportModeLabel: options.exportModeLabel || 'instagram_quilt_source_9x16_layout_b',
+          exportPrimaryQuiltOnly: true,
+          preserveAspectRatio: 'xMidYMid meet',
+          exportModeLabel: options.exportModeLabel || 'instagram_quilt_source_9x16_primary',
           instagramTrueWhiteMatte: false,
           quiltFingerprint: fingerprint
         };
@@ -28383,9 +28484,11 @@ try {
           exportModeLabel:
             options.exportModeLabel || (screenAspect ? 'zapier_screen_aspect_crop' : undefined),
           skipExportUnderpaint: options.skipExportUnderpaint === true,
+          exportPrimaryQuiltOnly: options.exportPrimaryQuiltOnly === true,
           viewBoxPaddingRatio: options.viewBoxPaddingRatio,
           preserveAspectRatio: options.preserveAspectRatio,
-          instagramTrueWhiteMatte: options.instagramTrueWhiteMatte === true
+          instagramTrueWhiteMatte: options.instagramTrueWhiteMatte === true,
+          quiltFingerprint: options.quiltFingerprint
         });
       }
 
@@ -28411,6 +28514,55 @@ try {
         }
         const croppedWidth = height * targetAspect;
         return [x + (width - croppedWidth) / 2, y, Math.min(width, croppedWidth), height];
+      }
+
+      /** Block bounds viewBox for exports (excludes on-screen mirror field). */
+      viewBoxPartsFromQuiltBlocks(blocks, paddingRatio = 0.02) {
+        if (!Array.isArray(blocks) || !blocks.length) return null;
+        const minX = Math.min(...blocks.map((b) => Number(b.x)));
+        const minY = Math.min(...blocks.map((b) => Number(b.y)));
+        const maxX = Math.max(...blocks.map((b) => Number(b.x) + Number(b.width)));
+        const maxY = Math.max(...blocks.map((b) => Number(b.y) + Number(b.height)));
+        const quiltW = maxX - minX;
+        const quiltH = maxY - minY;
+        if (!(quiltW > 0) || !(quiltH > 0)) return null;
+        const padded = this.padViewBoxParts([minX, minY, quiltW, quiltH], paddingRatio);
+        return padded || [minX, minY, quiltW, quiltH];
+      }
+
+      /**
+       * Expand (never shrink) a viewBox so every block stays inside a target aspect (e.g. 9:16).
+       */
+      expandViewBoxToAspect(viewBoxParts, targetAspect) {
+        if (
+          !Array.isArray(viewBoxParts) ||
+          viewBoxParts.length !== 4 ||
+          !Number.isFinite(targetAspect) ||
+          targetAspect <= 0
+        ) {
+          return null;
+        }
+        const [x, y, width, height] = viewBoxParts;
+        if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+        const sourceAspect = width / height;
+        if (Math.abs(sourceAspect - targetAspect) < 0.0001) return [x, y, width, height];
+        if (sourceAspect > targetAspect) {
+          const nh = width / targetAspect;
+          const dy = (nh - height) / 2;
+          return [x, y - dy, width, nh];
+        }
+        const nw = height * targetAspect;
+        const dx = (nw - width) / 2;
+        return [x - dx, y, nw, height];
+      }
+
+      stripMirroredQuiltFieldFromSvgClone(svgClone) {
+        if (!svgClone) return;
+        svgClone
+          .querySelectorAll(
+            '#quiltMirroredFieldLayer, #quiltExportMirroredGapUnderpaint, [data-export-mirrored-field="1"]'
+          )
+          .forEach((node) => node.remove());
       }
 
       padViewBoxParts(viewBoxParts, paddingRatio) {
@@ -28664,9 +28816,8 @@ try {
           qy2 = Math.max(qy2, by + bh);
         }
         /**
-         * Primary blocks do not include the mirrored field (`#quiltMirroredFieldLayer`).
-         * Without extending qy2, the reflection is below the union bbox and gets bleached to white,
-         * so the export looks like a thin quilt pinned to the top of a 9:16 (and the classic 4:5 card).
+         * Screen exports include the mirrored field in the SVG viewBox; extend bleach to that full height.
+         * Primary-only Instagram exports strip the mirror and must not extend past block bounds.
          */
         if (svgClone?.querySelector?.('#quiltMirroredFieldLayer')) {
           qy2 = Math.max(qy2, vbY + vbH);
@@ -28754,11 +28905,29 @@ try {
               node.style.animation = 'none';
             });
 
+            const exportBlocks =
+              Array.isArray(options.underpaintBlocks) && options.underpaintBlocks.length
+                ? options.underpaintBlocks
+                : null;
+            const exportPrimaryQuiltOnly = options.exportPrimaryQuiltOnly === true;
+            if (exportPrimaryQuiltOnly) {
+              this.stripMirroredQuiltFieldFromSvgClone(svgClone);
+            }
+
             const viewBox = (quiltSVG.getAttribute('viewBox') || '').trim();
             let viewBoxParts = null;
             let sourceWidth = 1080;
             let sourceHeight = 1080;
-            if (viewBox) {
+            if (exportPrimaryQuiltOnly && exportBlocks) {
+              viewBoxParts = this.viewBoxPartsFromQuiltBlocks(
+                exportBlocks,
+                Number(options.viewBoxPaddingRatio) > 0 ? Number(options.viewBoxPaddingRatio) : 0.02
+              );
+              if (viewBoxParts) {
+                sourceWidth = Math.max(1, viewBoxParts[2]);
+                sourceHeight = Math.max(1, viewBoxParts[3]);
+              }
+            } else if (viewBox) {
               const parts = viewBox.split(/\s+/).map(Number);
               if (parts.length === 4 && parts.every(Number.isFinite)) {
                 viewBoxParts = parts;
@@ -28775,15 +28944,23 @@ try {
               Number.isFinite(options.targetAspect) && options.targetAspect > 0
                 ? options.targetAspect
                 : null;
-            const croppedViewBoxParts =
-              targetAspect && viewBoxParts
-                ? this.cropViewBoxForSliceAspect(viewBoxParts, targetAspect)
-                : null;
+            let croppedViewBoxParts = null;
+            let expandedViewBoxParts = null;
+            if (targetAspect && viewBoxParts) {
+              if (exportPrimaryQuiltOnly) {
+                expandedViewBoxParts = this.expandViewBoxToAspect(viewBoxParts, targetAspect);
+              } else {
+                croppedViewBoxParts = this.cropViewBoxForSliceAspect(viewBoxParts, targetAspect);
+              }
+            }
             const paddedViewBoxParts =
-              options.viewBoxPaddingRatio && (croppedViewBoxParts || viewBoxParts)
+              options.viewBoxPaddingRatio &&
+              !exportPrimaryQuiltOnly &&
+              (croppedViewBoxParts || viewBoxParts)
                 ? this.padViewBoxParts(croppedViewBoxParts || viewBoxParts, Number(options.viewBoxPaddingRatio))
                 : null;
-            const exportViewBoxParts = paddedViewBoxParts || croppedViewBoxParts;
+            const exportViewBoxParts =
+              expandedViewBoxParts || paddedViewBoxParts || croppedViewBoxParts;
             if (exportViewBoxParts) {
               viewBoxParts = exportViewBoxParts;
               sourceWidth = Math.max(1, exportViewBoxParts[2]);
@@ -28824,8 +29001,10 @@ try {
             }
             this.lastQuiltExportDebug = {
               mode: options.exportModeLabel || (targetAspect ? 'target_aspect_crop' : 'default_svg_raster'),
+              exportPrimaryQuiltOnly,
               originalViewBox: viewBox || '',
               croppedViewBox: croppedViewBoxParts ? croppedViewBoxParts.join(' ') : '',
+              expandedViewBox: expandedViewBoxParts ? expandedViewBoxParts.join(' ') : '',
               paddedViewBox: paddedViewBoxParts ? paddedViewBoxParts.join(' ') : '',
               viewBoxPaddingRatio: Number(options.viewBoxPaddingRatio) || null,
               targetAspect: targetAspect || null,
@@ -29380,7 +29559,11 @@ try {
         return { quoteText, quoteAuthor, composeOptions };
       }
 
-      async _generateInstagramStoryLayoutBImageData(blocks, quoteObj, dateKey) {
+      /**
+       * Same pipeline as nightly `generateInstagramStoryLayoutBImage` (Zapier layout-b-story.png).
+       * @returns {Promise<Blob|null>}
+       */
+      async generateInstagramStoryLayoutBBlob(blocks, quoteObj = null, dateKey = null) {
         if (!blocks || blocks.length === 0) return null;
         const dk = dateKey || Utils.getTodayKey();
         const { quoteText, quoteAuthor, composeOptions } = await this._buildLayoutBStoryComposeOptions(
@@ -29393,7 +29576,7 @@ try {
           exportModeLabel: 'layout_b_story_9x16_source'
         });
         if (!highResBlob) return null;
-        const storyBlob = await composeInstagramLayoutBFromQuiltBlob(
+        return composeInstagramLayoutBFromQuiltBlob(
           highResBlob,
           quoteText,
           quoteAuthor,
@@ -29402,6 +29585,11 @@ try {
           dk,
           composeOptions
         );
+      }
+
+      async _generateInstagramStoryLayoutBImageData(blocks, quoteObj, dateKey) {
+        const storyBlob = await this.generateInstagramStoryLayoutBBlob(blocks, quoteObj, dateKey);
+        if (!storyBlob) return null;
         return await new Promise((resolve) => {
           const fr = new FileReader();
           fr.onload = () => resolve(fr.result || null);
@@ -29422,7 +29610,7 @@ try {
         }
       }
 
-      async _generateInstagramPostLayoutBImageData(blocks, quoteObj, dateKey, { requireSpeaker = false } = {}) {
+      async generateInstagramPostLayoutBBlob(blocks, quoteObj = null, dateKey = null, { requireSpeaker = false } = {}) {
         if (!blocks || blocks.length === 0) return null;
         const dk = dateKey || Utils.getTodayKey();
         const { quoteText, quoteAuthor, composeOptions, hasSpeaker } =
@@ -29437,7 +29625,7 @@ try {
         });
         if (!highResBlob) return null;
 
-        const postBlob = await composeInstagramLayoutBFromQuiltBlob(
+        return composeInstagramLayoutBFromQuiltBlob(
           highResBlob,
           quoteText,
           quoteAuthor,
@@ -29446,6 +29634,13 @@ try {
           dk,
           composeOptions
         );
+      }
+
+      async _generateInstagramPostLayoutBImageData(blocks, quoteObj, dateKey, { requireSpeaker = false } = {}) {
+        const postBlob = await this.generateInstagramPostLayoutBBlob(blocks, quoteObj, dateKey, {
+          requireSpeaker
+        });
+        if (!postBlob) return null;
         return await new Promise((resolve) => {
           const fr = new FileReader();
           fr.onload = () => resolve(fr.result || null);
@@ -35495,9 +35690,11 @@ try {
         this._layoutBStoryPreviewShareBlob = null;
         this._layoutBPreviewDebounceTimer = null;
         this._layoutBPreviewGeneration = 0;
-        /** After a successful story preview for 2+ blocks, skip heavy regen until preview is cleared (≤1 blocks). */
+        /** After a successful story preview, skip regen until quilt/quote/speaker content key changes. */
         this._layoutBStoryPreviewHeavyDoneThisVisit = false;
-        /** Calendar key (UTC 7:00 boundary) for which `_layoutBStoryPreviewHeavyDoneThisVisit` last succeeded; forces regen after day roll. */
+        /** Fingerprint of last successful preview: dateKey + quilt blocks + speaker URL. */
+        this._layoutBStoryPreviewContentKey = '';
+        /** @deprecated kept for day-roll invalidation; use `_layoutBStoryPreviewContentKey`. */
         this._layoutBStoryPreviewSatisfiedForDateKey = null;
         this._quiltFortuneFrontObjectUrl = null;
         this._quiltFortuneFrontGeneration = 0;
@@ -37147,7 +37344,7 @@ try {
         note.setAttribute('tabindex', '0');
         note.setAttribute(
           'aria-label',
-          'What else can we do together? Long press to show each name in the color they picked.'
+          'What else can we do together? Long press to make the names glimmer.'
         );
 
         const triggerGentleWobble = () => {
@@ -37177,7 +37374,7 @@ try {
             suppressClick = false;
           }, 450);
           triggerGentleWobble();
-          this.toggleContributorPickerColors();
+          this.toggleContributorNameGlimmer();
         };
 
         note.addEventListener('pointerdown', (event) => {
@@ -37198,17 +37395,17 @@ try {
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
           triggerGentleWobble();
-          this.toggleContributorPickerColors();
+          this.toggleContributorNameGlimmer();
         });
       }
 
-      toggleContributorPickerColors() {
-        this._contributorPickerColorsRevealed = !this._contributorPickerColorsRevealed;
+      toggleContributorNameGlimmer() {
+        this._contributorNamesGlimmerActive = !this._contributorNamesGlimmerActive;
         const list = document.getElementById('quiltContributorList');
         if (list) {
           list.classList.toggle(
-            'quilt-contributor-list--picker-colors',
-            !!this._contributorPickerColorsRevealed
+            'quilt-contributor-list--glimmer',
+            !!this._contributorNamesGlimmerActive
           );
         }
         this.renderQuiltContributorList();
@@ -46255,7 +46452,7 @@ try {
           // Only mutate the visible quilt after the guarded server reset succeeds.
           this.quiltEngine.initialize();
           this.dailyContributors = [];
-          this._contributorPickerColorsRevealed = false;
+          this._contributorNamesGlimmerActive = false;
           this.logger.log('🔄 Quilt engine reinitialized');
           try {
             this._maybeSnapPickerToDailyFirstPalette({ forceDaily: true });
@@ -46956,103 +47153,6 @@ try {
         }
       }
 
-      _hexLuminanceForContributorName(hex) {
-        const normalized = String(hex || '').trim();
-        if (!Utils.validateHexColor(normalized)) return null;
-        const r = parseInt(normalized.slice(1, 3), 16) / 255;
-        const g = parseInt(normalized.slice(3, 5), 16) / 255;
-        const b = parseInt(normalized.slice(5, 7), 16) / 255;
-        return 0.299 * r + 0.587 * g + 0.114 * b;
-      }
-
-      _contrastRatioForContributorName(lumA, lumB) {
-        const a = Number(lumA);
-        const b = Number(lumB);
-        if (!Number.isFinite(a) || !Number.isFinite(b)) return 1;
-        const lighter = Math.max(a, b);
-        const darker = Math.min(a, b);
-        return (lighter + 0.05) / (darker + 0.05);
-      }
-
-      _nameCloudBackgroundLuminance() {
-        const tone = this.getContributorNameContrastPalette().tone;
-        return tone === 'dark' ? 0.12 : 0.94;
-      }
-
-      colorForContributorNameDisplay(pickerHex) {
-        const normalized = String(pickerHex || '').trim();
-        if (!Utils.validateHexColor(normalized)) return null;
-        const bgLum = this._nameCloudBackgroundLuminance();
-        let displayHex = normalized;
-        let lum = this._hexLuminanceForContributorName(displayHex);
-        let guard = 0;
-        while (this._contrastRatioForContributorName(lum, bgLum) < 3.05 && guard < 14) {
-          const hsl = this.hexToHsl(displayHex);
-          const delta = bgLum > 0.5 ? -0.07 : 0.07;
-          const nextL = Math.max(0.1, Math.min(0.9, hsl.l + delta));
-          displayHex = Utils.hslToHex(hsl.h, hsl.s * 100, nextL * 100);
-          lum = this._hexLuminanceForContributorName(displayHex);
-          guard += 1;
-        }
-        return displayHex;
-      }
-
-      _blockBelongsToContributor(block, userId) {
-        const uid = String(userId || '').trim();
-        if (!block || !uid) return false;
-        if (String(block.contributorId || '').trim() === uid) return true;
-        const ids = Array.isArray(block.contributorIds) ? block.contributorIds : [];
-        return ids.some((id) => String(id || '').trim() === uid);
-      }
-
-      buildContributorPickerColorMap() {
-        const map = new Map();
-        const blocks = Array.isArray(this.quiltEngine?.blocks) ? this.quiltEngine.blocks : [];
-        const events = Array.isArray(this.quiltEngine?.colorReplayEvents)
-          ? this.quiltEngine.colorReplayEvents
-          : [];
-        const remember = (userId, hex) => {
-          const uid = String(userId || '').trim();
-          const color = String(hex || '').trim();
-          if (!uid || !Utils.validateHexColor(color) || map.has(uid)) return;
-          map.set(uid, color);
-        };
-
-        events.forEach((event) => {
-          const newHex = String(event?.newHex || '').trim();
-          if (!Utils.validateHexColor(newHex)) return;
-          const newHexKey = newHex.toLowerCase();
-          (Array.isArray(event?.children) ? event.children : []).forEach((child) => {
-            const uid = String(child?.contributorId || '').trim();
-            if (!uid) return;
-            const childHex = String(child?.color || '').trim().toLowerCase();
-            if (childHex === newHexKey || !map.has(uid)) {
-              remember(uid, newHex);
-            }
-          });
-        });
-
-        this.normalizeDailyContributors(this.dailyContributors).forEach((entry) => {
-          const uid = String(entry?.userId || '').trim();
-          if (!uid || map.has(uid)) return;
-          const owned = blocks.filter((block) => this._blockBelongsToContributor(block, uid));
-          if (!owned.length) return;
-          const best = owned
-            .slice()
-            .sort((a, b) => {
-              const aPrimary = String(a.contributorId || '').trim() === uid ? 1 : 0;
-              const bPrimary = String(b.contributorId || '').trim() === uid ? 1 : 0;
-              if (bPrimary !== aPrimary) return bPrimary - aPrimary;
-              return (Number(b.submissionIndex) || 0) - (Number(a.submissionIndex) || 0);
-            })[0];
-          if (best && Utils.validateHexColor(best.color)) {
-            remember(uid, best.color);
-          }
-        });
-
-        return map;
-      }
-
       renderContributorCloud(listEl, entries, variant, currentUserId) {
         if (!listEl) return;
         const sizeBuckets = [0.9, 1.0, 1.1, 1.22];
@@ -47066,9 +47166,8 @@ try {
           }
           return Math.abs(h);
         };
-        const pickerColorsActive = !!this._contributorPickerColorsRevealed;
-        const pickerMap = pickerColorsActive ? this.buildContributorPickerColorMap() : null;
-        listEl.classList.toggle('quilt-contributor-list--picker-colors', pickerColorsActive);
+        const glimmerActive = !!this._contributorNamesGlimmerActive;
+        listEl.classList.toggle('quilt-contributor-list--glimmer', glimmerActive);
         listEl.innerHTML = '';
         (Array.isArray(entries) ? entries : []).forEach((entry, index) => {
           const item = document.createElement('span');
@@ -47085,27 +47184,13 @@ try {
           item.style.setProperty('--cloud-rot', `${tilt}deg`);
           item.style.setProperty('--tag-nudge-x', `${nudgeX}px`);
           item.style.setProperty('--tag-nudge-y', `${nudgeY}px`);
-          if (pickerColorsActive) {
-            item.style.setProperty('--picker-color-index', String(index));
+          if (glimmerActive) {
+            item.style.setProperty('--glimmer-index', String(index));
           } else {
-            item.style.removeProperty('--picker-color-index');
-          }
-          if (entryUserId) {
-            item.dataset.userId = entryUserId;
+            item.style.removeProperty('--glimmer-index');
           }
           if (isCurrent) {
             item.classList.add('quilt-contributor-name--current');
-          }
-          if (pickerColorsActive && entryUserId) {
-            const pickerHex = pickerMap?.get(entryUserId);
-            const displayHex = pickerHex ? this.colorForContributorNameDisplay(pickerHex) : null;
-            if (displayHex) {
-              item.style.color = displayHex;
-            } else {
-              item.style.removeProperty('color');
-            }
-          } else {
-            item.style.removeProperty('color');
           }
           item.setAttribute('role', 'listitem');
           item.textContent = name;
@@ -47122,8 +47207,8 @@ try {
         const ordered = this.getOrderedDisplayContributors();
         this.applyContributorNameContrast();
         list.classList.toggle(
-          'quilt-contributor-list--picker-colors',
-          !!this._contributorPickerColorsRevealed
+          'quilt-contributor-list--glimmer',
+          !!this._contributorNamesGlimmerActive
         );
         this.renderContributorCloud(list, ordered, 'cloud', currentUserId);
 
@@ -48040,9 +48125,28 @@ try {
         }
       }
 
+      /** Cache key so story preview/share regen when quilt or speaker changes (not only once per visit). */
+      _layoutBStoryPreviewContentKeyFor(blocks, dateKey, quote) {
+        const dk = String(dateKey || '').trim();
+        const fp =
+          typeof Utils.computeQuiltFingerprint === 'function' && Array.isArray(blocks)
+            ? Utils.computeQuiltFingerprint(blocks)
+            : String((blocks || []).length);
+        const q = quote && typeof quote === 'object' ? quote : {};
+        const speaker = String(
+          q.speakerCutoutUrl ??
+            q.speaker_cutout_url ??
+            q.speakerImageUrl ??
+            q.speaker_image_url ??
+            ''
+        ).trim();
+        return `${dk}|${fp}|${speaker}`;
+      }
+
       /** Drop cached Layout B story preview so a new app-day cannot keep yesterday's bitmap. */
       _invalidateLayoutBStoryPreviewForAppDayChange() {
         this._layoutBStoryPreviewHeavyDoneThisVisit = false;
+        this._layoutBStoryPreviewContentKey = '';
         this._layoutBStoryPreviewSatisfiedForDateKey = null;
         this._layoutBStoryPreviewShareBlob = null;
         this._layoutBPreviewGeneration++;
@@ -48069,7 +48173,9 @@ try {
             this.quoteService && typeof this.quoteService.getQuoteCalendarKeyNow === 'function'
               ? this.quoteService.getQuoteCalendarKeyNow()
               : Utils.getTodayKey();
-          if (this._layoutBStoryPreviewSatisfiedForDateKey === calendarKey) {
+          const quote = this.quoteService?.getTodayQuote?.() || {};
+          const nextKey = this._layoutBStoryPreviewContentKeyFor(blocks, calendarKey, quote);
+          if (this._layoutBStoryPreviewContentKey === nextKey) {
             return;
           }
           this._layoutBStoryPreviewHeavyDoneThisVisit = false;
@@ -48362,6 +48468,7 @@ try {
         const blockCount = Array.isArray(blocks) ? blocks.length : 0;
         if (blockCount <= 1) {
           this._layoutBStoryPreviewHeavyDoneThisVisit = false;
+          this._layoutBStoryPreviewContentKey = '';
           this._layoutBStoryPreviewSatisfiedForDateKey = null;
           this._layoutBStoryPreviewShareBlob = null;
           this._revokeLayoutBPreviewObjectUrl();
@@ -48376,7 +48483,19 @@ try {
           return;
         }
 
-        if (this._layoutBStoryPreviewHeavyDoneThisVisit) {
+        const dk =
+          this.quoteService && typeof this.quoteService.getQuoteCalendarKeyNow === 'function'
+            ? this.quoteService.getQuoteCalendarKeyNow()
+            : Utils.getTodayKey();
+        const arch = this.archiveService;
+        let quote =
+          (this.quoteService && typeof this.quoteService.getQuoteResolvedForInstagramDateKey === 'function'
+            ? await this.quoteService.getQuoteResolvedForInstagramDateKey(dk)
+            : null) ||
+          this.quoteService?.getTodayQuote?.() ||
+          { text: '', author: '' };
+        const previewContentKey = this._layoutBStoryPreviewContentKeyFor(blocks, dk, quote);
+        if (this._layoutBStoryPreviewHeavyDoneThisVisit && this._layoutBStoryPreviewContentKey === previewContentKey) {
           return;
         }
 
@@ -48389,28 +48508,15 @@ try {
         }
 
         try {
-          const highResBlob = await this.getHighResQuiltBlobForShare();
           if (gen !== this._layoutBPreviewGeneration) return;
-          const dk =
-            this.quoteService && typeof this.quoteService.getQuoteCalendarKeyNow === 'function'
-              ? this.quoteService.getQuoteCalendarKeyNow()
-              : Utils.getTodayKey();
-          const { qText, qAuthor, composeExtras } = await this.resolveLayoutBStoryQuoteAndComposeOptions(dk, blocks);
-          /** Story (9:16) preview: inject today's admin speaker-cutout preset transform if any. */
-          if (composeExtras?.speakerOverlay) {
-            const presetTransform = await odqSpeakerCutoutTransformForDateAsync(dk, 'story');
-            if (presetTransform) composeExtras.speakerOverlay.transform = presetTransform;
+          if (!arch || typeof arch.generateInstagramStoryLayoutBBlob !== 'function') {
+            throw new Error('Layout B story export unavailable');
           }
-          const lbBlob = await composeInstagramLayoutBFromQuiltBlob(
-            highResBlob,
-            qText,
-            qAuthor,
-            1080,
-            1920,
-            dk,
-            composeExtras
-          );
+          const lbBlob = await arch.generateInstagramStoryLayoutBBlob(blocks, quote, dk);
           if (gen !== this._layoutBPreviewGeneration) return;
+          if (!lbBlob) {
+            throw new Error('Layout B story preview blob was empty');
+          }
           this._layoutBStoryPreviewShareBlob = lbBlob;
           const url = URL.createObjectURL(lbBlob);
           this._revokeLayoutBPreviewObjectUrl();
@@ -48419,6 +48525,7 @@ try {
           const applyReady = () => {
             if (gen !== this._layoutBPreviewGeneration) return;
             this._layoutBStoryPreviewHeavyDoneThisVisit = true;
+            this._layoutBStoryPreviewContentKey = previewContentKey;
             this._layoutBStoryPreviewSatisfiedForDateKey = dk;
             wrap.setAttribute('aria-busy', 'false');
             if (hint) {
@@ -51757,28 +51864,45 @@ try {
        * On success, shows a single toast (camera roll wording) for both native share and download fallback.
        */
       async exportLayoutBShareImage(layoutH, shareTitle, filenameStem) {
-        const highResBlob = await this.getHighResQuiltBlobForShare();
         const blocks = this.quiltEngine?.blocks;
         const dk = Utils.getTodayKey();
-        const shareAspect = layoutH === 1350 ? 'post' : 'story';
-        const { qText, qAuthor, composeExtras } = await this.resolveLayoutBStoryQuoteAndComposeOptions(
-          dk,
-          blocks,
-          shareAspect
-        );
-        if (composeExtras?.speakerOverlay) {
-          const presetTransform = await odqSpeakerCutoutTransformForDateAsync(dk, shareAspect);
-          if (presetTransform) composeExtras.speakerOverlay.transform = presetTransform;
+        const arch = this.archiveService;
+        const quote =
+          (this.quoteService && typeof this.quoteService.getQuoteResolvedForInstagramDateKey === 'function'
+            ? await this.quoteService.getQuoteResolvedForInstagramDateKey(dk)
+            : null) ||
+          this.quoteService?.getTodayQuote?.() ||
+          { text: '', author: '' };
+        let outBlob = null;
+        if (layoutH === 1920 && arch?.generateInstagramStoryLayoutBBlob) {
+          outBlob = await arch.generateInstagramStoryLayoutBBlob(blocks, quote, dk);
+        } else if (layoutH === 1350 && arch?.generateInstagramPostLayoutBBlob) {
+          outBlob = await arch.generateInstagramPostLayoutBBlob(blocks, quote, dk);
+        } else {
+          const highResBlob = await this.getHighResQuiltBlobForShare();
+          const shareAspect = layoutH === 1350 ? 'post' : 'story';
+          const { qText, qAuthor, composeExtras } = await this.resolveLayoutBStoryQuoteAndComposeOptions(
+            dk,
+            blocks,
+            shareAspect
+          );
+          if (composeExtras?.speakerOverlay) {
+            const presetTransform = await odqSpeakerCutoutTransformForDateAsync(dk, shareAspect);
+            if (presetTransform) composeExtras.speakerOverlay.transform = presetTransform;
+          }
+          outBlob = await composeInstagramLayoutBFromQuiltBlob(
+            highResBlob,
+            qText,
+            qAuthor,
+            1080,
+            layoutH,
+            dk,
+            composeExtras
+          );
         }
-        const outBlob = await composeInstagramLayoutBFromQuiltBlob(
-          highResBlob,
-          qText,
-          qAuthor,
-          1080,
-          layoutH,
-          dk,
-          composeExtras
-        );
+        if (!outBlob) {
+          throw new Error('Could not build Layout B share image');
+        }
         const filename = `${filenameStem}-${new Date().toISOString().split('T')[0]}.png`;
         const imageFile = new File([outBlob], filename, { type: 'image/png' });
         const shareData = {
