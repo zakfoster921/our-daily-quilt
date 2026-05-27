@@ -5574,25 +5574,21 @@ try {
       }
     }
 
-    #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer[data-glimmer-effect] .quilt-contributor-name {
+    /* white-stamp — letter shimmer + pinpoint glitter (only effect for now). */
+    #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer .quilt-contributor-name {
       -webkit-background-clip: text;
       background-clip: text;
       -webkit-text-fill-color: transparent;
       background-size: 220% 100%;
       background-repeat: no-repeat;
+      animation-duration: 3.1s, 2.35s;
       animation-timing-function: linear, ease-in-out;
       animation-iteration-count: infinite, infinite;
       animation-delay: calc(var(--glimmer-index, 0) * 0.09s), calc(var(--glimmer-index, 0) * 0.07s);
     }
 
-    /* white-stamp — crisp white band + pinpoints (default favourite). */
-    #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer[data-glimmer-effect='white-stamp']
-      .quilt-contributor-name {
-      animation-duration: 3.1s, 2.35s;
-    }
-
     #screen-quilt .quilt-contributors-stage[data-quilt-tone='light']
-      .quilt-contributor-list.quilt-contributor-list--glimmer[data-glimmer-effect='white-stamp']
+      .quilt-contributor-list.quilt-contributor-list--glimmer
       .quilt-contributor-name {
       background-image: linear-gradient(
         108deg,
@@ -5608,7 +5604,7 @@ try {
     }
 
     #screen-quilt .quilt-contributors-stage[data-quilt-tone='light']
-      .quilt-contributor-list.quilt-contributor-list--glimmer[data-glimmer-effect='white-stamp']
+      .quilt-contributor-list.quilt-contributor-list--glimmer
       .quilt-contributor-name--current {
       background-image: linear-gradient(
         108deg,
@@ -5623,7 +5619,7 @@ try {
     }
 
     #screen-quilt .quilt-contributors-stage[data-quilt-tone='dark']
-      .quilt-contributor-list.quilt-contributor-list--glimmer[data-glimmer-effect='white-stamp']
+      .quilt-contributor-list.quilt-contributor-list--glimmer
       .quilt-contributor-name {
       background-image: linear-gradient(
         108deg,
@@ -5639,7 +5635,7 @@ try {
     }
 
     #screen-quilt .quilt-contributors-stage[data-quilt-tone='dark']
-      .quilt-contributor-list.quilt-contributor-list--glimmer[data-glimmer-effect='white-stamp']
+      .quilt-contributor-list.quilt-contributor-list--glimmer
       .quilt-contributor-name--current {
       background-image: linear-gradient(
         108deg,
@@ -5653,7 +5649,22 @@ try {
       );
     }
 
-    @keyframes quiltGlimmerGoldSparkLight {
+    #screen-quilt .quilt-contributor-list.quilt-contributor-list--glimmer
+      .quilt-contributor-name--current::after {
+      -webkit-text-fill-color: currentColor;
+      color: var(--contributor-name-current-color);
+      background: none;
+      animation: quiltContributorLetterGlitterDark 2.35s ease-in-out infinite;
+      animation-delay: calc(var(--glimmer-index, 0) * 0.07s + 0.2s);
+    }
+
+    #screen-quilt .quilt-contributors-stage[data-quilt-tone='light']
+      .quilt-contributor-list.quilt-contributor-list--glimmer
+      .quilt-contributor-name--current::after {
+      animation-name: quiltContributorLetterGlitterLight;
+    }
+
+    @keyframes quiltGlimmerGoldSparkLight_REMOVED {
       0%, 100% {
         text-shadow:
           0.05em 0.03em 0 transparent,
@@ -28783,14 +28794,13 @@ try {
       }
 
       /**
-       * Canonical 9:16 quilt capture for Zapier (classic + Layout B). Primary blocks only —
-       * the quilt screen mirrors the top field for presentation; IG stills must show the full quilt once.
-       * Cached per fingerprint so classic and layout B in one push share identical pixels.
+       * Canonical 9:16 quilt capture for Zapier (classic + Layout B). Matches the quilt screen:
+       * primary field + mirrored fold, live viewBox, xMidYMin slice. Cached per fingerprint.
        */
       async getInstagramQuiltSourceBlob(blocks, options = {}) {
         if (!blocks || blocks.length === 0) return null;
         const fingerprint = Utils.computeQuiltFingerprint(blocks);
-        const cacheKey = `${String(options.dateKey || '').trim()}:${fingerprint}:primary`;
+        const cacheKey = `${String(options.dateKey || '').trim()}:${fingerprint}:quilt-screen`;
         if (
           this._igQuiltSourceCacheKey === cacheKey &&
           this._igQuiltSourceCacheBlob instanceof Blob &&
@@ -28802,18 +28812,20 @@ try {
         const rasterOpts = {
           targetAspect: IG_QUILT_SCREEN_ASPECT,
           underpaintBlocks: blocks,
-          exportPrimaryQuiltOnly: true,
-          preserveAspectRatio: 'xMidYMid meet',
-          exportModeLabel: options.exportModeLabel || 'instagram_quilt_source_9x16_primary',
+          exportMatchQuiltScreen: true,
+          exportMatteFill: '#f6f4f1',
+          exportModeLabel: options.exportModeLabel || 'instagram_quilt_source_9x16_quilt_screen',
           instagramTrueWhiteMatte: false,
           quiltFingerprint: fingerprint
         };
 
         let quiltBlob = null;
+        let quiltBlobFromLiveSvg = false;
         const quiltSVG = typeof document !== 'undefined' ? document.getElementById('quilt') : null;
         if (this.hasRenderedQuiltSvgForBlocks(quiltSVG, blocks)) {
           try {
             quiltBlob = await this.rasterizeVisibleQuiltSvgToPngBlob(quiltSVG, blocks, rasterOpts);
+            quiltBlobFromLiveSvg = !!quiltBlob;
           } catch (e) {
             this.logger.warn('SVG raster failed for Instagram quilt source, using blocks:', e);
           }
@@ -28822,6 +28834,23 @@ try {
         }
         if (!quiltBlob) {
           quiltBlob = await this.generateQuiltRasterBlobFromBlocks(blocks, rasterOpts);
+        }
+        if (
+          quiltBlob &&
+          !quiltBlobFromLiveSvg &&
+          typeof window !== 'undefined' &&
+          typeof window.app?.composeMirroredQuiltFieldBlob === 'function'
+        ) {
+          try {
+            const mirrored = await window.app.composeMirroredQuiltFieldBlob(quiltBlob, {
+              maxEdge: 2400,
+              mimeType: 'image/png',
+              imageSmoothingQuality: 'high'
+            });
+            if (mirrored) quiltBlob = mirrored;
+          } catch (mirrorErr) {
+            this.logger.warn('Mirrored quilt compose fallback failed:', mirrorErr);
+          }
         }
         if (quiltBlob) {
           this._igQuiltSourceCacheKey = cacheKey;
@@ -28927,6 +28956,8 @@ try {
             options.exportModeLabel || (screenAspect ? 'zapier_screen_aspect_crop' : undefined),
           skipExportUnderpaint: options.skipExportUnderpaint === true,
           exportPrimaryQuiltOnly: options.exportPrimaryQuiltOnly === true,
+          exportMatchQuiltScreen: options.exportMatchQuiltScreen === true,
+          exportMatteFill: options.exportMatteFill,
           viewBoxPaddingRatio: options.viewBoxPaddingRatio,
           preserveAspectRatio: options.preserveAspectRatio,
           instagramTrueWhiteMatte: options.instagramTrueWhiteMatte === true,
@@ -29352,7 +29383,8 @@ try {
                 ? options.underpaintBlocks
                 : null;
             const exportPrimaryQuiltOnly = options.exportPrimaryQuiltOnly === true;
-            if (exportPrimaryQuiltOnly) {
+            const exportMatchQuiltScreen = options.exportMatchQuiltScreen === true;
+            if (exportPrimaryQuiltOnly && !exportMatchQuiltScreen) {
               this.stripMirroredQuiltFieldFromSvgClone(svgClone);
             }
 
@@ -29388,7 +29420,7 @@ try {
                 : null;
             let croppedViewBoxParts = null;
             let expandedViewBoxParts = null;
-            if (targetAspect && viewBoxParts) {
+            if (targetAspect && viewBoxParts && !exportMatchQuiltScreen) {
               if (exportPrimaryQuiltOnly) {
                 expandedViewBoxParts = this.expandViewBoxToAspect(viewBoxParts, targetAspect);
               } else {
@@ -29398,25 +29430,28 @@ try {
             const paddedViewBoxParts =
               options.viewBoxPaddingRatio &&
               !exportPrimaryQuiltOnly &&
+              !exportMatchQuiltScreen &&
               (croppedViewBoxParts || viewBoxParts)
                 ? this.padViewBoxParts(croppedViewBoxParts || viewBoxParts, Number(options.viewBoxPaddingRatio))
                 : null;
             const exportViewBoxParts =
-              expandedViewBoxParts || paddedViewBoxParts || croppedViewBoxParts;
+              exportMatchQuiltScreen && viewBoxParts
+                ? viewBoxParts
+                : expandedViewBoxParts || paddedViewBoxParts || croppedViewBoxParts;
             if (exportViewBoxParts) {
               viewBoxParts = exportViewBoxParts;
               sourceWidth = Math.max(1, exportViewBoxParts[2]);
               sourceHeight = Math.max(1, exportViewBoxParts[3]);
               svgClone.setAttribute('viewBox', exportViewBoxParts.join(' '));
-              /**
-               * xMidYMin: pins content to top of viewBox — good for some story exports.
-               * xMidYMid: centers vertically — classic 4:5 IG card should have even white bands
-               * top/bottom once the 9:16 raster is contained in the post.
-               */
-              const par =
-                typeof options.preserveAspectRatio === 'string' && options.preserveAspectRatio.trim()
-                  ? options.preserveAspectRatio.trim()
-                  : 'xMidYMin meet';
+              let par;
+              if (exportMatchQuiltScreen) {
+                par = String(quiltSVG.getAttribute('preserveAspectRatio') || '').trim() || 'xMidYMin slice';
+              } else {
+                par =
+                  typeof options.preserveAspectRatio === 'string' && options.preserveAspectRatio.trim()
+                    ? options.preserveAspectRatio.trim()
+                    : 'xMidYMin meet';
+              }
               svgClone.setAttribute('preserveAspectRatio', par);
             }
             const rect = quiltSVG.getBoundingClientRect?.();
@@ -29444,6 +29479,7 @@ try {
             this.lastQuiltExportDebug = {
               mode: options.exportModeLabel || (targetAspect ? 'target_aspect_crop' : 'default_svg_raster'),
               exportPrimaryQuiltOnly,
+              exportMatchQuiltScreen,
               originalViewBox: viewBox || '',
               croppedViewBox: croppedViewBoxParts ? croppedViewBoxParts.join(' ') : '',
               expandedViewBox: expandedViewBoxParts ? expandedViewBoxParts.join(' ') : '',
@@ -29474,7 +29510,9 @@ try {
             const exportMatteFill =
               typeof options.exportMatteFill === 'string' && /^#[0-9a-f]{3,8}$/i.test(options.exportMatteFill.trim())
                 ? options.exportMatteFill.trim()
-                : '#ffffff';
+                : exportMatchQuiltScreen
+                  ? '#f6f4f1'
+                  : '#ffffff';
             const img = new Image();
             img.onload = () => {
               try {
@@ -29498,12 +29536,16 @@ try {
                 ctx.imageSmoothingQuality = 'high';
                 const iw = Math.max(1, img.naturalWidth || outW);
                 const ih = Math.max(1, img.naturalHeight || outH);
-                const scale = Math.min(outW / iw, outH / ih);
-                const dw = Math.round(iw * scale);
-                const dh = Math.round(ih * scale);
-                const ox = Math.floor((outW - dw) / 2);
-                const oy = Math.floor((outH - dh) / 2);
-                ctx.drawImage(img, 0, 0, iw, ih, ox, oy, dw, dh);
+                if (exportMatchQuiltScreen) {
+                  ctx.drawImage(img, 0, 0, outW, outH);
+                } else {
+                  const scale = Math.min(outW / iw, outH / ih);
+                  const dw = Math.round(iw * scale);
+                  const dh = Math.round(ih * scale);
+                  const ox = Math.floor((outW - dw) / 2);
+                  const oy = Math.floor((outH - dh) / 2);
+                  ctx.drawImage(img, 0, 0, iw, ih, ox, oy, dw, dh);
+                }
                 if (options.underpaintBlocks) {
                   this.healQuiltExportRasterSeams(ctx, outW, outH);
                 }
@@ -47600,15 +47642,53 @@ try {
         return Object.freeze(['white-stamp', 'gold-dust', 'silver-lift', 'ember-twinkle']);
       }
 
-      getContributorNameGlimmerEffectId(dateKey = Utils.getTodayKey()) {
+      _glimmerEffectIndexForDateKey(dateKey) {
         const effects = SimplifiedQuiltAppV2.CONTRIBUTOR_NAME_GLIMMER_EFFECTS;
         const key = String(dateKey || '').trim();
-        if (!key) return effects[0];
+        if (!key) return 0;
+        const iso = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (iso) {
+          const utcMs = Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+          if (Number.isFinite(utcMs)) {
+            return Math.floor(utcMs / 86400000) % effects.length;
+          }
+        }
         let h = 5381;
         for (let i = 0; i < key.length; i++) {
           h = ((h << 5) + h + key.charCodeAt(i)) | 0;
         }
-        return effects[Math.abs(h) % effects.length];
+        return Math.abs(h) % effects.length;
+      }
+
+      getContributorNameGlimmerEffectId(dateKey = Utils.getTodayKey()) {
+        const effects = SimplifiedQuiltAppV2.CONTRIBUTOR_NAME_GLIMMER_EFFECTS;
+        try {
+          const override = String(localStorage.getItem('ourDailyGlimmerEffectOverride') || '').trim();
+          if (override && effects.includes(override)) return override;
+        } catch (_) {
+          /* ignore */
+        }
+        return effects[this._glimmerEffectIndexForDateKey(dateKey)];
+      }
+
+      /** Console helper: `app.listContributorNameGlimmerEffects(7)` */
+      listContributorNameGlimmerEffects(dayCount = 7, startDateKey = Utils.getTodayKey()) {
+        const effects = SimplifiedQuiltAppV2.CONTRIBUTOR_NAME_GLIMMER_EFFECTS;
+        const start = String(startDateKey || '').trim();
+        const startParts = start.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const base = startParts
+          ? Date.UTC(Number(startParts[1]), Number(startParts[2]) - 1, Number(startParts[3]))
+          : Date.now();
+        const rows = [];
+        for (let i = 0; i < Math.max(1, Number(dayCount) || 1); i++) {
+          const utc = base + i * 86400000;
+          const dateKey = new Date(utc).toISOString().slice(0, 10);
+          rows.push({
+            dateKey,
+            effectId: effects[this._glimmerEffectIndexForDateKey(dateKey)]
+          });
+        }
+        return rows;
       }
 
       syncContributorNameGlimmerEffectMarkup() {
