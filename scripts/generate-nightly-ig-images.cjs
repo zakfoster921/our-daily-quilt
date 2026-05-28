@@ -9,6 +9,16 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
+/** Active quilt calendar day (UTC 07:00 boundary). Used for live quilt-screen newspaper clipping. */
+function getActiveQuiltDateKey(d = new Date()) {
+  const adj = new Date(d);
+  if (d.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
+  const y = adj.getUTCFullYear();
+  const m = String(adj.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(adj.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /** Last archived quilt day. Intended for runs at or after 07:00 UTC (see nightly-instagram-snapshot.yml cron). */
 function getCompletedQuiltDateKey(d = new Date()) {
   const adj = new Date(d);
@@ -33,7 +43,15 @@ async function writeFailureArtifacts(page, attempt, outDir) {
   }
 }
 
-async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, strictQuote }) {
+async function runNightlyIgAttempt({
+  appUrl,
+  apiBase,
+  dateKey,
+  attempt,
+  outDir,
+  strictQuote,
+  clippingOnly = false
+}) {
   const evaluateTimeoutMs = Math.max(
     120000,
     Number(process.env.NIGHTLY_IG_EVALUATE_TIMEOUT_MS) || 720000
@@ -61,29 +79,67 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
     await page.waitForFunction(() => !!window.app && window.app._portalQuiltLoaded === true, undefined, {
       timeout: 180000
     });
-    console.log('[nightly-ig] waiting for quilt blocks…');
-    await page.waitForFunction(
-      () =>
-        !!window.app &&
-        !!window.app.quiltEngine &&
-        Array.isArray(window.app.quiltEngine.blocks) &&
-        window.app.quiltEngine.blocks.length > 0,
-      undefined,
-      { timeout: 180000 }
-    );
+    if (!clippingOnly) {
+      console.log('[nightly-ig] waiting for quilt blocks…');
+      await page.waitForFunction(
+        () =>
+          !!window.app &&
+          !!window.app.quiltEngine &&
+          Array.isArray(window.app.quiltEngine.blocks) &&
+          window.app.quiltEngine.blocks.length > 0,
+        undefined,
+        { timeout: 180000 }
+      );
+    } else {
+      console.log('[nightly-ig] clipping-only: waiting for quote catalog…');
+      await page.waitForFunction(
+        () =>
+          !!window.app?.quoteService &&
+          Array.isArray(window.app.quoteService.quotes) &&
+          window.app.quoteService.quotes.length > 0,
+        undefined,
+        { timeout: 180000 }
+      );
+    }
 
     console.log(
-      `[nightly-ig] generating images for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
+      `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
     page.setDefaultTimeout(evaluateTimeoutMs);
     const result = await page.evaluate(
-      async ({ dateKey, strictQuote }) => {
+      async ({ dateKey, strictQuote, clippingOnly }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
         }
         const app = window.app;
+        if (clippingOnly) {
+          const arch = app.archiveService;
+          if (!arch?.generateNewspaperClippingImageData) {
+            throw new Error('generateNewspaperClippingImageData missing — deploy our-daily-beta.html');
+          }
+          log('generating newspaper clipping PNG…');
+          const newspaperClippingImageData = await arch.generateNewspaperClippingImageData(dateKey);
+          if (!newspaperClippingImageData) {
+            throw new Error(`Newspaper clipping was not generated for ${dateKey}`);
+          }
+          log('uploading newspaper-clipping.png…');
+          const doc = await Utils.writeInstagramImagesDocForZapier({
+            dateKey,
+            newspaperClippingImageData,
+            storageCacheControl: 'no-store'
+          });
+          if (!doc.newspaperClippingUrl && !doc.newspaperClippingImageStorageUrl) {
+            throw new Error('newspaperClippingUrl missing after upload');
+          }
+          return {
+            dateKey,
+            clippingOnly: true,
+            newspaperClippingUrl: doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || ''
+          };
+        }
+
         let blocks = app.quiltEngine?.blocks || [];
         const getFirestoreBlocksForDateKey = async (dk) => {
           try {
@@ -281,6 +337,14 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
         if (!quiltScreen9x16ImageData) {
           throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
         }
+        let newspaperClippingImageData = null;
+        if (arch.generateNewspaperClippingImageData) {
+          log('generating newspaper clipping PNG…');
+          newspaperClippingImageData = await arch.generateNewspaperClippingImageData(dateKey);
+          if (!newspaperClippingImageData) {
+            console.warn(`[nightly-ig:page] newspaper clipping empty for ${dateKey}`);
+          }
+        }
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
         if (quiltExportMeta && !quiltExportMeta.quiltBlobFromLiveSvg) {
           console.warn(
@@ -333,6 +397,7 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
           dateKey,
           instagramImage,
           quiltScreen9x16ImageData,
+          newspaperClippingImageData,
           postLayoutBImageData,
           storyLayoutBImageData,
           aliasLayoutBSpeakerUrl,
@@ -375,8 +440,19 @@ async function runNightlyIgAttempt({ appUrl, apiBase, dateKey, attempt, outDir, 
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote }
+      { dateKey, strictQuote, clippingOnly }
     );
+
+    if (clippingOnly) {
+      console.log('[nightly-ig] clipping-only run complete (skipping full IG verify)');
+      return {
+        success: true,
+        date: dateKey,
+        attempt,
+        clippingOnly: true,
+        newspaperClippingUrl: result.newspaperClippingUrl || ''
+      };
+    }
 
     console.log('[nightly-ig] verifying API URLs…');
     const verifyRes = await fetch(`${apiBase}/api/generate-instagram`, {
@@ -453,7 +529,9 @@ async function main() {
     (process.env.API_BASE_URL && String(process.env.API_BASE_URL).replace(/\/$/, '')) ||
     new URL(appUrl).origin;
   const now = new Date();
+  const clippingOnly = String(process.env.NIGHTLY_IG_CLIPPING_ONLY || '').toLowerCase() === 'true';
   if (
+    !clippingOnly &&
     !process.env.DATE_KEY &&
     process.env.NIGHTLY_IG_SKIP_SCHEDULE_GUARD !== 'true' &&
     now.getUTCHours() < 7
@@ -463,7 +541,8 @@ async function main() {
         'Set DATE_KEY to override or NIGHTLY_IG_SKIP_SCHEDULE_GUARD=true to bypass.'
     );
   }
-  const dateKey = process.env.DATE_KEY || getCompletedQuiltDateKey(now);
+  const dateKey =
+    process.env.DATE_KEY || (clippingOnly ? getActiveQuiltDateKey(now) : getCompletedQuiltDateKey(now));
   const strictQuote = String(process.env.NIGHTLY_IG_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);
@@ -485,7 +564,8 @@ async function main() {
         dateKey,
         attempt,
         outDir,
-        strictQuote
+        strictQuote,
+        clippingOnly
       });
       console.log(JSON.stringify(result, null, 2));
       return;

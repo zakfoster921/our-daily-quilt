@@ -4047,12 +4047,15 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       typeof body.storyLayoutBImageData === 'string' ? body.storyLayoutBImageData : '';
     const quiltScreen9x16ImageData =
       typeof body.quiltScreen9x16ImageData === 'string' ? body.quiltScreen9x16ImageData : '';
+    const newspaperClippingImageData =
+      typeof body.newspaperClippingImageData === 'string' ? body.newspaperClippingImageData : '';
     if (
       !instagramImage &&
       !postLayoutBImageData &&
       !postLayoutBSpeakerImageData &&
       !storyLayoutBImageData &&
-      !quiltScreen9x16ImageData
+      !quiltScreen9x16ImageData &&
+      !newspaperClippingImageData
     ) {
       return res.status(400).json({ success: false, error: 'No image data URLs provided' });
     }
@@ -4133,6 +4136,16 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       docPayload.quiltScreen9x16ImageStorageUrl = publicUrl;
       docPayload.quiltScreen9x16Url = publicUrl;
       docPayload.quiltScreenUrl = publicUrl;
+    }
+    if (newspaperClippingImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/newspaper-clipping.png`,
+        parsePngDataUrlToBuffer(newspaperClippingImageData),
+        'image/png'
+      );
+      docPayload.newspaperClippingImageStorageUrl = publicUrl;
+      docPayload.newspaperClippingUrl = publicUrl;
+      docPayload.newspaperClippingReady = true;
     }
 
     await db.collection('instagram-images').doc(dateKey).set(docPayload, { merge: true });
