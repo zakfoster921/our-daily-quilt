@@ -67,7 +67,8 @@ const SNAKE_CASE_FIELD_PAIRS = [
   ['submittedVia', 'submitted_via'],
   ['timesUsed', 'times_used'],
   ['firstResponse', 'first_response'],
-  ['userName', 'user_name']
+  ['userName', 'user_name'],
+  ['firstLineCount', 'first_line_count']
 ];
 
 function requireEnv(name) {
@@ -338,6 +339,38 @@ function getMappedText(props, base, ...directKeys) {
   return '';
 }
 
+/** Number property (or numeric text / formula / rollup) by normalized column name. */
+function getMappedNumber(props, base, fallback = 0, ...directKeys) {
+  function numFromProp(prop) {
+    if (!prop) return null;
+    if (typeof prop.number === 'number' && Number.isFinite(prop.number)) return prop.number;
+    const plain = plainValueFromNotionProp(prop);
+    if (typeof plain === 'number' && Number.isFinite(plain)) return plain;
+    const t = textFromAnyNotionProp(prop);
+    if (t) {
+      const parsed = Number.parseInt(String(t).trim(), 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }
+  if (props && base) {
+    const n = numFromProp(props[base]);
+    if (n != null) return n;
+  }
+  for (const k of directKeys) {
+    const n = numFromProp(props[k]);
+    if (n != null) return n;
+  }
+  const target = normPropKey(base);
+  if (!props || !target) return fallback;
+  for (const key of Object.keys(props)) {
+    if (normPropKey(key) !== target) continue;
+    const n = numFromProp(props[key]);
+    if (n != null) return n;
+  }
+  return fallback;
+}
+
 /**
  * Community prompt column names vary; after strict getMappedText, try any property whose
  * normalized name contains both "community" and "prompt" (e.g. "Community reflection prompt").
@@ -529,6 +562,14 @@ function parseNotionRow(page) {
   const mood = getMappedText(props, 'mood', 'Mood');
   const fortune = getMappedText(props, 'fortune', 'Fortune');
   const keyword = getMappedText(props, 'keyword', 'Keyword', 'keywords', 'Keywords');
+  const firstLineCount = getMappedNumber(
+    props,
+    'first_line_count',
+    0,
+    'firstLineCount',
+    'First line count',
+    'First Line Count'
+  );
   const blessing = findBlessingFromProps(props);
   const speakerImageUrl = getMappedUrl(
     props,
@@ -673,6 +714,7 @@ function parseNotionRow(page) {
       mood,
       fortune,
       keyword: String(keyword || '').trim(),
+      ...(firstLineCount > 0 ? { first_line_count: Math.round(firstLineCount) } : {}),
       blessing,
       speaker_image_url: speakerImageUrl,
       speaker_dates: speakerDates,

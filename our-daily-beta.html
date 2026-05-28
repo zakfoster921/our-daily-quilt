@@ -5821,10 +5821,37 @@ try {
 
     #screen-quilt .quilt-quote-clipping__image {
       display: block;
+      position: relative;
+      z-index: 2;
       width: 100%;
       height: auto;
       margin: 0 auto;
       border-radius: 1px;
+    }
+
+    /* PNG already bakes paper + grain; avoid doubling card ::before/::after on top. */
+    #screen-quilt .quilt-quote-clipping--has-png.quilt-quote-display {
+      background-color: transparent;
+      background-image: none;
+      box-shadow: none;
+      overflow: visible;
+      padding: 0;
+    }
+
+    #screen-quilt .quilt-quote-clipping--has-png.quilt-quote-clipping {
+      padding: 0;
+    }
+
+    #screen-quilt .quilt-quote-clipping--has-png.quilt-quote-display::before,
+    #screen-quilt .quilt-quote-clipping--has-png.quilt-quote-display::after {
+      display: none;
+    }
+
+    /* Shadow follows hand-cut alpha, not the rectangular article box. */
+    #screen-quilt .quilt-quote-clipping--has-png .quilt-quote-clipping__image {
+      border-radius: 0;
+      filter: drop-shadow(0 4px 14px rgba(45, 36, 29, 0.14))
+        drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1));
     }
 
     #screen-quilt .quilt-quote-clipping--has-png .quilt-quote-clipping__fallback {
@@ -29379,7 +29406,22 @@ try {
           tomorrow = adj.tomorrow;
         }
         if (!today || !String(today.text || today.body || '').trim()) return null;
-        return compose({ yesterday, today, tomorrow, dateKey: dk });
+        let paperTextureUrl = null;
+        try {
+          if (typeof location !== 'undefined' && location.href) {
+            paperTextureUrl = new URL('assets/quilt-paper-card-texture.png', location.href).href;
+          }
+        } catch (_) {
+          /* */
+        }
+        return compose({
+          yesterday,
+          today,
+          tomorrow,
+          dateKey: dk,
+          paperTextureUrl,
+          width: 0
+        });
       }
 
       // Generate Instagram-ready image (4:5 portrait ratio)
@@ -34711,23 +34753,11 @@ try {
           : keywordRaw.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
         if (!keywords.length) return null;
 
-        let styles = ['bold'];
-        let rawStyles =
-          q?.layoutBKeywordEmphasis ??
-          q?.layoutBKeywordEmphasisStory ??
-          q?.keywordEmphasis ??
-          q?.keyword_emphasis ??
-          null;
-        if (typeof rawStyles === 'string') {
-          try {
-            rawStyles = JSON.parse(rawStyles);
-          } catch {
-            rawStyles = null;
-          }
-        }
-        if (rawStyles && typeof rawStyles === 'object' && Array.isArray(rawStyles.styles) && rawStyles.styles.length) {
-          styles = rawStyles.styles;
-        }
+        const dk =
+          String(q?.dateKey || '').trim() ||
+          (this.quoteService?.getQuoteCalendarKeyNow?.() || '');
+        const styles =
+          globalThis.QuiltNewspaperClipping?.clippingKeywordStylesForDateKey?.(dk) || ['bold'];
 
         return LBKE.normalizeLayoutBKeywordEmphasisPayload({ keywords, styles });
       }
@@ -34921,6 +34951,16 @@ try {
               fortune: String(data.fortune ?? data.Fortune ?? '').trim(),
               keyword: String(data.keyword ?? data.keywordSnapshot ?? '').trim(),
               keywordSnapshot: String(data.keywordSnapshot ?? data.keyword ?? '').trim(),
+              ...(() => {
+                let flc = Number(data.first_line_count ?? data.firstLineCount);
+                if (!Number.isFinite(flc) || flc <= 0) {
+                  const snap = data.notionProperties?.first_line_count?.value;
+                  flc = Number(snap);
+                }
+                if (!Number.isFinite(flc) || flc <= 0) return {};
+                const n = Math.round(flc);
+                return { first_line_count: n, firstLineCount: n };
+              })(),
               blessing: blessingStr,
               notificationText: String(data.notificationText ?? data.notification_text ?? '').trim(),
               notification_text: String(data.notificationText ?? data.notification_text ?? '').trim(),
@@ -50387,23 +50427,22 @@ try {
         if (a11y) a11y.textContent = a11yText;
         if (a11yText) clipping.setAttribute('aria-label', a11yText);
 
-        if (this._isPersonalQuiltMode) {
+        const clearPng = () => {
           clipping.classList.remove('quilt-quote-clipping--has-png');
           if (img) {
             img.hidden = true;
             img.removeAttribute('src');
           }
+        };
+
+        if (this._isPersonalQuiltMode) {
+          clearPng();
           return;
         }
 
         const dk = dateKey || this.quoteService?.getQuoteCalendarKeyNow?.();
-        const url = dk ? await this.fetchNewspaperClippingUrl(dk) : null;
-        if (!url || !img) {
-          clipping.classList.remove('quilt-quote-clipping--has-png');
-          if (img) {
-            img.hidden = true;
-            img.removeAttribute('src');
-          }
+        if (!img) {
+          clearPng();
           return;
         }
 
@@ -50412,29 +50451,53 @@ try {
           img.hidden = false;
         };
 
-        if (img.src === url && img.naturalWidth > 0) {
-          showPng();
-          return;
+        const loadClippingSrc = (src) =>
+          new Promise((resolve) => {
+            if (!src) {
+              resolve(false);
+              return;
+            }
+            if (img.src === src && img.naturalWidth > 0) {
+              showPng();
+              resolve(true);
+              return;
+            }
+            let settled = false;
+            const finish = (ok) => {
+              if (settled) return;
+              settled = true;
+              if (ok) showPng();
+              else clearPng();
+              resolve(ok);
+            };
+            img.onload = () => finish(img.naturalWidth > 0);
+            img.onerror = () => finish(false);
+            img.src = src;
+            if (img.complete) finish(img.naturalWidth > 0);
+          });
+
+        const url = dk ? await this.fetchNewspaperClippingUrl(dk) : null;
+        if (url && (await loadClippingSrc(url))) return;
+
+        if (url) {
+          this.logger.warn(
+            'Newspaper clipping Storage URL failed; composing in browser (tmp smoke PNGs are not used automatically)'
+          );
         }
 
-        await new Promise((resolve) => {
-          const done = () => resolve();
-          img.onload = () => {
-            if (img.naturalWidth > 0) showPng();
-            else clipping.classList.remove('quilt-quote-clipping--has-png');
-            done();
-          };
-          img.onerror = () => {
-            clipping.classList.remove('quilt-quote-clipping--has-png');
-            img.hidden = true;
-            done();
-          };
-          img.src = url;
-          if (img.complete) {
-            if (img.naturalWidth > 0) showPng();
-            done();
+        try {
+          const arch = this.archiveService;
+          if (typeof arch?.generateNewspaperClippingImageData === 'function') {
+            const dataUrl = await arch.generateNewspaperClippingImageData(dk);
+            if (dataUrl && (await loadClippingSrc(dataUrl))) return;
+          } else if (!globalThis.QuiltNewspaperClipping?.composeDataUrl) {
+            this.logger.warn('QuiltNewspaperClipping script missing — cannot compose clipping in browser');
           }
-        });
+        } catch (e) {
+          this.logger.warn('Client newspaper clipping compose failed:', e?.message || e);
+        }
+
+        clearPng();
       }
 
       populateQuiltQuote() {

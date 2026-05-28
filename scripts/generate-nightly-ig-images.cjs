@@ -256,6 +256,8 @@ async function runNightlyIgAttempt({
           if (!text && !author) return null;
           const out = { text, body: text, author };
           const fieldMap = {
+            keyword: [data.keyword, data.keywordSnapshot],
+            first_line_count: [data.first_line_count, data.firstLineCount],
             blessing: [data.blessing, data.Blessing, data.blessingSnapshot],
             whatIf: [data.whatIf, data.what_if, data.whatIfSnapshot],
             speakerName: [data.speakerName, data.speaker_name, data.author, data.authorSnapshot],
