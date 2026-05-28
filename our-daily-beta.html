@@ -9469,7 +9469,7 @@ try {
 
     #screen-quilt .quilt-mood-widget__deck {
       display: grid;
-      grid-template-columns: minmax(0, var(--quilt-float-sheet-width));
+      grid-template-columns: var(--quilt-float-sheet-width);
       grid-template-rows: auto auto;
       justify-content: center;
       justify-items: center;
@@ -9499,11 +9499,12 @@ try {
     #screen-quilt .quilt-mood-widget__card {
       appearance: none;
       -webkit-appearance: none;
+      display: block;
       position: relative;
       z-index: 2;
       flex: 0 0 auto;
       width: var(--quilt-float-sheet-width);
-      max-width: 100%;
+      max-width: var(--quilt-float-sheet-width);
       margin: 0;
       padding: 0;
       border: 0;
@@ -29527,7 +29528,7 @@ try {
           quoteClippingHeightPx: quoteH,
           quoteClippingWidthPx: quoteW,
           paperTextureUrl,
-          width: 0
+          width: quoteW
         });
       }
 
@@ -50540,22 +50541,24 @@ try {
         return body ? Utils.formatMoodReceiptBody(body) : '';
       }
 
-      /** Match mood clipping display width to the quote PNG on screen (works for legacy narrow PNGs too). */
+      /** Match mood clipping on-screen box to quote PNG (fixes legacy narrow Storage assets). */
       _syncMoodClippingWidthToQuote(img, card) {
-        const quoteImg = document.querySelector(
-          '.quilt-quote-clipping--has-png .quilt-quote-clipping__image'
-        );
-        const w = Math.round(quoteImg?.getBoundingClientRect?.()?.width || 0);
+        const quoteImg = document.querySelector('.quilt-quote-clipping__image');
+        if (!quoteImg?.src || quoteImg.naturalWidth <= 0) return;
+        const rect = quoteImg.getBoundingClientRect();
+        const w = Math.round(rect.width || 0);
+        const h = Math.round(rect.height || 0);
         if (!w || w < 48) return;
-        const px = `${w}px`;
-        if (img) {
-          img.style.width = px;
-          img.style.maxWidth = '100%';
-        }
         const host = card || img?.closest?.('.quilt-mood-widget__card');
+        const sheet = 'var(--quilt-float-sheet-width)';
         if (host) {
-          host.style.width = px;
-          host.style.maxWidth = '100%';
+          host.style.width = sheet;
+          host.style.maxWidth = sheet;
+        }
+        if (img) {
+          img.style.width = `${w}px`;
+          img.style.maxWidth = sheet;
+          img.style.height = h > 0 ? 'auto' : '';
         }
       }
 
@@ -50794,7 +50797,20 @@ try {
           });
 
         const moodAfterQuote = () => {
-          void this.applyQuiltMoodClippings({ dateKey: dk, quote: todayQ });
+          void this.applyQuiltMoodClippings({ dateKey: dk, quote: todayQ }).then(() => {
+            requestAnimationFrame(() => {
+              document
+                .querySelectorAll(
+                  '.quilt-mood-widget__card--has-png .quilt-mood-widget__mood-clipping__image'
+                )
+                .forEach((imgEl) => {
+                  this._syncMoodClippingWidthToQuote(
+                    imgEl,
+                    imgEl.closest('.quilt-mood-widget__card')
+                  );
+                });
+            });
+          });
         };
 
         const url = dk ? await this.fetchNewspaperClippingUrl(dk) : null;
