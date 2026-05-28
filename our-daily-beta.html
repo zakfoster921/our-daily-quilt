@@ -9647,19 +9647,6 @@ try {
         drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1));
     }
 
-    #screen-quilt .quilt-mood-widget__card--has-png .quilt-mood-widget__mood-text {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-      clip-path: inset(50%);
-    }
-
     #screen-quilt .quilt-mood-widget__card-inner {
       position: relative;
       display: block;
@@ -9751,13 +9738,33 @@ try {
       display: none;
     }
 
+    /* Screen-reader / last-resort fallback only — PNG is the visible card face. */
     #screen-quilt .quilt-mood-widget__mood-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+      clip-path: inset(50%);
+    }
+
+    #screen-quilt .quilt-mood-widget__card--text-fallback .quilt-mood-widget__mood-text {
       position: relative;
       z-index: 10;
+      width: auto;
+      height: auto;
       margin: 0;
       padding: clamp(0.65rem, 6%, 0.95rem) clamp(0.42rem, 4%, 0.55rem);
       max-width: 100%;
       box-sizing: border-box;
+      overflow: visible;
+      clip: auto;
+      clip-path: none;
+      white-space: normal;
       font-family: var(--mood-clipping-font);
       font-size: var(--mood-clipping-body-size);
       font-style: normal;
@@ -34504,7 +34511,7 @@ try {
           if (quiltQuoteDisplay && this.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
           }
-          void window.app?.applyQuiltNewspaperClipping?.();
+          void window.app?.applyQuiltNewspaperClipping?.({ quote: todayQ });
           window.app?.renderQuiltContributorList?.();
 
           this.populateReflectionPromptCard();
@@ -37341,6 +37348,7 @@ try {
         this._quiltFortuneFrontGeneration = 0;
         this._quiltMoodCardObjectUrl = null;
         this._quiltMoodCardGeneration = 0;
+        this._moodClippingApplyGeneration = 0;
         this._quiltResetCountdownTimer = null;
         this._reflectionThemesArchiveLoaded = false;
         this._reflectionThemesArchivePageSize = 7;
@@ -50577,6 +50585,7 @@ try {
           img.removeAttribute('src');
         };
         const showPng = () => {
+          card.classList.remove('quilt-mood-widget__card--text-fallback');
           card.classList.add('quilt-mood-widget__card--has-png');
           img.hidden = false;
           const label = this._moodClippingA11yLabel(line);
@@ -50612,15 +50621,26 @@ try {
         if (!widget || widget.hasAttribute('hidden')) return;
         if (this._isPersonalQuiltMode) return;
 
-        const todayQ =
+        const applyGen = ++this._moodClippingApplyGeneration;
+        const dk = dateKey || this.quoteService?.getQuoteCalendarKeyNow?.();
+        let todayQ =
           quote ||
           this.quoteService?.getTodayQuote?.() ||
           null;
+        if (dk && todayQ && this.quoteService?.hydrateMoodFieldsForCalendarKey) {
+          try {
+            todayQ =
+              (await this.quoteService.hydrateMoodFieldsForCalendarKey(dk, todayQ)) || todayQ;
+          } catch (e) {
+            this.logger.warn('applyQuiltMoodClippings hydrate:', e?.message || e);
+          }
+        }
+        if (applyGen !== this._moodClippingApplyGeneration) return;
+
         const moods = this.quoteService?._moodLinesFromQuote?.(todayQ || {}) || {
           goodDay: '',
           roughDay: ''
         };
-        const dk = dateKey || this.quoteService?.getQuoteCalendarKeyNow?.();
         const goodLine = String(moods.goodDay || widget.dataset.goodDay || '').trim();
         const roughLine = String(moods.roughDay || widget.dataset.roughDay || '').trim();
 
@@ -50632,18 +50652,27 @@ try {
           );
           if (textEl) textEl.textContent = this._moodClippingA11yLabel(line);
           if (!card || !img || !line) {
-            if (card) card.classList.remove('quilt-mood-widget__card--has-png');
+            if (card) {
+              card.classList.remove('quilt-mood-widget__card--has-png', 'quilt-mood-widget__card--text-fallback');
+            }
             return;
           }
 
+          card.classList.remove('quilt-mood-widget__card--has-png', 'quilt-mood-widget__card--text-fallback');
+
           const url = dk ? await this.fetchMoodClippingUrl(dk, variant) : null;
+          if (applyGen !== this._moodClippingApplyGeneration) return;
           if (url && (await this._loadMoodClippingOntoCard(card, img, { src: url, line, mood: variant }))) {
             return;
           }
 
           try {
             const arch = this.archiveService;
-            if (typeof arch?.generateMoodClippingImageData === 'function') {
+            if (typeof arch?.generateMoodClippingImageData !== 'function') {
+              this.logger.warn('generateMoodClippingImageData missing on archiveService');
+            } else if (!globalThis.QuiltMoodClipping?.composeMoodDataUrl) {
+              this.logger.warn('QuiltMoodClipping script missing — cannot compose mood PNG in browser');
+            } else {
               let quoteH = 0;
               let quoteW = 0;
               if (typeof arch._measureDataUrlSizePx === 'function') {
@@ -50651,8 +50680,9 @@ try {
                 if (quoteImg?.src && quoteImg.naturalWidth > 0) {
                   quoteW = quoteImg.naturalWidth;
                   quoteH = quoteImg.naturalHeight;
-                } else {
+                } else if (dk) {
                   const quoteDataUrl = await arch.generateNewspaperClippingImageData(dk);
+                  if (applyGen !== this._moodClippingApplyGeneration) return;
                   const size = await arch._measureDataUrlSizePx(quoteDataUrl);
                   quoteW = size?.w ?? 0;
                   quoteH = size?.h ?? 0;
@@ -50663,6 +50693,7 @@ try {
                 quoteClippingHeightPx: quoteH,
                 quoteClippingWidthPx: quoteW
               });
+              if (applyGen !== this._moodClippingApplyGeneration) return;
               if (dataUrl && (await this._loadMoodClippingOntoCard(card, img, { src: dataUrl, line, mood: variant }))) {
                 return;
               }
@@ -50671,7 +50702,9 @@ try {
             this.logger.warn(`Client mood clipping compose (${variant}) failed:`, e?.message || e);
           }
 
+          if (applyGen !== this._moodClippingApplyGeneration) return;
           card.classList.remove('quilt-mood-widget__card--has-png');
+          card.classList.add('quilt-mood-widget__card--text-fallback');
           img.hidden = true;
           img.removeAttribute('src');
         };
@@ -50767,8 +50800,15 @@ try {
             if (img.complete) finish(img.naturalWidth > 0);
           });
 
+        const moodAfterQuote = () => {
+          void this.applyQuiltMoodClippings({ dateKey: dk, quote: todayQ });
+        };
+
         const url = dk ? await this.fetchNewspaperClippingUrl(dk) : null;
-        if (url && (await loadClippingSrc(url))) return;
+        if (url && (await loadClippingSrc(url))) {
+          moodAfterQuote();
+          return;
+        }
 
         if (url) {
           this.logger.warn(
@@ -50780,7 +50820,10 @@ try {
           const arch = this.archiveService;
           if (typeof arch?.generateNewspaperClippingImageData === 'function') {
             const dataUrl = await arch.generateNewspaperClippingImageData(dk);
-            if (dataUrl && (await loadClippingSrc(dataUrl))) return;
+            if (dataUrl && (await loadClippingSrc(dataUrl))) {
+              moodAfterQuote();
+              return;
+            }
           } else if (!globalThis.QuiltNewspaperClipping?.composeDataUrl) {
             this.logger.warn('QuiltNewspaperClipping script missing — cannot compose clipping in browser');
           }
@@ -50789,6 +50832,7 @@ try {
         }
 
         clearPng();
+        moodAfterQuote();
       }
 
       populateQuiltQuote() {
@@ -50827,7 +50871,8 @@ try {
           if (quiltQuoteDisplay && this.quoteService.quiltScreenHasBodyContent(todayQ)) {
             quiltQuoteDisplay.classList.add('has-content');
           }
-          void this.applyQuiltNewspaperClipping({ quote: todayQ });
+          void this.applyQuiltNewspaperClipping({ dateKey: this.quoteService?.getQuoteCalendarKeyNow?.(), quote: todayQ });
+          void this.applyQuiltMoodClippings({ quote: todayQ });
           this.renderQuiltContributorList();
         } catch (error) {
           this.logger.warn('Failed to populate quilt quote:', error);
