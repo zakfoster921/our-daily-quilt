@@ -185,11 +185,14 @@ async function main() {
       (rough ? ` | rough_day ${rough.w}×${rough.h}px` : '')
   );
   if (quotePayload?.w && quotePayload?.h && good.w && good.h) {
+    const wPct = Math.round((good.w / quotePayload.w) * 100);
     const hPct = Math.round((good.h / quotePayload.h) * 100);
     const quoteAspect = (quotePayload.w / quotePayload.h).toFixed(2);
     const moodAspect = (good.w / good.h).toFixed(2);
+    const ok =
+      wPct >= 90 && wPct <= 110 && hPct >= 90 && hPct <= 110 ? 'within 10%' : 'OUT OF BAND';
     console.log(
-      `[smoke] quote aspect ${quoteAspect}:1 | mood aspect ${moodAspect}:1 | mood height ${hPct}% of quote`
+      `[smoke] quote aspect ${quoteAspect}:1 | mood aspect ${moodAspect}:1 | mood size ${wPct}%×${hPct}% of quote (${ok})`
     );
   }
 }
