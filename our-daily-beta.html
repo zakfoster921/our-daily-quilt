@@ -5335,7 +5335,7 @@ try {
       background: transparent;
       overflow: visible;
       z-index: 10;
-      gap: clamp(2.6rem, 8vw, 3.4rem);
+      gap: clamp(0.55rem, 2vw, 0.9rem);
       padding: 0.65rem 0 0;
     }
 
@@ -9389,22 +9389,16 @@ try {
       min-height: 54px !important;
     }
 
-    /* Mood-pick: narrow fortune-slip flip cards on a dark mat under the quote clipping. */
+    /* Mood-pick: full-width clippings in a loose stack under the quote. */
     #screen-quilt .quilt-mood-widget {
       position: relative;
       z-index: 2;
-      width: 100%;
-      --mood-mat-width: 90vw;
-      max-width: var(--mood-mat-width);
-      --mood-mat-bg: #1a1816;
-      --mood-mat-pad-x: clamp(1.15rem, 4.8vw, 1.75rem);
-      --mood-mat-pad-y: clamp(1rem, 3.4vw, 1.35rem);
-      --mood-mat-under-quote: clamp(2.15rem, 7.5vw, 3.35rem);
-      --mood-deck-pad: clamp(0.85rem, 3vw, 1.15rem);
-      --mood-card-width: 75vw;
-      --mood-card-short: calc(var(--mood-card-width) * 5 / 17);
-      --mood-card-overlap: 34px;
-      --mood-card-stagger-x: 9px;
+      width: var(--quilt-float-sheet-width);
+      max-width: var(--quilt-float-sheet-width);
+      --mood-deck-pad: 0;
+      --mood-stack-gap: clamp(0.65rem, 2.8vw, 1.05rem);
+      --mood-stack-offset-y: clamp(4rem, 34vw, 6.5rem);
+      --mood-stack-stagger-x: clamp(0.45rem, 2.2vw, 0.85rem);
       --mood-clipping-font: 'Libre Baskerville', Georgia, 'Times New Roman', Times, serif;
       --mood-clipping-body-size: clamp(0.78rem, 2.35vw, 1.02rem);
       --mood-clipping-ink: rgba(42, 34, 28, 0.86);
@@ -9457,7 +9451,7 @@ try {
     }
 
     #screen-quilt .quilt-mood-widget:not([hidden]) {
-      margin-top: calc(-1 * var(--mood-mat-under-quote) * 0.82);
+      margin-top: 0;
     }
 
     #screen-quilt .quilt-mood-widget__announcer {
@@ -9479,57 +9473,20 @@ try {
       align-items: center;
       justify-content: flex-start;
       width: 100%;
-      max-width: var(--mood-mat-width);
+      max-width: var(--quilt-float-sheet-width);
       margin: 0 auto;
-      padding:
-        var(--mood-deck-pad)
-        var(--mood-deck-pad)
-        clamp(0.45rem, 2vw, 0.65rem);
+      padding: var(--mood-deck-pad);
       gap: 0;
-      overflow-x: clip;
-      overflow-y: visible;
+      overflow: visible;
       flex-shrink: 0;
       position: relative;
       z-index: 1;
       isolation: isolate;
       box-sizing: border-box;
-      min-height: calc(
-        var(--mood-mat-under-quote) +
-        (var(--mood-deck-pad) * 2) +
-        (var(--mood-card-short) * 2) -
-        var(--mood-card-overlap) +
-        var(--mood-mat-pad-y)
-      );
+      min-height: 0;
     }
 
-    /* Dark mat — 90vw, rises under quote; cards (75vw) centered on top. */
-    #screen-quilt .quilt-mood-widget__deck::before {
-      content: '';
-      position: absolute;
-      z-index: 0;
-      pointer-events: none;
-      left: 50%;
-      top: calc(-1 * var(--mood-mat-under-quote));
-      bottom: calc(-1 * var(--mood-mat-pad-y) * 0.4);
-      width: var(--mood-mat-width);
-      max-width: 100%;
-      box-sizing: border-box;
-      background-color: var(--mood-mat-bg);
-      background-image:
-        linear-gradient(152deg, rgba(255, 255, 255, 0.05) 0%, transparent 38%),
-        linear-gradient(328deg, rgba(0, 0, 0, 0.22) 0%, transparent 48%),
-        radial-gradient(ellipse 88% 62% at 50% 0%, rgba(255, 255, 255, 0.04), transparent 58%);
-      background-size: 100% 100%;
-      background-position: center;
-      background-repeat: no-repeat;
-      box-shadow:
-        0 2px 0 rgba(255, 255, 255, 0.04) inset,
-        0 14px 32px rgba(0, 0, 0, 0.38),
-        0 4px 12px rgba(0, 0, 0, 0.22);
-      transform: translateX(-50%) rotate(-0.55deg);
-      transform-origin: center center;
-    }
-
+    #screen-quilt .quilt-mood-widget__deck::before,
     #screen-quilt .quilt-mood-widget__deck::after {
       display: none;
     }
@@ -9544,8 +9501,8 @@ try {
       position: relative;
       z-index: 2;
       flex: 0 0 auto;
-      width: min(var(--quilt-float-sheet-width, 100%), calc(100% - var(--mood-card-stagger-x)));
-      max-width: var(--quilt-float-sheet-width);
+      width: var(--quilt-float-sheet-width);
+      max-width: 100%;
       margin: 0;
       padding: 0;
       border: 0;
@@ -9557,21 +9514,20 @@ try {
       transform-origin: center center;
       transition:
         transform var(--mood-card-dismiss-ms) cubic-bezier(0.33, 1, 0.58, 1),
-        opacity calc(var(--mood-card-dismiss-ms) * 0.92) cubic-bezier(0.4, 0, 0.75, 1);
+        opacity calc(var(--mood-card-dismiss-ms) * 0.92) cubic-bezier(0.4, 0, 0.75, 1),
+        margin var(--mood-card-dismiss-ms) cubic-bezier(0.33, 1, 0.58, 1);
     }
 
-    /* Back card (top): slight counter-clockwise tilt. */
+    /* Loose stack: good on top, rough stepped down so both bottom edges stay visible. */
     #screen-quilt .quilt-mood-widget__card--good {
-      z-index: 1;
-      transform: rotate(-7deg);
+      z-index: 2;
+      transform: translateX(calc(-1 * var(--mood-stack-stagger-x))) rotate(-5deg);
     }
 
-    /* Front card (bottom): overlaps upward, nudged right, slight clockwise tilt. */
     #screen-quilt .quilt-mood-widget__card--rough {
-      z-index: 2;
-      margin-left: 0;
-      margin-top: calc(-1 * var(--mood-card-overlap));
-      transform: translate(var(--mood-card-stagger-x), 0) rotate(9deg);
+      z-index: 1;
+      margin-top: var(--mood-stack-offset-y);
+      transform: translateX(var(--mood-stack-stagger-x)) rotate(6deg);
     }
 
     #screen-quilt .quilt-mood-widget__card:focus-visible {
@@ -9598,7 +9554,7 @@ try {
 
     #screen-quilt .quilt-mood-widget__card--rough.is-dismissed {
       bottom: 0;
-      margin-top: calc(-1 * var(--mood-card-overlap));
+      margin-top: var(--mood-stack-offset-y);
       transform: translateX(calc(100vw + 40px)) rotate(6deg);
     }
 
@@ -9620,10 +9576,10 @@ try {
 
     #screen-quilt .quilt-mood-widget__card-stage {
       display: block;
-      width: min(var(--quilt-float-sheet-width, 100%), calc(100% - var(--mood-card-stagger-x)));
+      width: 100%;
       max-width: var(--quilt-float-sheet-width);
       height: auto;
-      aspect-ratio: 17 / 5;
+      aspect-ratio: auto;
     }
 
     #screen-quilt .quilt-mood-widget__mood-clipping__image {
@@ -9637,8 +9593,7 @@ try {
     }
 
     #screen-quilt .quilt-mood-widget__card--has-png .quilt-mood-widget__card-stage {
-      aspect-ratio: auto;
-      width: min(var(--quilt-float-sheet-width, 100%), 92vw);
+      width: 100%;
       max-width: var(--quilt-float-sheet-width);
     }
 
