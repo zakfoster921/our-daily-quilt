@@ -9396,9 +9396,9 @@ try {
       width: var(--quilt-float-sheet-width);
       max-width: var(--quilt-float-sheet-width);
       --mood-deck-pad: 0;
-      --mood-stack-gap: clamp(0.65rem, 2.8vw, 1.05rem);
-      --mood-stack-offset-y: clamp(4rem, 34vw, 6.5rem);
-      --mood-stack-stagger-x: clamp(0.45rem, 2.2vw, 0.85rem);
+      /* Pull rough up under good so both bottom hand-cut edges stay visible. */
+      --mood-stack-overlap: clamp(3.25rem, 21vw, 5.25rem);
+      --mood-stack-stagger-x: clamp(0.55rem, 2.8vw, 1rem);
       --mood-clipping-font: 'Libre Baskerville', Georgia, 'Times New Roman', Times, serif;
       --mood-clipping-body-size: clamp(0.78rem, 2.35vw, 1.02rem);
       --mood-clipping-ink: rgba(42, 34, 28, 0.86);
@@ -9468,15 +9468,16 @@ try {
     }
 
     #screen-quilt .quilt-mood-widget__deck {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
+      display: grid;
+      grid-template-columns: minmax(0, var(--quilt-float-sheet-width));
+      grid-template-rows: auto auto;
+      justify-content: center;
+      justify-items: center;
       width: 100%;
       max-width: var(--quilt-float-sheet-width);
       margin: 0 auto;
       padding: var(--mood-deck-pad);
-      gap: 0;
+      row-gap: 0;
       overflow: visible;
       flex-shrink: 0;
       position: relative;
@@ -9518,16 +9519,20 @@ try {
         margin var(--mood-card-dismiss-ms) cubic-bezier(0.33, 1, 0.58, 1);
     }
 
-    /* Loose stack: good on top, rough stepped down so both bottom edges stay visible. */
+    /* Loose stack under quote: overlap vertically, stagger horizontally. */
     #screen-quilt .quilt-mood-widget__card--good {
+      grid-row: 1;
+      grid-column: 1;
       z-index: 2;
-      transform: translateX(calc(-1 * var(--mood-stack-stagger-x))) rotate(-5deg);
+      transform: translateX(calc(-1 * var(--mood-stack-stagger-x))) rotate(-4.5deg);
     }
 
     #screen-quilt .quilt-mood-widget__card--rough {
+      grid-row: 2;
+      grid-column: 1;
       z-index: 1;
-      margin-top: var(--mood-stack-offset-y);
-      transform: translateX(var(--mood-stack-stagger-x)) rotate(6deg);
+      margin-top: calc(-1 * var(--mood-stack-overlap));
+      transform: translateX(var(--mood-stack-stagger-x)) rotate(5.5deg);
     }
 
     #screen-quilt .quilt-mood-widget__card:focus-visible {
@@ -9554,7 +9559,7 @@ try {
 
     #screen-quilt .quilt-mood-widget__card--rough.is-dismissed {
       bottom: 0;
-      margin-top: var(--mood-stack-offset-y);
+      margin-top: calc(-1 * var(--mood-stack-overlap));
       transform: translateX(calc(100vw + 40px)) rotate(6deg);
     }
 
@@ -9598,6 +9603,9 @@ try {
     }
 
     #screen-quilt .quilt-mood-widget__card--has-png .quilt-mood-widget__mood-clipping__image {
+      width: 100%;
+      max-width: var(--quilt-float-sheet-width);
+      height: auto;
       filter: drop-shadow(0 4px 14px rgba(45, 36, 29, 0.14))
         drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1));
     }
@@ -50532,6 +50540,25 @@ try {
         return body ? Utils.formatMoodReceiptBody(body) : '';
       }
 
+      /** Match mood clipping display width to the quote PNG on screen (works for legacy narrow PNGs too). */
+      _syncMoodClippingWidthToQuote(img, card) {
+        const quoteImg = document.querySelector(
+          '.quilt-quote-clipping--has-png .quilt-quote-clipping__image'
+        );
+        const w = Math.round(quoteImg?.getBoundingClientRect?.()?.width || 0);
+        if (!w || w < 48) return;
+        const px = `${w}px`;
+        if (img) {
+          img.style.width = px;
+          img.style.maxWidth = '100%';
+        }
+        const host = card || img?.closest?.('.quilt-mood-widget__card');
+        if (host) {
+          host.style.width = px;
+          host.style.maxWidth = '100%';
+        }
+      }
+
       async _loadMoodClippingOntoCard(card, img, { src, line, mood }) {
         if (!card || !img) return false;
         const clearPng = () => {
@@ -50543,6 +50570,7 @@ try {
           card.classList.remove('quilt-mood-widget__card--text-fallback');
           card.classList.add('quilt-mood-widget__card--has-png');
           img.hidden = false;
+          this._syncMoodClippingWidthToQuote(img, card);
           const label = this._moodClippingA11yLabel(line);
           if (label) card.setAttribute('aria-label', label);
         };
@@ -50668,6 +50696,16 @@ try {
           goodLine ? applyVariant('good', goodLine) : Promise.resolve(),
           roughLine ? applyVariant('rough', roughLine) : Promise.resolve()
         ]);
+        requestAnimationFrame(() => {
+          widget
+            .querySelectorAll('.quilt-mood-widget__card--has-png .quilt-mood-widget__mood-clipping__image')
+            .forEach((imgEl) => {
+              this._syncMoodClippingWidthToQuote(
+                imgEl,
+                imgEl.closest('.quilt-mood-widget__card')
+              );
+            });
+        });
       }
 
       async fetchNewspaperClippingUrl(dateKey) {
