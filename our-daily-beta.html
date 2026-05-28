@@ -9604,9 +9604,10 @@ try {
     }
 
     #screen-quilt .quilt-mood-widget__card--has-png .quilt-mood-widget__mood-clipping__image {
-      width: 100%;
-      max-width: var(--quilt-float-sheet-width);
-      height: auto;
+      box-sizing: border-box;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
       filter: drop-shadow(0 4px 14px rgba(45, 36, 29, 0.14))
         drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1));
     }
@@ -50541,14 +50542,13 @@ try {
         return body ? Utils.formatMoodReceiptBody(body) : '';
       }
 
-      /** Match mood clipping on-screen box to quote PNG (fixes legacy narrow Storage assets). */
+      /** Mood PNGs scale with CSS; clear stale inline px from older sync logic. */
       _syncMoodClippingWidthToQuote(img, card) {
         const quoteImg = document.querySelector('.quilt-quote-clipping__image');
-        if (!quoteImg?.src || quoteImg.naturalWidth <= 0) return;
-        const rect = quoteImg.getBoundingClientRect();
+        const quoteMissing = !quoteImg?.src || quoteImg.naturalWidth <= 0;
+        const rect = quoteImg?.getBoundingClientRect?.() || { width: 0, height: 0 };
         const w = Math.round(rect.width || 0);
         const h = Math.round(rect.height || 0);
-        if (!w || w < 48) return;
         const host = card || img?.closest?.('.quilt-mood-widget__card');
         const sheet = 'var(--quilt-float-sheet-width)';
         if (host) {
@@ -50556,10 +50556,20 @@ try {
           host.style.maxWidth = sheet;
         }
         if (img) {
-          img.style.width = `${w}px`;
-          img.style.maxWidth = sheet;
-          img.style.height = h > 0 ? 'auto' : '';
+          img.style.removeProperty('width');
+          img.style.removeProperty('max-width');
+          img.style.removeProperty('height');
         }
+        const moodNatW = img?.naturalWidth ?? 0;
+        const moodNatH = img?.naturalHeight ?? 0;
+        const moodRect = img?.getBoundingClientRect?.() || { width: 0, height: 0 };
+        const stack = document.querySelector('.quote-card-stack');
+        const sheetResolved = stack
+          ? getComputedStyle(stack).getPropertyValue('--quilt-float-sheet-width').trim()
+          : '';
+        // #region agent log
+        fetch('http://127.0.0.1:7433/ingest/0ed8adaa-5aed-4571-811f-aadcc7a8fddc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8d7d5f'},body:JSON.stringify({sessionId:'8d7d5f',hypothesisId:quoteMissing?'B':w<48?'C':'D',location:'our-daily-beta.html:_syncMoodClippingWidthToQuote',message:'mood width sync',data:{quoteMissing,quoteNatW:quoteImg?.naturalWidth??0,quoteNatH:quoteImg?.naturalHeight??0,quoteRectW:w,quoteRectH:h,syncApplied:true,moodNatW,moodNatH,moodRectW:Math.round(moodRect.width||0),moodRectH:Math.round(moodRect.height||0),moodStyleW:img?.style?.width||'',moodComputedW:img?getComputedStyle(img).width:'',sheetVar:sheetResolved,widthRatio:w>0?+(moodRect.width/w).toFixed(3):0},timestamp:Date.now(),runId:'post-fix'})}).catch(()=>{});
+        // #endregion
       }
 
       async _loadMoodClippingOntoCard(card, img, { src, line, mood }) {
@@ -50590,7 +50600,13 @@ try {
             else clearPng();
             resolve(ok);
           };
-          img.onload = () => finish(img.naturalWidth > 0);
+          img.onload = () => {
+            // #region agent log
+            const srcHint = String(src||'').replace(/\?.*$/,'').split('/').slice(-2).join('/');
+            fetch('http://127.0.0.1:7433/ingest/0ed8adaa-5aed-4571-811f-aadcc7a8fddc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8d7d5f'},body:JSON.stringify({sessionId:'8d7d5f',hypothesisId:'A',location:'our-daily-beta.html:_loadMoodClippingOntoCard:onload',message:'mood img loaded',data:{mood,srcHint,naturalW:img.naturalWidth,naturalH:img.naturalHeight,isDataUrl:String(src||'').startsWith('data:')},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            finish(img.naturalWidth > 0);
+          };
           img.onerror = () => finish(false);
           if (img.src === src && img.complete && img.naturalWidth > 0) {
             showPng();
@@ -50649,6 +50665,9 @@ try {
           const url = dk ? await this.fetchMoodClippingUrl(dk, variant) : null;
           if (applyGen !== this._moodClippingApplyGeneration) return;
           if (url && (await this._loadMoodClippingOntoCard(card, img, { src: url, line, mood: variant }))) {
+            // #region agent log
+            fetch('http://127.0.0.1:7433/ingest/0ed8adaa-5aed-4571-811f-aadcc7a8fddc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8d7d5f'},body:JSON.stringify({sessionId:'8d7d5f',hypothesisId:'E',location:'our-daily-beta.html:applyQuiltMoodClippings:storage',message:'mood from storage url',data:{variant,dateKey:dk,srcHint:String(url).replace(/\?.*$/,'').split('/').slice(-2).join('/')},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             return;
           }
 
@@ -50681,6 +50700,9 @@ try {
               });
               if (applyGen !== this._moodClippingApplyGeneration) return;
               if (dataUrl && (await this._loadMoodClippingOntoCard(card, img, { src: dataUrl, line, mood: variant }))) {
+                // #region agent log
+                fetch('http://127.0.0.1:7433/ingest/0ed8adaa-5aed-4571-811f-aadcc7a8fddc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8d7d5f'},body:JSON.stringify({sessionId:'8d7d5f',hypothesisId:'E',location:'our-daily-beta.html:applyQuiltMoodClippings:compose',message:'mood from client compose',data:{variant,dateKey:dk,quoteW,quoteH},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
                 return;
               }
             }
