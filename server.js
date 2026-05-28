@@ -4049,13 +4049,19 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       typeof body.quiltScreen9x16ImageData === 'string' ? body.quiltScreen9x16ImageData : '';
     const newspaperClippingImageData =
       typeof body.newspaperClippingImageData === 'string' ? body.newspaperClippingImageData : '';
+    const moodClippingGoodImageData =
+      typeof body.moodClippingGoodImageData === 'string' ? body.moodClippingGoodImageData : '';
+    const moodClippingRoughImageData =
+      typeof body.moodClippingRoughImageData === 'string' ? body.moodClippingRoughImageData : '';
     if (
       !instagramImage &&
       !postLayoutBImageData &&
       !postLayoutBSpeakerImageData &&
       !storyLayoutBImageData &&
       !quiltScreen9x16ImageData &&
-      !newspaperClippingImageData
+      !newspaperClippingImageData &&
+      !moodClippingGoodImageData &&
+      !moodClippingRoughImageData
     ) {
       return res.status(400).json({ success: false, error: 'No image data URLs provided' });
     }
@@ -4146,6 +4152,26 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       docPayload.newspaperClippingImageStorageUrl = publicUrl;
       docPayload.newspaperClippingUrl = publicUrl;
       docPayload.newspaperClippingReady = true;
+    }
+    if (moodClippingGoodImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/mood-clipping-good.png`,
+        parsePngDataUrlToBuffer(moodClippingGoodImageData),
+        'image/png'
+      );
+      docPayload.moodClippingGoodImageStorageUrl = publicUrl;
+      docPayload.moodClippingGoodUrl = publicUrl;
+      docPayload.moodClippingGoodReady = true;
+    }
+    if (moodClippingRoughImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/mood-clipping-rough.png`,
+        parsePngDataUrlToBuffer(moodClippingRoughImageData),
+        'image/png'
+      );
+      docPayload.moodClippingRoughImageStorageUrl = publicUrl;
+      docPayload.moodClippingRoughUrl = publicUrl;
+      docPayload.moodClippingRoughReady = true;
     }
 
     await db.collection('instagram-images').doc(dateKey).set(docPayload, { merge: true });

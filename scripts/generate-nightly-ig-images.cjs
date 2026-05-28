@@ -124,19 +124,56 @@ async function runNightlyIgAttempt({
           if (!newspaperClippingImageData) {
             throw new Error(`Newspaper clipping was not generated for ${dateKey}`);
           }
-          log('uploading newspaper-clipping.png…');
+          let quoteClippingHeightPx = 0;
+          let quoteClippingWidthPx = 0;
+          if (typeof arch._measureDataUrlSizePx === 'function') {
+            const quoteSize = await arch._measureDataUrlSizePx(newspaperClippingImageData);
+            quoteClippingHeightPx = quoteSize?.h ?? 0;
+            quoteClippingWidthPx = quoteSize?.w ?? 0;
+          } else if (typeof arch._measureDataUrlHeightPx === 'function') {
+            quoteClippingHeightPx = await arch._measureDataUrlHeightPx(newspaperClippingImageData);
+          }
+          let moodClippingGoodImageData = null;
+          let moodClippingRoughImageData = null;
+          if (arch?.generateMoodClippingImageData) {
+            log('generating mood clipping good_day PNG…');
+            moodClippingGoodImageData = await arch.generateMoodClippingImageData(dateKey, {
+              variant: 'good',
+              quoteClippingHeightPx,
+              quoteClippingWidthPx
+            });
+            if (!moodClippingGoodImageData) {
+              throw new Error(`Mood clipping (good_day) was not generated for ${dateKey}`);
+            }
+            if (process.env.MOOD_CLIPPING_ROUGH === '1') {
+              log('generating mood clipping rough_day PNG…');
+              moodClippingRoughImageData = await arch.generateMoodClippingImageData(dateKey, {
+                variant: 'rough',
+                quoteClippingHeightPx,
+                quoteClippingWidthPx
+              });
+            }
+          }
+          log('uploading clipping PNGs…');
           const doc = await Utils.writeInstagramImagesDocForZapier({
             dateKey,
             newspaperClippingImageData,
+            moodClippingGoodImageData,
+            moodClippingRoughImageData,
             storageCacheControl: 'no-store'
           });
           if (!doc.newspaperClippingUrl && !doc.newspaperClippingImageStorageUrl) {
             throw new Error('newspaperClippingUrl missing after upload');
           }
+          if (moodClippingGoodImageData && !doc.moodClippingGoodUrl && !doc.moodClippingGoodImageStorageUrl) {
+            throw new Error('moodClippingGoodUrl missing after upload');
+          }
           return {
             dateKey,
             clippingOnly: true,
-            newspaperClippingUrl: doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || ''
+            newspaperClippingUrl: doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || '',
+            moodClippingGoodUrl: doc.moodClippingGoodUrl || doc.moodClippingGoodImageStorageUrl || '',
+            moodClippingRoughUrl: doc.moodClippingRoughUrl || doc.moodClippingRoughImageStorageUrl || ''
           };
         }
 
