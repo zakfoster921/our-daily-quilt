@@ -50,8 +50,7 @@ async function runNightlyIgAttempt({
   attempt,
   outDir,
   strictQuote,
-  clippingOnly = false,
-  moodClippingRough = false
+  clippingOnly = false
 }) {
   const evaluateTimeoutMs = Math.max(
     120000,
@@ -108,7 +107,7 @@ async function runNightlyIgAttempt({
     );
     page.setDefaultTimeout(evaluateTimeoutMs);
     const result = await page.evaluate(
-      async ({ dateKey, strictQuote, clippingOnly, moodClippingRough }) => {
+      async ({ dateKey, strictQuote, clippingOnly }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
@@ -146,14 +145,12 @@ async function runNightlyIgAttempt({
             if (!moodClippingGoodImageData) {
               throw new Error(`Mood clipping (good_day) was not generated for ${dateKey}`);
             }
-            if (moodClippingRough) {
-              log('generating mood clipping rough_day PNG…');
-              moodClippingRoughImageData = await arch.generateMoodClippingImageData(dateKey, {
-                variant: 'rough',
-                quoteClippingHeightPx,
-                quoteClippingWidthPx
-              });
-            }
+            log('generating mood clipping rough_day PNG…');
+            moodClippingRoughImageData = await arch.generateMoodClippingImageData(dateKey, {
+              variant: 'rough',
+              quoteClippingHeightPx,
+              quoteClippingWidthPx
+            });
           }
           log('uploading clipping PNGs…');
           const doc = await Utils.writeInstagramImagesDocForZapier({
@@ -168,6 +165,13 @@ async function runNightlyIgAttempt({
           }
           if (moodClippingGoodImageData && !doc.moodClippingGoodUrl && !doc.moodClippingGoodImageStorageUrl) {
             throw new Error('moodClippingGoodUrl missing after upload');
+          }
+          if (
+            moodClippingRoughImageData &&
+            !doc.moodClippingRoughUrl &&
+            !doc.moodClippingRoughImageStorageUrl
+          ) {
+            throw new Error('moodClippingRoughUrl missing after upload');
           }
           return {
             dateKey,
@@ -480,7 +484,7 @@ async function runNightlyIgAttempt({
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote, clippingOnly, moodClippingRough }
+      { dateKey, strictQuote, clippingOnly }
     );
 
     if (clippingOnly) {
@@ -584,7 +588,6 @@ async function main() {
   const dateKey =
     process.env.DATE_KEY || (clippingOnly ? getActiveQuiltDateKey(now) : getCompletedQuiltDateKey(now));
   const strictQuote = String(process.env.NIGHTLY_IG_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
-  const moodClippingRough = process.env.MOOD_CLIPPING_ROUGH === '1';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);
   }
@@ -606,8 +609,7 @@ async function main() {
         attempt,
         outDir,
         strictQuote,
-        clippingOnly,
-        moodClippingRough
+        clippingOnly
       });
       console.log(JSON.stringify(result, null, 2));
       return;

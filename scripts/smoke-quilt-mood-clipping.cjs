@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-/** Smoke test: mood clipping PNG (good_day first; rough when MOOD_CLIPPING_ROUGH=1). */
+/** Smoke test: mood clipping PNG (good_day; rough when MOOD_CLIPPING_ROUGH=1 or variant=rough|both). */
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
