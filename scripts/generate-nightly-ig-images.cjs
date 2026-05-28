@@ -50,7 +50,8 @@ async function runNightlyIgAttempt({
   attempt,
   outDir,
   strictQuote,
-  clippingOnly = false
+  clippingOnly = false,
+  moodClippingRough = false
 }) {
   const evaluateTimeoutMs = Math.max(
     120000,
@@ -107,7 +108,7 @@ async function runNightlyIgAttempt({
     );
     page.setDefaultTimeout(evaluateTimeoutMs);
     const result = await page.evaluate(
-      async ({ dateKey, strictQuote, clippingOnly }) => {
+      async ({ dateKey, strictQuote, clippingOnly, moodClippingRough }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
@@ -145,7 +146,7 @@ async function runNightlyIgAttempt({
             if (!moodClippingGoodImageData) {
               throw new Error(`Mood clipping (good_day) was not generated for ${dateKey}`);
             }
-            if (process.env.MOOD_CLIPPING_ROUGH === '1') {
+            if (moodClippingRough) {
               log('generating mood clipping rough_day PNG…');
               moodClippingRoughImageData = await arch.generateMoodClippingImageData(dateKey, {
                 variant: 'rough',
@@ -479,7 +480,7 @@ async function runNightlyIgAttempt({
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote, clippingOnly }
+      { dateKey, strictQuote, clippingOnly, moodClippingRough }
     );
 
     if (clippingOnly) {
@@ -583,6 +584,7 @@ async function main() {
   const dateKey =
     process.env.DATE_KEY || (clippingOnly ? getActiveQuiltDateKey(now) : getCompletedQuiltDateKey(now));
   const strictQuote = String(process.env.NIGHTLY_IG_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
+  const moodClippingRough = process.env.MOOD_CLIPPING_ROUGH === '1';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);
   }
@@ -604,7 +606,8 @@ async function main() {
         attempt,
         outDir,
         strictQuote,
-        clippingOnly
+        clippingOnly,
+        moodClippingRough
       });
       console.log(JSON.stringify(result, null, 2));
       return;
