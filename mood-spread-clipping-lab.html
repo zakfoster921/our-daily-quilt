@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mood spread clipping — preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=brightness_1,contrast&display=block" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1816;
+      color: #e8e4dc;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 320px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      padding: 1rem 1.1rem 2rem;
+      background: #252220;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      overflow-y: auto;
+    }
+    .panel h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0 0 0.35rem;
+    }
+    .panel .note {
+      font-size: 0.78rem;
+      color: #9a9590;
+      line-height: 1.45;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8a8580;
+      margin: 0.7rem 0 0.25rem;
+    }
+    textarea {
+      width: 100%;
+      font: inherit;
+      font-size: 0.88rem;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      background: #1a1816;
+      color: #e8e4dc;
+      min-height: 3.25rem;
+      resize: vertical;
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 0.85rem;
+      padding: 0.45rem 0.75rem;
+      font: inherit;
+      font-size: 0.82rem;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      background: #e6d4a8;
+      color: #1a1610;
+      border-color: #e6d4a8;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .status {
+      font-size: 0.78rem;
+      color: #9a9590;
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+    }
+    .preview-wrap {
+      padding: 2rem 1.5rem 3rem;
+      background: #121110;
+      min-height: 100vh;
+    }
+    .compare {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2.5rem;
+      align-items: flex-start;
+    }
+    figure {
+      margin: 0;
+      max-width: min(94vw, 28.75rem);
+    }
+    .preview-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6a6560;
+      margin: 0 0 0.65rem;
+    }
+    figcaption {
+      font-size: 0.75rem;
+      color: #7a7570;
+      margin-top: 0.5rem;
+    }
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h1>Mood spread clipping</h1>
+      <p class="note">Full good/rough columns · flanks flush to center quote · Material icons.</p>
+
+      <label for="quoteText">Quote</label>
+      <textarea id="quoteText">Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world.</textarea>
+
+      <label for="quoteAuthor">Author</label>
+      <textarea id="quoteAuthor" rows="1">Albert Einstein</textarea>
+
+      <label for="goodDay">Good day (left)</label>
+      <textarea id="goodDay">Hard mute the inner critic.</textarea>
+
+      <label for="roughDay">Rough day (right)</label>
+      <textarea id="roughDay">Let the difficult thing stay difficult for one more breath.</textarea>
+
+      <button type="button" class="btn" id="renderBtn">Render</button>
+      <p class="status" id="status">Loading…</p>
+    </aside>
+
+    <main class="preview-wrap">
+      <div class="compare">
+        <figure>
+          <p class="preview-label">New — mood spread + arrows</p>
+          <img id="moodSpreadImg" alt="Mood spread clipping preview" width="428">
+          <figcaption id="moodSpreadMeta">—</figcaption>
+        </figure>
+        <figure>
+          <p class="preview-label">Current — peek crop</p>
+          <img id="peekImg" alt="Peek clipping preview" width="428">
+          <figcaption id="peekMeta">—</figcaption>
+        </figure>
+      </div>
+    </main>
+  </div>
+
+  <script src="lib/quote-keyword-emphasis.js"></script>
+  <script src="lib/layout-b-keyword-emphasis.js"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=22"></script>
+  <script>
+    (function () {
+      const QNC = window.QuiltNewspaperClipping;
+      const quoteTextEl = document.getElementById('quoteText');
+      const quoteAuthorEl = document.getElementById('quoteAuthor');
+      const goodEl = document.getElementById('goodDay');
+      const roughEl = document.getElementById('roughDay');
+      const statusEl = document.getElementById('status');
+      const moodImg = document.getElementById('moodSpreadImg');
+      const peekImg = document.getElementById('peekImg');
+      const moodMeta = document.getElementById('moodSpreadMeta');
+      const peekMeta = document.getElementById('peekMeta');
+
+      function payload() {
+        return {
+          dateKey: '2026-05-29',
+          today: {
+            text: quoteTextEl.value.trim(),
+            author: quoteAuthorEl.value.trim(),
+            keyword: 'encircles the world',
+            first_line_count: 4
+          },
+          goodDay: goodEl.value.trim(),
+          roughDay: roughEl.value.trim(),
+          yesterday: {
+            text: 'Follow your bliss and the universe will open doors where there were only walls.',
+            author: 'Joseph Campbell'
+          },
+          tomorrow: {
+            text: 'We are the myths we tell ourselves about ourselves.',
+            author: 'Jean Houston'
+          }
+        };
+      }
+
+      async function render() {
+        if (!QNC?.composeMoodSpreadDataUrl || !QNC?.composeDataUrl) {
+          statusEl.textContent = 'Missing quilt-newspaper-clipping.js';
+          return;
+        }
+        statusEl.textContent = 'Rendering…';
+        const data = payload();
+        try {
+          const [moodUrl, peekUrl] = await Promise.all([
+            QNC.composeMoodSpreadDataUrl(data),
+            QNC.composeDataUrl(data)
+          ]);
+          if (!moodUrl) throw new Error('Mood spread export failed');
+          moodImg.src = moodUrl;
+          peekImg.src = peekUrl || '';
+          moodImg.onload = () => {
+            moodMeta.textContent = `${moodImg.naturalWidth}×${moodImg.naturalHeight}px`;
+          };
+          if (peekUrl) {
+            peekImg.onload = () => {
+              peekMeta.textContent = `${peekImg.naturalWidth}×${peekImg.naturalHeight}px`;
+            };
+          }
+          statusEl.textContent = 'Done — edit fields and click Render to refresh.';
+        } catch (err) {
+          statusEl.textContent = String(err?.message || err);
+        }
+      }
+
+      document.getElementById('renderBtn').addEventListener('click', render);
+      [quoteTextEl, quoteAuthorEl, goodEl, roughEl].forEach((el) => {
+        el.addEventListener('keydown', (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') render();
+        });
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>
