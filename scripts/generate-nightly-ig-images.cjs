@@ -102,6 +102,27 @@ async function runNightlyIgAttempt({
       );
     }
 
+    console.log('[nightly-ig] loading Firestore quote catalog + pinning assignment…');
+    await page.evaluate(async (dateKey) => {
+      const qs = window.app?.quoteService;
+      if (!qs?.loadQuotesFromFirestore) {
+        throw new Error('quoteService.loadQuotesFromFirestore missing');
+      }
+      const catalogOk = await qs.loadQuotesFromFirestore({ requireServer: true });
+      if (!catalogOk) {
+        throw new Error('Firestore quote catalog failed to load (keyword / first_line_count need server catalog)');
+      }
+      const indexesOk = await qs.regenerateShuffledIndexes?.({ requireServer: true });
+      if (indexesOk === false) {
+        throw new Error('Firestore shuffled quote indexes failed to load');
+      }
+      const pinned = await qs.resolveAndPinCalendarKey?.(dateKey, { requireLive: true });
+      if (!pinned) {
+        throw new Error(`Could not pin quote assignment for ${dateKey}`);
+      }
+      await qs.primeQuoteAssignmentsNearTerm?.();
+    }, dateKey);
+
     console.log(
       `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
@@ -114,6 +135,11 @@ async function runNightlyIgAttempt({
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
         }
         const app = window.app;
+        if (app.quoteService?.getQuoteResolvedForInstagramDateKey) {
+          const pinned = await app.quoteService.getQuoteResolvedForInstagramDateKey(dateKey);
+          const kw = String(pinned?.keyword ?? pinned?.keywordSnapshot ?? '').trim();
+          log(`pinned quote for ${dateKey}; keyword=${kw || '(missing)'}`);
+        }
         if (clippingOnly) {
           const arch = app.archiveService;
           if (!arch?.generateNewspaperClippingImageData) {
@@ -300,6 +326,7 @@ async function runNightlyIgAttempt({
           const fieldMap = {
             keyword: [data.keyword, data.keywordSnapshot],
             first_line_count: [data.first_line_count, data.firstLineCount],
+            firstLineCount: [data.firstLineCount, data.first_line_count],
             blessing: [data.blessing, data.Blessing, data.blessingSnapshot],
             whatIf: [data.whatIf, data.what_if, data.whatIfSnapshot],
             speakerName: [data.speakerName, data.speaker_name, data.author, data.authorSnapshot],

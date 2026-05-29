@@ -2907,6 +2907,23 @@ function pickClassicImageUrlFromInstagramDoc(data) {
   return String(data.classicUrl || data.imageStorageUrl || '').trim();
 }
 
+function pickNewspaperClippingUrlFromInstagramDoc(data) {
+  if (!data || typeof data !== 'object') return '';
+  return String(data.newspaperClippingUrl || data.newspaperClippingImageStorageUrl || '').trim();
+}
+
+async function resolveReflectionArchiveNewspaperClippingForApi(db, dateKey) {
+  const key = String(dateKey || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return '';
+  try {
+    const igSnap = await db.collection('instagram-images').doc(key).get();
+    const igData = igSnap.exists ? igSnap.data() || {} : {};
+    return pickNewspaperClippingUrlFromInstagramDoc(igData);
+  } catch (_) {
+    return '';
+  }
+}
+
 /**
  * App Zapier push stores classicUrl + blockCount on instagram-images/{date}.
  * Prefer that over nightly/early snapshots and over stale archive block arrays.
@@ -4817,9 +4834,10 @@ app.get('/api/reflection-themes/archive', async (req, res) => {
       if (!themes.length) continue;
 
       const themeData = { ...data, appDateKey: dateKey };
-      const [context, quilt] = await Promise.all([
+      const [context, quilt, newspaperClippingUrl] = await Promise.all([
         loadReflectionArchiveContextServer(db, dateKey, themeData),
-        resolveReflectionArchiveQuiltForApi(db, dateKey, themeData)
+        resolveReflectionArchiveQuiltForApi(db, dateKey, themeData),
+        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey)
       ]);
 
       entries.push({
@@ -4831,7 +4849,8 @@ app.get('/api/reflection-themes/archive', async (req, res) => {
         reflectionPrompt: context.prompt,
         quiltImageUrl: quilt.quiltImageUrl,
         quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
-        quiltImageIsClassic: quilt.quiltImageIsClassic === true
+        quiltImageIsClassic: quilt.quiltImageIsClassic === true,
+        newspaperClippingUrl: newspaperClippingUrl || ''
       });
     }
 
