@@ -5245,8 +5245,19 @@ try {
       --quilt-footer-clearance: max(1rem, calc(5rem + env(safe-area-inset-bottom, 0px)));
       --quilt-byg-inner-gap: clamp(1.1rem, 3.5dvh, 1.75rem);
       --quilt-what-else-to-names-gap: calc(var(--quilt-byg-inner-gap) * 0.25);
-      --quilt-quote-paper-bg: #f3efe6;
-      --quilt-speaker-card-warm-neutral: rgb(255, 252, 247);
+      /* Scroll design system — artifact | matte | tape */
+      --odq-paper-artifact: #f5e6d4;
+      --odq-paper-matte: #ebe8e3;
+      --odq-paper-tape: #f2eee6;
+      --odq-ink-body: rgba(56, 46, 36, 0.78);
+      --odq-ink-meta: rgba(47, 39, 31, 0.68);
+      --odq-ink-frame: rgba(30, 24, 18, 0.94);
+      --odq-artifact-shadow:
+        drop-shadow(0 4px 14px rgba(45, 36, 29, 0.14))
+        drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1))
+        drop-shadow(0 8px 20px rgba(28, 32, 42, 0.06));
+      --quilt-quote-paper-bg: var(--odq-paper-artifact);
+      --quilt-speaker-card-warm-neutral: var(--odq-paper-artifact);
       --quilt-float-card-max: 460px;
       --quilt-float-card-gutter: 16px;
       /* vw-based so reflection panel matches quote/mood width (not parent %). */
@@ -5261,7 +5272,7 @@ try {
       --quilt-quote-overhang: calc(var(--quilt-float-sheet-width) * 0.1);
       --quilt-card-text-pad-x: clamp(1.35rem, 6.5vw, 2.15rem);
       --quilt-card-text-pad-y: clamp(1.25rem, 4.5vw, 1.85rem);
-      --quilt-paper-card-fallback: #f6f2eb;
+      --quilt-paper-card-fallback: var(--odq-paper-artifact);
       --quilt-paper-card-texture: url("assets/quilt-paper-card-texture.png");
       --quilt-chalk-squiggle: url("assets/chalk-squiggle-alpha.png");
       --quilt-chalk-squiggle-opacity: 0.95;
@@ -5304,7 +5315,7 @@ try {
 
     /* Transparent side gutters (quilt shows through); warm sheet only behind the card column. */
     #screen-quilt .quote-card-stack {
-      --quilt-quote-paper-bg: #f3efe6;
+      --quilt-quote-paper-bg: var(--odq-paper-artifact, #f5e6d4);
       --quilt-float-card-max: 460px;
       --quilt-float-card-gutter: 16px;
       --quilt-float-sheet-width: min(
@@ -5841,8 +5852,7 @@ try {
     /* Shadow follows hand-cut alpha, not the rectangular article box. */
     #screen-quilt .quilt-quote-clipping--has-png .quilt-quote-clipping__image {
       border-radius: 0;
-      filter: drop-shadow(0 4px 14px rgba(45, 36, 29, 0.14))
-        drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1));
+      filter: var(--odq-artifact-shadow);
     }
 
     #screen-quilt .quilt-quote-clipping--has-png .quilt-quote-clipping__fallback {
@@ -7454,10 +7464,9 @@ try {
 
       #screen-quilt .button-container {
         position: relative !important;
-        background: #f6f4f1 !important;
+        background: transparent !important;
         padding: 2.25rem 1rem 1rem !important;
-        /* Shadow above only so it does not fill the transparent band below reflection. */
-        box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.12) !important;
+        box-shadow: none !important;
         width: 100% !important;
         /* Reflection sheet scrolls in the main quilt column below quote / speaker / contributors. */
         z-index: 10 !important;
@@ -10434,7 +10443,7 @@ try {
       padding-right: 0;
     }
 
-    #screen-quilt .quote-card-stack:has(#quiltMoodSpread:not([hidden])) {
+    #screen-quilt .quote-card-stack:has(#quiltMoodSpread.is-ready:not([hidden])) {
       --quilt-float-card-gutter: 0;
       --quilt-float-card-max: 100%;
       --quilt-float-sheet-width: 100%;
@@ -10443,16 +10452,30 @@ try {
       padding-right: 0;
     }
 
-    #screen-quilt #quiltMoodSpread.quilt-mood-spread:not([hidden]) {
+    #screen-quilt #quiltMoodSpread.quilt-mood-spread.is-ready:not([hidden]) {
       display: block;
       width: 100%;
       max-width: 100%;
     }
 
-    /* Mood spread replaces CRT terminal + legacy stack quote clipping. */
+    /* Mood spread replaces CRT terminal + legacy stack quote clipping (only when spread is live). */
     #screen-quilt .quote-card-stack #quiltMoodWidget.quilt-mood-terminal-host,
-    #screen-quilt .quote-card-stack #quiltMoodWidgetAnnouncer,
-    #screen-quilt .quote-card-stack .quilt-quote-display.quilt-quote-clipping {
+    #screen-quilt .quote-card-stack #quiltMoodWidgetAnnouncer {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      max-height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+    }
+
+    /* Mood spread replaces legacy peek clipping only once the spread PNG is live. */
+    #screen-quilt .quote-card-stack:has(#quiltMoodSpread.is-ready:not([hidden]))
+      .quilt-quote-display.quilt-quote-clipping {
       display: none !important;
       visibility: hidden !important;
       height: 0 !important;
@@ -10591,7 +10614,7 @@ try {
       margin-top: 0.15rem;
     }
 
-    #screen-quilt .quote-card-stack:has(#quiltMoodWidget.quilt-mood-terminal-host:not([hidden]))
+    #screen-quilt .quote-card-stack:has(#quiltMoodSpread.is-ready:not([hidden]))
       .quilt-quote-clipping {
       display: none !important;
     }
@@ -10702,8 +10725,8 @@ try {
       overflow: visible !important;
       padding: 20px !important;
       box-sizing: border-box;
-      /* Upward shadow only — downward shadow was painting over the quilt band above story preview. */
-      box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.12) !important;
+      background: transparent !important;
+      box-shadow: none !important;
     }
 
     #screen-quilt .button-container:has(.quilt-reflection-scrap-widget) {
@@ -10723,7 +10746,7 @@ try {
       overflow: visible;
     }
 
-    /* Reflection prompt card: ~10% of card width lifts above the #f6f4f1 panel (same idea as quote paper). */
+    /* Reflection prompt card: ~10% of card width lifts above the transparent reflection ground. */
     #screen-quilt .quilt-reflection-question-paper {
       position: relative;
       z-index: 4;
@@ -11951,14 +11974,41 @@ try {
       flex-direction: column;
       gap: 10px;
       align-items: stretch;
-      background: rgba(255, 252, 247, 0.92);
-      border: 1px solid rgba(58, 45, 34, 0.18);
+      background-color: var(--odq-paper-artifact, #f5e6d4);
+      background-image: var(--quilt-paper-surface-image);
+      background-size: 100% 100%, 100% 100%, 100% 100%;
+      background-position: center;
+      background-repeat: no-repeat;
+      border: none;
       border-radius: 0;
-      box-shadow: 0 10px 28px rgba(45, 34, 22, 0.08);
+      box-shadow: none;
+      filter: var(--odq-artifact-shadow);
       color: #2f271f;
       text-align: left;
       position: relative;
       z-index: 10;
+      isolation: isolate;
+      overflow: visible;
+      transform: rotate(-0.6deg);
+      transform-origin: center center;
+    }
+
+    #screen-quilt .quote-speaker-widget::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image: var(--quilt-paper-card-texture);
+      background-size: 88px 88px;
+      background-repeat: repeat;
+      opacity: 0.11;
+      mix-blend-mode: multiply;
+    }
+
+    #screen-quilt .quote-speaker-widget > * {
+      position: relative;
+      z-index: 1;
     }
 
     #screen-quilt .quote-speaker-widget[hidden] {
@@ -11987,10 +12037,10 @@ try {
         radial-gradient(ellipse at 48% 54%, rgba(58, 45, 34, 0.06) 0 42%, transparent 68%);
       border: 0;
       box-shadow: none;
-      filter: drop-shadow(3px 10px 10px rgba(45, 34, 22, 0.12));
+      filter: none;
       isolation: isolate;
       margin-bottom: 8px;
-      transform: rotate(-0.8deg);
+      transform: rotate(-0.2deg);
     }
 
     #screen-quilt .quote-speaker-image-wrap .quote-speaker-halo,
@@ -12706,7 +12756,7 @@ try {
 
     /* Full-res Layout B story (1080×1920); same asset as share flow; image band is full viewport width. */
     #screen-quilt .quilt-layout-b-preview-wrap {
-      --quilt-warm-neutral: #ebe8e3;
+      --quilt-warm-neutral: var(--odq-paper-matte, #ebe8e3);
       --quilt-story-preview-frame-pad: 0.65rem;
       --quilt-story-preview-frame-pad-bottom: var(--quilt-story-preview-frame-pad);
       display: flex;
@@ -12883,7 +12933,7 @@ try {
     }
 
     #screen-quilt .quilt-before-you-go__stack {
-      --quilt-byg-tape: #f2eee6;
+      --quilt-byg-tape: var(--odq-paper-tape, #f2eee6);
       --quilt-byg-tape-strip: url("assets/before-you-go-tape-alpha.png");
       --quilt-byg-tape-cap: 13%;
       --quilt-byg-tape-safe-y: 1.25rem;
@@ -14711,7 +14761,7 @@ try {
       </div>
 
       <!-- Button container - side panel on desktop -->
-      <div class="button-container" style="position: relative; background: rgba(246, 244, 241, 0.95); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); overflow-y: auto; box-sizing: border-box; border: none;">
+      <div class="button-container" style="position: relative; background: transparent; box-shadow: none; overflow: visible; box-sizing: border-box; border: none;">
 
         <div class="button-group" hidden aria-hidden="true">
           <button type="button" id="dedicateBlockBtn" class="btn" hidden aria-hidden="true" aria-label="Dedicate this block to someone">
@@ -15955,9 +16005,9 @@ try {
   <script src="rumi-colors.js"></script>
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=22"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=24"></script>
   <script src="lib/quilt-mood-clipping.js?v=5"></script>
-  <script src="lib/quilt-mood-spread-widget.js?v=4"></script>
+  <script src="lib/quilt-mood-spread-widget.js?v=10"></script>
   <script src="lib/quilt-mood-terminal.js?v=23"></script>
   <script>
   </script>
@@ -25199,6 +25249,10 @@ try {
             } catch (_) {
               /* */
             }
+            requestAnimationFrame(() => {
+              document.getElementById('quiltMoodSpread')?._moodSpreadWidget?.remeasure?.();
+              void window.app?._primeQuiltQuoteChrome?.();
+            });
           }
 
           const previousActive = document.querySelector('.screen.active');
@@ -34521,10 +34575,16 @@ try {
           if (quiltQuoteText) quiltQuoteText.innerHTML = this.formatQuiltQuoteWithAuthor(todayQ?.text, todayQ?.author, todayQ);
           if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
 
-          if (quiltQuoteDisplay && this.quiltScreenHasBodyContent(todayQ)) {
+          if (
+            quiltQuoteDisplay &&
+            this.quiltScreenHasBodyContent(todayQ) &&
+            !window.app?._moodSpreadOwnsQuoteUi?.()
+          ) {
             quiltQuoteDisplay.classList.add('has-content');
           }
-          void window.app?.applyQuiltNewspaperClipping?.({ quote: todayQ });
+          if (!window.app?._quiltMoodSpreadEnabled?.()) {
+            void window.app?.applyQuiltNewspaperClipping?.({ quote: todayQ });
+          }
           window.app?.renderQuiltContributorList?.();
 
           this.populateReflectionPromptCard();
@@ -42532,6 +42592,104 @@ try {
         );
       }
 
+      /** True when mood spread PNG is mounted and decoded (replaces legacy peek clipping). */
+      _quiltMoodSpreadIsLive() {
+        const spreadHost = document.getElementById('quiltMoodSpread');
+        if (
+          !spreadHost ||
+          !spreadHost.classList.contains('is-ready') ||
+          !spreadHost._moodSpreadWidget
+        ) {
+          return false;
+        }
+        const img = spreadHost.querySelector('.quilt-mood-spread__img');
+        return !!(img?.naturalWidth);
+      }
+
+      _clearLegacyQuoteClippingPng() {
+        this._stripLegacyQuoteClippingPng();
+        const clipping = document.querySelector('.quilt-quote-clipping');
+        if (!clipping) return;
+        clipping.classList.remove('has-content');
+        clipping.setAttribute('hidden', 'hidden');
+        clipping.setAttribute('aria-hidden', 'true');
+      }
+
+      _stripLegacyQuoteClippingPng() {
+        const clipping = document.querySelector('.quilt-quote-clipping');
+        const img = document.querySelector('.quilt-quote-clipping__image');
+        if (!clipping) return;
+        clipping.classList.remove('quilt-quote-clipping--has-png');
+        if (img) {
+          img.hidden = true;
+          img.removeAttribute('src');
+        }
+      }
+
+      _showQuiltQuoteTextFallback(quote = null) {
+        if (this._quiltMoodSpreadIsLive() || this._moodSpreadOwnsQuoteUi()) {
+          return;
+        }
+        const clipping = document.querySelector('.quilt-quote-clipping');
+        if (!clipping) return;
+        const todayQ = quote || this.quoteService?.getTodayQuote?.() || null;
+        const body = String(todayQ?.text ?? todayQ?.body ?? '').trim();
+        if (!body) return;
+        const quiltQuoteText = document.querySelector('.quilt-quote-text');
+        const quiltQuoteAuthor = document.querySelector('.quilt-quote-author');
+        if (quiltQuoteText && this.quoteService?.formatQuiltQuoteWithAuthor) {
+          quiltQuoteText.innerHTML = this.quoteService.formatQuiltQuoteWithAuthor(
+            todayQ?.text,
+            todayQ?.author,
+            todayQ
+          );
+        }
+        if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
+        const a11y = document.querySelector('.quilt-quote-clipping__a11y');
+        const a11yText = this._quiltNewspaperClippingA11yText(todayQ);
+        if (a11y) a11y.textContent = a11yText;
+        if (a11yText) clipping.setAttribute('aria-label', a11yText);
+        this._stripLegacyQuoteClippingPng();
+        clipping.classList.add('has-content');
+        clipping.removeAttribute('hidden');
+        clipping.removeAttribute('aria-hidden');
+      }
+
+      /** Mood spread replaces peek clipping whenever the widget is active or loading. */
+      _moodSpreadOwnsQuoteUi() {
+        if (!this._quiltMoodSpreadEnabled()) return false;
+        const host = document.getElementById('quiltMoodSpread');
+        if (!host?._moodSpreadWidget && !host?._moodSpreadComposePending) return false;
+        if (host._moodSpreadComposePending) return true;
+        if (host.classList.contains('is-ready')) return true;
+        const src = host.querySelector('.quilt-mood-spread__img')?.src;
+        return !!(src && src.length > 32);
+      }
+
+      _fallbackQuiltQuoteClipping(quote = null, dateKey = null) {
+        if (this._quiltMoodSpreadIsLive() || this._moodSpreadOwnsQuoteUi()) return;
+        const todayQuote = quote || this.quoteService?.getTodayQuote?.() || null;
+        if (this._quiltMoodSpreadEnabled()) {
+          this._stripLegacyQuoteClippingPng();
+          this._showQuiltQuoteTextFallback(todayQuote);
+          return;
+        }
+        void this.applyQuiltNewspaperClipping({
+          dateKey: dateKey || this.quoteService?.getQuoteCalendarKeyNow?.(),
+          quote: todayQuote
+        });
+      }
+
+      _markQuiltMoodSpreadQuoteUi() {
+        const stack = document.querySelector('#screen-quilt .quote-card-stack');
+        if (!stack) return;
+        if (this._quiltMoodSpreadIsLive()) {
+          stack.setAttribute('data-quote-ui', 'mood-spread');
+        } else {
+          stack.removeAttribute('data-quote-ui');
+        }
+      }
+
       _prepareQuiltMoodHostForSpread(host, { goodDay, roughDay, initialMood = null } = {}) {
         if (!host) return;
         const g = String(goodDay || '').trim();
@@ -42740,8 +42898,11 @@ try {
           const params = new URLSearchParams(window.location.search || '');
           const v = params.get('previewMoodWidget');
           if (v === '1' || v === 'true') return true;
+          if (String(window.location.pathname || '').includes('our-daily-beta')) return true;
           // Opening the single-file build from disk (file://) — show cards with placeholders.
           if (window.location.protocol === 'file:') return true;
+          const host = String(window.location.hostname || '').toLowerCase();
+          if (host === 'localhost' || host === '127.0.0.1') return true;
         } catch (_) {
           /* */
         }
@@ -42787,8 +42948,10 @@ try {
         if (!spreadHost) return;
         const SpreadW = globalThis.QuiltMoodSpreadWidget;
         const QNC = globalThis.QuiltNewspaperClipping;
+        const todayQuote = this._quoteForMoodWidget(quote);
         if (!SpreadW?.mount || !QNC?.composeMoodSpreadWithMetrics || !this._quiltMoodSpreadEnabled()) {
           this._unmountQuiltMoodSpread();
+          this._fallbackQuiltQuoteClipping(todayQuote);
           return;
         }
 
@@ -42796,29 +42959,41 @@ try {
         const r = String(roughDay || '').trim();
         if (!g || !r) {
           this._unmountQuiltMoodSpread();
+          this._fallbackQuiltQuoteClipping(todayQuote);
           return;
         }
 
-        const todayQuote = this._quoteForMoodWidget(quote);
         const sig = `${g}\u0001${r}`;
         if (
           spreadHost.dataset.contentSig === sig &&
-          spreadHost._moodSpreadWidget &&
-          !spreadHost.hasAttribute('hidden')
+          spreadHost._moodSpreadWidget
         ) {
           if (initialMood === 'good' || initialMood === 'rough') {
             spreadHost._moodSpreadWidget.setPanel(SpreadW.moodToPanel(initialMood), { instant });
           }
           spreadHost._moodSpreadWidget.remeasure?.();
+          if (spreadHost.classList.contains('is-ready')) {
+            this._clearLegacyQuoteClippingPng();
+            this._markQuiltMoodSpreadQuoteUi();
+          }
+          return;
+        }
+
+        if (spreadHost._moodSpreadComposePending === sig) {
           return;
         }
 
         SpreadW.unmount(spreadHost);
         SpreadW.injectStyles?.();
+        spreadHost._moodSpreadComposePending = sig;
+        if (!this._moodSpreadOwnsQuoteUi()) {
+          this._showQuiltQuoteTextFallback(todayQuote);
+        }
 
         const quotePayload = this._quiltMoodTerminalQuotePayload(todayQuote);
         if (!quotePayload) {
           this._unmountQuiltMoodSpread();
+          this._fallbackQuiltQuoteClipping(todayQuote);
           return;
         }
 
@@ -42847,9 +43022,13 @@ try {
             paperTextureUrl,
             width: 0
           });
+          if (spreadHost._moodSpreadComposePending !== sig) {
+            return;
+          }
           if (!composed?.dataUrl) {
-            this.logger?.warn?.('Mood spread compose returned empty');
+            console.warn('[our-daily] Mood spread compose returned empty');
             this._unmountQuiltMoodSpread();
+            this._fallbackQuiltQuoteClipping(todayQuote, dk);
             return;
           }
 
@@ -42864,6 +43043,10 @@ try {
             slides: composed.slides,
             initialPanel: initialMood ? SpreadW.moodToPanel(initialMood) : 'center',
             instant: !!instant,
+            onReady: () => {
+              this._clearLegacyQuoteClippingPng();
+              this._markQuiltMoodSpreadQuoteUi();
+            },
             onSelect: (pickedMood) => {
               if (!moodHost) return;
               const bodyText = String(pickedMood === 'good' ? g : r).trim();
@@ -42873,14 +43056,32 @@ try {
             }
           });
           if (!mounted) {
-            this.logger?.warn?.('QuiltMoodSpreadWidget mount failed');
+            console.warn('[our-daily] QuiltMoodSpreadWidget mount failed');
             this._unmountQuiltMoodSpread();
+            this._fallbackQuiltQuoteClipping(todayQuote, dk);
             return;
           }
           mounted.remeasure?.();
+          if (spreadHost.classList.contains('is-ready')) {
+            this._clearLegacyQuoteClippingPng();
+            this._markQuiltMoodSpreadQuoteUi();
+          }
         } catch (err) {
-          this.logger?.warn?.('Mood spread refresh failed:', err);
-          this._unmountQuiltMoodSpread();
+          console.warn('[our-daily] Mood spread refresh failed:', err);
+          const keepExistingSpread =
+            spreadHost.classList.contains('is-ready') &&
+            spreadHost._moodSpreadWidget &&
+            spreadHost.dataset.contentSig === sig;
+          if (!keepExistingSpread) {
+            this._unmountQuiltMoodSpread();
+            if (!this._moodSpreadOwnsQuoteUi()) {
+              this._showQuiltQuoteTextFallback(todayQuote);
+            }
+          }
+        } finally {
+          if (spreadHost._moodSpreadComposePending === sig) {
+            delete spreadHost._moodSpreadComposePending;
+          }
         }
       }
 
@@ -42888,14 +43089,19 @@ try {
         const host = document.getElementById('quiltMoodWidget');
         if (!host) return;
 
+        const todayQuote = this._quoteForMoodWidget(quote);
+
+        if (this._quiltMoodSpreadEnabled()) {
+          this._stripLegacyQuoteClippingPng();
+        }
+
         if (!this._quiltMoodSpreadEnabled()) {
           host.setAttribute('hidden', 'hidden');
           this._unmountQuiltMoodSpread();
           this.logger?.warn?.('QuiltMoodSpreadWidget missing — mood spread hidden');
+          this._fallbackQuiltQuoteClipping(todayQuote);
           return;
         }
-
-        const todayQuote = this._quoteForMoodWidget(quote);
         let { goodDay, roughDay } = this.quoteService?._moodLinesFromQuote?.(todayQuote || {}) || {
           goodDay: '',
           roughDay: ''
@@ -42906,13 +43112,13 @@ try {
           if (!roughDay) roughDay = 'Love is enough today.';
         }
 
-        if (!goodDay || !roughDay) {
-          this._scheduleQuiltMoodFieldsHydrate(todayQuote, host);
+        if (!goodDay || !roughDay) {          this._scheduleQuiltMoodFieldsHydrate(todayQuote, host);
           if (host.dataset.moodHydratePending === '1') {
             host.classList.remove('is-active', 'is-good', 'is-rough');
             host.setAttribute('hidden', 'hidden');
             host.innerHTML = '';
             this._unmountQuiltMoodSpread();
+            this._showQuiltQuoteTextFallback(todayQuote);
             return;
           }
           host.classList.remove('is-hydrating');
@@ -42925,6 +43131,7 @@ try {
             delete host.dataset.contentSig;
             host.innerHTML = '';
             this._unmountQuiltMoodSpread();
+            this._showQuiltQuoteTextFallback(todayQuote);
           }
           return;
         }
@@ -42935,8 +43142,7 @@ try {
         if (
           spreadHost &&
           spreadHost.dataset.contentSig === sig &&
-          spreadHost._moodSpreadWidget &&
-          !spreadHost.hasAttribute('hidden')
+          spreadHost._moodSpreadWidget
         ) {
           this._prepareQuiltMoodHostForSpread(host, {
             goodDay,
@@ -50864,11 +51070,15 @@ try {
       }
 
       async applyQuiltMoodClippings({ dateKey = null, quote = null } = {}) {
-        if (!this._quiltMoodTerminalUiEnabled() && this._quiltMoodSpreadEnabled()) {
+        if (this._quiltMoodSpreadIsLive()) {
           return;
         }
         const moodHost = document.getElementById('quiltMoodWidget');
-        if (moodHost?.classList.contains('quilt-mood-terminal-host') && this._quiltMoodTerminalEnabled()) {
+        if (
+          this._quiltMoodTerminalUiEnabled() &&
+          moodHost?.classList.contains('quilt-mood-terminal-host') &&
+          this._quiltMoodTerminalEnabled()
+        ) {
           return;
         }
 
@@ -51003,12 +51213,71 @@ try {
         }
       }
 
+      async _composeQuiltNewspaperClippingDataUrl(dateKey, todayQ) {
+        const compose = globalThis.QuiltNewspaperClipping?.composeDataUrl;
+        if (typeof compose !== 'function') return null;
+        const today = todayQ || this.quoteService?.getTodayQuote?.() || null;
+        const text = String(today?.text ?? today?.body ?? '').trim();
+        if (!text) return null;
+        const dk =
+          String(dateKey || '').trim() ||
+          String(today?.dateKey || '').trim() ||
+          this.quoteService?.getQuoteCalendarKeyNow?.() ||
+          '';
+        let yesterday = null;
+        let tomorrow = null;
+        const qs = this.quoteService;
+        if (qs && dk && typeof qs.getAdjacentQuotesForClippingDateKey === 'function') {
+          try {
+            const adj = await qs.getAdjacentQuotesForClippingDateKey(dk);
+            yesterday = adj?.yesterday || null;
+            tomorrow = adj?.tomorrow || null;
+          } catch (_) {
+            /* */
+          }
+        } else if (qs?.getAdjacentQuotesForClipping) {
+          const adj = qs.getAdjacentQuotesForClipping() || {};
+          yesterday = adj.yesterday || null;
+          tomorrow = adj.tomorrow || null;
+        }
+        let paperTextureUrl = null;
+        try {
+          if (typeof location !== 'undefined' && location.href) {
+            paperTextureUrl = new URL('assets/quilt-paper-card-texture.png', location.href).href;
+          }
+        } catch (_) {
+          /* */
+        }
+        return compose({
+          yesterday,
+          today,
+          tomorrow,
+          dateKey: dk,
+          paperTextureUrl,
+          width: 0
+        });
+      }
+
       async applyQuiltNewspaperClipping({ dateKey = null, quote = null } = {}) {
-        if (!this._quiltMoodTerminalUiEnabled() && this._quiltMoodSpreadEnabled()) {
+        if (this._quiltMoodSpreadEnabled()) {
+          this._stripLegacyQuoteClippingPng();
+          if (this._quiltMoodSpreadIsLive() || this._moodSpreadOwnsQuoteUi()) {
+            this._clearLegacyQuoteClippingPng();
+            this._markQuiltMoodSpreadQuoteUi();
+          } else {
+            this._showQuiltQuoteTextFallback(quote || this.quoteService?.getTodayQuote?.());
+          }
+          return;
+        }
+        if (this._quiltMoodSpreadIsLive() || this._moodSpreadOwnsQuoteUi()) {
           return;
         }
         const moodHost = document.getElementById('quiltMoodWidget');
-        if (moodHost?.classList.contains('quilt-mood-terminal-host') && this._quiltMoodTerminalEnabled()) {
+        if (
+          this._quiltMoodTerminalUiEnabled() &&
+          moodHost?.classList.contains('quilt-mood-terminal-host') &&
+          this._quiltMoodTerminalEnabled()
+        ) {
           const dk = dateKey || this.quoteService?.getQuoteCalendarKeyNow?.();
           void this._refreshQuiltMoodTerminalQuoteClipping({ forceRefresh: true, dateKey: dk });
           return;
@@ -51035,6 +51304,15 @@ try {
           }
         };
 
+        const showTextFallback = () => {
+          clearPng();
+          const body = String(todayQ?.text ?? todayQ?.body ?? '').trim();
+          if (!body) return;
+          clipping.classList.add('has-content');
+          clipping.removeAttribute('hidden');
+          clipping.removeAttribute('aria-hidden');
+        };
+
         if (this._isPersonalQuiltMode) {
           clearPng();
           return;
@@ -51042,12 +51320,14 @@ try {
 
         const dk = dateKey || this.quoteService?.getQuoteCalendarKeyNow?.();
         if (!img) {
-          clearPng();
+          showTextFallback();
           return;
         }
 
         const showPng = () => {
-          clipping.classList.add('quilt-quote-clipping--has-png');
+          clipping.classList.add('quilt-quote-clipping--has-png', 'has-content');
+          clipping.removeAttribute('hidden');
+          clipping.removeAttribute('aria-hidden');
           img.hidden = false;
         };
 
@@ -51106,21 +51386,28 @@ try {
         }
 
         try {
+          let dataUrl = null;
           const arch = this.archiveService;
           if (typeof arch?.generateNewspaperClippingImageData === 'function') {
-            const dataUrl = await arch.generateNewspaperClippingImageData(dk);
-            if (dataUrl && (await loadClippingSrc(dataUrl))) {
-              moodAfterQuote();
-              return;
-            }
-          } else if (!globalThis.QuiltNewspaperClipping?.composeDataUrl) {
-            this.logger.warn('QuiltNewspaperClipping script missing — cannot compose clipping in browser');
+            dataUrl = await arch.generateNewspaperClippingImageData(dk);
+          }
+          if (!dataUrl) {
+            dataUrl = await this._composeQuiltNewspaperClippingDataUrl(dk, todayQ);
+          }
+          if (dataUrl && (await loadClippingSrc(dataUrl))) {
+            moodAfterQuote();
+            return;
+          }
+          if (!globalThis.QuiltNewspaperClipping?.composeDataUrl) {
+            console.warn('[our-daily] QuiltNewspaperClipping.composeDataUrl missing');
+          } else {
+            console.warn('[our-daily] Newspaper clipping PNG compose returned empty');
           }
         } catch (e) {
-          this.logger.warn('Client newspaper clipping compose failed:', e?.message || e);
+          console.warn('[our-daily] Client newspaper clipping compose failed:', e?.message || e);
         }
 
-        clearPng();
+        showTextFallback();
         moodAfterQuote();
       }
 
@@ -51157,10 +51444,19 @@ try {
           if (quiltQuoteText) quiltQuoteText.innerHTML = this.quoteService.formatQuiltQuoteWithAuthor(todayQ?.text, todayQ?.author, todayQ);
           if (quiltQuoteAuthor) quiltQuoteAuthor.textContent = '';
 
-          if (quiltQuoteDisplay && this.quoteService.quiltScreenHasBodyContent(todayQ)) {
+          if (
+            quiltQuoteDisplay &&
+            this.quoteService.quiltScreenHasBodyContent(todayQ) &&
+            !this._moodSpreadOwnsQuoteUi()
+          ) {
             quiltQuoteDisplay.classList.add('has-content');
           }
-          void this.applyQuiltNewspaperClipping({ dateKey: this.quoteService?.getQuoteCalendarKeyNow?.(), quote: todayQ });
+          if (!this._quiltMoodSpreadEnabled()) {
+            void this.applyQuiltNewspaperClipping({
+              dateKey: this.quoteService?.getQuoteCalendarKeyNow?.(),
+              quote: todayQ
+            });
+          }
           void this.applyQuiltMoodClippings({ quote: todayQ });
           this.renderQuiltContributorList();
         } catch (error) {
