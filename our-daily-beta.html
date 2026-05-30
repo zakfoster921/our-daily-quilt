@@ -218,7 +218,7 @@ try {
        while the font loads. `icon_names=` limits the download to only the glyphs we render.
        NOTE: Google Fonts rejects this URL with 400 if icon names aren't alphabetical —
        keep icon_names in sorted order. -->
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add_alert,book,brightness_1,comedy_mask,content_copy,contrast,flare,headphones,movie,palette&display=block" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=book,brightness_1,comedy_mask,content_copy,contrast,flare,headphones,movie,notification_add,palette&display=block" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link rel="preload" href="assets/fonts/Zakarack-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/portal-our-daily-quilt.png" as="image" fetchpriority="high">
   <!-- Test script to verify it's running -->
@@ -5256,6 +5256,8 @@ try {
         drop-shadow(0 4px 14px rgba(45, 36, 29, 0.14))
         drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1))
         drop-shadow(0 8px 20px rgba(28, 32, 42, 0.06));
+      --odq-scroll-artifact-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      --odq-scroll-artifact-grain-opacity: 0.045;
       --quilt-quote-paper-bg: var(--odq-paper-artifact);
       --quilt-speaker-card-warm-neutral: var(--odq-paper-artifact);
       --quilt-float-card-max: 460px;
@@ -5370,6 +5372,22 @@ try {
     #screen-quilt .quote-card-stack + .quote-speaker-stage,
     #screen-quilt .quote-speaker-stage + .button-container {
       margin-top: var(--quilt-section-gap);
+    }
+
+    /* Wave 2: faint shared grain on scroll ephemera (ties quilt field to paper artifacts). */
+    #screen-quilt .quote-speaker-stage::after,
+    #screen-quilt .quilt-reflection-scrap-widget::after,
+    #screen-quilt .quilt-user-color-card-wrap::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      pointer-events: none;
+      opacity: var(--odq-scroll-artifact-grain-opacity, 0.045);
+      mix-blend-mode: multiply;
+      background-image: var(--odq-scroll-artifact-grain);
+      background-size: 88px 88px;
+      background-repeat: repeat;
     }
 
     #screen-quilt .quilt-contributors-stage {
@@ -5775,8 +5793,7 @@ try {
       z-index: 1;
     }
 
-    #screen-quilt .quilt-quote-display,
-    #screen-quilt .quilt-reflection-question-paper {
+    #screen-quilt .quilt-quote-display {
       border: none;
       outline: none;
       border-radius: 0;
@@ -5907,14 +5924,13 @@ try {
     }
 
     /* Texture on ::before (overscaled) so JPEG side margins don't read as white vertical bars. */
-    #screen-quilt .quilt-quote-display::before,
-    #screen-quilt .quilt-reflection-question-paper::before {
+    #screen-quilt .quilt-quote-display::before {
       content: '';
       position: absolute;
       inset: -3px;
       z-index: 0;
       pointer-events: none;
-      background-color: var(--quilt-paper-card-fallback, #f6f2eb);
+      background-color: var(--odq-paper-artifact, var(--quilt-paper-card-fallback, #f5e6d4));
       background-image: var(--quilt-paper-card-texture);
       background-size: 118% 118%;
       background-position: center;
@@ -5922,8 +5938,7 @@ try {
       background-blend-mode: multiply;
     }
 
-    #screen-quilt .quilt-quote-display::after,
-    #screen-quilt .quilt-reflection-question-paper::after {
+    #screen-quilt .quilt-quote-display::after {
       content: '';
       position: absolute;
       inset: 0;
@@ -10737,6 +10752,11 @@ try {
       --quilt-reflection-copy-size: var(--quilt-quote-copy-size);
       --reflection-question-card-width: min(100%, 21.5rem);
       --reflection-question-overhang: calc(var(--reflection-question-card-width) * 0.1);
+      --quilt-byg-tape: var(--odq-paper-tape, #f2eee6);
+      --quilt-byg-tape-strip: url("assets/before-you-go-tape-alpha.png");
+      --quilt-byg-tape-cap: 13%;
+      --quilt-byg-tape-safe-y: 1.25rem;
+      --quilt-byg-tape-safe-x: 15.5%;
       position: relative;
       z-index: 3;
       width: calc(100% - 20px);
@@ -10746,7 +10766,7 @@ try {
       overflow: visible;
     }
 
-    /* Reflection prompt card: ~10% of card width lifts above the transparent reflection ground. */
+    /* Reflection prompt card: BYG torn-tape slab; ~10% width lifts above reflection ground. */
     #screen-quilt .quilt-reflection-question-paper {
       position: relative;
       z-index: 4;
@@ -10755,21 +10775,77 @@ try {
         calc(-1 * var(--reflection-panel-top-gutter, 20px) - var(--reflection-question-overhang))
         auto
         clamp(0.75rem, 2.25vw, 1rem);
-      padding:
-        clamp(1.65rem, 5.5vw, 2.25rem)
-        clamp(1.5rem, 5vw, 2rem)
-        clamp(1.95rem, 6vw, 2.5rem);
+      padding: 0;
       box-sizing: border-box;
+      background: transparent;
+      border: none;
+      outline: none;
+      border-radius: 0;
+      box-shadow: none;
+      overflow: visible;
+      isolation: isolate;
       transform: translate3d(2px, 0, 0) rotate(1.4deg);
       transform-origin: center center;
       text-align: left;
+    }
+
+    #screen-quilt .quilt-reflection-question-paper::before {
+      content: '';
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      transform-origin: 50% 50%;
+      pointer-events: none;
+      background-color: var(--quilt-byg-tape);
+      background-image:
+        var(--quilt-byg-tape-strip),
+        linear-gradient(104deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 46%),
+        repeating-linear-gradient(
+          90deg,
+          rgba(110, 96, 72, 0.022) 0 1px,
+          transparent 1px 4px
+        );
+      background-size:
+        var(--quilt-byg-tape-cap) 100%,
+        calc(100% - var(--quilt-byg-tape-cap)) 100%,
+        calc(100% - var(--quilt-byg-tape-cap)) 100%;
+      background-position:
+        left center,
+        var(--quilt-byg-tape-cap) center,
+        var(--quilt-byg-tape-cap) center;
+      background-repeat: no-repeat;
+    }
+
+    #screen-quilt .quilt-reflection-question-paper::after {
+      content: '';
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      transform-origin: 50% 50%;
+      pointer-events: none;
+      background-image: var(--quilt-byg-tape-strip);
+      background-size: var(--quilt-byg-tape-cap) 100%;
+      background-position: right center;
+      background-repeat: no-repeat;
+    }
+
+    #screen-quilt .quilt-reflection-question-paper-body {
+      position: relative;
+      z-index: 1;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      padding:
+        clamp(1.35rem, 4.5vw, var(--quilt-byg-tape-safe-y))
+        var(--quilt-byg-tape-safe-x)
+        clamp(1.65rem, 5vw, calc(var(--quilt-byg-tape-safe-y) + 0.45rem));
     }
 
     #screen-quilt .quilt-reflection-scrap-text {
       position: relative;
       z-index: 2;
       margin: 0 0 0.85rem;
-      color: #2f2924;
+      color: var(--odq-ink-body, #2f2924);
       font-family: var(--quilt-courier-font);
       font-size: var(--quilt-reflection-copy-size);
       font-style: normal;
@@ -11983,7 +12059,7 @@ try {
       border-radius: 0;
       box-shadow: none;
       filter: var(--odq-artifact-shadow);
-      color: #2f271f;
+      color: var(--odq-ink-body, #2f271f);
       text-align: left;
       position: relative;
       z-index: 10;
@@ -12743,8 +12819,8 @@ try {
         margin: 0 25px 15px;
       }
 
-      #screen-quilt .quilt-reflection-question-paper {
-        padding: 1.5rem 1.25rem 1.45rem;
+      #screen-quilt .quilt-reflection-question-paper-body {
+        padding: 1.15rem 18% 1.35rem;
       }
 
       #screen-quilt .quilt-reflection-response-submit {
@@ -13683,6 +13759,7 @@ try {
       transform: rotate(var(--quilt-color-card-tilt));
       transform-origin: center center;
       overflow: visible;
+      position: relative;
     }
 
     #screen-quilt .quilt-user-color-card-wrap[hidden] {
@@ -13690,9 +13767,9 @@ try {
     }
 
     #screen-quilt .quilt-user-shape-card {
-      --quilt-color-card-paper: var(--quilt-quote-paper-bg, #f3efe6);
-      --quilt-color-card-stock: #e3ddd4;
-      --quilt-color-card-note: #f5f1e9;
+      --quilt-color-card-paper: var(--odq-paper-artifact, var(--quilt-quote-paper-bg, #f5e6d4));
+      --quilt-color-card-stock: var(--odq-paper-matte, #ebe8e3);
+      --quilt-color-card-note: var(--odq-paper-tape, #f2eee6);
       position: relative;
       width: 100%;
       margin: 0;
@@ -13701,19 +13778,17 @@ try {
     }
 
     #screen-quilt .quilt-user-shape-card__mount {
-      --slide-mount: #ebe5dc;
+      --slide-mount: var(--odq-paper-matte, #ebe8e3);
       --slide-mount-edge: #ddd6cb;
+      --slide-mount-edge: color-mix(in srgb, var(--odq-paper-matte, #ebe8e3) 82%, #2f271f 18%);
       position: relative;
       box-sizing: border-box;
       border-radius: 3px;
       padding: 0;
       background: transparent;
       overflow: visible;
-      box-shadow:
-        0 1px 0 rgba(45, 36, 29, 0.14),
-        0 4px 10px rgba(45, 36, 29, 0.16),
-        0 12px 28px rgba(45, 36, 29, 0.14),
-        0 20px 44px rgba(45, 36, 29, 0.08);
+      box-shadow: none;
+      filter: var(--odq-artifact-shadow);
       isolation: isolate;
     }
 
@@ -14108,13 +14183,6 @@ try {
       display: none !important;
     }
 
-    .quilt-footer-icon-cluster .quilt-remember-icon-btn .material-symbols-outlined {
-      font-family: 'Material Symbols Outlined';
-      font-size: 39px;
-      line-height: 1;
-      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    }
-
     .quilt-remember-icon-btn[aria-pressed="true"] {
       color: rgba(0, 0, 0, 0.88);
     }
@@ -14290,6 +14358,7 @@ try {
 
     .quilt-footer-icon-cluster .quilt-instagram-icon-link svg,
     .quilt-footer-icon-cluster .quilt-about-icon-link svg,
+    .quilt-footer-icon-cluster .quilt-remember-icon-btn svg,
     .quilt-footer-icon-cluster .quilt-settings-icon-btn svg {
       display: block;
       width: 42px;
@@ -14299,6 +14368,11 @@ try {
       stroke-width: 1.8;
       stroke-linecap: round;
       stroke-linejoin: round;
+    }
+
+    .quilt-footer-icon-cluster .quilt-remember-icon-btn svg {
+      fill: currentColor;
+      stroke: none;
     }
 
     @media (max-width: 420px) {
@@ -14317,13 +14391,10 @@ try {
 
       .quilt-footer-icon-cluster .quilt-instagram-icon-link svg,
       .quilt-footer-icon-cluster .quilt-about-icon-link svg,
+      .quilt-footer-icon-cluster .quilt-remember-icon-btn svg,
       .quilt-footer-icon-cluster .quilt-settings-icon-btn svg {
         width: 36px;
         height: 36px;
-      }
-
-      .quilt-footer-icon-cluster .quilt-remember-icon-btn .material-symbols-outlined {
-        font-size: 33px;
       }
     }
 
@@ -14790,21 +14861,23 @@ try {
         <section class="quilt-reflection-scrap-widget" id="quiltReflectionScrapWidget" aria-label="Reflections and shared themes">
           <p class="quilt-reflection-scrap-kicker" id="quiltReflectionScrapTitle">Share one small thought</p>
           <div class="quilt-reflection-question-paper">
-            <p class="quilt-reflection-scrap-text" id="quiltReflectionScrapText"></p>
-            <form class="quilt-reflection-response-form is-collapsed" id="quiltReflectionResponseForm" aria-label="Anonymous reflection response">
-                <textarea
-                  class="quilt-reflection-response-input"
-                  id="quiltReflectionResponseInput"
-                  rows="1"
-                  maxlength="200"
-                  placeholder="Share your experience"
-                  aria-label="Share a reflection response"
-                  aria-describedby="quiltReflectionResponseHelper"
-                ></textarea>
-                <p class="quilt-reflection-response-helper" id="quiltReflectionResponseHelper" aria-live="polite" hidden></p>
-                <p class="quilt-reflection-response-byline" id="quiltReflectionResponseByline">Anonymous. Common threads are drawn from responses and shared below.</p>
-                <button class="quilt-reflection-response-submit" id="quiltReflectionResponseSubmit" type="submit" aria-expanded="false" aria-controls="quiltReflectionResponseInput">add yours</button>
-            </form>
+            <div class="quilt-reflection-question-paper-body">
+              <p class="quilt-reflection-scrap-text" id="quiltReflectionScrapText"></p>
+              <form class="quilt-reflection-response-form is-collapsed" id="quiltReflectionResponseForm" aria-label="Anonymous reflection response">
+                  <textarea
+                    class="quilt-reflection-response-input"
+                    id="quiltReflectionResponseInput"
+                    rows="1"
+                    maxlength="200"
+                    placeholder="Share your experience"
+                    aria-label="Share a reflection response"
+                    aria-describedby="quiltReflectionResponseHelper"
+                  ></textarea>
+                  <p class="quilt-reflection-response-helper" id="quiltReflectionResponseHelper" aria-live="polite" hidden></p>
+                  <p class="quilt-reflection-response-byline" id="quiltReflectionResponseByline">Anonymous. Common threads are drawn from responses and shared below.</p>
+                  <button class="quilt-reflection-response-submit" id="quiltReflectionResponseSubmit" type="submit" aria-expanded="false" aria-controls="quiltReflectionResponseInput">add yours</button>
+              </form>
+            </div>
           </div>
           <section class="quilt-reflection-wall" id="quiltReflectionWall" aria-label="Reflection themes from the community">
             <div class="quilt-reflection-theme-cards-shell" id="quiltReflectionThemeCardsShell">
@@ -15187,7 +15260,9 @@ try {
               data-next="screen-remember-today"
               aria-label="Remember something from today"
             >
-              <span class="material-symbols-outlined" aria-hidden="true" translate="no">add_alert</span>
+              <svg viewBox="0 -960 960 960" role="img" focusable="false" aria-hidden="true">
+                <path d="M480-500Zm0 420q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80Zm240-360v-120H600v-80h120v-120h80v120h120v80H800v120h-80ZM160-200v-80h80v-280q0-83 50-147.5T420-792v-28q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v28q14 4 27.5 8.5T593-772q-15 14-27 30.5T545-706q-15-7-31.5-10.5T480-720q-66 0-113 47t-47 113v280h320v-112q18 11 38 18t42 11v83h80v80H160Z"></path>
+              </svg>
             </button>
             <button
               type="button"
@@ -15527,7 +15602,9 @@ try {
             data-next="screen-remember-today"
             aria-label="Remember something from today"
           >
-            <span class="material-symbols-outlined" aria-hidden="true" translate="no">add_alert</span>
+            <svg viewBox="0 -960 960 960" role="img" focusable="false" aria-hidden="true">
+              <path d="M480-500Zm0 420q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80Zm240-360v-120H600v-80h120v-120h80v120h120v80H800v120h-80ZM160-200v-80h80v-280q0-83 50-147.5T420-792v-28q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v28q14 4 27.5 8.5T593-772q-15 14-27 30.5T545-706q-15-7-31.5-10.5T480-720q-66 0-113 47t-47 113v280h320v-112q18 11 38 18t42 11v83h80v80H160Z"></path>
+            </svg>
           </button>
           <button
             type="button"
@@ -16005,7 +16082,7 @@ try {
   <script src="rumi-colors.js"></script>
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=24"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=29"></script>
   <script src="lib/quilt-mood-clipping.js?v=5"></script>
   <script src="lib/quilt-mood-spread-widget.js?v=10"></script>
   <script src="lib/quilt-mood-terminal.js?v=23"></script>
@@ -42290,10 +42367,63 @@ try {
             const widget = document.getElementById('quoteSpeakerWidget');
             if (!nameEl || !widget || widget.hidden || !String(nameEl.textContent || '').trim()) return;
             this.fitQuoteSpeakerNameToOneLine(nameEl, { silent: true });
+            this._applyQuoteSpeakerHandCut(widget, widget.dataset.handCutDateKey || '');
           }, 48);
         });
         ro.observe(copy);
         this._quoteSpeakerNameResizeObserver = ro;
+      }
+
+      _applyQuoteSpeakerHandCut(widget, dateKey = '') {
+        if (!widget) return;
+        const QNC = globalThis.QuiltNewspaperClipping;
+        if (!QNC?.buildHandCutCssClipPath || widget.hidden) {
+          widget.style.removeProperty('clip-path');
+          widget.style.removeProperty('-webkit-clip-path');
+          return;
+        }
+        const rect = widget.getBoundingClientRect();
+        const w = Math.max(1, Math.round(rect.width));
+        const h = Math.max(1, Math.round(rect.height));
+        if (w < 64 || h < 40) {
+          widget.style.removeProperty('clip-path');
+          widget.style.removeProperty('-webkit-clip-path');
+          return;
+        }
+        const clip = QNC.buildHandCutCssClipPath(w, h, dateKey);
+        if (!clip) {
+          widget.style.removeProperty('clip-path');
+          widget.style.removeProperty('-webkit-clip-path');
+          return;
+        }
+        widget.style.clipPath = clip;
+        widget.style.webkitClipPath = clip;
+      }
+
+      _ensureQuoteSpeakerHandCutFit(widget, dateKey = '') {
+        if (!widget) return;
+        widget.dataset.handCutDateKey = String(dateKey || '').trim();
+        if (typeof ResizeObserver !== 'undefined') {
+          if (!this._quoteSpeakerHandCutObserver) {
+            this._quoteSpeakerHandCutObserver = new ResizeObserver(() => {
+              const w = document.getElementById('quoteSpeakerWidget');
+              if (!w || w.hidden) return;
+              this._applyQuoteSpeakerHandCut(w, w.dataset.handCutDateKey || '');
+            });
+          }
+          if (widget !== this._quoteSpeakerHandCutObservedEl) {
+            if (this._quoteSpeakerHandCutObservedEl) {
+              this._quoteSpeakerHandCutObserver.unobserve(this._quoteSpeakerHandCutObservedEl);
+            }
+            this._quoteSpeakerHandCutObserver.observe(widget);
+            this._quoteSpeakerHandCutObservedEl = widget;
+          }
+        }
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            this._applyQuoteSpeakerHandCut(widget, widget.dataset.handCutDateKey || '');
+          });
+        });
       }
 
       _applyQuoteSpeakerImageLoaded(displayUrl, imageToken, profile, imageWrap, halo, neutralSilhouette, colorWash, avatar) {
@@ -42350,6 +42480,8 @@ try {
         if (!profile) {
           widget.hidden = true;
           widget.classList.remove('quote-speaker-widget--no-image');
+          widget.style.removeProperty('clip-path');
+          widget.style.removeProperty('-webkit-clip-path');
           if (stage) stage.classList.remove('quote-speaker-stage--visible');
           this._quoteSpeakerLastFitName = null;
           return;
@@ -42523,6 +42655,10 @@ try {
           };
           preloader.src = profile.imageUrl;
         }
+        const speakerDateKey = String(
+          resolvedQuote?.dateKey || this.quoteService?.getQuoteCalendarKeyNow?.() || ''
+        ).trim();
+        this._ensureQuoteSpeakerHandCutFit(widget, speakerDateKey);
         void this.refreshQuiltMoodCardImages();
       }
 
@@ -42964,9 +43100,11 @@ try {
         }
 
         const sig = `${g}\u0001${r}`;
+        const exportRev = String(QNC?.CLIPPING_EXPORT_REV || '').trim();
         if (
           spreadHost.dataset.contentSig === sig &&
-          spreadHost._moodSpreadWidget
+          spreadHost._moodSpreadWidget &&
+          spreadHost.dataset.moodExportRev === exportRev
         ) {
           if (initialMood === 'good' || initialMood === 'rough') {
             spreadHost._moodSpreadWidget.setPanel(SpreadW.moodToPanel(initialMood), { instant });
@@ -43035,6 +43173,7 @@ try {
           spreadHost.dataset.contentSig = sig;
           spreadHost.dataset.goodDay = g;
           spreadHost.dataset.roughDay = r;
+          spreadHost.dataset.moodExportRev = exportRev;
 
           const moodHost = document.getElementById('quiltMoodWidget');
           const mounted = SpreadW.mount(spreadHost, {
@@ -43112,7 +43251,8 @@ try {
           if (!roughDay) roughDay = 'Love is enough today.';
         }
 
-        if (!goodDay || !roughDay) {          this._scheduleQuiltMoodFieldsHydrate(todayQuote, host);
+        if (!goodDay || !roughDay) {
+          this._scheduleQuiltMoodFieldsHydrate(todayQuote, host);
           if (host.dataset.moodHydratePending === '1') {
             host.classList.remove('is-active', 'is-good', 'is-rough');
             host.setAttribute('hidden', 'hidden');

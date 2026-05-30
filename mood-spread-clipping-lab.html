@@ -157,7 +157,7 @@
 
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=23"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=29"></script>
   <script>
     (function () {
       const QNC = window.QuiltNewspaperClipping;
@@ -174,6 +174,7 @@
       function payload() {
         return {
           dateKey: '2026-05-29',
+          paperTextureUrl: null,
           today: {
             text: quoteTextEl.value.trim(),
             author: quoteAuthorEl.value.trim(),
@@ -194,31 +195,36 @@
       }
 
       async function render() {
-        if (!QNC?.composeMoodSpreadDataUrl || !QNC?.composeDataUrl) {
-          statusEl.textContent = 'Missing quilt-newspaper-clipping.js';
+        if (!QNC?.composeMoodSpreadWithMetrics || !QNC?.composeDataUrl) {
+          statusEl.textContent = 'Missing quilt-newspaper-clipping.js — serve over http, not file://';
           return;
         }
-        statusEl.textContent = 'Rendering…';
+        statusEl.textContent = `Rendering (export rev ${QNC.CLIPPING_EXPORT_REV || '?'})…`;
         const data = payload();
         try {
-          const [moodUrl, peekUrl] = await Promise.all([
-            QNC.composeMoodSpreadDataUrl(data),
+          const [moodResult, peekUrl] = await Promise.all([
+            QNC.composeMoodSpreadWithMetrics(data),
             QNC.composeDataUrl(data)
           ]);
+          const moodUrl = moodResult?.dataUrl;
           if (!moodUrl) throw new Error('Mood spread export failed');
           moodImg.src = moodUrl;
           peekImg.src = peekUrl || '';
           moodImg.onload = () => {
-            moodMeta.textContent = `${moodImg.naturalWidth}×${moodImg.naturalHeight}px`;
+            moodMeta.textContent = `${moodImg.naturalWidth}×${moodImg.naturalHeight}px · rev ${QNC.CLIPPING_EXPORT_REV || '?'}`;
           };
           if (peekUrl) {
             peekImg.onload = () => {
               peekMeta.textContent = `${peekImg.naturalWidth}×${peekImg.naturalHeight}px`;
             };
+          } else {
+            peekMeta.textContent = 'Peek export failed';
           }
-          statusEl.textContent = 'Done — edit fields and click Render to refresh.';
+          statusEl.textContent = `Done — export rev ${QNC.CLIPPING_EXPORT_REV || '?'}. Edit fields and click Render.`;
         } catch (err) {
           statusEl.textContent = String(err?.message || err);
+          moodImg.removeAttribute('src');
+          peekImg.removeAttribute('src');
         }
       }
 
