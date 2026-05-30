@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mood triptych — preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=brightness_1,contrast&display=block" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1816;
+      color: #e8e4dc;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 320px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      padding: 1rem 1.1rem 2rem;
+      background: #252220;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      overflow-y: auto;
+    }
+    .panel h1 { font-size: 1rem; font-weight: 600; margin: 0 0 0.35rem; }
+    .panel .note {
+      font-size: 0.78rem;
+      color: #9a9590;
+      line-height: 1.45;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8a8580;
+      margin: 0.7rem 0 0.25rem;
+    }
+    textarea {
+      width: 100%;
+      font: inherit;
+      font-size: 0.88rem;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      background: #1a1816;
+      color: #e8e4dc;
+      min-height: 3.25rem;
+      resize: vertical;
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 0.85rem;
+      padding: 0.45rem 0.75rem;
+      font: inherit;
+      font-size: 0.82rem;
+      border: 1px solid #e6d4a8;
+      border-radius: 4px;
+      background: #e6d4a8;
+      color: #1a1610;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .status {
+      font-size: 0.78rem;
+      color: #9a9590;
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+    }
+    .preview-wrap {
+      padding: 2rem 1.5rem 3rem;
+      background: #121110;
+      min-height: 100vh;
+    }
+    #screen-quilt {
+      --quilt-float-card-max: 460px;
+      --quilt-float-card-gutter: 16px;
+      --quilt-float-sheet-width: min(var(--quilt-float-card-max), calc(100vw - 32px));
+      --quilt-paper-card-fallback: #f5e6d4;
+      --quilt-paper-surface-image:
+        linear-gradient(118deg, rgba(72, 58, 42, 0.03) 0%, transparent 52%),
+        linear-gradient(298deg, rgba(58, 44, 30, 0.04) 0%, transparent 54%),
+        radial-gradient(ellipse 90% 75% at 50% 42%, rgba(255, 252, 248, 0.14), transparent 58%);
+      --quilt-paper-card-shadow:
+        0 1px 0 rgba(45, 36, 29, 0.08),
+        0 5px 16px rgba(45, 36, 29, 0.12);
+      --odq-artifact-shadow:
+        drop-shadow(0 4px 14px rgba(45, 36, 29, 0.14))
+        drop-shadow(0 1px 3px rgba(45, 36, 29, 0.1));
+      max-width: min(94vw, 28.75rem);
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h1>Mood triptych</h1>
+      <p class="note">Peek quote + two icon squares that unfold on tap.</p>
+
+      <label for="quoteText">Quote</label>
+      <textarea id="quoteText">Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world.</textarea>
+
+      <label for="quoteAuthor">Author</label>
+      <textarea id="quoteAuthor" rows="1">Albert Einstein</textarea>
+
+      <label for="goodDay">Good day</label>
+      <textarea id="goodDay">Hard mute the inner critic.</textarea>
+
+      <label for="roughDay">Rough day</label>
+      <textarea id="roughDay">Let the difficult thing stay difficult for one more breath.</textarea>
+
+      <button type="button" class="btn" id="renderBtn">Render</button>
+      <p class="status" id="status">Loading…</p>
+    </aside>
+
+    <main class="preview-wrap">
+      <section id="screen-quilt">
+        <div id="quiltMoodSpread" class="quilt-mood-triptych" hidden></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="lib/quote-keyword-emphasis.js"></script>
+  <script src="lib/layout-b-keyword-emphasis.js"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=29"></script>
+  <script src="lib/quilt-mood-triptych-widget.js?v=17"></script>
+  <script>
+    (function () {
+      const QNC = window.QuiltNewspaperClipping;
+      const TriptychW = window.QuiltMoodTriptychWidget;
+      const host = document.getElementById('quiltMoodSpread');
+      const statusEl = document.getElementById('status');
+
+      function payload() {
+        return {
+          dateKey: '2026-05-29',
+          paperTextureUrl: null,
+          today: {
+            text: document.getElementById('quoteText').value.trim(),
+            author: document.getElementById('quoteAuthor').value.trim(),
+            keyword: 'encircles the world',
+            first_line_count: 4
+          },
+          goodDay: document.getElementById('goodDay').value.trim(),
+          roughDay: document.getElementById('roughDay').value.trim()
+        };
+      }
+
+      async function render() {
+        if (!QNC?.composeDataUrl || !TriptychW?.mount) {
+          statusEl.textContent = 'Missing scripts — serve over http, not file://';
+          return;
+        }
+        statusEl.textContent = 'Rendering…';
+        const data = payload();
+        try {
+          TriptychW.unmount(host);
+          const quoteDataUrl = await QNC.composeDataUrl({
+            today: data.today,
+            dateKey: data.dateKey,
+            paperTextureUrl: data.paperTextureUrl,
+            width: 0
+          });
+          if (!quoteDataUrl) throw new Error('Quote compose failed');
+          const mounted = TriptychW.mount(host, {
+            quoteDataUrl,
+            goodDay: data.goodDay,
+            roughDay: data.roughDay,
+            dateKey: data.dateKey,
+            onReady: () => {
+              statusEl.textContent = 'Ready — tap a square to unfold.';
+            }
+          });
+          if (!mounted) throw new Error('Triptych mount failed');
+        } catch (err) {
+          statusEl.textContent = String(err?.message || err);
+          TriptychW.unmount(host);
+        }
+      }
+
+      document.getElementById('renderBtn').addEventListener('click', render);
+      render();
+    })();
+  </script>
+</body>
+</html>

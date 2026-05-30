@@ -209,6 +209,7 @@ try {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link href="https://fonts.googleapis.com/css2?family=Cutive+Mono&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Cutive+Mono&display=swap" rel="stylesheet"></noscript>
   <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
@@ -5231,6 +5232,7 @@ try {
     /* Quote / mood column (realistic paper quote card + section sheet behind quote + slot). */
     #screen-quilt {
       --quilt-courier-font: 'Courier Prime', 'Courier New', Courier, monospace;
+      --quilt-sticker-label-font: 'Oswald', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
       --quilt-cutive-font: 'Cutive Mono', ui-monospace, monospace;
       --quilt-quote-copy-size: clamp(1.044rem, 4.32vw, 1.728rem);
       --quilt-quote-font: var(--quilt-courier-font);
@@ -10458,17 +10460,20 @@ try {
       padding-right: 0;
     }
 
-    #screen-quilt .quote-card-stack:has(#quiltMoodSpread.is-ready:not([hidden])) {
-      --quilt-float-card-gutter: 0;
-      --quilt-float-card-max: 100%;
-      --quilt-float-sheet-width: 100%;
-      align-items: stretch;
+    #screen-quilt .quote-card-stack:has(#quiltMoodSpread.quilt-mood-triptych.is-ready:not([hidden])) {
+      --quilt-float-card-gutter: clamp(1.25rem, 8vw, 2.25rem);
+      --quilt-float-card-max: 460px;
+      --quilt-float-sheet-width: min(
+        var(--quilt-float-card-max),
+        calc(100% - (2 * var(--quilt-float-card-gutter)))
+      );
+      align-items: center;
       padding-left: 0;
       padding-right: 0;
     }
 
-    #screen-quilt #quiltMoodSpread.quilt-mood-spread.is-ready:not([hidden]) {
-      display: block;
+    #screen-quilt #quiltMoodSpread.quilt-mood-triptych.is-ready:not([hidden]) {
+      display: flex;
       width: 100%;
       max-width: 100%;
     }
@@ -11291,6 +11296,9 @@ try {
 
     #screen-quilt .quilt-reflection-question-paper .quilt-reflection-response-form .quilt-reflection-response-submit {
       align-self: center;
+      margin-left: auto;
+      margin-right: auto;
+      max-width: calc(100% - 0.35rem);
     }
 
     #screen-quilt .quilt-reflection-question-paper .quilt-reflection-response-byline {
@@ -11442,27 +11450,134 @@ try {
     }
 
     #screen-quilt .quilt-reflection-response-submit {
+      --reflection-add-yours-sticker-rgb: 196, 118, 88;
+      --reflection-add-yours-sticker-grain: 0.36;
+      --reflection-add-yours-sticker-wear: 0.4;
+      position: relative;
+      isolation: isolate;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       margin: 0.78rem 0 0;
-      padding: 0.64rem 1rem;
-      border: 1px solid rgba(91, 70, 44, 0.18);
+      padding: 0.62rem 1.08rem 0.66rem;
+      border: none;
       border-radius: 999px;
-      background: #2f2b24;
-      color: #f5ecdc;
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
+      background-color: var(--reflection-add-yours-sticker-bg, rgba(196, 118, 88, 0.82));
+      background-image:
+        radial-gradient(ellipse 120% 90% at 32% 22%, rgba(255, 248, 236, 0.2), transparent 62%),
+        radial-gradient(ellipse 80% 60% at 68% 70%, rgba(255, 252, 247, 0.1), transparent 58%);
+      color: var(--reflection-add-yours-sticker-ink, rgba(31, 28, 24, 0.84));
+      font-family: var(--quilt-sticker-label-font);
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.07em;
+      line-height: 1.1;
       text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+      font-stretch: condensed;
       cursor: pointer;
+      /* Flush stock: top/left rim highlight + bottom/right ink edge (reference tag) */
+      box-shadow:
+        inset 1px 1px 0 var(--reflection-add-yours-sticker-highlight, rgba(255, 244, 228, 0.36)),
+        1px 1px 0 var(--reflection-add-yours-sticker-shadow, rgba(47, 39, 31, 0.18));
+      text-shadow: none;
+      -webkit-font-smoothing: antialiased;
+      opacity: var(--reflection-add-yours-sticker-opacity, 0.9);
+      transform: rotate(var(--reflection-add-yours-sticker-tilt, -1.35deg))
+        translate(var(--reflection-add-yours-sticker-x, 0), var(--reflection-add-yours-sticker-y, 0.05rem));
+      transform-origin: 52% 48%;
+      -webkit-appearance: none;
+      appearance: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: opacity 0.16s ease;
+    }
+
+    /* Light fiber — no dark multiply blotches */
+    #screen-quilt .quilt-reflection-response-submit::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background-image:
+        repeating-linear-gradient(
+          92deg,
+          rgba(255, 248, 236, 0.05) 0 1px,
+          transparent 1px 4px
+        ),
+        repeating-linear-gradient(
+          8deg,
+          rgba(255, 252, 247, 0.04) 0 1px,
+          transparent 1px 5px
+        ),
+        radial-gradient(circle at 22% 30%, rgba(255, 252, 247, 0.35) 0 0.038rem, transparent 0.05rem),
+        radial-gradient(circle at 62% 44%, rgba(255, 248, 236, 0.28) 0 0.03rem, transparent 0.04rem),
+        radial-gradient(circle at 48% 72%, rgba(255, 252, 247, 0.32) 0 0.034rem, transparent 0.044rem);
+      background-size:
+        100% 100%,
+        100% 100%,
+        0.46rem 0.46rem,
+        0.46rem 0.46rem,
+        0.46rem 0.46rem;
+      background-position:
+        0 0,
+        0.1rem 0.08rem,
+        0 0,
+        0.18rem 0.12rem,
+        0.08rem 0.18rem;
+      mix-blend-mode: soft-light;
+      opacity: var(--reflection-add-yours-sticker-grain, 0.42);
+    }
+
+    /* Scuff marks — lighter paper showing through worn ink */
+    #screen-quilt .quilt-reflection-response-submit::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background-image:
+        linear-gradient(
+          116deg,
+          transparent 36%,
+          var(--reflection-add-yours-sticker-paper, rgba(255, 248, 236, 0.72)) 39%,
+          var(--reflection-add-yours-sticker-paper, rgba(255, 248, 236, 0.72)) 41.5%,
+          transparent 44.5%
+        ),
+        linear-gradient(
+          74deg,
+          transparent 54%,
+          var(--reflection-add-yours-sticker-paper, rgba(255, 248, 236, 0.58)) 56.5%,
+          var(--reflection-add-yours-sticker-paper, rgba(255, 248, 236, 0.58)) 58%,
+          transparent 60.5%
+        ),
+        linear-gradient(
+          162deg,
+          transparent 18%,
+          var(--reflection-add-yours-sticker-paper, rgba(255, 252, 247, 0.5)) 20%,
+          transparent 22%
+        ),
+        radial-gradient(ellipse 34% 14% at 38% 58%, var(--reflection-add-yours-sticker-paper, rgba(255, 252, 247, 0.78)), transparent 72%),
+        radial-gradient(ellipse 22% 10% at 72% 34%, var(--reflection-add-yours-sticker-paper, rgba(255, 248, 236, 0.62)), transparent 70%),
+        radial-gradient(circle at 18% 78%, var(--reflection-add-yours-sticker-paper, rgba(255, 252, 247, 0.55)) 0 0.06rem, transparent 0.07rem),
+        radial-gradient(circle at 84% 22%, var(--reflection-add-yours-sticker-paper, rgba(255, 248, 236, 0.48)) 0 0.05rem, transparent 0.06rem);
+      opacity: var(--reflection-add-yours-sticker-wear, 0.52);
+      mix-blend-mode: screen;
     }
 
     #screen-quilt .quilt-reflection-question-paper .quilt-reflection-response-submit {
       margin: 0.85rem 0 0.5rem;
-      background: rgba(47, 43, 36, 0.9);
-      color: #f8efe0;
-      box-shadow: none;
+    }
+
+    #screen-quilt .quilt-reflection-response-submit:hover:not(:disabled),
+    #screen-quilt .quilt-reflection-response-submit:focus-visible:not(:disabled) {
+      opacity: 0.9;
+      outline: none;
+    }
+
+    #screen-quilt .quilt-reflection-response-submit:focus-visible:not(:disabled) {
+      outline: 1px dashed rgba(47, 41, 36, 0.34);
+      outline-offset: 0.28rem;
     }
 
     #screen-quilt .quilt-reflection-response-submit:disabled {
@@ -11534,20 +11649,40 @@ try {
     }
 
     #screen-quilt .quilt-reflection-carousel {
-      --quilt-reflection-theme-size: calc(var(--quilt-reflection-copy-size) * 0.81);
+      --quilt-reflection-theme-size: calc(var(--quilt-reflection-copy-size) * 0.92);
       --reflection-patch-w: 52vw;
       --reflection-patch-h-base: clamp(11rem, 36vw, 13rem);
-      --reflection-patch-overlap: clamp(0.1rem, 0.38vw, 0.2rem);
+      --reflection-patch-overlap: clamp(0.28rem, 1.05vw, 0.52rem);
       --reflection-patch-side-bleed: clamp(0.07rem, 0.26vw, 0.13rem);
       --reflection-fabric-fray: clamp(0.15rem, 0.45vw, 0.19rem);
       --reflection-outer-edge-fray: calc(var(--reflection-fabric-fray) + max(0.3rem, 2.5%));
       --reflection-carousel-scroll-hint: clamp(2.25rem, 10.5vw, 4.25rem);
+      /* Diagonal thread strength only — no orthogonal repeat (that reads as graph-paper blocks). */
+      --reflection-fabric-weave-scale: 1.38;
+      --reflection-fabric-thread-light: 0.16;
+      --reflection-fabric-thread-dark: 0.15;
       position: relative;
       width: 100%;
       margin: 0;
+      isolation: isolate;
+    }
+
+    #screen-quilt .quilt-reflection-carousel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image: var(--quilt-paper-card-texture), var(--odq-scroll-artifact-grain);
+      background-size: 88px 88px, 256px 256px;
+      background-repeat: repeat;
+      opacity: var(--odq-scroll-artifact-grain-opacity, 0.045);
+      mix-blend-mode: multiply;
     }
 
     #screen-quilt .quilt-reflection-carousel-viewport {
+      position: relative;
+      z-index: 1;
       width: 100%;
       box-sizing: border-box;
       overflow-x: auto;
@@ -11559,7 +11694,7 @@ try {
       overscroll-behavior-x: contain;
       scroll-behavior: auto;
       user-select: none;
-      background-color: #f6f4f1;
+      background-color: color-mix(in srgb, var(--odq-paper-matte, #ebe8e3) 38%, transparent);
     }
 
     #screen-quilt .quilt-reflection-carousel-viewport.is-scrollable {
@@ -11608,10 +11743,11 @@ try {
 
     #screen-quilt .quilt-reflection-carousel-slide {
       --reflection-fabric-rgb: 231, 216, 188;
-      --reflection-fabric-text: #1a1a1a;
+      --reflection-fabric-text: #2f271f;
+      --reflection-fabric-cut: polygon(0 2%, 18% 0, 42% 1.4%, 68% 0.4%, 100% 2%, 100% 98%, 76% 100%, 48% 98.6%, 19% 100%, 0 98%);
       --reflection-fabric-weave: 1;
       --reflection-fabric-fray: clamp(0.15rem, 0.45vw, 0.19rem);
-      --reflection-fray-stroke: 0.06rem;
+      --reflection-fray-stroke: 0.045rem;
       --reflection-fray-tuck: max(0.3rem, 2.5%);
       --reflection-fray-len-a: 0.07rem;
       --reflection-fray-len-b: 0.1rem;
@@ -11636,6 +11772,8 @@ try {
       overflow: visible;
       z-index: var(--reflection-slide-z, 1);
       scroll-snap-align: center;
+      /* Fills hand-cut notches and sub-patch row gaps (see ::before clip). */
+      background-color: rgb(var(--reflection-fabric-rgb));
     }
 
     #screen-quilt .quilt-reflection-carousel-slide:not(:first-child) {
@@ -11659,9 +11797,10 @@ try {
     }
 
     #screen-quilt .quilt-reflection-carousel-slide--decor::before {
-      background-blend-mode: screen, overlay, multiply, multiply, multiply, multiply, soft-light, overlay, multiply;
+      background-blend-mode: overlay, multiply, multiply, multiply, overlay, multiply;
     }
 
+    /* Typed call-to-action on the fabric patch — not a glass pill */
     #screen-quilt .quilt-reflection-carousel-invite-btn {
       position: relative;
       z-index: 5;
@@ -11669,21 +11808,25 @@ try {
       align-items: center;
       justify-content: center;
       margin: 0;
-      padding: 0.55rem 1.2rem;
+      padding: 0.2rem 0.05rem 0.35rem;
       border: none;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.24);
+      border-radius: 0;
+      background: transparent;
       color: inherit;
-      font-family: 'Courier Prime', 'Courier New', Courier, monospace;
-      font-size: 0.702rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      line-height: 1.2;
+      font-family: var(--quilt-courier-font);
+      font-size: var(--quilt-reflection-theme-size, calc(var(--quilt-reflection-copy-size) * 0.92));
+      font-weight: 400;
+      font-style: normal;
+      letter-spacing: 0.1em;
+      line-height: 1.25;
       text-transform: uppercase;
+      text-decoration: none;
       cursor: pointer;
       box-shadow: none;
-      text-shadow: none;
+      text-shadow: 0 0.5px 0 rgba(255, 252, 247, 0.25);
       filter: none;
+      transform: rotate(var(--reflection-fabric-tilt, 0deg)) translateY(var(--reflection-fabric-y, 0));
+      transform-origin: 50% 52%;
       -webkit-appearance: none;
       appearance: none;
       -webkit-tap-highlight-color: transparent;
@@ -11691,19 +11834,20 @@ try {
     }
 
     #screen-quilt .quilt-reflection-carousel-slide--light .quilt-reflection-carousel-invite-btn {
-      background: rgba(0, 0, 0, 0.1);
+      text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.35);
     }
 
     #screen-quilt .quilt-reflection-carousel-invite-btn:hover,
     #screen-quilt .quilt-reflection-carousel-invite-btn:focus-visible {
-      background: rgba(255, 255, 255, 0.34);
-      box-shadow: none;
+      background: transparent;
+      text-decoration: none;
+      opacity: 0.88;
       outline: none;
     }
 
-    #screen-quilt .quilt-reflection-carousel-slide--light .quilt-reflection-carousel-invite-btn:hover,
-    #screen-quilt .quilt-reflection-carousel-slide--light .quilt-reflection-carousel-invite-btn:focus-visible {
-      background: rgba(0, 0, 0, 0.16);
+    #screen-quilt .quilt-reflection-carousel-invite-btn:focus-visible {
+      outline: 1px dashed rgba(47, 39, 31, 0.35);
+      outline-offset: 0.35rem;
     }
 
     #screen-quilt .quilt-reflection-carousel-slide--light .quilt-reflection-carousel-text {
@@ -11719,7 +11863,7 @@ try {
       transform: rotate(var(--reflection-fabric-tilt, 0deg)) translateY(var(--reflection-fabric-y, 0));
     }
 
-    /* Clip only the fabric body; slide stays unclipped so ::after fray can extend past the cut edge. */
+    /* Clip only the fabric body; stay inset so ::after / fray spans can show past top & bottom edges. */
     #screen-quilt .quilt-reflection-carousel-slide::before {
       top: 0;
       bottom: 0;
@@ -11729,19 +11873,28 @@ try {
       clip-path: var(--reflection-fabric-cut);
       -webkit-clip-path: var(--reflection-fabric-cut);
       background-color: rgb(var(--reflection-fabric-rgb));
+      /* Woven = smooth wash + diagonal threads + nap dots. Never 0deg/90deg repeat (grid blocks). */
       background-image:
-        linear-gradient(90deg, rgba(255, 255, 255, calc(0.08 * var(--reflection-fabric-weave))), rgba(41, 34, 29, calc(0.12 * var(--reflection-fabric-weave)))),
-        repeating-linear-gradient(0deg, rgba(255, 255, 255, calc(0.14 * var(--reflection-fabric-weave))) 0 1px, transparent 1px 5px),
-        repeating-linear-gradient(90deg, rgba(45, 38, 32, calc(0.12 * var(--reflection-fabric-weave))) 0 1px, transparent 1px 6px),
+        linear-gradient(
+          90deg,
+          rgba(255, 255, 255, calc(0.08 * var(--reflection-fabric-weave))),
+          rgba(41, 34, 29, calc(0.12 * var(--reflection-fabric-weave)))
+        ),
         radial-gradient(circle at 18% 7%, rgba(47, 43, 37, calc(0.34 * var(--reflection-fabric-weave))) 0 0.08rem, transparent 0.1rem),
         radial-gradient(circle at 84% 10%, rgba(47, 43, 37, calc(0.28 * var(--reflection-fabric-weave))) 0 0.07rem, transparent 0.095rem),
         radial-gradient(circle at 93% 82%, rgba(47, 43, 37, calc(0.24 * var(--reflection-fabric-weave))) 0 0.06rem, transparent 0.09rem),
         radial-gradient(circle at 8% 88%, rgba(47, 43, 37, calc(0.2 * var(--reflection-fabric-weave))) 0 0.055rem, transparent 0.085rem),
-        repeating-linear-gradient(88deg, rgba(255, 255, 255, calc(0.09 * var(--reflection-fabric-weave))) 0 1px, transparent 1px 7px),
-        repeating-linear-gradient(2deg, rgba(42, 35, 30, calc(0.09 * var(--reflection-fabric-weave))) 0 1px, transparent 1px 8px);
+        repeating-linear-gradient(
+          88deg,
+          rgba(255, 255, 255, calc(var(--reflection-fabric-thread-light, 0.16) * var(--reflection-fabric-weave) * var(--reflection-fabric-weave-scale, 1.38))) 0 1.5px,
+          transparent 1.5px 5.5px
+        ),
+        repeating-linear-gradient(
+          2deg,
+          rgba(42, 35, 30, calc(var(--reflection-fabric-thread-dark, 0.15) * var(--reflection-fabric-weave) * var(--reflection-fabric-weave-scale, 1.38))) 0 1.5px,
+          transparent 1.5px 6.5px
+        );
       background-size:
-        100% 100%,
-        100% 100%,
         100% 100%,
         auto,
         auto,
@@ -11756,12 +11909,8 @@ try {
         0 0,
         0 0,
         0 0,
-        0 0,
-        0 0,
         0 0;
       background-repeat:
-        repeat,
-        repeat,
         repeat,
         no-repeat,
         no-repeat,
@@ -11769,12 +11918,14 @@ try {
         no-repeat,
         repeat,
         repeat;
-      background-blend-mode: screen, overlay, multiply, multiply, multiply, multiply, multiply, overlay, multiply;
+      background-blend-mode: overlay, multiply, multiply, multiply, soft-light, multiply;
       box-shadow:
-        inset 0.6px 0.7px 0 rgba(255, 255, 255, calc(0.2 * var(--reflection-fabric-weave))),
-        inset -1px -1px 0 rgba(38, 31, 26, calc(0.18 * var(--reflection-fabric-weave))),
-        0 5px 14px rgba(48, 36, 24, 0.1);
-      filter: blur(0.1px);
+        inset 0.5px 0.5px 0 rgba(255, 255, 255, calc(0.18 * var(--reflection-fabric-weave))),
+        inset -0.8px -0.8px 0 rgba(var(--reflection-fabric-rgb), calc(0.22 * var(--reflection-fabric-weave))),
+        0 1px 0 rgba(var(--reflection-fabric-rgb), 0.14),
+        0 5px 16px rgba(var(--reflection-fabric-rgb), 0.16),
+        0 16px 36px rgba(45, 36, 29, 0.07);
+      filter: none;
     }
 
     /* Top warp threads: behind fabric, lengthened into patch so edges never gap. */
@@ -11809,7 +11960,7 @@ try {
       transform-origin: 50% 52%;
       transform: rotate(var(--reflection-fabric-tilt, 0deg)) translateY(var(--reflection-fabric-y, 0));
       height: calc(var(--reflection-fabric-fray) + var(--reflection-fray-tuck));
-      z-index: 0;
+      z-index: 2;
       pointer-events: none;
       background:
         repeating-linear-gradient(90deg, transparent 0 0.1rem, rgb(var(--reflection-fabric-rgb)) 0.1rem calc(0.1rem + var(--reflection-fray-stroke)), transparent calc(0.1rem + var(--reflection-fray-stroke)) 0.32rem, rgba(var(--reflection-fabric-rgb), 0.76) 0.32rem calc(0.32rem + var(--reflection-fray-stroke)), transparent calc(0.32rem + var(--reflection-fray-stroke)) 0.54rem) 0 0 / 100% calc(var(--reflection-fray-tuck) + var(--reflection-fray-len-a)) no-repeat,
@@ -11878,7 +12029,8 @@ try {
       background-repeat: repeat-y;
       background-size: 100% 2.64rem;
       background-position: center top;
-      filter: drop-shadow(0 0.45px 0.6px rgba(24, 18, 12, 0.22));
+      filter: drop-shadow(0 0.35px 0.45px rgba(24, 18, 12, 0.16));
+      opacity: 0.92;
     }
 
     #screen-quilt .quilt-reflection-carousel-seam.is-visible {
@@ -11899,23 +12051,27 @@ try {
 
     #screen-quilt .quilt-reflection-carousel-slide.has-join-shadow-left::before {
       box-shadow:
-        inset 5px 0 12px -5px rgba(38, 31, 26, 0.1),
-        inset 0.6px 0.7px 0 rgba(255, 255, 255, calc(0.2 * var(--reflection-fabric-weave))),
-        inset -1px -1px 0 rgba(38, 31, 26, calc(0.18 * var(--reflection-fabric-weave))),
-        0 5px 14px rgba(48, 36, 24, 0.1);
+        inset 5px 0 12px -5px rgba(45, 36, 29, 0.09),
+        inset 0.5px 0.5px 0 rgba(255, 255, 255, calc(0.16 * var(--reflection-fabric-weave))),
+        inset -0.8px -0.8px 0 rgba(45, 36, 29, calc(0.14 * var(--reflection-fabric-weave))),
+        0 1px 0 rgba(45, 36, 29, 0.08),
+        0 5px 16px rgba(45, 36, 29, 0.12),
+        0 16px 36px rgba(45, 36, 29, 0.06);
     }
 
     #screen-quilt .quilt-reflection-carousel-slide--light.has-join-shadow-left::before {
       box-shadow:
-        inset 5px 0 12px -5px rgba(38, 31, 26, 0.08),
-        inset 0.6px 0.7px 0 rgba(255, 255, 255, calc(0.28 * var(--reflection-fabric-weave))),
-        inset -1px -1px 0 rgba(38, 31, 26, calc(0.12 * var(--reflection-fabric-weave))),
-        0 5px 14px rgba(48, 36, 24, 0.1);
+        inset 5px 0 12px -5px rgba(45, 36, 29, 0.07),
+        inset 0.5px 0.5px 0 rgba(255, 255, 255, calc(0.22 * var(--reflection-fabric-weave))),
+        inset -0.8px -0.8px 0 rgba(45, 36, 29, calc(0.1 * var(--reflection-fabric-weave))),
+        0 1px 0 rgba(45, 36, 29, 0.08),
+        0 5px 16px rgba(45, 36, 29, 0.12),
+        0 16px 36px rgba(45, 36, 29, 0.06);
     }
 
     #screen-quilt .quilt-reflection-carousel-text {
       position: relative;
-      z-index: 2;
+      z-index: 3;
       transform-origin: 50% 52%;
       transform: rotate(var(--reflection-fabric-tilt, 0deg)) translateY(var(--reflection-fabric-y, 0));
       margin: 0;
@@ -11923,7 +12079,7 @@ try {
       max-width: 100%;
       color: inherit;
       font-family: var(--quilt-courier-font);
-      font-size: var(--quilt-reflection-theme-size, calc(var(--quilt-reflection-copy-size) * 0.81));
+      font-size: var(--quilt-reflection-theme-size, calc(var(--quilt-reflection-copy-size) * 0.92));
       font-style: normal;
       font-weight: 400;
       line-height: 1.35;
@@ -12041,105 +12197,96 @@ try {
     }
 
     #screen-quilt .quote-speaker-widget {
+      --quilt-byg-tape: var(--odq-paper-tape, #f2eee6);
+      --quilt-byg-tape-strip: url("assets/before-you-go-tape-alpha.png");
+      --quilt-byg-tape-cap: 13%;
+      --quilt-byg-tape-safe-y: 1.15rem;
+      --quilt-byg-tape-safe-x: 15.5%;
       width: 100%;
       max-width: var(--quilt-float-card-max, 460px);
       box-sizing: border-box;
       margin: 0 auto;
-      padding: 26px 16px 48px;
+      padding: 0 0 2.25rem;
       display: flex;
       flex-direction: column;
-      gap: 10px;
       align-items: stretch;
-      background-color: var(--odq-paper-artifact, #f5e6d4);
-      background-image: var(--quilt-paper-surface-image);
-      background-size: 100% 100%, 100% 100%, 100% 100%;
-      background-position: center;
-      background-repeat: no-repeat;
+      background: transparent;
       border: none;
       border-radius: 0;
       box-shadow: none;
-      filter: var(--odq-artifact-shadow);
+      filter: none;
       color: var(--odq-ink-body, #2f271f);
       text-align: left;
       position: relative;
       z-index: 10;
-      isolation: isolate;
       overflow: visible;
-      transform: rotate(-0.6deg);
-      transform-origin: center center;
-    }
-
-    #screen-quilt .quote-speaker-widget::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background-image: var(--quilt-paper-card-texture);
-      background-size: 88px 88px;
-      background-repeat: repeat;
-      opacity: 0.11;
-      mix-blend-mode: multiply;
-    }
-
-    #screen-quilt .quote-speaker-widget > * {
-      position: relative;
-      z-index: 1;
+      transform: none;
     }
 
     #screen-quilt .quote-speaker-widget[hidden] {
       display: none;
     }
 
-    #screen-quilt .quote-speaker-widget--no-image {
-      gap: 0;
-      padding-top: 18px;
+    #screen-quilt .quote-speaker-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: clamp(0.65rem, 2.4vw, 0.95rem);
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
     }
 
-    #screen-quilt .quote-speaker-widget--no-image .quote-speaker-image-wrap,
-    #screen-quilt .quote-speaker-widget--no-image .quote-speaker-attribution {
-      display: none;
-    }
-
-    #screen-quilt .quote-speaker-image-wrap {
+    /* Magazine cutout — portrait alpha mask + hand-cut clip (JS) */
+    #screen-quilt .quote-speaker-cutout {
       display: block;
       position: relative;
-      width: 100%;
+      z-index: 1;
+      width: min(89.7%, 20.125rem);
+      margin: 0 auto;
       aspect-ratio: 1 / 1;
-      overflow: visible;
-      border-radius: 0;
-      background:
-        linear-gradient(132deg, rgba(255, 250, 236, 0.42), rgba(255, 250, 236, 0.12) 54%, rgba(58, 45, 34, 0.035)),
-        radial-gradient(ellipse at 48% 54%, rgba(58, 45, 34, 0.06) 0 42%, transparent 68%);
+      overflow: hidden;
+      background: transparent;
       border: 0;
       box-shadow: none;
-      filter: none;
       isolation: isolate;
-      margin-bottom: 8px;
-      transform: rotate(-0.2deg);
+      transform: rotate(-1.35deg) translateX(-4px);
+      transform-origin: center bottom;
+      filter:
+        drop-shadow(2px 5px 0 rgba(35, 27, 20, 0.09))
+        drop-shadow(6px 14px 18px rgba(35, 27, 20, 0.14));
     }
 
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-halo,
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette,
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash,
-    #screen-quilt .quote-speaker-image-wrap::before,
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-xerox-grain {
-      content: "";
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--loaded {
+      overflow: visible;
+    }
+
+    #screen-quilt .quote-speaker-cutout::before,
+    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette,
+    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash,
+    #screen-quilt .quote-speaker-cutout .quote-speaker-xerox-grain {
+      content: '';
       position: absolute;
       pointer-events: none;
     }
 
-    #screen-quilt .quote-speaker-image-wrap[hidden] {
-      display: none;
-    }
-
-    #screen-quilt .quote-speaker-image-wrap::before {
+    #screen-quilt .quote-speaker-cutout::before {
       inset: 0;
       z-index: 4;
       background-image: var(--speaker-image-url, none);
       background-size: 100% auto;
       background-position: top center;
       background-repeat: no-repeat;
+      -webkit-mask-image: var(--speaker-image-url, none);
+      mask-image: var(--speaker-image-url, none);
+      -webkit-mask-size: 100% auto;
+      mask-size: 100% auto;
+      -webkit-mask-position: top center;
+      mask-position: top center;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-mode: alpha;
+      mask-mode: alpha;
       filter:
         grayscale(1)
         contrast(1.48)
@@ -12150,27 +12297,27 @@ try {
       transform: rotate(0.6deg);
     }
 
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-halo {
-      inset: 5%;
-      z-index: 1;
-      background: var(--speaker-halo-color, rgba(214, 151, 126, 0.32));
-      clip-path: polygon(9% 10%, 77% 5%, 96% 25%, 90% 84%, 66% 96%, 15% 90%, 4% 52%);
-      opacity: 0.34;
-      filter: blur(0.25px) saturate(1.08);
-      transform: rotate(1.25deg);
-    }
-
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette,
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette,
+    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash {
       inset: 0;
       background-image: var(--speaker-image-url, none);
       background-size: 100% auto;
       background-position: top center;
       background-repeat: no-repeat;
+      -webkit-mask-image: var(--speaker-image-url, none);
+      mask-image: var(--speaker-image-url, none);
+      -webkit-mask-size: 100% auto;
+      mask-size: 100% auto;
+      -webkit-mask-position: top center;
+      mask-position: top center;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-mode: alpha;
+      mask-mode: alpha;
       mix-blend-mode: normal;
     }
 
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette {
       z-index: 2;
       opacity: 1;
       filter:
@@ -12185,7 +12332,7 @@ try {
       transform: translate(0.7%, 0.6%) rotate(0.18deg) scale(1.004);
     }
 
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash {
       z-index: 3;
       opacity: 0.34;
       filter:
@@ -12200,13 +12347,12 @@ try {
       transform: translate(-2.2%, 1.9%) rotate(-0.55deg) scale(1.012);
     }
 
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-halo[hidden],
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-neutral-silhouette[hidden],
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-color-wash[hidden] {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette[hidden],
+    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash[hidden] {
       display: none;
     }
 
-    #screen-quilt .quote-speaker-image-wrap .quote-speaker-xerox-grain {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-xerox-grain {
       inset: 0;
       z-index: 5;
       background:
@@ -12220,31 +12366,49 @@ try {
       mask-position: top center;
       -webkit-mask-repeat: no-repeat;
       mask-repeat: no-repeat;
+      -webkit-mask-mode: alpha;
+      mask-mode: alpha;
       mix-blend-mode: multiply;
       opacity: 0.18;
       transform: translate(0.6%, -0.4%) rotate(0.35deg);
     }
 
-    #screen-quilt .quote-speaker-image,
-    #screen-quilt .quote-speaker-avatar {
+    /* Faint scissor highlight along the hand-cut edge */
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--loaded::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      z-index: 6;
+      pointer-events: none;
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 252, 247, 0.42),
+        inset 0 0 12px rgba(35, 27, 20, 0.04);
+      opacity: 0.55;
+    }
+
+    #screen-quilt .quote-speaker-cutout[hidden] {
+      display: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-image {
       position: absolute;
       inset: 0;
-      z-index: 1;
+      z-index: 0;
       width: 100%;
       height: 100%;
-      border-radius: 0;
+      object-fit: contain;
+      object-position: top center;
+      opacity: 0;
+      pointer-events: none;
     }
 
-    #screen-quilt .quote-speaker-image {
-      display: none !important;
-      object-fit: cover;
+    #screen-quilt .quote-speaker-cutout .quote-speaker-image[hidden] {
+      display: none;
     }
 
-    #screen-quilt .quote-speaker-image.is-loaded {
-      display: none !important;
-    }
-
-    #screen-quilt .quote-speaker-avatar {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-avatar {
+      position: absolute;
+      inset: 8%;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -12258,55 +12422,131 @@ try {
         linear-gradient(135deg, #e7d8bc, #d7c6ad);
     }
 
-    #screen-quilt .quote-speaker-image[hidden],
-    #screen-quilt .quote-speaker-avatar[hidden] {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-avatar[hidden] {
       display: none;
     }
 
-    #screen-quilt .quote-speaker-copy {
-      min-width: 0;
-      width: 100%;
-      text-align: center;
+    #screen-quilt .quote-speaker-slab {
+      position: relative;
+      z-index: 1;
       box-sizing: border-box;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: visible;
+      isolation: isolate;
     }
 
-    #screen-quilt .quote-speaker-kicker {
-      display: block;
-      margin: 0.1rem 0 0.22rem;
-      font-size: 0.7rem;
-      font-weight: 700;
-      letter-spacing: 0.09em;
-      text-transform: uppercase;
-      color: rgba(47, 39, 31, 0.58);
+    #screen-quilt .quote-speaker-slab::before {
+      content: '';
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      transform-origin: 50% 50%;
+      pointer-events: none;
+      background-color: var(--quilt-byg-tape);
+      background-image:
+        var(--quilt-byg-tape-strip),
+        linear-gradient(104deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 46%),
+        repeating-linear-gradient(
+          90deg,
+          rgba(110, 96, 72, 0.022) 0 1px,
+          transparent 1px 4px
+        );
+      background-size:
+        var(--quilt-byg-tape-cap) 100%,
+        calc(100% - var(--quilt-byg-tape-cap)) 100%,
+        calc(100% - var(--quilt-byg-tape-cap)) 100%;
+      background-position:
+        left center,
+        var(--quilt-byg-tape-cap) center,
+        var(--quilt-byg-tape-cap) center;
+      background-repeat: no-repeat;
+    }
+
+    #screen-quilt .quote-speaker-slab::after {
+      content: '';
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      transform-origin: 50% 50%;
+      pointer-events: none;
+      background-image: var(--quilt-byg-tape-strip);
+      background-size: var(--quilt-byg-tape-cap) 100%;
+      background-position: right center;
+      background-repeat: no-repeat;
+    }
+
+    #screen-quilt .quote-speaker-slab-body {
+      position: relative;
+      z-index: 1;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      padding: var(--quilt-byg-tape-safe-y) var(--quilt-byg-tape-safe-x);
+    }
+
+    #screen-quilt .quote-speaker-slab--identity {
+      z-index: 3;
+      margin-top: clamp(-2.85rem, -12vw, -2.1rem);
+      transform: rotate(-0.85deg) translateX(-2px);
+    }
+
+    #screen-quilt .quote-speaker-widget--no-image .quote-speaker-slab--identity {
+      margin-top: 0;
+    }
+
+    #screen-quilt .quote-speaker-slab--identity .quote-speaker-slab-body {
+      padding-top: 1rem;
+      padding-bottom: 0.85rem;
+      text-align: center;
+    }
+
+    #screen-quilt .quote-speaker-slab--bio {
+      transform: rotate(0.95deg) translateX(3px);
+    }
+
+    #screen-quilt .quote-speaker-slab--bio .quote-speaker-slab-body {
+      padding-top: 0.95rem;
+      padding-bottom: 1rem;
+    }
+
+    #screen-quilt .quote-speaker-slab[hidden] {
+      display: none;
+    }
+
+    #screen-quilt .quote-speaker-widget--no-image .quote-speaker-cutout,
+    #screen-quilt .quote-speaker-widget--no-image .quote-speaker-attribution {
+      display: none;
     }
 
     #screen-quilt .quote-speaker-name {
-      /* Match horizontal inset of .quote-speaker-guide (24px). */
-      margin: 0 24px;
-      width: auto;
-      max-width: calc(100% - 48px);
+      margin: 0;
+      width: 100%;
       min-width: 0;
       box-sizing: border-box;
       font-family: 'Zakarack', Georgia, 'Times New Roman', serif;
-      /* Default cap; JS (fitQuoteSpeakerNameToOneLine) shrinks so the full name fits on one line. */
       font-size: 5.75rem;
       line-height: 1.05;
       font-weight: 1000;
       color: #241f19;
       white-space: nowrap;
       overflow: visible;
+      text-align: center;
     }
 
     #screen-quilt .quote-speaker-dates {
-      margin: 0.18rem 0 0;
+      margin: 0.22rem 0 0;
       font-family: var(--quilt-cutive-font);
       font-size: 0.946rem;
       line-height: 1.25;
       color: rgba(47, 39, 31, 0.68);
+      text-align: center;
     }
 
     #screen-quilt .quote-speaker-guide {
-      margin: 0.46rem 24px 0;
+      margin: 0;
       font-family: var(--quilt-cutive-font);
       font-size: calc(0.92rem * 1.21);
       font-style: normal;
@@ -12316,7 +12556,10 @@ try {
     }
 
     #screen-quilt .quote-speaker-attribution {
-      margin: 0 24px 0.35rem;
+      position: relative;
+      z-index: 4;
+      margin: -0.35rem auto 0;
+      width: min(89.7%, 20.125rem);
       font-size: 0.68rem;
       line-height: 1.25;
       color: rgba(47, 39, 31, 0.48);
@@ -12805,12 +13048,7 @@ try {
         width: 100%;
         max-width: var(--quilt-float-card-max, 460px);
         margin: 0 auto;
-        padding: 26px 16px 48px;
-      }
-
-      #screen-quilt .quote-speaker-widget--no-image {
-        gap: 0;
-        padding-top: 18px;
+        padding: 0 0 2rem;
       }
 
       #screen-quilt .quilt-reflection-scrap-widget {
@@ -12826,7 +13064,6 @@ try {
       #screen-quilt .quilt-reflection-response-submit {
         width: auto;
         max-width: 100%;
-        align-self: center;
       }
     }
 
@@ -14761,11 +14998,11 @@ try {
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" tabindex="0" aria-label="OUR DAILY QUILT — community quilt with colorful blocks. Tap to find your color."></svg>
         <canvas id="quiltFilmGrainOverlay" width="1" height="1" aria-hidden="true"></canvas>
       </div>
-      <!-- Quote card stack — mood spread clipping (terminal + legacy quote clipping retired). -->
+      <!-- Quote card stack — mood triptych (peek quote + unfolding mood cards). -->
       <div class="quote-card-stack">
         <div
           id="quiltMoodSpread"
-          class="quilt-mood-spread"
+          class="quilt-mood-triptych"
           aria-label="Today's quote and mood messages"
           hidden
         ></div>
@@ -14804,8 +15041,8 @@ try {
 
       <div class="quote-speaker-stage" id="quoteSpeakerStage">
       <aside class="quote-speaker-widget" id="quoteSpeakerWidget" aria-labelledby="quoteSpeakerName" hidden>
-        <div class="quote-speaker-copy">
-          <span class="quote-speaker-image-wrap" id="quoteSpeakerImageWrap" aria-hidden="true" hidden>
+        <div class="quote-speaker-stack">
+          <figure class="quote-speaker-cutout" id="quoteSpeakerImageWrap" aria-hidden="true" hidden>
             <img
               class="quote-speaker-image"
               id="quoteSpeakerImage"
@@ -14817,16 +15054,23 @@ try {
               referrerpolicy="no-referrer"
               hidden
             />
-            <span class="quote-speaker-halo" id="quoteSpeakerHalo" hidden></span>
             <span class="quote-speaker-neutral-silhouette" id="quoteSpeakerNeutralSilhouette" hidden></span>
             <span class="quote-speaker-color-wash" id="quoteSpeakerColorWash" hidden></span>
             <span class="quote-speaker-avatar" id="quoteSpeakerAvatar" hidden></span>
             <span class="quote-speaker-xerox-grain" aria-hidden="true"></span>
-          </span>
+          </figure>
           <p class="quote-speaker-attribution" id="quoteSpeakerAttribution" hidden></p>
-          <p class="quote-speaker-name" id="quoteSpeakerName"></p>
-          <p class="quote-speaker-dates" id="quoteSpeakerDates" hidden></p>
-          <p class="quote-speaker-guide" id="quoteSpeakerGuide" hidden></p>
+          <div class="quote-speaker-slab quote-speaker-slab--identity" id="quoteSpeakerIdentitySlab">
+            <div class="quote-speaker-slab-body">
+              <p class="quote-speaker-name" id="quoteSpeakerName"></p>
+              <p class="quote-speaker-dates" id="quoteSpeakerDates" hidden></p>
+            </div>
+          </div>
+          <div class="quote-speaker-slab quote-speaker-slab--bio" id="quoteSpeakerBioSlab" hidden>
+            <div class="quote-speaker-slab-body">
+              <p class="quote-speaker-guide" id="quoteSpeakerGuide"></p>
+            </div>
+          </div>
         </div>
       </aside>
       </div>
@@ -16084,7 +16328,7 @@ try {
   <script src="lib/layout-b-keyword-emphasis.js"></script>
   <script src="lib/quilt-newspaper-clipping.js?v=29"></script>
   <script src="lib/quilt-mood-clipping.js?v=5"></script>
-  <script src="lib/quilt-mood-spread-widget.js?v=10"></script>
+  <script src="lib/quilt-mood-triptych-widget.js?v=17"></script>
   <script src="lib/quilt-mood-terminal.js?v=23"></script>
   <script>
   </script>
@@ -25327,7 +25571,7 @@ try {
               /* */
             }
             requestAnimationFrame(() => {
-              document.getElementById('quiltMoodSpread')?._moodSpreadWidget?.remeasure?.();
+              document.getElementById('quiltMoodSpread')?._moodTriptychWidget?.remeasure?.();
               void window.app?._primeQuiltQuoteChrome?.();
             });
           }
@@ -39918,14 +40162,14 @@ try {
           if (!unique.includes(normalized)) unique.push(normalized);
         });
         ['#e7d8bc', '#ea9b9a', '#b9a7d8', '#8bd5d8', '#f2c7ba', '#c7b299'].forEach((color) => {
-          if (unique.length < 6 && !unique.includes(color)) unique.push(color);
+          if (unique.length < 6 && !unique.includes(color.toLowerCase())) unique.push(color.toLowerCase());
         });
         const washed = unique.map((color) => {
           const hsv = Utils.hexToHsv(color);
           const wash = Utils.hsvToHex(
             hsv.h,
-            hsv.s < 10 ? 16 : Math.max(26, Math.min(74, hsv.s * 0.72)),
-            Math.max(58, Math.min(88, hsv.v + (100 - hsv.v) * 0.28))
+            hsv.s < 10 ? 18 : Math.max(32, Math.min(78, hsv.s * 0.78)),
+            Math.max(58, Math.min(92, hsv.v + (100 - hsv.v) * 0.26))
           );
           const match = /^#?([0-9a-f]{6})$/i.exec(wash);
           if (!match) return '231, 216, 188';
@@ -39951,7 +40195,9 @@ try {
       }
 
       getReflectionFabricPatchTextColor(rgbCsv) {
-        return this.getReflectionFabricPatchLuminance(rgbCsv) < 0.58 ? '#ffffff' : '#1a1a1a';
+        return this.getReflectionFabricPatchLuminance(rgbCsv) < 0.58
+          ? 'rgba(255, 252, 247, 0.95)'
+          : '#2f271f';
       }
 
       getReflectionFabricPatchWeaveStrength(rgbCsv) {
@@ -39986,7 +40232,7 @@ try {
       }
 
       getReflectionFabricPatchContentWeight(themeEntry) {
-        if (themeEntry === 'add yours') return 0;
+        if (themeEntry === 'add yours' || themeEntry === 'add yours ?') return 0;
         const normalized = this.normalizeReflectionWallTheme(themeEntry);
         if (normalized?.text) {
           const author = String(normalized.author || '').trim();
@@ -39998,7 +40244,7 @@ try {
 
       /** Narrow by default; only approach full width when copy needs it (~200 chars). */
       getReflectionFabricPatchWidth(themeEntry, allThemes = []) {
-        if (themeEntry === 'add yours') return '42vw';
+        if (themeEntry === 'add yours' || themeEntry === 'add yours ?') return '42vw';
         const chars = this.getReflectionFabricPatchContentWeight(themeEntry);
         if (!chars) return '42vw';
         if (chars <= 62) return '50vw';
@@ -40074,7 +40320,7 @@ try {
         const hsv = Utils.hexToHsv(hex);
         const next = Utils.hsvToHex(
           (hsv.h + hueShiftDeg + 360) % 360,
-          Math.max(26, Math.min(74, hsv.s < 10 ? 28 : hsv.s)),
+          Math.max(26, Math.min(72, hsv.s < 10 ? 28 : hsv.s * 0.9)),
           Math.max(58, Math.min(88, hsv.v))
         );
         const match = /^#?([0-9a-f]{6})$/i.exec(next);
@@ -40128,19 +40374,12 @@ try {
         const rgb = rgbOverride || palette[index % palette.length] || '231, 216, 188';
         const textColor = this.getReflectionFabricPatchTextColor(rgb);
         const weaveStrength = this.getReflectionFabricPatchWeaveStrength(rgb);
-        const cuts = [
-          '0 2%, 18% 0, 42% 1.4%, 68% 0.4%, 100% 2%, 100% 98%, 76% 100%, 48% 98.6%, 19% 100%, 0 98%',
-          '0 1.2%, 24% 0.4%, 53% 2%, 81% 0, 100% 1.5%, 100% 98.4%, 82% 99.4%, 55% 98%, 26% 100%, 0 97.8%',
-          '0 2.2%, 16% 0.7%, 39% 0, 73% 1.8%, 100% 0.8%, 100% 97.7%, 70% 100%, 43% 98.4%, 15% 99.5%, 0 98.3%',
-          '0 0.9%, 21% 1.8%, 48% 0.2%, 77% 1.2%, 100% 0, 100% 98.8%, 84% 100%, 50% 98.2%, 22% 99.2%, 0 97.4%'
-        ];
         return [
           `--reflection-fabric-rgb: ${rgb}`,
           `--reflection-fabric-text: ${textColor}`,
           `--reflection-fabric-weave: ${weaveStrength}`,
           `--reflection-patch-w: ${this.getReflectionFabricPatchWidth(themeText, allThemes)}`,
           `--reflection-patch-h: ${this.getReflectionFabricPatchHeight(themeText, allThemes)}`,
-          `--reflection-fabric-cut: polygon(${cuts[index % cuts.length]})`,
           `--reflection-fabric-tilt: ${this.getReflectionFabricPatchTilt(index)}`,
           `--reflection-fabric-y: 0rem`,
           `--reflection-slide-z: ${index + 1}`
@@ -40169,27 +40408,28 @@ try {
           rgbOverride || this.pickReflectionFabricPatchRgb(index, null);
         const lightClass =
           this.getReflectionFabricPatchWeaveStrength(rgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
-        const heightThemes = allThemesForHeight.length ? allThemesForHeight : ['add yours'];
-        const style = this.getReflectionFabricPatchStyle(index, 'add yours', heightThemes, rgb);
+        const heightThemes = allThemesForHeight.length ? allThemesForHeight : ['add yours ?'];
+        const dateKey = String(Utils.getTodayKey() || 'nodate').trim() || 'nodate';
+        const style = this.getReflectionFabricPatchStyle(index, 'add yours ?', heightThemes, rgb);
         return `
-              <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--invite${lightClass}" data-reflection-invite-slide data-reflection-slide="${index}" style="${style}">
+              <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--invite${lightClass}" data-reflection-invite-slide data-reflection-slide="${index}" data-reflection-hand-cut-seed="${dateKey}:reflection-invite:${index}" style="${style}">
                 ${this.getReflectionCarouselFrayMarkup(edgeFray)}
                 <span class="quilt-reflection-carousel-seam quilt-reflection-carousel-seam--join" aria-hidden="true"></span>
-                <button type="button" class="quilt-reflection-carousel-invite-btn" aria-label="Add your reflection">add yours</button>
+                <button type="button" class="quilt-reflection-carousel-invite-btn" aria-label="Add your reflection?">add yours ?</button>
               </article>
             `;
       }
 
       getReflectionDecorPatchPalette() {
         return [
-          '186, 132, 156',
-          '132, 162, 198',
-          '168, 142, 192',
-          '142, 184, 168',
-          '198, 156, 128',
-          '158, 142, 198',
-          '128, 172, 186',
-          '192, 148, 132'
+          '212, 118, 148',
+          '118, 148, 218',
+          '188, 128, 208',
+          '108, 198, 168',
+          '228, 168, 118',
+          '168, 128, 218',
+          '98, 188, 212',
+          '218, 138, 118'
         ];
       }
 
@@ -40242,13 +40482,6 @@ try {
       getReflectionDecorPatchStyle(slideIndex, slotKey, rgbOverride, dims) {
         const rgb = rgbOverride || this.pickReflectionDecorPatchRgb(null, null, slotKey);
         const weaveStrength = this.getReflectionFabricPatchWeaveStrength(rgb);
-        const decorCuts = [
-          '4% 0%, 96% 2%, 100% 98%, 2% 100%',
-          '2% 1%, 98% 0%, 96% 99%, 0% 97%',
-          '0% 3%, 100% 1%, 97% 100%, 3% 96%',
-          '3% 0%, 100% 4%, 98% 97%, 1% 100%',
-          '1% 2%, 97% 0%, 100% 98%, 4% 99%'
-        ];
         const h = Utils.hashStringToUint(String(slotKey || 'decor-cut')) || 1;
         const tilt = `${((h % 7) - 3) * 0.35}deg`;
         return [
@@ -40257,7 +40490,6 @@ try {
           `--reflection-fabric-weave: ${weaveStrength}`,
           `--reflection-patch-w: ${dims.width}`,
           `--reflection-patch-h: ${dims.height}`,
-          `--reflection-fabric-cut: polygon(${decorCuts[h % decorCuts.length]})`,
           `--reflection-fabric-tilt: ${tilt}`,
           `--reflection-fabric-y: 0rem`,
           `--reflection-slide-z: ${slideIndex + 1}`
@@ -40271,7 +40503,7 @@ try {
           this.getReflectionFabricPatchWeaveStrength(rgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
         const style = this.getReflectionDecorPatchStyle(slideIndex, slotKey, rgb, dims);
         return `
-              <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--decor${lightClass}" data-reflection-decor-slide data-reflection-slide="${slideIndex}" aria-hidden="true" style="${style}">
+              <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--decor${lightClass}" data-reflection-decor-slide data-reflection-slide="${slideIndex}" data-reflection-hand-cut-seed="${slotKey}" aria-hidden="true" style="${style}">
                 ${this.getReflectionCarouselFrayMarkup(edgeFray)}
                 <span class="quilt-reflection-carousel-seam quilt-reflection-carousel-seam--join" aria-hidden="true"></span>
               </article>
@@ -40281,8 +40513,9 @@ try {
       buildReflectionThemePatchSlide(slideIndex, theme, allThemes, rgb, edgeFray = {}) {
         const lightClass =
           this.getReflectionFabricPatchWeaveStrength(rgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
+        const dateKey = String(Utils.getTodayKey() || 'nodate').trim() || 'nodate';
         return `
-              <article class="quilt-reflection-carousel-slide${lightClass}" data-reflection-theme-slide data-reflection-slide="${slideIndex}" style="${this.getReflectionFabricPatchStyle(slideIndex, theme, allThemes, rgb)}">
+              <article class="quilt-reflection-carousel-slide${lightClass}" data-reflection-theme-slide data-reflection-slide="${slideIndex}" data-reflection-hand-cut-seed="${dateKey}:reflection-patch:${slideIndex}" style="${this.getReflectionFabricPatchStyle(slideIndex, theme, allThemes, rgb)}">
                 ${this.getReflectionCarouselFrayMarkup(edgeFray)}
                 <span class="quilt-reflection-carousel-seam quilt-reflection-carousel-seam--join" aria-hidden="true"></span>
                 <p class="quilt-reflection-carousel-text">${this.formatReflectionCarouselTextHtml(theme)}</p>
@@ -40395,7 +40628,7 @@ try {
         slideParts.push(
           this.buildReflectionInvitePatchSlide(
             inviteSlideIndex,
-            ideas.length ? [...ideas, 'add yours'] : ['add yours'],
+            ideas.length ? [...ideas, 'add yours ?'] : ['add yours ?'],
             inviteRgb,
             { left: inviteSlideIndex === 0, right: true }
           )
@@ -40404,7 +40637,7 @@ try {
         const viewportAttrs =
           'role="region" tabindex="0" aria-label="Swipe through reflection theme patches and add yours"';
         return `
-          <div class="quilt-reflection-carousel" data-reflection-carousel>
+          <div class="quilt-reflection-carousel" data-reflection-carousel data-reflection-hand-cut-date-key="${dateKey}">
             <div class="quilt-reflection-carousel-viewport" data-reflection-carousel-viewport ${viewportAttrs}>
               <div class="quilt-reflection-carousel-track" data-reflection-carousel-track>${slides}</div>
             </div>
@@ -40460,10 +40693,47 @@ try {
         }
       }
 
+      _reflectionPatchHandCutCfg() {
+        return {
+          exportScale: 1,
+          handCutMarginDomPx: 0.35,
+          handCutCornerChamferDomPx: 10,
+          handCutMacroDomPx: 8,
+          handCutBiteMaxDomPx: 14,
+          handCutSecondaryBiteDomPx: 9,
+          handCutSideInwardMaxDomPx: 8,
+          handCutTopBottomTrimDomPx: 7
+        };
+      }
+
+      syncReflectionCarouselHandCuts(slides, dateKey = '') {
+        const list = Array.isArray(slides) ? slides : [];
+        const dk = String(dateKey || Utils.getTodayKey() || 'nodate').trim() || 'nodate';
+        const QNC = globalThis.QuiltNewspaperClipping;
+        const cfg = this._reflectionPatchHandCutCfg();
+        list.forEach((slide, index) => {
+          const seed =
+            String(slide.dataset.reflectionHandCutSeed || '').trim() ||
+            `${dk}:reflection-patch:${String(slide.dataset.reflectionSlide || index).trim()}`;
+          if (!QNC?.buildHandCutCssClipPath) return;
+          const rect = slide.getBoundingClientRect();
+          const w = Math.max(1, Math.round(rect.width));
+          const h = Math.max(1, Math.round(rect.height));
+          if (w < 40 || h < 32) return;
+          const clip = QNC.buildHandCutCssClipPath(w, h, seed, cfg);
+          if (clip) slide.style.setProperty('--reflection-fabric-cut', clip);
+        });
+      }
+
       initReflectionCarouselLoop(notes) {
         if (this._reflectionCarouselResizeHandler) {
           window.removeEventListener('resize', this._reflectionCarouselResizeHandler);
           this._reflectionCarouselResizeHandler = null;
+        }
+        if (this._reflectionCarouselHandCutObserver) {
+          this._reflectionCarouselHandCutObserver.disconnect();
+          this._reflectionCarouselHandCutObserver = null;
+          this._reflectionCarouselHandCutObservedEl = null;
         }
         if (this._reflectionCarouselScrollHintObserver) {
           this._reflectionCarouselScrollHintObserver.disconnect();
@@ -40483,12 +40753,42 @@ try {
         const slides = Array.from(viewport.querySelectorAll('.quilt-reflection-carousel-slide'));
         if (!slides.length) return;
         viewport.classList.toggle('is-scrollable', slides.length > 1);
-        const layoutSeams = () => {
+        const carousel = viewport.closest('[data-reflection-carousel]');
+        const handCutDateKey = String(
+          carousel?.dataset?.reflectionHandCutDateKey || Utils.getTodayKey() || 'nodate'
+        ).trim();
+        const layoutCarousel = () => {
           this.syncReflectionCarouselEdgeFray(slides);
           this.syncReflectionCarouselSeams(slides);
+          this.syncReflectionCarouselHandCuts(slides, handCutDateKey);
         };
-        layoutSeams();
-        requestAnimationFrame(layoutSeams);
+        layoutCarousel();
+        requestAnimationFrame(layoutCarousel);
+        if (typeof ResizeObserver !== 'undefined' && carousel) {
+          if (this._reflectionCarouselHandCutObservedEl !== carousel) {
+            if (this._reflectionCarouselHandCutObservedEl && this._reflectionCarouselHandCutObserver) {
+              this._reflectionCarouselHandCutObserver.unobserve(this._reflectionCarouselHandCutObservedEl);
+            }
+            if (!this._reflectionCarouselHandCutObserver) {
+              this._reflectionCarouselHandCutObserver = new ResizeObserver(() => {
+                const vp = notes?.querySelector?.('[data-reflection-carousel-viewport]');
+                const c = vp?.closest?.('[data-reflection-carousel]');
+                const list = vp
+                  ? Array.from(vp.querySelectorAll('.quilt-reflection-carousel-slide'))
+                  : [];
+                if (!list.length) return;
+                this.syncReflectionCarouselEdgeFray(list);
+                this.syncReflectionCarouselSeams(list);
+                this.syncReflectionCarouselHandCuts(
+                  list,
+                  c?.dataset?.reflectionHandCutDateKey || ''
+                );
+              });
+            }
+            this._reflectionCarouselHandCutObserver.observe(carousel);
+            this._reflectionCarouselHandCutObservedEl = carousel;
+          }
+        }
         let currentIndex = 0;
         let scrollHintPlayed = false;
         let userScrolledCarousel = false;
@@ -40709,7 +41009,7 @@ try {
         }
         let resizeTimer = null;
         this._reflectionCarouselResizeHandler = () => {
-          layoutSeams();
+          layoutCarousel();
           if (resizeTimer) clearTimeout(resizeTimer);
           resizeTimer = setTimeout(() => {
             resizeTimer = null;
@@ -42302,7 +42602,7 @@ try {
 
       fitQuoteSpeakerNameToOneLine(nameEl, opts = {}) {
         if (!nameEl || !nameEl.isConnected) return;
-        const copy = nameEl.closest('.quote-speaker-copy');
+        const copy = nameEl.closest('.quote-speaker-slab-body');
         if (!copy) return;
         const rootRem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
         const minPx = Math.max(11, 1.65 * rootRem);
@@ -42356,7 +42656,9 @@ try {
 
       _ensureQuoteSpeakerNameResizeFit() {
         if (this._quoteSpeakerNameResizeFitReady) return;
-        const copy = document.querySelector('#screen-quilt #quoteSpeakerWidget .quote-speaker-copy');
+        const copy = document.querySelector(
+          '#screen-quilt #quoteSpeakerIdentitySlab .quote-speaker-slab-body'
+        );
         if (!copy || typeof ResizeObserver === 'undefined') return;
         this._quoteSpeakerNameResizeFitReady = true;
         let t = null;
@@ -42364,92 +42666,194 @@ try {
           if (t) clearTimeout(t);
           t = setTimeout(() => {
             const nameEl = document.getElementById('quoteSpeakerName');
+            const cutout = document.getElementById('quoteSpeakerImageWrap');
             const widget = document.getElementById('quoteSpeakerWidget');
             if (!nameEl || !widget || widget.hidden || !String(nameEl.textContent || '').trim()) return;
             this.fitQuoteSpeakerNameToOneLine(nameEl, { silent: true });
-            this._applyQuoteSpeakerHandCut(widget, widget.dataset.handCutDateKey || '');
+            this._applyQuoteSpeakerHandCut(
+              cutout,
+              widget.dataset.handCutDateKey || '',
+              'speaker-cutout'
+            );
           }, 48);
         });
         ro.observe(copy);
         this._quoteSpeakerNameResizeObserver = ro;
       }
 
-      _applyQuoteSpeakerHandCut(widget, dateKey = '') {
-        if (!widget) return;
+      _quoteSpeakerHandCutCfg() {
+        return {
+          exportScale: 1,
+          handCutMarginDomPx: 0.2,
+          handCutCornerChamferDomPx: 9,
+          handCutMacroDomPx: 10,
+          handCutBiteMaxDomPx: 20,
+          handCutSecondaryBiteDomPx: 12,
+          handCutSideInwardMaxDomPx: 11,
+          handCutTopBottomTrimDomPx: 9
+        };
+      }
+
+      _applyQuoteSpeakerHandCut(target, dateKey = '', seedSuffix = '') {
+        if (!target) return;
         const QNC = globalThis.QuiltNewspaperClipping;
-        if (!QNC?.buildHandCutCssClipPath || widget.hidden) {
-          widget.style.removeProperty('clip-path');
-          widget.style.removeProperty('-webkit-clip-path');
+        const widget = document.getElementById('quoteSpeakerWidget');
+        if (!QNC?.buildHandCutCssClipPath || target.hidden || widget?.hidden) {
+          target.classList.remove('quote-speaker-cutout--loaded');
+          target.style.removeProperty('clip-path');
+          target.style.removeProperty('-webkit-clip-path');
           return;
         }
-        const rect = widget.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
         const w = Math.max(1, Math.round(rect.width));
         const h = Math.max(1, Math.round(rect.height));
-        if (w < 64 || h < 40) {
-          widget.style.removeProperty('clip-path');
-          widget.style.removeProperty('-webkit-clip-path');
+        if (w < 48 || h < 48) {
+          target.classList.remove('quote-speaker-cutout--loaded');
+          target.style.removeProperty('clip-path');
+          target.style.removeProperty('-webkit-clip-path');
           return;
         }
-        const clip = QNC.buildHandCutCssClipPath(w, h, dateKey);
+        const seedKey = [String(dateKey || '').trim(), String(seedSuffix || '').trim()]
+          .filter(Boolean)
+          .join(':');
+        const clip = QNC.buildHandCutCssClipPath(w, h, seedKey, this._quoteSpeakerHandCutCfg());
         if (!clip) {
-          widget.style.removeProperty('clip-path');
-          widget.style.removeProperty('-webkit-clip-path');
+          target.classList.remove('quote-speaker-cutout--loaded');
+          target.style.removeProperty('clip-path');
+          target.style.removeProperty('-webkit-clip-path');
           return;
         }
-        widget.style.clipPath = clip;
-        widget.style.webkitClipPath = clip;
+        target.style.clipPath = clip;
+        target.style.webkitClipPath = clip;
+        if (target.classList.contains('quote-speaker-cutout')) {
+          target.classList.add('quote-speaker-cutout--loaded');
+        }
       }
 
       _ensureQuoteSpeakerHandCutFit(widget, dateKey = '') {
         if (!widget) return;
         widget.dataset.handCutDateKey = String(dateKey || '').trim();
-        if (typeof ResizeObserver !== 'undefined') {
+        const cutout = document.getElementById('quoteSpeakerImageWrap');
+        if (typeof ResizeObserver !== 'undefined' && cutout) {
           if (!this._quoteSpeakerHandCutObserver) {
             this._quoteSpeakerHandCutObserver = new ResizeObserver(() => {
               const w = document.getElementById('quoteSpeakerWidget');
-              if (!w || w.hidden) return;
-              this._applyQuoteSpeakerHandCut(w, w.dataset.handCutDateKey || '');
+              const c = document.getElementById('quoteSpeakerImageWrap');
+              if (!w || w.hidden || !c || c.hidden) return;
+              this._applyQuoteSpeakerHandCut(c, w.dataset.handCutDateKey || '', 'speaker-cutout');
             });
           }
-          if (widget !== this._quoteSpeakerHandCutObservedEl) {
+          if (cutout !== this._quoteSpeakerHandCutObservedEl) {
             if (this._quoteSpeakerHandCutObservedEl) {
               this._quoteSpeakerHandCutObserver.unobserve(this._quoteSpeakerHandCutObservedEl);
             }
-            this._quoteSpeakerHandCutObserver.observe(widget);
-            this._quoteSpeakerHandCutObservedEl = widget;
+            this._quoteSpeakerHandCutObserver.observe(cutout);
+            this._quoteSpeakerHandCutObservedEl = cutout;
           }
         }
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            this._applyQuoteSpeakerHandCut(widget, widget.dataset.handCutDateKey || '');
+            if (cutout && !cutout.hidden) {
+              this._applyQuoteSpeakerHandCut(
+                cutout,
+                widget.dataset.handCutDateKey || '',
+                'speaker-cutout'
+              );
+            }
           });
         });
       }
 
-      _applyQuoteSpeakerImageLoaded(displayUrl, imageToken, profile, imageWrap, halo, neutralSilhouette, colorWash, avatar) {
+      _quoteSpeakerWashHueRotateFromHex(hex) {
+        const m = String(hex || '').trim().match(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
+        if (!m) return 304;
+        const r = parseInt(m[1], 16) / 255;
+        const g = parseInt(m[2], 16) / 255;
+        const b = parseInt(m[3], 16) / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h = 0;
+        if (max !== min) {
+          const d = max - min;
+          if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+          else if (max === g) h = ((b - r) / d + 2) / 6;
+          else h = ((r - g) / d + 4) / 6;
+        }
+        return Math.round(h * 360);
+      }
+
+      _applyQuoteSpeakerWashColors(widget) {
+        if (!widget) return;
+        const washColor = String(
+          this.getMostPopularQuiltColor()?.color || CONFIG.APP.defaultColor || '#ea9b9a'
+        ).trim();
+        const safeWashColor = /^#[0-9A-Fa-f]{6}$/.test(washColor) ? washColor : '#ea9b9a';
+        const washRgb = safeWashColor.match(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
+        widget.style.setProperty('--speaker-wash-color', safeWashColor);
+        widget.style.setProperty('--speaker-wash-hue-rotate', `${this._quoteSpeakerWashHueRotateFromHex(safeWashColor)}deg`);
+        if (washRgb) {
+          const rgb = washRgb.slice(1).map((hex) => parseInt(hex, 16)).join(', ');
+          widget.style.setProperty('--speaker-wash-color-strong', `rgba(${rgb}, 0.46)`);
+          widget.style.setProperty('--speaker-wash-color-medium', `rgba(${rgb}, 0.42)`);
+          widget.style.setProperty('--speaker-wash-color-soft', `rgba(${rgb}, 0.36)`);
+          widget.style.setProperty('--speaker-wash-color-faint', `rgba(${rgb}, 0.28)`);
+        }
+      }
+
+      _applyQuoteSpeakerImageLoaded(displayUrl, imageToken, profile, imageWrap, img, neutralSilhouette, colorWash, avatar) {
         const speakerImageCssUrl = `url("${String(displayUrl).replace(/"/g, '%22')}")`;
         if (imageWrap) {
           imageWrap.hidden = false;
+          imageWrap.classList.add('quote-speaker-cutout--loaded');
           imageWrap.style.setProperty('--speaker-image-url', speakerImageCssUrl);
         }
-        if (halo) halo.hidden = false;
         if (neutralSilhouette) neutralSilhouette.hidden = false;
         if (colorWash) colorWash.hidden = false;
+        if (img) {
+          img.src = displayUrl;
+          img.hidden = false;
+          img.classList.add('is-loaded');
+        }
         if (avatar) avatar.hidden = true;
         this._quoteSpeakerCutoutUrl = displayUrl;
+        const widget = document.getElementById('quoteSpeakerWidget');
+        if (widget && imageWrap && !imageWrap.hidden) {
+          this._applyQuoteSpeakerHandCut(
+            imageWrap,
+            widget.dataset.handCutDateKey || '',
+            'speaker-cutout'
+          );
+        }
         this.syncExitChamberSpeakerTextureFromWidget?.();
       }
 
-      _showQuoteSpeakerAvatarFallback(imageWrap, halo, neutralSilhouette, colorWash, avatar) {
+      _showQuoteSpeakerAvatarFallback(imageWrap, img, neutralSilhouette, colorWash, avatar) {
         if (imageWrap) {
-          imageWrap.hidden = true;
+          imageWrap.hidden = false;
+          imageWrap.classList.remove('quote-speaker-cutout--loaded');
           imageWrap.style.removeProperty('--speaker-image-url');
         }
-        if (halo) halo.hidden = true;
+        if (img) {
+          img.hidden = true;
+          img.classList.remove('is-loaded');
+          img.removeAttribute('src');
+        }
         if (neutralSilhouette) neutralSilhouette.hidden = true;
         if (colorWash) colorWash.hidden = true;
-        if (avatar) avatar.hidden = true;
+        if (avatar) avatar.hidden = false;
+        if (imageWrap) {
+          imageWrap.style.removeProperty('clip-path');
+          imageWrap.style.removeProperty('-webkit-clip-path');
+        }
         this._quoteSpeakerCutoutUrl = '';
+        const widget = document.getElementById('quoteSpeakerWidget');
+        if (imageWrap && widget && !widget.hidden) {
+          this._applyQuoteSpeakerHandCut(
+            imageWrap,
+            widget.dataset.handCutDateKey || '',
+            'speaker-cutout'
+          );
+        }
         this.syncExitChamberSpeakerTextureFromWidget?.();
       }
 
@@ -42469,9 +42873,9 @@ try {
         const img = document.getElementById('quoteSpeakerImage');
         const avatar = document.getElementById('quoteSpeakerAvatar');
         const imageWrap = document.getElementById('quoteSpeakerImageWrap');
-        const halo = document.getElementById('quoteSpeakerHalo');
         const neutralSilhouette = document.getElementById('quoteSpeakerNeutralSilhouette');
         const colorWash = document.getElementById('quoteSpeakerColorWash');
+        const bioSlab = document.getElementById('quoteSpeakerBioSlab');
         const nameEl = document.getElementById('quoteSpeakerName');
         const datesEl = document.getElementById('quoteSpeakerDates');
         const guideEl = document.getElementById('quoteSpeakerGuide');
@@ -42480,8 +42884,11 @@ try {
         if (!profile) {
           widget.hidden = true;
           widget.classList.remove('quote-speaker-widget--no-image');
-          widget.style.removeProperty('clip-path');
-          widget.style.removeProperty('-webkit-clip-path');
+          widget.dataset.handCutDateKey = '';
+          if (imageWrap) {
+            imageWrap.style.removeProperty('clip-path');
+            imageWrap.style.removeProperty('-webkit-clip-path');
+          }
           if (stage) stage.classList.remove('quote-speaker-stage--visible');
           this._quoteSpeakerLastFitName = null;
           return;
@@ -42493,30 +42900,7 @@ try {
         if (stage) stage.classList.add('quote-speaker-stage--visible');
         widget.hidden = false;
         widget.classList.toggle('quote-speaker-widget--no-image', !showSpeakerImage);
-        const washColor = String(this.getMostPopularQuiltColor()?.color || CONFIG.APP.defaultColor || '#ea9b9a').trim();
-        const safeWashColor = /^#[0-9A-Fa-f]{6}$/.test(washColor) ? washColor : '#ea9b9a';
-        const palette = this.getQuiltPaletteSummary?.()?.palette || [];
-        const haloColor =
-          palette.find((item) => {
-            const value = String(item?.color || '').trim();
-            return /^#[0-9A-Fa-f]{6}$/.test(value) && value.toLowerCase() !== safeWashColor.toLowerCase();
-          })?.color ||
-          this.getContrastingQuiltColorExcludingDominant?.() ||
-          CONFIG.APP.defaultColor ||
-          '#d6977e';
-        const safeHaloColor = /^#[0-9A-Fa-f]{6}$/.test(String(haloColor || '').trim())
-          ? String(haloColor).trim()
-          : '#d6977e';
-        const washRgb = safeWashColor.match(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
-        widget.style.setProperty('--speaker-wash-color', safeWashColor);
-        widget.style.setProperty('--speaker-halo-color', safeHaloColor);
-        if (washRgb) {
-          const rgb = washRgb.slice(1).map((hex) => parseInt(hex, 16)).join(', ');
-          widget.style.setProperty('--speaker-wash-color-strong', `rgba(${rgb}, 0.46)`);
-          widget.style.setProperty('--speaker-wash-color-medium', `rgba(${rgb}, 0.42)`);
-          widget.style.setProperty('--speaker-wash-color-soft', `rgba(${rgb}, 0.36)`);
-          widget.style.setProperty('--speaker-wash-color-faint', `rgba(${rgb}, 0.28)`);
-        }
+        this._applyQuoteSpeakerWashColors(widget);
         if (nameEl) {
           const speakerName = String(profile.name || '').trim();
           const nameChanged = speakerName !== this._quoteSpeakerLastFitName;
@@ -42537,6 +42921,7 @@ try {
           guideEl.textContent = profile.guideLine;
           guideEl.hidden = !profile.guideLine;
         }
+        if (bioSlab) bioSlab.hidden = !profile.guideLine;
         const imageAttribution = showSpeakerImage
           ? this.formatQuoteSpeakerImageAttribution(profile.imageAttribution)
           : '';
@@ -42548,20 +42933,16 @@ try {
         this._quoteSpeakerImageToken = imageToken;
         if (imageWrap) {
           imageWrap.hidden = !showSpeakerImage;
+          imageWrap.classList.remove('quote-speaker-cutout--loaded');
           imageWrap.style.removeProperty('--speaker-image-url');
+          imageWrap.style.removeProperty('clip-path');
+          imageWrap.style.removeProperty('-webkit-clip-path');
         }
-        if (halo) {
-          halo.hidden = true;
-        }
-        if (neutralSilhouette) {
-          neutralSilhouette.hidden = true;
-        }
-        if (colorWash) {
-          colorWash.hidden = true;
-        }
+        if (neutralSilhouette) neutralSilhouette.hidden = true;
+        if (colorWash) colorWash.hidden = true;
         if (avatar) {
           avatar.textContent = this.getQuoteSpeakerInitials(profile.name);
-          avatar.hidden = !showSpeakerImage;
+          avatar.hidden = true;
         }
         if (img) {
           img.alt = showSpeakerImage ? `Portrait of ${profile.name}` : '';
@@ -42573,7 +42954,7 @@ try {
           const applyLoaded = (displayUrl) => {
             if (this._quoteSpeakerImageToken !== imageToken) return;
             if (!displayUrl) {
-              this._showQuoteSpeakerAvatarFallback(imageWrap, halo, neutralSilhouette, colorWash, avatar);
+              this._showQuoteSpeakerAvatarFallback(imageWrap, img, neutralSilhouette, colorWash, avatar);
               return;
             }
             this._applyQuoteSpeakerImageLoaded(
@@ -42581,7 +42962,7 @@ try {
               imageToken,
               profile,
               imageWrap,
-              halo,
+              img,
               neutralSilhouette,
               colorWash,
               avatar
@@ -42651,7 +43032,7 @@ try {
               preloader.src = portraitFallback;
               return;
             }
-            this._showQuoteSpeakerAvatarFallback(imageWrap, halo, neutralSilhouette, colorWash, avatar);
+            this._showQuoteSpeakerAvatarFallback(imageWrap, img, neutralSilhouette, colorWash, avatar);
           };
           preloader.src = profile.imageUrl;
         }
@@ -42723,22 +43104,22 @@ try {
 
       _quiltMoodSpreadEnabled() {
         return (
-          typeof globalThis.QuiltMoodSpreadWidget?.mount === 'function' &&
-          typeof globalThis.QuiltNewspaperClipping?.composeMoodSpreadWithMetrics === 'function'
+          typeof globalThis.QuiltMoodTriptychWidget?.mount === 'function' &&
+          typeof globalThis.QuiltNewspaperClipping?.composeDataUrl === 'function'
         );
       }
 
-      /** True when mood spread PNG is mounted and decoded (replaces legacy peek clipping). */
+      /** True when mood triptych is mounted and quote PNG decoded (replaces legacy peek clipping). */
       _quiltMoodSpreadIsLive() {
         const spreadHost = document.getElementById('quiltMoodSpread');
         if (
           !spreadHost ||
           !spreadHost.classList.contains('is-ready') ||
-          !spreadHost._moodSpreadWidget
+          !spreadHost._moodTriptychWidget
         ) {
           return false;
         }
-        const img = spreadHost.querySelector('.quilt-mood-spread__img');
+        const img = spreadHost.querySelector('.quilt-mood-triptych__quote-img');
         return !!(img?.naturalWidth);
       }
 
@@ -42791,14 +43172,14 @@ try {
         clipping.removeAttribute('aria-hidden');
       }
 
-      /** Mood spread replaces peek clipping whenever the widget is active or loading. */
+      /** Mood triptych replaces peek clipping whenever the widget is active or loading. */
       _moodSpreadOwnsQuoteUi() {
         if (!this._quiltMoodSpreadEnabled()) return false;
         const host = document.getElementById('quiltMoodSpread');
-        if (!host?._moodSpreadWidget && !host?._moodSpreadComposePending) return false;
+        if (!host?._moodTriptychWidget && !host?._moodSpreadComposePending) return false;
         if (host._moodSpreadComposePending) return true;
         if (host.classList.contains('is-ready')) return true;
-        const src = host.querySelector('.quilt-mood-spread__img')?.src;
+        const src = host.querySelector('.quilt-mood-triptych__quote-img')?.src;
         return !!(src && src.length > 32);
       }
 
@@ -42820,7 +43201,7 @@ try {
         const stack = document.querySelector('#screen-quilt .quote-card-stack');
         if (!stack) return;
         if (this._quiltMoodSpreadIsLive()) {
-          stack.setAttribute('data-quote-ui', 'mood-spread');
+          stack.setAttribute('data-quote-ui', 'mood-triptych');
         } else {
           stack.removeAttribute('data-quote-ui');
         }
@@ -42990,9 +43371,9 @@ try {
         host.classList.toggle('is-rough', mood === 'rough');
         this._saveQuiltMoodPickToStorage(host, mood, stampAt);
         const spreadHost = document.getElementById('quiltMoodSpread');
-        const SpreadW = globalThis.QuiltMoodSpreadWidget;
-        if (spreadHost?._moodSpreadWidget && SpreadW?.moodToPanel) {
-          spreadHost._moodSpreadWidget.setPanel(SpreadW.moodToPanel(mood));
+        const TriptychW = globalThis.QuiltMoodTriptychWidget;
+        if (spreadHost?._moodTriptychWidget && TriptychW?.moodToPanel) {
+          spreadHost._moodTriptychWidget.setMood(mood, { instant: false });
         }
         const announcer = document.getElementById('quiltMoodWidgetAnnouncer');
         const bodyText = String(line || '').trim() ||
@@ -43066,12 +43447,12 @@ try {
 
       _unmountQuiltMoodSpread() {
         const spreadHost = document.getElementById('quiltMoodSpread');
-        globalThis.QuiltMoodSpreadWidget?.unmount?.(spreadHost);
+        globalThis.QuiltMoodTriptychWidget?.unmount?.(spreadHost);
       }
 
       remeasureQuiltMoodSpread() {
         const spreadHost = document.getElementById('quiltMoodSpread');
-        spreadHost?._moodSpreadWidget?.remeasure?.();
+        spreadHost?._moodTriptychWidget?.remeasure?.();
       }
 
       async _refreshQuiltMoodSpread(
@@ -43082,10 +43463,10 @@ try {
       ) {
         const spreadHost = document.getElementById('quiltMoodSpread');
         if (!spreadHost) return;
-        const SpreadW = globalThis.QuiltMoodSpreadWidget;
+        const TriptychW = globalThis.QuiltMoodTriptychWidget;
         const QNC = globalThis.QuiltNewspaperClipping;
         const todayQuote = this._quoteForMoodWidget(quote);
-        if (!SpreadW?.mount || !QNC?.composeMoodSpreadWithMetrics || !this._quiltMoodSpreadEnabled()) {
+        if (!TriptychW?.mount || !QNC?.composeDataUrl || !this._quiltMoodSpreadEnabled()) {
           this._unmountQuiltMoodSpread();
           this._fallbackQuiltQuoteClipping(todayQuote);
           return;
@@ -43103,13 +43484,13 @@ try {
         const exportRev = String(QNC?.CLIPPING_EXPORT_REV || '').trim();
         if (
           spreadHost.dataset.contentSig === sig &&
-          spreadHost._moodSpreadWidget &&
+          spreadHost._moodTriptychWidget &&
           spreadHost.dataset.moodExportRev === exportRev
         ) {
           if (initialMood === 'good' || initialMood === 'rough') {
-            spreadHost._moodSpreadWidget.setPanel(SpreadW.moodToPanel(initialMood), { instant });
+            spreadHost._moodTriptychWidget.setMood(initialMood, { instant });
           }
-          spreadHost._moodSpreadWidget.remeasure?.();
+          spreadHost._moodTriptychWidget.remeasure?.();
           if (spreadHost.classList.contains('is-ready')) {
             this._clearLegacyQuoteClippingPng();
             this._markQuiltMoodSpreadQuoteUi();
@@ -43121,8 +43502,8 @@ try {
           return;
         }
 
-        SpreadW.unmount(spreadHost);
-        SpreadW.injectStyles?.();
+        TriptychW.unmount(spreadHost);
+        TriptychW.injectStyles?.();
         spreadHost._moodSpreadComposePending = sig;
         if (!this._moodSpreadOwnsQuoteUi()) {
           this._showQuiltQuoteTextFallback(todayQuote);
@@ -43146,7 +43527,7 @@ try {
 
         const dk = String(quotePayload.dateKey || '').trim();
         try {
-          const composed = await QNC.composeMoodSpreadWithMetrics({
+          const quoteDataUrl = await QNC.composeDataUrl({
             today: {
               text: quotePayload.text,
               author: quotePayload.author,
@@ -43154,8 +43535,6 @@ try {
               firstLineCount: quotePayload.firstLineCount,
               keyword: quotePayload.keyword
             },
-            goodDay: g,
-            roughDay: r,
             dateKey: dk,
             paperTextureUrl,
             width: 0
@@ -43163,8 +43542,8 @@ try {
           if (spreadHost._moodSpreadComposePending !== sig) {
             return;
           }
-          if (!composed?.dataUrl) {
-            console.warn('[our-daily] Mood spread compose returned empty');
+          if (!quoteDataUrl) {
+            console.warn('[our-daily] Triptych quote compose returned empty');
             this._unmountQuiltMoodSpread();
             this._fallbackQuiltQuoteClipping(todayQuote, dk);
             return;
@@ -43176,11 +43555,12 @@ try {
           spreadHost.dataset.moodExportRev = exportRev;
 
           const moodHost = document.getElementById('quiltMoodWidget');
-          const mounted = SpreadW.mount(spreadHost, {
-            dataUrl: composed.dataUrl,
-            metrics: composed.metrics,
-            slides: composed.slides,
-            initialPanel: initialMood ? SpreadW.moodToPanel(initialMood) : 'center',
+          const mounted = TriptychW.mount(spreadHost, {
+            quoteDataUrl,
+            goodDay: g,
+            roughDay: r,
+            dateKey: dk,
+            initialMood: initialMood === 'good' || initialMood === 'rough' ? initialMood : null,
             instant: !!instant,
             onReady: () => {
               this._clearLegacyQuoteClippingPng();
@@ -43195,7 +43575,7 @@ try {
             }
           });
           if (!mounted) {
-            console.warn('[our-daily] QuiltMoodSpreadWidget mount failed');
+            console.warn('[our-daily] QuiltMoodTriptychWidget mount failed');
             this._unmountQuiltMoodSpread();
             this._fallbackQuiltQuoteClipping(todayQuote, dk);
             return;
@@ -43206,12 +43586,12 @@ try {
             this._markQuiltMoodSpreadQuoteUi();
           }
         } catch (err) {
-          console.warn('[our-daily] Mood spread refresh failed:', err);
-          const keepExistingSpread =
+          console.warn('[our-daily] Mood triptych refresh failed:', err);
+          const keepExisting =
             spreadHost.classList.contains('is-ready') &&
-            spreadHost._moodSpreadWidget &&
+            spreadHost._moodTriptychWidget &&
             spreadHost.dataset.contentSig === sig;
-          if (!keepExistingSpread) {
+          if (!keepExisting) {
             this._unmountQuiltMoodSpread();
             if (!this._moodSpreadOwnsQuoteUi()) {
               this._showQuiltQuoteTextFallback(todayQuote);
@@ -43237,7 +43617,7 @@ try {
         if (!this._quiltMoodSpreadEnabled()) {
           host.setAttribute('hidden', 'hidden');
           this._unmountQuiltMoodSpread();
-          this.logger?.warn?.('QuiltMoodSpreadWidget missing — mood spread hidden');
+          this.logger?.warn?.('QuiltMoodTriptychWidget missing — mood triptych hidden');
           this._fallbackQuiltQuoteClipping(todayQuote);
           return;
         }
@@ -43282,7 +43662,7 @@ try {
         if (
           spreadHost &&
           spreadHost.dataset.contentSig === sig &&
-          spreadHost._moodSpreadWidget
+          spreadHost._moodTriptychWidget
         ) {
           this._prepareQuiltMoodHostForSpread(host, {
             goodDay,
@@ -43817,6 +44197,152 @@ try {
         globalThis.QuiltMoodTerminal?.injectTerminalStyles?.();
       }
 
+      isWarmQuiltStickerColor(hsv) {
+        const h = Number(hsv?.h) || 0;
+        const s = Number(hsv?.s) || 0;
+        const v = Number(hsv?.v) || 0;
+        if (v < 24 || v > 98) return false;
+        if (s < 10) return v >= 40 && (h <= 58 || h >= 328);
+        if (s < 16) return h <= 62 || h >= 312;
+        return h <= 72 || h >= 308;
+      }
+
+      warmQuiltStickerHue(hsv) {
+        const h = Number(hsv?.h) || 0;
+        if (h <= 72 || h >= 308) return h;
+        if (h < 180) return 28;
+        return 12;
+      }
+
+      pickReflectionAddYoursStickerColor() {
+        const isHex = (color) => /^#?[0-9a-f]{6}$/i.test(String(color || '').trim());
+        const normalize = (color) => {
+          const value = String(color || '').trim().toLowerCase();
+          if (!isHex(value)) return '';
+          return value.startsWith('#') ? value : `#${value}`;
+        };
+        const summary = this.getQuiltPaletteSummary?.();
+        const prominent = [];
+        (summary?.colors || []).forEach((item) => {
+          const color = normalize(item?.color);
+          if (isHex(color) && !prominent.includes(color)) prominent.push(color);
+        });
+        const blockCounts = new Map();
+        (this.quiltEngine?.blocks || []).forEach((block) => {
+          const color = normalize(block?.color);
+          if (!isHex(color)) return;
+          blockCounts.set(color, (blockCounts.get(color) || 0) + 1);
+        });
+        const rankedBlocks = [...blockCounts.entries()]
+          .map(([color, count]) => ({ color, count, hsv: Utils.hexToHsv(color) }))
+          .filter(({ hsv }) => hsv.s >= 18 && hsv.v >= 28 && hsv.v <= 98)
+          .sort((a, b) => b.count - a.count || b.hsv.s - a.hsv.s || b.hsv.v - a.hsv.v)
+          .map((item) => item.color);
+        const pool = [];
+        prominent.forEach((color) => {
+          if (!pool.includes(color)) pool.push(color);
+        });
+        rankedBlocks.forEach((color) => {
+          if (!pool.includes(color)) pool.push(color);
+        });
+        this.getQuiltFortuneColors?.()
+          .map((color) => normalize(color))
+          .filter(isHex)
+          .forEach((color) => {
+            if (!pool.includes(color)) pool.push(color);
+          });
+        const warmFallback = ['#e4a876', '#d47794', '#ea9b9a', '#c47658', '#f2c7ba', '#c7b299'];
+        const warmCandidates = pool
+          .map((color, index) => {
+            const hsv = Utils.hexToHsv(color);
+            const count = blockCounts.get(color) || 0;
+            const warmHueDelta = Math.min(
+              Math.abs(hsv.h - 24),
+              Math.abs(hsv.h - 360 - 24),
+              Math.abs(hsv.h + 360 - 24)
+            );
+            return {
+              color,
+              hsv,
+              index,
+              count,
+              warmHueDelta
+            };
+          })
+          .filter(({ hsv }) => this.isWarmQuiltStickerColor(hsv))
+          .sort(
+            (a, b) =>
+              a.index - b.index ||
+              b.count - a.count ||
+              a.warmHueDelta - b.warmHueDelta ||
+              b.hsv.s - a.hsv.s
+          );
+        let pick =
+          warmCandidates.length > 0
+            ? warmCandidates[0].color
+            : pool[0] || warmFallback[0];
+        if (!warmCandidates.length && pool.length) {
+          const source = Utils.hexToHsv(pool[0]);
+          pick = Utils.hsvToHex(
+            this.warmQuiltStickerHue(source),
+            Math.max(28, Math.min(92, source.s * 0.96)),
+            Math.max(38, Math.min(96, source.v * 0.94))
+          );
+        }
+        const candidates = warmCandidates.length
+          ? warmCandidates.slice(0, Math.min(3, warmCandidates.length)).map((item) => item.color)
+          : [pick];
+        const seed =
+          Utils.hashStringToUint(`${Utils.getTodayKey()}:add-yours-sticker:${candidates.join('|')}`) || 1;
+        return candidates[seed % candidates.length] || warmFallback[0];
+      }
+
+      applyReflectionAddYoursStickerStyle() {
+        const submit = document.getElementById('quiltReflectionResponseSubmit');
+        if (!submit) return;
+        const color = this.pickReflectionAddYoursStickerColor();
+        const match = /^#?([0-9a-f]{6})$/i.exec(String(color || '').trim());
+        if (!match) return;
+        const hex = match[1];
+        const hsv = Utils.hexToHsv(`#${hex}`);
+        const prominentHex = Utils.hsvToHex(
+          hsv.h,
+          hsv.s < 8 ? 42 : Math.max(36, Math.min(100, hsv.s * 0.98)),
+          Math.max(36, Math.min(98, hsv.v * 0.96))
+        );
+        const prominentMatch = /^#?([0-9a-f]{6})$/i.exec(String(prominentHex || '').trim());
+        const vintageRaw = prominentMatch ? prominentMatch[1] : hex;
+        const r = parseInt(vintageRaw.slice(0, 2), 16);
+        const g = parseInt(vintageRaw.slice(2, 4), 16);
+        const b = parseInt(vintageRaw.slice(4, 6), 16);
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        const ink =
+          luminance >= 142 ? 'rgba(31, 28, 24, 0.84)' : 'rgba(243, 234, 216, 0.86)';
+        const highlight = `rgba(${Math.min(255, r + 24)}, ${Math.min(255, g + 20)}, ${Math.min(255, b + 16)}, 0.4)`;
+        const shadow = `rgba(${Math.max(0, r - 36)}, ${Math.max(0, g - 32)}, ${Math.max(0, b - 26)}, 0.16)`;
+        const paper = `rgba(${Math.min(255, r + 72)}, ${Math.min(255, g + 66)}, ${Math.min(255, b + 52)}, 0.78)`;
+        const placementSeed =
+          Utils.hashStringToUint(`${Utils.getTodayKey()}:add-yours-sticker-placement:${vintageRaw}`) || 1;
+        const randomUnit = (salt) => ((placementSeed + Utils.hashStringToUint(salt)) % 10000) / 9999;
+        const tilt = (-1.85 + (placementSeed % 380) / 100).toFixed(2);
+        const x = (-0.22 + ((placementSeed >>> 8) % 45) / 100).toFixed(2);
+        const y = (-0.04 + ((placementSeed >>> 16) % 90) / 100).toFixed(2);
+        const grain = (0.3 + randomUnit('grain') * 0.14).toFixed(2);
+        const wear = (0.46 + randomUnit('wear') * 0.16).toFixed(2);
+        submit.style.setProperty('--reflection-add-yours-sticker-bg', `rgba(${r}, ${g}, ${b}, 0.82)`);
+        submit.style.setProperty('--reflection-add-yours-sticker-opacity', '0.9');
+        submit.style.setProperty('--reflection-add-yours-sticker-rgb', `${r}, ${g}, ${b}`);
+        submit.style.setProperty('--reflection-add-yours-sticker-ink', ink);
+        submit.style.setProperty('--reflection-add-yours-sticker-paper', paper);
+        submit.style.setProperty('--reflection-add-yours-sticker-highlight', highlight);
+        submit.style.setProperty('--reflection-add-yours-sticker-shadow', shadow);
+        submit.style.setProperty('--reflection-add-yours-sticker-grain', grain);
+        submit.style.setProperty('--reflection-add-yours-sticker-wear', wear);
+        submit.style.setProperty('--reflection-add-yours-sticker-tilt', `${tilt}deg`);
+        submit.style.setProperty('--reflection-add-yours-sticker-x', `${x}rem`);
+        submit.style.setProperty('--reflection-add-yours-sticker-y', `${y}rem`);
+      }
+
       refreshQuiltReflectionScrapWidget(quote = null) {
         const widget = document.getElementById('quiltReflectionScrapWidget');
         if (!widget) return;
@@ -43957,6 +44483,7 @@ try {
         });
         positionGapExtras();
         requestAnimationFrame(() => positionGapExtras());
+        this.applyReflectionAddYoursStickerStyle();
         this.loadReflectionThemesForToday()
           .then(() => requestAnimationFrame(() => positionGapExtras()))
           .catch((error) => {
