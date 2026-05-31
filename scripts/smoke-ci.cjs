@@ -61,6 +61,7 @@ function smokeSyntax() {
     'lib/simplified-quilt-app-boot.js',
     'lib/simplified-quilt-app-quilt.js',
     'lib/simplified-quilt-app-share.js',
+    'lib/simplified-quilt-app-admin.js',
     'scripts/generate-nightly-ig-images.cjs',
     'scripts/sync-notion-to-firestore.cjs',
     'scripts/smoke-deps.cjs'
