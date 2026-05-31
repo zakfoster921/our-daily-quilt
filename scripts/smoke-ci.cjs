@@ -58,6 +58,7 @@ function smokeSyntax() {
     'lib/quote-service.js',
     'lib/quilt-renderer-v2.js',
     'lib/app-config.js',
+    'lib/layout-b-compose.js',
     'lib/simplified-quilt-app-boot.js',
     'lib/simplified-quilt-app-quilt.js',
     'lib/simplified-quilt-app-share.js',
