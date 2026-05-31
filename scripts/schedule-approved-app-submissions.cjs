@@ -40,6 +40,7 @@ const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'speakerBorn',
   'speakerDied',
   'speakerGuideLine',
+  'speakerKeywords',
   'imageAttribution'
 ];
 
@@ -131,6 +132,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     speakerBornSnapshot: q.speakerBorn.slice(0, 80),
     speakerDiedSnapshot: q.speakerDied.slice(0, 80),
     speakerGuideLineSnapshot: q.speakerGuideLine.slice(0, 260),
+    speakerKeywordsSnapshot: String(q.speakerKeywords ?? q.speaker_keywords ?? '').slice(0, 200),
     imageAttributionSnapshot: q.imageAttribution.slice(0, 260),
     assignedAt: new Date().toISOString(),
     assignedBy
@@ -166,6 +168,7 @@ function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     speaker_born: String(q.speaker_born ?? q.speakerBorn ?? '').trim(),
     speaker_died: String(q.speaker_died ?? q.speakerDied ?? '').trim(),
     speaker_guide_line: String(q.speaker_guide_line ?? q.speakerGuideLine ?? '').trim(),
+    speaker_keywords: String(q.speaker_keywords ?? q.speakerKeywords ?? '').trim(),
     image_attribution: String(q.image_attribution ?? q.imageAttribution ?? '').trim(),
     assignedBy,
     assignedAt: updatedAt,
@@ -257,6 +260,7 @@ async function main() {
       speakerBorn: String(d.speakerBorn ?? d.speaker_born ?? '').trim(),
       speakerDied: String(d.speakerDied ?? d.speaker_died ?? '').trim(),
       speakerGuideLine: String(d.speakerGuideLine ?? d.speaker_guide_line ?? '').trim(),
+      speakerKeywords: String(d.speakerKeywords ?? d.speaker_keywords ?? '').trim(),
       imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
       submittedAt: String(d.submittedAt || '').trim(),
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),

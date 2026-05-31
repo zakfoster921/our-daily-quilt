@@ -57,6 +57,7 @@ const SNAKE_CASE_FIELD_PAIRS = [
   ['speakerBorn', 'speaker_born'],
   ['speakerDied', 'speaker_died'],
   ['speakerGuideLine', 'speaker_guide_line'],
+  ['speakerKeywords', 'speaker_keywords'],
   ['imageAttribution', 'image_attribution'],
   ['submittedBy', 'submitted_by'],
   ['dateScheduled', 'date_scheduled'],
@@ -302,6 +303,67 @@ function findBlessingFromProps(props) {
   for (const key of Object.keys(props)) {
     if (!normPropKey(key).includes('blessing')) continue;
     const t = textFromAnyNotionProp(props[key]);
+    if (t) return t;
+  }
+  return '';
+}
+
+/** Text from speaker_keywords column (rich text, multi-select tags, select, formula, rollup). */
+function speakerKeywordsTextFromProp(prop) {
+  if (!prop || typeof prop !== 'object') return '';
+  const fromAny = textFromAnyNotionProp(prop);
+  if (fromAny) return String(fromAny).trim();
+  if (prop.type === 'multi_select' && Array.isArray(prop.multi_select)) {
+    return prop.multi_select
+      .map((s) => (s && s.name ? String(s.name).trim() : ''))
+      .filter(Boolean)
+      .join(', ')
+      .trim();
+  }
+  if (prop.select?.name) return String(prop.select.name).trim();
+  if (prop.status?.name) return String(prop.status.name).trim();
+  if (prop.type === 'url' && prop.url) return String(prop.url).trim();
+  const plain = plainValueFromNotionProp(prop);
+  if (Array.isArray(plain)) {
+    return plain
+      .map((x) => (typeof x === 'string' ? x : x && x.name ? String(x.name) : ''))
+      .filter(Boolean)
+      .join(', ')
+      .trim();
+  }
+  if (typeof plain === 'string') return plain.trim();
+  if (typeof plain === 'number' && Number.isFinite(plain)) return String(plain);
+  return '';
+}
+
+/** speaker_keywords / speaker_keyword (Notion column name varies). */
+function findSpeakerKeywordsFromProps(props) {
+  if (!props) return '';
+  const directKeys = [
+    'speaker_keywords',
+    'speaker_keyword',
+    'speakerKeywords',
+    'speakerKeyword',
+    'Speaker keywords',
+    'Speaker keyword',
+    'Speaker Keywords',
+    'Speaker Keyword'
+  ];
+  for (const k of directKeys) {
+    if (props[k]) {
+      const t = speakerKeywordsTextFromProp(props[k]);
+      if (t) return t;
+    }
+  }
+  const byBase = findPropByBaseName(props, 'speaker_keywords');
+  if (byBase) {
+    const t = speakerKeywordsTextFromProp(byBase);
+    if (t) return t;
+  }
+  for (const key of Object.keys(props)) {
+    const nk = normPropKey(key);
+    if (nk !== 'speakerkeywords' && nk !== 'speakerkeyword') continue;
+    const t = speakerKeywordsTextFromProp(props[key]);
     if (t) return t;
   }
   return '';
@@ -626,6 +688,23 @@ function parseNotionRow(page) {
     'why_good_guide',
     'why_good_for_reflection'
   );
+  const speakerKeywords = findSpeakerKeywordsFromProps(props);
+  if (process.env.SYNC_DEBUG_SPEAKER_KEYWORDS === '1') {
+    const debugPageId = String(process.env.SYNC_DEBUG_SPEAKER_KEYWORDS_PAGE_ID || '').trim();
+    const shouldPrintDebug = !debugPageId || debugPageId === String(page?.id || '').trim();
+    if (shouldPrintDebug) {
+      const rawProp = props.speaker_keywords || findPropByBaseName(props, 'speaker_keywords');
+      console.log('[sync] speaker_keywords debug', {
+        pageId: page?.id,
+        author,
+        dateScheduled: getDateStart(props.date_scheduled),
+        hasProp: !!rawProp,
+        propType: rawProp?.type || null,
+        propKeys: rawProp ? Object.keys(rawProp).filter((k) => k !== 'id') : [],
+        resolved: String(speakerKeywords || '').slice(0, 120)
+      });
+    }
+  }
   const imageAttribution = getMappedText(
     props,
     'image_attribution',
@@ -721,6 +800,7 @@ function parseNotionRow(page) {
       speaker_born: speakerBorn,
       speaker_died: speakerDied,
       speaker_guide_line: speakerGuideLine,
+      speaker_keywords: String(speakerKeywords || '').trim(),
       image_attribution: imageAttribution,
       submitted_by: submittedBy,
       first_response: firstResponse,

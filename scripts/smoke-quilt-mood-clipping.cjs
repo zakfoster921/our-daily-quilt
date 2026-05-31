@@ -80,7 +80,7 @@ async function main() {
   const page = await browser.newPage();
   await page.setContent(
     `<!DOCTYPE html><html><head>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap">
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,700;1,9..40,400&display=swap">
     </head><body></body></html>`,
     { waitUntil: 'networkidle' }
   );
@@ -120,7 +120,7 @@ async function main() {
         const qnc = globalThis.QuiltNewspaperClipping;
         const cfg = moodApi.withMoodClippingTypography(qnc.DEFAULTS);
         await Promise.all([
-          qnc.ensureNewspaperClippingFonts([cfg.bodyPx, cfg.centerBodyPx]),
+          qnc.ensureNewspaperClippingFonts([cfg.bodyPx, cfg.centerBodyPx], cfg.fontFamily),
           qnc.ensureClippingSurfaceAssets(cfg)
         ]);
         const dataUrl = await moodApi.composeMoodDataUrl({

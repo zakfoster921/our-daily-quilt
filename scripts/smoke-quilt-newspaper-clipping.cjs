@@ -123,8 +123,9 @@ async function main() {
     }
     const qnc = require('../lib/quilt-newspaper-clipping.js');
     const kwStyle = qnc.clippingKeywordStylesForDateKey(dateKey).join('+');
+    const spStyle = qnc.clippingSpeakerNameStyleForDateKey(dateKey, qnc.clippingKeywordStylesForDateKey(dateKey));
     console.log(
-      `[smoke] loaded quotes from Firestore for ${dateKey} (keyword: ${payload.today.keyword || '(none)'}, first_line_count: ${payload.today.first_line_count ?? 3}, keyword_style: ${kwStyle})`
+      `[smoke] loaded quotes from Firestore for ${dateKey} (keyword: ${payload.today.keyword || '(none)'}, first_line_count: ${payload.today.first_line_count ?? 3}, keyword_style: ${kwStyle}, speaker_style: ${spStyle})`
     );
   } else {
     payload = fallback;

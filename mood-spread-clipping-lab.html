@@ -8,6 +8,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=brightness_1,contrast&display=block" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cutive+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -51,7 +55,8 @@
       color: #8a8580;
       margin: 0.7rem 0 0.25rem;
     }
-    textarea {
+    textarea,
+    select {
       width: 100%;
       font: inherit;
       font-size: 0.88rem;
@@ -60,8 +65,20 @@
       border-radius: 4px;
       background: #1a1816;
       color: #e8e4dc;
+    }
+    textarea {
       min-height: 3.25rem;
       resize: vertical;
+    }
+    .font-sample {
+      margin: 0.35rem 0 0;
+      padding: 0.5rem 0.55rem;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.2);
+      font-size: 0.82rem;
+      line-height: 1.35;
+      color: rgba(232, 228, 220, 0.88);
     }
     .btn {
       display: inline-block;
@@ -121,7 +138,11 @@
   <div class="layout">
     <aside class="panel">
       <h1>Mood spread clipping</h1>
-      <p class="note">Full good/rough columns · flanks flush to center quote · Material icons.</p>
+      <p class="note">Full good/rough columns · center quote only (no dark flank bars). Peek export is center column only. Serve from repo root (<code>npx serve .</code>).</p>
+
+      <label for="clippingFont">Clipping font</label>
+      <select id="clippingFont" aria-describedby="fontSample"></select>
+      <p class="font-sample" id="fontSample" aria-hidden="true">Imagination encircles the world.</p>
 
       <label for="quoteText">Quote</label>
       <textarea id="quoteText">Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world.</textarea>
@@ -157,24 +178,82 @@
 
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=29"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=32"></script>
   <script>
     (function () {
       const QNC = window.QuiltNewspaperClipping;
+      const CLIPPING_FONT_PRESETS = [
+        {
+          id: 'dm-sans',
+          label: 'DM Sans — production',
+          family: QNC?.CLIPPING_FONT_FAMILY || '"DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif'
+        },
+        {
+          id: 'libre-baskerville',
+          label: 'Libre Baskerville — previous',
+          family: '"Libre Baskerville", Georgia, "Times New Roman", Times, serif'
+        },
+        {
+          id: 'courier-prime',
+          label: 'Courier Prime — quilt quote',
+          family: '"Courier Prime", "Courier New", Courier, monospace'
+        },
+        {
+          id: 'cutive-mono',
+          label: 'Cutive Mono — quilt UI mono',
+          family: '"Cutive Mono", ui-monospace, monospace'
+        },
+        {
+          id: 'lora',
+          label: 'Lora — serif alt',
+          family: '"Lora", Georgia, "Times New Roman", Times, serif'
+        },
+        {
+          id: 'georgia',
+          label: 'Georgia — system serif',
+          family: 'Georgia, "Times New Roman", Times, serif'
+        }
+      ];
+
       const quoteTextEl = document.getElementById('quoteText');
       const quoteAuthorEl = document.getElementById('quoteAuthor');
       const goodEl = document.getElementById('goodDay');
       const roughEl = document.getElementById('roughDay');
+      const fontEl = document.getElementById('clippingFont');
+      const fontSampleEl = document.getElementById('fontSample');
       const statusEl = document.getElementById('status');
       const moodImg = document.getElementById('moodSpreadImg');
       const peekImg = document.getElementById('peekImg');
       const moodMeta = document.getElementById('moodSpreadMeta');
       const peekMeta = document.getElementById('peekMeta');
 
-      function payload() {
+      function selectedFontPreset() {
+        const id = fontEl?.value || CLIPPING_FONT_PRESETS[0].id;
+        return CLIPPING_FONT_PRESETS.find((p) => p.id === id) || CLIPPING_FONT_PRESETS[0];
+      }
+
+      function updateFontSample() {
+        const preset = selectedFontPreset();
+        if (!fontSampleEl) return;
+        fontSampleEl.style.fontFamily = preset.family;
+        fontSampleEl.textContent = quoteTextEl.value.trim().slice(0, 72) || 'Imagination encircles the world.';
+      }
+
+      function populateFontSelect() {
+        if (!fontEl) return;
+        fontEl.innerHTML = CLIPPING_FONT_PRESETS.map(
+          (p) => `<option value="${p.id}">${p.label}</option>`
+        ).join('');
+        fontEl.value = 'dm-sans';
+        updateFontSample();
+      }
+
+      function composeOpts() {
+        const preset = selectedFontPreset();
         return {
           dateKey: '2026-05-29',
           paperTextureUrl: null,
+          fontFamily: preset.family,
           today: {
             text: quoteTextEl.value.trim(),
             author: quoteAuthorEl.value.trim(),
@@ -199,28 +278,30 @@
           statusEl.textContent = 'Missing quilt-newspaper-clipping.js — serve over http, not file://';
           return;
         }
-        statusEl.textContent = `Rendering (export rev ${QNC.CLIPPING_EXPORT_REV || '?'})…`;
-        const data = payload();
+        const opts = composeOpts();
+        const preset = selectedFontPreset();
+        statusEl.textContent = `Rendering ${preset.label} (rev ${QNC.CLIPPING_EXPORT_REV || '?'})…`;
         try {
           const [moodResult, peekUrl] = await Promise.all([
-            QNC.composeMoodSpreadWithMetrics(data),
-            QNC.composeDataUrl(data)
+            QNC.composeMoodSpreadWithMetrics(opts),
+            QNC.composeDataUrl(opts)
           ]);
           const moodUrl = moodResult?.dataUrl;
           if (!moodUrl) throw new Error('Mood spread export failed');
           moodImg.src = moodUrl;
           peekImg.src = peekUrl || '';
           moodImg.onload = () => {
-            moodMeta.textContent = `${moodImg.naturalWidth}×${moodImg.naturalHeight}px · rev ${QNC.CLIPPING_EXPORT_REV || '?'}`;
+            const face = QNC.primaryClippingFontName?.(opts.fontFamily) || preset.label;
+            moodMeta.textContent = `${moodImg.naturalWidth}×${moodImg.naturalHeight}px · ${face} · rev ${QNC.CLIPPING_EXPORT_REV || '?'}`;
           };
           if (peekUrl) {
             peekImg.onload = () => {
-              peekMeta.textContent = `${peekImg.naturalWidth}×${peekImg.naturalHeight}px`;
+              peekMeta.textContent = `${peekImg.naturalWidth}×${peekImg.naturalHeight}px · peek`;
             };
           } else {
             peekMeta.textContent = 'Peek export failed';
           }
-          statusEl.textContent = `Done — export rev ${QNC.CLIPPING_EXPORT_REV || '?'}. Edit fields and click Render.`;
+          statusEl.textContent = `Done — ${preset.label}. Change font or copy and click Render.`;
         } catch (err) {
           statusEl.textContent = String(err?.message || err);
           moodImg.removeAttribute('src');
@@ -228,8 +309,15 @@
         }
       }
 
+      populateFontSelect();
+
       document.getElementById('renderBtn').addEventListener('click', render);
+      fontEl.addEventListener('change', () => {
+        updateFontSample();
+        render();
+      });
       [quoteTextEl, quoteAuthorEl, goodEl, roughEl].forEach((el) => {
+        el.addEventListener('input', updateFontSample);
         el.addEventListener('keydown', (e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') render();
         });

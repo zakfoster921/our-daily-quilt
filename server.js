@@ -4190,6 +4190,9 @@ app.post('/api/push-instagram-assets', async (req, res) => {
       docPayload.moodClippingRoughUrl = publicUrl;
       docPayload.moodClippingRoughReady = true;
     }
+    if (moodClippingGoodImageData || moodClippingRoughImageData) {
+      docPayload.moodClippingComposerVersion = Number(body.moodClippingComposerVersion ?? 6) || 6;
+    }
 
     await db.collection('instagram-images').doc(dateKey).set(docPayload, { merge: true });
     console.log(

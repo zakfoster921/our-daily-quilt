@@ -16,6 +16,8 @@ function firstThemePatchFromData(data) {
 
 function catalogFieldsForAssignmentMirror(catalog) {
   const portrait = String(catalog?.speaker_image_url ?? catalog?.speakerImageUrl ?? '').trim();
+  const speakerKeywords = String(catalog?.speaker_keywords ?? catalog?.speakerKeywords ?? '').trim();
+  const speakerGuideLine = String(catalog?.speaker_guide_line ?? catalog?.speakerGuideLine ?? '').trim();
   return {
     first_response: String(catalog?.first_response ?? '').slice(0, 500),
     user_name: FIRST_RESPONSE_USER_NAME,
@@ -24,6 +26,12 @@ function catalogFieldsForAssignmentMirror(catalog) {
           speakerImageUrlSnapshot: portrait.slice(0, 500),
           speaker_image_url_snapshot: portrait.slice(0, 500)
         }
+      : {}),
+    ...(speakerKeywords
+      ? { speakerKeywordsSnapshot: speakerKeywords.slice(0, 200) }
+      : {}),
+    ...(speakerGuideLine
+      ? { speakerGuideLineSnapshot: speakerGuideLine.slice(0, 260) }
       : {})
   };
 }
