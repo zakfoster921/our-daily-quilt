@@ -1358,11 +1358,6 @@ try {
       border-radius: 1px;
     }
 
-    #screen-quote .quote-card.layoutb-preview-card {
-      background: transparent;
-      box-shadow: none;
-    }
-
     #screen-quote .quote-screen-clipping--has-png .quote-screen-clipping__image {
       border-radius: 0;
       filter: var(--odq-artifact-shadow, drop-shadow(0 3px 10px rgba(0, 0, 0, 0.16)));
@@ -2719,7 +2714,7 @@ try {
       margin-left: auto;
       margin-right: auto;
       padding: 0.7rem 0.7rem;
-      /* Inner is display:none; stage is appended inside the card — drop default min-height so no empty shell. */
+      /* Inner is display:none; clipping image lives in the card — drop default min-height so no empty shell. */
       min-height: 0;
       align-items: center;
     }
@@ -12678,7 +12673,7 @@ try {
 
     /* inline-block + isolate: stacking per phrase; zero padding so line-height stays unchanged. */
     #screen-quilt .quote-speaker-guide .speaker-guide-marker {
-      --speaker-marker-band: 1.2em;
+      --speaker-marker-band: 1.35em;
       position: relative;
       display: inline-block;
       vertical-align: baseline;
@@ -12694,23 +12689,38 @@ try {
       overflow: visible;
     }
 
-    /* Band centered on text: 1.2em = 20% taller than 1em cap box; out of flow → no extra leading. */
-    #screen-quilt .quote-speaker-guide .speaker-guide-marker__stroke {
+    /* Soft base wash (goal: thick centered band behind legible type). */
+    #screen-quilt .quote-speaker-guide .speaker-guide-marker::before {
+      content: '';
       position: absolute;
-      left: -4%;
-      width: 108%;
+      left: -0.06em;
+      right: -0.06em;
       top: 50%;
       height: var(--speaker-marker-band);
+      transform: translateY(-50%);
+      background: rgba(255, 214, 74, 0.48);
+      border-radius: 0.16em 0.12em 0.14em 0.1em;
       z-index: 0;
       pointer-events: none;
-      opacity: 1;
+    }
+
+    /* Organic SVG on top of base; centered, ~20% taller than cap height. */
+    #screen-quilt .quote-speaker-guide .speaker-guide-marker__stroke {
+      position: absolute;
+      left: -5%;
+      width: 110%;
+      top: 50%;
+      height: var(--speaker-marker-band);
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0.92;
       transform: translateY(-50%);
       transform-origin: center center;
     }
 
     #screen-quilt .quote-speaker-guide .speaker-guide-marker__text {
       position: relative;
-      z-index: 1;
+      z-index: 2;
       transform: rotate(var(--marker-tilt, 0deg));
     }
 
@@ -34219,7 +34229,7 @@ try {
       }
 
       /**
-       * Coalesce Layout B quote-screen paints so rapid displayQuote calls don't flash plain text then remount.
+       * Coalesce quote-screen clipping paints so rapid displayQuote calls don't flash plain text then remount.
        */
       _revealQuoteLayoutBStage() {
         const clipping = document.querySelector('#screen-quote .quote-screen-clipping');
@@ -34366,7 +34376,7 @@ try {
       }
 
       /**
-       * Rebuild Layout B strip stage using current wrapper width. Call after #screen-quote is visible —
+       * Rebuild quote clipping using current wrapper width. Call after #screen-quote is visible —
        * displayQuote() runs at init while the screen is display:none, so clientWidth was wrong until now.
        */
       scheduleQuoteLayoutBPreviewLayoutRefresh(force = false) {
@@ -49332,7 +49342,7 @@ try {
 
       /**
        * Quote in top half; after `readPauseMs` (default 1.5s) wheel slides into bottom half.
-       * Waits for Layout B strips when the quote card is in preview mode so sliders never beat the quote.
+       * Waits for the quote clipping image when the quote card is in preview mode so sliders never beat the quote.
        */
       scheduleQuoteColorPickerReveal(readPauseMs = CONFIG.APP.quoteColorPickerRevealMs) {
         this._pendingQuoteColorPickerRevealMs = readPauseMs;
