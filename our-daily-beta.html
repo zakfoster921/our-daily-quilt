@@ -16430,6 +16430,7 @@ try {
   <script src="lib/utils-color.js"></script>
   <script src="lib/utils-client.js"></script>
   <script src="lib/utils-portal.js"></script>
+  <script src="lib/utils-mood-receipt.js"></script>
   <script src="lib/utils-quilt.js"></script>
   <script src="lib/quilt-shape-v2.js"></script>
   <script src="lib/live-daily-data-sync.js"></script>
@@ -22174,163 +22175,11 @@ try {
     if (typeof UtilsCore.getQuiltDimensions !== 'function') {
       throw new Error('lib/utils-quilt.js must load before the app module');
     }
+    if (typeof UtilsCore.moodReceiptPaperFromUserColor !== 'function') {
+      throw new Error('lib/utils-mood-receipt.js must load before the app module');
+    }
 
     class Utils extends UtilsCore {
-
-      /** Light desaturated thermal paper from the user's quilt color (fallback when missing). */
-      static moodReceiptPaperFromUserColor(hex) {
-        const fallback = '#e8e2d6';
-        const raw = String(hex || '').trim();
-        if (!Utils.validateHexColor(raw)) return fallback;
-        const hsv = Utils.hexToHsv(raw);
-        const sat =
-          hsv.s < 6
-            ? 6
-            : Math.min(14, Math.max(5, Math.round(hsv.s * 0.11)));
-        const val = Math.max(94, Math.min(97, Math.round(93 + (100 - hsv.v) * 0.48)));
-        const tinted = Utils.hsvToHex(hsv.h, sat, val);
-        const mix = 0.34;
-        const parse = (h) => {
-          const n = parseInt(String(h).replace('#', ''), 16);
-          return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-        };
-        const a = parse(tinted);
-        const b = parse('#f8f5ef');
-        const ch = (k) =>
-          Math.round(a[k] * (1 - mix) + b[k] * mix)
-            .toString(16)
-            .padStart(2, '0');
-        return '#' + ch('r') + ch('g') + ch('b');
-      }
-
-      /** Denser warm stock for the quilt Pantone chip (footer + card face). */
-      static colorCardstockPaperFromUserColor(hex) {
-        const tinted = Utils.moodReceiptPaperFromUserColor(hex);
-        const mix = 0.42;
-        const parse = (h) => {
-          const n = parseInt(String(h).replace('#', ''), 16);
-          return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-        };
-        const a = parse(tinted);
-        const b = parse('#e3ddd4');
-        const ch = (k) =>
-          Math.round(a[k] * (1 - mix) + b[k] * mix)
-            .toString(16)
-            .padStart(2, '0');
-        return '#' + ch('r') + ch('g') + ch('b');
-      }
-
-      /** Receipt footer stamp: MM/DD/YY HH:MMA (POS-style, fixed width). */
-      static formatMoodReceiptStamp(date = new Date()) {
-        const mm = String(date.getMonth() + 1).padStart(2, '0');
-        const dd = String(date.getDate()).padStart(2, '0');
-        const yy = String(date.getFullYear() % 100).padStart(2, '0');
-        const datePart = `${mm}/${dd}/${yy}`;
-        let hour12 = date.getHours() % 12;
-        if (hour12 === 0) hour12 = 12;
-        const min = String(date.getMinutes()).padStart(2, '0');
-        const meridiem = date.getHours() >= 12 ? 'P' : 'A';
-        const timePart = `${String(hour12).padStart(2, '0')}:${min}${meridiem}`;
-        return `${datePart} ${timePart}`;
-      }
-
-      /** Receipt message body only (date/time is a separate line in the DOM). */
-      static formatMoodReceiptBody(bodyText) {
-        return String(bodyText || '').trim().replace(/\s+/g, ' ');
-      }
-
-      /** Receipt header: MESSAGE FOR: NAME (uses portal greeting when name omitted). */
-      static formatMoodReceiptLabel(name) {
-        const raw = name != null ? String(name).trim() : '';
-        const display = raw || Utils.getNameThanksDisplayName();
-        return `MESSAGE FOR: ${String(display).toUpperCase()}`;
-      }
-
-      /** Full-width ===== rule for thermal receipt paper (measures container width). */
-      static moodReceiptRuleLine(containerEl) {
-        const fallback = '='.repeat(24);
-        if (!containerEl || typeof document === 'undefined') return fallback;
-        const width = containerEl.clientWidth;
-        if (width <= 0) return fallback;
-        const sample =
-          containerEl.querySelector('.quilt-mood-widget__paper-text, .exit-chamber-mood-paper__text') ||
-          containerEl;
-        const cs = getComputedStyle(sample);
-        if (!Utils._moodReceiptRuleCanvas) {
-          Utils._moodReceiptRuleCanvas = document.createElement('canvas');
-        }
-        const ctx = Utils._moodReceiptRuleCanvas.getContext('2d');
-        if (!ctx) return '='.repeat(Math.max(12, Math.floor(width / 9)));
-        const fontStyle = cs.fontStyle && cs.fontStyle !== 'normal' ? `${cs.fontStyle} ` : '';
-        ctx.font = `${fontStyle}${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-        const eqW = ctx.measureText('=').width;
-        if (!eqW || eqW <= 0) return '='.repeat(Math.max(12, Math.floor(width / 9)));
-        const ls = parseFloat(cs.letterSpacing);
-        const charSpan = eqW + (Number.isFinite(ls) ? ls : 0);
-        return '='.repeat(Math.max(8, Math.floor(width / charSpan)));
-      }
-
-      /** Screen-reader / announce string: message, label, then stamp. */
-      static formatMoodReceiptLine(bodyText, date = new Date()) {
-        const body = Utils.formatMoodReceiptBody(bodyText);
-        const label = Utils.formatMoodReceiptLabel();
-        const stamp = Utils.formatMoodReceiptStamp(date);
-        const parts = [body, label, stamp].filter(Boolean);
-        return parts.join('. ');
-      }
-
-      static refreshPortalDateText() {
-        Utils.syncPortalVisitMode();
-        const dateText = document.getElementById('date-text');
-        if (dateText) {
-          dateText.textContent = Utils.formatDate();
-        }
-        Utils.refreshPortalGreeting();
-        if (window.app?._portalQuiltLoaded && typeof window.app.updateSquareCounter === 'function') {
-          window.app.updateSquareCounter();
-        }
-      }
-
-      /** Compact label: v1.20 = marketing major + Xcode build (native). Web omits non-numeric build. */
-      static formatPortalVersionLabel(version, build) {
-        const versionStr = String(version || '').trim();
-        const buildStr = String(build || '').trim();
-        const major = versionStr.split('.')[0] || '1';
-        if (/^\d+$/.test(buildStr)) {
-          return `v${major}.${buildStr}`;
-        }
-        const parts = versionStr.split('.').filter(Boolean);
-        if (parts.length >= 2) return `v${parts[0]}.${parts[1]}`;
-        if (parts.length === 1) return `v${parts[0]}`;
-        return '';
-      }
-
-      static refreshPortalVersionLabel() {
-        const el = document.getElementById('portal-version-label');
-        if (!el || typeof CONFIG === 'undefined' || !CONFIG.APP) return;
-
-        const fallbackVersion = CONFIG.APP.version || '?';
-        const fallbackBuild = CONFIG.APP.buildId || 'dev';
-        el.textContent = Utils.formatPortalVersionLabel(fallbackVersion, fallbackBuild);
-
-        const isNative =
-          typeof odqIsCapacitorNative === 'function' && odqIsCapacitorNative();
-        if (!isNative) return;
-
-        const appPlugin = window.Capacitor?.Plugins?.App;
-        if (!appPlugin || typeof appPlugin.getInfo !== 'function') return;
-
-        appPlugin.getInfo()
-          .then((info) => {
-            if (!el) return;
-            el.textContent = Utils.formatPortalVersionLabel(
-              info?.version || fallbackVersion,
-              info?.build || fallbackBuild
-            );
-          })
-          .catch(() => {});
-      }
-
       static dataUrlToBlob(dataUrl) {
         const m = String(dataUrl).match(/^data:([^;]+);base64,(.+)$/);
         if (!m) {
