@@ -43,6 +43,7 @@ function smokeSyntax() {
     'lib/utils-color.js',
     'lib/utils-client.js',
     'lib/utils-portal.js',
+    'lib/utils-quilt.js',
     'lib/quilt-shape-v2.js',
     'lib/live-daily-data-sync.js',
     'lib/quilt-data-service.js',

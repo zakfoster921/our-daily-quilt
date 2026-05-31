@@ -16430,6 +16430,7 @@ try {
   <script src="lib/utils-color.js"></script>
   <script src="lib/utils-client.js"></script>
   <script src="lib/utils-portal.js"></script>
+  <script src="lib/utils-quilt.js"></script>
   <script src="lib/quilt-shape-v2.js"></script>
   <script src="lib/live-daily-data-sync.js"></script>
   <script src="lib/quilt-data-service.js"></script>
@@ -22170,62 +22171,11 @@ try {
     if (typeof UtilsCore.getUserFirstName !== 'function') {
       throw new Error('lib/utils-portal.js must load before the app module');
     }
+    if (typeof UtilsCore.getQuiltDimensions !== 'function') {
+      throw new Error('lib/utils-quilt.js must load before the app module');
+    }
 
     class Utils extends UtilsCore {
-      static getQuiltDimensions() {
-        const hasVisualViewport = window.visualViewport && window.visualViewport.width > 0;
-        
-        let screenWidth, screenHeight;
-        
-        if (hasVisualViewport) {
-          screenWidth = window.visualViewport.width;
-          screenHeight = window.visualViewport.height;
-        } else {
-          const body = document.body;
-          const html = document.documentElement;
-          
-          const bodyRect = body.getBoundingClientRect();
-          const htmlRect = html.getBoundingClientRect();
-          
-          const measuredWidth = Math.min(bodyRect.width, htmlRect.width);
-          const measuredHeight = Math.min(bodyRect.height, htmlRect.height);
-          
-          if (measuredWidth > 0 && measuredHeight > 0) {
-            screenWidth = measuredWidth;
-            screenHeight = measuredHeight;
-          } else {
-            screenWidth = window.innerWidth;
-            screenHeight = window.innerHeight;
-            
-            const browserUIMargin = Math.min(screenHeight * 0.15, 120);
-            screenHeight = screenHeight - browserUIMargin;
-          }
-        }
-        
-        const isMobile = screenWidth <= 768;
-        
-        if (isMobile) {
-          // Mobile: Use fixed 4:5 dimensions for Instagram-friendly experience
-          const width = 1070;  // 1080 - 10px padding
-          const height = 1340; // 1350 - 10px padding
-          return {
-            width: width,
-            height: height,
-            viewBoxWidth: width,
-            viewBoxHeight: height
-          };
-        } else {
-          // Desktop: Use fixed 4:5 dimensions for Instagram-friendly experience
-          const width = 1070;  // 1080 - 10px padding
-          const height = 1340; // 1350 - 10px padding
-          return {
-            width: width,
-            height: height,
-            viewBoxWidth: width,
-            viewBoxHeight: height
-          };
-        }
-      }
 
       /** Light desaturated thermal paper from the user's quilt color (fallback when missing). */
       static moodReceiptPaperFromUserColor(hex) {
@@ -22515,39 +22465,6 @@ try {
         return Utils.hstTrianglesForFirestore(pieces);
       }
 
-      /**
-       * Half-square triangles in block-local coords (0…w, 0…h) for canvas/SVG/reel.
-       */
-      static getHstRenderTriangles(block) {
-        if (!block || block.patternType !== 'special' || block.specialPatternType !== 'hst') {
-          return [];
-        }
-        if (Array.isArray(block.hstTriangles) && block.hstTriangles.length) {
-          return block.hstTriangles.map((t) => ({
-            color: t.color,
-            points: (t.points || []).map((p) => {
-              if (Array.isArray(p)) return [Number(p[0]), Number(p[1])];
-              if (p && typeof p === 'object') return [Number(p.x), Number(p.y)];
-              return [0, 0];
-            })
-          }));
-        }
-        const w = Number(block.width);
-        const h = Number(block.height);
-        const c1 = typeof block.color === 'string' ? block.color : '#c8c4bf';
-        const c2 = typeof block.hstColorB === 'string' ? block.hstColorB : c1;
-        const diag = block.hstDiagonal === 'ne-sw' ? 'ne-sw' : 'nw-se';
-        if (diag === 'nw-se') {
-          return [
-            { color: c1, points: [[0, 0], [0, h], [w, h]] },
-            { color: c2, points: [[0, 0], [w, 0], [w, h]] }
-          ];
-        }
-        return [
-          { color: c1, points: [[0, 0], [w, 0], [0, h]] },
-          { color: c2, points: [[w, 0], [w, h], [0, h]] }
-        ];
-      }
 
       /** Deterministic PRNG from block fields so organic HST shape is stable per block. */
       static _hashHstOrganicSeed(block) {
@@ -23416,79 +23333,6 @@ try {
         }
       }
 
-      /**
-       * Stable quilt fingerprint (order-insensitive) so image/reel writes can be verified as same source quilt.
-       * Uses integer-snapped geometry + color and a fast deterministic hash.
-       */
-      static computeQuiltFingerprint(blocks) {
-        if (!Array.isArray(blocks) || blocks.length === 0) return '';
-        const normalized = blocks
-          .filter((b) => b && typeof b.x === 'number' && b.width > 0 && b.height > 0)
-          .map((b) => ({
-            x: Math.round(b.x),
-            y: Math.round(b.y),
-            w: Math.round(b.width),
-            h: Math.round(b.height),
-            c: String(b.color || '').trim().toLowerCase(),
-            hst:
-              b.patternType === 'special' && b.specialPatternType === 'hst'
-                ? (() => {
-                    const tris = Utils.getHstRenderTriangles(b);
-                    if (tris.length && Array.isArray(b.hstTriangles) && b.hstTriangles.length) {
-                      const enc = tris
-                        .map((t) => ({
-                          c: String(t.color || '').trim().toLowerCase(),
-                          p: (t.points || []).map((pt) => [Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100])
-                        }))
-                        .sort((a, b) => a.c.localeCompare(b.c) || JSON.stringify(a.p).localeCompare(JSON.stringify(b.p)));
-                      return `tri:${JSON.stringify(enc)}`;
-                    }
-                    return `${String(b.hstDiagonal || 'nw-se')}:${String(b.hstColorB || '').trim().toLowerCase()}`;
-                  })()
-                : '',
-            poly:
-              Array.isArray(b.polygonPieces) && b.polygonPieces.length
-                ? (() => {
-                    const enc = b.polygonPieces
-                      .map((piece) => ({
-                        c: String(piece.color || '').trim().toLowerCase(),
-                        p: (piece.points || []).map((pt) => {
-                          const x = Array.isArray(pt) ? pt[0] : pt?.x;
-                          const y = Array.isArray(pt) ? pt[1] : pt?.y;
-                          return [Math.round(Number(x) * 100) / 100, Math.round(Number(y) * 100) / 100];
-                        })
-                      }))
-                      .sort((a, b) => a.c.localeCompare(b.c) || JSON.stringify(a.p).localeCompare(JSON.stringify(b.p)));
-                    return `poly:${JSON.stringify(enc)}`;
-                  })()
-                : '',
-            inset:
-              b.patternType === 'special' && b.specialPatternType === 'insetCircle'
-                ? `inset:${b.insetTier ?? 0}:${String(b.insetInnerColor || '').trim().toLowerCase()}:${Math.round(Number(b.insetCx) || 0)}:${Math.round(Number(b.insetCy) || 0)}:${Math.round(Number(b.insetR) || 0)}:${b.insetNextCutVertical === true ? '1' : b.insetNextCutVertical === false ? '0' : 'u'}`
-                : ''
-          }))
-          .sort((a, b) =>
-            a.x - b.x ||
-            a.y - b.y ||
-            a.w - b.w ||
-            a.h - b.h ||
-            a.c.localeCompare(b.c) ||
-            a.hst.localeCompare(b.hst) ||
-            a.poly.localeCompare(b.poly) ||
-            a.inset.localeCompare(b.inset)
-          );
-        if (!normalized.length) return '';
-        const canonical = normalized
-          .map((b) => `${b.x},${b.y},${b.w},${b.h},${b.c},${b.hst},${b.poly},${b.inset}`)
-          .join('|');
-        // 32-bit FNV-1a (hex) with length prefix for quick mismatch checks.
-        let h = 0x811c9dc5;
-        for (let i = 0; i < canonical.length; i++) {
-          h ^= canonical.charCodeAt(i);
-          h = Math.imul(h, 0x01000193) >>> 0;
-        }
-        return `qfp-v1-${normalized.length}-${h.toString(16).padStart(8, '0')}`;
-      }
 
       /**
        * Firestore rejects `undefined` and `NaN`. Strip undefined recursively; coerce non-finite numbers to null.
