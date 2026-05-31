@@ -12689,7 +12689,7 @@ try {
       overflow: visible;
     }
 
-    /* Soft base wash (goal: thick centered band behind legible type). */
+    /* Soft base wash — color from live quilt via --speaker-guide-marker-* on #quoteSpeakerWidget. */
     #screen-quilt .quote-speaker-guide .speaker-guide-marker::before {
       content: '';
       position: absolute;
@@ -12698,10 +12698,14 @@ try {
       top: 50%;
       height: var(--speaker-marker-band);
       transform: translateY(-50%);
-      background: rgba(255, 214, 74, 0.48);
+      background: var(--speaker-guide-marker-bg, rgba(255, 214, 74, 0.48));
       border-radius: 0.16em 0.12em 0.14em 0.1em;
       z-index: 0;
       pointer-events: none;
+    }
+
+    #screen-quilt .quote-speaker-guide .speaker-guide-marker__stroke path {
+      fill: var(--speaker-guide-marker-fill, rgba(255, 214, 74, 0.62));
     }
 
     /* Organic SVG on top of base; centered, ~20% taller than cap height. */
@@ -16506,7 +16510,7 @@ try {
   <!-- rumi-colors is local; QR + html2canvas load on demand (were blocking launch on CDN). -->
   <script src="rumi-colors.js"></script>
   <script src="lib/quote-keyword-emphasis.js"></script>
-  <script src="lib/speaker-guide-marker.js?v=7"></script>
+  <script src="lib/speaker-guide-marker.js?v=9"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
   <script src="lib/quilt-newspaper-clipping.js?v=32"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
@@ -43037,7 +43041,10 @@ try {
           this.getMostPopularQuiltColor()?.color || CONFIG.APP.defaultColor || '#ea9b9a'
         ).trim();
         const safeWashColor = /^#[0-9A-Fa-f]{6}$/.test(washColor) ? washColor : '#ea9b9a';
+        const markerColor = String(this.getBrightQuiltMarkerColor() || safeWashColor).trim();
+        const safeMarkerColor = /^#[0-9A-Fa-f]{6}$/.test(markerColor) ? markerColor : safeWashColor;
         const washRgb = safeWashColor.match(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
+        const markerRgb = safeMarkerColor.match(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
         widget.style.setProperty('--speaker-wash-color', safeWashColor);
         widget.style.setProperty('--speaker-wash-hue-rotate', `${this._quoteSpeakerWashHueRotateFromHex(safeWashColor)}deg`);
         if (washRgb) {
@@ -43046,6 +43053,12 @@ try {
           widget.style.setProperty('--speaker-wash-color-medium', `rgba(${rgb}, 0.42)`);
           widget.style.setProperty('--speaker-wash-color-soft', `rgba(${rgb}, 0.36)`);
           widget.style.setProperty('--speaker-wash-color-faint', `rgba(${rgb}, 0.28)`);
+        }
+        if (markerRgb) {
+          const rgb = markerRgb.slice(1).map((hex) => parseInt(hex, 16)).join(', ');
+          widget.style.setProperty('--speaker-guide-marker-rgb', rgb);
+          widget.style.setProperty('--speaker-guide-marker-bg', `rgba(${rgb}, 0.5)`);
+          widget.style.setProperty('--speaker-guide-marker-fill', `rgba(${rgb}, 0.68)`);
         }
       }
 
@@ -50932,6 +50945,38 @@ try {
 
       getMostPopularQuiltColor(blocks = this.quiltEngine?.blocks || []) {
         return this.getQuiltPaletteSummary(blocks)?.colors?.[0] || null;
+      }
+
+      /** Bright, saturated hex from today's quilt blocks for keyword highlighter bands. */
+      getBrightQuiltMarkerColor(blocks = this.quiltEngine?.blocks || []) {
+        const isHex = (color) => /^#?[0-9a-f]{6}$/i.test(String(color || '').trim());
+        const normalize = (color) => {
+          const value = String(color || '').trim().toLowerCase();
+          if (!isHex(value)) return '';
+          return value.startsWith('#') ? value : `#${value}`;
+        };
+        const candidates = [];
+        const addCandidate = (color, weight = 1) => {
+          const hex = normalize(color);
+          if (!hex) return;
+          const hsv = Utils.hexToHsv(hex);
+          if (hsv.s < 22 || hsv.v < 42) return;
+          const score = (hsv.v * 0.62 + hsv.s * 0.38) * weight;
+          candidates.push({ hex, score });
+        };
+        (this.getQuiltPaletteSummary(blocks)?.palette || []).forEach((item, index) => {
+          addCandidate(item?.color, index === 0 ? 1.08 : 1);
+        });
+        blocks.forEach((block) => addCandidate(block?.color, 1));
+        candidates.sort((a, b) => b.score - a.score);
+        const picked = candidates[0]?.hex || normalize(this.getMostPopularQuiltColor(blocks)?.color);
+        if (!picked) return '#ea9b9a';
+        const hsv = Utils.hexToHsv(picked);
+        return Utils.hsvToHex(
+          hsv.h,
+          Math.max(38, Math.min(88, hsv.s)),
+          Math.max(74, Math.min(94, hsv.v + (100 - hsv.v) * 0.22))
+        );
       }
 
       getFriendlyColorName(hex) {
