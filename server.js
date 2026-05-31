@@ -81,6 +81,13 @@ app.use(
     index: false
   })
 );
+app.use(
+  '/styles',
+  express.static(path.join(ROOT_DIR, 'styles'), {
+    dotfiles: 'deny',
+    index: false
+  })
+);
 
 // In-memory storage for generated images
 const imageStore = new Map();

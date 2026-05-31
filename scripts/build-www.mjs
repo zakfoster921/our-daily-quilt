@@ -11,6 +11,8 @@ const cutiveSrc = join(assetsSrc, "fonts", "CutiveMono-Regular.ttf");
 const cutiveIosDest = join(root, "ios", "App", "App", "Fonts", "CutiveMono-Regular.ttf");
 const libSrc = join(root, "lib");
 const libDest = join(www, "lib");
+const stylesSrc = join(root, "styles");
+const stylesDest = join(www, "styles");
 const rumiSrc = join(root, "rumi-colors.js");
 const rumiDest = join(www, "rumi-colors.js");
 const srcHtml = join(root, "our-daily-beta.html");
@@ -73,6 +75,13 @@ try {
   }
 } catch {
   console.warn("build:www: no lib/ folder, skipping");
+}
+try {
+  if (await stat(stylesSrc).then((s) => s.isDirectory())) {
+    await copyDir(stylesSrc, stylesDest);
+  }
+} catch {
+  console.warn("build:www: no styles/ folder, skipping");
 }
 try {
   await copyFile(rumiSrc, rumiDest);
