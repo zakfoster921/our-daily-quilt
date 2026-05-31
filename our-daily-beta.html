@@ -12677,9 +12677,9 @@ try {
       overflow: visible;
     }
 
-    /* inline-block + isolate: one organic SVG stroke per phrase; zero padding → no extra leading. */
+    /* Felt-tip highlighter: one SVG stroke, rounded caps, full text height, no extra leading. */
     #screen-quilt .quote-speaker-guide .speaker-guide-marker {
-      --speaker-marker-band: 1.35em;
+      --speaker-marker-band: 1.22em;
       position: relative;
       display: inline-block;
       vertical-align: baseline;
@@ -12697,21 +12697,19 @@ try {
 
     #screen-quilt .quote-speaker-guide .speaker-guide-marker__stroke {
       position: absolute;
-      left: -7%;
-      width: 114%;
+      left: -0.08em;
+      right: -0.08em;
+      width: auto;
       top: 50%;
       height: var(--speaker-marker-band);
       z-index: 0;
       pointer-events: none;
-      opacity: 0.9;
-      transform: translateY(-50%) rotate(var(--marker-stroke-tilt, 0deg))
-        scale(var(--marker-stroke-sx, 1.04), var(--marker-stroke-sy, 1.14));
+      transform: translateY(-50%) rotate(var(--marker-stroke-tilt, 0deg));
       transform-origin: center center;
-      filter: blur(0.25px) contrast(1.04);
     }
 
     #screen-quilt .quote-speaker-guide .speaker-guide-marker__stroke path {
-      fill: var(--speaker-guide-marker-fill, rgba(255, 214, 74, 0.65));
+      fill: var(--speaker-guide-marker-fill, rgba(255, 233, 74, 0.52));
     }
 
     #screen-quilt .quote-speaker-guide .speaker-guide-marker__text {
@@ -12722,10 +12720,29 @@ try {
 
     #screen-quilt .quote-speaker-attribution {
       position: absolute;
-      top: 0.4rem;
-      right: 0;
+      inset: 0;
       z-index: 5;
       margin: 0;
+      padding: 0;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    #screen-quilt .quote-speaker-attribution-svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    #screen-quilt .quote-speaker-attribution-label {
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+    }
+
+    #screen-quilt .quote-speaker-attribution--fallback {
+      inset: auto;
+      top: 0.4rem;
+      right: 0;
       width: calc(100% - 0.5rem);
       max-height: 2.85em;
       height: auto;
@@ -12738,7 +12755,6 @@ try {
       color: rgba(47, 39, 31, 0.52);
       text-align: start;
       overflow: hidden;
-      pointer-events: none;
     }
 
     #screen-quilt .quote-speaker-attribution[hidden] {
@@ -42867,6 +42883,220 @@ try {
         return value.replace(/^image\s*:\s*/i, '').trim();
       }
 
+      _quoteSpeakerAttributionFontSizePx() {
+        const rootRem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+        return Math.max(7, 0.58 * rootRem);
+      }
+
+      _quoteSpeakerImageContainRect(naturalW, naturalH, boxW, boxH) {
+        const iw = Math.max(1, naturalW);
+        const ih = Math.max(1, naturalH);
+        const scale = Math.min(boxW / iw, boxH / ih);
+        const drawW = iw * scale;
+        const drawH = ih * scale;
+        return {
+          offsetX: (boxW - drawW) / 2,
+          offsetY: 0,
+          drawW,
+          drawH
+        };
+      }
+
+      _quoteSpeakerSilhouetteRightEdge(img, boxW, boxH) {
+        if (!img?.naturalWidth || !img?.naturalHeight) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = boxW;
+        canvas.height = boxH;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return null;
+        const { offsetX, offsetY, drawW, drawH } = this._quoteSpeakerImageContainRect(
+          img.naturalWidth,
+          img.naturalHeight,
+          boxW,
+          boxH
+        );
+        ctx.clearRect(0, 0, boxW, boxH);
+        ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+        let data;
+        try {
+          data = ctx.getImageData(0, 0, boxW, boxH).data;
+        } catch (_) {
+          return null;
+        }
+        const rowHasOpaque = (y) => {
+          for (let x = 0; x < boxW; x += 1) {
+            if (data[(y * boxW + x) * 4 + 3] > 28) return true;
+          }
+          return false;
+        };
+        let yStart = 0;
+        let yEnd = boxH - 1;
+        while (yStart < boxH && !rowHasOpaque(yStart)) yStart += 1;
+        while (yEnd > yStart && !rowHasOpaque(yEnd)) yEnd -= 1;
+        if (yEnd <= yStart) return null;
+        const step = Math.max(1, Math.round((yEnd - yStart) / 140));
+        const points = [];
+        for (let y = yStart; y <= yEnd; y += step) {
+          let rightX = -1;
+          for (let x = boxW - 1; x >= 0; x -= 1) {
+            if (data[(y * boxW + x) * 4 + 3] > 28) {
+              rightX = x;
+              break;
+            }
+          }
+          if (rightX >= 0) points.push({ x: rightX, y });
+        }
+        if (points.length < 3) return null;
+        const window = Math.min(5, Math.floor(points.length / 8) || 1);
+        return points.map((p, i) => {
+          let sum = 0;
+          let count = 0;
+          for (let j = i - window; j <= i + window; j += 1) {
+            if (points[j]) {
+              sum += points[j].x;
+              count += 1;
+            }
+          }
+          return { x: sum / count, y: p.y };
+        });
+      }
+
+      _quoteSpeakerSilhouetteCaptionPath(points) {
+        if (!points?.length) return '';
+        const pts = points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`);
+        return `M ${pts[0]} L ${pts.slice(1).join(' L ')}`;
+      }
+
+      _setQuoteSpeakerAttributionFallback(attributionEl, text) {
+        attributionEl.classList.add('quote-speaker-attribution--fallback');
+        attributionEl.textContent = text;
+      }
+
+      _layoutQuoteSpeakerAttributionAlongSilhouette(attributionEl, imgEl, cutoutEl) {
+        if (!attributionEl || attributionEl.hidden) return;
+        const text = String(attributionEl.dataset.attributionText || '').trim();
+        if (!text) {
+          attributionEl.replaceChildren();
+          attributionEl.classList.remove('quote-speaker-attribution--fallback');
+          return;
+        }
+        const wrap = attributionEl.closest('.quote-speaker-portrait-wrap');
+        const cutout = cutoutEl || document.getElementById('quoteSpeakerImageWrap');
+        const img = imgEl || cutout?.querySelector('.quote-speaker-image');
+        if (!wrap || !cutout || cutout.hidden) {
+          this._setQuoteSpeakerAttributionFallback(attributionEl, text);
+          return;
+        }
+        const boxW = Math.max(1, Math.round(wrap.clientWidth));
+        const boxH = Math.max(1, Math.round(wrap.clientHeight));
+        if (boxW < 48 || boxH < 48) return;
+
+        const paint = () => {
+          if (!img?.src || !img.naturalWidth) {
+            this._setQuoteSpeakerAttributionFallback(attributionEl, text);
+            return;
+          }
+          const edge = this._quoteSpeakerSilhouetteRightEdge(img, boxW, boxH);
+          if (!edge?.length) {
+            this._setQuoteSpeakerAttributionFallback(attributionEl, text);
+            return;
+          }
+          const fontSize = this._quoteSpeakerAttributionFontSizePx();
+          const lineHeight = fontSize * 1.4;
+          const span = edge[edge.length - 1].y - edge[0].y;
+          const charsPerCol = Math.max(1, Math.floor(span / lineHeight));
+          const maxCols = 3;
+          const colWidth = fontSize * 1.32;
+          const padPx = Math.max(3, fontSize * 0.45);
+          const columns = [];
+          for (let i = 0; i < text.length && columns.length < maxCols; i += charsPerCol) {
+            columns.push(text.slice(i, i + charsPerCol));
+          }
+
+          const svgNS = 'http://www.w3.org/2000/svg';
+          const svg = document.createElementNS(svgNS, 'svg');
+          svg.setAttribute('class', 'quote-speaker-attribution-svg');
+          svg.setAttribute('viewBox', `0 0 ${boxW} ${boxH}`);
+          svg.setAttribute('aria-hidden', 'true');
+          svg.setAttribute('preserveAspectRatio', 'none');
+
+          const defs = document.createElementNS(svgNS, 'defs');
+          svg.appendChild(defs);
+
+          columns.forEach((colText, colIdx) => {
+            const offsetX = padPx - colIdx * colWidth;
+            const colPoints = edge.map((p) => ({ x: p.x + offsetX, y: p.y }));
+            const pathId = `quoteSpeakerAttrPath${colIdx}`;
+            const path = document.createElementNS(svgNS, 'path');
+            path.setAttribute('id', pathId);
+            path.setAttribute('d', this._quoteSpeakerSilhouetteCaptionPath(colPoints));
+            path.setAttribute('fill', 'none');
+            defs.appendChild(path);
+
+            const textEl = document.createElementNS(svgNS, 'text');
+            textEl.setAttribute('class', 'quote-speaker-attribution-label');
+            textEl.setAttribute('font-size', String(fontSize));
+            textEl.setAttribute('fill', 'rgba(47, 39, 31, 0.52)');
+            textEl.setAttribute('letter-spacing', '0.03em');
+            textEl.style.textOrientation = 'upright';
+            const textPath = document.createElementNS(svgNS, 'textPath');
+            textPath.setAttribute('href', `#${pathId}`);
+            textPath.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', `#${pathId}`);
+            textPath.setAttribute('startOffset', String(Math.max(0, fontSize * 0.35)));
+            textPath.textContent = colText;
+            textEl.appendChild(textPath);
+            svg.appendChild(textEl);
+          });
+
+          attributionEl.classList.remove('quote-speaker-attribution--fallback');
+          attributionEl.replaceChildren(svg);
+          attributionEl.setAttribute('aria-label', text);
+        };
+
+        if (img && img.src && (!img.complete || !img.naturalWidth)) {
+          img.addEventListener('load', paint, { once: true });
+          img.addEventListener(
+            'error',
+            () => this._setQuoteSpeakerAttributionFallback(attributionEl, text),
+            { once: true }
+          );
+          return;
+        }
+        paint();
+      }
+
+      _scheduleQuoteSpeakerAttributionLayout(attributionEl, imgEl, cutoutEl) {
+        if (!attributionEl) return;
+        if (this._quoteSpeakerAttributionLayoutTimer) {
+          clearTimeout(this._quoteSpeakerAttributionLayoutTimer);
+        }
+        this._quoteSpeakerAttributionLayoutTimer = setTimeout(() => {
+          this._quoteSpeakerAttributionLayoutTimer = null;
+          this._layoutQuoteSpeakerAttributionAlongSilhouette(attributionEl, imgEl, cutoutEl);
+        }, 48);
+      }
+
+      _ensureQuoteSpeakerAttributionFit(widget) {
+        const wrap = widget?.querySelector('.quote-speaker-portrait-wrap');
+        if (!wrap || typeof ResizeObserver === 'undefined') return;
+        if (!this._quoteSpeakerAttributionObserver) {
+          this._quoteSpeakerAttributionObserver = new ResizeObserver(() => {
+            const attributionEl = document.getElementById('quoteSpeakerAttribution');
+            const cutout = document.getElementById('quoteSpeakerImageWrap');
+            const img = cutout?.querySelector('.quote-speaker-image');
+            if (!attributionEl || attributionEl.hidden) return;
+            this._scheduleQuoteSpeakerAttributionLayout(attributionEl, img, cutout);
+          });
+        }
+        if (wrap !== this._quoteSpeakerAttributionObservedEl) {
+          if (this._quoteSpeakerAttributionObservedEl) {
+            this._quoteSpeakerAttributionObserver.unobserve(this._quoteSpeakerAttributionObservedEl);
+          }
+          this._quoteSpeakerAttributionObserver.observe(wrap);
+          this._quoteSpeakerAttributionObservedEl = wrap;
+        }
+      }
+
       fitQuoteSpeakerNameToOneLine(nameEl, opts = {}) {
         if (!nameEl || !nameEl.isConnected) return;
         const copy = nameEl.closest('.quote-speaker-slab-body');
@@ -43074,9 +43304,9 @@ try {
           widget.style.setProperty('--speaker-wash-color-faint', `rgba(${rgb}, 0.28)`);
         }
         if (markerRgb) {
-          const rgb = markerRgb.slice(1).map((hex) => parseInt(hex, 16)).join(', ');
+          const rgb = this._highlighterMarkerRgbFromQuiltHex(safeMarkerColor);
           widget.style.setProperty('--speaker-guide-marker-rgb', rgb);
-          widget.style.setProperty('--speaker-guide-marker-fill', `rgba(${rgb}, 0.65)`);
+          widget.style.setProperty('--speaker-guide-marker-fill', `rgba(${rgb}, 0.52)`);
         }
       }
 
@@ -43103,6 +43333,10 @@ try {
             widget.dataset.handCutDateKey || '',
             'speaker-cutout'
           );
+        }
+        const attributionEl = document.getElementById('quoteSpeakerAttribution');
+        if (attributionEl && !attributionEl.hidden) {
+          this._scheduleQuoteSpeakerAttributionLayout(attributionEl, img, imageWrap);
         }
         this.syncExitChamberSpeakerTextureFromWidget?.();
       }
@@ -43215,8 +43449,15 @@ try {
           ? this.formatQuoteSpeakerImageAttribution(profile.imageAttribution)
           : '';
         if (attributionEl) {
-          attributionEl.textContent = imageAttribution;
+          attributionEl.dataset.attributionText = imageAttribution;
           attributionEl.hidden = !imageAttribution;
+          if (!imageAttribution) {
+            attributionEl.textContent = '';
+            attributionEl.removeAttribute('aria-label');
+            attributionEl.classList.remove('quote-speaker-attribution--fallback');
+          } else {
+            this._scheduleQuoteSpeakerAttributionLayout(attributionEl, img, imageWrap);
+          }
         }
         const imageToken = `${profile.name}:${profile.imageUrl}`;
         this._quoteSpeakerImageToken = imageToken;
@@ -43305,6 +43546,7 @@ try {
           resolvedQuote?.dateKey || this.quoteService?.getQuoteCalendarKeyNow?.() || ''
         ).trim();
         this._ensureQuoteSpeakerHandCutFit(widget, speakerDateKey);
+        this._ensureQuoteSpeakerAttributionFit(widget);
         void this.refreshQuiltMoodCardImages();
       }
 
@@ -50992,9 +51234,22 @@ try {
         const hsv = Utils.hexToHsv(picked);
         return Utils.hsvToHex(
           hsv.h,
-          Math.max(38, Math.min(88, hsv.s)),
-          Math.max(74, Math.min(94, hsv.v + (100 - hsv.v) * 0.22))
+          Math.max(48, Math.min(90, hsv.s * 0.82 + 12)),
+          Math.max(80, Math.min(97, hsv.v + (100 - hsv.v) * 0.38))
         );
+      }
+
+      /** Quilt hue at highlighter saturation/value for semi-transparent marker fill. */
+      _highlighterMarkerRgbFromQuiltHex(hex) {
+        const safe = String(hex || '').trim();
+        const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(safe);
+        if (!m) return '255, 233, 74';
+        const vivid = this.getBrightQuiltMarkerColor([
+          { color: `#${m[1]}${m[2]}${m[3]}` }
+        ]);
+        const vm = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(vivid || ''));
+        if (!vm) return '255, 233, 74';
+        return `${parseInt(vm[1], 16)}, ${parseInt(vm[2], 16)}, ${parseInt(vm[3], 16)}`;
       }
 
       getFriendlyColorName(hex) {
