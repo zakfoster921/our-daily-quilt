@@ -303,9 +303,13 @@ async function runSsrAttempt({
           );
         }
 
+        const transcodeHeaders = { 'Content-Type': 'application/json' };
+        if (process.env.INSTAGRAM_ASSET_API_TOKEN) {
+          transcodeHeaders['x-instagram-api-token'] = process.env.INSTAGRAM_ASSET_API_TOKEN;
+        }
         const tr = await fetch(`${apiBase}/api/transcode-instagram-reel`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: transcodeHeaders,
           body: JSON.stringify({ date: dateKey, force: true })
         });
         const trJson = await tr.json().catch(() => ({}));

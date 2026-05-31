@@ -8,6 +8,8 @@ const https = require('https');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
+const dns = require('dns').promises;
+const net = require('net');
 
 let ffmpegStaticPath = null;
 try {
@@ -41,6 +43,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
 const ROOT_DIR = __dirname;
+const ONE_KB = 1024;
+const ONE_MB = 1024 * ONE_KB;
 const PUBLIC_ROOT_FILES = new Set([
   'index.html',
   'our-daily-beta.html',
@@ -49,7 +53,9 @@ const PUBLIC_ROOT_FILES = new Set([
   'rumi-colors.js'
 ]);
 
-app.use(express.json({ limit: '35mb' }));
+app.use(enforceJsonSizeByRoute);
+app.use(express.json({ limit: '35mb', verify: verifyJsonSizeByRoute }));
+app.use(handleJsonBodyError);
 
 function sendPublicRootFile(res, fileName) {
   return res.sendFile(path.join(ROOT_DIR, fileName));
@@ -92,6 +98,242 @@ function tailOutput(text, maxLen) {
   if (!text || text.length <= maxLen) return text || '';
   return `…(truncated)\n${text.slice(-maxLen)}`;
 }
+
+const JSON_SIZE_LIMITS = new Map([
+  ['/api/push-instagram-assets', 30 * ONE_MB],
+  ['/api/transcode-instagram-reel', 4 * ONE_KB],
+  ['/api/quote-keywords', 12 * ONE_KB],
+  ['/api/quote-submission', 24 * ONE_KB],
+  ['/api/reflection-response', 24 * ONE_KB],
+  ['/api/push/register', 12 * ONE_KB],
+  ['/api/generate-instagram', 4 * ONE_KB]
+]);
+
+function enforceJsonSizeByRoute(req, res, next) {
+  const maxBytes = JSON_SIZE_LIMITS.get(req.path);
+  if (!maxBytes) return next();
+  const contentLength = Number(req.headers['content-length'] || 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    return res.status(413).json({
+      success: false,
+      error: `Request body too large; max ${Math.round(maxBytes / ONE_KB)}KB`
+    });
+  }
+  return next();
+}
+
+function verifyJsonSizeByRoute(req, _res, buf) {
+  const maxBytes = JSON_SIZE_LIMITS.get(req.path);
+  if (maxBytes && buf && buf.length > maxBytes) {
+    const err = new Error(`Request body too large; max ${Math.round(maxBytes / ONE_KB)}KB`);
+    err.status = 413;
+    throw err;
+  }
+}
+
+function handleJsonBodyError(err, _req, res, next) {
+  if (!err) return next();
+  if (err.status === 413 || err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      error: err.message || 'Request body too large'
+    });
+  }
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid JSON request body'
+    });
+  }
+  return next(err);
+}
+
+function parsePositiveInt(value, fallback) {
+  const n = parseInt(String(value || ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function clientRateLimitKey(req, name) {
+  return `${name}:${req.ip || req.socket?.remoteAddress || 'unknown'}`;
+}
+
+function createRateLimiter({ name, windowMs, max }) {
+  const buckets = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = clientRateLimitKey(req, name);
+    const current = buckets.get(key);
+    if (!current || current.resetAt <= now) {
+      buckets.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    current.count += 1;
+    if (current.count > max) {
+      const retryAfterSec = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        success: false,
+        error: 'Too many requests. Please try again later.'
+      });
+    }
+    return next();
+  };
+}
+
+function tokenFromRequest(req) {
+  const auth = String(req.header('authorization') || '').trim();
+  const bearer = auth.match(/^Bearer\s+(.+)$/i);
+  return String(
+    (bearer && bearer[1]) ||
+      req.header('x-api-token') ||
+      req.header('x-instagram-api-token') ||
+      req.header('x-reset-token') ||
+      ''
+  ).trim();
+}
+
+function optionalTokenAuth(envNames) {
+  return (req, res, next) => {
+    const expected = envNames.map((name) => String(process.env[name] || '').trim()).find(Boolean);
+    if (!expected) return next();
+    const provided = tokenFromRequest(req);
+    if (!provided || provided !== expected) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    return next();
+  };
+}
+
+function timeoutSignal(timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const t = timeoutSignal(timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: t.signal });
+  } finally {
+    t.clear();
+  }
+}
+
+async function readResponseBufferWithLimit(response, maxBytes) {
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error(`Remote file is too large (${contentLength} bytes)`);
+  }
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length > maxBytes) throw new Error(`Remote file is too large (${buf.length} bytes)`);
+    return buf;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = Buffer.from(value);
+    total += chunk.length;
+    if (total > maxBytes) {
+      try {
+        await reader.cancel();
+      } catch (_) {
+        /* ignore */
+      }
+      throw new Error(`Remote file is too large (${total} bytes)`);
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+function isPrivateIpAddress(address) {
+  const family = net.isIP(address);
+  if (family === 4) {
+    const parts = address.split('.').map((p) => Number(p));
+    const [a, b] = parts;
+    return (
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a === 0
+    );
+  }
+  if (family === 6) {
+    const normalized = address.toLowerCase();
+    return (
+      normalized === '::1' ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      normalized.startsWith('fe80:') ||
+      normalized === '::'
+    );
+  }
+  return false;
+}
+
+async function assertPublicProxyUrl(parsed) {
+  const host = parsed.hostname;
+  if (!host || host === 'localhost' || host.endsWith('.localhost')) {
+    throw new Error('Private or local image hosts are not supported');
+  }
+  if (net.isIP(host)) {
+    if (isPrivateIpAddress(host)) throw new Error('Private or local image hosts are not supported');
+    return;
+  }
+  const records = await dns.lookup(host, { all: true });
+  if (!records.length || records.some((record) => isPrivateIpAddress(record.address))) {
+    throw new Error('Private or local image hosts are not supported');
+  }
+}
+
+const limitGenerateInstagram = createRateLimiter({
+  name: 'generate-instagram',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_GENERATE_INSTAGRAM_PER_MIN, 80)
+});
+const limitInstagramAssetPush = createRateLimiter({
+  name: 'push-instagram-assets',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_IG_ASSET_PUSH_PER_10_MIN, 12)
+});
+const limitTranscodeReel = createRateLimiter({
+  name: 'transcode-instagram-reel',
+  windowMs: 60 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_REEL_TRANSCODE_PER_HOUR, 4)
+});
+const limitProxyImage = createRateLimiter({
+  name: 'proxy-image',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_PROXY_IMAGE_PER_MIN, 60)
+});
+const limitQuoteKeywords = createRateLimiter({
+  name: 'quote-keywords',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUOTE_KEYWORDS_PER_MIN, 12)
+});
+const limitQuoteSubmission = createRateLimiter({
+  name: 'quote-submission',
+  windowMs: 60 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUOTE_SUBMISSION_PER_HOUR, 8)
+});
+const limitReflectionResponse = createRateLimiter({
+  name: 'reflection-response',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_REFLECTION_RESPONSE_PER_10_MIN, 10)
+});
+const limitPushRegister = createRateLimiter({
+  name: 'push-register',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_PUSH_REGISTER_PER_10_MIN, 20)
+});
+
+const optionalInstagramAssetAuth = optionalTokenAuth(['INSTAGRAM_ASSET_API_TOKEN']);
 
 /**
  * Runs a .cjs script from /scripts with the same env as the server (Notion + Firestore vars).
@@ -208,7 +450,7 @@ function getFfmpegBinaryPath() {
 function setInstagramApiCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-token, x-instagram-api-token, x-reset-token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -229,7 +471,7 @@ function setResetApiCors(res) {
 function setQuoteSubmissionCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -568,11 +810,27 @@ function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath, moodLabel = '') {
     ];
     const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
+    const timeoutMs = parsePositiveInt(process.env.REEL_TRANSCODE_TIMEOUT_MS, 120000);
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      reject(new Error(`ffmpeg timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
     child.stderr.on('data', (d) => {
       stderr += d.toString();
     });
-    child.on('error', reject);
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       if (code === 0) resolve(stderr);
       else reject(new Error(`ffmpeg exited ${code}: ${tailOutput(stderr, 4000)}`));
     });
@@ -621,11 +879,18 @@ async function transcodeInstagramReelWebmToMp4(dateKey, options = {}) {
   const outPath = path.join(tmpDir, 'out.mp4');
 
   try {
-    const res = await fetch(webmUrl);
+    const res = await fetchWithTimeout(
+      webmUrl,
+      {},
+      parsePositiveInt(process.env.REEL_WEBM_FETCH_TIMEOUT_MS, 20000)
+    );
     if (!res.ok) {
       throw new Error(`Failed to download reel WebM (${res.status})`);
     }
-    const webmBuf = Buffer.from(await res.arrayBuffer());
+    const webmBuf = await readResponseBufferWithLimit(
+      res,
+      parsePositiveInt(process.env.REEL_WEBM_MAX_BYTES, 40 * ONE_MB)
+    );
     await fs.writeFile(inPath, webmBuf);
 
     await runFfmpegWebmToMp4(ffmpegPath, inPath, outPath, quoteMood);
@@ -3899,7 +4164,7 @@ async function getTodayInstagramImage(options = {}) {
   }
 }
 
-app.post('/api/generate-instagram', async (req, res) => {
+app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => {
   try {
     console.log('🚀 Starting Instagram image generation from Firestore...');
 
@@ -4075,7 +4340,7 @@ app.options('/api/push-instagram-assets', (req, res) => {
  * The iOS WebView can hang on Firebase Auth/Storage SDK writes; this endpoint receives the
  * already-rendered PNG data URLs and uses Firebase Admin to upload Storage + merge Firestore.
  */
-app.post('/api/push-instagram-assets', async (req, res) => {
+app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagramAssetAuth, async (req, res) => {
   setInstagramApiCors(res);
   try {
     if (!db) {
@@ -4242,7 +4507,7 @@ app.post('/api/push-instagram-assets', async (req, res) => {
 });
 
 // CORS-safe image proxy for canvas exports that need to read/process remote speaker portraits.
-app.get('/api/proxy-image', async (req, res) => {
+app.get('/api/proxy-image', limitProxyImage, async (req, res) => {
   try {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -4254,11 +4519,16 @@ app.get('/api/proxy-image', async (req, res) => {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return res.status(400).json({ error: 'Only http(s) image URLs are supported' });
     }
-    const upstream = await fetch(parsed.toString(), {
-      headers: {
-        'User-Agent': 'OurDailyQuiltImageProxy/1.0'
-      }
-    });
+    await assertPublicProxyUrl(parsed);
+    const upstream = await fetchWithTimeout(
+      parsed.toString(),
+      {
+        headers: {
+          'User-Agent': 'OurDailyQuiltImageProxy/1.0'
+        }
+      },
+      parsePositiveInt(process.env.PROXY_IMAGE_FETCH_TIMEOUT_MS, 10000)
+    );
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: `Image fetch failed (${upstream.status})` });
     }
@@ -4266,7 +4536,10 @@ app.get('/api/proxy-image', async (req, res) => {
     if (!contentType.startsWith('image/')) {
       return res.status(415).json({ error: `Unsupported content type: ${contentType}` });
     }
-    let buf = Buffer.from(await upstream.arrayBuffer());
+    let buf = await readResponseBufferWithLimit(
+      upstream,
+      parsePositiveInt(process.env.PROXY_IMAGE_MAX_BYTES, 8 * ONE_MB)
+    );
     const matte = String(req.query?.matte || '').trim().toLowerCase();
     if (matte === 'warm' || matte === 'f6f4f1' || matte === ARCHIVE_QUILT_PREVIEW_BG.toLowerCase()) {
       try {
@@ -4282,7 +4555,17 @@ app.get('/api/proxy-image', async (req, res) => {
     res.send(buf);
   } catch (error) {
     console.warn('proxy-image failed:', error.message);
-    res.status(500).json({ error: 'Image proxy failed' });
+    const msg = String(error?.message || '');
+    if (/private|local image hosts/i.test(msg)) {
+      return res.status(400).json({ error: 'Unsupported image host' });
+    }
+    if (/too large/i.test(msg)) {
+      return res.status(413).json({ error: 'Image is too large' });
+    }
+    if (/abort|timed out|timeout/i.test(msg)) {
+      return res.status(504).json({ error: 'Image proxy timed out' });
+    }
+    return res.status(500).json({ error: 'Image proxy failed' });
   }
 });
 
@@ -4339,7 +4622,7 @@ app.options('/api/quote-keywords', (req, res) => {
   return res.status(204).end();
 });
 
-app.post('/api/quote-keywords', async (req, res) => {
+app.post('/api/quote-keywords', limitQuoteKeywords, async (req, res) => {
   setQuoteSubmissionCors(res);
   try {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -4411,7 +4694,7 @@ app.options('/api/push/register', (req, res) => {
   return res.status(204).end();
 });
 
-app.post('/api/push/register', async (req, res) => {
+app.post('/api/push/register', limitPushRegister, async (req, res) => {
   setPushApiCors(res);
   try {
     if (!db) {
@@ -4498,7 +4781,7 @@ app.options('/api/quote-submission', (req, res) => {
   return res.status(204).end();
 });
 
-app.post('/api/quote-submission', async (req, res) => {
+app.post('/api/quote-submission', limitQuoteSubmission, async (req, res) => {
   setQuoteSubmissionCors(res);
   try {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -4542,7 +4825,7 @@ app.options('/api/reflection-response', (req, res) => {
   return res.status(204).end();
 });
 
-app.post('/api/reflection-response', async (req, res) => {
+app.post('/api/reflection-response', limitReflectionResponse, async (req, res) => {
   setReflectionApiCors(res);
   try {
     if (!db) throw new Error('Firestore not initialized');
@@ -6206,7 +6489,7 @@ app.options('/api/transcode-instagram-reel', (req, res) => {
  * WebM → H.264 MP4 for Instagram Reels. Call after the client uploads reel.webm (e.g. right after Push IG assets).
  * Body: { "date": "YYYY-MM-DD", "force": true } optional — defaults to app-day key used by generate-instagram.
  */
-app.post('/api/transcode-instagram-reel', async (req, res) => {
+app.post('/api/transcode-instagram-reel', limitTranscodeReel, optionalInstagramAssetAuth, async (req, res) => {
   setInstagramApiCors(res);
   try {
     if (!db) {
