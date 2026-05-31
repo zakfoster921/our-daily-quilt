@@ -17092,10 +17092,28 @@ try {
           const pick = (((lineSalt * 1103515245 + 12345) ^ dch * 31) >>> 0) % 100 < 48;
           return pick ? [best.left, best.right] : null;
         };
+        const emphasisRunsForLine = (lineText, keywords) => {
+          const ln = String(lineText || '');
+          if (!ln.trim()) return null;
+          let runs = LBKE.buildTextRunsForLine(ln, keywords, kwStyles);
+          if (LBKE.lineHasEmphasisRuns(runs)) return runs;
+          for (const kw of keywords) {
+            const single = String(kw || '').trim();
+            if (!single) continue;
+            runs = LBKE.buildTextRunsForLine(ln, [single], kwStyles);
+            if (LBKE.lineHasEmphasisRuns(runs)) return runs;
+          }
+          return null;
+        };
+        const emphasisRunsForInlinePartLine = (lineText) => {
+          const ln = String(lineText || '').trim();
+          if (!ln) return null;
+          return emphasisRunsForLine(ln, [ln]);
+        };
         const emitQuoteLine = (ln, bodyFont, lineSalt) => {
           if (kwActive && !kwOwnStrip) {
-            const runs = LBKE.buildTextRunsForLine(ln, kwKeywords, kwStyles);
-            if (LBKE.lineHasEmphasisRuns(runs)) {
+            const runs = emphasisRunsForLine(ln, kwKeywords);
+            if (runs) {
               measureStripWithRuns(runs, bodyFont, 1.38, 'quote');
               return;
             }
@@ -17127,8 +17145,8 @@ try {
               const lines = wrapLines(ctx, chunkText, innerMaxW);
               for (const ln of lines) {
                 if (part.kind === 'inline-emphasis') {
-                  const runs = LBKE.buildTextRunsForLine(ln, kwKeywords, kwStyles);
-                  if (LBKE.lineHasEmphasisRuns(runs)) {
+                  const runs = emphasisRunsForInlinePartLine(ln);
+                  if (runs) {
                     measureStripWithRuns(runs, bodyFont, 1.38, 'quote');
                     continue;
                   }
