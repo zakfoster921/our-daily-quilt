@@ -40,6 +40,8 @@ function smokeSyntax() {
     'lib/error-handler.js',
     'lib/color-utils-v2.js',
     'lib/utils-core.js',
+    'lib/utils-color.js',
+    'lib/live-daily-data-sync.js',
     'scripts/generate-nightly-ig-images.cjs',
     'scripts/sync-notion-to-firestore.cjs',
     'scripts/smoke-deps.cjs'
