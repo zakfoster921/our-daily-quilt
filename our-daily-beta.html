@@ -12671,9 +12671,10 @@ try {
       overflow: visible;
     }
 
-    /* inline-block + isolate: stacking per phrase; zero padding so line-height stays unchanged. */
+    /* inline-block + isolate: one background band per phrase; zero padding → no extra leading. */
     #screen-quilt .quote-speaker-guide .speaker-guide-marker {
       --speaker-marker-band: 1.35em;
+      --speaker-marker-half: calc(var(--speaker-marker-band) / 2);
       position: relative;
       display: inline-block;
       vertical-align: baseline;
@@ -12682,34 +12683,22 @@ try {
       -webkit-box-decoration-break: clone;
       padding: 0;
       margin: 0;
-      background: none;
       color: inherit;
       font: inherit;
       line-height: inherit;
       overflow: visible;
-    }
-
-    /* Single highlight band (no stacked SVG + ::before). Color from live quilt on #quoteSpeakerWidget. */
-    #screen-quilt .quote-speaker-guide .speaker-guide-marker::before {
-      content: '';
-      position: absolute;
-      left: -0.05em;
-      right: -0.05em;
-      top: 50%;
-      height: var(--speaker-marker-band);
-      transform: translateY(-50%);
-      background: var(--speaker-guide-marker-fill, rgba(255, 214, 74, 0.58));
-      border-radius: 0.14em 0.1em 0.12em 0.11em;
-      z-index: 0;
-      pointer-events: none;
-    }
-
-    #screen-quilt .quote-speaker-guide .speaker-guide-marker[data-marker-idx='1']::before {
-      border-radius: 0.11em 0.14em 0.1em 0.13em;
-    }
-
-    #screen-quilt .quote-speaker-guide .speaker-guide-marker[data-marker-idx='2']::before {
-      border-radius: 0.13em 0.09em 0.14em 0.1em;
+      background-color: transparent;
+      background-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc(50% - var(--speaker-marker-half)),
+        var(--speaker-guide-marker-fill, rgba(255, 214, 74, 0.65)) calc(50% - var(--speaker-marker-half)),
+        var(--speaker-guide-marker-fill, rgba(255, 214, 74, 0.65)) calc(50% + var(--speaker-marker-half)),
+        transparent calc(50% + var(--speaker-marker-half)),
+        transparent 100%
+      );
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
     }
 
     #screen-quilt .quote-speaker-guide .speaker-guide-marker__stroke {
@@ -16504,9 +16493,9 @@ try {
   <!-- rumi-colors is local; QR + html2canvas load on demand (were blocking launch on CDN). -->
   <script src="rumi-colors.js"></script>
   <script src="lib/quote-keyword-emphasis.js"></script>
-  <script src="lib/speaker-guide-marker.js?v=9"></script>
+  <script src="lib/speaker-guide-marker.js?v=11"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=32"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=33"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
   <script src="lib/quilt-mood-triptych-widget.js?v=42"></script>
   <script src="lib/quilt-mood-terminal.js?v=23"></script>
@@ -29917,13 +29906,8 @@ try {
         return Utils.blobToDataUrl(blob);
       }
 
-      /** Pre-rendered 3-column newspaper clipping PNG for quilt screen / instagram-images. */
-      async generateNewspaperClippingImageData(dateKey = null) {
-        const compose = globalThis.QuiltNewspaperClipping?.composeDataUrl;
-        if (typeof compose !== 'function') {
-          this.logger.warn('QuiltNewspaperClipping.composeDataUrl missing');
-          return null;
-        }
+      /** Same today-only payload as quilt mood triptych (not 3-column neighbor peek). */
+      async _resolveNewspaperClippingTodayPayload(dateKey = null) {
         const qs = window.app?.quoteService;
         const dk =
           String(dateKey || '').trim() ||
@@ -29931,35 +29915,55 @@ try {
           Utils.getTodayKey?.() ||
           '';
         if (!dk) return null;
-        let yesterday = null;
-        let today = null;
-        let tomorrow = null;
-        if (qs && typeof qs.getAdjacentQuotesForClippingDateKey === 'function') {
-          ({ yesterday, today, tomorrow } = await qs.getAdjacentQuotesForClippingDateKey(dk));
-        } else if (qs) {
-          today =
-            (typeof qs.getQuoteResolvedForInstagramDateKey === 'function'
-              ? await qs.getQuoteResolvedForInstagramDateKey(dk)
-              : null) || qs.getTodayQuote?.();
-          const adj = qs.getAdjacentQuotesForClipping?.() || {};
-          yesterday = adj.yesterday;
-          tomorrow = adj.tomorrow;
+        const app = window.app;
+        let raw = null;
+        if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+          try {
+            raw = await qs.getQuoteResolvedForInstagramDateKey(dk);
+          } catch (_) {
+            /* */
+          }
         }
-        if (!today || !String(today.text || today.body || '').trim()) return null;
-        let paperTextureUrl = null;
+        if (!raw && qs) raw = qs.getTodayQuote?.();
+        const q = app?._quoteForMoodWidget?.(raw) || raw;
+        const payload =
+          app?._quiltMoodTerminalQuotePayload?.(q, dk) ||
+          (q && String(q.text ?? q.body ?? '').trim()
+            ? {
+                text: String(q.text ?? q.body ?? '').trim(),
+                author: String(q.author ?? q.authorSnapshot ?? '').trim(),
+                dateKey: dk
+              }
+            : null);
+        if (!payload?.text) return null;
+        return { ...payload, dateKey: String(payload.dateKey || dk).trim() || dk };
+      }
+
+      _newspaperClippingPaperTextureUrl() {
         try {
           if (typeof location !== 'undefined' && location.href) {
-            paperTextureUrl = new URL('assets/quilt-paper-card-texture.png', location.href).href;
+            return new URL('assets/quilt-paper-card-texture.png', location.href).href;
           }
         } catch (_) {
           /* */
         }
+        return null;
+      }
+
+      /** Pre-rendered newspaper clipping PNG — matches live quilt mood triptych quote card. */
+      async generateNewspaperClippingImageData(dateKey = null) {
+        const compose = globalThis.QuiltNewspaperClipping?.composeDataUrl;
+        if (typeof compose !== 'function') {
+          this.logger.warn('QuiltNewspaperClipping.composeDataUrl missing');
+          return null;
+        }
+        const payload = await this._resolveNewspaperClippingTodayPayload(dateKey);
+        if (!payload) return null;
+        const dk = payload.dateKey;
         return compose({
-          yesterday,
-          today,
-          tomorrow,
+          today: payload,
           dateKey: dk,
-          paperTextureUrl,
+          paperTextureUrl: this._newspaperClippingPaperTextureUrl(),
           width: 0
         });
       }
@@ -42839,7 +42843,7 @@ try {
       formatQuoteSpeakerImageAttribution(attribution) {
         const value = String(attribution || '').trim();
         if (!value) return '';
-        return /^image\s*:/i.test(value) ? value : `Image: ${value}`;
+        return value.replace(/^image\s*:\s*/i, '').trim();
       }
 
       fitQuoteSpeakerNameToOneLine(nameEl, opts = {}) {
@@ -43051,7 +43055,7 @@ try {
         if (markerRgb) {
           const rgb = markerRgb.slice(1).map((hex) => parseInt(hex, 16)).join(', ');
           widget.style.setProperty('--speaker-guide-marker-rgb', rgb);
-          widget.style.setProperty('--speaker-guide-marker-fill', `rgba(${rgb}, 0.58)`);
+          widget.style.setProperty('--speaker-guide-marker-fill', `rgba(${rgb}, 0.65)`);
         }
       }
 
@@ -43508,17 +43512,17 @@ try {
         return [lead, body, name, stamp].filter(Boolean).join('. ');
       }
 
-      _quiltMoodTerminalQuotePayload(quote) {
+      _quiltMoodTerminalQuotePayload(quote, dateKey = null) {
         const q = quote || this._quoteForMoodWidget() || null;
         if (!q || typeof q !== 'object') return null;
         const text = String(q.text ?? q.body ?? '').trim();
         if (!text) return null;
         const author = String(q.author ?? q.authorSnapshot ?? '').trim();
-        const dateKey = String(
-          this.quoteService?.getQuoteCalendarKeyNow?.() || q.dateKey || ''
+        const dateKeyOut = String(
+          dateKey || this.quoteService?.getQuoteCalendarKeyNow?.() || q.dateKey || ''
         ).trim();
         const flc = Number(q.first_line_count ?? q.firstLineCount);
-        const payload = { text, author, dateKey };
+        const payload = { text, author, dateKey: dateKeyOut };
         if (Number.isFinite(flc) && flc > 0) payload.firstLineCount = Math.round(flc);
         if (q.keyword) payload.keyword = String(q.keyword).trim();
         return payload;
