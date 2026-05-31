@@ -11735,9 +11735,9 @@ try {
       --reflection-outer-edge-fray: calc(var(--reflection-fabric-fray) + max(0.3rem, 2.5%));
       --reflection-carousel-scroll-hint: clamp(2.25rem, 10.5vw, 4.25rem);
       /* Diagonal thread strength only — no orthogonal repeat (that reads as graph-paper blocks). */
-      --reflection-fabric-weave-scale: 1.38;
-      --reflection-fabric-thread-light: 0.16;
-      --reflection-fabric-thread-dark: 0.15;
+      --reflection-fabric-weave-scale: 1.12;
+      --reflection-fabric-thread-light: 0.11;
+      --reflection-fabric-thread-dark: 0.09;
       position: relative;
       width: 100%;
       margin: 0;
@@ -11954,13 +11954,13 @@ try {
       background-image:
         linear-gradient(
           90deg,
-          rgba(255, 255, 255, calc(0.08 * var(--reflection-fabric-weave))),
-          rgba(41, 34, 29, calc(0.12 * var(--reflection-fabric-weave)))
+          rgba(255, 255, 255, calc(0.14 * var(--reflection-fabric-weave))),
+          rgba(41, 34, 29, calc(0.07 * var(--reflection-fabric-weave)))
         ),
-        radial-gradient(circle at 18% 7%, rgba(47, 43, 37, calc(0.34 * var(--reflection-fabric-weave))) 0 0.08rem, transparent 0.1rem),
-        radial-gradient(circle at 84% 10%, rgba(47, 43, 37, calc(0.28 * var(--reflection-fabric-weave))) 0 0.07rem, transparent 0.095rem),
-        radial-gradient(circle at 93% 82%, rgba(47, 43, 37, calc(0.24 * var(--reflection-fabric-weave))) 0 0.06rem, transparent 0.09rem),
-        radial-gradient(circle at 8% 88%, rgba(47, 43, 37, calc(0.2 * var(--reflection-fabric-weave))) 0 0.055rem, transparent 0.085rem),
+        radial-gradient(circle at 18% 7%, rgba(47, 43, 37, calc(0.2 * var(--reflection-fabric-weave))) 0 0.08rem, transparent 0.1rem),
+        radial-gradient(circle at 84% 10%, rgba(47, 43, 37, calc(0.16 * var(--reflection-fabric-weave))) 0 0.07rem, transparent 0.095rem),
+        radial-gradient(circle at 93% 82%, rgba(47, 43, 37, calc(0.14 * var(--reflection-fabric-weave))) 0 0.06rem, transparent 0.09rem),
+        radial-gradient(circle at 8% 88%, rgba(47, 43, 37, calc(0.12 * var(--reflection-fabric-weave))) 0 0.055rem, transparent 0.085rem),
         repeating-linear-gradient(
           88deg,
           rgba(255, 255, 255, calc(var(--reflection-fabric-thread-light, 0.16) * var(--reflection-fabric-weave) * var(--reflection-fabric-weave-scale, 1.38))) 0 1.5px,
@@ -12621,9 +12621,9 @@ try {
       position: absolute;
       left: -5%;
       right: -5%;
-      bottom: 0.04em;
+      bottom: 0.02em;
       width: 110%;
-      height: 0.92em;
+      height: 1.1em;
       z-index: 0;
       pointer-events: none;
       opacity: 0.95;
@@ -16403,7 +16403,7 @@ try {
   <!-- rumi-colors is local; QR + html2canvas load on demand (were blocking launch on CDN). -->
   <script src="rumi-colors.js"></script>
   <script src="lib/quote-keyword-emphasis.js"></script>
-  <script src="lib/speaker-guide-marker.js?v=2"></script>
+  <script src="lib/speaker-guide-marker.js?v=3"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
   <script src="lib/quilt-newspaper-clipping.js?v=32"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
@@ -40318,6 +40318,21 @@ try {
         return this.buildReflectionWallThemes(communityThemes, first);
       }
 
+      /** Pastel wash: brighter, lower chroma so carousel patches read apart from live quilt blocks. */
+      washReflectionCarouselPatchRgb(rgbCsv) {
+        const hex = this.reflectionFabricRgbCsvToHex(rgbCsv);
+        const hsv = Utils.hexToHsv(hex);
+        const wash = Utils.hsvToHex(
+          hsv.h,
+          hsv.s < 10 ? 14 : Math.max(20, Math.min(52, hsv.s * 0.58)),
+          Math.max(74, Math.min(96, hsv.v + (100 - hsv.v) * 0.38))
+        );
+        const match = /^#?([0-9a-f]{6})$/i.exec(wash);
+        if (!match) return '245, 232, 218';
+        const h = match[1];
+        return `${parseInt(h.slice(0, 2), 16)}, ${parseInt(h.slice(2, 4), 16)}, ${parseInt(h.slice(4, 6), 16)}`;
+      }
+
       getReflectionFabricPatchPalette() {
         const isHex = (color) => /^#[0-9A-Fa-f]{6}$/.test(String(color || '').trim());
         const paletteColors = (this.getQuiltPaletteSummary()?.palette || [])
@@ -40334,20 +40349,14 @@ try {
         ['#e7d8bc', '#ea9b9a', '#b9a7d8', '#8bd5d8', '#f2c7ba', '#c7b299'].forEach((color) => {
           if (unique.length < 6 && !unique.includes(color.toLowerCase())) unique.push(color.toLowerCase());
         });
-        const washed = unique.map((color) => {
-          const hsv = Utils.hexToHsv(color);
-          const wash = Utils.hsvToHex(
-            hsv.h,
-            hsv.s < 10 ? 18 : Math.max(32, Math.min(78, hsv.s * 0.78)),
-            Math.max(58, Math.min(92, hsv.v + (100 - hsv.v) * 0.26))
-          );
-          const match = /^#?([0-9a-f]{6})$/i.exec(wash);
+        const paletteRgb = unique.map((color) => {
+          const match = /^#?([0-9a-f]{6})$/i.exec(color);
           if (!match) return '231, 216, 188';
           const hex = match[1];
           return `${parseInt(hex.slice(0, 2), 16)}, ${parseInt(hex.slice(2, 4), 16)}, ${parseInt(hex.slice(4, 6), 16)}`;
         });
         const seenRgb = new Set();
-        return washed.filter((rgb) => {
+        return paletteRgb.filter((rgb) => {
           const key = this.normalizeReflectionFabricRgbKey(rgb);
           if (!key || seenRgb.has(key)) return false;
           seenRgb.add(key);
@@ -40490,8 +40499,8 @@ try {
         const hsv = Utils.hexToHsv(hex);
         const next = Utils.hsvToHex(
           (hsv.h + hueShiftDeg + 360) % 360,
-          Math.max(26, Math.min(72, hsv.s < 10 ? 28 : hsv.s * 0.9)),
-          Math.max(58, Math.min(88, hsv.v))
+          Math.max(22, Math.min(50, hsv.s < 10 ? 24 : hsv.s * 0.55)),
+          Math.max(74, Math.min(95, hsv.v + (100 - hsv.v) * 0.35))
         );
         const match = /^#?([0-9a-f]{6})$/i.exec(next);
         if (!match) return rgbCsv || '231, 216, 188';
@@ -40541,7 +40550,8 @@ try {
 
       getReflectionFabricPatchStyle(index, themeText, allThemes, rgbOverride) {
         const palette = this.getReflectionFabricPatchPalette();
-        const rgb = rgbOverride || palette[index % palette.length] || '231, 216, 188';
+        const rawRgb = rgbOverride || palette[index % palette.length] || '231, 216, 188';
+        const rgb = this.washReflectionCarouselPatchRgb(rawRgb);
         const textColor = this.getReflectionFabricPatchTextColor(rgb);
         const weaveStrength = this.getReflectionFabricPatchWeaveStrength(rgb);
         return [
@@ -40574,13 +40584,13 @@ try {
       }
 
       buildReflectionInvitePatchSlide(index, allThemesForHeight = [], rgbOverride, edgeFray = {}) {
-        const rgb =
-          rgbOverride || this.pickReflectionFabricPatchRgb(index, null);
+        const rawRgb = rgbOverride || this.pickReflectionFabricPatchRgb(index, null);
+        const washedRgb = this.washReflectionCarouselPatchRgb(rawRgb);
         const lightClass =
-          this.getReflectionFabricPatchWeaveStrength(rgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
+          this.getReflectionFabricPatchWeaveStrength(washedRgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
         const heightThemes = allThemesForHeight.length ? allThemesForHeight : ['add yours ?'];
         const dateKey = String(Utils.getTodayKey() || 'nodate').trim() || 'nodate';
-        const style = this.getReflectionFabricPatchStyle(index, 'add yours ?', heightThemes, rgb);
+        const style = this.getReflectionFabricPatchStyle(index, 'add yours ?', heightThemes, rawRgb);
         return `
               <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--invite${lightClass}" data-reflection-invite-slide data-reflection-slide="${index}" data-reflection-hand-cut-seed="${dateKey}:reflection-invite:${index}" style="${style}">
                 ${this.getReflectionCarouselFrayMarkup(edgeFray)}
@@ -40592,14 +40602,14 @@ try {
 
       getReflectionDecorPatchPalette() {
         return [
-          '212, 118, 148',
-          '118, 148, 218',
-          '188, 128, 208',
-          '108, 198, 168',
-          '228, 168, 118',
-          '168, 128, 218',
-          '98, 188, 212',
-          '218, 138, 118'
+          '232, 186, 198',
+          '186, 202, 228',
+          '214, 190, 220',
+          '178, 216, 204',
+          '236, 206, 186',
+          '204, 190, 224',
+          '178, 214, 226',
+          '230, 196, 186'
         ];
       }
 
@@ -40650,7 +40660,8 @@ try {
       }
 
       getReflectionDecorPatchStyle(slideIndex, slotKey, rgbOverride, dims) {
-        const rgb = rgbOverride || this.pickReflectionDecorPatchRgb(null, null, slotKey);
+        const rawRgb = rgbOverride || this.pickReflectionDecorPatchRgb(null, null, slotKey);
+        const rgb = this.washReflectionCarouselPatchRgb(rawRgb);
         const weaveStrength = this.getReflectionFabricPatchWeaveStrength(rgb);
         const h = Utils.hashStringToUint(String(slotKey || 'decor-cut')) || 1;
         const tilt = `${((h % 7) - 3) * 0.35}deg`;
@@ -40667,11 +40678,12 @@ try {
       }
 
       buildReflectionDecorPatchSlide(slideIndex, slotKey, leftRgb, rightRgb, edgeFray = {}) {
-        const rgb = this.pickReflectionDecorPatchRgb(leftRgb, rightRgb, slotKey);
+        const rawRgb = this.pickReflectionDecorPatchRgb(leftRgb, rightRgb, slotKey);
+        const washedRgb = this.washReflectionCarouselPatchRgb(rawRgb);
         const dims = this.getReflectionDecorPatchDimensions(slotKey);
         const lightClass =
-          this.getReflectionFabricPatchWeaveStrength(rgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
-        const style = this.getReflectionDecorPatchStyle(slideIndex, slotKey, rgb, dims);
+          this.getReflectionFabricPatchWeaveStrength(washedRgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
+        const style = this.getReflectionDecorPatchStyle(slideIndex, slotKey, rawRgb, dims);
         return `
               <article class="quilt-reflection-carousel-slide quilt-reflection-carousel-slide--decor${lightClass}" data-reflection-decor-slide data-reflection-slide="${slideIndex}" data-reflection-hand-cut-seed="${slotKey}" aria-hidden="true" style="${style}">
                 ${this.getReflectionCarouselFrayMarkup(edgeFray)}
@@ -40682,7 +40694,9 @@ try {
 
       buildReflectionThemePatchSlide(slideIndex, theme, allThemes, rgb, edgeFray = {}) {
         const lightClass =
-          this.getReflectionFabricPatchWeaveStrength(rgb) < 1 ? ' quilt-reflection-carousel-slide--light' : '';
+          this.getReflectionFabricPatchWeaveStrength(this.washReflectionCarouselPatchRgb(rgb)) < 1
+            ? ' quilt-reflection-carousel-slide--light'
+            : '';
         const dateKey = String(Utils.getTodayKey() || 'nodate').trim() || 'nodate';
         return `
               <article class="quilt-reflection-carousel-slide${lightClass}" data-reflection-theme-slide data-reflection-slide="${slideIndex}" data-reflection-hand-cut-seed="${dateKey}:reflection-patch:${slideIndex}" style="${this.getReflectionFabricPatchStyle(slideIndex, theme, allThemes, rgb)}">
