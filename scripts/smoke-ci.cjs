@@ -52,6 +52,9 @@ function smokeSyntax() {
     'lib/quilt-shape-v2.js',
     'lib/live-daily-data-sync.js',
     'lib/quilt-data-service.js',
+    'lib/archive-service.js',
+    'lib/quote-service.js',
+    'lib/quilt-renderer-v2.js',
     'scripts/generate-nightly-ig-images.cjs',
     'scripts/sync-notion-to-firestore.cjs',
     'scripts/smoke-deps.cjs'
