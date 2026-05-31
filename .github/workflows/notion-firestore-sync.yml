@@ -16,9 +16,14 @@ on:
           - append
           - swap
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -32,6 +37,7 @@ jobs:
       # Transient ECONNRESET / registry blips are common on scheduled runs; npm
       # retries + a few full retries avoid a false-negative failed sync.
       - name: Install dependencies (skip native builds)
+        timeout-minutes: 8
         run: |
           npm config set fetch-retries 8
           npm config set fetch-retry-mintimeout 15000
@@ -72,6 +78,7 @@ jobs:
           fi
 
       - name: Sync quotes (Notion -> Firestore)
+        timeout-minutes: 8
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
@@ -80,6 +87,7 @@ jobs:
         run: node scripts/sync-notion-to-firestore.cjs "${START_ARG}" --window=7
 
       - name: Reconcile assignments from Notion date_scheduled
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
@@ -90,6 +98,7 @@ jobs:
       # the day after --start=opening and bumps the previous occupant back to the pool.
       # Manual dispatch: append unless you pick "swap" in the workflow input.
       - name: Schedule approved app-submitted quotes
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
@@ -105,6 +114,7 @@ jobs:
           fi
 
       - name: Append rolling 7-day quote window
+        timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
@@ -112,6 +122,7 @@ jobs:
         run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=8 --min-count=9 --append-only
 
       - name: Process speaker cutouts for scheduled quotes
+        timeout-minutes: 10
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
@@ -121,6 +132,7 @@ jobs:
         run: node scripts/process-speaker-cutouts.cjs --scheduled --require-reviewed "${START_ARG}" --window=9 --limit=3 --soft-fail
 
       - name: Sync usage (Firestore -> Notion)
+        timeout-minutes: 8
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}

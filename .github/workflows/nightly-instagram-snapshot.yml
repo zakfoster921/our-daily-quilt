@@ -18,6 +18,10 @@ on:
         description: "Quilt date to render (YYYY-MM-DD). Default: last completed quilt day."
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   nightly-ig-images:
     runs-on: ubuntu-latest
@@ -34,6 +38,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        timeout-minutes: 8
         run: npm ci --ignore-scripts
 
       # Headless shell only (~90MB) — matches chromium.launch({ headless: true }) and is much
@@ -45,6 +50,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}-chromium-headless-shell
 
       - name: Install Playwright Chromium headless shell
+        timeout-minutes: 8
         run: |
           set -euo pipefail
           echo "Installing Playwright chromium-headless-shell..."
@@ -81,6 +87,7 @@ jobs:
 
       - name: Generate final Instagram images for Zapier
         id: nightly_ig
+        timeout-minutes: 18
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
           DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}

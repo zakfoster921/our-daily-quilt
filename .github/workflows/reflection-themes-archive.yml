@@ -24,9 +24,14 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   generate-reflection-themes:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Resolve target date key
         id: resolve_date
@@ -95,7 +100,11 @@ jobs:
           while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
             echo "::group::Attempt ${attempt}/${MAX_ATTEMPTS}"
             http_code=$(curl -sS -o response.json -w "%{http_code}" \
+              --connect-timeout 10 \
               --max-time 240 \
+              --retry 1 \
+              --retry-delay 10 \
+              --retry-all-errors \
               -X POST "$THEMES_URL" \
               -H "Content-Type: application/json" \
               -H "x-reflection-theme-token: $TOKEN" \

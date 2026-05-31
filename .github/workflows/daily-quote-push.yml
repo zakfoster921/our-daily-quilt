@@ -10,9 +10,14 @@ on:
         description: "Optional app-date override (YYYY-MM-DD)"
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   daily-quote-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Call daily quote push endpoint
         env:
@@ -41,6 +46,11 @@ jobs:
 
           echo "POST ${PUSH_URL}"
           http_code=$(curl -sS -o response.json -w "%{http_code}" \
+            --connect-timeout 10 \
+            --max-time 120 \
+            --retry 2 \
+            --retry-delay 10 \
+            --retry-all-errors \
             -X POST "$PUSH_URL" \
             -H "Content-Type: application/json" \
             -H "x-reset-token: $RESET_TOKEN" \

@@ -31,9 +31,14 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   process:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -44,6 +49,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies (skip native builds)
+        timeout-minutes: 8
         run: npm ci --ignore-scripts
 
       - name: Validate required secrets
@@ -64,6 +70,7 @@ jobs:
           fi
 
       - name: Process speaker cutouts
+        timeout-minutes: 12
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}

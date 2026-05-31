@@ -17,6 +17,10 @@ on:
         description: "Calendar date for center quote (YYYY-MM-DD). Default: active quilt day."
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   today-newspaper-clipping:
     runs-on: ubuntu-latest
@@ -33,6 +37,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        timeout-minutes: 8
         run: npm ci --ignore-scripts
 
       - name: Cache Playwright browsers
@@ -42,6 +47,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}-chromium-headless-shell
 
       - name: Install Playwright Chromium headless shell
+        timeout-minutes: 8
         run: npx playwright install chromium-headless-shell
 
       - name: Resolve target date key
@@ -72,6 +78,7 @@ jobs:
           echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
 
       - name: Generate newspaper clipping for today
+        timeout-minutes: 15
         env:
           RESET_URL: ${{ secrets.RESET_URL }}
           DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
