@@ -18194,9 +18194,46 @@ try {
 
     function odqKeywordEmphasisFromQuoteObject(quote, dateKey) {
       if (!quote || typeof quote !== 'object') return null;
-      const payload = globalThis.QuiltNewspaperClipping?.keywordPayloadForQuote?.(quote, dateKey);
+      const text = String(quote.text ?? quote.body ?? '').trim();
+      if (!text) return null;
+      const payload = globalThis.QuiltNewspaperClipping?.keywordPayloadForQuote?.(
+        { ...quote, text, body: text },
+        dateKey
+      );
       if (!payload?.keywords?.length) return null;
       return odqEnsureKeywordEmphasisStyles(payload);
+    }
+
+    function odqMergeLayoutBQuoteKeywordsWithTuneStyles(quoteEmphasis, tuneEmphasis) {
+      if (!quoteEmphasis?.keywords?.length) return tuneEmphasis || quoteEmphasis || null;
+      if (!tuneEmphasis?.styles?.length) return quoteEmphasis;
+      return odqEnsureKeywordEmphasisStyles({
+        keywords: quoteEmphasis.keywords.slice(0, 3),
+        styles: tuneEmphasis.styles.slice()
+      });
+    }
+
+    async function odqResolveLayoutBQuoteKeywordEmphasis(dateKey, quoteHint = null) {
+      const key = String(dateKey || '').trim();
+      if (!key) return null;
+      const candidates = [];
+      if (quoteHint && typeof quoteHint === 'object') candidates.push(quoteHint);
+      const qs = window.app?.quoteService;
+      if (qs?._pinnedByDateKey?.[key]) candidates.push(qs._pinnedByDateKey[key]);
+      if (typeof qs?.getQuoteResolvedForInstagramDateKey === 'function') {
+        try {
+          const resolved = await qs.getQuoteResolvedForInstagramDateKey(key);
+          if (resolved) candidates.push(resolved);
+        } catch (_) {
+          /* optional */
+        }
+      }
+      for (const candidate of candidates) {
+        const fromObject = odqKeywordEmphasisFromQuoteObject(candidate, key);
+        if (fromObject) return fromObject;
+      }
+      const fromFirestore = await odqKeywordEmphasisFromQuoteFirestore(key);
+      return fromFirestore ? odqEnsureKeywordEmphasisStyles(fromFirestore) : null;
     }
 
     async function odqKeywordEmphasisFromQuoteFirestore(dateKey) {
@@ -18291,49 +18328,32 @@ try {
         };
       };
 
-      // Admin tune modal overrides win for this aspect (explicit manual styling).
+      // Notion quote keywords are canonical (same as newspaper clipping).
+      const fromQuote = await odqResolveLayoutBQuoteKeywordEmphasis(key, quoteHint);
+
+      // Admin tune / legacy instagram docs may carry custom styles — never override Notion keywords.
       try {
         const fromInstagram = await readInstagramEmphasis();
-        if (
-          fromInstagram?.normalized &&
-          String(fromInstagram.raw?.updatedBy || '').trim() === ADMIN_TUNE
-        ) {
-          odqSetCachedLayoutBKeywordEmphasis(key, fromInstagram.normalized, a);
-          return fromInstagram.normalized;
+        if (fromInstagram?.normalized) {
+          const updatedBy = String(fromInstagram.raw?.updatedBy || '').trim();
+          if (updatedBy === ADMIN_TUNE) {
+            const merged = odqMergeLayoutBQuoteKeywordsWithTuneStyles(fromQuote, fromInstagram.normalized);
+            if (merged) {
+              odqSetCachedLayoutBKeywordEmphasis(key, merged, a);
+              return merged;
+            }
+          }
         }
       } catch (err) {
         console.warn('odqReadLayoutBKeywordEmphasis Firestore read failed:', err);
       }
 
-      // Canonical keywords from resolved quote object — same path as newspaper clipping.
-      const quoteCandidates = [];
-      if (quoteHint && typeof quoteHint === 'object') quoteCandidates.push(quoteHint);
-      const qs = window.app?.quoteService;
-      if (qs?._pinnedByDateKey?.[key]) quoteCandidates.push(qs._pinnedByDateKey[key]);
-      if (typeof qs?.getQuoteResolvedForInstagramDateKey === 'function') {
-        try {
-          const resolved = await qs.getQuoteResolvedForInstagramDateKey(key);
-          if (resolved) quoteCandidates.push(resolved);
-        } catch (_) {
-          /* optional */
-        }
-      }
-      for (const candidate of quoteCandidates) {
-        const fromObject = odqKeywordEmphasisFromQuoteObject(candidate, key);
-        if (fromObject) {
-          odqSetCachedLayoutBKeywordEmphasis(key, fromObject, a);
-          return fromObject;
-        }
-      }
-
-      const fromQuote = await odqKeywordEmphasisFromQuoteFirestore(key);
       if (fromQuote) {
-        const ensured = odqEnsureKeywordEmphasisStyles(fromQuote);
-        odqSetCachedLayoutBKeywordEmphasis(key, ensured, a);
-        return ensured;
+        odqSetCachedLayoutBKeywordEmphasis(key, fromQuote, a);
+        return fromQuote;
       }
 
-      // Legacy Notion mirror on instagram-images when quote has no keyword field.
+      // No quote keyword field — fall back to mirrored instagram doc or cache.
       try {
         const fromInstagram = await readInstagramEmphasis();
         if (fromInstagram?.normalized) {
@@ -20046,6 +20066,7 @@ try {
     globalThis.odqReadLayoutBStripLayoutSeed = odqReadLayoutBStripLayoutSeed;
     globalThis.odqGetCachedLayoutBKeywordEmphasis = odqGetCachedLayoutBKeywordEmphasis;
     globalThis.odqKeywordEmphasisFromQuoteObject = odqKeywordEmphasisFromQuoteObject;
+    globalThis.odqResolveLayoutBQuoteKeywordEmphasis = odqResolveLayoutBQuoteKeywordEmphasis;
     globalThis.odqReadLayoutBKeywordEmphasis = odqReadLayoutBKeywordEmphasis;
     globalThis.odqSpeakerCutoutTransformForDateAsync = odqSpeakerCutoutTransformForDateAsync;
     globalThis.composeInstagramLayoutBFromQuiltBlob = composeInstagramLayoutBFromQuiltBlob;
