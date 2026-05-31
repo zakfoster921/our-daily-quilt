@@ -50,6 +50,8 @@ function smokeSyntax() {
     'lib/utils-zapier.js',
     'lib/utils-instagram.js',
     'lib/quilt-shape-v2.js',
+    'lib/simple-quilt-engine.js',
+    'lib/ui-service.js',
     'lib/live-daily-data-sync.js',
     'lib/quilt-data-service.js',
     'lib/archive-service.js',
