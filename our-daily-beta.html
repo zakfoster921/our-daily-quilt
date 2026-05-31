@@ -16403,11 +16403,11 @@ try {
   <!-- rumi-colors is local; QR + html2canvas load on demand (were blocking launch on CDN). -->
   <script src="rumi-colors.js"></script>
   <script src="lib/quote-keyword-emphasis.js"></script>
-  <script src="lib/speaker-guide-marker.js"></script>
+  <script src="lib/speaker-guide-marker.js?v=1"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
   <script src="lib/quilt-newspaper-clipping.js?v=31"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
-  <script src="lib/quilt-mood-triptych-widget.js?v=41"></script>
+  <script src="lib/quilt-mood-triptych-widget.js?v=42"></script>
   <script src="lib/quilt-mood-terminal.js?v=23"></script>
   <script>
   </script>
@@ -33076,6 +33076,31 @@ try {
         };
       }
 
+      /** speaker_guide_line + speaker_keywords from dailyQuoteAssignments snapshots. */
+      _mergeAssignmentSpeakerGuideSnapshotFields(quote, data) {
+        if (!quote || !data || typeof data !== 'object') return quote;
+        const guideLine = String(
+          data.speakerGuideLineSnapshot ??
+            data.speakerGuideLine ??
+            data.speaker_guide_line ??
+            ''
+        ).trim();
+        const speakerKeywords = String(
+          data.speakerKeywordsSnapshot ??
+            data.speakerKeywords ??
+            data.speaker_keywords ??
+            ''
+        ).trim();
+        if (!guideLine && !speakerKeywords) return quote;
+        return {
+          ...quote,
+          ...(guideLine ? { speakerGuideLine: guideLine, speaker_guide_line: guideLine } : {}),
+          ...(speakerKeywords
+            ? { speakerKeywords, speaker_keywords: speakerKeywords }
+            : {})
+        };
+      }
+
       _mergeAssignmentKeywordFields(quote, data) {
         if (!quote || !data || typeof data !== 'object') return quote;
         const keyword = String(data.keyword ?? data.keywordSnapshot ?? '').trim();
@@ -33183,9 +33208,12 @@ try {
             return this._mergeAssignmentKeywordFields(
               this._mergePinnedWithCatalogFields(
                 byId,
-                this._mergeAssignmentMoodSnapshotFields(
-                  this._mergeAssignmentArtRecSnapshotFields(
-                    this._mergeAssignmentSpeakerCutout(byId, data),
+                this._mergeAssignmentSpeakerGuideSnapshotFields(
+                  this._mergeAssignmentMoodSnapshotFields(
+                    this._mergeAssignmentArtRecSnapshotFields(
+                      this._mergeAssignmentSpeakerCutout(byId, data),
+                      data
+                    ),
                     data
                   ),
                   data
@@ -33202,9 +33230,12 @@ try {
             return this._mergeAssignmentKeywordFields(
               this._mergePinnedWithCatalogFields(
                 byEmb,
-                this._mergeAssignmentMoodSnapshotFields(
-                  this._mergeAssignmentArtRecSnapshotFields(
-                    this._mergeAssignmentSpeakerCutout(byEmb, data),
+                this._mergeAssignmentSpeakerGuideSnapshotFields(
+                  this._mergeAssignmentMoodSnapshotFields(
+                    this._mergeAssignmentArtRecSnapshotFields(
+                      this._mergeAssignmentSpeakerCutout(byEmb, data),
+                      data
+                    ),
                     data
                   ),
                   data
@@ -33224,9 +33255,12 @@ try {
             return this._mergeAssignmentKeywordFields(
               this._mergePinnedWithCatalogFields(
                 byText,
-                this._mergeAssignmentMoodSnapshotFields(
-                  this._mergeAssignmentArtRecSnapshotFields(
-                    this._mergeAssignmentSpeakerCutout(byText, data),
+                this._mergeAssignmentSpeakerGuideSnapshotFields(
+                  this._mergeAssignmentMoodSnapshotFields(
+                    this._mergeAssignmentArtRecSnapshotFields(
+                      this._mergeAssignmentSpeakerCutout(byText, data),
+                      data
+                    ),
                     data
                   ),
                   data
@@ -33415,10 +33449,51 @@ try {
         return hydrated;
       }
 
+      async hydrateSpeakerGuideFieldsForCalendarKey(dateKey, baseQuote = null) {
+        const dk = String(dateKey || this.getQuoteCalendarKeyNow()).trim();
+        let merged = baseQuote || this._pinnedByDateKey[dk] || null;
+        if (!dk || !merged) return merged;
+
+        const fresh = this._hydrateQuoteFromCatalog(merged);
+        if (fresh) merged = this._mergePinnedWithCatalogFields(fresh, merged);
+
+        const assignData = await this._readDailyQuoteAssignmentData(dk);
+        if (assignData) merged = this._mergeAssignmentSpeakerGuideSnapshotFields(merged, assignData);
+
+        let guideLine = String(merged.speakerGuideLine ?? merged.speaker_guide_line ?? '').trim();
+        let speakerKeywords = String(merged.speakerKeywords ?? merged.speaker_keywords ?? '').trim();
+
+        if ((!guideLine || !speakerKeywords) && window.db && window.firestore) {
+          const sourceId = String(merged.sourceId || fresh?.sourceId || '').trim();
+          if (sourceId && sourceId !== dk) {
+            const doc = await this._readFirestoreQuoteDoc(sourceId);
+            if (doc) {
+              if (!guideLine) {
+                guideLine = String(doc.speaker_guide_line ?? doc.speakerGuideLine ?? '').trim();
+              }
+              if (!speakerKeywords) {
+                speakerKeywords = String(doc.speaker_keywords ?? doc.speakerKeywords ?? '').trim();
+              }
+            }
+          }
+        }
+
+        if (!guideLine && !speakerKeywords) return merged;
+
+        merged = {
+          ...merged,
+          ...(guideLine ? { speakerGuideLine: guideLine, speaker_guide_line: guideLine } : {}),
+          ...(speakerKeywords ? { speakerKeywords, speaker_keywords: speakerKeywords } : {})
+        };
+        this._pinnedByDateKey[dk] = merged;
+        return merged;
+      }
+
       async _pinAndHydrateQuote(dateKey, quote) {
         if (!quote) return null;
         let merged = await this._mergeBlessingFromDailyFirestoreDocs(dateKey, quote);
         merged = (await this.hydrateMoodFieldsForCalendarKey(dateKey, merged)) || merged;
+        merged = (await this.hydrateSpeakerGuideFieldsForCalendarKey(dateKey, merged)) || merged;
         this._pinnedByDateKey[dateKey] = merged;
         return merged;
       }
