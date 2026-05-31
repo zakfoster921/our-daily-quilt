@@ -36,6 +36,10 @@ function runNodeCheck(relPath) {
 function smokeSyntax() {
   const files = [
     'server.js',
+    'lib/logger.js',
+    'lib/error-handler.js',
+    'lib/color-utils-v2.js',
+    'lib/utils-core.js',
     'scripts/generate-nightly-ig-images.cjs',
     'scripts/sync-notion-to-firestore.cjs',
     'scripts/smoke-deps.cjs'

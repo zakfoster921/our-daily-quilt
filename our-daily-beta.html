@@ -16423,6 +16423,10 @@ try {
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
   <script src="lib/quilt-mood-triptych-widget.js?v=42"></script>
   <script src="lib/quilt-mood-terminal.js?v=23"></script>
+  <script src="lib/logger.js"></script>
+  <script src="lib/error-handler.js"></script>
+  <script src="lib/color-utils-v2.js"></script>
+  <script src="lib/utils-core.js"></script>
   <script>
   </script>
   <script>
@@ -16580,6 +16584,8 @@ try {
       }
     };
 
+    globalThis.CONFIG = CONFIG;
+
     // ===== FIREBASE INITIALIZATION =====
     // Initialize Firebase immediately after CONFIG is defined
     
@@ -16620,116 +16626,9 @@ try {
     });
 
     // ===== COLOR UTILITIES (LAB Color Space) =====
-    class ColorUtilsV2 {
-      static colorCache = new Map();
-      
-      static hexToRgb(hex) {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ? {
-          r: parseInt(result[1], 16),
-          g: parseInt(result[2], 16),
-          b: parseInt(result[3], 16)
-        } : null;
-      }
-      
-      static rgbToXyz(r, g, b) {
-        let r1 = r / 255, g1 = g / 255, b1 = b / 255;
-        
-        r1 = r1 > 0.04045 ? Math.pow((r1 + 0.055) / 1.055, 2.4) : r1 / 12.92;
-        g1 = g1 > 0.04045 ? Math.pow((g1 + 0.055) / 1.055, 2.4) : g1 / 12.92;
-        b1 = b1 > 0.04045 ? Math.pow((b1 + 0.055) / 1.055, 2.4) : b1 / 12.92;
-        
-        const x = r1 * 0.4124 + g1 * 0.3576 + b1 * 0.1805;
-        const y = r1 * 0.2126 + g1 * 0.7152 + b1 * 0.0722;
-        const z = r1 * 0.0193 + g1 * 0.1192 + b1 * 0.9505;
-        
-        return { x, y, z };
-      }
-      
-      static xyzToLab(x, y, z) {
-        const xn = 0.95047, yn = 1.00000, zn = 1.08883;
-        
-        const x1 = x / xn, y1 = y / yn, z1 = z / zn;
-        
-        const fx = x1 > 0.008856 ? Math.pow(x1, 1/3) : (7.787 * x1) + (16 / 116);
-        const fy = y1 > 0.008856 ? Math.pow(y1, 1/3) : (7.787 * y1) + (16 / 116);
-        const fz = z1 > 0.008856 ? Math.pow(z1, 1/3) : (7.787 * z1) + (16 / 116);
-        
-        const L = (116 * fy) - 16;
-        const a = 500 * (fx - fy);
-        const b = 200 * (fy - fz);
-        
-        return { L, a, b };
-      }
-      
-      static hexToLab(hex) {
-        if (this.colorCache.has(hex)) {
-          return this.colorCache.get(hex);
-        }
-        
-        const rgb = this.hexToRgb(hex);
-        if (!rgb) return null;
-        
-        const xyz = this.rgbToXyz(rgb.r, rgb.g, rgb.b);
-        const lab = this.xyzToLab(xyz.x, xyz.y, xyz.z);
-        
-        if (this.colorCache.size < CONFIG.QUILT_V2.LAB_COLOR_CACHE_SIZE) {
-          this.colorCache.set(hex, lab);
-        }
-        
-        return lab;
-      }
-      
-      static getColorDistance(color1, color2) {
-        const lab1 = this.hexToLab(color1);
-        const lab2 = this.hexToLab(color2);
-        
-        if (!lab1 || !lab2) return Infinity;
-        
-        const dL = lab1.L - lab2.L;
-        const da = lab1.a - lab2.a;
-        const db = lab1.b - lab2.b;
-        
-        return Math.sqrt(dL * dL + da * da + db * db);
-      }
-      
-      static isColorSimilar(color1, color2) {
-        const distance = this.getColorDistance(color1, color2);
-        return distance <= CONFIG.QUILT_V2.COLOR_SIMILARITY_THRESHOLD;
-      }
-      
-      static getColorFamilyName(hexColor) {
-        const rgb = this.hexToRgb(hexColor);
-        if (!rgb) return 'unknown';
-        
-        const { r, g, b } = rgb;
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        const delta = max - min;
-        
-        if (delta === 0) return 'gray';
-        
-        let hue;
-        if (max === r) {
-          hue = ((g - b) / delta) % 6;
-        } else if (max === g) {
-          hue = (b - r) / delta + 2;
-        } else {
-          hue = (r - g) / delta + 4;
-        }
-        
-        hue = Math.round(hue * 60);
-        if (hue < 0) hue += 360;
-        
-        if (hue >= 0 && hue < 30) return 'red';
-        if (hue >= 30 && hue < 60) return 'orange';
-        if (hue >= 60 && hue < 90) return 'yellow';
-        if (hue >= 90 && hue < 150) return 'green';
-        if (hue >= 150 && hue < 210) return 'cyan';
-        if (hue >= 210 && hue < 270) return 'blue';
-        if (hue >= 270 && hue < 330) return 'purple';
-        return 'pink';
-      }
+    const ColorUtilsV2 = globalThis.ColorUtilsV2;
+    if (typeof ColorUtilsV2 !== 'function') {
+      throw new Error('lib/color-utils-v2.js must load before the app module');
     }
 
     // ===== ENHANCED SHAPE CLASS =====
@@ -22370,7 +22269,12 @@ try {
     }
 
     // ===== UTILITY FUNCTIONS =====
-    class Utils {
+    const UtilsCore = globalThis.UtilsCore;
+    if (typeof UtilsCore !== 'function') {
+      throw new Error('lib/utils-core.js must load before the app module');
+    }
+
+    class Utils extends UtilsCore {
       static hslToHex(h, s, l) {
         h /= 360;
         s /= 100;
@@ -22504,11 +22408,6 @@ try {
         out[i] = Math.round(r * 255);
         out[i + 1] = Math.round(g * 255);
         out[i + 2] = Math.round(b * 255);
-      }
-
-      static validateHexColor(color) {
-        const hexRegex = /^#[0-9A-F]{6}$/i;
-        return hexRegex.test(color);
       }
 
       /**
@@ -23120,24 +23019,6 @@ try {
         requestAnimationFrame(run);
       }
 
-      static getAppDateKeyForDate(date) {
-        // Map any Date to the app-day key using the same UTC + 7am cutoff as the quote service.
-        const source = date instanceof Date ? date : new Date(date);
-        if (!source || Number.isNaN(source.getTime())) return '';
-        const adjustedDate = new Date(source);
-        if (source.getUTCHours() < 7) {
-          adjustedDate.setUTCDate(adjustedDate.getUTCDate() - 1);
-        }
-        const year = adjustedDate.getUTCFullYear();
-        const month = String(adjustedDate.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(adjustedDate.getUTCDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      }
-
-      static getTodayKey() {
-        return Utils.getAppDateKeyForDate(new Date());
-      }
-
       static getQuiltDimensions() {
         const hasVisualViewport = window.visualViewport && window.visualViewport.width > 0;
         
@@ -23191,15 +23072,6 @@ try {
             viewBoxHeight: height
           };
         }
-      }
-
-      static formatDate(date = new Date()) {
-        return date.toLocaleDateString(undefined, {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
       }
 
       /** Light desaturated thermal paper from the user's quilt color (fallback when missing). */
@@ -25078,27 +24950,9 @@ try {
     }
 
     // ===== LOGGING SERVICE =====
-    class Logger {
-      constructor(debugMode = CONFIG.APP.debugMode) {
-        this.debugMode = debugMode;
-        this.prefix = '🧵';
-      }
-
-      log(message, data = null) {
-        if (this.debugMode) {
-          console.log(`${this.prefix} ${message}`, data || '');
-        }
-      }
-
-      warn(message, data = null) {
-        if (this.debugMode) {
-          console.warn(`${this.prefix} ⚠️ ${message}`, data || '');
-        }
-      }
-
-      error(message, error = null) {
-        console.error(`${this.prefix} ❌ ${message}`, error || '');
-      }
+    const Logger = globalThis.Logger;
+    if (typeof Logger !== 'function') {
+      throw new Error('lib/logger.js must load before the app module');
     }
 
     // ===== UI SERVICE =====
@@ -26145,43 +25999,9 @@ try {
     }
 
     // ===== ERROR HANDLING SERVICE =====
-    class ErrorHandler {
-      constructor(uiService, logger) {
-        this.uiService = uiService;
-        this.logger = logger;
-      }
-
-      handleError(error, context = 'Unknown') {
-        // Web Share API and other user gestures reject with AbortError when the user dismisses the sheet — not an app failure.
-        if (error && error.name === 'AbortError') return;
-
-        this.logger.error(`Error in ${context}:`, error);
-
-        const silentToastContexts = new Set(['shareFlow', 'shareFlowExperimental', 'testInstagramImage']);
-        if (silentToastContexts.has(context)) return;
-        
-        const errorMessages = {
-          'loadQuilt': 'Failed to load quilt data. Starting fresh.',
-          'saveQuilt': 'Failed to save your color. Please try again.',
-          'shareFlow': 'Failed to create share image. Saving instead.',
-          'colorPicker': 'Color picker error. Please try again.',
-          'App initialization': 'Failed to initialize app. Please refresh.',
-          'renderQuilt': 'Failed to render quilt. Please try again.',
-          'addColorToQuilt': 'Failed to add color. Please try again.',
-          'handleAddColor': 'Could not place your color. Try again, or close and reopen the app.',
-          'syntheticReel': 'Could not export synthetic reel. Try Chrome on desktop.'
-        };
-        
-        const message = errorMessages[context] || 'Something went wrong. Please try again.';
-        this.uiService.showToast(message);
-      }
-
-      validateColor(color) {
-        if (!Utils.validateHexColor(color)) {
-          throw new Error(`Invalid color format: ${color}`);
-        }
-        return true;
-      }
+    const ErrorHandler = globalThis.ErrorHandler;
+    if (typeof ErrorHandler !== 'function') {
+      throw new Error('lib/error-handler.js must load before the app module');
     }
 
     const ODQ_CANVAS_SERIF_FONT = '\'Libre Baskerville\', Georgia, "Times New Roman", Times, serif';
