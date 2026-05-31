@@ -17127,37 +17127,40 @@ try {
           }
           measureStrip([ln], bodyFont, 1.38, 'quote');
         };
-        const segments = segmentQuoteForLayout(quoteText);
         const qPx = quoteFontPx();
         const bodyFont = `400 ${qPx}px ${FONT_SERIF}`;
         ctx.font = bodyFont;
         let quoteLineSalt = 0;
-        for (const seg of segments) {
-          if (kwActive) {
-            const parts = LBKE.expandSegmentForKeywordEmphasis(seg, kwKeywords, kwStyles);
-            for (const part of parts) {
-              if (part.kind === 'emphasis-strip') {
-                measureEmphasisStrip(part.text, part.rank);
-                continue;
-              }
-              const chunkText = String(part.text || '');
-              if (!chunkText.trim()) continue;
-              const lines = wrapLines(ctx, chunkText, innerMaxW);
-              for (const ln of lines) {
-                if (part.kind === 'inline-emphasis') {
-                  const runs = emphasisRunsForInlinePartLine(ln);
-                  if (runs) {
-                    measureStripWithRuns(runs, bodyFont, 1.38, 'quote');
-                    continue;
-                  }
-                }
-                emitQuoteLine(ln, bodyFont, quoteLineSalt++);
-              }
-            }
-            continue;
+        const layoutKeywordPart = (part) => {
+          if (part.kind === 'emphasis-strip') {
+            measureEmphasisStrip(part.text, part.rank);
+            return;
           }
-          const lines = wrapLines(ctx, seg, innerMaxW);
-          for (const ln of lines) emitQuoteLine(ln, bodyFont, quoteLineSalt++);
+          const chunkText = String(part.text || '');
+          if (!chunkText.trim()) return;
+          for (const seg of segmentQuoteForLayout(chunkText)) {
+            const lines = wrapLines(ctx, seg, innerMaxW);
+            for (const ln of lines) {
+              if (part.kind === 'inline-emphasis') {
+                const runs = emphasisRunsForInlinePartLine(ln);
+                if (runs) {
+                  measureStripWithRuns(runs, bodyFont, 1.38, 'quote');
+                  continue;
+                }
+              }
+              emitQuoteLine(ln, bodyFont, quoteLineSalt++);
+            }
+          }
+        };
+        if (kwActive) {
+          // Match keywords on full quote text first — strip segmentation splits long Notion phrases.
+          const fullParts = LBKE.expandSegmentForKeywordEmphasis(quoteText, kwKeywords, kwStyles);
+          for (const part of fullParts) layoutKeywordPart(part);
+        } else {
+          for (const seg of segmentQuoteForLayout(quoteText)) {
+            const lines = wrapLines(ctx, seg, innerMaxW);
+            for (const ln of lines) emitQuoteLine(ln, bodyFont, quoteLineSalt++);
+          }
         }
         if (quoteAuthor) {
           const aPx = authorFontPx();
