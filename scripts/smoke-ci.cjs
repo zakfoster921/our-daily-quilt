@@ -58,6 +58,7 @@ function smokeSyntax() {
     'lib/quote-service.js',
     'lib/quilt-renderer-v2.js',
     'lib/app-config.js',
+    'lib/simplified-quilt-app-boot.js',
     'scripts/generate-nightly-ig-images.cjs',
     'scripts/sync-notion-to-firestore.cjs',
     'scripts/smoke-deps.cjs'
