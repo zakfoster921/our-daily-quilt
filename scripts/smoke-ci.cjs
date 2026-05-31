@@ -120,6 +120,21 @@ function smokeDeps() {
   }
 }
 
+function smokeExtractedGlobals() {
+  const res = spawnSync(process.execPath, [path.join(__dirname, 'smoke-extracted-globals.cjs')], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 30000
+  });
+  process.stdout.write(res.stdout || '');
+  process.stderr.write(res.stderr || '');
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    throw new Error('smoke-extracted-globals failed');
+  }
+  ok('extracted module globals');
+}
+
 function main() {
   console.log('Running CI smoke checks...\n');
   try {
@@ -141,6 +156,11 @@ function main() {
     smokeDeps();
   } catch (err) {
     fail('dependencies', err);
+  }
+  try {
+    smokeExtractedGlobals();
+  } catch (err) {
+    fail('extracted globals', err);
   }
   console.log('');
   if (process.exitCode) {
