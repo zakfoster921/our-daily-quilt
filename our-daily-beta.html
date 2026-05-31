@@ -16428,6 +16428,7 @@ try {
   <script src="lib/color-utils-v2.js"></script>
   <script src="lib/utils-core.js"></script>
   <script src="lib/utils-color.js"></script>
+  <script src="lib/utils-client.js"></script>
   <script src="lib/live-daily-data-sync.js"></script>
   <script src="lib/quilt-data-service.js"></script>
   <script>
@@ -22279,77 +22280,11 @@ try {
     if (typeof UtilsCore.hslToHex !== 'function') {
       throw new Error('lib/utils-color.js must load before the app module');
     }
+    if (typeof UtilsCore.fillTemplateWithColors !== 'function') {
+      throw new Error('lib/utils-client.js must load before the app module');
+    }
 
     class Utils extends UtilsCore {
-      /**
-       * Substitute concrete hex colors into a slot-based quilt template
-       * (e.g. CONFIG.PERSONAL_QUILT.TEMPLATE). Each block's `colorSlot`,
-       * optional `hstColorBSlot`, and optional `insetInnerColorSlot` are
-       * 1-indexed into the provided `colors` array. Returns a `blocks[]`
-       * array compatible with
-       * `ArchiveService.generateQuiltRasterBlobFromBlocks`.
-       */
-      static fillTemplateWithColors(template, colors) {
-        if (!template || !Array.isArray(template.blocks)) return [];
-        if (!Array.isArray(colors) || colors.length === 0) return [];
-        const colorAt = (slot) => {
-          const idx = Number(slot);
-          if (!Number.isFinite(idx) || idx < 1) return colors[0];
-          return colors[Math.min(idx, colors.length) - 1];
-        };
-        return template.blocks.map((b) => {
-          const out = { ...b, color: colorAt(b.colorSlot ?? 1) };
-          if (b.hstColorBSlot != null) out.hstColorB = colorAt(b.hstColorBSlot);
-          if (b.insetInnerColorSlot != null) out.insetInnerColor = colorAt(b.insetInnerColorSlot);
-          return out;
-        });
-      }
-
-      static getOrCreateUserId() {
-        let userId = localStorage.getItem('ourDailyUserId');
-        if (!userId) {
-          userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          localStorage.setItem('ourDailyUserId', userId);
-        }
-        return userId;
-      }
-
-      static getOrCreateAppInstanceId() {
-        let id = localStorage.getItem('ourDailyAppInstanceId');
-        if (!id) {
-          id = `app_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-          localStorage.setItem('ourDailyAppInstanceId', id);
-        }
-        return id;
-      }
-
-      static getClientPlatformLabel() {
-        try {
-          if (typeof odqIsCapacitorNative === 'function' && odqIsCapacitorNative()) {
-            return 'capacitor-ios';
-          }
-        } catch (_) {
-          /* ignore */
-        }
-        const href = String(window.location?.href || '');
-        if (href.startsWith('file:')) return 'local-file';
-        if (href.startsWith('capacitor:')) return 'capacitor-ios';
-        return 'web';
-      }
-
-      static buildWriteProvenance(reason = 'unknown') {
-        return {
-          clientBuild: `${CONFIG.APP.version}:${CONFIG.APP.buildId}`,
-          writeReason: String(reason || 'unknown').slice(0, 80),
-          appInstanceId: Utils.getOrCreateAppInstanceId(),
-          userId: Utils.getOrCreateUserId(),
-          platform: Utils.getClientPlatformLabel(),
-          href: String(window.location?.href || '').slice(0, 180),
-          userAgent: String(navigator.userAgent || '').slice(0, 220),
-          writtenAt: new Date().toISOString()
-        };
-      }
-
       static USER_FIRST_NAME_KEY = 'ourDailyUserFirstName';
       static FIRST_NAME_SKIPPED_KEY = 'ourDailyFirstNameSkipped';
       static FRIEND_TERM_QUEUE_KEY = 'ourDailyFriendTermQueue';
