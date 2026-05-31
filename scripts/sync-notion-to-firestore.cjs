@@ -974,7 +974,15 @@ async function mirrorKeywordEmphasisToInstagram(db, options) {
     { updatedBy }
   );
   if (result.deleteEmphasis) {
-    await ref.set({ layoutBKeywordEmphasis: admin.firestore.FieldValue.delete() }, { merge: true });
+    const deleteField = admin.firestore.FieldValue.delete();
+    await ref.set(
+      {
+        layoutBKeywordEmphasis: deleteField,
+        layoutBKeywordEmphasisStory: deleteField,
+        layoutBKeywordEmphasisPost: deleteField
+      },
+      { merge: true }
+    );
   } else {
     await ref.set(result.patch, { merge: true });
   }

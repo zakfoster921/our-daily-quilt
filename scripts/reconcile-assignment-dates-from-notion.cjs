@@ -188,7 +188,15 @@ function queueInstagramKeywordEmphasisSync(db, batchState, igByDate, dateKey, q,
     updatedBy: source
   });
   if (result.deleteEmphasis) {
-    batchState.batch.set(ref, { layoutBKeywordEmphasis: deleteField }, { merge: true });
+    batchState.batch.set(
+      ref,
+      {
+        layoutBKeywordEmphasis: deleteField,
+        layoutBKeywordEmphasisStory: deleteField,
+        layoutBKeywordEmphasisPost: deleteField
+      },
+      { merge: true }
+    );
   } else {
     batchState.batch.set(ref, result.patch, { merge: true });
     igByDate.set(key, { ...(existing || {}), ...result.patch });

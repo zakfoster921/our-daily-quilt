@@ -16444,6 +16444,7 @@ try {
   <script src="lib/archive-service.js"></script>
   <script src="lib/quote-service.js"></script>
   <script src="lib/quilt-renderer-v2.js"></script>
+  <script src="lib/app-config.js"></script>
   <script>
   </script>
   <script>
@@ -16456,152 +16457,11 @@ try {
   <!-- FIREBASE DISABLED FOR LOCAL TESTING -->
   <script type="module">
     // ===== CONFIGURATION =====
-    const CONFIG = {
-      APP: {
-        name: 'OUR DAILY QUILT',
-        version: '1.0.0',
-        /** First Rumi-palette swatch: fresh quilt + picker default (see `hexToHsv` / daily snap). */
-        defaultColor: '#ea9b9a',
-        quiltSize: 1000,
-        animationDuration: 2000,
-        toastDuration: 3000,
-        /** Milestone “banner” read time (longer copy than typical toasts). */
-        milestoneInAppNotificationMs: 7000,
-        /** Optional; falls back to generated icon if missing. */
-        notificationIconUrl: 'assets/icon.png',
-        /** Pause after scroll-end before push opt-in fades in (ms). */
-        pushOptInRevealDelayMs: 520,
-        /** Delay before color picker pane reveals on quote screen (ms). */
-        quoteColorPickerRevealMs: 1500,
-        /** Quote screen: hue / sat / value sliders (wheel hidden). ?picker=wheel for legacy wheel. */
-        useThreeSliderPicker: true,
-        buildId: '20',
-        /** Public app URL for native “share with a friend”; leave empty until the listing is live. */
-        shareAppUrl: '',
-        /** App Store / TestFlight review URL; leave empty until ready. */
-        appStoreReviewUrl: '',
-        debugMode: false,
-        enableAdminTools: odqEnableAdminTools(),
-        /** TEMP: quilt gem that opens exit chamber (#quiltDailyColorsCtaBtn). */
-        exitChamberCtaEnabled: false,
-        /** TEMP: milestone quilts archive, reveals, and milestone notifications. */
-        milestoneQuiltsEnabled: false
-      },
-      FIREBASE: {
-        // ENABLED FOR IMAGE REVEAL FUNCTIONALITY
-        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
-        authDomain: "our-daily.firebaseapp.com",
-        projectId: "our-daily",
-        storageBucket: "our-daily.firebasestorage.app",
-        messagingSenderId: "337201931314",
-        appId: "1:337201931314:web:fb5677846d03eb285ac82b",
-        measurementId: "G-65XB7QC1F4"
-      },
-      COLOR_PICKER: {
-        wheelSize: 280,
-        defaultHue: 36,
-        defaultLightness: 90,
-        saturation: 21.7
-      },
-      QUILT: {
-        viewBoxWidth: 800,
-        viewBoxHeight: 800,
-        gridCols: 8,
-        gridRows: 8,
-        blockSpacing: 4,
-        blockPadding: 2
-      },
-      QUILT_V2: {
-        FREEZE_THRESHOLD: 20,
-        MIN_SHAPE_SIZE: 40,
-        COLOR_SIMILARITY_THRESHOLD: 35,
-        LAB_COLOR_CACHE_SIZE: 1000
-      },
-      /** Railway Node server: manual Notion ↔ Firestore sync (`server.js` POST /api/sync-notion-firestore). */
-      BACKEND: {
-        baseUrl: 'https://our-daily-quilt-production.up.railway.app'
-      },
-      COLOR_MILESTONES: {
-        5: "Five days in. Here's what you've made so far. Thank you for being here ♡",
-        10: "Ten colors. I was hoping you'd stick around ! ♡",
-        25: "25 colors ! You're becoming a regular ! ♡",
-        50: "Fifty days of color ♡ You're a real part of how this thing works",
-        100: "100 colors added ! Three months of showing up, one color at a time ♡ Thank you",
-        250: "You just shared your 250th color ! ♡ You've been here through a lot of quilts",
-        365: "A full year of colors ! ♡ We're basically family at this point",
-        500: "You've had a hand in 500 quilts ♡ And you made every one of them better",
-        1000: "1000 colors. Four digits. You're an absolute legend ♡ Thank you for being here !"
-      },
-      /**
-       * Personal-quilt milestone reveal. When a device picks its
-       * MILESTONE_COUNT-th lifetime color, schedule a one-shot local
-       * notification (via @capacitor/local-notifications) to fire DELAY_MS
-       * later. Tap opens an in-app card showing a personal quilt rendered
-       * from TEMPLATE, with the user's first MILESTONE_COUNT picks filling
-       * the template's color slots in chronological order. See
-       * `maybeCreateColorMilestoneNotification` and `showPersonalQuiltReveal`.
-       * The Firestore doc at
-       * `colorMilestoneNotifications/{deviceId}_{milestoneCount}` is
-       * analytics-only; this feature does not use any server pipeline.
-       */
-      PERSONAL_QUILT: {
-        MILESTONE_COUNT: 5,
-        DELAY_MS: 2 * 60 * 60 * 1000,
-        LOCAL_NOTIF_ID: 9212077,
-        TEMPLATE: {
-          width: 1080,
-          height: 1350,
-          blocks: [
-            { id: 't1',  x: 0,   y: 0,    width: 380,  height: 260,
-              patternType: 'special', specialPatternType: 'hst', hstDiagonal: 'ne-sw',
-              colorSlot: 1, hstColorBSlot: 4 },
-            { id: 't2',  x: 380, y: 0,    width: 150,  height: 90,
-              patternType: 'regular', colorSlot: 5 },
-            { id: 't3',  x: 380, y: 90,   width: 150,  height: 190,
-              patternType: 'special', specialPatternType: 'hst', hstDiagonal: 'nw-se',
-              colorSlot: 3, hstColorBSlot: 5 },
-            { id: 't4',  x: 530, y: 0,    width: 550,  height: 200,
-              patternType: 'regular', colorSlot: 2 },
-            { id: 't5',  x: 0,   y: 260,  width: 380,  height: 240,
-              patternType: 'special', specialPatternType: 'hst', hstDiagonal: 'nw-se',
-              colorSlot: 1, hstColorBSlot: 4 },
-            { id: 't6',  x: 530, y: 200,  width: 550,  height: 300,
-              patternType: 'regular', colorSlot: 3 },
-            { id: 't7',  x: 380, y: 280,  width: 150,  height: 220,
-              patternType: 'regular', colorSlot: 2 },
-            { id: 't8',  x: 0,   y: 500,  width: 720,  height: 550,
-              patternType: 'regular', colorSlot: 1 },
-            { id: 't9',  x: 540, y: 500,  width: 180,  height: 220,
-              patternType: 'special', specialPatternType: 'hst', hstDiagonal: 'ne-sw',
-              colorSlot: 1, hstColorBSlot: 5 },
-            { id: 't10', x: 720, y: 500,  width: 360,  height: 550,
-              patternType: 'regular', colorSlot: 2 },
-            { id: 't11', x: 0,   y: 1050, width: 1080, height: 300,
-              patternType: 'regular', colorSlot: 1 }
-          ]
-        }
-      },
-      /**
-       * Remember-today: reader picks items on #screen-remember-today; one combined
-       * local notification fires later the same quote-day (native only). Tap opens
-       * read-only #screen-remember-today-view with saved segments.
-       */
-      REMEMBER_TODAY: {
-        LOCAL_NOTIF_ID: 9212088,
-        MAX_BODY_CHARS: 320,
-        MAX_SEGMENT_CHARS: 140,
-        /** Latest local hour (24h) for random 2–8h delivery; at or after this, use LATE_NIGHT_DELAY_MS. */
-        CUTOFF_HOUR_LOCAL: 22,
-        LATE_NIGHT_DELAY_MS: 7 * 60 * 1000,
-        MIN_DELAY_MS: 2 * 60 * 60 * 1000,
-        MAX_DELAY_MS: 8 * 60 * 60 * 1000,
-        SEGMENT_PRIORITY: ['mood', 'watch_for', 'quote', 'color', 'companion', 'thoughts'],
-        MAX_THOUGHTS_CHARS: 280,
-        COMPANION_FALLBACK_TITLE: 'Art recommendation for this quote is coming soon.'
-      }
-    };
+    const CONFIG = globalThis.CONFIG;
+    if (!CONFIG || typeof CONFIG !== 'object') {
+      throw new Error('lib/app-config.js must load before the app module');
+    }
 
-    globalThis.CONFIG = CONFIG;
 
     // ===== FIREBASE INITIALIZATION =====
     // Initialize Firebase immediately after CONFIG is defined
@@ -18332,10 +18192,18 @@ try {
       }
     }
 
+    function odqKeywordEmphasisFromQuoteObject(quote, dateKey) {
+      if (!quote || typeof quote !== 'object') return null;
+      const payload = globalThis.QuiltNewspaperClipping?.keywordPayloadForQuote?.(quote, dateKey);
+      if (!payload?.keywords?.length) return null;
+      return odqEnsureKeywordEmphasisStyles(payload);
+    }
+
     async function odqKeywordEmphasisFromQuoteFirestore(dateKey) {
       if (!window.db || !window.firestore) return null;
       const QKE = globalThis.QuoteKeywordEmphasis;
       const LBKE = globalThis.LayoutBKeywordEmphasis;
+      const readDoc = window.firestore.getDocFromServer || window.firestore.getDoc;
       const buildFrom = (raw, text) => {
         const keywordRaw = String(raw || '').trim();
         const quoteText = String(text || '').trim();
@@ -18364,19 +18232,17 @@ try {
       let assignmentData = null;
       try {
         const assignRef = window.firestore.doc(window.db, 'dailyQuoteAssignments', dateKey);
-        const assignSnap = await window.firestore.getDoc(assignRef);
+        const assignSnap = await readDoc(assignRef);
         if (assignSnap.exists()) assignmentData = assignSnap.data() || {};
       } catch (_) {
         /* optional */
       }
       if (assignmentData) {
-        const fromAssign = tryDoc(assignmentData);
-        if (fromAssign) return fromAssign;
         const sid = String(assignmentData.sourceId || '').trim();
         if (sid && sid !== dateKey) {
           try {
             const srcRef = window.firestore.doc(window.db, 'quotes', sid);
-            const srcSnap = await window.firestore.getDoc(srcRef);
+            const srcSnap = await readDoc(srcRef);
             if (srcSnap.exists()) {
               const fromCatalog = tryDoc(srcSnap.data(), assignmentData.textSnapshot);
               if (fromCatalog) return fromCatalog;
@@ -18385,12 +18251,14 @@ try {
             /* optional */
           }
         }
+        const fromAssign = tryDoc(assignmentData);
+        if (fromAssign) return fromAssign;
       }
       const collections = ['quotes', 'dailyQuoteAssignments'];
       for (const collectionName of collections) {
         try {
           const ref = window.firestore.doc(window.db, collectionName, dateKey);
-          const snap = await window.firestore.getDoc(ref);
+          const snap = await readDoc(ref);
           if (!snap.exists()) continue;
           const built = tryDoc(snap.data());
           if (built) return built;
@@ -18401,41 +18269,82 @@ try {
       return null;
     }
 
-    async function odqReadLayoutBKeywordEmphasis(dateKey, aspect = 'story') {
+    async function odqReadLayoutBKeywordEmphasis(dateKey, aspect = 'story', quoteHint = null) {
       const key = String(dateKey || '').trim();
       if (!key) return null;
       const a = odqNormalizeTuneAspect(aspect);
-      const cached = odqGetCachedLayoutBKeywordEmphasis(key, a);
-      if (cached) {
-        return cached;
-      }
+      const ADMIN_TUNE = 'admin-tune-modal';
       const firestoreField = a === 'post' ? 'layoutBKeywordEmphasisPost' : 'layoutBKeywordEmphasisStory';
-      if (window.db && window.firestore) {
+
+      const readInstagramEmphasis = async () => {
+        if (!window.db || !window.firestore) return null;
+        const ref = window.firestore.doc(window.db, 'instagram-images', key);
+        const snap = await window.firestore.getDoc(ref);
+        if (!snap.exists()) return null;
+        const data = snap.data() || {};
+        let raw = data[firestoreField];
+        if (!raw && data.layoutBKeywordEmphasis) raw = data.layoutBKeywordEmphasis;
+        if (!raw || typeof raw !== 'object') return null;
+        return {
+          raw,
+          normalized: odqEnsureKeywordEmphasisStyles(odqNormalizeKeywordEmphasisPayload(raw))
+        };
+      };
+
+      // Admin tune modal overrides win for this aspect (explicit manual styling).
+      try {
+        const fromInstagram = await readInstagramEmphasis();
+        if (
+          fromInstagram?.normalized &&
+          String(fromInstagram.raw?.updatedBy || '').trim() === ADMIN_TUNE
+        ) {
+          odqSetCachedLayoutBKeywordEmphasis(key, fromInstagram.normalized, a);
+          return fromInstagram.normalized;
+        }
+      } catch (err) {
+        console.warn('odqReadLayoutBKeywordEmphasis Firestore read failed:', err);
+      }
+
+      // Canonical keywords from resolved quote object — same path as newspaper clipping.
+      const quoteCandidates = [];
+      if (quoteHint && typeof quoteHint === 'object') quoteCandidates.push(quoteHint);
+      const qs = window.app?.quoteService;
+      if (qs?._pinnedByDateKey?.[key]) quoteCandidates.push(qs._pinnedByDateKey[key]);
+      if (typeof qs?.getQuoteResolvedForInstagramDateKey === 'function') {
         try {
-          const ref = window.firestore.doc(window.db, 'instagram-images', key);
-          const snap = await window.firestore.getDoc(ref);
-          if (snap.exists()) {
-            const data = snap.data() || {};
-            let raw = data[firestoreField];
-            if (!raw && data.layoutBKeywordEmphasis) raw = data.layoutBKeywordEmphasis;
-            const normalized = odqEnsureKeywordEmphasisStyles(odqNormalizeKeywordEmphasisPayload(raw));
-            if (normalized) {
-              odqSetCachedLayoutBKeywordEmphasis(key, normalized, a);
-              return normalized;
-            }
-          }
-        } catch (err) {
-          console.warn('odqReadLayoutBKeywordEmphasis Firestore read failed:', err);
+          const resolved = await qs.getQuoteResolvedForInstagramDateKey(key);
+          if (resolved) quoteCandidates.push(resolved);
+        } catch (_) {
+          /* optional */
         }
       }
+      for (const candidate of quoteCandidates) {
+        const fromObject = odqKeywordEmphasisFromQuoteObject(candidate, key);
+        if (fromObject) {
+          odqSetCachedLayoutBKeywordEmphasis(key, fromObject, a);
+          return fromObject;
+        }
+      }
+
       const fromQuote = await odqKeywordEmphasisFromQuoteFirestore(key);
       if (fromQuote) {
         const ensured = odqEnsureKeywordEmphasisStyles(fromQuote);
         odqSetCachedLayoutBKeywordEmphasis(key, ensured, a);
         return ensured;
       }
-      const finalCached = odqGetCachedLayoutBKeywordEmphasis(key, a);
-      return finalCached;
+
+      // Legacy Notion mirror on instagram-images when quote has no keyword field.
+      try {
+        const fromInstagram = await readInstagramEmphasis();
+        if (fromInstagram?.normalized) {
+          odqSetCachedLayoutBKeywordEmphasis(key, fromInstagram.normalized, a);
+          return fromInstagram.normalized;
+        }
+      } catch (_) {
+        /* optional */
+      }
+
+      return odqGetCachedLayoutBKeywordEmphasis(key, a);
     }
 
     async function odqWriteLayoutBKeywordEmphasis(dateKey, payload, aspect = 'story') {
@@ -20135,6 +20044,7 @@ try {
     globalThis.odqGetCachedLayoutBStripLayoutSeed = odqGetCachedLayoutBStripLayoutSeed;
     globalThis.odqReadLayoutBStripLayoutSeed = odqReadLayoutBStripLayoutSeed;
     globalThis.odqGetCachedLayoutBKeywordEmphasis = odqGetCachedLayoutBKeywordEmphasis;
+    globalThis.odqKeywordEmphasisFromQuoteObject = odqKeywordEmphasisFromQuoteObject;
     globalThis.odqReadLayoutBKeywordEmphasis = odqReadLayoutBKeywordEmphasis;
     globalThis.odqSpeakerCutoutTransformForDateAsync = odqSpeakerCutoutTransformForDateAsync;
     globalThis.composeInstagramLayoutBFromQuiltBlob = composeInstagramLayoutBFromQuiltBlob;
@@ -34078,7 +33988,7 @@ try {
         if (speakerOverlay) composeExtras.speakerOverlay = speakerOverlay;
         if (tuneAspect === 'post') composeExtras.quiltFit = 'cover';
         try {
-          const keywordEmphasis = await odqReadLayoutBKeywordEmphasis(dk, tuneAspect);
+          const keywordEmphasis = await odqReadLayoutBKeywordEmphasis(dk, tuneAspect, qt);
           if (keywordEmphasis) {
             composeExtras.keywordEmphasis = keywordEmphasis;
             composeExtras.keywordEmphasisExplicit = true;
