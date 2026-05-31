@@ -1,24 +1,28 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow read access to all files with CORS headers
     match /{allPaths=**} {
       allow read: if true;
-      
-      // Add CORS headers for cross-origin requests
-      function corsHeaders() {
-        return {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          'Access-Control-Max-Age': '3600'
-        };
-      }
     }
-    
-    // Allow anonymous users to upload to quilt-reveals folder
+
+    // App users sign in anonymously before client-side reveal uploads.
     match /quilt-reveals/{fileName} {
-      allow write: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // App/manual image pipelines sign in anonymously before uploading IG assets.
+    // Server/Admin SDK writes bypass Storage rules.
+    match /instagram-zapier/{dateKey}/{fileName} {
+      allow write: if request.auth != null
+        && dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && request.resource.size < 50 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'video/webm' ||
+          request.resource.contentType == 'video/mp4'
+        );
     }
     
     // Deny all other writes

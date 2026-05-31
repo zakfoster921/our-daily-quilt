@@ -6,6 +6,10 @@ service cloud.firestore {
       return id.matches('^\\d{4}-\\d{2}-\\d{2}$');
     }
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     match /quilts/{dateKey} {
       allow read: if true;
       // Prevent stale browser/client bundles from clearing production quilts.
@@ -22,6 +26,32 @@ service cloud.firestore {
       allow create, update, delete: if !isDateKey(quoteId);
     }
 
+    match /dailyQuoteAssignments/{dateKey} {
+      // Public daily quote state, written only by server/Admin SDK sync jobs.
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /dailyQuoteUsage/{dateKey} {
+      // Public read-only usage metadata for app display; server/Admin SDK writes.
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /archives/{dateKey} {
+      // Public archive content, written only by server/Admin SDK reset/backfill jobs.
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /instagram-images/{dateKey} {
+      allow read: if true;
+      // The app's image pipeline signs in anonymously before uploading Storage assets
+      // and merging URL fields here. Server/Admin SDK writes bypass these rules.
+      allow create, update: if isSignedIn() && isDateKey(dateKey);
+      allow delete: if false;
+    }
+
     match /reflectionResponses/{responseId} {
       // Private raw user reflections: server/Admin SDK writes only.
       allow read, write: if false;
@@ -33,12 +63,43 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Preserve the currently deployed permissive behavior for all other collections.
+    match /colorMilestoneNotifications/{notificationId} {
+      // Best-effort client analytics. Never required for core quilt saving.
+      allow create, update: if true;
+      allow read, delete: if false;
+    }
+
+    match /popularColorResponses/{dateKey}/responses/{responseId} {
+      // Disabled in the current UI, but keep the narrow write path explicit.
+      allow create: if true;
+      allow read, update, delete: if false;
+    }
+
+    match /pushTokens/{tokenId} {
+      // Push tokens are registered through the Express API.
+      allow read, write: if false;
+    }
+
+    match /ops/{opId} {
+      // Operational idempotency/status docs are server/Admin SDK only.
+      allow read, write: if false;
+    }
+
+    match /quoteSubmissions/{submissionId} {
+      // Quote submissions are created through the Express API.
+      allow read, write: if false;
+    }
+
     match /{collection}/{document=**} {
-      allow read, write: if collection != 'quilts'
-        && collection != 'quotes'
-        && collection != 'reflectionResponses'
-        && collection != 'reflectionThemes';
+      // Hotfix: the monolith still has a few startup reads that are easy to miss.
+      // Keep unknown client writes closed, but allow public reads outside private/server-only collections.
+      allow read: if collection != 'reflectionResponses'
+        && collection != 'pushTokens'
+        && collection != 'ops'
+        && collection != 'quoteSubmissions'
+        && collection != 'colorMilestoneNotifications'
+        && collection != 'popularColorResponses';
+      allow write: if false;
     }
   }
 }
