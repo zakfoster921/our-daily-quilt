@@ -42,6 +42,7 @@ function smokeSyntax() {
     'lib/utils-core.js',
     'lib/utils-color.js',
     'lib/live-daily-data-sync.js',
+    'lib/quilt-data-service.js',
     'scripts/generate-nightly-ig-images.cjs',
     'scripts/sync-notion-to-firestore.cjs',
     'scripts/smoke-deps.cjs'
