@@ -16429,6 +16429,7 @@ try {
   <script src="lib/utils-core.js"></script>
   <script src="lib/utils-color.js"></script>
   <script src="lib/utils-client.js"></script>
+  <script src="lib/quilt-shape-v2.js"></script>
   <script src="lib/live-daily-data-sync.js"></script>
   <script src="lib/quilt-data-service.js"></script>
   <script>
@@ -16636,127 +16637,9 @@ try {
     }
 
     // ===== ENHANCED SHAPE CLASS =====
-    class QuiltShapeV2 {
-      constructor(options = {}) {
-        this.id = options.id || this.generateId();
-        this.type = options.type || 'KEY_SHAPE';
-        this.color = options.color || CONFIG.APP.defaultColor;
-        this.position = options.position || { x: 0, y: 0, width: 1000, height: 1000 };
-        this.parentId = options.parentId || null;
-        this.contributorId = options.contributorId || null;
-        this.submissionIndex = options.submissionIndex || 0;
-        this.colorFamily = options.colorFamily || null;
-        this.descendants = [];
-      }
-      
-      generateId() {
-        return 'shape_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      }
-      
-      canSplit(direction) {
-        if (direction === 'horizontal') {
-          return this.position.height >= CONFIG.QUILT_V2.MIN_SHAPE_SIZE * 2;
-        } else {
-          return this.position.width >= CONFIG.QUILT_V2.MIN_SHAPE_SIZE * 2;
-        }
-      }
-      
-      getValidSplitDirections() {
-        const directions = [];
-        if (this.canSplit('horizontal')) directions.push('horizontal');
-        if (this.canSplit('vertical')) directions.push('vertical');
-        return directions;
-      }
-      
-      split(newColor, direction, contributorId, submissionIndex) {
-        if (!this.canSplit(direction)) {
-          throw new Error(`Cannot split shape ${this.id} in ${direction} direction`);
-        }
-
-        const splitRatio = 0.3 + Math.random() * 0.4;
-        let shape1, shape2;
-
-        if (direction === 'horizontal') {
-          const splitHeight = this.position.height * splitRatio;
-          
-          shape1 = new QuiltShapeV2({
-            type: this.type,
-            color: this.color,
-            position: {
-              x: this.position.x,
-              y: this.position.y,
-              width: this.position.width,
-              height: splitHeight
-            },
-            parentId: this.id,
-            contributorId: this.contributorId,
-            submissionIndex: this.submissionIndex,
-            colorFamily: this.colorFamily
-          });
-
-          shape2 = new QuiltShapeV2({
-            type: this.type,
-            color: newColor,
-            position: {
-              x: this.position.x,
-              y: this.position.y + splitHeight,
-              width: this.position.width,
-              height: this.position.height - splitHeight
-            },
-            parentId: this.id,
-            contributorId: contributorId,
-            submissionIndex: submissionIndex,
-            colorFamily: this.colorFamily
-          });
-        } else {
-          const splitWidth = this.position.width * splitRatio;
-          
-          shape1 = new QuiltShapeV2({
-            type: this.type,
-            color: this.color,
-            position: {
-              x: this.position.x,
-              y: this.position.y,
-              width: splitWidth,
-              height: this.position.height
-            },
-            parentId: this.id,
-            contributorId: this.contributorId,
-            submissionIndex: this.submissionIndex,
-            colorFamily: this.colorFamily
-          });
-
-          shape2 = new QuiltShapeV2({
-            type: this.type,
-            color: newColor,
-            position: {
-              x: this.position.x + splitWidth,
-              y: this.position.y,
-              width: this.position.width - splitWidth,
-              height: this.position.height
-            },
-            parentId: this.id,
-            contributorId: contributorId,
-            submissionIndex: submissionIndex,
-            colorFamily: this.colorFamily
-          });
-        }
-
-        this.descendants.push(shape2.id);
-        
-        return [shape1, shape2];
-      }
-      
-      getAllDescendants(allShapes) {
-        const descendants = [...this.descendants];
-        this.descendants.forEach(descId => {
-          const desc = allShapes.find(s => s.id === descId);
-          if (desc) {
-            descendants.push(...desc.getAllDescendants(allShapes));
-          }
-        });
-        return descendants;
-      }
+    const QuiltShapeV2 = globalThis.QuiltShapeV2;
+    if (typeof QuiltShapeV2 !== 'function') {
+      throw new Error('lib/quilt-shape-v2.js must load before the app module');
     }
 
     // ===== SIMPLIFIED QUILT ENGINE (BETA) =====

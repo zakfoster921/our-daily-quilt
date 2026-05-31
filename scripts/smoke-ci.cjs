@@ -42,6 +42,7 @@ function smokeSyntax() {
     'lib/utils-core.js',
     'lib/utils-color.js',
     'lib/utils-client.js',
+    'lib/quilt-shape-v2.js',
     'lib/live-daily-data-sync.js',
     'lib/quilt-data-service.js',
     'scripts/generate-nightly-ig-images.cjs',
