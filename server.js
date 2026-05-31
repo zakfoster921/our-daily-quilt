@@ -40,9 +40,41 @@ const { repairReflectionPublishedFromRaw } = require('./scripts/lib/repair-refle
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
+const ROOT_DIR = __dirname;
+const PUBLIC_ROOT_FILES = new Set([
+  'index.html',
+  'our-daily-beta.html',
+  'privacy.html',
+  'support.html',
+  'rumi-colors.js'
+]);
 
 app.use(express.json({ limit: '35mb' }));
-app.use(express.static('.'));
+
+function sendPublicRootFile(res, fileName) {
+  return res.sendFile(path.join(ROOT_DIR, fileName));
+}
+
+app.get('/', (_req, res) => sendPublicRootFile(res, 'index.html'));
+app.get('/:fileName', (req, res, next) => {
+  const fileName = String(req.params.fileName || '');
+  if (!PUBLIC_ROOT_FILES.has(fileName)) return next();
+  return sendPublicRootFile(res, fileName);
+});
+app.use(
+  '/assets',
+  express.static(path.join(ROOT_DIR, 'assets'), {
+    dotfiles: 'deny',
+    index: false
+  })
+);
+app.use(
+  '/lib',
+  express.static(path.join(ROOT_DIR, 'lib'), {
+    dotfiles: 'deny',
+    index: false
+  })
+);
 
 // In-memory storage for generated images
 const imageStore = new Map();
