@@ -3073,10 +3073,9 @@
       touch-action: pan-y;
       max-width: 100vw;
     }
-    /* Intro flow lead lines — first name, welcome, quote bridge (shared token). */
+    /* Intro flow lead lines — first name + quote bridge (shared token). */
     .first-name-heading,
-    .name-thanks-line,
-    .name-thanks-line__lead {
+    #screen-first-quote-bridge .name-thanks-line__lead {
       font-family: var(--intro-flow-heading-font, var(--portal-mono-font, 'SF Mono', ui-monospace, Menlo, monospace));
       font-weight: var(--intro-flow-heading-weight, 200);
       font-style: normal;
@@ -3085,7 +3084,20 @@
       line-height: var(--intro-flow-heading-line-height, 1.35);
     }
 
-    /* Post-name thanks: lead (intro token) + name (Zakarack). */
+    /* Post-name welcome lead — DM Sans light; name below stays Zakarack. */
+    #screen-name-thanks .name-thanks-line {
+      font-size: var(--intro-flow-heading-size, var(--portal-subtext-size));
+    }
+    #screen-name-thanks .name-thanks-line__lead {
+      font-family: var(--quilt-dm-sans-font, 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif);
+      font-weight: 300;
+      font-style: normal;
+      font-size: var(--intro-flow-heading-size, var(--portal-subtext-size));
+      color: var(--intro-flow-heading-color, #000);
+      line-height: var(--intro-flow-heading-line-height, 1.35);
+    }
+
+    /* Post-name thanks: lead + name layout. */
     .name-thanks-line {
       margin: 0;
       max-width: min(94vw, 28rem);
@@ -4912,7 +4924,7 @@
       --quilt-byg-inner-gap: clamp(1.1rem, 3.5dvh, 1.75rem);
       --quilt-what-else-to-names-gap: calc(var(--quilt-byg-inner-gap) * 0.25);
       /* Scroll design system — artifact | matte | tape */
-      --odq-paper-artifact: #f8f3eb;
+      --odq-paper-artifact: #f6f4f1;
       --odq-paper-matte: #ebe8e3;
       --odq-paper-tape: #f2eee6;
       --odq-ink-body: rgba(56, 46, 36, 0.78);
@@ -4941,6 +4953,9 @@
       --quilt-card-text-pad-x: clamp(1.35rem, 6.5vw, 2.15rem);
       --quilt-card-text-pad-y: clamp(1.25rem, 4.5vw, 1.85rem);
       --quilt-paper-card-fallback: var(--odq-paper-artifact);
+      /* Mood triptych vintage newsbox fills (Rumi / daily quilt palette). */
+      --quilt-mood-good-fill: #df9368;
+      --quilt-mood-rough-fill: #7eb0c8;
       --quilt-paper-card-texture: url("../assets/quilt-paper-card-texture.png");
       --quilt-chalk-squiggle: url("../assets/chalk-squiggle-alpha.png");
       --quilt-chalk-squiggle-opacity: 0.95;
@@ -4983,7 +4998,7 @@
 
     /* Transparent side gutters (quilt shows through); warm sheet only behind the card column. */
     #screen-quilt .quote-card-stack {
-      --quilt-quote-paper-bg: var(--odq-paper-artifact, #f8f3eb);
+      --quilt-quote-paper-bg: var(--odq-paper-artifact, #f6f4f1);
       --quilt-float-card-max: 460px;
       --quilt-float-card-gutter: 16px;
       --quilt-float-sheet-width: min(
@@ -5596,7 +5611,7 @@
       inset: -3px;
       z-index: 0;
       pointer-events: none;
-      background-color: var(--odq-paper-artifact, var(--quilt-paper-card-fallback, #f8f3eb));
+      background-color: var(--odq-paper-artifact, var(--quilt-paper-card-fallback, #f6f4f1));
       background-image: var(--quilt-paper-card-texture);
       background-size: 118% 118%;
       background-position: center;
@@ -11831,41 +11846,41 @@
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: clamp(0.65rem, 2.4vw, 0.95rem);
+      /* gap blocks negative-margin overlap — use per-slab spacing instead */
+      gap: 0;
       width: 100%;
       min-width: 0;
       box-sizing: border-box;
+      position: relative;
+      isolation: isolate;
     }
 
     #screen-quilt .quote-speaker-portrait-wrap {
       position: relative;
-      width: min(89.7%, 20.125rem);
-      margin: 0 auto;
-      transform: rotate(-1.35deg) translateX(-4px);
+      z-index: 1;
+      width: min(94%, 21.5rem);
+      margin: 0 auto clamp(-3.25rem, -14vw, -2.4rem);
+      transform: rotate(-1.35deg) translateX(-4px) translateY(0.4rem);
       transform-origin: center bottom;
     }
 
-    /* Magazine cutout — portrait alpha mask + hand-cut clip (JS) */
+    /* Magazine cutout — height from image aspect (JS); no forced 1:1 square */
     #screen-quilt .quote-speaker-cutout {
       display: block;
       position: relative;
-      z-index: 1;
+      z-index: 0;
       width: 100%;
       margin: 0;
-      aspect-ratio: 1 / 1;
+      min-height: 7.5rem;
       overflow: hidden;
       background: transparent;
       border: 0;
       box-shadow: none;
-      isolation: isolate;
       transform: none;
-      filter:
-        drop-shadow(2px 5px 0 rgba(35, 27, 20, 0.09))
-        drop-shadow(6px 14px 18px rgba(35, 27, 20, 0.14));
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--loaded {
-      overflow: visible;
+      overflow: hidden;
     }
 
     #screen-quilt .quote-speaker-cutout::before,
@@ -11881,8 +11896,8 @@
       inset: 0;
       z-index: 4;
       background-image: var(--speaker-image-url, none);
-      background-size: 100% auto;
-      background-position: top center;
+      background-size: var(--speaker-cutout-bg-w, 100%) var(--speaker-cutout-bg-h, auto);
+      background-position: var(--speaker-cutout-pos-x, 50%) var(--speaker-cutout-pos-y, 0px);
       background-repeat: no-repeat;
       /* Alpha PNG cutouts — no mask-image here: iOS Safari/WKWebView applies stricter
          CORS to mask-image than background-image and can hide the whole layer. */
@@ -11900,8 +11915,8 @@
     #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash {
       inset: 0;
       background-image: var(--speaker-image-url, none);
-      background-size: 100% auto;
-      background-position: top center;
+      background-size: var(--speaker-cutout-bg-w, 100%) var(--speaker-cutout-bg-h, auto);
+      background-position: var(--speaker-cutout-pos-x, 50%) var(--speaker-cutout-pos-y, 0px);
       background-repeat: no-repeat;
       mix-blend-mode: normal;
     }
@@ -11962,7 +11977,9 @@
       pointer-events: none;
       box-shadow:
         inset 0 0 0 1px rgba(255, 252, 247, 0.42),
-        inset 0 0 12px rgba(35, 27, 20, 0.04);
+        inset 0 0 12px rgba(35, 27, 20, 0.04),
+        2px 5px 0 rgba(35, 27, 20, 0.09),
+        6px 14px 18px rgba(35, 27, 20, 0.12);
       opacity: 0.55;
     }
 
@@ -11977,7 +11994,7 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      object-position: top center;
+      object-position: center var(--speaker-cutout-pos-y, 0px);
       opacity: 0;
       pointer-events: none;
     }
@@ -12068,8 +12085,8 @@
     }
 
     #screen-quilt .quote-speaker-slab--identity {
-      z-index: 3;
-      margin-top: clamp(-2.85rem, -12vw, -2.1rem);
+      z-index: 5;
+      margin-top: 0;
       transform: rotate(-0.85deg) translateX(-2px);
     }
 
@@ -12078,12 +12095,14 @@
     }
 
     #screen-quilt .quote-speaker-slab--identity .quote-speaker-slab-body {
-      padding-top: 1rem;
+      padding-top: 1.2rem;
       padding-bottom: 0.85rem;
       text-align: center;
     }
 
     #screen-quilt .quote-speaker-slab--bio {
+      z-index: 4;
+      margin-top: clamp(0.65rem, 2.4vw, 0.95rem);
       transform: rotate(0.95deg) translateX(3px);
     }
 
@@ -12185,10 +12204,10 @@
     #screen-quilt .quote-speaker-attribution {
       position: absolute;
       inset: 0;
-      z-index: 5;
+      z-index: 2;
       margin: 0;
       padding: 0;
-      overflow: visible;
+      overflow: hidden;
       pointer-events: none;
     }
 
@@ -12205,10 +12224,11 @@
 
     #screen-quilt .quote-speaker-attribution--fallback {
       inset: auto;
-      bottom: calc(0.35rem + var(--quote-speaker-attribution-lift, 2.75rem));
-      right: 0;
+      bottom: calc(0.35rem + var(--quote-speaker-attribution-lift, 0px));
+      right: 0.15rem;
       top: auto;
-      width: calc(100% - 0.5rem);
+      width: auto;
+      max-width: calc(100% - 0.5rem);
       max-height: 2.85em;
       height: auto;
       writing-mode: vertical-rl;
@@ -13659,7 +13679,7 @@
     }
 
     #screen-quilt .quilt-user-shape-card {
-      --quilt-color-card-paper: var(--odq-paper-artifact, var(--quilt-quote-paper-bg, #f8f3eb));
+      --quilt-color-card-paper: var(--odq-paper-artifact, var(--quilt-quote-paper-bg, #f6f4f1));
       --quilt-color-card-stock: var(--odq-paper-matte, #ebe8e3);
       --quilt-color-card-note: var(--odq-paper-tape, #f2eee6);
       position: relative;
