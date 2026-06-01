@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Library pocket — empty cutout</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #2a2622;
+      color: #e8e4dc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+      gap: 1rem;
+    }
+    h1 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 0;
+      opacity: 0.85;
+    }
+    .compare {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    figure { margin: 0; text-align: center; }
+    figcaption {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      opacity: 0.55;
+      margin-top: 0.45rem;
+    }
+    canvas {
+      display: block;
+      max-width: min(94vw, 360px);
+      height: auto;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+    .checker {
+      background:
+        conic-gradient(#666 90deg, #555 90deg 180deg, #666 180deg 270deg, #555 270deg) 0 0 / 16px 16px;
+    }
+    .note {
+      max-width: 38rem;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      opacity: 0.65;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Empty library pocket — transparent cutout</h1>
+  <div class="compare">
+    <figure>
+      <canvas id="source" width="628" height="900" aria-label="Source photo"></canvas>
+      <figcaption>Source</figcaption>
+    </figure>
+    <figure class="checker">
+      <canvas id="cutout" width="628" height="900" aria-label="Pocket cutout"></canvas>
+      <figcaption>Cutout (alpha)</figcaption>
+    </figure>
+  </div>
+  <p class="note">Card removed, interior back wall synthesized, background keyed out.</p>
+  <script>
+    (function () {
+      const SOURCE_URL = window.__LIBRARY_POCKET_SOURCE_URL || 'assets/library-pocket-source.png';
+      const W = 628;
+      const H = 900;
+
+      /** Rough pocket envelope in source photo (px). */
+      const POCKET_RECT = { x0: 168, y0: 88, x1: 602, y1: 712 };
+
+      function hashNoise(x, y) {
+        const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+        return s - Math.floor(s);
+      }
+
+      function inPocketRect(x, y) {
+        return x >= POCKET_RECT.x0 && x < POCKET_RECT.x1 &&
+          y >= POCKET_RECT.y0 && y < POCKET_RECT.y1;
+      }
+
+      /** Front face manila (yellow-heavy cardstock). */
+      function isManila(r, g, b) {
+        const yellow = g - b;
+        const warm = r - b;
+        return yellow > 48 && warm > 55 && g > 155 && r > 198 && b < g - 12;
+      }
+
+      /** Due-date card + blue rules/headers. */
+      function isCardPixel(r, g, b) {
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const yellow = g - b;
+        const blueInk = b > r + 10 && b > g + 2 && b > 68;
+        const paperWhite = lum > 192 && yellow < 58 && r > 178 && b > 145;
+        const coolCream = lum > 165 && yellow < 52 && r > 165 && g > 155 && b > 120;
+        return blueInk || paperWhite || coolCream;
+      }
+
+      function buildCardMask(data) {
+        const mask = new Uint8Array(W * H);
+        const { x0, y0, x1, y1 } = POCKET_RECT;
+
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const i = (y * W + x) * 4;
+            if (isCardPixel(data[i], data[i + 1], data[i + 2])) {
+              mask[y * W + x] = 1;
+            }
+          }
+        }
+
+        // Bridge ruled-line gaps.
+        for (let pass = 0; pass < 3; pass++) {
+          const next = new Uint8Array(mask);
+          for (let y = y0 + 1; y < y1 - 1; y++) {
+            for (let x = x0 + 1; x < x1 - 1; x++) {
+              const idx = y * W + x;
+              if (mask[idx]) continue;
+              let n = 0;
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  if (mask[idx + dy * W + dx]) n++;
+                }
+              }
+              if (n >= 4) next[idx] = 1;
+            }
+          }
+          mask.set(next);
+        }
+
+        // Largest connected component = the card.
+        const visited = new Uint8Array(W * H);
+        let bestArea = 0;
+        let bestCells = null;
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const start = y * W + x;
+            if (!mask[start] || visited[start]) continue;
+            const stack = [start];
+            visited[start] = 1;
+            const cells = [start];
+            while (stack.length) {
+              const cur = stack.pop();
+              const cx = cur % W;
+              const cy = (cur / W) | 0;
+              for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (nx < x0 || nx >= x1 || ny < y0 || ny >= y1) continue;
+                const nb = ny * W + nx;
+                if (!mask[nb] || visited[nb]) continue;
+                visited[nb] = 1;
+                stack.push(nb);
+                cells.push(nb);
+              }
+            }
+            if (cells.length > bestArea) {
+              bestArea = cells.length;
+              bestCells = cells;
+            }
+          }
+        }
+
+        const cardOnly = new Uint8Array(W * H);
+        if (bestCells) {
+          for (const idx of bestCells) cardOnly[idx] = 1;
+        }
+
+        // Include cream paper protruding above the pocket lip (card sticks out).
+        const bounds = maskBounds(cardOnly);
+        if (bounds.maxY >= bounds.minY) {
+          for (let y = Math.max(y0, bounds.minY - 40); y <= bounds.minY + 6; y++) {
+            for (let x = bounds.minX - 8; x <= bounds.maxX + 8; x++) {
+              if (x < x0 || x >= x1) continue;
+              const i = (y * W + x) * 4;
+              if (isCardPixel(data[i], data[i + 1], data[i + 2]) ||
+                  (data[i + 1] - data[i + 2] < 55 && data[i] > 175)) {
+                cardOnly[y * W + x] = 1;
+              }
+            }
+          }
+        }
+
+        // Expand slightly so blue fringe / anti-alias is included.
+        for (let pass = 0; pass < 2; pass++) {
+          const next = new Uint8Array(cardOnly);
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              const idx = y * W + x;
+              if (cardOnly[idx]) continue;
+              let touch = false;
+              for (let dy = -1; dy <= 1 && !touch; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  if (cardOnly[idx + dy * W + dx]) { touch = true; break; }
+                }
+              }
+              if (touch) next[idx] = 1;
+            }
+          }
+          cardOnly.set(next);
+        }
+
+        return cardOnly;
+      }
+
+      function maskBounds(mask) {
+        let minX = W, minY = H, maxX = 0, maxY = 0;
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            if (!mask[y * W + x]) continue;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+        return { minX, minY, maxX, maxY };
+      }
+
+      function sampleManilaFace(data, cardMask) {
+        const { x0, y0, x1, y1 } = POCKET_RECT;
+        let sr = 0, sg = 0, sb = 0, n = 0;
+        for (let y = Math.floor(y0 + (y1 - y0) * 0.55); y < y1 - 8; y += 2) {
+          for (let x = x0 + 12; x < x1 - 12; x += 2) {
+            const idx = y * W + x;
+            if (cardMask[idx]) continue;
+            const i = idx * 4;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            if (!isManila(r, g, b)) continue;
+            sr += r; sg += g; sb += b;
+            n++;
+          }
+        }
+        if (!n) return { r: 232, g: 205, b: 122, n: 0 };
+        return { r: sr / n, g: sg / n, b: sb / n, n };
+      }
+
+      function paintInteriorBack(data, cardMask, manila) {
+        const out = new Uint8ClampedArray(data);
+        const bounds = maskBounds(cardMask);
+        const { minX, minY, maxX, maxY } = bounds;
+        const lipY = minY;
+
+        for (let y = minY; y <= maxY; y++) {
+          let leftX = minX - 5;
+          while (leftX > 2 && cardMask[y * W + leftX]) leftX--;
+          let rightX = maxX + 5;
+          while (rightX < W - 3 && cardMask[y * W + rightX]) rightX++;
+
+          for (let x = minX; x <= maxX; x++) {
+            const idx = y * W + x;
+            if (!cardMask[idx]) continue;
+
+            let r, g, b;
+            const lOk = !cardMask[y * W + leftX];
+            const rOk = !cardMask[y * W + rightX];
+            if (lOk && rOk) {
+              const li = (y * W + leftX) * 4;
+              const ri = (y * W + rightX) * 4;
+              const wR = (x - leftX) / Math.max(1, rightX - leftX);
+              r = data[li] * (1 - wR) + data[ri] * wR;
+              g = data[li + 1] * (1 - wR) + data[ri + 1] * wR;
+              b = data[li + 2] * (1 - wR) + data[ri + 2] * wR;
+            } else {
+              r = manila.r;
+              g = manila.g;
+              b = manila.b;
+            }
+
+            const distFromLip = Math.max(0, y - lipY);
+            const lipShadow = Math.exp(-distFromLip / 9) * 0.05;
+            r *= 1 - lipShadow;
+            g *= 1 - lipShadow;
+            b *= 1 - lipShadow * 1.03;
+
+            const i = idx * 4;
+            out[i] = Math.min(255, Math.max(0, r));
+            out[i + 1] = Math.min(255, Math.max(0, g));
+            out[i + 2] = Math.min(255, Math.max(0, b));
+          }
+        }
+
+        // Any remaining cool/cream pixels inside the opening become manila back wall.
+        for (let y = minY - 6; y <= maxY + 4; y++) {
+          if (y < 0 || y >= H) continue;
+          for (let x = minX - 4; x <= maxX + 4; x++) {
+            if (x < 0 || x >= W) continue;
+            const idx = y * W + x;
+            const i = idx * 4;
+            const r = out[i], g = out[i + 1], b = out[i + 2];
+            if (!cardMask[idx] && isManila(r, g, b)) continue;
+            if (y > lipY + 12 && isManila(r, g, b)) continue;
+            const yellow = g - b;
+            if (yellow > 48 && isManila(r, g, b)) continue;
+            out[i] = Math.min(255, Math.max(0, manila.r));
+            out[i + 1] = Math.min(255, Math.max(0, manila.g));
+            out[i + 2] = Math.min(255, Math.max(0, manila.b));
+          }
+        }
+
+        // Narrow lip crease on front flap edge.
+        for (let y = lipY - 2; y < lipY + 8; y++) {
+          if (y < 0 || y >= H) continue;
+          const darken = Math.exp(-Math.abs(y - lipY) / 3.5) * 0.1;
+          for (let x = minX - 2; x <= maxX + 2; x++) {
+            if (x < 0 || x >= W) continue;
+            const idx = y * W + x;
+            const i = idx * 4;
+            out[i] *= 1 - darken;
+            out[i + 1] *= 1 - darken;
+            out[i + 2] *= 1 - darken * 1.06;
+          }
+        }
+
+        return out;
+      }
+
+      function buildPocketAlpha(data, cardMask) {
+        const alpha = new Float32Array(W * H);
+        const { x0, y0, x1, y1 } = POCKET_RECT;
+
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const idx = y * W + x;
+            const i = idx * 4;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            let a = 0;
+
+            if (inPocketRect(x, y) && (isManila(r, g, b) || cardMask[idx])) {
+              a = 1;
+            } else if (inPocketRect(x, y)) {
+              const yellow = g - b;
+              if (yellow > 38 && r > 185 && g > 140) a = 0.85;
+            }
+
+            // Drop book hinge / endpaper (left and outer surround).
+            if (x < POCKET_RECT.x0 - 6) a = 0;
+            if (y < POCKET_RECT.y0 - 10 && x < POCKET_RECT.x1) a = 0;
+            if (x > POCKET_RECT.x1 + 4) a = 0;
+            if (y > POCKET_RECT.y1 + 6) a = 0;
+
+            // Remove grey-green hinge strip.
+            const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+            if (x < 155 && chroma < 42 && r < 210) a = 0;
+
+            // Endpaper cream (low yellow index).
+            const yellow = g - b;
+            if (yellow < 42 && !cardMask[idx] && !isManila(r, g, b)) {
+              if (x < POCKET_RECT.x0 + 30 || y < POCKET_RECT.y0 + 8) a = 0;
+            }
+
+            // Left-edge glue/stain — only drop obvious non-pocket (avoid notching manila).
+            if (x < POCKET_RECT.x0 + 12 && yellow < 38) a = 0;
+            if (x < POCKET_RECT.x0 + 8 && !isManila(r, g, b) && yellow < 48) a = 0;
+
+            alpha[idx] = a;
+          }
+        }
+
+        // Fill small holes inside pocket silhouette.
+        for (let pass = 0; pass < 2; pass++) {
+          for (let y = y0 + 2; y < y1 - 2; y++) {
+            for (let x = x0 + 2; x < x1 - 2; x++) {
+              const idx = y * W + x;
+              if (alpha[idx] > 0.5) continue;
+              let sum = 0;
+              for (let dy = -2; dy <= 2; dy++) {
+                for (let dx = -2; dx <= 2; dx++) {
+                  sum += alpha[idx + dy * W + dx];
+                }
+              }
+              if (sum > 12) alpha[idx] = 1;
+            }
+          }
+        }
+
+        // Feather edge 1px.
+        const feathered = new Float32Array(alpha);
+        for (let y = 1; y < H - 1; y++) {
+          for (let x = 1; x < W - 1; x++) {
+            const idx = y * W + x;
+            if (alpha[idx] <= 0 || alpha[idx] >= 1) continue;
+            let sum = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                sum += alpha[idx + dy * W + dx];
+              }
+            }
+            feathered[idx] = sum / 9;
+          }
+        }
+
+        // Edge softening for cutout.
+        const out = new Float32Array(feathered);
+        for (let y = 2; y < H - 2; y++) {
+          for (let x = 2; x < W - 2; x++) {
+            const idx = y * W + x;
+            if (feathered[idx] < 0.05) continue;
+            let edge = false;
+            for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+              if (feathered[idx + dy * W + dx] < 0.05) { edge = true; break; }
+            }
+            if (edge) out[idx] = Math.min(1, feathered[idx] * 0.92 + 0.08);
+          }
+        }
+
+        return out;
+      }
+
+      function localMedianLum(data, x, y, radius) {
+        const vals = [];
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            const ny = y + dy;
+            const nx = x + dx;
+            if (ny < 0 || ny >= H || nx < 0 || nx >= W) continue;
+            const i = (ny * W + nx) * 4;
+            vals.push(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+          }
+        }
+        vals.sort((a, b) => a - b);
+        return vals[Math.floor(vals.length / 2)] || 0;
+      }
+
+      /** Watermark + bright horizontal streaks on manila. */
+      function buildDefectMask(data, region) {
+        const { x0, y0, x1, y1 } = region;
+        const mask = new Uint8Array(W * H);
+        const rowLum = new Float32Array(H);
+
+        for (let y = y0; y < y1; y++) {
+          let sum = 0, n = 0;
+          for (let x = x0; x < x1; x++) {
+            const i = (y * W + x) * 4;
+            if (!isManila(data[i], data[i + 1], data[i + 2])) continue;
+            sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            n++;
+          }
+          rowLum[y] = n ? sum / n : 0;
+        }
+
+        for (let y = y0; y < y1; y++) {
+          let neigh = 0, cnt = 0;
+          for (let dy = -5; dy <= 5; dy++) {
+            if (dy === 0) continue;
+            const yy = y + dy;
+            if (yy < y0 || yy >= y1) continue;
+            neigh += rowLum[yy];
+            cnt++;
+          }
+          const rowOutlier = cnt > 0 && rowLum[y] > neigh / cnt + 2.8;
+
+          for (let x = x0; x < x1; x++) {
+            const idx = y * W + x;
+            const i = idx * 4;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            if (!isManila(r, g, b) && !isCardPixel(r, g, b)) continue;
+
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const med = localMedianLum(data, x, y, 7);
+            const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+            const flat = chroma < 36;
+            const bright = lum > med + 4.5;
+            const watermark = bright && flat;
+            const streak = rowOutlier && lum > med + 1.5;
+
+            if (watermark || streak) mask[idx] = 1;
+          }
+        }
+
+        // Dilate thin watermark strokes.
+        for (let pass = 0; pass < 2; pass++) {
+          const next = new Uint8Array(mask);
+          for (let y = y0 + 1; y < y1 - 1; y++) {
+            for (let x = x0 + 1; x < x1 - 1; x++) {
+              const idx = y * W + x;
+              if (mask[idx]) continue;
+              let n = 0;
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  if (mask[idx + dy * W + dx]) n++;
+                }
+              }
+              if (n >= 3) next[idx] = 1;
+            }
+          }
+          mask.set(next);
+        }
+        return mask;
+      }
+
+      function inpaintDefects(data, defectMask, manila) {
+        const out = new Uint8ClampedArray(data);
+        const { x0, y0, x1, y1 } = POCKET_RECT;
+
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const idx = y * W + x;
+            if (!defectMask[idx]) continue;
+
+            const offsets = [-48, -32, -20, 20, 32, 48, -72, 72];
+            let r = manila.r, g = manila.g, b = manila.b;
+            let found = false;
+
+            for (const oy of offsets) {
+              const sy = y + oy;
+              if (sy < y0 || sy >= y1) continue;
+              const si = (sy * W + x) * 4;
+              if (defectMask[sy * W + x]) continue;
+              const sr = data[si], sg = data[si + 1], sb = data[si + 2];
+              if (!isManila(sr, sg, sb)) continue;
+              r = sr; g = sg; b = sb;
+              found = true;
+              break;
+            }
+
+            if (!found) {
+              for (const ox of [-18, 18, -30, 30]) {
+                const sx = x + ox;
+                if (sx < x0 || sx >= x1) continue;
+                const si = (y * W + sx) * 4;
+                if (defectMask[y * W + sx]) continue;
+                const sr = data[si], sg = data[si + 1], sb = data[si + 2];
+                if (!isManila(sr, sg, sb)) continue;
+                r = sr; g = sg; b = sb;
+                found = true;
+                break;
+              }
+            }
+
+            const i = idx * 4;
+            out[i] = Math.min(255, Math.max(0, r));
+            out[i + 1] = Math.min(255, Math.max(0, g));
+            out[i + 2] = Math.min(255, Math.max(0, b));
+          }
+        }
+        return out;
+      }
+
+      /** Remove row-wise banding on back flap (above front lip). */
+      function destripeBackFlap(data, lipY, manila) {
+        const out = new Uint8ClampedArray(data);
+        const x0 = POCKET_RECT.x0 + 8;
+        const x1 = POCKET_RECT.x1 - 8;
+        const y0 = POCKET_RECT.y0;
+        const y1 = Math.min(H, lipY + 18);
+        const rowLum = new Float32Array(H);
+
+        for (let y = y0; y < y1; y++) {
+          let sum = 0, n = 0;
+          for (let x = x0; x < x1; x++) {
+            const i = (y * W + x) * 4;
+            sum += 0.299 * out[i] + 0.587 * out[i + 1] + 0.114 * out[i + 2];
+            n++;
+          }
+          rowLum[y] = n ? sum / n : 0;
+        }
+
+        for (let pass = 0; pass < 3; pass++) {
+          for (let y = y0 + 2; y < y1 - 2; y++) {
+            const avg = (rowLum[y - 2] + rowLum[y - 1] + rowLum[y + 1] + rowLum[y + 2]) * 0.25;
+            if (rowLum[y] <= avg + 1.2) continue;
+
+            for (let x = x0; x < x1; x++) {
+              const idx = y * W + x;
+              const i = idx * 4;
+              const yi = ((y - 2) * W + x) * 4;
+              const yo = ((y + 2) * W + x) * 4;
+              const blend = Math.min(0.85, (rowLum[y] - avg) / 8);
+              out[i] = out[yi] * 0.5 + out[yo] * 0.5 + manila.r * blend * 0.12;
+              out[i + 1] = out[yi + 1] * 0.5 + out[yo + 1] * 0.5 + manila.g * blend * 0.12;
+              out[i + 2] = out[yi + 2] * 0.5 + out[yo + 2] * 0.5 + manila.b * blend * 0.12;
+              const grain = (hashNoise(x + pass, y) - 0.5) * 7;
+              out[i] += grain;
+              out[i + 1] += grain * 0.95;
+              out[i + 2] += grain * 0.75;
+            }
+            rowLum[y] = avg;
+          }
+        }
+        return out;
+      }
+
+      function alphaBounds(alpha) {
+        let minX = W, minY = H, maxX = 0, maxY = 0;
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            if (alpha[y * W + x] < 0.08) continue;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+        return { minX, minY, maxX, maxY };
+      }
+
+      /** Round back-panel top corners only (flat top edge preserved). */
+      function applyRoundedTopCorners(alpha, rgba, width, height, radius) {
+        let minX = width, minY = height, maxX = 0;
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            if (alpha[y * width + x] < 0.08) continue;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+          }
+        }
+        if (maxX <= minX) return;
+        const r = radius;
+        const r2 = r * r;
+        const cxL = minX + r;
+        const cy = minY + r;
+        const cxR = maxX - r;
+
+        const keepAt = (px, py) => {
+          let inCorner = false;
+          let dist2 = 0;
+          if (px < cxL && py < cy) {
+            inCorner = true;
+            const dx = cxL - px;
+            const dy = cy - py;
+            dist2 = dx * dx + dy * dy;
+          } else if (px > cxR && py < cy) {
+            inCorner = true;
+            const dx = px - cxR;
+            const dy = cy - py;
+            dist2 = dx * dx + dy * dy;
+          }
+          if (!inCorner) return 1;
+          if (dist2 >= r2) return 0;
+          const dist = Math.sqrt(dist2);
+          if (dist <= r - 1.3) return 1;
+          return Math.max(0, (r - dist) / 1.3);
+        };
+
+        for (let y = minY; y < cy + 2; y++) {
+          for (let x = minX; x <= maxX; x++) {
+            const keep = keepAt(x, y);
+            if (keep >= 0.999) continue;
+            const idx = y * width + x;
+            alpha[idx] *= keep;
+            const i = idx * 4;
+            const a = Math.round(alpha[idx] * 255);
+            rgba[i + 3] = a;
+            if (a < 8) {
+              rgba[i] = 0;
+              rgba[i + 1] = 0;
+              rgba[i + 2] = 0;
+            }
+          }
+        }
+      }
+
+      /** Front flap top edge (horizontal crease), not card top. */
+      function detectFrontFlapLipY(data) {
+        const x0 = 260;
+        const x1 = 540;
+        const y0 = POCKET_RECT.y0 + 80;
+        const y1 = POCKET_RECT.y1 - 50;
+        let bestY = Math.floor(y0 + (y1 - y0) * 0.62);
+        let bestScore = 0;
+        for (let y = y0; y < y1; y++) {
+          let score = 0;
+          for (let x = x0; x < x1; x += 3) {
+            const i = (y * W + x) * 4;
+            const i2 = ((y + 2) * W + x) * 4;
+            const lum1 = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            const lum2 = 0.299 * data[i2] + 0.587 * data[i2 + 1] + 0.114 * data[i2 + 2];
+            score += Math.abs(lum2 - lum1);
+          }
+          if (score > bestScore) {
+            bestScore = score;
+            bestY = y;
+          }
+        }
+        return bestY;
+      }
+
+      function isSourceDefect(data, x, y) {
+        const i = (y * W + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        if (!isManila(r, g, b)) return true;
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const med = localMedianLum(data, x, y, 6);
+        const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+        const yellow = g - b;
+        const watermarkish = lum > 205 && chroma < 48 && yellow > 35;
+        const flatBright = lum > med + 1.8 && chroma < 42;
+        return flatBright || watermarkish;
+      }
+
+      function readCleanManila(srcData, x, y, yMin, yMax) {
+        const tryAt = (sx, sy) => {
+          if (sy < yMin || sy >= yMax || sx < 0 || sx >= W) return null;
+          if (isSourceDefect(srcData, sx, sy)) return null;
+          const i = (sy * W + sx) * 4;
+          return [srcData[i], srcData[i + 1], srcData[i + 2]];
+        };
+        let rgb = tryAt(x, y);
+        if (rgb) return rgb;
+        for (const oy of [4, -4, 8, -8, 14, -14, 22, -22, 32, -32]) {
+          rgb = tryAt(x, y + oy);
+          if (rgb) return rgb;
+        }
+        for (const ox of [4, -4, 8, -8, 16, -16]) {
+          rgb = tryAt(x + ox, y);
+          if (rgb) return rgb;
+          rgb = tryAt(x + ox, y + 10);
+          if (rgb) return rgb;
+        }
+        return null;
+      }
+
+      /** Clone real front-pocket paper texture onto back flap (and card opening). */
+      function syncTextureFromFront(outData, srcData, flapLipY, cardMask) {
+        const out = new Uint8ClampedArray(outData);
+        const x0 = POCKET_RECT.x0 + 12;
+        const x1 = POCKET_RECT.x1 - 12;
+        const yTop = POCKET_RECT.y0 + 2;
+        const yEnd = Math.min(H, flapLipY + 6);
+        const tileY0 = 558;
+        const tileY1 = 688;
+        const tileH = Math.max(1, tileY1 - tileY0);
+        const backH = Math.max(1, yEnd - yTop);
+
+        for (let y = yTop; y < H; y++) {
+          for (let x = x0; x < x1; x++) {
+            const idx = y * W + x;
+            const onBackFlap = y < yEnd;
+            const inCard = cardMask[idx];
+            const needsFix = onBackFlap || inCard ||
+              isSourceDefect(out, x, y) ||
+              isSourceDefect(srcData, x, y);
+            if (!needsFix) continue;
+
+            let srcY;
+            if (onBackFlap) {
+              const rel = (y - yTop) / backH;
+              srcY = tileY0 + (rel * (tileH - 1)) | 0;
+            } else {
+              srcY = tileY0 + (((y - yTop) * 2) % tileH);
+            }
+            const rgb = readCleanManila(srcData, x, srcY, tileY0, tileY1);
+            if (!rgb) continue;
+            const i = idx * 4;
+            out[i] = rgb[0];
+            out[i + 1] = rgb[1];
+            out[i + 2] = rgb[2];
+          }
+        }
+        return out;
+      }
+
+      /** Force-repaint dreamstime band from clean lower pocket (always, full width). */
+      function scrubWatermarkHard(outData, srcData) {
+        const out = new Uint8ClampedArray(outData);
+        const x0 = POCKET_RECT.x0 + 6;
+        const x1 = POCKET_RECT.x1 - 6;
+        const y0 = 328;
+        const y1 = POCKET_RECT.y1 - 16;
+        const tileY0 = 618;
+        const tileY1 = 686;
+        const tileH = tileY1 - tileY0;
+
+        for (let y = y0; y < y1; y++) {
+          const rel = (y - y0) / Math.max(1, y1 - y0);
+          const srcY = tileY0 + (rel * (tileH - 1)) | 0;
+          for (let x = x0; x < x1; x++) {
+            const rgb = readCleanManila(srcData, x, srcY, tileY0, tileY1);
+            if (!rgb) continue;
+            const i = (y * W + x) * 4;
+            out[i] = rgb[0];
+            out[i + 1] = rgb[1];
+            out[i + 2] = rgb[2];
+          }
+        }
+        return out;
+      }
+
+      /** Vertical left edge from outermost point of corner — fill inward notches. */
+      function smoothLeftEdge(rgba, alpha, srcData, flapLipY) {
+        const x0 = POCKET_RECT.x0;
+        const x1 = POCKET_RECT.x1;
+        const yTop = POCKET_RECT.y0;
+        const y1 = Math.min(H, flapLipY + 40);
+        const tileY0 = 618;
+        const tileY1 = 686;
+
+        let straightX = x1;
+        for (let y = yTop; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            if (alpha[y * W + x] > 0.2) straightX = Math.min(straightX, x);
+          }
+        }
+        if (straightX >= x1) return;
+
+        for (let y = yTop; y < y1; y++) {
+          for (let x = x0; x < straightX; x++) {
+            const idx = y * W + x;
+            alpha[idx] = 0;
+            rgba[idx * 4 + 3] = 0;
+          }
+
+          let rowLeft = -1;
+          for (let x = straightX; x < x1; x++) {
+            if (alpha[y * W + x] > 0.35) {
+              rowLeft = x;
+              break;
+            }
+          }
+
+          const refX = Math.min(x1 - 6, (rowLeft > straightX ? rowLeft : straightX) + 12);
+          const ri = (y * W + refX) * 4;
+          let rr = rgba[ri], rg = rgba[ri + 1], rb = rgba[ri + 2];
+          const srcY = tileY0 + ((y * 3) % (tileY1 - tileY0));
+          const rgb = readCleanManila(srcData, refX, srcY, tileY0, tileY1);
+          if (rgb) { rr = rgb[0]; rg = rgb[1]; rb = rgb[2]; }
+
+          const fillEnd = rowLeft > straightX ? rowLeft : straightX + 1;
+          for (let x = straightX; x < fillEnd; x++) {
+            const idx = y * W + x;
+            const i = idx * 4;
+            rgba[i] = rr;
+            rgba[i + 1] = rg;
+            rgba[i + 2] = rb;
+            alpha[idx] = 1;
+            rgba[i + 3] = 255;
+          }
+        }
+      }
+
+      /** Dreamstime band — retexture from front pocket (not row-cloned). */
+      function scrubWatermarkBand(data, srcData, flapLipY) {
+        const out = new Uint8ClampedArray(data);
+        const x0 = POCKET_RECT.x0 + 12;
+        const x1 = POCKET_RECT.x1 - 12;
+        const y0 = 350;
+        const y1 = 535;
+        const tileY0 = Math.min(POCKET_RECT.y1 - 80, flapLipY + 130);
+        const tileY1 = POCKET_RECT.y1 - 22;
+        const tileH = Math.max(1, tileY1 - tileY0);
+
+        for (let y = y0; y < y1; y++) {
+          const rel = (y - y0) / Math.max(1, y1 - y0);
+          const srcY = tileY0 + (rel * (tileH - 1)) | 0;
+          for (let x = x0; x < x1; x++) {
+            const rgb = readCleanManila(srcData, x, srcY, tileY0, tileY1);
+            if (!rgb) continue;
+            const i = (y * W + x) * 4;
+            out[i] = rgb[0];
+            out[i + 1] = rgb[1];
+            out[i + 2] = rgb[2];
+          }
+        }
+        return out;
+      }
+
+      function applyAlphaCutout(rgba, alpha) {
+        const out = new Uint8ClampedArray(rgba.length);
+        for (let i = 0; i < W * H; i++) {
+          const pi = i * 4;
+          const a = Math.min(255, Math.max(0, Math.round(alpha[i] * 255)));
+          out[pi] = rgba[pi];
+          out[pi + 1] = rgba[pi + 1];
+          out[pi + 2] = rgba[pi + 2];
+          out[pi + 3] = a;
+        }
+        return out;
+      }
+
+      function cropRgbaToAlphaBounds(rgba, alpha, pad = 14) {
+        let minX = W, minY = H, maxX = 0, maxY = 0;
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            if (alpha[y * W + x] < 0.08) continue;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+        minX = Math.max(0, minX - pad);
+        minY = Math.max(0, minY - pad);
+        maxX = Math.min(W - 1, maxX + pad);
+        maxY = Math.min(H - 1, maxY + pad);
+        const cw = maxX - minX + 1;
+        const ch = maxY - minY + 1;
+        const cropped = new Uint8ClampedArray(cw * ch * 4);
+        for (let y = 0; y < ch; y++) {
+          for (let x = 0; x < cw; x++) {
+            const si = ((minY + y) * W + (minX + x)) * 4;
+            const di = (y * cw + x) * 4;
+            cropped[di] = rgba[si];
+            cropped[di + 1] = rgba[si + 1];
+            cropped[di + 2] = rgba[si + 2];
+            cropped[di + 3] = rgba[si + 3];
+          }
+        }
+        return { data: cropped, width: cw, height: ch };
+      }
+
+      window.__renderLibraryPocket = async function renderLibraryPocket() {
+        const cutoutCanvas = document.getElementById('cutout');
+        const sourceCanvas = document.getElementById('source');
+        const srcCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+        const outCtx = cutoutCanvas.getContext('2d', { willReadFrequently: true });
+
+        const img = await new Promise((resolve, reject) => {
+          const el = new Image();
+          el.onload = () => resolve(el);
+          el.onerror = reject;
+          el.src = SOURCE_URL;
+        });
+
+        srcCtx.drawImage(img, 0, 0, W, H);
+        const srcImage = srcCtx.getImageData(0, 0, W, H);
+        const cardMask = buildCardMask(srcImage.data);
+        const manila = sampleManilaFace(srcImage.data, cardMask);
+        const flapLipY = detectFrontFlapLipY(srcImage.data);
+        let filled = new Uint8ClampedArray(srcImage.data);
+        filled = paintInteriorBack(filled, cardMask, manila);
+        filled = syncTextureFromFront(filled, srcImage.data, flapLipY, cardMask);
+        filled = scrubWatermarkHard(filled, srcImage.data);
+
+        let alpha = buildPocketAlpha(filled, cardMask);
+        let rgba = applyAlphaCutout(filled, alpha);
+        applyRoundedTopCorners(alpha, rgba, W, H, 17);
+        smoothLeftEdge(rgba, alpha, srcImage.data, flapLipY);
+        const cropped = cropRgbaToAlphaBounds(rgba, alpha, 14);
+
+        cutoutCanvas.width = cropped.width;
+        cutoutCanvas.height = cropped.height;
+        outCtx.clearRect(0, 0, cropped.width, cropped.height);
+        outCtx.putImageData(new ImageData(cropped.data, cropped.width, cropped.height), 0, 0);
+
+        // Re-round top corners in cropped space (padding can square them slightly).
+        const cAlpha = new Float32Array(cropped.width * cropped.height);
+        const cd = cropped.data;
+        for (let i = 0; i < cropped.width * cropped.height; i++) {
+          cAlpha[i] = cd[i * 4 + 3] / 255;
+        }
+        const cRgba = new Uint8ClampedArray(cd);
+        const cW = cropped.width;
+        const cH = cropped.height;
+        applyRoundedTopCorners(cAlpha, cRgba, cW, cH, 22);
+
+        outCtx.putImageData(new ImageData(cRgba, cropped.width, cropped.height), 0, 0);
+        cropped.data = cRgba;
+
+        window.__libraryPocketCutout = cropped;
+
+        return {
+          width: cropped.width,
+          height: cropped.height,
+          maskPixels: cardMask.reduce((a, b) => a + b, 0),
+          manila
+        };
+      };
+
+      renderLibraryPocket().catch((err) => {
+        document.body.insertAdjacentHTML('beforeend',
+          `<p style="color:#f88">Failed to render: ${err.message}</p>`);
+      });
+    })();
+  </script>
+</body>
+</html>

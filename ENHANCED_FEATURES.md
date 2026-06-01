@@ -2,7 +2,7 @@
 
 ## 🎯 What's New in Version 3.0.0
 
-The rebuilt version (`our-daily-rebuilt.html`) includes sophisticated intelligent features that transform the quilt from a simple random block system into a color-coherent collaborative art piece.
+The rebuilt version (`archive/html/our-daily-rebuilt.html`) includes sophisticated intelligent features that transform the quilt from a simple random block system into a color-coherent collaborative art piece.
 
 ## 🌟 Key Enhanced Features
 

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terminal mood screen — lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bitcount+Single&family=Bitcount+Grid+Single&family=Workbench&family=VT323&family=Doto&family=Pixelify+Sans&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1816;
+      color: #e8e4dc;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 340px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      padding: 1rem 1.1rem 2rem;
+      background: #252220;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+    .panel h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0 0 0.35rem;
+    }
+    .panel .note {
+      font-size: 0.78rem;
+      color: #9a9590;
+      line-height: 1.45;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8a8580;
+      margin: 0.7rem 0 0.25rem;
+    }
+    textarea, select, input[type="text"], input[type="range"] {
+      width: 100%;
+      font: inherit;
+      font-size: 0.88rem;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      background: #1a1816;
+      color: #e8e4dc;
+    }
+    textarea { min-height: 3.25rem; resize: vertical; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .row label { margin: 0; text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .btn {
+      display: inline-block;
+      margin-top: 0.65rem;
+      margin-right: 0.35rem;
+      padding: 0.45rem 0.75rem;
+      font: inherit;
+      font-size: 0.82rem;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      background: #333;
+      color: #eee;
+      cursor: pointer;
+    }
+    .btn-primary { background: #e6d4a8; color: #1a1610; border-color: #e6d4a8; font-weight: 600; }
+    .status {
+      font-size: 0.78rem;
+      color: #9a9590;
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+    }
+    .preview-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2rem 1.25rem;
+      min-height: 100vh;
+      gap: 1.5rem;
+      background:
+        radial-gradient(ellipse at 50% 0%, rgba(255,228,180,0.06) 0%, transparent 55%),
+        #121110;
+    }
+    .preview-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6a6560;
+    }
+    #domMount {
+      width: min(94vw, var(--quilt-float-sheet-width, 28.75rem));
+      min-height: 16rem;
+    }
+    canvas {
+      display: block;
+      max-width: min(94vw, var(--quilt-float-sheet-width, 28.75rem));
+      height: auto;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    .compare {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2rem;
+      justify-content: flex-start;
+      align-items: flex-start;
+      width: 100%;
+      max-width: 52rem;
+    }
+    figure { margin: 0; text-align: left; }
+    figcaption {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      opacity: 0.55;
+      margin-top: 0.5rem;
+    }
+    .font-compare {
+      width: 100%;
+      max-width: 52rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .font-compare__row {
+      display: grid;
+      grid-template-columns: 7.5rem 1fr;
+      gap: 0.65rem;
+      align-items: baseline;
+      padding: 0.45rem 0.55rem;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(0,0,0,0.25);
+      cursor: pointer;
+    }
+    .font-compare__row:hover,
+    .font-compare__row.is-active {
+      border-color: rgba(230, 212, 168, 0.35);
+      background: rgba(230, 212, 168, 0.06);
+    }
+    .font-compare__meta {
+      font-size: 0.68rem;
+      line-height: 1.35;
+      color: #8a8580;
+    }
+    .font-compare__meta strong {
+      display: block;
+      color: #c8c2b8;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .font-compare__sample {
+      font-size: clamp(0.94rem, 3.42vw, 1.14rem);
+      line-height: 1.35;
+      color: #e6d4a8;
+      letter-spacing: 0.04em;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h1>Terminal mood screen</h1>
+      <p class="note">Today’s quote appears as a taped newspaper clipping at the top (Before You Go tape). Terminal lines sit underneath. Tap the pixel icons to answer.</p>
+
+      <label for="termFont">Pixel terminal font</label>
+      <select id="termFont"></select>
+      <label for="letterSpacing">Letter spacing (VT323 openness)</label>
+      <input type="range" id="letterSpacing" min="0" max="14" value="6" step="1">
+      <p class="note" style="margin-top:0.35rem"><strong>Bitcount Mono Single</strong> is on Google Fonts as <strong>Bitcount Single</strong> (taller mono; Grid Single is the compact one).</p>
+
+      <label for="quoteText">Today’s quote</label>
+      <textarea id="quoteText" rows="3">Caminante no hay camino se hace camino al andar.</textarea>
+
+      <label for="quoteAuthor">Quote author (optional)</label>
+      <input type="text" id="quoteAuthor" value="Antonio Machado" />
+
+      <label for="goodDay">Good day message</label>
+      <textarea id="goodDay">Hard mute the inner critic. Say the true thing once.</textarea>
+
+      <label for="roughDay">Rough day message</label>
+      <textarea id="roughDay">Love is enough today.</textarea>
+
+      <label for="width">Canvas width (px)</label>
+      <input type="range" id="width" min="260" max="420" value="340" step="10">
+
+      <label for="pixelGrid">Icon chunkiness (lower = blockier)</label>
+      <input type="range" id="pixelGrid" min="6" max="14" value="11" step="1">
+
+      <div class="row" style="margin-top:0.65rem">
+        <input type="checkbox" id="typewriter" checked>
+        <label for="typewriter">Typewriter on answer</label>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="resetBtn">Reset question</button>
+      <button type="button" class="btn" id="exportBtn">Export PNG (after pick)</button>
+      <p class="status" id="status">Pick a circle in the preview →</p>
+    </aside>
+
+    <main class="preview-wrap">
+      <div class="compare">
+        <figure>
+          <p class="preview-label">Live — pick a circle</p>
+          <div id="domMount"></div>
+          <figcaption>Interactive DOM</figcaption>
+        </figure>
+        <figure>
+          <p class="preview-label">Canvas (answered)</p>
+          <canvas id="preview" width="340" height="120" aria-label="Terminal mood PNG preview"></canvas>
+          <figcaption>After selection</figcaption>
+        </figure>
+      </div>
+      <div class="font-compare" id="fontCompare" aria-label="Font comparison — click a row to apply"></div>
+    </main>
+  </div>
+
+  <script src="lib/quote-keyword-emphasis.js"></script>
+  <script src="lib/quilt-newspaper-clipping.js"></script>
+  <script src="lib/quilt-mood-terminal.js"></script>
+  <script>
+    (function () {
+      const T = window.QuiltMoodTerminal;
+      const hasClipping = !!window.QuiltNewspaperClipping?.composeDataUrl;
+      T.injectTerminalStyles();
+
+      const quoteTextEl = document.getElementById('quoteText');
+      const quoteAuthorEl = document.getElementById('quoteAuthor');
+      const goodEl = document.getElementById('goodDay');
+      const roughEl = document.getElementById('roughDay');
+      const widthEl = document.getElementById('width');
+      const pixelGridEl = document.getElementById('pixelGrid');
+      const typewriterEl = document.getElementById('typewriter');
+      const termFontEl = document.getElementById('termFont');
+      const letterSpacingEl = document.getElementById('letterSpacing');
+      const fontCompareEl = document.getElementById('fontCompare');
+      const domMount = document.getElementById('domMount');
+      const canvas = document.getElementById('preview');
+      const statusEl = document.getElementById('status');
+      let term = null;
+      let lastDataUrl = null;
+      const FONT_SAMPLE = '> A special message for you';
+      const fontOptions = T.TERMINAL_FONT_OPTIONS || [];
+      let selectedFontId = 'bitcount-mono-single';
+
+      function selectedFontOption() {
+        return fontOptionById(selectedFontId) || fontOptions[0];
+      }
+
+      function selectedLetterSpacing() {
+        const manual = letterSpacingEl?.dataset?.manual === '1';
+        if (!manual) {
+          const opt = selectedFontOption();
+          if (opt?.letterSpacing) return opt.letterSpacing;
+        }
+        const n = Number(letterSpacingEl?.value);
+        if (!Number.isFinite(n)) return T.TERMINAL_DEFAULTS.letterSpacing;
+        return `${(n / 100).toFixed(2)}em`;
+      }
+
+      function selectedFontSizeScale() {
+        const opt = selectedFontOption();
+        return Number(opt?.fontSizeScale) > 0 ? Number(opt.fontSizeScale) : 1;
+      }
+
+      function fontOptionById(id) {
+        return fontOptions.find((f) => f.id === id) || fontOptions[0];
+      }
+
+      function selectedFontFamily() {
+        return fontOptionById(selectedFontId)?.family || T.TERMINAL_DEFAULTS.fontFamily;
+      }
+
+      function populateFontControls() {
+        termFontEl.innerHTML = fontOptions
+          .map(
+            (f) =>
+              `<option value="${f.id}">${f.label}${f.id === 'bitcount-mono-single' ? ' — default' : ''}</option>`
+          )
+          .join('');
+        termFontEl.value = selectedFontId;
+        fontCompareEl.innerHTML = fontOptions
+          .map((f) => {
+            const active = f.id === selectedFontId ? ' is-active' : '';
+            const ls = f.letterSpacing || '0.05em';
+            const scale = Number(f.fontSizeScale) > 0 ? Number(f.fontSizeScale) : 1;
+            return `<button type="button" class="font-compare__row${active}" data-font-id="${f.id}">
+              <span class="font-compare__meta"><strong>${f.label}</strong>${f.note}</span>
+              <span class="font-compare__sample" style="font-family:${f.family};letter-spacing:${ls};font-size:calc(1.15rem * ${scale});-webkit-font-smoothing:none">${FONT_SAMPLE}</span>
+            </button>`;
+          })
+          .join('');
+      }
+
+      function setSelectedFont(id) {
+        if (!fontOptionById(id)) return;
+        selectedFontId = id;
+        termFontEl.value = id;
+        const opt = fontOptionById(id);
+        if (letterSpacingEl && opt?.letterSpacing && letterSpacingEl.dataset.manual !== '1') {
+          const em = parseFloat(opt.letterSpacing);
+          if (Number.isFinite(em)) letterSpacingEl.value = String(Math.round(em * 100));
+        }
+        fontCompareEl.querySelectorAll('.font-compare__row').forEach((row) => {
+          row.classList.toggle('is-active', row.dataset.fontId === id);
+        });
+      }
+
+      function mountTerminal() {
+        domMount.innerHTML = '';
+        term = T.createInteractiveTerminalElement({
+          quote: {
+            text: quoteTextEl.value.trim(),
+            author: quoteAuthorEl.value.trim()
+          },
+          goodDay: goodEl.value.trim(),
+          roughDay: roughEl.value.trim(),
+          iconPixelGrid: Number(pixelGridEl.value) || 11,
+          typewriter: typewriterEl.checked,
+          typewriterMs: 26,
+          fontFamily: selectedFontFamily(),
+          letterSpacing: selectedLetterSpacing(),
+          fontSizeScale: selectedFontSizeScale(),
+          wakeOnReveal: false,
+          onSelect: (mood, line) => {
+            statusEl.textContent = `${mood} day · exporting…`;
+            exportAnswered(mood, line);
+          }
+        });
+        domMount.appendChild(term);
+        statusEl.textContent = hasClipping
+          ? 'Pick full circle or half circle →'
+          : 'Missing quilt-newspaper-clipping.js — quote tape hidden.';
+        lastDataUrl = null;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#030303';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      async function exportAnswered(mood, line) {
+        const width = Number(widthEl.value) || 340;
+        const dataUrl = await T.composeTerminalDataUrl({
+          mood,
+          goodDay: goodEl.value.trim(),
+          roughDay: roughEl.value.trim(),
+          line,
+          width,
+          iconPixelGrid: Number(pixelGridEl.value) || 11,
+          exportScale: 2
+        });
+        if (!dataUrl) {
+          statusEl.textContent = 'Canvas export failed.';
+          return;
+        }
+        lastDataUrl = dataUrl;
+        const img = new Image();
+        img.onload = () => {
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          statusEl.textContent = `${mood} · ${canvas.width}×${canvas.height}px · v${T.TERMINAL_COMPOSER_VERSION}`;
+        };
+        img.src = dataUrl;
+      }
+
+      document.getElementById('resetBtn').addEventListener('click', () => {
+        if (term?.resetTerminalMood) term.resetTerminalMood();
+        else mountTerminal();
+        statusEl.textContent = 'Pick full circle or half circle →';
+      });
+
+      document.getElementById('exportBtn').addEventListener('click', () => {
+        const mood = term?.dataset?.selectedMood;
+        if (!mood) {
+          statusEl.textContent = 'Pick a circle first.';
+          return;
+        }
+        const line = mood === 'rough' ? roughEl.value.trim() : goodEl.value.trim();
+        exportAnswered(mood, line);
+      });
+
+      [quoteTextEl, quoteAuthorEl, goodEl, roughEl, widthEl, pixelGridEl, typewriterEl].forEach((el) => {
+        el.addEventListener('change', mountTerminal);
+        if (el.tagName === 'TEXTAREA' || el.type === 'text') {
+          el.addEventListener('input', () => {
+            clearTimeout(el._termLabDebounce);
+            el._termLabDebounce = setTimeout(mountTerminal, 400);
+          });
+        }
+      });
+
+      termFontEl.addEventListener('change', () => {
+        setSelectedFont(termFontEl.value);
+        populateFontControls();
+        mountTerminal();
+      });
+      letterSpacingEl.addEventListener('input', () => {
+        letterSpacingEl.dataset.manual = '1';
+        populateFontControls();
+        if (term) {
+          T.applyTerminalFontFamily(term, {
+            fontFamily: selectedFontFamily(),
+            letterSpacing: selectedLetterSpacing(),
+            fontSizeScale: selectedFontSizeScale()
+          });
+        } else mountTerminal();
+      });
+      fontCompareEl.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-font-id]');
+        if (!row) return;
+        setSelectedFont(row.dataset.fontId);
+        populateFontControls();
+        mountTerminal();
+      });
+
+      populateFontControls();
+      mountTerminal();
+    })();
+  </script>
+</body>
+</html>

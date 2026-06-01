@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Color Picker Comparison Lab</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 2rem 1rem 4rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #e8e6e2;
+      color: #2e2e2e;
+    }
+
+    #lab-error {
+      display: none;
+      max-width: 420px;
+      margin: 0 auto 1rem;
+      padding: 0.75rem 1rem;
+      background: #fdecea;
+      color: #611a15;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+
+    #lab-error.visible { display: block; }
+
+    #lab-loading {
+      max-width: 420px;
+      margin: 0 auto 2rem;
+      text-align: center;
+      color: #666;
+      font-size: 0.9rem;
+    }
+      max-width: 420px;
+      margin: 0 auto 2.5rem;
+      text-align: center;
+    }
+
+    .page-header h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+
+    .page-header p {
+      margin: 0;
+      font-size: 0.92rem;
+      line-height: 1.5;
+      color: #555;
+    }
+
+    .mock-section {
+      max-width: 420px;
+      margin: 0 auto 3rem;
+    }
+
+    .mock-label {
+      text-align: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .mock-label h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.25rem;
+    }
+
+    .mock-label .meta {
+      font-size: 0.82rem;
+      color: #666;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mock-label .meta span + span::before {
+      content: ' · ';
+    }
+
+  .phone-scale-wrap {
+      display: flex;
+      justify-content: center;
+      overflow: visible;
+    }
+
+    .phone-frame {
+      --phone-w: 390px;
+      --phone-h: 844px;
+      width: var(--phone-w);
+      height: var(--phone-h);
+      background: #f6f4f1;
+      border-radius: 36px;
+      box-shadow:
+        0 0 0 2px rgba(0, 0, 0, 0.08),
+        0 12px 40px rgba(0, 0, 0, 0.18);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transform-origin: top center;
+    }
+
+    .mock-quote {
+      flex: 1 1 50%;
+      max-height: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 1rem 0.5rem;
+      overflow: hidden;
+    }
+
+    .quote-card {
+      background: #e7e3dd;
+      padding: 1.2rem;
+      width: 81%;
+      min-height: 100px;
+    }
+
+    .quote-line {
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-style: italic;
+      font-size: clamp(0.95rem, 3.5vw, 1.05rem);
+      line-height: 1.45;
+      color: #2e2e2e;
+      margin: 0;
+    }
+
+    .quote-author {
+      font-family: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-align: right;
+      color: #404040;
+      margin: 0.75rem 0 0;
+    }
+
+    .mock-picker {
+      flex: 1 1 50%;
+      max-height: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem 1rem 1.25rem;
+      gap: 0.55rem;
+    }
+
+    .picker-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .picker-surface {
+      position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    canvas.picker-surface {
+      display: block;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      cursor: crosshair;
+    }
+
+    canvas.picker-surface.is-round {
+      border-radius: 50%;
+    }
+
+    .picker-indicator {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+      z-index: 2;
+    }
+
+    .preview-disc {
+      border-radius: 50%;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      border: 2px solid rgba(255, 255, 255, 0.6);
+    }
+
+    /* Hue bar + SV square */
+    .variant-hue-sv .hue-bar {
+      width: 280px;
+      height: 22px;
+      border-radius: 11px;
+    }
+
+    .variant-hue-sv .sv-square {
+      width: 280px;
+      height: 138px;
+      border-radius: 10px;
+    }
+
+    /* Arc */
+    .variant-arc .arc-canvas {
+      width: 220px;
+      height: 90px;
+      border-radius: 0;
+      box-shadow: none;
+      background: transparent;
+    }
+
+    .variant-arc .preview-disc {
+      width: 72px;
+      height: 72px;
+    }
+
+    /* Strip */
+    .variant-strip .preview-disc {
+      width: 64px;
+      height: 64px;
+    }
+
+    .variant-strip .hue-strip {
+      width: 300px;
+      height: 36px;
+      border-radius: 18px;
+    }
+
+    /* Palette */
+    .variant-palette .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      width: 260px;
+    }
+
+    .variant-palette .swatch {
+      aspect-ratio: 1;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      padding: 0;
+    }
+
+    .variant-palette .swatch:hover {
+      transform: scale(1.06);
+    }
+
+    .variant-palette .swatch.selected {
+      outline: 3px solid #fff;
+      outline-offset: 2px;
+      box-shadow: 0 0 0 2px #333, 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Donut */
+    .variant-donut .donut-canvas {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .value-slider-wrap {
+      width: min(280px, 72vw);
+    }
+
+    .value-slider {
+      width: 100%;
+      cursor: pointer;
+      appearance: none;
+      height: 30px;
+      border-radius: 15px;
+      background: linear-gradient(to right, #404040, #e8e8e8);
+      outline: none;
+      border: none;
+      -webkit-appearance: none;
+    }
+
+    .value-slider::-webkit-slider-thumb {
+      width: 24px;
+      height: 24px;
+      background: #fff;
+      border: 1px solid #333;
+      border-radius: 50%;
+      cursor: pointer;
+      -webkit-appearance: none;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .value-slider::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+      background: #fff;
+      border: 1px solid #333;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .submit-btn {
+      display: inline-block;
+      min-width: 14rem;
+      padding: 0.85rem 2.25rem;
+      background: #fff;
+      color: #000;
+      border: none;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: default;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    @media (max-width: 420px) {
+      body { padding: 1.25rem 0.5rem 3rem; }
+      .phone-frame {
+        transform: scale(calc((100vw - 1rem) / 390));
+        transform-origin: top center;
+        margin-bottom: calc(844px * ((100vw - 1rem) / 390 - 1));
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <h1>Color Picker Comparison Lab</h1>
+    <p>Scroll to compare five compact pickers inside a quote-screen mock. Drag or tap each control; value slider and button match the app layout.</p>
+  </header>
+
+  <div id="lab-error" role="alert"></div>
+  <div id="lab-loading">Loading pickers…</div>
+  <div id="mocks"></div>
+
+  <script>
+    const Utils = {
+      hsvToHex(h, s, v) {
+        h = ((h % 360) + 360) % 360;
+        s = Math.max(0, Math.min(100, s)) / 100;
+        v = Math.max(0, Math.min(100, v)) / 100;
+        if (s === 0) {
+          const g = Math.round(v * 255);
+          const hex = (n) => (n.toString(16).length === 1 ? '0' + n.toString(16) : n.toString(16));
+          return `#${hex(g)}${hex(g)}${hex(g)}`;
+        }
+        const i = Math.floor(h / 60) % 6;
+        const f = h / 60 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (i) {
+          case 0: r = v; g = t; b = p; break;
+          case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = t; break;
+          case 3: r = p; g = q; b = v; break;
+          case 4: r = t; g = p; b = v; break;
+          default: r = v; g = p; b = q; break;
+        }
+        const toHex = (c) => {
+          const hex = Math.round(c * 255).toString(16);
+          return hex.length === 1 ? '0' + hex : hex;
+        };
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+      },
+
+      writeHsvRgbBytes(h, s, v, out, i) {
+        h = ((h % 360) + 360) % 360;
+        s = Math.max(0, Math.min(100, s)) / 100;
+        v = Math.max(0, Math.min(100, v)) / 100;
+        if (s === 0) {
+          const u = Math.round(v * 255);
+          out[i] = u; out[i + 1] = u; out[i + 2] = u;
+          return;
+        }
+        const seg = Math.floor(h / 60) % 6;
+        const f = h / 60 - seg;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        let r, g, b;
+        switch (seg) {
+          case 0: r = v; g = t; b = p; break;
+          case 1: r = q; g = v; b = p; break;
+          case 2: r = p; g = v; b = t; break;
+          case 3: r = p; g = q; b = v; break;
+          case 4: r = t; g = p; b = v; break;
+          default: r = v; g = p; b = q; break;
+        }
+        out[i] = Math.round(r * 255);
+        out[i + 1] = Math.round(g * 255);
+        out[i + 2] = Math.round(b * 255);
+      }
+    };
+
+    const DEFAULT_HSV = { h: 25, s: 60, v: 75 };
+
+    const MOOD_SWATCHES = [
+      { h: 35, s: 15, v: 92 }, { h: 20, s: 45, v: 90 }, { h: 15, s: 55, v: 72 }, { h: 8, s: 70, v: 88 },
+      { h: 350, s: 35, v: 78 }, { h: 310, s: 28, v: 75 }, { h: 120, s: 25, v: 70 }, { h: 75, s: 35, v: 65 },
+      { h: 200, s: 40, v: 85 }, { h: 220, s: 30, v: 60 }, { h: 270, s: 35, v: 80 }, { h: 45, s: 70, v: 88 },
+      { h: 38, s: 80, v: 82 }, { h: 0, s: 0, v: 35 }, { h: 30, s: 8, v: 75 }, { h: 175, s: 45, v: 55 }
+    ];
+
+    const QUOTE = {
+      line: 'The world is full of magic things, patiently waiting for our senses to grow sharper.',
+      author: 'W.B. Yeats'
+    };
+
+    function setupCanvas(canvas) {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const rect = canvas.getBoundingClientRect();
+      const style = getComputedStyle(canvas);
+      const cssW = rect.width > 0 ? rect.width : (parseFloat(style.width) || canvas.clientWidth || 1);
+      const cssH = rect.height > 0 ? rect.height : (parseFloat(style.height) || canvas.clientHeight || 1);
+      const W = Math.max(1, Math.round(cssW * dpr));
+      const H = Math.max(1, Math.round(cssH * dpr));
+      if (canvas.width !== W || canvas.height !== H) {
+        canvas.width = W;
+        canvas.height = H;
+      }
+      return { ctx: canvas.getContext('2d', { alpha: true }), W, H, dpr, cssW, cssH, ready: cssW > 1 && cssH > 1 };
+    }
+
+    function paintCanvas(canvas, painter) {
+      const info = setupCanvas(canvas);
+      if (!info.ready) return false;
+      painter(info);
+      return true;
+    }
+
+    function renderHueBar(canvas) {
+      return paintCanvas(canvas, ({ ctx, W, H }) => {
+        const img = ctx.createImageData(W, H);
+        const d = img.data;
+        for (let py = 0; py < H; py++) {
+          for (let px = 0; px < W; px++) {
+            const idx = (py * W + px) * 4;
+            const h = (px / Math.max(1, W - 1)) * 360;
+            Utils.writeHsvRgbBytes(h, 100, 100, d, idx);
+            d[idx + 3] = 255;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+      });
+    }
+
+    function renderHueStrip(canvas) {
+      renderHueBar(canvas);
+    }
+
+    function renderSvSquare(canvas, hue) {
+      return paintCanvas(canvas, ({ ctx, W, H }) => {
+        const img = ctx.createImageData(W, H);
+        const d = img.data;
+        for (let py = 0; py < H; py++) {
+          for (let px = 0; px < W; px++) {
+            const idx = (py * W + px) * 4;
+            const s = (px / Math.max(1, W - 1)) * 100;
+            const v = (1 - py / Math.max(1, H - 1)) * 100;
+            Utils.writeHsvRgbBytes(hue, s, v, d, idx);
+            d[idx + 3] = 255;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+      });
+    }
+
+    function renderHueArc(canvas) {
+      return paintCanvas(canvas, ({ ctx, W, H }) => {
+        ctx.clearRect(0, 0, W, H);
+        const cx = W / 2;
+        const cy = H + 8;
+        const outerR = Math.min(W, H * 2) / 2 - 4;
+        const innerR = outerR - Math.max(14, outerR * 0.18);
+        const img = ctx.createImageData(W, H);
+        const d = img.data;
+        for (let py = 0; py < H; py++) {
+          for (let px = 0; px < W; px++) {
+            const idx = (py * W + px) * 4;
+            const udx = px + 0.5 - cx;
+            const udy = py + 0.5 - cy;
+            const dist = Math.hypot(udx, udy);
+            if (dist > outerR || dist < innerR) {
+              d[idx + 3] = 0;
+              continue;
+            }
+            let angleDeg = Math.atan2(-udy, udx) * 180 / Math.PI;
+            if (angleDeg < 0) angleDeg += 360;
+            if (angleDeg > 180) {
+              d[idx + 3] = 0;
+              continue;
+            }
+            const sat = 70 + (dist - innerR) / (outerR - innerR) * 30;
+            Utils.writeHsvRgbBytes(angleDeg, sat, 100, d, idx);
+            d[idx + 3] = 255;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+      });
+    }
+
+    function renderDonut(canvas) {
+      const { ctx, W, H } = setupCanvas(canvas);
+      const cx = W / 2;
+      const cy = H / 2;
+      const outerR = Math.min(W, H) / 2 - 0.5;
+      const ringThickness = outerR * 0.22;
+      const innerDiscR = outerR - ringThickness - 2;
+      const ringInnerR = outerR - ringThickness;
+      const img = ctx.createImageData(W, H);
+      const d = img.data;
+      for (let py = 0; py < H; py++) {
+        for (let px = 0; px < W; px++) {
+          const idx = (py * W + px) * 4;
+          const udx = (px + 0.5 - cx) / outerR;
+          const udy = (py + 0.5 - cy) / outerR;
+          const dist = Math.hypot(udx, udy);
+          if (dist > 1) {
+            d[idx + 3] = 0;
+            continue;
+          }
+          let angleDeg = Math.atan2(-udy, udx) * 180 / Math.PI;
+          if (angleDeg < 0) angleDeg += 360;
+          const distPx = dist * outerR;
+          if (distPx >= ringInnerR) {
+            Utils.writeHsvRgbBytes(angleDeg, 100, 100, d, idx);
+          } else {
+            const s = dist / (innerDiscR / outerR) * 100;
+            Utils.writeHsvRgbBytes(angleDeg, Math.min(100, s), 100, d, idx);
+          }
+          d[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function bindDrag(el, onPointer) {
+      let active = false;
+      const start = (e) => {
+        e.preventDefault();
+        active = true;
+        el.setPointerCapture?.(e.pointerId);
+        onPointer(e);
+      };
+      const move = (e) => { if (active) onPointer(e); };
+      const end = () => { active = false; };
+      el.addEventListener('pointerdown', start);
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', end);
+      el.addEventListener('pointercancel', end);
+    }
+
+    function posInEl(el, e) {
+      const rect = el.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, (e.clientX ?? e.pageX) - rect.left));
+      const y = Math.max(0, Math.min(rect.height, (e.clientY ?? e.pageY) - rect.top));
+      return { x, y, rect };
+    }
+
+    class PickerMock {
+      constructor(config) {
+        this.id = config.id;
+        this.title = config.title;
+        this.variantClass = config.variantClass;
+        this.buildPicker = config.buildPicker;
+        this.hsv = { ...DEFAULT_HSV };
+      }
+
+      mount(container) {
+        const section = document.createElement('section');
+        section.className = 'mock-section';
+        const label = document.createElement('div');
+        label.className = 'mock-label';
+        label.innerHTML = `<h2>${this.title}</h2><p class="meta"><span class="hex-readout"></span><span class="size-readout"></span></p>`;
+
+        const scaleWrap = document.createElement('div');
+        scaleWrap.className = 'phone-scale-wrap';
+        const phone = document.createElement('div');
+        phone.className = 'phone-frame';
+
+        const quote = document.createElement('div');
+        quote.className = 'mock-quote';
+        quote.innerHTML = `<div class="quote-card"><p class="quote-line">${QUOTE.line}</p><p class="quote-author">${QUOTE.author}</p></div>`;
+
+        const pickerHalf = document.createElement('div');
+        pickerHalf.className = `mock-picker ${this.variantClass}`;
+        const pickerWrap = document.createElement('div');
+        pickerWrap.className = 'picker-wrap';
+        pickerWrap.dataset.pickerRoot = '';
+        const sliderWrap = document.createElement('div');
+        sliderWrap.className = 'value-slider-wrap';
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.className = 'value-slider';
+        slider.min = '25';
+        slider.max = '90';
+        slider.value = String(this.hsv.v);
+        slider.setAttribute('aria-label', 'Adjust color brightness');
+        sliderWrap.appendChild(slider);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'submit-btn';
+        btn.tabIndex = -1;
+        btn.textContent = 'Add your color';
+
+        pickerHalf.append(pickerWrap, sliderWrap, btn);
+        phone.append(quote, pickerHalf);
+        scaleWrap.appendChild(phone);
+        section.append(label, scaleWrap);
+        container.appendChild(section);
+
+        this.root = pickerWrap;
+        this.slider = slider;
+        this.hexEl = label.querySelector('.hex-readout');
+        this.sizeEl = label.querySelector('.size-readout');
+        this.pickerHalf = pickerHalf;
+
+        slider.addEventListener('input', () => {
+          this.hsv.v = parseInt(slider.value, 10);
+          this.updateUI();
+        });
+
+        this.buildPicker(this);
+        this.updateUI();
+      }
+
+      updateSliderTrack() {
+        const vMin = 25;
+        const vMax = 90;
+        this.slider.style.background = `linear-gradient(to right,
+          ${Utils.hsvToHex(this.hsv.h, this.hsv.s, vMin)},
+          ${Utils.hsvToHex(this.hsv.h, this.hsv.s, vMax)})`;
+        this.slider.value = String(Math.round(this.hsv.v));
+      }
+
+      measurePicker() {
+        const surfaces = this.root.querySelectorAll('.picker-surface, .palette-grid, .preview-disc');
+        let w = 0, h = 0;
+        surfaces.forEach((el) => {
+          const r = el.getBoundingClientRect();
+          w = Math.max(w, Math.round(r.width));
+          h += Math.round(r.height);
+        });
+        if (surfaces.length > 1) {
+          // stack height includes gaps ~0.5rem between surfaces
+          h += Math.round(8 * (surfaces.length - 1));
+        }
+        return `${w}×${h}px`;
+      }
+
+      updateUI() {
+        this.updateSliderTrack();
+        const hex = Utils.hsvToHex(this.hsv.h, this.hsv.s, this.hsv.v);
+        this.hexEl.textContent = hex;
+        if (this.onUpdate) this.onUpdate(hex);
+        requestAnimationFrame(() => {
+          this.sizeEl.textContent = this.measurePicker();
+        });
+      }
+
+      setIndicator(el, x, y) {
+        if (!el) return;
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+      }
+    }
+
+    function buildHueSv(mock) {
+      const wrap = document.createElement('div');
+      wrap.style.position = 'relative';
+
+      const hueBar = document.createElement('canvas');
+      hueBar.className = 'picker-surface hue-bar';
+      hueBar.setAttribute('aria-label', 'Hue');
+
+      const svSquare = document.createElement('canvas');
+      svSquare.className = 'picker-surface sv-square';
+      svSquare.setAttribute('aria-label', 'Saturation and brightness');
+
+      const hueInd = document.createElement('div');
+      hueInd.className = 'picker-indicator';
+      const svInd = document.createElement('div');
+      svInd.className = 'picker-indicator';
+
+      const hueWrap = document.createElement('div');
+      hueWrap.style.position = 'relative';
+      hueWrap.append(hueBar, hueInd);
+      const svWrap = document.createElement('div');
+      svWrap.style.position = 'relative';
+      svWrap.append(svSquare, svInd);
+      wrap.append(hueWrap, svWrap);
+      mock.root.appendChild(wrap);
+
+      renderHueBar(hueBar);
+      renderSvSquare(svSquare, mock.hsv.h);
+
+      const syncIndicators = () => {
+        const hr = hueBar.getBoundingClientRect();
+        const sr = svSquare.getBoundingClientRect();
+        mock.setIndicator(hueInd, (mock.hsv.h / 360) * hr.width, hr.height / 2);
+        mock.setIndicator(svInd,
+          (mock.hsv.s / 100) * sr.width,
+          (1 - (mock.hsv.v - 25) / 65) * sr.height
+        );
+      };
+
+      bindDrag(hueBar, (e) => {
+        const { x, rect } = posInEl(hueBar, e);
+        mock.hsv.h = Math.round((x / rect.width) * 360);
+        renderSvSquare(svSquare, mock.hsv.h);
+        mock.updateUI();
+        syncIndicators();
+      });
+
+      bindDrag(svSquare, (e) => {
+        const { x, y, rect } = posInEl(svSquare, e);
+        mock.hsv.s = Math.round((x / rect.width) * 100);
+        mock.hsv.v = Math.round(25 + (1 - y / rect.height) * 65);
+        mock.updateUI();
+        syncIndicators();
+      });
+
+      mock.onUpdate = () => syncIndicators();
+      syncIndicators();
+    }
+
+    function buildArc(mock) {
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '0.65rem';
+
+      const arcWrap = document.createElement('div');
+      arcWrap.style.position = 'relative';
+      const arc = document.createElement('canvas');
+      arc.className = 'picker-surface arc-canvas';
+      arc.setAttribute('aria-label', 'Hue arc');
+      const arcInd = document.createElement('div');
+      arcInd.className = 'picker-indicator';
+      arcWrap.append(arc, arcInd);
+
+      const preview = document.createElement('div');
+      preview.className = 'preview-disc picker-surface';
+      preview.setAttribute('aria-hidden', 'true');
+
+      wrap.append(arcWrap, preview);
+      mock.root.appendChild(wrap);
+      renderHueArc(arc);
+
+      const syncArc = () => {
+        const rect = arc.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height + 8;
+        const outerR = Math.min(rect.width, rect.height * 2) / 2 - 4;
+        const innerR = outerR - Math.max(14, outerR * 0.18);
+        const sat = mock.hsv.s;
+        const t = Math.max(0, Math.min(1, (sat - 70) / 30));
+        const r = innerR + t * (outerR - innerR);
+        const rad = (mock.hsv.h * Math.PI) / 180;
+        mock.setIndicator(arcInd, cx + r * Math.cos(rad), cy - r * Math.sin(rad));
+        preview.style.background = Utils.hsvToHex(mock.hsv.h, mock.hsv.s, mock.hsv.v);
+      };
+
+      bindDrag(arc, (e) => {
+        const { x, y, rect } = posInEl(arc, e);
+        const cx = rect.width / 2;
+        const cy = rect.height + 8;
+        const udx = x - cx;
+        const udy = y - cy;
+        let angleDeg = Math.atan2(-udy, udx) * 180 / Math.PI;
+        if (angleDeg < 0) angleDeg += 360;
+        if (angleDeg > 180) angleDeg = angleDeg > 270 ? 0 : 180;
+        mock.hsv.h = Math.round(angleDeg);
+        const dist = Math.hypot(udx, udy);
+        const outerR = Math.min(rect.width, rect.height * 2) / 2 - 4;
+        const innerR = outerR - Math.max(14, outerR * 0.18);
+        const t = Math.max(0, Math.min(1, (dist - innerR) / (outerR - innerR)));
+        mock.hsv.s = Math.round(70 + t * 30);
+        mock.updateUI();
+        syncArc();
+      });
+
+      mock.onUpdate = (hex) => {
+        preview.style.background = hex;
+        syncArc();
+      };
+      syncArc();
+    }
+
+    function buildStrip(mock) {
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '0.75rem';
+
+      const preview = document.createElement('div');
+      preview.className = 'preview-disc picker-surface';
+
+      const stripWrap = document.createElement('div');
+      stripWrap.style.position = 'relative';
+      const strip = document.createElement('canvas');
+      strip.className = 'picker-surface hue-strip';
+      strip.setAttribute('aria-label', 'Hue spectrum');
+      const stripInd = document.createElement('div');
+      stripInd.className = 'picker-indicator';
+      stripWrap.append(strip, stripInd);
+
+      wrap.append(preview, stripWrap);
+      mock.root.appendChild(wrap);
+      renderHueStrip(strip);
+
+      const syncStrip = () => {
+        preview.style.background = Utils.hsvToHex(mock.hsv.h, mock.hsv.s, mock.hsv.v);
+        const rect = strip.getBoundingClientRect();
+        mock.setIndicator(stripInd, (mock.hsv.h / 360) * rect.width, rect.height / 2);
+      };
+
+      bindDrag(strip, (e) => {
+        const { x, rect } = posInEl(strip, e);
+        mock.hsv.h = Math.round((x / rect.width) * 360);
+        mock.hsv.s = 75;
+        mock.updateUI();
+        syncStrip();
+      });
+
+      mock.onUpdate = () => syncStrip();
+      syncStrip();
+    }
+
+    function buildPalette(mock) {
+      const grid = document.createElement('div');
+      grid.className = 'palette-grid picker-surface';
+      grid.setAttribute('role', 'listbox');
+      grid.setAttribute('aria-label', 'Mood colors');
+
+      MOOD_SWATCHES.forEach((sw, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'swatch';
+        btn.style.background = Utils.hsvToHex(sw.h, sw.s, sw.v);
+        btn.setAttribute('aria-label', `Color ${i + 1}`);
+        btn.dataset.index = String(i);
+        btn.addEventListener('click', () => {
+          mock.hsv = { h: sw.h, s: sw.s, v: Math.max(25, Math.min(90, sw.v)) };
+          mock.slider.value = String(mock.hsv.v);
+          grid.querySelectorAll('.swatch').forEach((s) => s.classList.remove('selected'));
+          btn.classList.add('selected');
+          mock.updateUI();
+        });
+        grid.appendChild(btn);
+      });
+
+      mock.root.appendChild(grid);
+
+      const closest = MOOD_SWATCHES.reduce((best, sw, i) => {
+        const d = Math.abs(sw.h - mock.hsv.h) + Math.abs(sw.s - mock.hsv.s);
+        return d < best.d ? { d, i } : best;
+      }, { d: Infinity, i: 0 });
+      grid.children[closest.i]?.classList.add('selected');
+    }
+
+    function buildDonut(mock) {
+      const wrap = document.createElement('div');
+      wrap.style.position = 'relative';
+
+      const canvas = document.createElement('canvas');
+      canvas.className = 'picker-surface donut-canvas is-round';
+      canvas.setAttribute('aria-label', 'Donut color picker');
+      const ind = document.createElement('div');
+      ind.className = 'picker-indicator';
+      wrap.append(canvas, ind);
+      mock.root.appendChild(wrap);
+      renderDonut(canvas);
+
+      const syncDonut = () => {
+        const rect = canvas.getBoundingClientRect();
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+        const outerR = Math.min(rect.width, rect.height) / 2;
+        const ringThickness = outerR * 0.22;
+        const innerDiscR = outerR - ringThickness - 2;
+        const ringInnerR = outerR - ringThickness;
+
+        const rad = (mock.hsv.h * Math.PI) / 180;
+        const sNorm = mock.hsv.s / 100;
+        let px, py;
+
+        if (sNorm > 0.85) {
+          const r = (ringInnerR + outerR) / 2;
+          px = cx + r * Math.cos(rad);
+          py = cy - r * Math.sin(rad);
+        } else {
+          const r = sNorm * innerDiscR;
+          px = cx + r * Math.cos(rad);
+          py = cy - r * Math.sin(rad);
+        }
+        mock.setIndicator(ind, px, py);
+      };
+
+      bindDrag(canvas, (e) => {
+        const { x, y, rect } = posInEl(canvas, e);
+        const cx = rect.width / 2;
+        const cy = rect.height / 2;
+        const outerR = Math.min(rect.width, rect.height) / 2;
+        const ringThickness = outerR * 0.22;
+        const innerDiscR = outerR - ringThickness - 2;
+        const ringInnerR = outerR - ringThickness;
+
+        const udx = x - cx;
+        const udy = y - cy;
+        const dist = Math.hypot(udx, udy);
+        let angleDeg = Math.atan2(-udy, udx) * 180 / Math.PI;
+        if (angleDeg < 0) angleDeg += 360;
+        mock.hsv.h = Math.round(angleDeg);
+
+        if (dist >= ringInnerR) {
+          mock.hsv.s = 100;
+        } else {
+          mock.hsv.s = Math.round(Math.min(100, (dist / innerDiscR) * 100));
+        }
+        mock.updateUI();
+        syncDonut();
+      });
+
+      mock.onUpdate = () => syncDonut();
+      syncDonut();
+    }
+
+    const mocks = [
+      new PickerMock({ id: 'hue-sv', title: '1. Hue bar + SV square', variantClass: 'variant-hue-sv', buildPicker: buildHueSv }),
+      new PickerMock({ id: 'arc', title: '2. Hue arc + preview disc', variantClass: 'variant-arc', buildPicker: buildArc }),
+      new PickerMock({ id: 'strip', title: '3. Spectrum strip + preview', variantClass: 'variant-strip', buildPicker: buildStrip }),
+      new PickerMock({ id: 'palette', title: '4. Mood palette grid', variantClass: 'variant-palette', buildPicker: buildPalette }),
+      new PickerMock({ id: 'donut', title: '5. Donut ring', variantClass: 'variant-donut', buildPicker: buildDonut })
+    ];
+
+    const container = document.getElementById('mocks');
+    mocks.forEach((m) => m.mount(container));
+
+    window.addEventListener('resize', () => {
+      mocks.forEach((m) => {
+        m.root.querySelectorAll('canvas').forEach((c) => {
+          if (c.classList.contains('hue-bar') || c.classList.contains('hue-strip')) renderHueBar(c);
+          else if (c.classList.contains('sv-square')) renderSvSquare(c, m.hsv.h);
+          else if (c.classList.contains('arc-canvas')) renderHueArc(c);
+          else if (c.classList.contains('donut-canvas')) renderDonut(c);
+        });
+        if (m.onUpdate) m.updateUI();
+      });
+    });
+  </script>
+</body>
+</html>

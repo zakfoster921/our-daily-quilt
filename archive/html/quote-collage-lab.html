@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ODQ Quote Collage Lab</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #d4d0c8;
+      color: #222;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      padding: 1rem 1.1rem 2rem;
+      background: #ebe8e3;
+      border-right: 1px solid rgba(0,0,0,0.08);
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+    .panel h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+    }
+    .panel .note {
+      font-size: 0.78rem;
+      color: #555;
+      line-height: 1.4;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #666;
+      margin: 0.65rem 0 0.25rem;
+    }
+    input[type="text"],
+    input[type="url"],
+    textarea,
+    select {
+      width: 100%;
+      font: inherit;
+      font-size: 0.9rem;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 4px;
+      background: #fff;
+    }
+    textarea { min-height: 4.5rem; resize: vertical; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .row input[type="text"] { flex: 1; min-width: 120px; }
+    .format-toggle {
+      display: flex;
+      gap: 0;
+      margin: 0.5rem 0;
+    }
+    .format-toggle button {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid rgba(0,0,0,0.2);
+      background: #fff;
+      font: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .format-toggle button:first-child { border-radius: 4px 0 0 4px; }
+    .format-toggle button:last-child { border-radius: 0 4px 4px 0; }
+    .format-toggle button.active {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 0.5rem;
+      margin-right: 0.35rem;
+      padding: 0.45rem 0.75rem;
+      font: inherit;
+      font-size: 0.82rem;
+      border: 1px solid rgba(0,0,0,0.2);
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-primary { background: #111; color: #fff; border-color: #111; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    input[type="range"] { width: 100%; }
+    .status {
+      font-size: 0.8rem;
+      color: #444;
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+    }
+    .status.err { color: #a22; }
+    .preview-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      min-height: 100vh;
+      gap: 1rem;
+    }
+    .preview-frame {
+      background: transparent;
+      padding: 0;
+      box-shadow: none;
+    }
+    #previewCanvas {
+      display: block;
+      max-width: min(92vw, 420px);
+      height: auto;
+    }
+    .ref-thumb {
+      max-width: 120px;
+      opacity: 0.85;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    .style-checks {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      padding: 0.45rem 0.5rem;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 4px;
+    }
+    .style-checks label.check-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.45rem;
+      font-size: 0.82rem;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #333;
+      margin: 0;
+      cursor: pointer;
+      line-height: 1.35;
+    }
+    .style-checks label.check-label input {
+      width: auto;
+      margin: 0.12rem 0 0;
+      flex-shrink: 0;
+    }
+    #bridgeFrame { display: none; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h1>Quote Collage Lab</h1>
+      <p class="note">
+        Editorial quote cards (Machado-style). Serve from repo root (<code>npx serve .</code>) for Load date.
+        Export at 1080×1350 or 1080×1920.
+      </p>
+
+      <div class="format-toggle" role="group" aria-label="Format">
+        <button type="button" id="btnFormatPost" class="active">Post 4:5</button>
+        <button type="button" id="btnFormatStory">Story 9:16</button>
+      </div>
+
+      <label for="dateKey">Date key</label>
+      <motion class="row">
+        <input type="text" id="dateKey" placeholder="YYYY-MM-DD">
+        <button type="button" class="btn btn-primary" id="btnLoadDate">Load date</button>
+      </div>
+
+      <label for="apiBase">API base (proxy-image)</label>
+      <input type="url" id="apiBase" placeholder="https://our-daily-quilt-production.up.railway.app">
+
+      <label for="quoteText">Quote (full text)</label>
+      <textarea id="quoteText" rows="3" placeholder="Full quote for auto line breaks…"></textarea>
+      <button type="button" class="btn" id="btnRebreak">Re-break from text</button>
+
+      <label for="quoteLines">Lines (one per row — export source)</label>
+      <textarea id="quoteLines" rows="6" placeholder="Editorial line breaks…"></textarea>
+
+      <label for="emphasisKeywords">Keywords / phrases (comma-separated)</label>
+      <input type="text" id="emphasisKeywords" placeholder="through, invincible summer">
+
+      <label>Keyword styles <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#888">(combine any)</span></label>
+      <div class="style-checks" id="emphasisStyleGroup">
+        <label class="check-label"><input type="checkbox" id="emphasisStyleAuto" value="auto"> Auto (seeded mix)</label>
+        <label class="check-label"><input type="checkbox" id="emphasisStylePoster" value="poster" checked> Poster — caps + scale</label>
+        <label class="check-label"><input type="checkbox" id="emphasisStyleCollage" value="collage"> Collage — angle + wash color</label>
+        <label class="check-label"><input type="checkbox" id="emphasisStyleAngle" value="angle"> Angle — tilt either way</label>
+        <label class="check-label"><input type="checkbox" id="emphasisStyleAngleDown" value="angle-down"> Angle down — tilt keyword downward</label>
+        <label class="check-label"><input type="checkbox" id="emphasisStyleQuilt" value="quilt"> Quilt — sample color + stroke</label>
+      </div>
+
+      <label for="author">Author / speaker credit</label>
+      <input type="text" id="author" placeholder="Antonio Machado">
+
+      <label for="speakerUrl">Speaker cutout URL</label>
+      <input type="url" id="speakerUrl" placeholder="Transparent PNG">
+
+      <label>Speaker position</label>
+      <div class="format-toggle" role="group" aria-label="Speaker position">
+        <button type="button" id="btnSpeakerLeft">Left</button>
+        <button type="button" id="btnSpeakerCenter" class="active">Center</button>
+        <button type="button" id="btnSpeakerRight">Right</button>
+      </div>
+
+      <label for="speakerWashColor">Speaker color wash (hex)</label>
+      <input type="text" id="speakerWashColor" value="#ea9b9a" placeholder="#ea9b9a">
+
+      <label for="washOpacity">Quilt wash opacity <span id="washVal">0.30</span></label>
+      <input type="range" id="washOpacity" min="0.25" max="0.35" step="0.01" value="0.30">
+
+      <label for="textColor">Text color</label>
+      <select id="textColor">
+        <option value="auto">Auto (from quilt)</option>
+        <option value="black">Black</option>
+        <option value="white">Off-white</option>
+      </select>
+
+      <label>Quilt image</label>
+      <input type="file" id="quiltFile" accept="image/*">
+      <button type="button" class="btn" id="btnClearQuilt">Clear quilt</button>
+
+      <div class="row" style="margin-top: 1rem;">
+        <button type="button" class="btn btn-primary" id="btnRender">Update preview</button>
+        <button type="button" class="btn" id="btnExport">Export PNG</button>
+      </div>
+
+      <p class="status" id="status" aria-live="polite"></p>
+    </aside>
+
+    <main class="preview-wrap">
+      <div class="preview-frame">
+        <canvas id="previewCanvas" width="1080" height="1350"></canvas>
+      </div>
+    </main>
+  </div>
+
+  <iframe id="bridgeFrame" title="App bridge" src="about:blank"></iframe>
+
+  <script src="lib/quote-keyword-emphasis.js"></script>
+  <script src="scripts/quote-collage-compose.js"></script>
+  <script>
+    (function () {
+      const C = window.QuoteCollageCompose;
+      const QKE = window.QuoteKeywordEmphasis;
+      const composeReady = !!C;
+
+      let format = 'post';
+      let speakerAlign = 'center';
+      let loadInFlight = false;
+      let quiltObjectUrl = null;
+      let quiltImage = null;
+      let renderGen = 0;
+      let linesDirty = false;
+
+      const el = (id) => document.getElementById(id);
+      const status = (msg, isErr) => {
+        const s = el('status');
+        s.textContent = msg || '';
+        s.className = 'status' + (isErr ? ' err' : '');
+      };
+
+      function setBtnEnabled(id, enabled) {
+        const btn = el(id);
+        if (btn) btn.disabled = !enabled;
+      }
+
+      function resetActionButtons() {
+        setBtnEnabled('btnLoadDate', true);
+        loadInFlight = false;
+      }
+
+      function withTimeout(promise, ms, label) {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => {
+            setTimeout(
+              () => reject(new Error(`${label} timed out (${Math.round(ms / 1000)}s). Try again or use a quilt PNG upload.`)),
+              ms
+            );
+          })
+        ]);
+      }
+
+      window.addEventListener('pageshow', resetActionButtons);
+
+      function todayKeyLocal() {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+
+      function getFormatDims() {
+        const f = C.FORMATS[format];
+        return { w: f.w, h: f.h };
+      }
+
+      function setFormat(next) {
+        format = next;
+        el('btnFormatPost').classList.toggle('active', format === 'post');
+        el('btnFormatStory').classList.toggle('active', format === 'story');
+        renderPreview();
+      }
+
+      function setSpeakerAlign(next) {
+        speakerAlign = next;
+        el('btnSpeakerLeft').classList.toggle('active', speakerAlign === 'left');
+        el('btnSpeakerCenter').classList.toggle('active', speakerAlign === 'center');
+        el('btnSpeakerRight').classList.toggle('active', speakerAlign === 'right');
+        renderPreview();
+      }
+
+      function getLinesFromTextarea() {
+        return el('quoteLines')
+          .value.split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean);
+      }
+
+      function getQuoteTextForKeywords() {
+        const full = el('quoteText').value.trim();
+        if (full) return full;
+        return getLinesFromTextarea().join(' ');
+      }
+
+      function getEmphasisWords() {
+        const quote = getQuoteTextForKeywords();
+        if (QKE && typeof QKE.parseEmphasisWordsInput === 'function') {
+          return QKE.parseEmphasisWordsInput(el('emphasisKeywords').value, quote);
+        }
+        return el('emphasisKeywords')
+          .value.split(/[,;\n]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+
+      function setEmphasisKeywordsField(words) {
+        el('emphasisKeywords').value = (words || []).join(', ');
+      }
+
+      const EMPHASIS_STYLE_IDS = ['Auto', 'Poster', 'Collage', 'Angle', 'AngleDown', 'Quilt'];
+
+      function getEmphasisStyleCheckboxes() {
+        return EMPHASIS_STYLE_IDS.map((id) => el('emphasisStyle' + id)).filter(Boolean);
+      }
+
+      function getEmphasisStyles() {
+        if (el('emphasisStyleAuto').checked) return 'auto';
+        const styles = getEmphasisStyleCheckboxes()
+          .filter((cb) => cb.id !== 'emphasisStyleAuto' && cb.checked)
+          .map((cb) => cb.value);
+        return styles.length ? styles : ['poster'];
+      }
+
+      function onEmphasisStyleChange(changed) {
+        if (changed.id === 'emphasisStyleAuto' && changed.checked) {
+          getEmphasisStyleCheckboxes()
+            .filter((cb) => cb.id !== 'emphasisStyleAuto')
+            .forEach((cb) => {
+              cb.checked = false;
+            });
+        } else if (changed.id !== 'emphasisStyleAuto' && changed.checked) {
+          el('emphasisStyleAuto').checked = false;
+        }
+        renderPreview();
+      }
+
+      function composeOptions(w, h) {
+        return {
+          width: w,
+          height: h,
+          quiltImage,
+          quoteLines: getLinesFromTextarea(),
+          author: el('author').value.trim(),
+          speakerImageUrl: el('speakerUrl').value.trim(),
+          speakerAlign,
+          speakerWashColor: el('speakerWashColor').value.trim(),
+          washOpacity: parseFloat(el('washOpacity').value),
+          textColor: el('textColor').value,
+          apiBase: el('apiBase').value.trim(),
+          dateKey: el('dateKey').value.trim() || todayKeyLocal(),
+          emphasisWords: getEmphasisWords(),
+          emphasisStyle: getEmphasisStyles()
+        };
+      }
+
+      function applyRebreak() {
+        if (!composeReady) return;
+        const text = el('quoteText').value.trim();
+        const dk = el('dateKey').value.trim() || todayKeyLocal();
+        const lines = C.splitQuoteIntoEditorialLines(text, dk);
+        el('quoteLines').value = lines.join('\n');
+        linesDirty = false;
+        status(`Re-broke into ${lines.length} line(s).`);
+      }
+
+      async function setQuiltFromBlob(blob) {
+        if (quiltObjectUrl) URL.revokeObjectURL(quiltObjectUrl);
+        quiltObjectUrl = URL.createObjectURL(blob);
+        quiltImage = await new Promise((resolve, reject) => {
+          const im = new Image();
+          im.crossOrigin = 'anonymous';
+          im.onload = () => resolve(im);
+          im.onerror = () => reject(new Error('Quilt decode failed'));
+          im.src = quiltObjectUrl;
+        });
+      }
+
+      async function renderPreview() {
+        if (!composeReady) return;
+        const gen = ++renderGen;
+        if (!quiltImage) {
+          status('Add a quilt (Load date or upload PNG).', true);
+          return;
+        }
+        const { w, h } = getFormatDims();
+        const lines = getLinesFromTextarea();
+        try {
+          const exportCanvas = await C.composeQuoteCollage(composeOptions(w, h));
+          if (gen !== renderGen) return;
+          const preview = el('previewCanvas');
+          const pctx = preview.getContext('2d');
+          preview.width = w;
+          preview.height = h;
+          pctx.drawImage(exportCanvas, 0, 0);
+          const kw = getEmphasisWords();
+          const kwNote = kw.length ? ` — keywords: ${kw.join(', ')}` : '';
+          status(`Preview ${w}×${h} — ${lines.length} line(s)${kwNote}.`);
+        } catch (e) {
+          status(e.message || String(e), true);
+        }
+      }
+
+      async function exportPng() {
+        if (!quiltImage) {
+          status('No quilt to export.', true);
+          return;
+        }
+        const { w, h } = getFormatDims();
+        const canvas = await C.composeQuoteCollage(composeOptions(w, h));
+        const blob = await C.canvasToBlob(canvas);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `quote-collage-${format}-${el('dateKey').value.trim() || 'export'}.png`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        status('Exported PNG.');
+      }
+
+      function waitForBridgeApp(frame, timeoutMs) {
+        return new Promise((resolve, reject) => {
+          const t0 = Date.now();
+          const tick = () => {
+            try {
+              const win = frame.contentWindow;
+              if (win && win.app && win.app.archiveService && win.Utils) {
+                resolve(win);
+                return;
+              }
+            } catch (_) {
+              /* cross-origin */
+            }
+            if (Date.now() - t0 > timeoutMs) {
+              reject(new Error('App bridge timed out. Serve via HTTP and wait for Firebase.'));
+              return;
+            }
+            setTimeout(tick, 400);
+          };
+          tick();
+        });
+      }
+
+      async function loadDateFromBridge() {
+        if (loadInFlight) {
+          status('Already loading — wait or refresh the page.', true);
+          return;
+        }
+        const dk = el('dateKey').value.trim() || todayKeyLocal();
+        loadInFlight = true;
+        setBtnEnabled('btnLoadDate', false);
+        const frame = el('bridgeFrame');
+        const loadBtn = el('btnLoadDate');
+        const prevLabel = loadBtn ? loadBtn.textContent : '';
+        if (loadBtn) loadBtn.textContent = 'Loading…';
+        try {
+          if (location.protocol === 'file:') {
+            throw new Error('Open via HTTP (e.g. npx serve .), not file://');
+          }
+          status(`Loading ${dk} — starting app bridge (first load can take 1–3 min)…`);
+          frame.src = 'our-daily-beta.html';
+          const win = await withTimeout(waitForBridgeApp(frame, 180000), 185000, 'App bridge');
+          status(`Loading ${dk} — fetching quilt, quote, speaker…`);
+          const result = await withTimeout(
+            win.evalBridgeLoadToday(dk),
+            120000,
+            'Firestore / quilt export'
+          );
+          if (!result || !result.quiltBlobBase64) {
+            throw new Error(result?.error || 'Bridge returned no quilt');
+          }
+          const bin = atob(result.quiltBlobBase64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'image/png' });
+          await setQuiltFromBlob(blob);
+
+          const quoteText = String(result.quoteText || '').trim();
+          const author = String(result.author || '').trim();
+          el('quoteText').value = quoteText;
+          el('author').value = author;
+          if (result.apiBase) el('apiBase').value = result.apiBase;
+          if (result.speakerUrl) el('speakerUrl').value = result.speakerUrl;
+          if (result.speakerWashColor) el('speakerWashColor').value = result.speakerWashColor;
+          applyRebreak();
+          status(`Loaded ${dk} — ${result.blockCount || '?'} blocks.`);
+        } catch (e) {
+          status(e.message || String(e), true);
+        } finally {
+          if (loadBtn) loadBtn.textContent = prevLabel || 'Load date';
+          resetActionButtons();
+        }
+      }
+
+      el('btnFormatPost').addEventListener('click', () => setFormat('post'));
+      el('btnFormatStory').addEventListener('click', () => setFormat('story'));
+      el('btnSpeakerLeft').addEventListener('click', () => setSpeakerAlign('left'));
+      el('btnSpeakerCenter').addEventListener('click', () => setSpeakerAlign('center'));
+      el('btnSpeakerRight').addEventListener('click', () => setSpeakerAlign('right'));
+      el('emphasisKeywords').addEventListener('change', renderPreview);
+      getEmphasisStyleCheckboxes().forEach((cb) => {
+        cb.addEventListener('change', () => onEmphasisStyleChange(cb));
+      });
+      el('btnRebreak').addEventListener('click', () => {
+        applyRebreak();
+        renderPreview();
+      });
+      el('btnRender').addEventListener('click', renderPreview);
+      el('btnExport').addEventListener('click', exportPng);
+      el('btnLoadDate').addEventListener('click', loadDateFromBridge);
+      el('washOpacity').addEventListener('input', () => {
+        el('washVal').textContent = parseFloat(el('washOpacity').value).toFixed(2);
+        renderPreview();
+      });
+      el('textColor').addEventListener('change', renderPreview);
+      el('speakerUrl').addEventListener('change', renderPreview);
+      el('speakerWashColor').addEventListener('change', renderPreview);
+      el('author').addEventListener('change', renderPreview);
+      el('quoteLines').addEventListener('input', () => {
+        linesDirty = true;
+      });
+      el('quoteLines').addEventListener('change', renderPreview);
+      el('quoteText').addEventListener('input', () => {
+        if (!linesDirty) return;
+      });
+      el('quiltFile').addEventListener('change', async (ev) => {
+        const file = ev.target.files?.[0];
+        if (!file) return;
+        try {
+          await setQuiltFromBlob(file);
+          status('Quilt uploaded.');
+          renderPreview();
+        } catch (e) {
+          status(e.message, true);
+        }
+      });
+      el('btnClearQuilt').addEventListener('click', () => {
+        if (quiltObjectUrl) URL.revokeObjectURL(quiltObjectUrl);
+        quiltObjectUrl = null;
+        quiltImage = null;
+        el('quiltFile').value = '';
+        status('Quilt cleared.');
+      });
+
+      el('dateKey').value = todayKeyLocal();
+      if (!el('apiBase').value) {
+        el('apiBase').value = 'https://our-daily-quilt-production.up.railway.app';
+      }
+
+      resetActionButtons();
+
+      if (!composeReady) {
+        status('Compose script failed to load. Check the browser console (404 on scripts?).', true);
+      } else {
+        const sample =
+          'Caminante no hay camino se hace camino al andar.';
+        el('quoteText').value = sample;
+        applyRebreak();
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -54,8 +54,8 @@ Two different video paths (see `.cursor/rules/instagram-zapier-reels.mdc`):
 ## Repo layout notes
 
 - **Production entry:** `our-daily-beta.html`, `index.html` (redirect), `privacy.html`, `support.html`
-- **Labs / mockups:** `*-lab.html`, `color-picker-*.html` — local design tools; excluded from Docker (`.dockerignore`), not deployed
-- **Legacy HTML:** older `our-daily-*.html` copies in repo root — not production; kept for reference until Phase 9 cleanup
+- **Labs / mockups:** `archive/html/*-lab.html`, `archive/html/color-picker-*.html` — local design tools; excluded from Docker, not deployed
+- **Legacy HTML:** older prototypes in `archive/html/` — not production
 
 ## Deployment
 
