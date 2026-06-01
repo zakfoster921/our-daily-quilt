@@ -61,4 +61,6 @@ Two different video paths (see `.cursor/rules/instagram-zapier-reels.mdc`):
 
 Railway builds from `Dockerfile`: `server.js`, `our-daily-beta.html`, `lib/`, `styles/`, `assets/`, `scripts/`. Push to `main` to deploy.
 
+**iOS release:** `npm run ios` → Xcode Archive → `npm run ios:archive` → `npm run ios:upload` (or Transporter).
+
 Health check: `GET /api/health`
