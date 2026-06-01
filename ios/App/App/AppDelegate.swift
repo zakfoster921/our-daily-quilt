@@ -1,13 +1,25 @@
 import UIKit
+import WebKit
 import Capacitor
 import FirebaseCore
 
 /// Exposes delegate methods to the Objective‑C runtime for Firebase / GoogleUtilities swizzling (`I-SWZ001014`).
 @UIApplicationMain
 @objcMembers
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
 
-    var window: UIWindow?
+    private let launchBackgroundColor = UIColor(
+        red: 246.0 / 255.0,
+        green: 244.0 / 255.0,
+        blue: 241.0 / 255.0,
+        alpha: 1.0
+    )
+    private var launchBridgeHandlerInstalled = false
+    var window: UIWindow? {
+        didSet {
+            window?.backgroundColor = launchBackgroundColor
+        }
+    }
 
     override init() {
         super.init()
@@ -25,7 +37,39 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        window?.backgroundColor = launchBackgroundColor
+        configureNativeLaunchBridge()
         return true
+    }
+
+    private func configureNativeLaunchBridge(retryCount: Int = 0) {
+        guard let bridgeViewController = window?.rootViewController as? CAPBridgeViewController else {
+            if retryCount < 20 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    self.configureNativeLaunchBridge(retryCount: retryCount + 1)
+                }
+            }
+            return
+        }
+
+        bridgeViewController.view.backgroundColor = launchBackgroundColor
+        bridgeViewController.webView?.isOpaque = false
+        bridgeViewController.webView?.backgroundColor = launchBackgroundColor
+        bridgeViewController.webView?.scrollView.backgroundColor = launchBackgroundColor
+
+        if launchBridgeHandlerInstalled, let webView = bridgeViewController.webView {
+            return
+        }
+        if let webView = bridgeViewController.webView {
+            webView.configuration.userContentController.add(self, name: "odqLaunchCover")
+            launchBridgeHandlerInstalled = true
+        }
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "odqLaunchCover" {
+            // Reserved for native launch handoff; Capacitor splash is hidden from JS when portal is ready.
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -34,7 +78,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
+        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore its current state in case it is terminated later.
         // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
     }
 

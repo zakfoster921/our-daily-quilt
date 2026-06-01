@@ -260,8 +260,12 @@ try {
   (function () {
     var BOOT_MAX_MS = 8000;
     var BOOT_MIN_MS = 320;
+    var NATIVE_SPLASH_FAST_ATTEMPTS = 80;
+    var NATIVE_SPLASH_RETRY_MAX_MS = 15000;
     var nativeSplashHidden = false;
     var nativeSplashHideAttempts = 0;
+    var nativeSplashBridgeWaitingLogged = false;
+    var nativeSplashUnavailableLogged = false;
 
     function isCapacitorNative() {
       try {
@@ -296,9 +300,23 @@ try {
         var splash = cap && cap.Plugins && cap.Plugins.SplashScreen;
         if (!splash || typeof splash.hide !== 'function') {
           nativeSplashHideAttempts += 1;
-          if (nativeSplashHideAttempts <= 80) {
-            setTimeout(hideNativeLaunchSplash, 50);
-          } else if (window.odqPerfMark) {
+          var now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+          var elapsed = now - shownAt;
+          if (nativeSplashHideAttempts <= NATIVE_SPLASH_FAST_ATTEMPTS || elapsed < NATIVE_SPLASH_RETRY_MAX_MS) {
+            if (
+              nativeSplashHideAttempts === NATIVE_SPLASH_FAST_ATTEMPTS + 1 &&
+              window.odqPerfMark &&
+              !nativeSplashBridgeWaitingLogged
+            ) {
+              nativeSplashBridgeWaitingLogged = true;
+              window.odqPerfMark('native-splash-hide-waiting-for-bridge');
+            }
+            setTimeout(
+              hideNativeLaunchSplash,
+              nativeSplashHideAttempts <= NATIVE_SPLASH_FAST_ATTEMPTS ? 50 : 250
+            );
+          } else if (window.odqPerfMark && !nativeSplashUnavailableLogged) {
+            nativeSplashUnavailableLogged = true;
             window.odqPerfMark('native-splash-hide-unavailable');
           }
           return;
@@ -315,6 +333,18 @@ try {
     var shownAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     var dismissed = false;
     var dismissPromise = null;
+
+    function prepareNativeLaunchShell() {
+      if (!nativeApp) return;
+      document.body.classList.add('odq-boot-active');
+      if (!bootEl) return;
+      bootEl.hidden = true;
+      bootEl.setAttribute('hidden', 'hidden');
+      bootEl.setAttribute('aria-hidden', 'true');
+      bootEl.classList.add('odq-boot-splash--dismissed');
+    }
+
+    prepareNativeLaunchShell();
 
     function removeBoot() {
       if (!bootEl) return;
@@ -351,14 +381,10 @@ try {
       });
     }
 
-    // On native, move off the static launch storyboard as soon as the lightweight
-    // web boot shell exists; the full portal DOM/app script still parse below.
-    if (nativeApp) {
-      // Hand off from the native launch storyboard to this lightweight HTML layer
-      // immediately. Waiting for the full portal/app script keeps iOS on the
-      // static launch screen even though the web boot shell is already available.
-      afterNextPaint(hideNativeLaunchSplash);
-    }
+    // Keep Capacitor's launch splash visible on native until the portal is ready.
+    // Hiding it when HTML first parses exposed a duplicate native text overlay.
+
+    window.odqHideNativeLaunchSplash = hideNativeLaunchSplash;
 
     function whenPortalGraphicReady() {
       // Do not gate native splash dismissal on image decode. The portal wordmark is
@@ -416,12 +442,14 @@ try {
       }
     };
 
-    setTimeout(function () {
-      finishDismiss();
-    }, BOOT_MAX_MS);
+    if (!nativeApp) {
+      setTimeout(function () {
+        finishDismiss();
+      }, BOOT_MAX_MS);
+    }
 
     function tryEarlyDismiss() {
-      if (dismissed) return;
+      if (dismissed || nativeApp) return;
       if (!document.getElementById('screen-portal')) return;
       window.OdqBootSplash.dismiss();
     }
@@ -434,7 +462,7 @@ try {
       }
     });
     var earlyPoll = setInterval(function () {
-      tryEarlyDismiss();
+      if (!nativeApp) tryEarlyDismiss();
       if (dismissed || document.readyState === 'complete') clearInterval(earlyPoll);
     }, 40);
   })();
@@ -1997,10 +2025,10 @@ try {
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/speaker-guide-marker.js?v=19"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=45"></script>
-  <script src="lib/odq-scanner-bed.js?v=2"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=46"></script>
+  <script src="lib/odq-scanner-bed.js?v=4"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
-  <script src="lib/quilt-mood-triptych-widget.js?v=109"></script>
+  <script src="lib/quilt-mood-triptych-widget.js?v=113"></script>
   <script src="lib/quilt-mood-terminal.js?v=24"></script>
   <script src="lib/logger.js"></script>
   <script src="lib/ui-service.js"></script>
