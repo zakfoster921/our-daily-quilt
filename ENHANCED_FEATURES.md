@@ -148,7 +148,7 @@ shareQuilt()
 
 ## 🚀 Next Steps
 
-1. **Test the Enhanced Version**: Open `our-daily-rebuilt.html` in browser
+1. **Test the Enhanced Version**: Open `archive/html/our-daily-rebuilt.html` in browser
 2. **Enable Admin Mode**: Run `enableAdmin()` in console
 3. **Add Test Blocks**: Use "TEST: ADD RANDOM BLOCK" button
 4. **Test Phase Transition**: Add 20+ blocks to see phase change
