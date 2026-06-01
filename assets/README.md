@@ -2,7 +2,7 @@
 
 Production images/fonts used by `our-daily-beta.html`, `styles/our-daily-beta.css`, and `lib/` are **tracked in git** and deployed via Docker.
 
-**Untracked files here** are usually lab exports or experiments (library pocket renders, tape masks, etc.). Commit them when production or a script depends on them — see the paperclip fix (`color-card-paperclip.png`).
+**Lab / design PNGs** (also tracked): `library-pocket-source.png`, `library-pocket-empty.png`, tape mask/strip variants, `chalk-squiggle.png`, `welcome-how-highlighter.png`, `odq-footer-wordmark.png`, `reflection-patch-star.png`. Used by labs under `archive/html/` and local render scripts — not referenced by production CSS unless promoted deliberately.
 
 Generate library pocket empty PNG:
 
