@@ -1,51 +1,64 @@
-# Our Daily Quilt Beta
+# Our Daily Quilt
 
-An interactive quilt-building application with image reveal functionality.
+Daily collaborative quilt app: portal → quote → color → shared quilt. Web (Railway), Firebase backend, Notion quote sync, Capacitor iOS shell, and GitHub Actions for nightly Instagram assets.
 
-## Features
+**Production:** https://our-daily-quilt-production.up.railway.app/our-daily-beta.html
 
-- **Interactive Quilt Building**: Add colors and build beautiful quilt patterns
-- **Image Reveal System**: Flip blocks to reveal pieces of a larger image
-- **Firebase Integration**: Load reveal images from Firebase Storage
-- **Mobile-First Design**: Optimized for touch interactions
-- **Local Storage**: Saves your quilt progress locally
+## Architecture (short)
 
-## Live Demo
+| Layer | What |
+|-------|------|
+| **Client shell** | `our-daily-beta.html` — markup, bootstrap scripts, Firebase init, prototype merge |
+| **Styles** | `styles/our-daily-beta.css` |
+| **App logic** | `lib/simplified-quilt-app-*.js` (portal, quilt, share, admin, mood, quote UI, nav, shell) |
+| **Services** | `lib/*-service.js`, `lib/utils-*.js`, `lib/layout-b-compose.js`, clipping widgets |
+| **Config** | `lib/app-config.js` (`CONFIG`) |
+| **API** | `server.js` (Node 20 on Railway) — quotes, IG generation, Notion sync hooks, reflection archive |
+| **Data** | Firestore (`quilts`, `instagram-images`, …), Firebase Storage |
+| **Automation** | `.github/workflows/` — daily reset, nightly IG **images**, Notion sync, speaker cutouts, etc. |
 
-Visit the live version to test the Firebase image reveal feature:
-[Live Demo](https://zakfoster921.github.io/our-daily-quilt/)
+The monolith HTML was split in Phase 8: class methods and Layout B canvas helpers live in `lib/`; CSS is external. The HTML module only defines `SimplifiedQuiltAppV2`’s constructor plus init wiring.
 
-## Local Development
+## Local development
 
-1. Clone the repository
-2. Open `our-daily-beta.html` in a web browser
-3. For Firebase image testing, deploy to a live server (GitHub Pages, Netlify, etc.)
+```bash
+npm install
+npm start                    # server.js on :3000
+npm run test:ci              # syntax, deps, extracted-global smoke
+```
 
-## Firebase Setup
+Static preview (no API):
 
-The app uses Firebase Storage for reveal images. Images should be stored in the `quilt-reveals` folder.
+```bash
+npx serve -l 3456 .
+# open http://localhost:3456/our-daily-beta.html
+```
+
+Firebase-backed flows need env/credentials locally (see `server.js` and scripts). Production uses Railway env vars.
+
+## iOS / Capacitor
+
+```bash
+npm run build:www            # copies our-daily-beta.html → www/index.html, lib/, styles/, assets/
+```
+
+Then open `ios/App` in Xcode. Native shell loads the same `lib/` and `styles/` tree as web.
+
+## Instagram & Zapier
+
+Two different video paths (see `.cursor/rules/instagram-zapier-reels.mdc`):
+
+1. **App reel** — user/browser records → `reel.webm` → transcode → **`reel.mp4`** (animated).
+2. **Nightly “static” reel** — optional; single frame loop (`reel-nightly.mp4`). **Scheduled automation posts images only** (`classic.png`, `layout-b.png`, story) via `nightly-instagram-snapshot.yml` → `npm run nightly:ig-images`. Zapier should wait for `readyForInstagram` on `instagram-images/{dateKey}`.
+
+## Repo layout notes
+
+- **Production entry:** `our-daily-beta.html`, `index.html` (redirect), `privacy.html`, `support.html`
+- **Labs / mockups:** `*-lab.html`, `color-picker-*.html` — local design tools; excluded from Docker (`.dockerignore`), not deployed
+- **Legacy HTML:** older `our-daily-*.html` copies in repo root — not production; kept for reference until Phase 9 cleanup
 
 ## Deployment
 
-### GitHub Pages (Recommended)
+Railway builds from `Dockerfile`: `server.js`, `our-daily-beta.html`, `lib/`, `styles/`, `assets/`, `scripts/`. Push to `main` to deploy.
 
-1. Push to GitHub repository
-2. Enable GitHub Pages in repository settings
-3. Set source to "Deploy from a branch"
-4. Select `main` branch and `/ (root)` folder
-
-### Netlify
-
-1. Drag and drop the project folder to Netlify
-2. Or connect your GitHub repository for automatic deployments
-
-## CORS Note
-
-Firebase image loading requires a proper domain (not `file://` or `localhost`). Deploy to a live website to test the full image reveal functionality.
-
-## Admin Access
-
-Use the gear icon in the bottom right to access admin features:
-- Manage reveal images
-- Force load Firebase images
-- Quote management
+Health check: `GET /api/health`
