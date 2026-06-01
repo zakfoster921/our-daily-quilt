@@ -1562,7 +1562,7 @@
       }
     }
 
-    body.intro-flow-active #screen-quote.intro-quote-land .quote-content-wrapper {
+    body.intro-flow-active #screen-quote.intro-quote-land .quote-content-wrapper:not(:has(.quote-screen-clipping)) {
       animation: introQuoteLandIn 0.82s cubic-bezier(0.22, 1, 0.28, 1) both;
     }
 
@@ -1805,7 +1805,7 @@
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     }
     
-    /* 3-slider picker: quote fills space above; picker shrink-wraps at bottom (slides up on reveal). */
+    /* 3-slider picker: quote fills space above; picker shrink-wraps at bottom (fades in on reveal). */
     #screen-quote.quote-picker-three-slider {
       --quote-control-width: min(300px, 78vw);
     }
@@ -1861,21 +1861,22 @@
       padding-bottom: max(2.2rem, calc(var(--odq-safe-bottom) + 1.3rem));
       padding-left: max(0.5rem, var(--odq-safe-left));
       padding-right: max(0.5rem, var(--odq-safe-right));
-      transform: translate3d(0, 100%, 0);
-      transition: transform 0.85s cubic-bezier(0.22, 0.61, 0.36, 1);
-      will-change: transform;
+      opacity: 0;
+      transition: opacity 0.85s cubic-bezier(0.22, 0.61, 0.36, 1);
+      will-change: opacity;
     }
 
     #screen-quote.quote-picker-three-slider .quote-color-combined__picker[hidden] {
       display: flex !important;
       visibility: hidden;
       pointer-events: none;
+      opacity: 0;
     }
 
     #screen-quote.quote-picker-three-slider.quote-picker-revealed .quote-color-combined__picker:not([hidden]) {
       visibility: visible;
       pointer-events: auto;
-      transform: translate3d(0, 0, 0);
+      opacity: 1;
     }
 
     #screen-quote.quote-picker-three-slider .color-picker-container--wheel {
@@ -1943,7 +1944,7 @@
     }
     
     #screen-quote {
-      transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+      transition: none;
       /* Flex host: child .quote-content-wrapper fills height; .quote-vspace rails split slack. */
       --portal-subtext-size: clamp(1.4rem, 3.5vw, 2rem);
       display: flex;
@@ -1981,7 +1982,12 @@
       transition: background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    /* Simple split: quote top half (fixed), color wheel bottom half (slides up). */
+    /* Picker fade-in only: backdrop stays neutral until color settle finishes. */
+    #screen-quote.quote-picker-revealed:not(.quote-has-color-picker) {
+      transition: none !important;
+    }
+
+    /* Simple split: quote top half (fixed), color picker bottom half (fades in). */
     .quote-stage-clip,
     .quote-color-combined {
       display: flex;
@@ -1994,8 +2000,14 @@
       overflow: hidden;
     }
 
-    #screen-quote .quote-stage-quote .quote-content-wrapper {
+    /* Clipping quote stays static — no fade/slide when sliders reveal or intro lands. */
+    #screen-quote .quote-stage-quote,
+    #screen-quote .quote-color-combined__quote,
+    #screen-quote .quote-stage-quote .quote-content-wrapper,
+    #screen-quote .quote-screen-clipping,
+    #screen-quote .quote-screen-clipping__image {
       animation: none !important;
+      transition: none !important;
       transform: none !important;
       opacity: 1 !important;
     }
@@ -2045,16 +2057,24 @@
       box-sizing: border-box;
     }
 
-    /* Clipping collage: no inner scroll box — image sizes to content. */
-    #screen-quote .quote-stage:has(> .quote-card.layoutb-preview-card > .quote-screen-clipping--ready),
-    #screen-quote .quote-stage-quote .quote-stage:has(> .quote-card.layoutb-preview-card > .quote-screen-clipping--ready),
-    #screen-quote .quote-color-combined__quote .quote-stage:has(> .quote-card.layoutb-preview-card > .quote-screen-clipping--ready) {
+    /* Clipping collage: stable layout before PNG decode finishes (no jump on --ready). */
+    #screen-quote .quote-stage:has(> .quote-card.layoutb-preview-card),
+    #screen-quote .quote-stage-quote .quote-stage:has(> .quote-card.layoutb-preview-card),
+    #screen-quote .quote-color-combined__quote .quote-stage:has(> .quote-card.layoutb-preview-card) {
       overflow: visible !important;
       max-height: none !important;
     }
 
-    #screen-quote .quote-content-wrapper:has(.quote-card.layoutb-preview-card > .quote-screen-clipping--ready) {
+    #screen-quote .quote-content-wrapper:has(.quote-card.layoutb-preview-card) {
       overflow: visible;
+    }
+
+    #screen-quote .quote-card.layoutb-preview-card > .quote-screen-clipping:not(.quote-screen-clipping--ready) {
+      visibility: hidden;
+    }
+
+    #screen-quote .quote-card.layoutb-preview-card > .quote-screen-clipping--ready {
+      visibility: visible;
     }
 
     .quote-stage-picker,
@@ -2075,9 +2095,9 @@
       padding-right: max(0.5rem, var(--odq-safe-right));
       background: transparent;
       overflow: hidden;
-      transform: translate3d(0, 100%, 0);
-      transition: transform 0.85s cubic-bezier(0.22, 0.61, 0.36, 1);
-      will-change: transform;
+      opacity: 0;
+      transition: opacity 0.85s cubic-bezier(0.22, 0.61, 0.36, 1);
+      will-change: opacity;
     }
 
     #screen-quote.quote-picker-revealed .quote-stage-clip,
@@ -2090,7 +2110,7 @@
       visibility: visible;
       pointer-events: auto;
       overflow: visible;
-      transform: translate3d(0, 0, 0);
+      opacity: 1;
     }
 
     #screen-quote.quote-picker-revealed .quote-color-combined__picker .color-picker-container {
@@ -2103,7 +2123,7 @@
       display: flex !important;
       visibility: hidden;
       pointer-events: none;
-      transform: translate3d(0, 100%, 0);
+      opacity: 0;
     }
 
     .quote-stage-picker.quote-color-picker--measuring,
@@ -2396,14 +2416,6 @@
       margin: clamp(0.1rem, 1vh, 0.65rem) auto clamp(1.35rem, 5vh, 3rem);
     }
 
-    /* Intro flow hero headings — SF Mono, light weight */
-    .first-name-heading,
-    #screen-first-quote-bridge .first-quote-bridge-line {
-      font-family: var(--portal-mono-font, 'SF Mono', ui-monospace, Menlo, monospace);
-      font-weight: 200;
-      font-style: normal;
-    }
-
     /* Full-width hero line — 75% of viewport, single line. */
     .welcome-how-heading-wrap {
       box-sizing: border-box;
@@ -2564,6 +2576,11 @@
     #screen-name-thanks,
     #screen-first-quote-bridge {
       --portal-subtext-size: clamp(1.4rem, 3.5vw, 2rem);
+      --intro-flow-heading-font: var(--portal-mono-font, 'SF Mono', ui-monospace, Menlo, monospace);
+      --intro-flow-heading-weight: 200;
+      --intro-flow-heading-size: var(--portal-subtext-size);
+      --intro-flow-heading-color: #000;
+      --intro-flow-heading-line-height: 1.35;
       flex-direction: column;
       justify-content: center;
       align-items: center;
@@ -3056,17 +3073,23 @@
       touch-action: pan-y;
       max-width: 100vw;
     }
-    /* Post-name thanks: “Welcome to ODQ” (SF Mono) + name (Zakarack). */
+    /* Intro flow lead lines — first name, welcome, quote bridge (shared token). */
+    .first-name-heading,
+    .name-thanks-line,
+    .name-thanks-line__lead {
+      font-family: var(--intro-flow-heading-font, var(--portal-mono-font, 'SF Mono', ui-monospace, Menlo, monospace));
+      font-weight: var(--intro-flow-heading-weight, 200);
+      font-style: normal;
+      font-size: var(--intro-flow-heading-size, var(--portal-subtext-size));
+      color: var(--intro-flow-heading-color, #000);
+      line-height: var(--intro-flow-heading-line-height, 1.35);
+    }
+
+    /* Post-name thanks: lead (intro token) + name (Zakarack). */
     .name-thanks-line {
       margin: 0;
       max-width: min(94vw, 28rem);
       text-align: center;
-      font-family: var(--portal-mono-font, 'SF Mono', ui-monospace, Menlo, monospace);
-      font-weight: 400;
-      font-size: calc(var(--portal-subtext-size) * 1.16);
-      letter-spacing: 0.02em;
-      color: rgba(41, 38, 34, 0.78);
-      line-height: 1.2;
     }
     #nameThanksLine {
       opacity: 0;
@@ -3078,9 +3101,6 @@
     .name-thanks-line__lead,
     .name-thanks-line__name {
       display: block;
-    }
-    .name-thanks-line__lead {
-      font-family: var(--portal-mono-font, 'SF Mono', ui-monospace, Menlo, monospace);
     }
     .name-thanks-line__name {
       margin-top: clamp(0.28rem, 1vh, 0.55rem);
@@ -3097,10 +3117,6 @@
       transition: opacity 700ms ease;
     }
 
-    #screen-first-quote-bridge .first-quote-bridge-line {
-      letter-spacing: 0.02em;
-      color: rgba(41, 38, 34, 0.78);
-    }
     #screen-first-quote-bridge .first-quote-bridge-line .name-thanks-line__lead + .name-thanks-line__lead {
       margin-top: clamp(0.28rem, 1vh, 0.55rem);
     }
@@ -3131,10 +3147,7 @@
       margin: 0 auto;
     }
     .first-name-heading {
-      font-size: var(--portal-subtext-size);
-      color: #000;
       margin: 0 0 1.35rem;
-      line-height: 1.35;
     }
 
     .first-name-label {
@@ -4899,7 +4912,7 @@
       --quilt-byg-inner-gap: clamp(1.1rem, 3.5dvh, 1.75rem);
       --quilt-what-else-to-names-gap: calc(var(--quilt-byg-inner-gap) * 0.25);
       /* Scroll design system — artifact | matte | tape */
-      --odq-paper-artifact: #f5e6d4;
+      --odq-paper-artifact: #f8f3eb;
       --odq-paper-matte: #ebe8e3;
       --odq-paper-tape: #f2eee6;
       --odq-ink-body: rgba(56, 46, 36, 0.78);
@@ -4970,7 +4983,7 @@
 
     /* Transparent side gutters (quilt shows through); warm sheet only behind the card column. */
     #screen-quilt .quote-card-stack {
-      --quilt-quote-paper-bg: var(--odq-paper-artifact, #f5e6d4);
+      --quilt-quote-paper-bg: var(--odq-paper-artifact, #f8f3eb);
       --quilt-float-card-max: 460px;
       --quilt-float-card-gutter: 16px;
       --quilt-float-sheet-width: min(
@@ -5583,7 +5596,7 @@
       inset: -3px;
       z-index: 0;
       pointer-events: none;
-      background-color: var(--odq-paper-artifact, var(--quilt-paper-card-fallback, #f5e6d4));
+      background-color: var(--odq-paper-artifact, var(--quilt-paper-card-fallback, #f8f3eb));
       background-image: var(--quilt-paper-card-texture);
       background-size: 118% 118%;
       background-position: center;
@@ -7333,6 +7346,10 @@
         /* body itself takes on the live color */
         background-color: var(--current-color, #f6f4f1) !important;
         transition: background-color 1.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+      }
+
+      body.color-mode-active:has(#screen-quote.quote-picker-revealed:not(.quote-has-color-picker)) {
+        transition: none !important;
       }
       
       /* Remove body transition - status bar should snap, not follow slow animation */
@@ -13642,7 +13659,7 @@
     }
 
     #screen-quilt .quilt-user-shape-card {
-      --quilt-color-card-paper: var(--odq-paper-artifact, var(--quilt-quote-paper-bg, #f5e6d4));
+      --quilt-color-card-paper: var(--odq-paper-artifact, var(--quilt-quote-paper-bg, #f8f3eb));
       --quilt-color-card-stock: var(--odq-paper-matte, #ebe8e3);
       --quilt-color-card-note: var(--odq-paper-tape, #f2eee6);
       position: relative;
