@@ -4936,6 +4936,12 @@
         drop-shadow(0 8px 20px rgba(28, 32, 42, 0.06));
       --odq-scroll-artifact-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
       --odq-scroll-artifact-grain-opacity: 0.045;
+      --odq-scanner-bloom-opacity: 0.05;
+      --odq-scanner-bloom-x: 28%;
+      --odq-scanner-bloom-y: 22%;
+      --odq-scanner-bloom-size: 68%;
+      --odq-scanner-iris-opacity: 0.035;
+      --odq-scanner-iris-angle: 132deg;
       --quilt-quote-paper-bg: var(--odq-paper-artifact);
       --quilt-speaker-card-warm-neutral: var(--odq-paper-artifact);
       --quilt-float-card-max: 460px;
@@ -5512,6 +5518,45 @@
       text-align: left;
     }
 
+
+    /* Scanner bed — flatbed glass lift + faint iridescence (above paper, below content). */
+    #screen-quilt .odq-scanner-bed {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    #screen-quilt .odq-scanner-bed::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      mix-blend-mode: soft-light;
+      background: radial-gradient(
+        ellipse var(--odq-scanner-bloom-size, 68%) 52% at
+          var(--odq-scanner-bloom-x, 28%) var(--odq-scanner-bloom-y, 22%),
+        rgba(255, 255, 255, var(--odq-scanner-bloom-opacity, 0.05)),
+        transparent 72%
+      );
+    }
+
+    #screen-quilt .odq-scanner-bed::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      mix-blend-mode: soft-light;
+      background: linear-gradient(
+        var(--odq-scanner-iris-angle, 132deg),
+        rgba(186, 198, 212, var(--odq-scanner-iris-opacity, 0.035)),
+        rgba(210, 196, 218, var(--odq-scanner-iris-opacity, 0.035)),
+        rgba(196, 210, 198, var(--odq-scanner-iris-opacity, 0.035)),
+        transparent 68%
+      );
+    }
+
     /* Newspaper clipping — pre-rendered PNG from nightly pipeline; plain-text fallback when missing. */
     #screen-quilt .quilt-quote-clipping {
       --quilt-clipping-font: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -5526,6 +5571,8 @@
     }
 
     #screen-quilt .quilt-quote-clipping__shadow {
+      position: relative;
+      isolation: isolate;
       width: 100%;
       max-width: 100%;
       transform: translate3d(-2px, 0, 0) rotate(-0.6deg);
