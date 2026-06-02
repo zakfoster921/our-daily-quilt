@@ -68,9 +68,20 @@ async function runNightlyIgAttempt({
   const page = await context.newPage();
   page.on('console', (msg) => {
     const text = msg.text();
-    if (text.includes('[nightly-ig:page]') || msg.type() === 'warning' || msg.type() === 'error') {
+    if (
+      text.includes('[nightly-ig:page]') ||
+      text.includes('[archive]') ||
+      text.includes('QuiltNewspaperClipping') ||
+      text.includes('Firestore') ||
+      text.includes('Storage') ||
+      msg.type() === 'warning' ||
+      msg.type() === 'error'
+    ) {
       console.log(`[nightly-ig:browser] ${text}`);
     }
+  });
+  page.on('pageerror', (err) => {
+    console.error('[nightly-ig:browser] pageerror:', err?.message || err);
   });
   try {
     console.log(`[nightly-ig] loading app ${appUrl}…`);
@@ -198,14 +209,29 @@ async function runNightlyIgAttempt({
             if (!moodClippingGoodImageData) {
               throw new Error(`Mood clipping (good_day) was not generated for ${dateKey}`);
             }
+            const goodBytes = Math.round(
+              ((String(moodClippingGoodImageData).length - 22) * 3) / 4
+            );
+            log(`mood clipping good_day PNG ~${goodBytes} bytes`);
             log('generating mood clipping rough_day PNG…');
             moodClippingRoughImageData = await arch.generateMoodClippingImageData(dateKey, {
               variant: 'rough',
               quoteClippingHeightPx,
               quoteClippingWidthPx
             });
+            if (moodClippingRoughImageData) {
+              const roughBytes = Math.round(
+                ((String(moodClippingRoughImageData).length - 22) * 3) / 4
+              );
+              log(`mood clipping rough_day PNG ~${roughBytes} bytes`);
+            } else {
+              log('mood clipping rough_day skipped (no copy)');
+            }
           }
-          log('uploading clipping PNGs…');
+          log('uploading clipping PNGs to Storage + Firestore…');
+          if (typeof Utils?.writeInstagramImagesDocForZapier !== 'function') {
+            throw new Error('Utils.writeInstagramImagesDocForZapier missing — deploy utils-instagram.js');
+          }
           const doc = await Utils.writeInstagramImagesDocForZapier({
             dateKey,
             newspaperClippingImageData,
@@ -213,6 +239,9 @@ async function runNightlyIgAttempt({
             moodClippingRoughImageData,
             storageCacheControl: 'no-store'
           });
+          log(
+            `upload complete; newspaperClippingUrl=${String(doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || '').slice(0, 120)}…`
+          );
           if (!doc.newspaperClippingUrl && !doc.newspaperClippingImageStorageUrl) {
             throw new Error('newspaperClippingUrl missing after upload');
           }
