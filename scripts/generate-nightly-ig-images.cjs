@@ -189,57 +189,13 @@ async function runNightlyIgAttempt({
               'Newspaper clipping paper texture did not load — check assets/quilt-paper-card-texture.png on APP_URL'
             );
           }
-          let quoteClippingHeightPx = 0;
-          let quoteClippingWidthPx = 0;
-          log('measuring quote clipping dimensions…');
-          if (typeof arch._measureDataUrlSizePx === 'function') {
-            const quoteSize = await arch._measureDataUrlSizePx(newspaperClippingImageData);
-            quoteClippingHeightPx = quoteSize?.h ?? 0;
-            quoteClippingWidthPx = quoteSize?.w ?? 0;
-          } else if (typeof arch._measureDataUrlHeightPx === 'function') {
-            quoteClippingHeightPx = await arch._measureDataUrlHeightPx(newspaperClippingImageData);
-          }
-          log(`quote clipping dimensions ${quoteClippingWidthPx}x${quoteClippingHeightPx}px`);
-          let moodClippingGoodImageData = null;
-          let moodClippingRoughImageData = null;
-          if (arch?.generateMoodClippingImageData) {
-            log('generating mood clipping good_day PNG…');
-            moodClippingGoodImageData = await arch.generateMoodClippingImageData(dateKey, {
-              variant: 'good',
-              quoteClippingHeightPx,
-              quoteClippingWidthPx
-            });
-            if (!moodClippingGoodImageData) {
-              throw new Error(`Mood clipping (good_day) was not generated for ${dateKey}`);
-            }
-            const goodBytes = Math.round(
-              ((String(moodClippingGoodImageData).length - 22) * 3) / 4
-            );
-            log(`mood clipping good_day PNG ~${goodBytes} bytes`);
-            log('generating mood clipping rough_day PNG…');
-            moodClippingRoughImageData = await arch.generateMoodClippingImageData(dateKey, {
-              variant: 'rough',
-              quoteClippingHeightPx,
-              quoteClippingWidthPx
-            });
-            if (moodClippingRoughImageData) {
-              const roughBytes = Math.round(
-                ((String(moodClippingRoughImageData).length - 22) * 3) / 4
-              );
-              log(`mood clipping rough_day PNG ~${roughBytes} bytes`);
-            } else {
-              log('mood clipping rough_day skipped (no copy)');
-            }
-          }
-          log('uploading clipping PNGs to Storage + Firestore…');
+          log('uploading newspaper clipping PNG to Storage + Firestore…');
           if (typeof Utils?.writeInstagramImagesDocForZapier !== 'function') {
             throw new Error('Utils.writeInstagramImagesDocForZapier missing — deploy utils-instagram.js');
           }
           const doc = await Utils.writeInstagramImagesDocForZapier({
             dateKey,
             newspaperClippingImageData,
-            moodClippingGoodImageData,
-            moodClippingRoughImageData,
             storageCacheControl: 'no-store'
           });
           const clippingUrl = String(
@@ -250,22 +206,10 @@ async function runNightlyIgAttempt({
           if (!doc.newspaperClippingUrl && !doc.newspaperClippingImageStorageUrl) {
             throw new Error('newspaperClippingUrl missing after upload');
           }
-          if (moodClippingGoodImageData && !doc.moodClippingGoodUrl && !doc.moodClippingGoodImageStorageUrl) {
-            throw new Error('moodClippingGoodUrl missing after upload');
-          }
-          if (
-            moodClippingRoughImageData &&
-            !doc.moodClippingRoughUrl &&
-            !doc.moodClippingRoughImageStorageUrl
-          ) {
-            throw new Error('moodClippingRoughUrl missing after upload');
-          }
           return {
             dateKey,
             clippingOnly: true,
-            newspaperClippingUrl: doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || '',
-            moodClippingGoodUrl: doc.moodClippingGoodUrl || doc.moodClippingGoodImageStorageUrl || '',
-            moodClippingRoughUrl: doc.moodClippingRoughUrl || doc.moodClippingRoughImageStorageUrl || ''
+            newspaperClippingUrl: doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || ''
           };
         }
 
@@ -579,20 +523,12 @@ async function runNightlyIgAttempt({
       console.log('[nightly-ig] clipping-only run complete (skipping full IG verify)');
       const newspaperClippingUrl = String(result.newspaperClippingUrl || '').trim();
       console.log(`[nightly-ig] newspaperClippingUrl=${newspaperClippingUrl || '(missing)'}`);
-      if (result.moodClippingGoodUrl) {
-        console.log(`[nightly-ig] moodClippingGoodUrl=${result.moodClippingGoodUrl}`);
-      }
-      if (result.moodClippingRoughUrl) {
-        console.log(`[nightly-ig] moodClippingRoughUrl=${result.moodClippingRoughUrl}`);
-      }
       return {
         success: true,
         date: dateKey,
         attempt,
         clippingOnly: true,
-        newspaperClippingUrl,
-        moodClippingGoodUrl: result.moodClippingGoodUrl || '',
-        moodClippingRoughUrl: result.moodClippingRoughUrl || ''
+        newspaperClippingUrl
       };
     }
 
