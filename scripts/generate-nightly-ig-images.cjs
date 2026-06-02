@@ -242,9 +242,11 @@ async function runNightlyIgAttempt({
             moodClippingRoughImageData,
             storageCacheControl: 'no-store'
           });
-          log(
-            `upload complete; newspaperClippingUrl=${String(doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || '').slice(0, 120)}…`
-          );
+          const clippingUrl = String(
+            doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || ''
+          ).trim();
+          log(`upload complete; newspaperClippingUrl=${clippingUrl}`);
+          log(`newspaperClippingExportRev=${String(doc.newspaperClippingExportRev || '').trim()}`);
           if (!doc.newspaperClippingUrl && !doc.newspaperClippingImageStorageUrl) {
             throw new Error('newspaperClippingUrl missing after upload');
           }
@@ -575,12 +577,22 @@ async function runNightlyIgAttempt({
 
     if (clippingOnly) {
       console.log('[nightly-ig] clipping-only run complete (skipping full IG verify)');
+      const newspaperClippingUrl = String(result.newspaperClippingUrl || '').trim();
+      console.log(`[nightly-ig] newspaperClippingUrl=${newspaperClippingUrl || '(missing)'}`);
+      if (result.moodClippingGoodUrl) {
+        console.log(`[nightly-ig] moodClippingGoodUrl=${result.moodClippingGoodUrl}`);
+      }
+      if (result.moodClippingRoughUrl) {
+        console.log(`[nightly-ig] moodClippingRoughUrl=${result.moodClippingRoughUrl}`);
+      }
       return {
         success: true,
         date: dateKey,
         attempt,
         clippingOnly: true,
-        newspaperClippingUrl: result.newspaperClippingUrl || ''
+        newspaperClippingUrl,
+        moodClippingGoodUrl: result.moodClippingGoodUrl || '',
+        moodClippingRoughUrl: result.moodClippingRoughUrl || ''
       };
     }
 
@@ -697,7 +709,10 @@ async function main() {
         strictQuote,
         clippingOnly
       });
-      console.log(JSON.stringify(result, null, 2));
+      console.log('[nightly-ig] result:', JSON.stringify(result, null, 2));
+      if (result.newspaperClippingUrl) {
+        console.log(`[nightly-ig] DONE newspaperClippingUrl=${result.newspaperClippingUrl}`);
+      }
       return;
     } catch (err) {
       lastError = err;
