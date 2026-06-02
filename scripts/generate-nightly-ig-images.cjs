@@ -138,8 +138,12 @@ async function runNightlyIgAttempt({
       `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
     page.setDefaultTimeout(evaluateTimeoutMs);
+    const minNewspaperClippingBytes = Math.max(
+      120000,
+      Number(process.env.NIGHTLY_MIN_NEWSPAPER_CLIPPING_BYTES) || 140000
+    );
     const result = await page.evaluate(
-      async ({ dateKey, strictQuote, clippingOnly }) => {
+      async ({ dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
@@ -169,10 +173,7 @@ async function runNightlyIgAttempt({
           log(
             `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
           );
-          const minClippingBytes = Math.max(
-            120000,
-            Number(process.env.NIGHTLY_MIN_NEWSPAPER_CLIPPING_BYTES) || 140000
-          );
+          const minClippingBytes = Math.max(120000, Number(minNewspaperClippingBytes) || 140000);
           if (clippingBytes < minClippingBytes) {
             throw new Error(
               `Newspaper clipping PNG too small (${clippingBytes} bytes < ${minClippingBytes}) — likely flat export without grain/halftone; check paper texture load and compose fallback in logs`
@@ -190,6 +191,7 @@ async function runNightlyIgAttempt({
           }
           let quoteClippingHeightPx = 0;
           let quoteClippingWidthPx = 0;
+          log('measuring quote clipping dimensions…');
           if (typeof arch._measureDataUrlSizePx === 'function') {
             const quoteSize = await arch._measureDataUrlSizePx(newspaperClippingImageData);
             quoteClippingHeightPx = quoteSize?.h ?? 0;
@@ -197,6 +199,7 @@ async function runNightlyIgAttempt({
           } else if (typeof arch._measureDataUrlHeightPx === 'function') {
             quoteClippingHeightPx = await arch._measureDataUrlHeightPx(newspaperClippingImageData);
           }
+          log(`quote clipping dimensions ${quoteClippingWidthPx}x${quoteClippingHeightPx}px`);
           let moodClippingGoodImageData = null;
           let moodClippingRoughImageData = null;
           if (arch?.generateMoodClippingImageData) {
@@ -567,7 +570,7 @@ async function runNightlyIgAttempt({
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote, clippingOnly }
+      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }
     );
 
     if (clippingOnly) {
