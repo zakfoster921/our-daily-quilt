@@ -3607,30 +3607,45 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
     }
   }
 
-  await newQuiltRef.set(
-    {
-      blocks: [],
-      contributorCount: 1,
-      contributors: [],
-      colorReplayEvents: [],
-      quiltFingerprint: '',
-      date: dateKey,
-      lastUpdated: getUtcIsoNow(),
-      resetBy: source,
-      resetAt: getUtcIsoNow(),
-      writeProvenance: {
-        clientBuild: 'server',
-        writeReason: 'server-daily-reset',
-        appInstanceId: 'server',
-        userId: 'server',
-        platform: 'server',
-        source,
-        writtenAt: getUtcIsoNow()
-      }
-    },
-    { merge: true }
-  );
+  const newQuiltSnap = await newQuiltRef.get();
+  const newQuiltData = newQuiltSnap.exists ? newQuiltSnap.data() || {} : {};
+  const todayBlocks = Array.isArray(newQuiltData.blocks) ? newQuiltData.blocks : [];
+  const todayBlockCount = todayBlocks.length;
+  /** Late cron must not wipe a quilt people already built after 07:00 UTC app-day rollover. */
+  const clearedToday = todayBlockCount <= 1;
+  const skippedClearReason = clearedToday ? null : 'active_quilt';
 
+  if (clearedToday) {
+    await newQuiltRef.set(
+      {
+        blocks: [],
+        contributorCount: 1,
+        contributors: [],
+        colorReplayEvents: [],
+        quiltFingerprint: '',
+        date: dateKey,
+        lastUpdated: getUtcIsoNow(),
+        resetBy: source,
+        resetAt: getUtcIsoNow(),
+        writeProvenance: {
+          clientBuild: 'server',
+          writeReason: 'server-daily-reset',
+          appInstanceId: 'server',
+          userId: 'server',
+          platform: 'server',
+          source,
+          writtenAt: getUtcIsoNow()
+        }
+      },
+      { merge: true }
+    );
+  } else {
+    console.warn(
+      `Daily reset: skipped clearing quilts/${dateKey} (${todayBlockCount} blocks); archived closing ${closingKey} only.`
+    );
+  }
+
+  const completedAt = getUtcIsoNow();
   await opRef.set(
     {
       status: 'success',
@@ -3638,7 +3653,10 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
       closingKey,
       archived,
       source,
-      completedAt: getUtcIsoNow()
+      clearedToday,
+      skippedClearReason,
+      todayBlockCountAtReset: todayBlockCount,
+      completedAt
     },
     { merge: true }
   );
@@ -3648,7 +3666,9 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
     date: dateKey,
     closingKey,
     alreadyReset: false,
-    archived
+    archived,
+    clearedToday,
+    skippedClearReason
   };
 }
 
@@ -5894,7 +5914,7 @@ app.post('/api/daily-reset', async (req, res) => {
 });
 
 /**
- * GitHub Actions (cron 6:30 UTC): snapshot quilt → classic PNG + 8s static MP4 for Zapier, before daily reset at 7:00 UTC.
+ * GitHub Actions: snapshot quilt → classic PNG + 8s static MP4 for Zapier (legacy). Daily reset: Railway Cron → /api/daily-reset (~07:17 UTC).
  * Auth: same x-reset-token as /api/daily-reset.
  */
 app.post('/api/nightly-instagram-snapshot', async (req, res) => {
