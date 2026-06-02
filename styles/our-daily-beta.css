@@ -86,6 +86,8 @@
       --odq-safe-right: max(0px, env(safe-area-inset-right, 0px));
       /* Extra vertical breathing room on the first-visit “Here’s how it works” screen (#screen-welcome). */
       --welcome-screen-v-gutter: clamp(0.75rem, 2.5vh, 1.75rem);
+      /* Settings, reflection, reflection archive, about — clear status bar / notch */
+      --odq-header-screen-pad-top: max(clamp(2.75rem, 9vh, 4.5rem), calc(var(--odq-safe-top) + 1rem));
     }
 
     @font-face {
@@ -147,7 +149,6 @@
         margin: 0;
         padding: 0;
         box-sizing: border-box;
-        position: relative;
         touch-action: none;
         /* Isolate stacking so canvas mix-blend composes reliably (WKWebView / device Safari). */
         isolation: isolate;
@@ -1280,10 +1281,8 @@
     #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible {
       overflow: visible;
     }
-    /* Quote screen: same wispy cloud-of-color gem as the exit-chamber
-       daily-colors button (#quiltDailyColorsCtaBtn), so the two read as the
-       same vessel across the ritual. The disc still fades in with the prompt;
-       its inner shimmer/beam pseudos animate continuously to echo the gem. */
+    /* Quote screen: wispy cloud-of-color gem. The disc fades in with the prompt;
+       inner shimmer/beam pseudos animate continuously. */
     #screen-quote .quote-color-wonky-btn__disc {
       position: relative;
       overflow: hidden;
@@ -1319,7 +1318,7 @@
       border-radius: inherit;
       pointer-events: none;
     }
-    /* Drifting cloud wisps — mirrors #quiltDailyColorsCtaBtn::before. */
+    /* Drifting cloud wisps. */
     #screen-quote .quote-color-wonky-btn__disc::before {
       background:
         radial-gradient(circle at 28% 38%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 36%),
@@ -1332,7 +1331,7 @@
       animation: quiltDailyColorsGemShimmer 28s linear infinite;
       z-index: 0;
     }
-    /* Soft passing wisp — mirrors #quiltDailyColorsCtaBtn::after. */
+    /* Soft passing wisp. */
     #screen-quote .quote-color-wonky-btn__disc::after {
       background: linear-gradient(
         115deg,
@@ -1348,6 +1347,18 @@
       animation: quiltDailyColorsGemBeam 11s ease-in-out 2.2s infinite;
       z-index: 1;
     }
+
+    @keyframes quiltDailyColorsGemShimmer {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes quiltDailyColorsGemBeam {
+      0%   { transform: translateX(-120%); opacity: 0; }
+      15%  { opacity: 1; }
+      55%  { opacity: 1; }
+      100% { transform: translateX(120%); opacity: 0; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       #screen-quote .quote-color-wonky-btn__disc::before { animation: none; }
       #screen-quote .quote-color-wonky-btn__disc::after { animation: none; opacity: 0; }
@@ -1364,8 +1375,7 @@
     #screen-quote
       #quoteColorWonkyBtn.quote-color-wonky-btn--visible:not(.quote-color-wonky-btn--pulse-off)
       .quote-color-wonky-btn__disc {
-      /* Disc itself sits still — only the inner shimmer/beam pseudos animate,
-         matching the exit-chamber daily-colors gem exactly. */
+      /* Disc itself sits still — only the inner shimmer/beam pseudos animate. */
       animation: none;
     }
     #screen-quote #quoteColorWonkyBtn.quote-color-wonky-btn--visible.quote-color-wonky-btn--pulse-off {
@@ -2610,7 +2620,7 @@
       --quilt-speaker-name-font: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
       justify-content: flex-start;
       overflow-y: auto;
-      padding: max(clamp(2.75rem, 9vh, 4.5rem), calc(var(--odq-safe-top) + 1rem)) 1.25rem max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+      padding: var(--odq-header-screen-pad-top) 1.25rem max(1rem, env(safe-area-inset-bottom, 0px)) !important;
     }
     #screen-remember-today,
     #screen-remember-today-view {
@@ -2691,6 +2701,7 @@
       line-height: 1.05;
       color: #2c2622;
       text-align: left;
+      text-transform: uppercase;
     }
 
     #screen-remember-today .remember-today-title {
@@ -2699,7 +2710,6 @@
 
     #screen-remember-today-view .remember-today-view-title {
       margin: 0 0 1.35rem;
-      text-transform: uppercase;
       text-wrap: balance;
     }
     #screen-remember-today .remember-today-intro {
@@ -6998,9 +7008,13 @@
       }
 
       #screen-about {
-        padding: max(clamp(2.75rem, 9vh, 4.5rem), var(--odq-safe-top)) max(1.25rem, calc(var(--odq-safe-right) + 1.25rem)) max(0.75rem, var(--odq-safe-bottom)) max(1.25rem, calc(var(--odq-safe-left) + 1.25rem)) !important;
+        padding: var(--odq-header-screen-pad-top) max(1.25rem, calc(var(--odq-safe-right) + 1.25rem)) max(0.75rem, var(--odq-safe-bottom)) max(1.25rem, calc(var(--odq-safe-left) + 1.25rem)) !important;
         overflow-y: auto !important;
         box-sizing: border-box !important;
+      }
+
+      #screen-reflection.active {
+        padding-top: var(--odq-header-screen-pad-top) !important;
       }
 
       #screen-about .about-container {
@@ -7202,6 +7216,7 @@
         justify-content: flex-start !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch;
+        padding: var(--odq-header-screen-pad-top) max(1rem, var(--odq-safe-right)) max(1rem, var(--odq-safe-bottom)) max(1rem, var(--odq-safe-left)) !important;
       }
 
       /* Quote: flex column host + grid wrapper — only when active so `showScreen` inline display:none wins. */
@@ -7267,7 +7282,7 @@
       
       #screen-archive.active,
       #screen-reflection-themes-archive.active {
-        padding: 0 max(0px, var(--odq-safe-right)) 0 max(0px, var(--odq-safe-left)) !important;
+        padding: var(--odq-header-screen-pad-top) max(0px, var(--odq-safe-right)) 0 max(0px, var(--odq-safe-left)) !important;
         display: block !important;
         min-height: 100vh !important;
         height: auto !important;
@@ -7778,7 +7793,7 @@
       max-height: 100dvh !important;
       overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
-      padding: max(clamp(2.75rem, 9vh, 4.5rem), calc(var(--odq-safe-top) + 1rem)) max(0px, var(--odq-safe-right)) max(4rem, calc(var(--odq-safe-bottom) + 3rem)) max(0px, var(--odq-safe-left)) !important;
+      padding: var(--odq-header-screen-pad-top) max(0px, var(--odq-safe-right)) max(4rem, calc(var(--odq-safe-bottom) + 3rem)) max(0px, var(--odq-safe-left)) !important;
     }
 
     #screen-reflection-themes-archive .back-to-quilt-btn {
@@ -8947,7 +8962,7 @@
       align-items: center;
       justify-content: flex-start;
       min-height: 0;
-      padding: max(4rem, calc(var(--odq-safe-top) + 1rem)) max(1rem, var(--odq-safe-right)) max(0.75rem, var(--odq-safe-bottom)) max(1rem, var(--odq-safe-left));
+      padding: var(--odq-header-screen-pad-top) max(1rem, var(--odq-safe-right)) max(0.75rem, var(--odq-safe-bottom)) max(1rem, var(--odq-safe-left));
       background-color: #f6f4f1;
     }
 
@@ -11461,7 +11476,7 @@
       --reflection-patch-side-bleed: clamp(0.07rem, 0.26vw, 0.13rem);
       --reflection-fabric-fray: clamp(0.15rem, 0.45vw, 0.19rem);
       --reflection-outer-edge-fray: calc(var(--reflection-fabric-fray) + max(0.3rem, 2.5%));
-      --reflection-carousel-scroll-hint: clamp(2.25rem, 10.5vw, 4.25rem);
+      --reflection-carousel-scroll-hint: clamp(1.25rem, 4vw, 1.75rem);
       /* Diagonal thread strength only — no orthogonal repeat (that reads as graph-paper blocks). */
       --reflection-fabric-weave-scale: 0.82;
       --reflection-fabric-thread-light: 0.08;
@@ -13670,15 +13685,6 @@
       line-height: 1.1;
     }
 
-    #screen-quilt .quilt-daily-colors-cta-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.55rem;
-      margin: 0 auto;
-      width: 100%;
-    }
-
     #screen-quilt .quilt-user-color-together-note-wrap {
       position: relative;
       z-index: 11;
@@ -13836,133 +13842,6 @@
       text-align: center;
       text-wrap: pretty;
       overflow-wrap: break-word;
-    }
-
-    /* TEMP: exit chamber gem CTA hidden while CONFIG.APP.exitChamberCtaEnabled is false. */
-    html[data-exit-chamber-cta-disabled="1"] #screen-quilt #quiltDailyColorsCtaBtn {
-      display: none !important;
-      visibility: hidden !important;
-      pointer-events: none !important;
-    }
-
-    #screen-quilt .quilt-daily-colors-cta {
-      width: 128px;
-      height: 128px;
-      border-radius: 50%;
-      padding: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      /* Match the quote-screen color button's -5° tilt so the two read as the
-         same hand-drawn vessel — empty at the start of the day, full here. */
-      transform: rotate(-5deg);
-      /* Wispy, decentralized cloud blobs — each color is its own soft off-center
-         puff with a long transparent falloff, so they blend like overlapping
-         clouds instead of forming a single radial bullseye. */
-      background:
-        radial-gradient(circle at 78% 22%, rgba(255, 214, 165, 0.88) 0%, rgba(255, 214, 165, 0) 42%),
-        radial-gradient(circle at 22% 30%, rgba(255, 182, 193, 0.82) 0%, rgba(255, 182, 193, 0) 46%),
-        radial-gradient(circle at 14% 76%, rgba(196, 216, 255, 0.82) 0%, rgba(196, 216, 255, 0) 48%),
-        radial-gradient(circle at 80% 82%, rgba(246, 198, 255, 0.78) 0%, rgba(246, 198, 255, 0) 46%),
-        radial-gradient(circle at 50% 96%, rgba(184, 240, 216, 0.74) 0%, rgba(184, 240, 216, 0) 44%),
-        radial-gradient(circle at 94% 52%, rgba(255, 243, 168, 0.74) 0%, rgba(255, 243, 168, 0) 44%),
-        radial-gradient(circle at 38% 58%, rgba(255, 255, 255, 0.36) 0%, rgba(255, 255, 255, 0) 62%),
-        #fbeede;
-      border: none;
-      color: rgba(74, 59, 44, 0.92);
-      /* Inset so the 1px ring survives clip-path (added below). */
-      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
-      cursor: pointer;
-      appearance: none;
-      -webkit-appearance: none;
-      transition: transform 160ms ease, box-shadow 160ms ease;
-      position: relative;
-      overflow: hidden;
-      /* True geometric clip — keeps the inner shimmer/beam (filter:blur +
-         mix-blend-mode) inside the circle on iOS Safari, where border-radius
-         + overflow:hidden alone can let blurred content spill past the edge. */
-      clip-path: circle(50%);
-      isolation: isolate;
-    }
-
-    #screen-quilt .quilt-daily-colors-cta::before,
-    #screen-quilt .quilt-daily-colors-cta::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      pointer-events: none;
-    }
-
-    /* Drifting cloud wisps — soft off-center radial puffs that slowly rotate so
-       the whole "atmosphere" appears to swirl rather than flash. */
-    #screen-quilt .quilt-daily-colors-cta::before {
-      background:
-        radial-gradient(circle at 28% 38%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 36%),
-        radial-gradient(circle at 72% 28%, rgba(255, 240, 220, 0.42) 0%, rgba(255, 240, 220, 0) 40%),
-        radial-gradient(circle at 64% 78%, rgba(220, 230, 255, 0.42) 0%, rgba(220, 230, 255, 0) 42%),
-        radial-gradient(circle at 18% 82%, rgba(255, 220, 240, 0.38) 0%, rgba(255, 220, 240, 0) 40%);
-      mix-blend-mode: screen;
-      filter: blur(6px);
-      transform-origin: 52% 48%;
-      animation: quiltDailyColorsGemShimmer 28s linear infinite;
-      z-index: 0;
-    }
-
-    /* Soft passing wisp — a wide, low-contrast diagonal cloud that drifts
-       across the gem, much more diffuse than a hard "shine". */
-    #screen-quilt .quilt-daily-colors-cta::after {
-      background: linear-gradient(
-        115deg,
-        transparent 28%,
-        rgba(255, 255, 255, 0.32) 44%,
-        rgba(255, 255, 255, 0.5) 50%,
-        rgba(255, 255, 255, 0.32) 56%,
-        transparent 72%
-      );
-      mix-blend-mode: screen;
-      filter: blur(8px);
-      transform: translateX(-120%);
-      animation: quiltDailyColorsGemBeam 11s ease-in-out 2.2s infinite;
-      z-index: 1;
-    }
-
-    @keyframes quiltDailyColorsGemShimmer {
-      to { transform: rotate(360deg); }
-    }
-
-    @keyframes quiltDailyColorsGemBeam {
-      0%   { transform: translateX(-120%); opacity: 0; }
-      15%  { opacity: 1; }
-      55%  { opacity: 1; }
-      100% { transform: translateX(120%); opacity: 0; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #screen-quilt .quilt-daily-colors-cta::before { animation: none; }
-      #screen-quilt .quilt-daily-colors-cta::after { animation: none; opacity: 0; }
-    }
-
-    #screen-quilt .quilt-daily-colors-cta:hover,
-    #screen-quilt .quilt-daily-colors-cta:focus-visible {
-      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
-      outline: none;
-    }
-
-    #screen-quilt .quilt-daily-colors-cta:active {
-      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
-    }
-
-    #screen-quilt .quilt-daily-colors-cta__label {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 0.78rem;
-      font-weight: 400;
-      font-style: italic;
-      letter-spacing: 0.02em;
-      color: rgba(86, 66, 47, 0.42);
-      text-align: center;
-      line-height: 1.3;
     }
 
     /* User's color — Pantone-style swatch on handled mount (stain + crimp). */

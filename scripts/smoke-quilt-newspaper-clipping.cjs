@@ -217,7 +217,30 @@ async function main() {
       author: 'Albert Einstein',
       first_line_count: 4
     };
+    const shortComposedW = await (async () => {
+      const compose = api.composeDataUrlWithLayout || api.composeDataUrl;
+      const composed = await compose({
+        ...quotes,
+        today: shortQuote,
+        dateKey: `${quotes.dateKey}-short-sharp`,
+        exportDensity: 2
+      });
+      const url = typeof composed === 'string' ? composed : composed?.dataUrl;
+      if (!url) return { pngW: 0, displayW: 0 };
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = () => res();
+        img.onerror = rej;
+        img.src = url;
+      });
+      return {
+        pngW: img.naturalWidth,
+        displayW: typeof composed === 'object' ? Number(composed.displayWidthPx) || 0 : 0
+      };
+    })();
     const shortSize = await composeSizeForToday(shortQuote, `${quotes.dateKey}-short`);
+    const shortSharpW = shortComposedW.pngW;
+    const shortDisplayW = shortComposedW.displayW;
     const longSize = await composeSizeForToday(longQuote, `${quotes.dateKey}-long`);
     const legacyOutW = api.resolveQuoteCropMetrics(cfg).outW;
 
@@ -229,6 +252,8 @@ async function main() {
       centerColW: spread?.centerColW ?? 0,
       legacyOutW,
       shortSize,
+      shortSharpW,
+      shortDisplayW,
       longSize,
       spread: spread.canvas.toDataURL('image/png', 0.92),
       clipped: clipped ? clipped.toDataURL('image/png', 0.92) : composed,
@@ -245,7 +270,7 @@ async function main() {
       `hand-cut corners look opaque (min corner alpha ${dataUrl.cornerAlphaMin}); silhouette may be missing`
     );
   }
-  const { shortSize, longSize, legacyOutW, clippedWidth } = dataUrl;
+  const { shortSize, shortSharpW, shortDisplayW, longSize, legacyOutW, clippedWidth } = dataUrl;
   if (!shortSize?.width || !longSize?.width) {
     throw new Error('content-aware sizing smoke: failed to compose short/long quote sizes');
   }
@@ -254,13 +279,25 @@ async function main() {
       `short quote clipping should be narrower than long quote (${shortSize.width}px vs ${longSize.width}px)`
     );
   }
+  if (!shortSharpW || !shortDisplayW || shortSharpW < shortDisplayW * 1.85) {
+    throw new Error(
+      `short quote compose should supersample for retina (sharp ${shortSharpW}px vs display ${shortDisplayW}px)`
+    );
+  }
+  const qnc = require('../lib/quilt-newspaper-clipping.js');
+  const minDisplayW = qnc.minClippingDisplayWidthDomPx({ displayScale: 1 });
+  if (shortDisplayW + 1 < minDisplayW) {
+    throw new Error(
+      `short quote display ${shortDisplayW}px should respect readability floor ${Math.round(minDisplayW)}px`
+    );
+  }
   if (Number.isFinite(legacyOutW) && legacyOutW > 0 && shortSize.width >= legacyOutW) {
     throw new Error(
       `short quote clipping should be narrower than legacy fixed outW (${shortSize.width}px vs ${legacyOutW}px)`
     );
   }
   console.log(
-    `[smoke] content-aware sizes — short: ${shortSize.width}x${shortSize.height} (centerCol ${shortSize.centerColW}), long: ${longSize.width}x${longSize.height}, live: ${clippedWidth}px wide (legacy fixed ${legacyOutW}px)`
+    `[smoke] content-aware sizes — short crop: ${shortSize.width}x${shortSize.height}, short compose display: ${shortDisplayW}px @ ${shortSharpW}px png, long: ${longSize.width}x${longSize.height}, live: ${clippedWidth}px (legacy ${legacyOutW}px)`
   );
   fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
   const writePng = (name, url) => {
