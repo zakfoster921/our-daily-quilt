@@ -150,6 +150,33 @@ async function runNightlyIgAttempt({
           if (!newspaperClippingImageData) {
             throw new Error(`Newspaper clipping was not generated for ${dateKey}`);
           }
+          const clippingBytes = Math.max(
+            0,
+            Math.round(((String(newspaperClippingImageData).length - 22) * 3) / 4)
+          );
+          const composeMeta = arch._lastNewspaperClippingComposeMeta || null;
+          log(
+            `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
+          );
+          const minClippingBytes = Math.max(
+            120000,
+            Number(process.env.NIGHTLY_MIN_NEWSPAPER_CLIPPING_BYTES) || 140000
+          );
+          if (clippingBytes < minClippingBytes) {
+            throw new Error(
+              `Newspaper clipping PNG too small (${clippingBytes} bytes < ${minClippingBytes}) — likely flat export without grain/halftone; check paper texture load and compose fallback in logs`
+            );
+          }
+          if (composeMeta?.composeAttempt > 0) {
+            throw new Error(
+              `Newspaper clipping used compose fallback "${composeMeta.composeAttemptLabel}" — paper texture dropped (canvas taint)`
+            );
+          }
+          if (composeMeta?.exportDiagnostics?.paperLoaded === false) {
+            throw new Error(
+              'Newspaper clipping paper texture did not load — check assets/quilt-paper-card-texture.png on APP_URL'
+            );
+          }
           let quoteClippingHeightPx = 0;
           let quoteClippingWidthPx = 0;
           if (typeof arch._measureDataUrlSizePx === 'function') {
