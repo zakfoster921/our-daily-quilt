@@ -162,6 +162,7 @@ async function main() {
     let clipped = api.cropSpreadToClipping(spread, cfg);
     if (clipped) {
       clipped = api.applyHandCutSilhouette(clipped, quotes.dateKey, cfg);
+      clipped = api.trimCanvasAlphaBounds(clipped, cfg);
     }
     const composed = await api.composeDataUrl(quotes);
     const flatCfg = {
@@ -189,9 +190,46 @@ async function main() {
         cornerAlphaMin = Math.min(cornerAlphaMin, sample(x, y));
       }
     }
+
+    async function composeSizeForToday(today, dateKey) {
+      const payload = { ...quotes, today, dateKey: dateKey || quotes.dateKey };
+      const s = api.renderFullSpread(mctx, payload, cfg);
+      if (!s) return null;
+      let c = api.cropSpreadToClipping(s, cfg);
+      if (!c) return null;
+      c = api.applyHandCutSilhouette(c, payload.dateKey, cfg);
+      c = api.trimCanvasAlphaBounds(c, cfg);
+      return {
+        centerColW: s.centerColW,
+        width: c.width,
+        height: c.height
+      };
+    }
+
+    const shortQuote = {
+      text: 'When we plant trees, we plant the seeds of peace and seeds of hope.',
+      author: 'Wangari Maathai',
+      first_line_count: 3
+    };
+    const longQuote = {
+      text:
+        'Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world and opens doors we never knew existed.',
+      author: 'Albert Einstein',
+      first_line_count: 4
+    };
+    const shortSize = await composeSizeForToday(shortQuote, `${quotes.dateKey}-short`);
+    const longSize = await composeSizeForToday(longQuote, `${quotes.dateKey}-long`);
+    const legacyOutW = api.resolveQuoteCropMetrics(cfg).outW;
+
     return {
       exportWidth: cfg.width,
       cornerAlphaMin,
+      clippedWidth: clipped?.width ?? 0,
+      clippedHeight: clipped?.height ?? 0,
+      centerColW: spread?.centerColW ?? 0,
+      legacyOutW,
+      shortSize,
+      longSize,
       spread: spread.canvas.toDataURL('image/png', 0.92),
       clipped: clipped ? clipped.toDataURL('image/png', 0.92) : composed,
       clippedFlat: clippedFlat ? clippedFlat.toDataURL('image/png', 0.92) : null,
@@ -207,6 +245,23 @@ async function main() {
       `hand-cut corners look opaque (min corner alpha ${dataUrl.cornerAlphaMin}); silhouette may be missing`
     );
   }
+  const { shortSize, longSize, legacyOutW, clippedWidth } = dataUrl;
+  if (!shortSize?.width || !longSize?.width) {
+    throw new Error('content-aware sizing smoke: failed to compose short/long quote sizes');
+  }
+  if (shortSize.width >= longSize.width) {
+    throw new Error(
+      `short quote clipping should be narrower than long quote (${shortSize.width}px vs ${longSize.width}px)`
+    );
+  }
+  if (Number.isFinite(legacyOutW) && legacyOutW > 0 && shortSize.width >= legacyOutW) {
+    throw new Error(
+      `short quote clipping should be narrower than legacy fixed outW (${shortSize.width}px vs ${legacyOutW}px)`
+    );
+  }
+  console.log(
+    `[smoke] content-aware sizes — short: ${shortSize.width}x${shortSize.height} (centerCol ${shortSize.centerColW}), long: ${longSize.width}x${longSize.height}, live: ${clippedWidth}px wide (legacy fixed ${legacyOutW}px)`
+  );
   fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
   const writePng = (name, url) => {
     const out = path.join(root, 'tmp', name);
