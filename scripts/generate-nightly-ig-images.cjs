@@ -40,15 +40,11 @@ function assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minClippingB
     );
   }
   if (meta.peekCrop !== true) {
+    const ratio = Number(meta.peekWidthRatio) || 0;
+    const centerW = Number(meta.centerOnlyWidth) || 0;
+    const peekW = Number(meta.clippedWidth) || 0;
     throw new Error(
-      'Newspaper clipping did not use peek crop — deploy latest quilt-newspaper-clipping.js (peekSides)'
-    );
-  }
-  const aspect = Number(meta.aspectRatio) || 0;
-  const minPeekAspect = Math.max(0.65, Number(process.env.NIGHTLY_MIN_PEEK_ASPECT) || 0.72);
-  if (aspect > 0 && aspect < minPeekAspect) {
-    throw new Error(
-      `Newspaper clipping too narrow (aspect ${aspect.toFixed(2)} < ${minPeekAspect}) — center-only trim or missing side columns`
+      `Newspaper clipping is not a 3-column peek (peekCrop=false; width ${peekW}px vs center-only ${centerW}px; ratio ${ratio.toFixed(2)}; need ≥1.08)`
     );
   }
 }
