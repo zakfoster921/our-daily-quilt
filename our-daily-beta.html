@@ -1981,7 +1981,7 @@ try {
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/speaker-guide-marker.js?v=21"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=74"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=75"></script>
   <script src="lib/odq-scanner-bed.js?v=4"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
   <script src="lib/quilt-mood-triptych-widget.js?v=147"></script>
@@ -2967,13 +2967,27 @@ try {
     window.resetQuiltMoodSelection = function resetQuiltMoodSelection() {
       try {
         if (window.app && typeof window.app.resetQuiltMoodSelection === 'function') {
-          return window.app.resetQuiltMoodSelection();
+          const ok = window.app.resetQuiltMoodSelection();
+          console.info(
+            ok
+              ? 'resetQuiltMoodSelection: ok (storage + triptych reset)'
+              : 'resetQuiltMoodSelection: partial — open quilt screen (#screen-quilt), then run again'
+          );
+          return ok;
         }
         const key =
           (typeof Utils !== 'undefined' && Utils.QUILT_MOOD_PICK_KEY) ||
           'ourDailyQuiltMoodPick';
         localStorage.removeItem(key);
-        console.warn('resetQuiltMoodSelection: app not ready — cleared storage only. Open quilt screen and run again.');
+        const triptych = document.getElementById('quiltMoodSpread')?._moodTriptychWidget;
+        if (triptych?.setMood) {
+          triptych.setMood(null, { instant: true, force: true });
+          console.info('resetQuiltMoodSelection: cleared storage + triptych (app not ready yet)');
+          return true;
+        }
+        console.warn(
+          'resetQuiltMoodSelection: app not ready — cleared storage only. Open quilt screen and run again, or: document.getElementById("quiltMoodSpread")._moodTriptychWidget?.setMood(null,{instant:true,force:true})'
+        );
       } catch (e) {
         console.warn(e);
       }
