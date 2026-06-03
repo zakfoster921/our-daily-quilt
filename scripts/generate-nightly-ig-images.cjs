@@ -30,6 +30,29 @@ function getCompletedQuiltDateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+function assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minClippingBytes) {
+  const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
+  const bytes = Math.max(0, Number(clippingBytes) || 0);
+  const minBytes = Math.max(120000, Number(minClippingBytes) || 140000);
+  if (bytes < minBytes) {
+    throw new Error(
+      `Newspaper clipping PNG too small (${bytes} bytes < ${minBytes}) — likely flat export without grain/halftone`
+    );
+  }
+  if (meta.peekCrop !== true) {
+    throw new Error(
+      'Newspaper clipping did not use peek crop — deploy latest quilt-newspaper-clipping.js (peekSides)'
+    );
+  }
+  const aspect = Number(meta.aspectRatio) || 0;
+  const minPeekAspect = Math.max(0.65, Number(process.env.NIGHTLY_MIN_PEEK_ASPECT) || 0.72);
+  if (aspect > 0 && aspect < minPeekAspect) {
+    throw new Error(
+      `Newspaper clipping too narrow (aspect ${aspect.toFixed(2)} < ${minPeekAspect}) — center-only trim or missing side columns`
+    );
+  }
+}
+
 async function writeFailureArtifacts(page, attempt, outDir) {
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -185,12 +208,6 @@ async function runNightlyIgAttempt({
           log(
             `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
           );
-          const minClippingBytes = Math.max(120000, Number(minNewspaperClippingBytes) || 140000);
-          if (clippingBytes < minClippingBytes) {
-            throw new Error(
-              `Newspaper clipping PNG too small (${clippingBytes} bytes < ${minClippingBytes}) — likely flat export without grain/halftone; check paper texture load and compose fallback in logs`
-            );
-          }
           if (composeMeta?.composeAttempt > 0) {
             throw new Error(
               `Newspaper clipping used compose fallback "${composeMeta.composeAttemptLabel}" — paper texture dropped (canvas taint)`
@@ -201,6 +218,7 @@ async function runNightlyIgAttempt({
               'Newspaper clipping paper texture did not load — check assets/quilt-paper-card-texture.png on APP_URL'
             );
           }
+          assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
           log('uploading newspaper clipping PNG to Storage + Firestore…');
           if (typeof Utils?.writeInstagramImagesDocForZapier !== 'function') {
             throw new Error('Utils.writeInstagramImagesDocForZapier missing — deploy utils-instagram.js');
@@ -430,8 +448,17 @@ async function runNightlyIgAttempt({
           log('generating newspaper clipping PNG…');
           newspaperClippingImageData = await arch.generateNewspaperClippingImageData(dateKey);
           if (!newspaperClippingImageData) {
-            console.warn(`[nightly-ig:page] newspaper clipping empty for ${dateKey}`);
+            throw new Error(`Newspaper clipping was not generated for ${dateKey}`);
           }
+          const clippingBytes = Math.max(
+            0,
+            Math.round(((String(newspaperClippingImageData).length - 22) * 3) / 4)
+          );
+          const composeMeta = arch._lastNewspaperClippingComposeMeta || null;
+          log(
+            `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
+          );
+          assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
         }
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
         if (quiltExportMeta && !quiltExportMeta.quiltBlobFromLiveSvg) {

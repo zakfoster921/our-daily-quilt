@@ -85,6 +85,23 @@ jobs:
           fi
           echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
 
+      - name: Start local app (same commit as workflow)
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          npx --yes serve@14 -l 8765 . > tmp/serve-nightly.log 2>&1 &
+          echo "SERVE_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:8765/our-daily-beta.html" >/dev/null; then
+              echo "Local app ready on :8765"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat tmp/serve-nightly.log || true
+          echo "::error::Local static server failed to start"
+          exit 1
+
       - name: Generate final Instagram images for Zapier
         id: nightly_ig
         timeout-minutes: 18
@@ -100,13 +117,20 @@ jobs:
             exit 1
           fi
           API_BASE_URL="${RESET_URL%/api/daily-reset}"
-          APP_URL="${API_BASE_URL}/our-daily-beta.html"
-          echo "API_BASE_URL=${API_BASE_URL}"
-          echo "APP_URL=${APP_URL}"
+          APP_URL="http://127.0.0.1:8765/our-daily-beta.html"
+          echo "API_BASE_URL=${API_BASE_URL} (Firestore/API)"
+          echo "APP_URL=${APP_URL} (clipping JS from this commit)"
           APP_URL="$APP_URL" API_BASE_URL="$API_BASE_URL" DATE_KEY="${DATE_KEY:-}" \
             NIGHTLY_IG_MAX_ATTEMPTS="${NIGHTLY_IG_MAX_ATTEMPTS}" \
             NIGHTLY_IG_ARTIFACTS_DIR="${NIGHTLY_IG_ARTIFACTS_DIR}" \
             npm run nightly:ig-images
+
+      - name: Stop local app server
+        if: always()
+        run: |
+          if [ -n "${SERVE_PID:-}" ]; then
+            kill "${SERVE_PID}" 2>/dev/null || true
+          fi
 
       - name: Upload failure artifacts
         if: failure()
