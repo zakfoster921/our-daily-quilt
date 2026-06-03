@@ -14,13 +14,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
         blue: 241.0 / 255.0,
         alpha: 1.0
     )
+    private let launchTextColor = UIColor(
+        red: 63.0 / 255.0,
+        green: 58.0 / 255.0,
+        blue: 53.0 / 255.0,
+        alpha: 1.0
+    )
     private var launchBridgeHandlerInstalled = false
+    private var launchCoverWindow: UIWindow?
+    private var launchSpinnerDismissed = false
     /// Wall-clock ms (Unix epoch) when the process started launching; injected into WKWebView for perf reports.
     private var nativeLaunchUnixMs: Double = Date().timeIntervalSince1970 * 1000
     private var nativeLaunchScriptInstalled = false
     var window: UIWindow? {
         didSet {
             window?.backgroundColor = launchBackgroundColor
+            showLaunchCoverWindow()
         }
     }
 
@@ -42,8 +51,76 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         window?.backgroundColor = launchBackgroundColor
+        showLaunchCoverWindow()
         configureNativeLaunchBridge()
         return true
+    }
+
+    /// Full-screen cover with color-submit ring — shown immediately, not when the WebView bridge is ready.
+    private func showLaunchCoverWindow(retryCount: Int = 0) {
+        guard !launchSpinnerDismissed, launchCoverWindow == nil else { return }
+
+        let scene =
+            window?.windowScene
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first(where: { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive })
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+
+        guard let scene else {
+            if retryCount < 40 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) {
+                    self.showLaunchCoverWindow(retryCount: retryCount + 1)
+                }
+            }
+            return
+        }
+
+        let coverWindow = UIWindow(windowScene: scene)
+        coverWindow.windowLevel = UIWindow.Level.statusBar + 1
+        coverWindow.backgroundColor = launchBackgroundColor
+        coverWindow.isUserInteractionEnabled = false
+
+        let rootVC = UIViewController()
+        rootVC.view.backgroundColor = launchBackgroundColor
+
+        let stack = UIStackView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 20
+
+        let label = UILabel()
+        label.text = "Getting today's quilt ready"
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.textColor = launchTextColor
+        label.font = UIFont.monospacedSystemFont(ofSize: 22, weight: .regular)
+
+        let spinner = OdqRingSpinnerView()
+
+        stack.addArrangedSubview(label)
+        stack.addArrangedSubview(spinner)
+        rootVC.view.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: rootVC.view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: rootVC.view.centerYAnchor, constant: -18),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: rootVC.view.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: rootVC.view.trailingAnchor, constant: -32),
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 352)
+        ])
+
+        coverWindow.rootViewController = rootVC
+        coverWindow.isHidden = false
+        launchCoverWindow = coverWindow
+    }
+
+    private func dismissLaunchCoverWindow() {
+        guard !launchSpinnerDismissed else { return }
+        launchSpinnerDismissed = true
+        launchCoverWindow?.isHidden = true
+        launchCoverWindow = nil
     }
 
     private func configureNativeLaunchBridge(retryCount: Int = 0) {
@@ -61,7 +138,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
         bridgeViewController.webView?.backgroundColor = launchBackgroundColor
         bridgeViewController.webView?.scrollView.backgroundColor = launchBackgroundColor
 
-        if launchBridgeHandlerInstalled, let webView = bridgeViewController.webView {
+        if launchBridgeHandlerInstalled, bridgeViewController.webView != nil {
             return
         }
         if let webView = bridgeViewController.webView {
@@ -82,7 +159,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "odqLaunchCover" {
-            // Reserved for native launch handoff; Capacitor splash is hidden from JS when portal is ready.
+            DispatchQueue.main.async {
+                self.dismissLaunchCoverWindow()
+            }
         }
     }
 
@@ -133,4 +212,76 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
         NotificationCenter.default.post(name: Notification.Name("didReceiveRemoteNotification"), object: completionHandler, userInfo: userInfo)
     }
 
+}
+
+/// Matches `.color-submit-transition__spinner` — 34pt ring, 1.5pt stroke, gap at top, 0.9s spin.
+@objc(OdqRingSpinnerView)
+class OdqRingSpinnerView: UIView {
+
+    private let ringLayer = CAShapeLayer()
+    private let ringColor = UIColor(
+        red: 63.0 / 255.0,
+        green: 58.0 / 255.0,
+        blue: 53.0 / 255.0,
+        alpha: 1.0
+    )
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        isOpaque = false
+        backgroundColor = .clear
+        ringLayer.fillColor = UIColor.clear.cgColor
+        ringLayer.strokeColor = ringColor.cgColor
+        ringLayer.lineWidth = 1.5
+        ringLayer.lineCap = .butt
+        ringLayer.opacity = 0.72
+        layer.addSublayer(ringLayer)
+    }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: 34, height: 34)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        ringLayer.frame = bounds
+        let inset = ringLayer.lineWidth / 2
+        let radius = (min(bounds.width, bounds.height) - ringLayer.lineWidth) / 2
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        // Gap at top, same idea as border-top-color: transparent.
+        let path = UIBezierPath(
+            arcCenter: center,
+            radius: radius,
+            startAngle: CGFloat.pi * 0.06 - CGFloat.pi / 2,
+            endAngle: CGFloat.pi * 1.94 - CGFloat.pi / 2,
+            clockwise: true
+        )
+        ringLayer.path = path.cgPath
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil else { return }
+        startAnimating()
+    }
+
+    private func startAnimating() {
+        guard layer.animation(forKey: "odqRingSpin") == nil else { return }
+        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+        animation.fromValue = 0
+        animation.toValue = Double.pi * 2
+        animation.duration = 0.9
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        layer.add(animation, forKey: "odqRingSpin")
+    }
 }
