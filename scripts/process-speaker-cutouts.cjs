@@ -17,6 +17,10 @@ const {
   isDateKey,
   resolveStartDateKey
 } = require('./lib/app-date-key.cjs');
+const {
+  logSpeakerCutoutOptimization,
+  optimizeSpeakerCutoutPng
+} = require('./lib/optimize-speaker-cutout-png.cjs');
 
 const WIKIMEDIA_USER_AGENT =
   process.env.WIKIMEDIA_USER_AGENT || 'OurDailyQuilt/1.0 (https://ourdailyquilt.com; speaker-cutouts)';
@@ -607,13 +611,15 @@ async function main() {
         : opts.recropExisting
           ? await cropTransparentPngWithMargin(await downloadBinaryFromUrl(existing), 0.1)
           : await removeBackgroundFromUrl(imageUrl, apiKey);
+      const optimized = await optimizeSpeakerCutoutPng(png);
+      logSpeakerCutoutOptimization(optimized, 'cutout');
       const hash = portraitUrlHash(imageUrl);
       const path = opts.uploadFile
         ? `speaker-cutouts/${safeName(author)}-${hash}-manual.png`
         : opts.recropExisting
           ? `speaker-cutouts/${safeName(author)}-${hash}-crop10.png`
           : `speaker-cutouts/${safeName(author)}-${hash}.png`;
-      const cutoutUrl = await saveDownloadableFile(path, png, 'image/png');
+      const cutoutUrl = await saveDownloadableFile(path, optimized.buffer, 'image/png');
       await row.ref.set(catalogCutoutPayload(cutoutUrl, imageUrl, admin.firestore.FieldValue.serverTimestamp()), {
         merge: true
       });

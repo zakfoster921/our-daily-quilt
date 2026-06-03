@@ -3,19 +3,139 @@
 <script>
 (function () {
   if (typeof window === 'undefined' || typeof performance === 'undefined' || !performance.now) return;
+  var BASELINE_STORAGE_KEY = 'odqPerfBaselineHistory';
+  var BASELINE_LAST_KEY = 'odqPerfBaselineLast';
+
   window.__ODQ_PERF = { marks: {} };
-  window.odqPerfMark = function (label) {
-    var ms = Math.round(performance.now());
-    window.__ODQ_PERF.marks[label] = ms;
-    console.log('[ODQ perf]', label, ms + 'ms since navigation start');
+
+  function perfMarks() {
+    return window.__ODQ_PERF.marks || {};
+  }
+
+  window.odqPerfDelta = function (fromMark, toMark) {
+    var m = perfMarks();
+    if (m[fromMark] == null || m[toMark] == null) return null;
+    return m[toMark] - m[fromMark];
   };
+
   window.odqPerfSummary = function () {
-    var m = window.__ODQ_PERF.marks;
+    var m = perfMarks();
     var rows = Object.keys(m)
       .sort(function (a, b) { return m[a] - m[b]; })
       .map(function (k) { return { mark: k, msSinceNav: m[k] }; });
     console.table(rows);
     return m;
+  };
+
+  window.odqPerfLaunchReport = function (options) {
+    options = options || {};
+    var m = perfMarks();
+    var quotePath =
+      m['launch-quote-slim'] != null
+        ? 'slim'
+        : m['launch-quote-full-sync'] != null
+          ? 'full-sync'
+          : m['bootstrap-quilt-cache'] != null
+            ? 'local-cache'
+            : 'unknown';
+    var report = {
+      capturedAt: new Date().toISOString(),
+      buildId: (typeof globalThis !== 'undefined' && globalThis.CONFIG && globalThis.CONFIG.APP && globalThis.CONFIG.APP.buildId) || null,
+      quotePath: quotePath,
+      launchOutcome:
+        m['after-load-quilt'] != null
+          ? 'ok'
+          : m['launch-sync-failed'] != null
+            ? 'sync-failed'
+            : 'unknown',
+      marks: m,
+      intervalsMs: {
+        scriptsParse: window.odqPerfDelta('first-html-script', 'dom-content-loaded'),
+        firebaseInit: window.odqPerfDelta('dom-content-loaded', 'firebase-js-ready'),
+        initToLiveSyncDone: window.odqPerfDelta('init-start', 'after-load-quilt'),
+        postSyncHandoff: window.odqPerfDelta('after-load-quilt', 'boot-splash-dismissed'),
+        totalToPortalReady: window.odqPerfDelta('first-html-script', 'boot-splash-dismissed'),
+        totalToNativeSplashHide: window.odqPerfDelta('first-html-script', 'native-splash-hide-called'),
+        nativeHideAfterPortal: window.odqPerfDelta('boot-splash-dismissed', 'native-splash-hide-called'),
+        preWebViewMs: typeof window.__ODQ_PERF.nativeToFirstScriptMs === 'number'
+          ? window.__ODQ_PERF.nativeToFirstScriptMs
+          : null,
+        wallMsSinceNativeLaunch:
+          typeof window.__ODQ_PERF.wallMsSinceNativeLaunch === 'number'
+            ? window.__ODQ_PERF.wallMsSinceNativeLaunch
+            : typeof window.__ODQ_NATIVE_LAUNCH_MS__ === 'number'
+              ? Math.round(Date.now() - window.__ODQ_NATIVE_LAUNCH_MS__)
+              : null
+      }
+    };
+
+    console.log('[ODQ perf] Launch report', report);
+    console.table(
+      Object.keys(report.intervalsMs).map(function (k) {
+        return { interval: k, ms: report.intervalsMs[k] };
+      })
+    );
+
+    if (!options.skipPersist) {
+      try {
+        localStorage.setItem(BASELINE_LAST_KEY, JSON.stringify(report));
+        var history = [];
+        try {
+          history = JSON.parse(localStorage.getItem(BASELINE_STORAGE_KEY) || '[]');
+          if (!Array.isArray(history)) history = [];
+        } catch (_) {
+          history = [];
+        }
+        history.unshift({
+          capturedAt: report.capturedAt,
+          buildId: report.buildId,
+          quotePath: report.quotePath,
+          intervalsMs: report.intervalsMs,
+          marks: report.marks
+        });
+        localStorage.setItem(BASELINE_STORAGE_KEY, JSON.stringify(history.slice(0, 20)));
+      } catch (_) { /* ignore */ }
+    }
+
+    return report;
+  };
+
+  window.odqPerfBaselineLast = function () {
+    try {
+      return JSON.parse(localStorage.getItem(BASELINE_LAST_KEY) || 'null');
+    } catch (_) {
+      return null;
+    }
+  };
+
+  window.odqPerfBaselineHistory = function () {
+    try {
+      return JSON.parse(localStorage.getItem(BASELINE_STORAGE_KEY) || '[]');
+    } catch (_) {
+      return [];
+    }
+  };
+
+  window.odqPerfMark = function (label) {
+    var ms = Math.round(performance.now());
+    window.__ODQ_PERF.marks[label] = ms;
+    if (
+      label === 'first-html-script' &&
+      typeof window.__ODQ_NATIVE_LAUNCH_MS__ === 'number'
+    ) {
+      window.__ODQ_PERF.nativeToFirstScriptMs = Math.round(
+        Date.now() - window.__ODQ_NATIVE_LAUNCH_MS__
+      );
+    }
+    if (
+      label === 'native-splash-hide-called' &&
+      typeof window.__ODQ_NATIVE_LAUNCH_MS__ === 'number'
+    ) {
+      window.__ODQ_PERF.wallMsSinceNativeLaunch = Math.round(
+        Date.now() - window.__ODQ_NATIVE_LAUNCH_MS__
+      );
+    }
+    console.log('[ODQ perf]', label, ms + 'ms since navigation start');
   };
   window.odqPerfMark('first-html-script');
   window.odqNotifyNativeLaunchCoverReady = function () {
@@ -135,7 +255,7 @@ try {
   <meta charset="UTF-8" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
-  <link rel="stylesheet" href="styles/our-daily-beta.css?v=30" />
+  <link rel="stylesheet" href="styles/our-daily-beta.css?v=31" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f6f4f1" />
   <meta name="color-scheme" content="light" />
@@ -323,6 +443,9 @@ try {
         }
         nativeSplashHidden = true;
         if (window.odqPerfMark) window.odqPerfMark('native-splash-hide-called');
+        if (window.odqPerfLaunchReport) {
+          setTimeout(function () { window.odqPerfLaunchReport(); }, 0);
+        }
         splash.hide({ fadeOutDuration: 0 });
       } catch (_) { /* ignore */ }
     }
@@ -398,12 +521,18 @@ try {
       if (!bootEl) {
         document.body.classList.remove('odq-boot-active');
         if (window.odqPerfMark) window.odqPerfMark('boot-splash-dismissed');
+        if (!nativeApp && window.odqPerfLaunchReport) {
+          setTimeout(function () { window.odqPerfLaunchReport(); }, 0);
+        }
         if (nativeApp) afterNextPaint(hideNativeLaunchSplash);
         return;
       }
       bootEl.setAttribute('aria-busy', 'false');
       document.body.classList.remove('odq-boot-active');
       if (window.odqPerfMark) window.odqPerfMark('boot-splash-dismissed');
+      if (!nativeApp && window.odqPerfLaunchReport) {
+        setTimeout(function () { window.odqPerfLaunchReport(); }, 0);
+      }
       if (nativeApp) {
         removeBoot();
         afterNextPaint(hideNativeLaunchSplash);
@@ -1267,6 +1396,18 @@ try {
       <div class="first-name-screen-inner">
         <div class="first-name-stack">
           <h1 class="settings-screen-heading" id="settingsScreenHeading">SETTINGS</h1>
+          <button
+            class="btn settings-remember-today-archive-link"
+            type="button"
+            id="settingsRememberTodayArchiveLink"
+            data-next="screen-remember-today-archive"
+            aria-label="See saved reminders"
+            hidden
+            aria-hidden="true"
+          >
+            <span class="settings-remember-today-archive-link__label">SAVED REMINDERS</span>
+            <span class="settings-remember-today-archive-link__sub">Things you asked us to bring back</span>
+          </button>
           <!-- TEMP: milestone quilts link hidden while CONFIG.APP.milestoneQuiltsEnabled is false. -->
           <button
             class="btn settings-milestone-quilts-link"
@@ -1382,6 +1523,40 @@ try {
       </div>
 
       <button class="btn back-to-quilt-btn" id="milestoneQuiltsBackBtn" type="button" data-next="screen-settings" aria-label="Back to settings">
+        <span class="stack-btn-content">
+          <span class="stack-btn-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M15 5l-7 7 7 7"></path>
+            </svg>
+          </span>
+          <span>Back to settings</span>
+        </span>
+      </button>
+    </section>
+
+    <!-- Saved reminders archive (Settings) -->
+    <section class="screen" id="screen-remember-today-archive" role="main" aria-label="Saved reminders">
+      <div class="remember-today-archive-header">
+        <h1>SAVED REMINDERS</h1>
+        <p class="remember-today-archive-subtitle">Things you asked us to bring back</p>
+      </div>
+
+      <div class="remember-today-archive-feed" id="rememberTodayArchiveFeed" role="list" aria-live="polite"></div>
+      <p class="remember-today-archive-empty" id="rememberTodayArchiveEmpty" hidden>
+        Nothing saved yet. Use Keep something from today on the quilt screen.
+      </p>
+
+      <button
+        type="button"
+        class="btn remember-today-archive-clear-btn"
+        id="rememberTodayArchiveClearBtn"
+        hidden
+        aria-hidden="true"
+      >
+        Clear all saved reminders
+      </button>
+
+      <button class="btn back-to-quilt-btn" id="rememberTodayArchiveBackBtn" type="button" data-next="screen-settings" aria-label="Back to settings">
         <span class="stack-btn-content">
           <span class="stack-btn-chevron" aria-hidden="true">
             <svg viewBox="0 0 24 24" role="img" focusable="false">
@@ -1806,7 +1981,7 @@ try {
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/speaker-guide-marker.js?v=21"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=59"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=60"></script>
   <script src="lib/odq-scanner-bed.js?v=4"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
   <script src="lib/quilt-mood-triptych-widget.js?v=119"></script>
@@ -1834,7 +2009,7 @@ try {
   <script src="lib/quilt-renderer-v2.js"></script>
   <script src="lib/app-config.js"></script>
   <script src="lib/layout-b-compose.js"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=24"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=25"></script>
   <script src="lib/simplified-quilt-app-quilt.js"></script>
   <script src="lib/simplified-quilt-app-share.js"></script>
   <script src="lib/simplified-quilt-app-admin.js?v=25"></script>

@@ -2,6 +2,7 @@
 /* eslint-disable no-console */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
@@ -16,6 +17,12 @@ import {
   where
 } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
+
+const require = createRequire(import.meta.url);
+const {
+  logSpeakerCutoutOptimization,
+  optimizeSpeakerCutoutPng
+} = require('./lib/optimize-speaker-cutout-png.cjs');
 
 const CONFIG = {
   apiKey: 'AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg',
@@ -73,7 +80,10 @@ async function main() {
   const args = parseArgs(process.argv);
   if (!args.uploadFile) throw new Error('Missing --upload-file=/path/to/cutout.png');
   const uploadFile = path.resolve(args.uploadFile);
-  const png = fs.readFileSync(uploadFile);
+  const rawPng = fs.readFileSync(uploadFile);
+  const optimized = await optimizeSpeakerCutoutPng(rawPng);
+  logSpeakerCutoutOptimization(optimized, 'manual-cutout');
+  const png = optimized.buffer;
   const dateKey = args.date === 'today' ? getAppDateKey() : args.date;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error(`Invalid --date value: ${args.date}`);
 

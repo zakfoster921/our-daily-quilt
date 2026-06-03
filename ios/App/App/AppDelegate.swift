@@ -15,6 +15,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
         alpha: 1.0
     )
     private var launchBridgeHandlerInstalled = false
+    /// Wall-clock ms (Unix epoch) when the process started launching; injected into WKWebView for perf reports.
+    private var nativeLaunchUnixMs: Double = Date().timeIntervalSince1970 * 1000
+    private var nativeLaunchScriptInstalled = false
     var window: UIWindow? {
         didSet {
             window?.backgroundColor = launchBackgroundColor
@@ -30,6 +33,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
 
     /// Runs before `didFinishLaunching` so Firebase Messaging / other native hooks see a configured default app.
     func application(_ application: UIApplication, willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        nativeLaunchUnixMs = Date().timeIntervalSince1970 * 1000
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
@@ -61,6 +65,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
             return
         }
         if let webView = bridgeViewController.webView {
+            if !nativeLaunchScriptInstalled {
+                let source = "window.__ODQ_NATIVE_LAUNCH_MS__=\(nativeLaunchUnixMs);"
+                let userScript = WKUserScript(
+                    source: source,
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: true
+                )
+                webView.configuration.userContentController.addUserScript(userScript)
+                nativeLaunchScriptInstalled = true
+            }
             webView.configuration.userContentController.add(self, name: "odqLaunchCover")
             launchBridgeHandlerInstalled = true
         }
