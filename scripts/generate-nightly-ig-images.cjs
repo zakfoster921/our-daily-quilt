@@ -170,10 +170,8 @@ async function runNightlyIgAttempt({
             const ratio = Number(meta.peekWidthRatio) || 0;
             const centerW = Number(meta.centerOnlyWidth) || 0;
             const peekW = Number(meta.clippedWidth) || 0;
-            const crop = String(meta.spreadCrop || 'peek');
-            const minRatio = crop === 'fullColumns' ? 1.45 : 1.08;
             throw new Error(
-              `Newspaper clipping is not a 3-column ${crop} (peekCrop=false; width ${peekW}px vs center-only ${centerW}px; ratio ${ratio.toFixed(2)}; need ≥${minRatio})`
+              `Newspaper clipping is not a 3-column peek (peekCrop=false; width ${peekW}px vs center-only ${centerW}px; ratio ${ratio.toFixed(2)}; need ≥1.08)`
             );
           }
           if (!meta.hasYesterdayText && !meta.hasTomorrowText) {
