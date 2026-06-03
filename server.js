@@ -1,6 +1,30 @@
 const express = require('express');
 const admin = require('firebase-admin');
-const { createCanvas, loadImage } = require('canvas');
+
+/** Lazy-load native canvas so `npm run dev` works when node-canvas is not rebuilt (proxy-image does not need it). */
+let _nodeCanvasModule = null;
+let _nodeCanvasLoadError = null;
+function getNodeCanvas() {
+  if (_nodeCanvasModule) return _nodeCanvasModule;
+  if (_nodeCanvasLoadError) throw _nodeCanvasLoadError;
+  try {
+    _nodeCanvasModule = require('canvas');
+    return _nodeCanvasModule;
+  } catch (err) {
+    const hint =
+      'Native canvas is missing. For full server IG/archive rendering run: npm rebuild canvas. ' +
+      'Local our-daily-beta + /api/proxy-image work without it.';
+    _nodeCanvasLoadError = new Error(`${hint} (${err && err.message ? err.message : err})`);
+    _nodeCanvasLoadError.cause = err;
+    throw _nodeCanvasLoadError;
+  }
+}
+function createCanvas(...args) {
+  return getNodeCanvas().createCanvas(...args);
+}
+function loadImage(...args) {
+  return getNodeCanvas().loadImage(...args);
+}
 const { spawn } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
@@ -4538,7 +4562,11 @@ app.get('/api/proxy-image', limitProxyImage, async (req, res) => {
   try {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    const rawUrl = String(req.query?.url || '').trim();
+    const {
+      normalizeProxyImageSourceUrl,
+      shrinkImageBufferForCanvasProxy
+    } = require('./scripts/lib/proxy-image-utils.cjs');
+    const rawUrl = normalizeProxyImageSourceUrl(req.query?.url || '');
     if (!rawUrl) {
       return res.status(400).json({ error: 'Missing url' });
     }
@@ -4565,7 +4593,7 @@ app.get('/api/proxy-image', limitProxyImage, async (req, res) => {
     }
     let buf = await readResponseBufferWithLimit(
       upstream,
-      parsePositiveInt(process.env.PROXY_IMAGE_MAX_BYTES, 8 * ONE_MB)
+      parsePositiveInt(process.env.PROXY_IMAGE_MAX_BYTES, 32 * ONE_MB)
     );
     const matte = String(req.query?.matte || '').trim().toLowerCase();
     if (matte === 'warm' || matte === 'f6f4f1' || matte === ARCHIVE_QUILT_PREVIEW_BG.toLowerCase()) {
@@ -4576,7 +4604,9 @@ app.get('/api/proxy-image', limitProxyImage, async (req, res) => {
         console.warn('proxy-image warm matte failed:', matteErr.message);
       }
     } else {
-      res.setHeader('Content-Type', contentType);
+      const beforeShrink = buf.length;
+      buf = await shrinkImageBufferForCanvasProxy(buf, contentType);
+      res.setHeader('Content-Type', buf.length < beforeShrink ? 'image/png' : contentType);
     }
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.send(buf);
@@ -6566,6 +6596,11 @@ app.post('/api/transcode-instagram-reel', limitTranscodeReel, optionalInstagramA
 });
 
 app.listen(PORT, () => {
+  try {
+    getNodeCanvas();
+  } catch (canvasErr) {
+    console.warn(`⚠️ ${canvasErr.message}`);
+  }
   console.log(`🚂 Instagram Quilt Generator (Firestore) running on port ${PORT}`);
   console.log(`📸 Instagram endpoint: http://localhost:${PORT}/api/generate-instagram`);
   console.log(`🎬 Reel transcode: http://localhost:${PORT}/api/transcode-instagram-reel`);

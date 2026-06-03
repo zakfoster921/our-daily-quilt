@@ -479,16 +479,6 @@ async function runNightlyIgAttempt({
         if (!storyLayoutBImageData) {
           throw new Error(`Layout B story image was not generated for ${dateKey}`);
         }
-        const expectedSpeakerImageUrl = pickString(
-          quote.speakerCutoutUrl,
-          quote.speaker_cutout_url,
-          quote.speakerImageUrl,
-          quote.speaker_image_url
-        );
-        if (expectedSpeakerImageUrl && !postLayoutBImageData) {
-          throw new Error(`Speaker image expected for ${dateKey}, but layout-b.png was not generated`);
-        }
-        const aliasLayoutBSpeakerUrl = !!(expectedSpeakerImageUrl && postLayoutBImageData);
 
         const zapierCaption =
           typeof Utils.formatZapierCaptionFromQuote === 'function'
@@ -515,7 +505,7 @@ async function runNightlyIgAttempt({
           newspaperClippingImageData,
           postLayoutBImageData,
           storyLayoutBImageData,
-          aliasLayoutBSpeakerUrl,
+          aliasLayoutBSpeakerUrl: false,
           zapierCaption,
           quiltFingerprint,
           blockCount: blocks.length,
@@ -528,13 +518,6 @@ async function runNightlyIgAttempt({
         });
         if (!doc.imageStorageUrl && !doc.classicUrl) {
           throw new Error('classic image URL missing after nightly upload');
-        }
-        if (
-          expectedSpeakerImageUrl &&
-          !doc.postLayoutBSpeakerImageStorageUrl &&
-          !doc.layoutBSpeakerUrl
-        ) {
-          throw new Error('layout B speaker URL missing after nightly upload');
         }
         if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
           throw new Error('layout B story URL missing after nightly upload');
@@ -549,7 +532,6 @@ async function runNightlyIgAttempt({
           readyForInstagram: !!doc.readyForInstagram,
           classicUrl: doc.classicUrl || doc.imageStorageUrl || '',
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
-          layoutBSpeakerUrl: doc.layoutBSpeakerUrl || doc.postLayoutBSpeakerImageStorageUrl || '',
           layoutBUrl: doc.layoutBUrl || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
@@ -586,16 +568,6 @@ async function runNightlyIgAttempt({
     if (!verify.classicImageUrl && !verify.imageUrl) {
       throw new Error('verify failed: classic image URL missing');
     }
-    if (result.layoutBSpeakerUrl) {
-      const speakerUrl = verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl;
-      if (!speakerUrl) {
-        throw new Error('verify failed: layout B speaker image URL missing');
-      }
-      const layoutBUrl = verify.layoutBImageUrl || verify.postLayoutBImageUrl || verify.postLayoutBPlainImageUrl;
-      if (layoutBUrl && speakerUrl !== layoutBUrl) {
-        throw new Error('verify failed: aliased layout B speaker URL must match layout-b.png URL');
-      }
-    }
     const verifyBlocks = Number(verify.blockCount) || 0;
     if (verifyBlocks <= 1) {
       throw new Error(`verify failed: blockCount=${verifyBlocks} (expected full quilt)`);
@@ -623,8 +595,6 @@ async function runNightlyIgAttempt({
       readyForInstagram: result.readyForInstagram,
       classicImageUrl: verify.classicImageUrl || verify.imageUrl,
       quiltScreen9x16ImageUrl: quiltScreen9x16Url,
-      layoutBSpeakerImageUrl:
-        verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || result.layoutBSpeakerUrl,
       layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || result.layoutBUrl,
       storyLayoutBImageUrl: storyUrl
     };

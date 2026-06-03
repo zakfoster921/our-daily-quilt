@@ -238,24 +238,6 @@ async function runSsrAttempt({
             dateKey
           );
         }
-        const expectedSpeakerImageUrl = String(
-          quote.speakerCutoutUrl ??
-            quote.speaker_cutout_url ??
-            quote.speakerCutoutUrlSnapshot ??
-            quote.speaker_cutout_url_snapshot ??
-            quote.speakerImageUrl ??
-            quote.speaker_image_url ??
-            quote.speakerImageUrlSnapshot ??
-            quote.speaker_image_url_snapshot ??
-            ''
-        ).trim();
-        if (expectedSpeakerImageUrl && !postLayoutBImageData) {
-          throw new Error(
-            `Speaker image expected for ${dateKey}, but layout-b.png was not generated.`
-          );
-        }
-        const aliasLayoutBSpeakerUrl = !!(expectedSpeakerImageUrl && postLayoutBImageData);
-
         const { blob, mode } = await app._buildSyntheticQuiltReelWebm(blocks, {
           width: 1080,
           height: 1920,
@@ -286,22 +268,13 @@ async function runSsrAttempt({
           dateKey,
           instagramImage,
           postLayoutBImageData,
-          aliasLayoutBSpeakerUrl,
+          aliasLayoutBSpeakerUrl: false,
           reelWebmBlob: blob,
           zapierCaption,
           quiltFingerprint,
           blockCount: Array.isArray(blocks) ? blocks.length : 0,
           contributorCount: Math.max(1, Number(app.quiltEngine?.submissionCount) || 1)
         });
-        if (
-          expectedSpeakerImageUrl &&
-          !doc.postLayoutBSpeakerImageStorageUrl &&
-          !doc.layoutBSpeakerUrl
-        ) {
-          throw new Error(
-            `Speaker image expected for ${dateKey}, but no layout B speaker URL was written.`
-          );
-        }
 
         const transcodeHeaders = { 'Content-Type': 'application/json' };
         if (process.env.INSTAGRAM_ASSET_API_TOKEN) {
@@ -325,9 +298,7 @@ async function runSsrAttempt({
           quoteText: String(quote.text ?? quote.body ?? '').trim(),
           quoteAuthor: String(quote.author ?? '').trim(),
           reelWebmUploaded: !!doc.reelWebmStorageUrl,
-          reelMp4Url: trJson.reelMp4Url || '',
-          speakerImageExpected: !!expectedSpeakerImageUrl,
-          layoutBSpeakerUploaded: !!(doc.postLayoutBSpeakerImageStorageUrl || doc.layoutBSpeakerUrl)
+          reelMp4Url: trJson.reelMp4Url || ''
         };
       },
       { dateKey, apiBase, strictQuote, requireSplitMode }
@@ -347,20 +318,6 @@ async function runSsrAttempt({
     if (!verify.reelMp4Url) {
       throw new Error('verify failed: reelMp4Url missing after SSR generation');
     }
-    if (
-      result.speakerImageExpected &&
-      !verify.layoutBSpeakerImageUrl &&
-      !verify.postLayoutBSpeakerImageUrl
-    ) {
-      throw new Error('verify failed: layout B speaker image URL missing after SSR generation');
-    }
-    if (result.speakerImageExpected) {
-      const speakerUrl = verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl;
-      const layoutBUrl = verify.layoutBImageUrl || verify.postLayoutBImageUrl || verify.postLayoutBPlainImageUrl;
-      if (layoutBUrl && speakerUrl && speakerUrl !== layoutBUrl) {
-        throw new Error('verify failed: aliased layout B speaker URL must match layout-b.png URL');
-      }
-    }
     return {
       success: true,
       date: dateKey,
@@ -369,9 +326,6 @@ async function runSsrAttempt({
       quoteText: result.quoteText,
       quoteAuthor: result.quoteAuthor,
       reelWebmUploaded: result.reelWebmUploaded,
-      speakerImageExpected: result.speakerImageExpected,
-      layoutBSpeakerUploaded: result.layoutBSpeakerUploaded,
-      layoutBSpeakerImageUrl: verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || '',
       reelMp4Url: verify.reelMp4Url,
       reelVideoUrl: verify.reelVideoUrl
     };
