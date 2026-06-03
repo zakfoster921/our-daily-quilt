@@ -30,25 +30,6 @@ function getCompletedQuiltDateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
-function assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minClippingBytes) {
-  const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
-  const bytes = Math.max(0, Number(clippingBytes) || 0);
-  const minBytes = Math.max(120000, Number(minClippingBytes) || 140000);
-  if (bytes < minBytes) {
-    throw new Error(
-      `Newspaper clipping PNG too small (${bytes} bytes < ${minBytes}) — likely flat export without grain/halftone`
-    );
-  }
-  if (meta.peekCrop !== true) {
-    const ratio = Number(meta.peekWidthRatio) || 0;
-    const centerW = Number(meta.centerOnlyWidth) || 0;
-    const peekW = Number(meta.clippedWidth) || 0;
-    throw new Error(
-      `Newspaper clipping is not a 3-column peek (peekCrop=false; width ${peekW}px vs center-only ${centerW}px; ratio ${ratio.toFixed(2)}; need ≥1.08)`
-    );
-  }
-}
-
 async function writeFailureArtifacts(page, attempt, outDir) {
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -176,6 +157,24 @@ async function runNightlyIgAttempt({
     const result = await page.evaluate(
       async ({ dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
+        const assertNewspaperPeekComposeMeta = (composeMeta, clippingBytes, minClippingBytes) => {
+          const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
+          const bytes = Math.max(0, Number(clippingBytes) || 0);
+          const minBytes = Math.max(120000, Number(minClippingBytes) || 140000);
+          if (bytes < minBytes) {
+            throw new Error(
+              `Newspaper clipping PNG too small (${bytes} bytes < ${minBytes}) — likely flat export without grain/halftone`
+            );
+          }
+          if (meta.peekCrop !== true) {
+            const ratio = Number(meta.peekWidthRatio) || 0;
+            const centerW = Number(meta.centerOnlyWidth) || 0;
+            const peekW = Number(meta.clippedWidth) || 0;
+            throw new Error(
+              `Newspaper clipping is not a 3-column peek (peekCrop=false; width ${peekW}px vs center-only ${centerW}px; ratio ${ratio.toFixed(2)}; need ≥1.08)`
+            );
+          }
+        };
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
