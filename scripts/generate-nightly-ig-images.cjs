@@ -131,6 +131,18 @@ async function runNightlyIgAttempt({
       if (!pinned) {
         throw new Error(`Could not pin quote assignment for ${dateKey}`);
       }
+      if (typeof qs.offsetQuoteCalendarKey === 'function' && typeof qs.resolveAndPinCalendarKey === 'function') {
+        const yKey = qs.offsetQuoteCalendarKey(dateKey, -1);
+        const tKey = qs.offsetQuoteCalendarKey(dateKey, 1);
+        const [y, t] = await Promise.all([
+          yKey ? qs.resolveAndPinCalendarKey(yKey, { requireLive: true }) : null,
+          tKey ? qs.resolveAndPinCalendarKey(tKey, { requireLive: true }) : null
+        ]);
+        const line = (q) => String(q?.text ?? q?.body ?? '').trim();
+        console.log(
+          `[nightly-ig:page] peek neighbors for ${dateKey}: yesterday=${line(y) ? 'ok' : 'empty'} tomorrow=${line(t) ? 'ok' : 'empty'}`
+        );
+      }
       await qs.primeQuoteAssignmentsNearTerm?.();
     }, dateKey);
 
