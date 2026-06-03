@@ -14,12 +14,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
         blue: 241.0 / 255.0,
         alpha: 1.0
     )
-    private let launchTextColor = UIColor(
-        red: 63.0 / 255.0,
-        green: 58.0 / 255.0,
-        blue: 53.0 / 255.0,
-        alpha: 1.0
-    )
     private var launchBridgeHandlerInstalled = false
     private var launchCoverWindow: UIWindow?
     private var launchSpinnerDismissed = false
@@ -56,7 +50,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
         return true
     }
 
-    /// Full-screen cover with color-submit ring — shown immediately, not when the WebView bridge is ready.
+    /// Transparent overlay — only the ring. Text stays on LaunchScreen / Capacitor splash (no duplicate label).
     private func showLaunchCoverWindow(retryCount: Int = 0) {
         guard !launchSpinnerDismissed, launchCoverWindow == nil else { return }
 
@@ -78,42 +72,48 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
 
         let coverWindow = UIWindow(windowScene: scene)
         coverWindow.windowLevel = UIWindow.Level.statusBar + 1
-        coverWindow.backgroundColor = launchBackgroundColor
+        coverWindow.backgroundColor = .clear
         coverWindow.isUserInteractionEnabled = false
 
         let rootVC = UIViewController()
-        rootVC.view.backgroundColor = launchBackgroundColor
+        rootVC.view.backgroundColor = .clear
 
-        let stack = UIStackView()
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 20
-
-        let label = UILabel()
-        label.text = "Getting today's quilt ready"
-        label.textAlignment = .center
-        label.numberOfLines = 0
-        label.textColor = launchTextColor
-        label.font = UIFont.monospacedSystemFont(ofSize: 22, weight: .regular)
+        // Invisible layout anchor — same constraints/font as LaunchScreen.storyboard odq-boot-msg.
+        let layoutLabel = UILabel()
+        layoutLabel.text = "Getting today's quilt ready"
+        layoutLabel.textAlignment = .center
+        layoutLabel.numberOfLines = 0
+        layoutLabel.textColor = .clear
+        layoutLabel.font = UIFont.monospacedSystemFont(ofSize: 22, weight: .regular)
+        layoutLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let spinner = OdqRingSpinnerView()
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.alpha = 0
 
-        stack.addArrangedSubview(label)
-        stack.addArrangedSubview(spinner)
-        rootVC.view.addSubview(stack)
+        rootVC.view.addSubview(layoutLabel)
+        rootVC.view.addSubview(spinner)
 
         NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: rootVC.view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: rootVC.view.centerYAnchor, constant: -18),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: rootVC.view.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: rootVC.view.trailingAnchor, constant: -32),
-            label.widthAnchor.constraint(lessThanOrEqualToConstant: 352)
+            layoutLabel.centerXAnchor.constraint(equalTo: rootVC.view.centerXAnchor),
+            layoutLabel.centerYAnchor.constraint(equalTo: rootVC.view.centerYAnchor, constant: -18),
+            layoutLabel.leadingAnchor.constraint(greaterThanOrEqualTo: rootVC.view.leadingAnchor, constant: 32),
+            layoutLabel.trailingAnchor.constraint(lessThanOrEqualTo: rootVC.view.trailingAnchor, constant: -32),
+            layoutLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 352),
+            spinner.centerXAnchor.constraint(equalTo: rootVC.view.centerXAnchor),
+            spinner.topAnchor.constraint(equalTo: layoutLabel.bottomAnchor, constant: 20)
         ])
 
         coverWindow.rootViewController = rootVC
         coverWindow.isHidden = false
         launchCoverWindow = coverWindow
+
+        DispatchQueue.main.async {
+            rootVC.view.layoutIfNeeded()
+            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut]) {
+                spinner.alpha = 0.72
+            }
+        }
     }
 
     private func dismissLaunchCoverWindow() {

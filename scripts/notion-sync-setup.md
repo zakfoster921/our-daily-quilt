@@ -53,6 +53,10 @@ node scripts/sync-notion-to-firestore.cjs --start=2026-05-26 --window=7
 
 Windowed sync also pulls **approved + no `date_scheduled`** rows (the scheduling pool) so nightly auto-scheduling still sees new approvals.
 
+### Deleting a quote in Notion
+
+Sync removes the row from the **`quotes`** catalog (full-catalog run deletes orphans; windowed sync detects missing pages assigned to upcoming days). It also clears any **`dailyQuoteAssignments/{date}`** slots that still pointed at that Notion page id, plus legacy `quotes/{date}` denormalized docs. The next **reconcile** / scheduler step in the nightly workflow re-fills empty days from remaining `date_scheduled` values.
+
 ## Notion column mapping
 
 - `quote_text` -> `text`

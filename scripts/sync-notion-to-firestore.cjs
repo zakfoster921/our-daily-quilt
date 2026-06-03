@@ -37,6 +37,11 @@ const {
   buildNotionSchedulingPoolFilter,
   findSchemaPropName
 } = require('./lib/sync-window.cjs');
+const {
+  isNotionPageMissingError,
+  clearDailyAssignmentsForRemovedSourceIds,
+  clearWindowAssignmentsMissingFromCatalog
+} = require('./lib/clear-orphan-assignments.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
 const SNAKE_CASE_FIELD_PAIRS = [
@@ -1069,6 +1074,8 @@ async function run() {
 
   /** Every page id returned by the database query (including rows skipped by parse). */
   const seenNotionIds = new Set();
+  /** Notion page ids removed from the database — clear any day slots that still reference them. */
+  const removedNotionSourceIds = new Set();
   let rowsToSync = [];
   let assignmentSlotIds = 0;
   let extraPageFetches = 0;
@@ -1121,7 +1128,12 @@ async function run() {
           extraPageFetches += 1;
         }
       } catch (e) {
-        console.warn(`[sync] skip assignment page ${pageId}: ${(e.message || e).slice(0, 200)}`);
+        if (isNotionPageMissingError(e)) {
+          removedNotionSourceIds.add(pageId);
+          console.warn(`[sync] Notion page gone — will clear assignment slots for ${pageId}`);
+        } else {
+          console.warn(`[sync] skip assignment page ${pageId}: ${(e.message || e).slice(0, 200)}`);
+        }
       }
     }
     rowsToSync = [...byId.values()];
@@ -1157,6 +1169,7 @@ async function run() {
     });
 
     if (orphanRefs.length) {
+      for (const ref of orphanRefs) removedNotionSourceIds.add(ref.id);
       if (dryRun) {
         orphanDeleteCount = orphanRefs.length;
         console.log(
@@ -1187,9 +1200,28 @@ async function run() {
     );
   }
 
+  let assignmentsCleared = 0;
+  const clearedFromRemoved = await clearDailyAssignmentsForRemovedSourceIds(db, {
+    assignmentsCollection,
+    quotesCollection: collectionName,
+    removedSourceIds: removedNotionSourceIds,
+    dryRun
+  });
+  assignmentsCleared += clearedFromRemoved.clearedSlots;
+
+  if (window) {
+    const clearedFromCatalog = await clearWindowAssignmentsMissingFromCatalog(db, {
+      window,
+      assignmentsCollection,
+      quotesCollection: collectionName,
+      dryRun
+    });
+    assignmentsCleared += clearedFromCatalog.clearedSlots;
+  }
+
   const windowLabel = window ? `${window.startKey}..${window.endKey}` : 'full-catalog';
   console.log(
-    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} assignmentsCleared=${assignmentsCleared} collection=${collectionName}`
   );
 }
 
