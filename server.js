@@ -4273,7 +4273,8 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
 
     const hasLayoutB = !!postLayoutBImageUrl;
     const hasLayoutBSpeaker = !!postLayoutBSpeakerImageUrl;
-    const primaryLayoutBImageUrl = postLayoutBSpeakerImageUrl || postLayoutBImageUrl || '';
+    /** Quote-only layout-b.png is the default post; speaker hero is a separate field. */
+    const primaryLayoutBImageUrl = postLayoutBImageUrl || postLayoutBSpeakerImageUrl || '';
     const reelWebmUrl = imageData.storageReelWebmUrl || '';
     const reelMp4Url = imageData.storageReelMp4Url || '';
     /** Instagram Reels accept MP4 (H.264); WebM is a fallback until /api/transcode-instagram-reel runs. */
@@ -4281,15 +4282,15 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-18-classic-quilt9x16-layoutb-story';
+    const apiVersion = 'instagram-api-19-layoutb-quote-and-speaker-split';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
-    // Aliases + array help Zaps that only show the first URL or need explicit picks.
+    // Include quote + speaker post URLs explicitly when both exist.
     const imageUrls = [
       imageUrl,
-      primaryLayoutBImageUrl,
-      postLayoutBImageUrl && postLayoutBImageUrl !== primaryLayoutBImageUrl
-        ? postLayoutBImageUrl
-        : ''
+      postLayoutBImageUrl,
+      postLayoutBSpeakerImageUrl,
+      storyLayoutBImageUrl,
+      quiltScreen9x16ImageUrl
     ].filter(Boolean);
     const mediaUrls = [...imageUrls];
     if (reelVideoUrl) mediaUrls.push(reelVideoUrl);
@@ -4334,7 +4335,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'imageUrl/classicImageUrl = classic 4:5. quiltScreen9x16ImageUrl/quiltScreen9x16Url = quilt-screen-9x16.png (quilt-only 9:16, mirror + slice). postLayoutBImageUrl/layoutBImageUrl prefer the Layout B speaker portrait when present; postLayoutBPlainImageUrl/layoutBPlainImageUrl = layout-b.png URL. storyLayoutBImageUrl/layoutBStoryImageUrl = layout-b-story.png (9:16 collage). When a speaker cutout exists, layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl alias the same layout-b.png file (no separate Storage object). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job (08:30 UTC, after 07:00 UTC reset). blockCount and contributorCount come from instagram-images when present, else quilts/{date}.'
+        'imageUrl/classicImageUrl = classic 4:5. layoutBImageUrl/postLayoutBImageUrl = layout-b.png (quote-only 4:5). layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl = layout-b-speaker.png (speaker hero 4:5). layoutBPlainImageUrl mirrors layout-b.png. quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job. blockCount and contributorCount from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(
@@ -4474,6 +4475,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       );
       docPayload.postLayoutBImageStorageUrl = publicUrl;
       docPayload.layoutBUrl = publicUrl;
+      docPayload.postLayoutBPlainImageStorageUrl = publicUrl;
+      docPayload.layoutBPlainUrl = publicUrl;
       if (body.aliasLayoutBSpeakerUrl) {
         docPayload.postLayoutBSpeakerImageStorageUrl = publicUrl;
         docPayload.layoutBSpeakerUrl = publicUrl;

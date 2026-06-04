@@ -611,7 +611,10 @@ async function runNightlyIgAttempt({
       readyForInstagram: result.readyForInstagram,
       classicImageUrl: verify.classicImageUrl || verify.imageUrl,
       quiltScreen9x16ImageUrl: quiltScreen9x16Url,
-      layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || result.layoutBUrl,
+      layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || verify.layoutBPlainImageUrl || result.layoutBUrl,
+      layoutBPlainImageUrl: verify.layoutBPlainImageUrl || verify.postLayoutBPlainImageUrl || '',
+      layoutBSpeakerImageUrl:
+        verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || '',
       storyLayoutBImageUrl: storyUrl
     };
   } catch (err) {
