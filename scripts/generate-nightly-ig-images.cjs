@@ -66,6 +66,7 @@ async function runNightlyIgAttempt({
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
   });
   const page = await context.newPage();
+  let lastPageError = null;
   page.on('console', (msg) => {
     const text = msg.text();
     if (
@@ -81,6 +82,7 @@ async function runNightlyIgAttempt({
     }
   });
   page.on('pageerror', (err) => {
+    lastPageError = err;
     console.error('[nightly-ig:browser] pageerror:', err?.message || err);
   });
   try {
@@ -466,11 +468,28 @@ async function runNightlyIgAttempt({
             `[nightly-ig:page] quilt-screen 9:16 used non-SVG path: ${JSON.stringify(quiltExportMeta)}`
           );
         }
+        const blobToDataUrl = async (blob, label) => {
+          if (!blob) throw new Error(`${label}: compose returned null`);
+          if (typeof Utils.blobToDataUrl !== 'function') {
+            throw new Error('Utils.blobToDataUrl missing');
+          }
+          const dataUrl = await Utils.blobToDataUrl(blob);
+          if (!dataUrl) throw new Error(`${label}: empty data URL`);
+          return dataUrl;
+        };
         if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
           arch._clearLayoutBStoryRefStripPlan();
         }
         let storyLayoutBImageData = null;
-        if (arch.generateInstagramStoryLayoutBImage) {
+        if (arch.generateInstagramStoryLayoutBBlob) {
+          log('generating layout B story 9:16…');
+          const storyBlob = await arch.generateInstagramStoryLayoutBBlob(blocks, quote, dateKey);
+          const refCount = Array.isArray(arch._layoutBStoryRefStripPlan)
+            ? arch._layoutBStoryRefStripPlan.length
+            : 0;
+          log(`layout B story strip ref: ${refCount} strips`);
+          storyLayoutBImageData = await blobToDataUrl(storyBlob, 'layout B story');
+        } else if (arch.generateInstagramStoryLayoutBImage) {
           log('generating layout B story 9:16…');
           storyLayoutBImageData = await arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey);
         }
@@ -478,7 +497,11 @@ async function runNightlyIgAttempt({
           throw new Error(`Layout B story image was not generated for ${dateKey}`);
         }
         let postLayoutBImageData = null;
-        if (arch.generateInstagramPostLayoutBImage) {
+        if (arch.generateInstagramPostLayoutBBlob) {
+          log('generating layout B post 4:5…');
+          const postBlob = await arch.generateInstagramPostLayoutBBlob(blocks, quote, dateKey);
+          postLayoutBImageData = await blobToDataUrl(postBlob, 'layout B post');
+        } else if (arch.generateInstagramPostLayoutBImage) {
           log('generating layout B post 4:5…');
           postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey);
         }
@@ -622,6 +645,10 @@ async function runNightlyIgAttempt({
     };
   } catch (err) {
     await writeFailureArtifacts(page, attempt, outDir);
+    const pe = lastPageError?.message || (lastPageError ? String(lastPageError) : '');
+    if (pe) {
+      throw new Error(`${err?.message || err} (browser: ${pe})`);
+    }
     throw err;
   } finally {
     await context.close();
