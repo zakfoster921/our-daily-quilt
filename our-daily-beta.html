@@ -255,7 +255,23 @@ try {
   <meta charset="UTF-8" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
-  <link rel="stylesheet" href="styles/our-daily-beta.css?v=31" />
+  <link rel="stylesheet" href="styles/our-daily-beta.css?v=38" />
+  <!-- file:// Safari resolves ../ in the stylesheet against the HTML path, not styles/ — use document-relative assets/ here -->
+  <style id="odq-document-asset-vars">
+    @font-face {
+      font-family: 'Zakarack';
+      src: url("assets/fonts/Zakarack-Regular.woff2") format('woff2');
+      font-weight: 400 1000;
+      font-style: normal;
+      font-display: swap;
+    }
+    :root {
+      --quilt-paper-card-texture: url("assets/quilt-paper-card-texture.png") !important;
+      --triptych-halftone-image: url("assets/mood-triptych-halftone.png") !important;
+      --triptych-halftone-mask: url("assets/mood-triptych-halftone-alpha.png") !important;
+      --quilt-chalk-squiggle: url("assets/chalk-squiggle-alpha.png") !important;
+    }
+  </style>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f6f4f1" />
   <meta name="color-scheme" content="light" />
@@ -277,7 +293,18 @@ try {
        NOTE: Google Fonts rejects this URL with 400 if icon names aren't alphabetical —
        keep icon_names in sorted order. -->
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=book%2Cbrightness_1%2Ccircle%2Ccomedy_mask%2Ccontent_copy%2Ccontrast%2Cflare%2Cheadphones%2Cmovie%2Cnotification_add%2Cpalette&display=block" rel="stylesheet">
-  <link rel="preload" href="assets/fonts/Zakarack-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+  (function () {
+    if (typeof location === 'undefined' || location.protocol === 'file:') return;
+    var link = document.createElement('link');
+    link.rel = 'preload';
+    link.href = 'assets/fonts/Zakarack-Regular.woff2';
+    link.as = 'font';
+    link.type = 'font/woff2';
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+  })();
+  </script>
   <link rel="preload" href="assets/portal-our-daily-quilt.png" as="image" fetchpriority="high">
   <!-- Test script to verify it's running -->
   <script>
@@ -1391,66 +1418,44 @@ try {
 
     <!-- Settings Screen -->
     <section class="screen" id="screen-settings" role="main" aria-label="Settings">
-      <div class="first-name-screen-inner">
-        <div class="first-name-stack">
-          <h1 class="settings-screen-heading" id="settingsScreenHeading">SETTINGS</h1>
-          <button
-            class="btn settings-remember-today-archive-link"
-            type="button"
-            id="settingsRememberTodayArchiveLink"
-            data-next="screen-remember-today-archive"
-            aria-label="See saved reminders"
-            hidden
-            aria-hidden="true"
-          >
-            <span class="settings-remember-today-archive-link__label">SAVED REMINDERS</span>
-            <span class="settings-remember-today-archive-link__sub">Things you asked us to bring back</span>
-          </button>
-          <!-- TEMP: milestone quilts link hidden while CONFIG.APP.milestoneQuiltsEnabled is false. -->
-          <button
-            class="btn settings-milestone-quilts-link"
-            type="button"
-            id="settingsMilestoneQuiltsLink"
-            data-next="screen-milestone-quilts"
-            aria-label="See your milestone quilts archived over time"
-            hidden
-            aria-hidden="true"
-          >
-            <span class="settings-milestone-quilts-link__label">YOUR MILESTONE QUILTS</span>
-            <span class="settings-milestone-quilts-link__sub">Archived over time, sent at milestones</span>
-          </button>
-          <h2 class="settings-colors-heading" id="settingsColorsHeading">YOUR COLORS</h2>
-          <section class="settings-color-calendar exit-chamber-calendar" aria-label="Your daily colors">
-            <header class="settings-color-calendar__header">
-              <h2 class="settings-color-calendar__title">Your daily colors</h2>
-              <div class="settings-color-calendar__nav">
-                <button
-                  type="button"
-                  class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--prev"
-                  aria-label="Previous month"
-                >
-                  <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-                    <path d="M15 5l-7 7 7 7"></path>
-                  </svg>
-                </button>
-                <span class="settings-color-calendar__month" aria-live="polite"></span>
-                <button
-                  type="button"
-                  class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--next"
-                  aria-label="Next month"
-                >
-                  <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-                    <path d="M9 5l7 7-7 7"></path>
-                  </svg>
-                </button>
-              </div>
-            </header>
-            <div class="settings-color-calendar__weekdays" aria-hidden="true">
-              <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+      <div class="settings-inner">
+        <h1 class="settings-title" id="settingsScreenHeading">Settings</h1>
+        <p class="settings-intro">Your colors, saved reminders, and name</p>
+        <div class="settings-items">
+          <article class="settings-item settings-item--colors">
+            <div class="settings-item__slab">
+              <p class="settings-item__kicker" id="settingsColorsHeading">Your colors</p>
+              <section class="settings-color-calendar settings-color-calendar--settings" aria-label="Your daily colors">
+                <header class="settings-color-calendar__header">
+                  <div class="settings-color-calendar__nav">
+                    <button
+                      type="button"
+                      class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--prev"
+                      aria-label="Previous month"
+                    >
+                      <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                        <path d="M15 5l-7 7 7 7"></path>
+                      </svg>
+                    </button>
+                    <span class="settings-color-calendar__month" aria-live="polite"></span>
+                    <button
+                      type="button"
+                      class="settings-color-calendar__nav-btn settings-color-calendar__nav-btn--next"
+                      aria-label="Next month"
+                    >
+                      <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
+                        <path d="M9 5l7 7-7 7"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </header>
+                <div class="settings-color-calendar__weekdays" aria-hidden="true">
+                  <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                </div>
+                <div class="settings-color-calendar__grid" role="grid" aria-label="Calendar of your daily colors"></div>
+              </section>
             </div>
-            <div class="settings-color-calendar__grid" role="grid" aria-label="Calendar of your daily colors"></div>
-            <p class="settings-color-calendar__summary" aria-live="polite"></p>
-          </section>
+          </article>
           <section class="settings-personal-quilt" aria-label="Your colors over time" hidden aria-hidden="true">
             <div class="settings-personal-quilt__frame">
               <svg
@@ -1463,7 +1468,7 @@ try {
             <p class="settings-personal-quilt__description" id="settingsPersonalQuiltDescription">
               Personal quilt coming soon.
             </p>
-            <div class="first-name-actions settings-personal-quilt-actions" hidden aria-hidden="true">
+            <div class="settings-personal-quilt-actions" hidden aria-hidden="true">
               <button
                 type="button"
                 class="btn settings-download-personal-quilt-btn"
@@ -1477,31 +1482,76 @@ try {
               </button>
             </div>
           </section>
-          <div class="settings-name-card">
-            <label class="first-name-label" for="settingsNameInput">First name</label>
-            <input
-              type="text"
-              id="settingsNameInput"
-              class="first-name-input"
-              maxlength="40"
-              autocomplete="given-name"
-              enterkeyhint="done"
-            />
-            <div class="first-name-actions settings-name-actions">
-              <button type="button" class="btn" id="settingsSaveNameBtn" aria-label="Save your name">
-                Update your name
-              </button>
-            </div>
-          </div>
-          <div class="first-name-actions">
-            <button type="button" class="btn" id="settingsBackBtn" aria-label="Back to quilt">
-              <svg viewBox="0 0 24 24" role="img" focusable="false" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7"></path>
-              </svg>
+          <article class="settings-item settings-item--nav" id="settingsRememberTodayArchiveItem" hidden aria-hidden="true">
+            <button
+              type="button"
+              class="settings-item__slab settings-item__slab--link"
+              id="settingsRememberTodayArchiveLink"
+              data-next="screen-remember-today-archive"
+              aria-label="See saved reminders"
+            >
+              <div class="settings-item__head">
+                <p class="settings-item__kicker">Saved reminders</p>
+                <span class="settings-item__chevron" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M9 5l7 7-7 7"></path>
+                  </svg>
+                </span>
+              </div>
+              <p class="settings-item__text">Things you asked us to bring back</p>
             </button>
-          </div>
+          </article>
+          <!-- TEMP: milestone quilts link hidden while CONFIG.APP.milestoneQuiltsEnabled is false. -->
+          <article class="settings-item settings-item--nav" id="settingsMilestoneQuiltsItem" hidden aria-hidden="true">
+            <button
+              type="button"
+              class="settings-item__slab settings-item__slab--link"
+              id="settingsMilestoneQuiltsLink"
+              data-next="screen-milestone-quilts"
+              aria-label="See your milestone quilts archived over time"
+            >
+              <div class="settings-item__head">
+                <p class="settings-item__kicker">Your milestone quilts</p>
+                <span class="settings-item__chevron" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M9 5l7 7-7 7"></path>
+                  </svg>
+                </span>
+              </div>
+              <p class="settings-item__text">Archived over time, sent at milestones</p>
+            </button>
+          </article>
+          <article class="settings-item settings-item--name">
+            <div class="settings-item__slab">
+              <div class="settings-item__head">
+                <label class="settings-item__kicker" for="settingsNameInput">Your name</label>
+                <button type="button" class="settings-item__save" id="settingsSaveNameBtn" aria-label="Save your name">
+                  Save
+                </button>
+              </div>
+              <input
+                type="text"
+                id="settingsNameInput"
+                class="settings-name-input"
+                maxlength="40"
+                autocomplete="given-name"
+                enterkeyhint="done"
+                aria-label="First name"
+              />
+            </div>
+          </article>
         </div>
+        <div class="settings-scroll-end" aria-hidden="true"></div>
       </div>
+      <footer class="settings-footer">
+        <button type="button" class="btn back-to-quilt-btn" id="settingsBackBtn" aria-label="Back to quilt">
+          <span class="stack-btn-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M15 5l-7 7 7 7"></path>
+            </svg>
+          </span>
+        </button>
+      </footer>
     </section>
 
     <!-- Milestone Quilts Screen -->
@@ -2007,7 +2057,7 @@ try {
   <script src="lib/quilt-renderer-v2.js"></script>
   <script src="lib/app-config.js"></script>
   <script src="lib/layout-b-compose.js"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=29"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=30"></script>
   <script src="lib/simplified-quilt-app-quilt.js?v=29"></script>
   <script src="lib/simplified-quilt-app-share.js"></script>
   <script src="lib/simplified-quilt-app-admin.js?v=25"></script>

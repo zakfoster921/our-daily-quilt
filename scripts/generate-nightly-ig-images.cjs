@@ -466,6 +466,17 @@ async function runNightlyIgAttempt({
             `[nightly-ig:page] quilt-screen 9:16 used non-SVG path: ${JSON.stringify(quiltExportMeta)}`
           );
         }
+        if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
+          arch._clearLayoutBStoryRefStripPlan();
+        }
+        let storyLayoutBImageData = null;
+        if (arch.generateInstagramStoryLayoutBImage) {
+          log('generating layout B story 9:16…');
+          storyLayoutBImageData = await arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey);
+        }
+        if (!storyLayoutBImageData) {
+          throw new Error(`Layout B story image was not generated for ${dateKey}`);
+        }
         let postLayoutBImageData = null;
         if (arch.generateInstagramPostLayoutBImage) {
           log('generating layout B post 4:5…');
@@ -485,14 +496,6 @@ async function runNightlyIgAttempt({
             quote,
             dateKey
           );
-        }
-        let storyLayoutBImageData = null;
-        if (arch.generateInstagramStoryLayoutBImage) {
-          log('generating layout B story 9:16…');
-          storyLayoutBImageData = await arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey);
-        }
-        if (!storyLayoutBImageData) {
-          throw new Error(`Layout B story image was not generated for ${dateKey}`);
         }
 
         const zapierCaption =
