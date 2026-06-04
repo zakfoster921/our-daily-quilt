@@ -471,6 +471,21 @@ async function runNightlyIgAttempt({
           log('generating layout B post 4:5…');
           postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey);
         }
+        let postLayoutBSpeakerImageData = null;
+        const expectedSpeakerImageUrl = pickString(
+          quote.speakerCutoutUrl,
+          quote.speaker_cutout_url,
+          quote.speakerImageUrl,
+          quote.speaker_image_url
+        );
+        if (expectedSpeakerImageUrl && arch.generateInstagramPostLayoutBSpeakerImage) {
+          log('generating layout B speaker hero post 4:5…');
+          postLayoutBSpeakerImageData = await arch.generateInstagramPostLayoutBSpeakerImage(
+            blocks,
+            quote,
+            dateKey
+          );
+        }
         let storyLayoutBImageData = null;
         if (arch.generateInstagramStoryLayoutBImage) {
           log('generating layout B story 9:16…');
@@ -504,6 +519,7 @@ async function runNightlyIgAttempt({
           quiltScreen9x16ImageData,
           newspaperClippingImageData,
           postLayoutBImageData,
+          postLayoutBSpeakerImageData,
           storyLayoutBImageData,
           aliasLayoutBSpeakerUrl: false,
           zapierCaption,
