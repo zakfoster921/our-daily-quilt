@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 const sharp = require('sharp');
+const { stripSpeakerCutoutHaloRgba } = require('./strip-speaker-cutout-halo.cjs');
 
 const DEFAULT_MAX_EDGE = 1200;
 
@@ -36,15 +37,27 @@ async function optimizeSpeakerCutoutPng(inputBuffer, options = {}) {
   const sourceH = Math.max(1, meta.height || 1);
   const scale = Math.min(1, maxEdge / Math.max(sourceW, sourceH));
 
-  const pipeline = sharp(inputBuffer, { failOn: 'none' }).ensureAlpha();
+  let pipeline = sharp(inputBuffer, { failOn: 'none' }).ensureAlpha();
   if (scale < 1) {
-    pipeline.resize(Math.max(1, Math.round(sourceW * scale)), Math.max(1, Math.round(sourceH * scale)), {
-      fit: 'inside',
-      withoutEnlargement: true
-    });
+    pipeline = pipeline.resize(
+      Math.max(1, Math.round(sourceW * scale)),
+      Math.max(1, Math.round(sourceH * scale)),
+      {
+        fit: 'inside',
+        withoutEnlargement: true
+      }
+    );
   }
 
-  const { data, info } = await pipeline
+  const { data: raw, info: rawInfo } = await pipeline
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  stripSpeakerCutoutHaloRgba(raw, rawInfo.width, rawInfo.height);
+
+  const { data, info } = await sharp(raw, {
+    raw: { width: rawInfo.width, height: rawInfo.height, channels: 4 }
+  })
     .png({
       compressionLevel: 9,
       adaptiveFiltering: true,

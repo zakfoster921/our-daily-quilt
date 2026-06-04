@@ -255,7 +255,7 @@ try {
   <meta charset="UTF-8" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
-  <link rel="stylesheet" href="styles/our-daily-beta.css?v=38" />
+  <link rel="stylesheet" href="styles/our-daily-beta.css?v=41" />
   <!-- file:// Safari resolves ../ in the stylesheet against the HTML path, not styles/ — use document-relative assets/ here -->
   <style id="odq-document-asset-vars">
     @font-face {
@@ -1129,7 +1129,11 @@ try {
               hidden
             />
           </div>
-          <p class="quilt-layout-b-preview-label">Long Tap to Share on Instagram</p>
+          <p class="quilt-layout-b-preview-label">
+            <span class="quilt-layout-b-preview-label__arrow" aria-hidden="true">↑</span>
+            Long Tap to Share on Instagram
+            <span class="quilt-layout-b-preview-label__arrow" aria-hidden="true">↑</span>
+          </p>
           <p class="quilt-layout-b-preview-hint" id="quiltLayoutBPreviewHint">Preparing preview…</p>
         </div>
         <div class="quilt-before-you-go" id="quiltBeforeYouGoWrap" aria-labelledby="quiltBeforeYouGoHeading">
@@ -2057,7 +2061,7 @@ try {
   <script src="lib/quilt-renderer-v2.js"></script>
   <script src="lib/app-config.js"></script>
   <script src="lib/layout-b-compose.js"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=30"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=32"></script>
   <script src="lib/simplified-quilt-app-quilt.js?v=29"></script>
   <script src="lib/simplified-quilt-app-share.js"></script>
   <script src="lib/simplified-quilt-app-admin.js?v=25"></script>
@@ -2236,11 +2240,11 @@ try {
         this.renderer = new QuiltRendererV2(this.logger);
         this.archiveService = new ArchiveService(this.logger, this.dataService);
         
+        // App state — set before engine so deviceId matches contribution records.
+        this.currentUserId = Utils.getOrCreateUserId();
+
         // Initialize simplified engine
         this.quiltEngine = new SimpleQuiltEngine(this.currentUserId);
-        
-        // App state
-        this.currentUserId = Utils.getOrCreateUserId();
         this.quiltScale = 1;
         this.dailyContributors = [];
         this.adminQuiltMutationQueue = Promise.resolve();
@@ -2344,6 +2348,7 @@ try {
         this._layoutBStoryPreviewContentKey = '';
         /** Last speaker cutout URL that triggered or satisfied a story preview. */
         this._layoutBStoryPreviewSpeakerPaintUrl = '';
+        this._layoutBStoryPreviewSpeakerUpgradeDone = false;
         this._layoutBStoryPreviewInFlight = false;
         this._layoutBStoryPreviewRerunQueued = false;
         /** @deprecated kept for day-roll invalidation; use `_layoutBStoryPreviewContentKey`. */
