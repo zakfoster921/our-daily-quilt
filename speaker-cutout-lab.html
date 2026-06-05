@@ -75,6 +75,7 @@
       background: #fff;
     }
     .row { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
+    .row.color-presets { margin-top: 0.55rem; }
     .row input[type="text"] { flex: 1; min-width: 100px; }
     .checks { display: flex; flex-direction: column; gap: 0.35rem; }
     .checks label.check {
@@ -163,11 +164,16 @@
       <section>
         <h2>Colors</h2>
         <label for="washColor">Solid wash (phase 1)</label>
-        <input type="color" id="washColor" value="#ea9b9a">
+        <input type="color" id="washColor" value="#ff4d8d">
         <label for="faceColor">Face paper</label>
-        <input type="color" id="faceColor" value="#e87890">
+        <input type="color" id="faceColor" value="#ffe566">
         <label for="torsoColor">Torso paper</label>
-        <input type="color" id="torsoColor" value="#c9a99a">
+        <input type="color" id="torsoColor" value="#56cfe1">
+        <div class="row color-presets">
+          <button type="button" class="btn" id="btnColorsVivid">Vivid test</button>
+          <button type="button" class="btn" id="btnColorsWarhol">Warhol</button>
+          <button type="button" class="btn" id="btnColorsMuted">Production muted</button>
+        </div>
       </section>
 
       <section>
@@ -178,6 +184,7 @@
           <label class="check"><input type="checkbox" id="layerTorso" checked> Torso paper</label>
           <label class="check"><input type="checkbox" id="layerFace" checked> Face paper</label>
           <label class="check"><input type="checkbox" id="layerGrain" checked> Xerox grain</label>
+          <label class="check"><input type="checkbox" id="layerContour" checked> Alpha contour trace (phase 3)</label>
         </div>
         <label>Wash opacity <span class="val" id="washAlphaVal">0.78</span></label>
         <input type="range" id="washAlpha" min="0" max="1" step="0.01" value="0.78">
@@ -187,10 +194,10 @@
 
       <section>
         <h2>Face shape</h2>
-        <label>Width vs silhouette <span class="val" id="faceWidthFracVal">0.56</span></label>
-        <input type="range" id="faceWidthFrac" min="0.35" max="0.85" step="0.01" value="0.56">
-        <label>Height (head band) <span class="val" id="faceHeightFracVal">0.54</span></label>
-        <input type="range" id="faceHeightFrac" min="0.35" max="0.7" step="0.01" value="0.54">
+        <label>Width vs silhouette <span class="val" id="faceWidthFracVal">0.67</span></label>
+        <input type="range" id="faceWidthFrac" min="0.35" max="0.85" step="0.01" value="0.672">
+        <label>Height (head band) <span class="val" id="faceHeightFracVal">0.65</span></label>
+        <input type="range" id="faceHeightFrac" min="0.35" max="0.7" step="0.01" value="0.648">
         <label>Vertical aspect (lower = taller) <span class="val" id="faceTargetAspectVal">0.68</span></label>
         <input type="range" id="faceTargetAspect" min="0.45" max="0.95" step="0.01" value="0.68">
         <label>Inflate <span class="val" id="paperShapeInflateVal">1.10</span></label>
@@ -213,6 +220,8 @@
         <input type="range" id="facePaperSpread" min="0" max="20" step="0.5" value="12">
         <label>Torso paper spread <span class="val" id="torsoPaperSpreadVal">14</span></label>
         <input type="range" id="torsoPaperSpread" min="0" max="20" step="0.5" value="14">
+        <label>Contour spread % <span class="val" id="contourSpreadVal">2.8</span></label>
+        <input type="range" id="contourSpread" min="0" max="8" step="0.2" value="2.8">
       </section>
 
       <div class="row">
@@ -248,6 +257,21 @@
         s.className = 'status' + (isErr ? ' err' : '');
       };
 
+      const COLOR_PRESETS = {
+        vivid: { washColor: '#ff4d8d', faceColor: '#ffe566', torsoColor: '#56cfe1' },
+        warhol: { washColor: '#e8488c', faceColor: '#f4c430', torsoColor: '#7ec8e3' },
+        muted: { washColor: '#ea9b9a', faceColor: '#e87890', torsoColor: '#c9a99a' }
+      };
+
+      function applyColorPreset(name) {
+        const preset = COLOR_PRESETS[name];
+        if (!preset) return;
+        el('washColor').value = preset.washColor;
+        el('faceColor').value = preset.faceColor;
+        el('torsoColor').value = preset.torsoColor;
+        scheduleRender();
+      }
+
       const SLIDER_BINDINGS = [
         ['faceWidthFrac', 'faceWidthFracVal', 2],
         ['faceHeightFrac', 'faceHeightFracVal', 2],
@@ -258,6 +282,7 @@
         ['washSpread', 'washSpreadVal', 1],
         ['facePaperSpread', 'facePaperSpreadVal', 1],
         ['torsoPaperSpread', 'torsoPaperSpreadVal', 1],
+        ['contourSpread', 'contourSpreadVal', 1],
         ['washAlpha', 'washAlphaVal', 2],
         ['paperAlpha', 'paperAlphaVal', 2]
       ];
@@ -304,7 +329,8 @@
         return {
           washSpread: parseFloat(el('washSpread').value),
           facePaperSpread: parseFloat(el('facePaperSpread').value),
-          torsoPaperSpread: parseFloat(el('torsoPaperSpread').value)
+          torsoPaperSpread: parseFloat(el('torsoPaperSpread').value),
+          contourSpread: parseFloat(el('contourSpread').value)
         };
       }
 
@@ -321,7 +347,8 @@
             backdrop: el('layerBackdrop').checked,
             torso: el('layerTorso').checked,
             face: el('layerFace').checked,
-            grain: el('layerGrain').checked
+            grain: el('layerGrain').checked,
+            contour: el('layerContour').checked
           },
           washAlpha: parseFloat(el('washAlpha').value),
           paperAlpha: parseFloat(el('paperAlpha').value)
@@ -340,16 +367,15 @@
         el('washSpread').value = mt.washSpread;
         el('facePaperSpread').value = mt.facePaperSpread;
         el('torsoPaperSpread').value = mt.torsoPaperSpread;
+        el('contourSpread').value = mt.contourSpread;
         el('washAlpha').value = 0.78;
         el('paperAlpha').value = 0.88;
-        el('washColor').value = '#ea9b9a';
-        el('faceColor').value = '#e87890';
-        el('torsoColor').value = '#c9a99a';
         el('layerWash').checked = true;
         el('layerBackdrop').checked = true;
         el('layerTorso').checked = true;
         el('layerFace').checked = true;
         el('layerGrain').checked = true;
+        el('layerContour').checked = true;
         SLIDER_BINDINGS.forEach(([inputId, valId, dec]) => {
           el(valId).textContent = parseFloat(el(inputId).value).toFixed(dec);
         });
@@ -403,9 +429,33 @@
           washAlpha: cfg.washAlpha,
           paperAlpha: cfg.paperAlpha,
           skipScannerBed: true,
-          keepExplicitColors: true
+          palette: [],
+          keepExplicitColors: true,
+          colorTestMode: true,
+          portraitAlpha: 0.38,
+          paperAlpha: 1
         });
-        status(ok ? `Rendered · seed ${cfg.seed}` : 'Render failed', !ok);
+        const resolved = SCR.buildSpeakerCutoutPlan({
+          width: rect.width,
+          height: rect.height,
+          washColor: cfg.washColor,
+          faceColor: cfg.faceColor,
+          torsoColor: cfg.torsoColor,
+          seed: cfg.seed,
+          img: speakerImg?.naturalWidth ? speakerImg : null,
+          paperTune: cfg.paperTune,
+          misTune: cfg.misTune,
+          palette: [],
+          keepExplicitColors: true,
+          colorTestMode: true
+        });
+        const rc = resolved?.resolvedColors || {};
+        status(
+          ok
+            ? `Rendered · wash ${rc.wash || cfg.washColor} · face ${rc.face || cfg.faceColor} · torso ${rc.torso || cfg.torsoColor}`
+            : 'Render failed',
+          !ok
+        );
       }
 
       function scheduleRender() {
@@ -451,7 +501,6 @@
           const data = await res.json();
           if (!data.success) throw new Error(data.error || 'Not found');
           el('seed').value = dk;
-          if (data.washColor) el('washColor').value = data.washColor;
           await setSpeakerFromUrl(data.cutoutUrl, data.name, dk);
         } catch (err) {
           status(err.message, true);
@@ -470,7 +519,7 @@
         el(id).addEventListener('change', scheduleRender);
       });
 
-      ['layerWash', 'layerBackdrop', 'layerTorso', 'layerFace', 'layerGrain'].forEach((id) => {
+      ['layerWash', 'layerBackdrop', 'layerTorso', 'layerFace', 'layerGrain', 'layerContour'].forEach((id) => {
         el(id).addEventListener('change', scheduleRender);
       });
 
@@ -493,8 +542,11 @@
       el('btnRender').addEventListener('click', () => void renderPreview());
       el('btnReset').addEventListener('click', () => {
         applyDefaults();
-        scheduleRender();
+        applyColorPreset('muted');
       });
+      el('btnColorsVivid').addEventListener('click', () => applyColorPreset('vivid'));
+      el('btnColorsWarhol').addEventListener('click', () => applyColorPreset('warhol'));
+      el('btnColorsMuted').addEventListener('click', () => applyColorPreset('muted'));
       el('btnCopy').addEventListener('click', async () => {
         const cfg = readConfig();
         updateConfigPreview(cfg);
