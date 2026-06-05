@@ -359,113 +359,15 @@
    * B/W portrait, radial color wash, xerox grain — same as Layout B drawSpeakerOverlay minus cream layer.
    */
   function drawSpeakerCutoutCard(ctx, img, rect, washColor, seedKey = 'odq') {
-    if (!img || !rect || rect.width <= 0 || rect.height <= 0) return false;
-    let portrait = null;
-    try {
-      portrait = makeSpeakerSilhouetteCanvas(img, rect.width, rect.height);
-    } catch (_) {
-      return false;
+    const SCR = globalThis.SpeakerCutoutRender;
+    if (SCR?.drawSpeakerCutoutStack) {
+      return SCR.drawSpeakerCutoutStack(ctx, img, rect, {
+        washColor,
+        seed: seedKey,
+        isCutoutPng: true
+      });
     }
-    if (!portrait) return false;
-    const wash = parseSpeakerWashRgb(washColor);
-
-    const grain = document.createElement('canvas');
-    grain.width = portrait.width;
-    grain.height = portrait.height;
-    const gx = grain.getContext('2d');
-    if (gx) {
-      const W = grain.width;
-      const H = grain.height;
-      const lineAngleRad = (92 * Math.PI) / 180;
-      gx.save();
-      gx.translate(W / 2, H / 2);
-      gx.rotate(lineAngleRad);
-      gx.strokeStyle = 'rgba(35, 27, 20, 0.72)';
-      gx.lineWidth = 1;
-      const diag = Math.ceil(Math.sqrt(W * W + H * H));
-      for (let y = -diag; y <= diag; y += 7) {
-        gx.beginPath();
-        gx.moveTo(-diag, y + 0.5);
-        gx.lineTo(diag, y + 0.5);
-        gx.stroke();
-      }
-      gx.restore();
-      const ringCx = W * 0.13;
-      const ringCy = H * 0.21;
-      const ringMaxR = Math.ceil(
-        Math.sqrt(Math.max(ringCx, W - ringCx) ** 2 + Math.max(ringCy, H - ringCy) ** 2)
-      );
-      gx.strokeStyle = 'rgba(35, 27, 20, 0.65)';
-      gx.lineWidth = 0.55;
-      for (let r = 4; r <= ringMaxR; r += 4) {
-        gx.beginPath();
-        gx.arc(ringCx, ringCy, r, 0, Math.PI * 2);
-        gx.stroke();
-      }
-      gx.globalCompositeOperation = 'destination-in';
-      gx.drawImage(portrait, 0, 0);
-    }
-
-    const washLayer = document.createElement('canvas');
-    washLayer.width = portrait.width;
-    washLayer.height = portrait.height;
-    const wx = washLayer.getContext('2d');
-    if (wx) {
-      const grad = wx.createRadialGradient(
-        washLayer.width * 0.28,
-        washLayer.height * 0.24,
-        washLayer.width * 0.04,
-        washLayer.width * 0.5,
-        washLayer.height * 0.5,
-        washLayer.width * 0.74
-      );
-      grad.addColorStop(0, `rgba(${wash.r}, ${wash.g}, ${wash.b}, 0.58)`);
-      grad.addColorStop(0.52, `rgba(${wash.r}, ${wash.g}, ${wash.b}, 0.38)`);
-      grad.addColorStop(1, 'rgba(255,244,218,0.12)');
-      wx.fillStyle = grad;
-      wx.fillRect(0, 0, washLayer.width, washLayer.height);
-      wx.globalCompositeOperation = 'destination-in';
-      wx.drawImage(portrait, 0, 0);
-    }
-
-    ctx.save();
-    ctx.translate(rect.x + rect.width / 2, rect.y + rect.height / 2);
-    ctx.rotate(rect.angle || 0);
-    if (QNC?.drawScannerBed) {
-      const bed = document.createElement('canvas');
-      bed.width = portrait.width;
-      bed.height = portrait.height;
-      const bctx = bed.getContext('2d');
-      if (bctx) {
-        QNC.drawScannerBed(
-          bctx,
-          bed.width,
-          bed.height,
-          `${String(seedKey || 'odq').trim()}:speaker-cutout:0`,
-          'speakerCutout'
-        );
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 1;
-        ctx.drawImage(bed, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
-      }
-    }
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = 0.95;
-    ctx.drawImage(portrait, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
-    if (wx) {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 0.62;
-      ctx.drawImage(washLayer, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
-    }
-    if (gx) {
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.globalAlpha = 0.3;
-      ctx.drawImage(grain, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
-    }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.restore();
-    return true;
+    return false;
   }
 
   /** Bottom-center, flush to canvas bottom (overflow crops PNG bottom padding). Area ≥ 30%. */

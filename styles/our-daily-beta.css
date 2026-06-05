@@ -12592,16 +12592,17 @@
       background-size: var(--speaker-cutout-bg-w, 100%) var(--speaker-cutout-bg-h, auto);
       background-position: var(--speaker-cutout-pos-x, 50%) var(--speaker-cutout-pos-y, 0px);
       background-repeat: no-repeat;
-      /* Alpha PNG cutouts — no mask-image here: iOS Safari/WKWebView applies stricter
-         CORS to mask-image than background-image and can hide the whole layer. */
       filter:
         grayscale(1)
         contrast(1.48)
         brightness(1.56)
         drop-shadow(-2px 3px 0 rgba(255, 250, 236, 0.72));
       mix-blend-mode: multiply;
-      opacity: 0.86;
-      transform: rotate(0.6deg);
+      opacity: var(--speaker-cutout-portrait-opacity, 0.9);
+      transform:
+        translate(var(--speaker-cutout-portrait-tx, 0%), var(--speaker-cutout-portrait-ty, 0%))
+        rotate(var(--speaker-cutout-portrait-rotate, 0.55deg))
+        scale(var(--speaker-cutout-portrait-scale, 1));
     }
 
     #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette,
@@ -12612,6 +12613,17 @@
       background-position: var(--speaker-cutout-pos-x, 50%) var(--speaker-cutout-pos-y, 0px);
       background-repeat: no-repeat;
       mix-blend-mode: normal;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-cutout-mat {
+      inset: 0;
+      z-index: 1;
+      background: rgb(255, 250, 236);
+      pointer-events: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-cutout-mat[hidden] {
+      display: none;
     }
 
     #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette {
@@ -12631,17 +12643,26 @@
 
     #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash {
       z-index: 3;
-      opacity: 0.34;
+      /* Same alpha cutout as portrait — offset via transform (Warhol color plate). */
+      background-image: var(--speaker-image-url, none);
+      background-size: var(--speaker-cutout-bg-w, 100%) var(--speaker-cutout-bg-h, auto);
+      background-position: var(--speaker-cutout-pos-x, 50%) var(--speaker-cutout-pos-y, 0px);
+      background-repeat: no-repeat;
+      background-color: transparent;
+      opacity: var(--speaker-cutout-wash-opacity, 0.95);
       filter:
         brightness(0)
         saturate(100%)
-        invert(76%)
-        sepia(28%)
-        saturate(1018%)
+        invert(88%)
+        sepia(60%)
+        saturate(950%)
         hue-rotate(var(--speaker-wash-hue-rotate, 304deg))
-        brightness(97%)
-        contrast(91%);
-      transform: translate(-2.2%, 1.9%) rotate(-0.55deg) scale(1.012);
+        brightness(0.94)
+        contrast(1.06);
+      transform:
+        translate(var(--speaker-cutout-wash-tx, -4.5%), var(--speaker-cutout-wash-ty, 3.2%))
+        rotate(var(--speaker-cutout-wash-rotate, -0.72deg))
+        scale(var(--speaker-cutout-wash-scale, 1.014));
     }
 
     #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette[hidden],
@@ -12653,12 +12674,14 @@
       inset: 0;
       z-index: 5;
       background:
-        repeating-radial-gradient(circle at 13% 21%, rgba(35, 27, 20, 0.27) 0 0.55px, transparent 0.65px 4px),
-        repeating-linear-gradient(92deg, rgba(35, 27, 20, 0.13) 0 1px, transparent 1px 7px);
-      /* Clipped by the figure's hand-cut clip-path — avoid mask-image (iOS CORS). */
+        repeating-radial-gradient(circle at 13% 21%, rgba(35, 27, 20, 0.31) 0 0.55px, transparent 0.65px 4px),
+        repeating-linear-gradient(92deg, rgba(35, 27, 20, 0.16) 0 1px, transparent 1px 7px);
       mix-blend-mode: multiply;
-      opacity: 0.27;
-      transform: translate(0.6%, -0.4%) rotate(0.35deg);
+      opacity: var(--speaker-cutout-grain-opacity, 0.34);
+      transform:
+        translate(var(--speaker-cutout-grain-tx, 0.6%), var(--speaker-cutout-grain-ty, -0.4%))
+        rotate(var(--speaker-cutout-grain-rotate, 0.35deg))
+        scale(var(--speaker-cutout-grain-scale, 1));
     }
 
     /* Faint scissor highlight along the hand-cut edge */
@@ -12686,20 +12709,25 @@
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-color-wash {
       display: block;
-      z-index: 5;
+      z-index: 3;
       inset: auto;
       left: var(--speaker-cutout-pos-x, 0px);
       top: var(--speaker-cutout-pos-y, 0px);
       width: var(--speaker-cutout-bg-w, 100%);
       height: var(--speaker-cutout-bg-h, auto);
+      background-image: var(--speaker-image-url, none);
       background-size: 100% auto;
       background-position: top left;
-      transform: none;
+      background-repeat: no-repeat;
+      transform:
+        translate(var(--speaker-cutout-wash-tx, -4.5%), var(--speaker-cutout-wash-ty, 3.2%))
+        rotate(var(--speaker-cutout-wash-rotate, -0.72deg))
+        scale(var(--speaker-cutout-wash-scale, 1.014));
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-xerox-grain {
       display: block !important;
-      z-index: 6;
+      z-index: 5;
       inset: auto;
       left: var(--speaker-cutout-pos-x, 0px);
       top: var(--speaker-cutout-pos-y, 0px);
@@ -12733,7 +12761,11 @@
       object-position: top left;
       filter: grayscale(1) contrast(1.48) brightness(1.56);
       mix-blend-mode: multiply;
-      opacity: 0.9;
+      opacity: var(--speaker-cutout-portrait-opacity, 0.9);
+      transform:
+        translate(var(--speaker-cutout-portrait-tx, 0%), var(--speaker-cutout-portrait-ty, 0%))
+        rotate(var(--speaker-cutout-portrait-rotate, 0.55deg))
+        scale(var(--speaker-cutout-portrait-scale, 1));
     }
 
     #screen-quilt .quote-speaker-cutout[hidden] {
