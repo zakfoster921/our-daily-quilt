@@ -72,6 +72,7 @@ const ONE_MB = 1024 * ONE_KB;
 const PUBLIC_ROOT_FILES = new Set([
   'index.html',
   'our-daily-beta.html',
+  'speaker-cutout-lab.html',
   'privacy.html',
   'support.html',
   'rumi-colors.js'
@@ -86,6 +87,10 @@ function sendPublicRootFile(res, fileName) {
 }
 
 app.get('/', (_req, res) => sendPublicRootFile(res, 'index.html'));
+app.get('/our-daily-beta', (_req, res) => sendPublicRootFile(res, 'our-daily-beta.html'));
+app.get('/our-daily-beta.html', (_req, res) => sendPublicRootFile(res, 'our-daily-beta.html'));
+app.get('/speaker-cutout-lab', (_req, res) => sendPublicRootFile(res, 'speaker-cutout-lab.html'));
+app.get('/speaker-cutout-lab.html', (_req, res) => sendPublicRootFile(res, 'speaker-cutout-lab.html'));
 app.get('/:fileName', (req, res, next) => {
   const fileName = String(req.params.fileName || '');
   if (!PUBLIC_ROOT_FILES.has(fileName)) return next();
@@ -4581,6 +4586,107 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       error: error.message || String(error),
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+function setSpeakerCutoutLabCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+app.options('/api/speaker-cutout-lab/speakers', (req, res) => {
+  setSpeakerCutoutLabCors(res);
+  res.status(204).end();
+});
+app.get('/api/speaker-cutout-lab/speakers', async (req, res) => {
+  setSpeakerCutoutLabCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not configured on this server' });
+    }
+    const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+    const limit = Math.min(800, Math.max(1, parseInt(String(req.query.limit || '400'), 10) || 400));
+    const snap = await db.collection(collection).limit(limit).get();
+    const seen = new Set();
+    const speakers = [];
+    snap.docs.forEach((doc) => {
+      const d = doc.data() || {};
+      const cutout = String(d.speakerCutoutUrl ?? d.speaker_cutout_url ?? '').trim();
+      if (!cutout || !/speaker-cutouts(?:%2F|\/)/i.test(cutout)) return;
+      if (seen.has(cutout)) return;
+      seen.add(cutout);
+      const name = String(d.speakerName ?? d.speaker_name ?? d.author ?? doc.id)
+        .replace(/^\s*[—-]\s*/, '')
+        .trim();
+      speakers.push({
+        id: doc.id,
+        name: name || doc.id,
+        cutoutUrl: cutout,
+        portraitUrl: String(d.speakerImageUrl ?? d.speaker_image_url ?? '').trim(),
+        dateKey: String(d.dateKey ?? d.date_key ?? d.dateScheduled ?? '').trim()
+      });
+    });
+    speakers.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    return res.json({ success: true, speakers });
+  } catch (error) {
+    console.warn('speaker-cutout-lab/speakers:', error.message);
+    return res.status(500).json({ success: false, error: error.message || String(error) });
+  }
+});
+
+app.options('/api/speaker-cutout-lab/for-date', (req, res) => {
+  setSpeakerCutoutLabCors(res);
+  res.status(204).end();
+});
+app.get('/api/speaker-cutout-lab/for-date', async (req, res) => {
+  setSpeakerCutoutLabCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not configured on this server' });
+    }
+    const dateKey = String(req.query.dateKey || req.query.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'dateKey must be YYYY-MM-DD' });
+    }
+    const quotesCol = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+    const assignmentsCol = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+    let quoteData = null;
+    let sourceId = '';
+    const assignSnap = await db.collection(assignmentsCol).doc(dateKey).get();
+    if (assignSnap.exists) {
+      const a = assignSnap.data() || {};
+      sourceId = String(a.sourceId || a.source_id || '').trim();
+    }
+    if (sourceId) {
+      const qSnap = await db.collection(quotesCol).doc(sourceId).get();
+      if (qSnap.exists) quoteData = qSnap.data();
+    }
+    if (!quoteData) {
+      const daySnap = await db.collection(quotesCol).doc(dateKey).get();
+      if (daySnap.exists) quoteData = daySnap.data();
+    }
+    if (!quoteData) {
+      return res.status(404).json({ success: false, error: `No quote found for ${dateKey}` });
+    }
+    const cutoutUrl = String(quoteData.speakerCutoutUrl ?? quoteData.speaker_cutout_url ?? '').trim();
+    if (!cutoutUrl) {
+      return res.status(404).json({ success: false, error: 'Quote has no speaker cutout URL' });
+    }
+    const name = String(quoteData.speakerName ?? quoteData.speaker_name ?? quoteData.author ?? '')
+      .replace(/^\s*[—-]\s*/, '')
+      .trim();
+    return res.json({
+      success: true,
+      dateKey,
+      name,
+      cutoutUrl,
+      sourceId: sourceId || dateKey,
+      washColor: '#ea9b9a'
+    });
+  } catch (error) {
+    console.warn('speaker-cutout-lab/for-date:', error.message);
+    return res.status(500).json({ success: false, error: error.message || String(error) });
   }
 });
 

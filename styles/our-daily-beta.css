@@ -12573,14 +12573,23 @@
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--loaded {
-      overflow: hidden;
+      overflow: visible;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer.quote-speaker-cutout--loaded {
+      overflow: visible;
     }
 
     #screen-quilt .quote-speaker-cutout::before,
     #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette,
-    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash,
     #screen-quilt .quote-speaker-cutout .quote-speaker-xerox-grain {
       content: '';
+      position: absolute;
+      pointer-events: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash {
+      display: block;
       position: absolute;
       pointer-events: none;
     }
@@ -12605,8 +12614,7 @@
         scale(var(--speaker-cutout-portrait-scale, 1));
     }
 
-    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette,
-    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash {
+    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette {
       inset: 0;
       background-image: var(--speaker-image-url, none);
       background-size: var(--speaker-cutout-bg-w, 100%) var(--speaker-cutout-bg-h, auto);
@@ -12643,36 +12651,97 @@
 
     #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash {
       z-index: 3;
-      /* Same alpha cutout as portrait — offset via transform (Warhol color plate). */
-      background-image: var(--speaker-image-url, none);
-      background-size: var(--speaker-cutout-bg-w, 100%) var(--speaker-cutout-bg-h, auto);
-      background-position: var(--speaker-cutout-pos-x, 50%) var(--speaker-cutout-pos-y, 0px);
-      background-repeat: no-repeat;
+      inset: 0;
+      /* Baked silhouette wash (canvas data URL) — avoids cross-origin CSS mask failures. */
+      background-image: var(--speaker-wash-layer-url, none);
       background-color: transparent;
-      opacity: var(--speaker-cutout-wash-opacity, 0.95);
-      filter:
-        brightness(0)
-        saturate(100%)
-        invert(88%)
-        sepia(60%)
-        saturate(950%)
-        hue-rotate(var(--speaker-wash-hue-rotate, 304deg))
-        brightness(0.94)
-        contrast(1.06);
+      background-size: 100% 100%;
+      background-position: top left;
+      background-repeat: no-repeat;
+      filter: none;
+      -webkit-mask-image: none;
+      mask-image: none;
+      mix-blend-mode: normal;
+      opacity: var(--speaker-cutout-wash-opacity, 0.96);
       transform:
         translate(var(--speaker-cutout-wash-tx, -4.5%), var(--speaker-cutout-wash-ty, 3.2%))
         rotate(var(--speaker-cutout-wash-rotate, -0.72deg))
         scale(var(--speaker-cutout-wash-scale, 1.014));
     }
 
-    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette[hidden],
     #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash[hidden] {
+      display: none;
+    }
+
+    /* Legacy filter wash block replaced above — keep neutral silhouette rule separate. */
+    #screen-quilt .quote-speaker-cutout .quote-speaker-neutral-silhouette[hidden],
+    #screen-quilt .quote-speaker-cutout .quote-speaker-color-wash.quote-speaker-color-wash--legacy[hidden] {
+      display: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-paper-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-paper-shape--backdrop {
+      display: block;
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background-color: var(--quilt-byg-tape, #f2eee6);
+      background-image: none;
+      opacity: 1;
+      transform:
+        translate(var(--speaker-paper-backdrop-tx, 0%), var(--speaker-paper-backdrop-ty, 0%))
+        rotate(var(--speaker-paper-backdrop-rotate, 0deg))
+        scale(var(--speaker-paper-backdrop-scale, 1));
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-paper-shape--backdrop[hidden] {
+      display: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout:not(.quote-speaker-cutout--paper-shapes) .quote-speaker-paper-shape--backdrop {
+      display: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-paper-layer[hidden] {
+      display: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-paper-shape {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-paper-shape--torso {
+      z-index: 1;
+      transform:
+        translate(var(--speaker-paper-torso-tx, 0%), var(--speaker-paper-torso-ty, 0%))
+        rotate(var(--speaker-paper-torso-rotate, 0deg))
+        scale(var(--speaker-paper-torso-scale, 1));
+    }
+
+    #screen-quilt .quote-speaker-cutout .quote-speaker-paper-shape--face {
+      z-index: 2;
+      transform:
+        translate(var(--speaker-paper-face-tx, 0%), var(--speaker-paper-face-ty, 0%))
+        rotate(var(--speaker-paper-face-rotate, 0deg))
+        scale(var(--speaker-paper-face-scale, 1));
+    }
+
+    #screen-quilt .quote-speaker-cutout:not(.quote-speaker-cutout--paper-shapes) .quote-speaker-paper-layer {
       display: none;
     }
 
     #screen-quilt .quote-speaker-cutout .quote-speaker-xerox-grain {
       inset: 0;
-      z-index: 5;
+      z-index: 6;
       background:
         repeating-radial-gradient(circle at 13% 21%, rgba(35, 27, 20, 0.31) 0 0.55px, transparent 0.65px 4px),
         repeating-linear-gradient(92deg, rgba(35, 27, 20, 0.16) 0 1px, transparent 1px 7px);
@@ -12715,10 +12784,14 @@
       top: var(--speaker-cutout-pos-y, 0px);
       width: var(--speaker-cutout-bg-w, 100%);
       height: var(--speaker-cutout-bg-h, auto);
-      background-image: var(--speaker-image-url, none);
-      background-size: 100% auto;
+      background-image: var(--speaker-wash-layer-url, none);
+      background-color: transparent;
+      background-size: 100% 100%;
       background-position: top left;
       background-repeat: no-repeat;
+      filter: none;
+      -webkit-mask-image: none;
+      mask-image: none;
       transform:
         translate(var(--speaker-cutout-wash-tx, -4.5%), var(--speaker-cutout-wash-ty, 3.2%))
         rotate(var(--speaker-cutout-wash-rotate, -0.72deg))
@@ -12727,7 +12800,7 @@
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-xerox-grain {
       display: block !important;
-      z-index: 5;
+      z-index: 6;
       inset: auto;
       left: var(--speaker-cutout-pos-x, 0px);
       top: var(--speaker-cutout-pos-y, 0px);
@@ -12750,7 +12823,7 @@
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-image.is-loaded {
-      z-index: 4;
+      z-index: 5;
       width: var(--speaker-cutout-bg-w, 100%);
       height: var(--speaker-cutout-bg-h, auto);
       max-width: 100%;

@@ -358,13 +358,14 @@
    * Speaker cutout card draw (no cream paper offset shape).
    * B/W portrait, radial color wash, xerox grain — same as Layout B drawSpeakerOverlay minus cream layer.
    */
-  function drawSpeakerCutoutCard(ctx, img, rect, washColor, seedKey = 'odq') {
+  function drawSpeakerCutoutCard(ctx, img, rect, washColor, seedKey = 'odq', palette = []) {
     const SCR = globalThis.SpeakerCutoutRender;
     if (SCR?.drawSpeakerCutoutStack) {
       return SCR.drawSpeakerCutoutStack(ctx, img, rect, {
         washColor,
         seed: seedKey,
-        isCutoutPng: true
+        isCutoutPng: true,
+        palette: Array.isArray(palette) ? palette : []
       });
     }
     return false;
@@ -1690,7 +1691,14 @@
     }
 
     if (speakerImg && speakerRect) {
-      drawSpeakerCutoutCard(ctx, speakerImg, speakerRect, speakerWashColor, dateKey);
+      drawSpeakerCutoutCard(
+        ctx,
+        speakerImg,
+        speakerRect,
+        speakerWashColor,
+        dateKey,
+        options.quiltPalette || options.palette || []
+      );
     }
 
     const creditRect = measureCreditRect(ctx, options.author, w, h, speakerRect);

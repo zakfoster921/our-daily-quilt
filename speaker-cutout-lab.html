@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Speaker Cutout Lab — ODQ</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #d4d0c8;
+      color: #222;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 380px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      padding: 1rem 1.1rem 2rem;
+      background: #ebe8e3;
+      border-right: 1px solid rgba(0,0,0,0.08);
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+    .panel h1 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+    .panel .note {
+      font-size: 0.78rem;
+      color: #555;
+      line-height: 1.45;
+      margin-bottom: 1rem;
+    }
+    .panel section { margin-bottom: 1.1rem; }
+    .panel h2 {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #666;
+      margin: 0 0 0.5rem;
+      padding-top: 0.35rem;
+      border-top: 1px solid rgba(0,0,0,0.08);
+    }
+    label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #555;
+      margin: 0.5rem 0 0.2rem;
+    }
+    label span.val { font-weight: 400; color: #888; }
+    input[type="text"],
+    input[type="url"],
+    select {
+      width: 100%;
+      font: inherit;
+      font-size: 0.88rem;
+      padding: 0.4rem 0.5rem;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 4px;
+      background: #fff;
+    }
+    input[type="range"] { width: 100%; }
+    input[type="color"] {
+      width: 100%;
+      height: 2rem;
+      padding: 0;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 4px;
+      background: #fff;
+    }
+    .row { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
+    .row input[type="text"] { flex: 1; min-width: 100px; }
+    .checks { display: flex; flex-direction: column; gap: 0.35rem; }
+    .checks label.check {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.84rem;
+      font-weight: 400;
+      margin: 0;
+      cursor: pointer;
+    }
+    .checks input { width: auto; }
+    .btn {
+      display: inline-block;
+      margin-top: 0.35rem;
+      margin-right: 0.3rem;
+      padding: 0.42rem 0.7rem;
+      font: inherit;
+      font-size: 0.8rem;
+      border: 1px solid rgba(0,0,0,0.2);
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-primary { background: #111; color: #fff; border-color: #111; }
+    .status { font-size: 0.8rem; color: #444; margin-top: 0.6rem; min-height: 1.2em; }
+    .status.err { color: #a22; }
+    .preview-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      min-height: 100vh;
+      gap: 1rem;
+      background:
+        repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0 8px, transparent 8px 16px),
+        #c8c4bc;
+    }
+    .preview-card {
+      background: rgb(255, 250, 236);
+      padding: 1.25rem;
+      box-shadow: 0 8px 28px rgba(35, 27, 20, 0.15);
+    }
+    #previewCanvas {
+      display: block;
+      max-width: min(92vw, 420px);
+      height: auto;
+    }
+    pre.config {
+      max-width: min(92vw, 520px);
+      font-size: 0.68rem;
+      background: rgba(255,255,255,0.75);
+      padding: 0.6rem;
+      border-radius: 4px;
+      overflow: auto;
+      max-height: 160px;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h1>Speaker Cutout Lab</h1>
+      <p class="note">
+        Tune Warhol stack layers live. Run <code>npm start</code> then open
+        <code>/speaker-cutout-lab.html</code>. Speaker list loads from Firestore when configured.
+      </p>
+
+      <section>
+        <h2>Speaker</h2>
+        <label for="speakerSelect">Catalog</label>
+        <select id="speakerSelect">
+          <option value="">— load speakers or paste URL —</option>
+        </select>
+        <div class="row">
+          <input type="text" id="dateKey" placeholder="YYYY-MM-DD">
+          <button type="button" class="btn" id="btnLoadDate">Load date</button>
+        </div>
+        <label for="cutoutUrl">Cutout PNG URL</label>
+        <input type="url" id="cutoutUrl" placeholder="https://…/speaker-cutouts/…png">
+        <label for="seed">Seed (date key)</label>
+        <input type="text" id="seed" placeholder="2026-06-05">
+      </section>
+
+      <section>
+        <h2>Colors</h2>
+        <label for="washColor">Solid wash (phase 1)</label>
+        <input type="color" id="washColor" value="#ea9b9a">
+        <label for="faceColor">Face paper</label>
+        <input type="color" id="faceColor" value="#e87890">
+        <label for="torsoColor">Torso paper</label>
+        <input type="color" id="torsoColor" value="#c9a99a">
+      </section>
+
+      <section>
+        <h2>Layers</h2>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="layerWash" checked> Solid offset wash (phase 1)</label>
+          <label class="check"><input type="checkbox" id="layerBackdrop" checked> Hand-cut paper backdrop</label>
+          <label class="check"><input type="checkbox" id="layerTorso" checked> Torso paper</label>
+          <label class="check"><input type="checkbox" id="layerFace" checked> Face paper</label>
+          <label class="check"><input type="checkbox" id="layerGrain" checked> Xerox grain</label>
+        </div>
+        <label>Wash opacity <span class="val" id="washAlphaVal">0.78</span></label>
+        <input type="range" id="washAlpha" min="0" max="1" step="0.01" value="0.78">
+        <label>Paper opacity <span class="val" id="paperAlphaVal">0.88</span></label>
+        <input type="range" id="paperAlpha" min="0" max="1" step="0.01" value="0.88">
+      </section>
+
+      <section>
+        <h2>Face shape</h2>
+        <label>Width vs silhouette <span class="val" id="faceWidthFracVal">0.56</span></label>
+        <input type="range" id="faceWidthFrac" min="0.35" max="0.85" step="0.01" value="0.56">
+        <label>Height (head band) <span class="val" id="faceHeightFracVal">0.54</span></label>
+        <input type="range" id="faceHeightFrac" min="0.35" max="0.7" step="0.01" value="0.54">
+        <label>Vertical aspect (lower = taller) <span class="val" id="faceTargetAspectVal">0.68</span></label>
+        <input type="range" id="faceTargetAspect" min="0.45" max="0.95" step="0.01" value="0.68">
+        <label>Inflate <span class="val" id="paperShapeInflateVal">1.10</span></label>
+        <input type="range" id="paperShapeInflate" min="1" max="1.35" step="0.01" value="1.1">
+      </section>
+
+      <section>
+        <h2>Shoulders</h2>
+        <label>Body start (shoulder line) <span class="val" id="torsoTopFracVal">0.50</span></label>
+        <input type="range" id="torsoTopFrac" min="0.3" max="0.65" step="0.01" value="0.5">
+        <label>Trim below shoulders <span class="val" id="torsoDropTopVal">0.04</span></label>
+        <input type="range" id="torsoDropTop" min="0" max="0.2" step="0.01" value="0.04">
+      </section>
+
+      <section>
+        <h2>Misregistration</h2>
+        <label>Wash spread % <span class="val" id="washSpreadVal">22</span></label>
+        <input type="range" id="washSpread" min="0" max="28" step="0.5" value="22">
+        <label>Face paper spread <span class="val" id="facePaperSpreadVal">12</span></label>
+        <input type="range" id="facePaperSpread" min="0" max="20" step="0.5" value="12">
+        <label>Torso paper spread <span class="val" id="torsoPaperSpreadVal">14</span></label>
+        <input type="range" id="torsoPaperSpread" min="0" max="20" step="0.5" value="14">
+      </section>
+
+      <div class="row">
+        <button type="button" class="btn btn-primary" id="btnRender">Render</button>
+        <button type="button" class="btn" id="btnReset">Reset defaults</button>
+        <button type="button" class="btn" id="btnCopy">Copy JSON</button>
+      </div>
+      <p class="status" id="status" aria-live="polite"></p>
+    </aside>
+
+    <main class="preview-wrap">
+      <div class="preview-card">
+        <canvas id="previewCanvas" width="336" height="400"></canvas>
+      </div>
+      <pre class="config" id="configOut" aria-label="Current tune JSON"></pre>
+    </main>
+  </div>
+
+  <script src="/lib/quilt-newspaper-clipping.js"></script>
+  <script src="/lib/speaker-cutout-render.js"></script>
+  <script>
+    (function () {
+      const SCR = globalThis.SpeakerCutoutRender;
+      if (!SCR) {
+        document.getElementById('status').textContent = 'SpeakerCutoutRender failed to load.';
+        return;
+      }
+
+      const el = (id) => document.getElementById(id);
+      const status = (msg, isErr) => {
+        const s = el('status');
+        s.textContent = msg || '';
+        s.className = 'status' + (isErr ? ' err' : '');
+      };
+
+      const SLIDER_BINDINGS = [
+        ['faceWidthFrac', 'faceWidthFracVal', 2],
+        ['faceHeightFrac', 'faceHeightFracVal', 2],
+        ['faceTargetAspect', 'faceTargetAspectVal', 2],
+        ['paperShapeInflate', 'paperShapeInflateVal', 2],
+        ['torsoTopFrac', 'torsoTopFracVal', 2],
+        ['torsoDropTop', 'torsoDropTopVal', 2],
+        ['washSpread', 'washSpreadVal', 1],
+        ['facePaperSpread', 'facePaperSpreadVal', 1],
+        ['torsoPaperSpread', 'torsoPaperSpreadVal', 1],
+        ['washAlpha', 'washAlphaVal', 2],
+        ['paperAlpha', 'paperAlphaVal', 2]
+      ];
+
+      let speakerImg = null;
+      let renderTimer = 0;
+
+      function todayKey() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+
+      function proxyUrl(raw) {
+        const url = String(raw || '').trim();
+        if (!url) return '';
+        if (/^https?:\/\//i.test(url)) return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+        return url;
+      }
+
+      async function loadImage(url) {
+        const src = proxyUrl(url);
+        if (!src) throw new Error('No cutout URL');
+        return new Promise((resolve, reject) => {
+          const im = new Image();
+          im.crossOrigin = 'anonymous';
+          im.onload = () => resolve(im);
+          im.onerror = () => reject(new Error('Image load failed'));
+          im.src = src;
+        });
+      }
+
+      function readPaperTune() {
+        return {
+          faceWidthFrac: parseFloat(el('faceWidthFrac').value),
+          faceHeightFrac: parseFloat(el('faceHeightFrac').value),
+          faceTargetAspect: parseFloat(el('faceTargetAspect').value),
+          paperShapeInflate: parseFloat(el('paperShapeInflate').value),
+          torsoBodyFrac0: parseFloat(el('torsoTopFrac').value),
+          torsoDropTop: parseFloat(el('torsoDropTop').value)
+        };
+      }
+
+      function readMisTune() {
+        return {
+          washSpread: parseFloat(el('washSpread').value),
+          facePaperSpread: parseFloat(el('facePaperSpread').value),
+          torsoPaperSpread: parseFloat(el('torsoPaperSpread').value)
+        };
+      }
+
+      function readConfig() {
+        return {
+          seed: el('seed').value.trim() || todayKey(),
+          washColor: el('washColor').value,
+          faceColor: el('faceColor').value,
+          torsoColor: el('torsoColor').value,
+          paperTune: readPaperTune(),
+          misTune: readMisTune(),
+          layers: {
+            wash: el('layerWash').checked,
+            backdrop: el('layerBackdrop').checked,
+            torso: el('layerTorso').checked,
+            face: el('layerFace').checked,
+            grain: el('layerGrain').checked
+          },
+          washAlpha: parseFloat(el('washAlpha').value),
+          paperAlpha: parseFloat(el('paperAlpha').value)
+        };
+      }
+
+      function applyDefaults() {
+        const pt = SCR.DEFAULT_PAPER_TUNE;
+        const mt = SCR.DEFAULT_MIS_TUNE;
+        el('faceWidthFrac').value = pt.faceWidthFrac;
+        el('faceHeightFrac').value = pt.faceHeightFrac;
+        el('faceTargetAspect').value = pt.faceTargetAspect;
+        el('paperShapeInflate').value = pt.paperShapeInflate;
+        el('torsoTopFrac').value = pt.torsoBodyFrac0;
+        el('torsoDropTop').value = pt.torsoDropTop;
+        el('washSpread').value = mt.washSpread;
+        el('facePaperSpread').value = mt.facePaperSpread;
+        el('torsoPaperSpread').value = mt.torsoPaperSpread;
+        el('washAlpha').value = 0.78;
+        el('paperAlpha').value = 0.88;
+        el('washColor').value = '#ea9b9a';
+        el('faceColor').value = '#e87890';
+        el('torsoColor').value = '#c9a99a';
+        el('layerWash').checked = true;
+        el('layerBackdrop').checked = true;
+        el('layerTorso').checked = true;
+        el('layerFace').checked = true;
+        el('layerGrain').checked = true;
+        SLIDER_BINDINGS.forEach(([inputId, valId, dec]) => {
+          el(valId).textContent = parseFloat(el(inputId).value).toFixed(dec);
+        });
+      }
+
+      function updateConfigPreview(cfg) {
+        el('configOut').textContent = JSON.stringify(cfg, null, 2);
+      }
+
+      function computeLabPreviewRect(img, canvasW, canvasH, pad = 20) {
+        const iw = Math.max(1, img.naturalWidth || img.width);
+        const ih = Math.max(1, img.naturalHeight || img.height);
+        const maxW = canvasW - pad * 2;
+        const maxH = canvasH - pad * 2;
+        const scale = Math.min(maxW / iw, maxH / ih);
+        const width = Math.round(iw * scale);
+        const height = Math.round(ih * scale);
+        return {
+          x: Math.round((canvasW - width) / 2),
+          y: Math.round((canvasH - height) / 2),
+          width,
+          height,
+          angle: 0
+        };
+      }
+
+      async function renderPreview() {
+        const cfg = readConfig();
+        updateConfigPreview(cfg);
+        if (!speakerImg) {
+          status('Pick a speaker or paste a cutout URL.', true);
+          return;
+        }
+        const canvas = el('previewCanvas');
+        const w = canvas.width;
+        const h = canvas.height;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = 'rgb(255, 250, 236)';
+        ctx.fillRect(0, 0, w, h);
+        const rect = computeLabPreviewRect(speakerImg, w, h);
+        const ok = SCR.drawSpeakerCutoutStack(ctx, speakerImg, rect, {
+          washColor: cfg.washColor,
+          faceColor: cfg.faceColor,
+          torsoColor: cfg.torsoColor,
+          seed: cfg.seed,
+          isCutoutPng: true,
+          paperTune: cfg.paperTune,
+          misTune: cfg.misTune,
+          layers: cfg.layers,
+          washAlpha: cfg.washAlpha,
+          paperAlpha: cfg.paperAlpha,
+          skipScannerBed: true,
+          keepExplicitColors: true
+        });
+        status(ok ? `Rendered · seed ${cfg.seed}` : 'Render failed', !ok);
+      }
+
+      function scheduleRender() {
+        clearTimeout(renderTimer);
+        renderTimer = setTimeout(() => {
+          void renderPreview();
+        }, 120);
+      }
+
+      async function setSpeakerFromUrl(url, name, seedHint) {
+        el('cutoutUrl').value = url;
+        if (seedHint) el('seed').value = seedHint;
+        status(`Loading ${name || 'cutout'}…`);
+        speakerImg = await loadImage(url);
+        await renderPreview();
+      }
+
+      async function loadSpeakers() {
+        try {
+          const res = await fetch('/api/speaker-cutout-lab/speakers');
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || 'API error');
+          const select = el('speakerSelect');
+          select.innerHTML = '<option value="">— pick a speaker —</option>';
+          (data.speakers || []).forEach((sp) => {
+            const opt = document.createElement('option');
+            opt.value = sp.cutoutUrl;
+            opt.textContent = sp.name || sp.id;
+            opt.dataset.seed = sp.dateKey || sp.id || '';
+            select.appendChild(opt);
+          });
+          status(`Loaded ${data.speakers.length} speaker(s) from catalog.`);
+        } catch (err) {
+          status(`Speaker list: ${err.message} (paste URL manually)`, true);
+        }
+      }
+
+      async function loadDate() {
+        const dk = el('dateKey').value.trim();
+        if (!dk) return status('Enter a date key.', true);
+        try {
+          const res = await fetch(`/api/speaker-cutout-lab/for-date?dateKey=${encodeURIComponent(dk)}`);
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || 'Not found');
+          el('seed').value = dk;
+          if (data.washColor) el('washColor').value = data.washColor;
+          await setSpeakerFromUrl(data.cutoutUrl, data.name, dk);
+        } catch (err) {
+          status(err.message, true);
+        }
+      }
+
+      SLIDER_BINDINGS.forEach(([inputId, valId, dec]) => {
+        el(inputId).addEventListener('input', () => {
+          el(valId).textContent = parseFloat(el(inputId).value).toFixed(dec);
+          scheduleRender();
+        });
+      });
+
+      ['washColor', 'faceColor', 'torsoColor', 'seed'].forEach((id) => {
+        el(id).addEventListener('input', scheduleRender);
+        el(id).addEventListener('change', scheduleRender);
+      });
+
+      ['layerWash', 'layerBackdrop', 'layerTorso', 'layerFace', 'layerGrain'].forEach((id) => {
+        el(id).addEventListener('change', scheduleRender);
+      });
+
+      el('speakerSelect').addEventListener('change', () => {
+        const opt = el('speakerSelect').selectedOptions[0];
+        const url = opt?.value;
+        if (!url) return;
+        void setSpeakerFromUrl(url, opt.textContent, opt.dataset.seed || el('seed').value);
+      });
+
+      el('cutoutUrl').addEventListener('change', () => {
+        const url = el('cutoutUrl').value.trim();
+        if (!url) return;
+        void setSpeakerFromUrl(url, 'custom', el('seed').value.trim() || todayKey()).catch((e) =>
+          status(e.message, true)
+        );
+      });
+
+      el('btnLoadDate').addEventListener('click', () => void loadDate());
+      el('btnRender').addEventListener('click', () => void renderPreview());
+      el('btnReset').addEventListener('click', () => {
+        applyDefaults();
+        scheduleRender();
+      });
+      el('btnCopy').addEventListener('click', async () => {
+        const cfg = readConfig();
+        updateConfigPreview(cfg);
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(cfg, null, 2));
+          status('Config copied to clipboard.');
+        } catch (_) {
+          status('Copy failed — select JSON below manually.', true);
+        }
+      });
+
+      el('dateKey').value = todayKey();
+      el('seed').value = todayKey();
+      applyDefaults();
+      const QNC = globalThis.QuiltNewspaperClipping;
+      if (QNC?.ensureClippingSurfaceAssets) {
+        void QNC.ensureClippingSurfaceAssets().then(() => scheduleRender());
+      }
+      void loadSpeakers();
+    })();
+  </script>
+</body>
+</html>
