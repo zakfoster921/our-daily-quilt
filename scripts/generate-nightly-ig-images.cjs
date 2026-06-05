@@ -246,7 +246,8 @@ async function runNightlyIgAttempt({
         }
 
         let blocks = app.quiltEngine?.blocks || [];
-        const getFirestoreBlocksForDateKey = async (dk) => {
+        let contributors = [];
+        const getFirestoreQuiltForDateKey = async (dk) => {
           try {
             if (!window.db || !window.firestore || typeof window.firestore.getDoc !== 'function') return null;
             const qRef = window.firestore.doc(window.db, 'quilts', dk);
@@ -254,14 +255,21 @@ async function runNightlyIgAttempt({
             if (!qSnap.exists()) return null;
             const data = qSnap.data() || {};
             const dayBlocks = Array.isArray(data.blocks) ? data.blocks : [];
-            return dayBlocks.length ? dayBlocks : null;
+            const dayContributors = Array.isArray(data.contributors) ? data.contributors : [];
+            if (!dayBlocks.length) return null;
+            return {
+              blocks: dayBlocks,
+              contributors: dayContributors,
+              contributorCount: Math.max(1, Number(data.contributorCount) || dayContributors.length || 1)
+            };
           } catch (_) {
             return null;
           }
         };
-        const dateBlocks = await getFirestoreBlocksForDateKey(dateKey);
-        if (Array.isArray(dateBlocks) && dateBlocks.length > 0) {
-          blocks = dateBlocks;
+        const dateQuilt = await getFirestoreQuiltForDateKey(dateKey);
+        if (dateQuilt && Array.isArray(dateQuilt.blocks) && dateQuilt.blocks.length > 0) {
+          blocks = dateQuilt.blocks;
+          contributors = Array.isArray(dateQuilt.contributors) ? dateQuilt.contributors : [];
         }
         if ((!Array.isArray(blocks) || blocks.length <= 1) && typeof app.loadQuilt === 'function') {
           try {
@@ -273,8 +281,11 @@ async function runNightlyIgAttempt({
           blocks = app.quiltEngine?.blocks || [];
         }
         if (!Array.isArray(blocks) || blocks.length <= 1) {
-          const retry = await getFirestoreBlocksForDateKey(dateKey);
-          if (Array.isArray(retry) && retry.length > 0) blocks = retry;
+          const retry = await getFirestoreQuiltForDateKey(dateKey);
+          if (retry && Array.isArray(retry.blocks) && retry.blocks.length > 0) {
+            blocks = retry.blocks;
+            contributors = Array.isArray(retry.contributors) ? retry.contributors : contributors;
+          }
         }
         if (!Array.isArray(blocks) || blocks.length <= 1) {
           throw new Error(
@@ -286,9 +297,11 @@ async function runNightlyIgAttempt({
         if (typeof app.applyQuiltDataFromPayload === 'function') {
           await app.applyQuiltDataFromPayload({
             blocks,
+            contributors,
             dateKey,
             date: dateKey,
-            contributorCount: Math.max(1, blocks.length)
+            contributorCount:
+              dateQuilt?.contributorCount || Math.max(1, contributors.length || blocks.length)
           });
         }
         const quiltScreenEl = document.getElementById('screen-quilt');
@@ -520,6 +533,18 @@ async function runNightlyIgAttempt({
             dateKey
           );
         }
+        let contributorCloudImageData = null;
+        if (arch.generateInstagramContributorCloudImage) {
+          log('generating contributor cloud post 4:5…');
+          contributorCloudImageData = await arch.generateInstagramContributorCloudImage(
+            blocks,
+            contributors,
+            dateKey
+          );
+          if (!contributorCloudImageData) {
+            log('contributor cloud skipped (no contributor names for this day)');
+          }
+        }
 
         const zapierCaption =
           typeof Utils.formatZapierCaptionFromQuote === 'function'
@@ -547,6 +572,7 @@ async function runNightlyIgAttempt({
           postLayoutBImageData,
           postLayoutBSpeakerImageData,
           storyLayoutBImageData,
+          contributorCloudImageData,
           aliasLayoutBSpeakerUrl: false,
           zapierCaption,
           quiltFingerprint,

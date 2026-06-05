@@ -17,6 +17,18 @@
     return g.QuoteKeywordEmphasis || null;
   })();
 
+  const QNC = (function resolveQuiltNewspaperClipping() {
+    try {
+      if (typeof require !== 'undefined') {
+        return require('../lib/quilt-newspaper-clipping.js');
+      }
+    } catch (_) {
+      /* browser bundle has no require */
+    }
+    const g = typeof globalThis !== 'undefined' ? globalThis : global;
+    return g.QuiltNewspaperClipping || null;
+  })();
+
   const FONT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
   const WORDMARK_DEFAULT = 'assets/portal-our-daily-quilt.png';
   const CREAM_INK = '#f8f6f2';
@@ -346,7 +358,7 @@
    * Speaker cutout card draw (no cream paper offset shape).
    * B/W portrait, radial color wash, xerox grain — same as Layout B drawSpeakerOverlay minus cream layer.
    */
-  function drawSpeakerCutoutCard(ctx, img, rect, washColor) {
+  function drawSpeakerCutoutCard(ctx, img, rect, washColor, seedKey = 'odq') {
     if (!img || !rect || rect.width <= 0 || rect.height <= 0) return false;
     let portrait = null;
     try {
@@ -368,7 +380,7 @@
       gx.save();
       gx.translate(W / 2, H / 2);
       gx.rotate(lineAngleRad);
-      gx.strokeStyle = 'rgba(35, 27, 20, 0.55)';
+      gx.strokeStyle = 'rgba(35, 27, 20, 0.72)';
       gx.lineWidth = 1;
       const diag = Math.ceil(Math.sqrt(W * W + H * H));
       for (let y = -diag; y <= diag; y += 7) {
@@ -383,7 +395,7 @@
       const ringMaxR = Math.ceil(
         Math.sqrt(Math.max(ringCx, W - ringCx) ** 2 + Math.max(ringCy, H - ringCy) ** 2)
       );
-      gx.strokeStyle = 'rgba(35, 27, 20, 0.5)';
+      gx.strokeStyle = 'rgba(35, 27, 20, 0.65)';
       gx.lineWidth = 0.55;
       for (let r = 4; r <= ringMaxR; r += 4) {
         gx.beginPath();
@@ -419,6 +431,24 @@
     ctx.save();
     ctx.translate(rect.x + rect.width / 2, rect.y + rect.height / 2);
     ctx.rotate(rect.angle || 0);
+    if (QNC?.drawScannerBed) {
+      const bed = document.createElement('canvas');
+      bed.width = portrait.width;
+      bed.height = portrait.height;
+      const bctx = bed.getContext('2d');
+      if (bctx) {
+        QNC.drawScannerBed(
+          bctx,
+          bed.width,
+          bed.height,
+          `${String(seedKey || 'odq').trim()}:speaker-cutout:0`,
+          'speakerCutout'
+        );
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.drawImage(bed, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
+      }
+    }
     ctx.globalCompositeOperation = 'multiply';
     ctx.globalAlpha = 0.95;
     ctx.drawImage(portrait, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
@@ -429,7 +459,7 @@
     }
     if (gx) {
       ctx.globalCompositeOperation = 'multiply';
-      ctx.globalAlpha = 0.2;
+      ctx.globalAlpha = 0.3;
       ctx.drawImage(grain, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
     }
     ctx.globalAlpha = 1;
@@ -1758,7 +1788,7 @@
     }
 
     if (speakerImg && speakerRect) {
-      drawSpeakerCutoutCard(ctx, speakerImg, speakerRect, speakerWashColor);
+      drawSpeakerCutoutCard(ctx, speakerImg, speakerRect, speakerWashColor, dateKey);
     }
 
     const creditRect = measureCreditRect(ctx, options.author, w, h, speakerRect);

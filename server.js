@@ -4069,6 +4069,8 @@ async function getTodayInstagramImage(options = {}) {
       raw.storyLayoutBImageStorageUrl || raw.layoutBStoryUrl || raw.storyLayoutBUrl || null;
     const storageQuiltScreen9x16Url =
       raw.quiltScreen9x16ImageStorageUrl || raw.quiltScreen9x16Url || raw.quiltScreenUrl || null;
+    const storageContributorCloudUrl =
+      raw.contributorCloudImageStorageUrl || raw.contributorCloudUrl || null;
     const storageReelWebmUrl = raw.reelWebmStorageUrl || raw.reelUrl || null;
     const storageReelMp4Url = raw.reelMp4StorageUrl || raw.reelMp4Url || null;
 
@@ -4199,6 +4201,7 @@ async function getTodayInstagramImage(options = {}) {
       storageLayoutBSpeakerUrl,
       storageStoryLayoutBUrl,
       storageQuiltScreen9x16Url,
+      storageContributorCloudUrl,
       storageReelWebmUrl,
       storageReelMp4Url,
       quote: quote,
@@ -4238,6 +4241,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     let postLayoutBSpeakerImageUrl = '';
     let storyLayoutBImageUrl = '';
     let quiltScreen9x16ImageUrl = '';
+    let contributorCloudImageUrl = '';
 
     if (imageData.storageClassicUrl) {
       imageUrl = imageData.storageClassicUrl;
@@ -4271,6 +4275,10 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       quiltScreen9x16ImageUrl = imageData.storageQuiltScreen9x16Url;
     }
 
+    if (imageData.storageContributorCloudUrl) {
+      contributorCloudImageUrl = imageData.storageContributorCloudUrl;
+    }
+
     const hasLayoutB = !!postLayoutBImageUrl;
     const hasLayoutBSpeaker = !!postLayoutBSpeakerImageUrl;
     /** Quote-only layout-b.png is the default post; speaker hero is a separate field. */
@@ -4282,7 +4290,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-19-layoutb-quote-and-speaker-split';
+    const apiVersion = 'instagram-api-20-contributor-cloud-post';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Include quote + speaker post URLs explicitly when both exist.
     const imageUrls = [
@@ -4290,7 +4298,8 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       postLayoutBImageUrl,
       postLayoutBSpeakerImageUrl,
       storyLayoutBImageUrl,
-      quiltScreen9x16ImageUrl
+      quiltScreen9x16ImageUrl,
+      contributorCloudImageUrl
     ].filter(Boolean);
     const mediaUrls = [...imageUrls];
     if (reelVideoUrl) mediaUrls.push(reelVideoUrl);
@@ -4311,6 +4320,8 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       quiltScreen9x16ImageUrl,
       quiltScreen9x16Url: quiltScreen9x16ImageUrl,
       quiltScreenUrl: quiltScreen9x16ImageUrl,
+      contributorCloudImageUrl,
+      contributorCloudUrl: contributorCloudImageUrl,
       imageUrls,
       reelWebmUrl,
       reelMp4Url,
@@ -4330,12 +4341,13 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       hasPostLayoutBSpeaker: hasLayoutBSpeaker,
       hasStoryLayoutB: !!storyLayoutBImageUrl,
       hasQuiltScreen9x16: !!quiltScreen9x16ImageUrl,
+      hasContributorCloud: !!contributorCloudImageUrl,
       blockCount: Number(imageData.blockCount) || 0,
       contributorCount: Math.max(1, Number(imageData.contributorCount) || 1),
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'imageUrl/classicImageUrl = classic 4:5. layoutBImageUrl/postLayoutBImageUrl = layout-b.png (quote-only 4:5). layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl = layout-b-speaker.png (speaker hero 4:5). layoutBPlainImageUrl mirrors layout-b.png. quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job. blockCount and contributorCount from instagram-images when present, else quilts/{date}.'
+        'imageUrl/classicImageUrl = classic 4:5. layoutBImageUrl/postLayoutBImageUrl = layout-b.png (quote-only 4:5). layoutBSpeakerImageUrl/postLayoutBSpeakerImageUrl = layout-b-speaker.png (speaker hero 4:5). layoutBPlainImageUrl mirrors layout-b.png. contributorCloudImageUrl = contributor-cloud.png (name cloud 4:5). quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job. blockCount and contributorCount from instagram-images when present, else quilts/{date}.'
     };
     
     console.log(
@@ -4419,6 +4431,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       typeof body.moodClippingGoodImageData === 'string' ? body.moodClippingGoodImageData : '';
     const moodClippingRoughImageData =
       typeof body.moodClippingRoughImageData === 'string' ? body.moodClippingRoughImageData : '';
+    const contributorCloudImageData =
+      typeof body.contributorCloudImageData === 'string' ? body.contributorCloudImageData : '';
     if (
       !instagramImage &&
       !postLayoutBImageData &&
@@ -4427,7 +4441,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       !quiltScreen9x16ImageData &&
       !newspaperClippingImageData &&
       !moodClippingGoodImageData &&
-      !moodClippingRoughImageData
+      !moodClippingRoughImageData &&
+      !contributorCloudImageData
     ) {
       return res.status(400).json({ success: false, error: 'No image data URLs provided' });
     }
@@ -4520,6 +4535,15 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.newspaperClippingImageStorageUrl = publicUrl;
       docPayload.newspaperClippingUrl = publicUrl;
       docPayload.newspaperClippingReady = true;
+    }
+    if (contributorCloudImageData) {
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/contributor-cloud.png`,
+        parsePngDataUrlToBuffer(contributorCloudImageData),
+        'image/png'
+      );
+      docPayload.contributorCloudImageStorageUrl = publicUrl;
+      docPayload.contributorCloudUrl = publicUrl;
     }
     if (moodClippingGoodImageData) {
       const { publicUrl } = await firebaseSaveDownloadableFile(

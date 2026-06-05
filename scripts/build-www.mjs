@@ -32,35 +32,56 @@ async function copyDir(src, dest) {
   }
 }
 
-async function resolveBuildId() {
+async function readPbxproj() {
   try {
-    const pbx = await readFile(pbxproj, "utf8");
-    const match = pbx.match(/CURRENT_PROJECT_VERSION = (\d+);/);
-    if (match) return match[1];
+    return await readFile(pbxproj, "utf8");
   } catch {
-    /* no iOS project */
+    return null;
   }
-  return "dev";
 }
 
-async function injectAppVersion(html) {
-  const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-  const version = pkg.version || "1.0.0";
-  const buildId = await resolveBuildId();
+async function resolveBuildId() {
+  const pbx = await readPbxproj();
+  if (!pbx) return "dev";
+  const match = pbx.match(/CURRENT_PROJECT_VERSION = (\d+);/);
+  return match ? match[1] : "dev";
+}
 
-  let out = html.replace(
+async function resolveMarketingVersion() {
+  const pbx = await readPbxproj();
+  if (pbx) {
+    const match = pbx.match(/MARKETING_VERSION = ([^;]+);/);
+    if (match) return match[1].trim();
+  }
+  try {
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    return pkg.version || "1.0.0";
+  } catch {
+    return "1.0.0";
+  }
+}
+
+function stampAppConfig(content, version, buildId) {
+  let out = content.replace(
     /(name: 'OUR DAILY QUILT',\s*\n\s*version: )'[^']+'/,
     `$1'${version}'`
   );
-  out = out.replace(/(buildId: )'[^']+'/, `$1'${buildId}'`);
-  return { html: out, version, buildId };
+  return out.replace(/(buildId: )'[^']+'/, `$1'${buildId}'`);
+}
+
+async function resolveAppVersion() {
+  return {
+    version: await resolveMarketingVersion(),
+    buildId: await resolveBuildId(),
+  };
 }
 
 await mkdir(www, { recursive: true });
 
+const { version, buildId } = await resolveAppVersion();
+
 const html = await readFile(srcHtml, "utf8");
-const { html: stamped, version, buildId } = await injectAppVersion(html);
-await writeFile(destHtml, stamped);
+await writeFile(destHtml, html);
 
 try {
   if (await stat(assetsSrc).then((s) => s.isDirectory())) {
@@ -72,6 +93,16 @@ try {
 try {
   if (await stat(libSrc).then((s) => s.isDirectory())) {
     await copyDir(libSrc, libDest);
+    const appConfigSrc = join(libSrc, "app-config.js");
+    const appConfigDest = join(libDest, "app-config.js");
+    try {
+      const cfg = await readFile(appConfigSrc, "utf8");
+      const stamped = stampAppConfig(cfg, version, buildId);
+      await writeFile(appConfigSrc, stamped);
+      await writeFile(appConfigDest, stamped);
+    } catch {
+      console.warn("build:www: lib/app-config.js missing, skipping version stamp");
+    }
   }
 } catch {
   console.warn("build:www: no lib/ folder, skipping");
