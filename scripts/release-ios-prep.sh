@@ -17,6 +17,13 @@ for arg in "$@"; do
   fi
 done
 
+if [[ -f "ios/App/App.xcodeproj/project.pbxproj" ]]; then
+  echo "==> bump iOS build number"
+  node scripts/bump-ios-build.cjs
+else
+  echo "WARN: ios/App/App.xcodeproj/project.pbxproj not found — skipping build bump"
+fi
+
 echo "==> npm run build:www"
 npm run build:www
 
@@ -33,7 +40,7 @@ npx cap sync ios
 echo ""
 echo "iOS release prep finished."
 echo "Next in Xcode: open App.xcworkspace → pick a device / Any iOS Device → Product → Archive."
-echo "Build number bumps automatically during Release archive (Xcode + app-config.js stay in sync)."
+echo "Build number was bumped above (run npm run ios once per App Store upload, before Archive)."
 echo "After exporting for App Store Connect: npm run ios:verify-push"
 echo ""
 
