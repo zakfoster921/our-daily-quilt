@@ -293,7 +293,7 @@ async function runNightlyIgAttempt({
           );
         }
 
-        log(`loaded ${blocks.length} blocks for ${dateKey}`);
+        log(`loaded ${blocks.length} blocks for ${dateKey}; firestore contributor names=${contributors.length}`);
         if (typeof app.applyQuiltDataFromPayload === 'function') {
           await app.applyQuiltDataFromPayload({
             blocks,
@@ -534,15 +534,27 @@ async function runNightlyIgAttempt({
           );
         }
         let contributorCloudImageData = null;
-        if (arch.generateInstagramContributorCloudImage) {
-          log('generating contributor cloud post 4:5…');
+        if (!arch.generateInstagramContributorCloudImage) {
+          log('contributor cloud skipped (generateInstagramContributorCloudImage missing on ArchiveService)');
+        } else if (!contributors.length) {
+          log('contributor cloud skipped (quilts/{dateKey}.contributors is empty)');
+        } else if (typeof globalThis.composeContributorCloudPostFromQuiltBlob !== 'function') {
+          log('contributor cloud skipped (contributor-cloud-compose.js did not load)');
+        } else {
+          log(`generating contributor cloud post 4:5 (${contributors.length} names)…`);
           contributorCloudImageData = await arch.generateInstagramContributorCloudImage(
             blocks,
             contributors,
             dateKey
           );
           if (!contributorCloudImageData) {
-            log('contributor cloud skipped (no contributor names for this day)');
+            log('contributor cloud failed (compose returned null — check browser console for ArchiveService error)');
+          } else {
+            const ccBytes = Math.max(
+              0,
+              Math.round(((String(contributorCloudImageData).length - 22) * 3) / 4)
+            );
+            log(`contributor cloud PNG ~${ccBytes} bytes`);
           }
         }
 
@@ -593,16 +605,25 @@ async function runNightlyIgAttempt({
         if (!doc.quiltScreen9x16Url && !doc.quiltScreen9x16ImageStorageUrl) {
           throw new Error('quilt screen 9:16 URL missing after nightly upload');
         }
+        const contributorCloudUrl = String(
+          doc.contributorCloudUrl || doc.contributorCloudImageStorageUrl || ''
+        ).trim();
+        if (contributorCloudUrl) {
+          log(`uploaded contributor-cloud.png → ${contributorCloudUrl}`);
+        }
         return {
           dateKey,
           blockCount: blocks.length,
           contributorCount,
+          contributorNameCount: contributors.length,
           readyForInstagram: !!doc.readyForInstagram,
           classicUrl: doc.classicUrl || doc.imageStorageUrl || '',
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
           layoutBUrl: doc.layoutBUrl || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
-            doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
+            doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || '',
+          contributorCloudUrl,
+          hasContributorCloud: !!contributorCloudUrl
         };
       },
       { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }
@@ -653,6 +674,13 @@ async function runNightlyIgAttempt({
     if (!quiltScreen9x16Url) {
       throw new Error('verify failed: quilt screen 9:16 image URL missing');
     }
+    const contributorCloudImageUrl =
+      verify.contributorCloudImageUrl || verify.contributorCloudUrl || '';
+    if (contributorCloudImageUrl) {
+      console.log(`[nightly-ig] contributorCloudImageUrl=${contributorCloudImageUrl}`);
+    } else {
+      console.log('[nightly-ig] contributor cloud not present (skipped or no contributor names)');
+    }
 
     return {
       success: true,
@@ -667,7 +695,10 @@ async function runNightlyIgAttempt({
       layoutBPlainImageUrl: verify.layoutBPlainImageUrl || verify.postLayoutBPlainImageUrl || '',
       layoutBSpeakerImageUrl:
         verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || '',
-      storyLayoutBImageUrl: storyUrl
+      storyLayoutBImageUrl: storyUrl,
+      contributorCloudImageUrl,
+      contributorCloudUrl: contributorCloudImageUrl || result.contributorCloudUrl || '',
+      hasContributorCloud: !!(contributorCloudImageUrl || result.contributorCloudUrl)
     };
   } catch (err) {
     await writeFailureArtifacts(page, attempt, outDir);
@@ -732,6 +763,13 @@ async function main() {
       console.log('[nightly-ig] result:', JSON.stringify(result, null, 2));
       if (result.newspaperClippingUrl) {
         console.log(`[nightly-ig] DONE newspaperClippingUrl=${result.newspaperClippingUrl}`);
+      }
+      if (result.contributorCloudUrl) {
+        console.log(`[nightly-ig] DONE contributorCloudUrl=${result.contributorCloudUrl}`);
+      } else if (!result.clippingOnly) {
+        console.log(
+          `[nightly-ig] contributor cloud not uploaded for ${result.dateKey} (firestore names=${result.contributorNameCount ?? '?'})`
+        );
       }
       return;
     } catch (err) {
