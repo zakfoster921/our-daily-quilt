@@ -136,7 +136,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
         bridgeViewController.view.backgroundColor = launchBackgroundColor
         bridgeViewController.webView?.isOpaque = false
         bridgeViewController.webView?.backgroundColor = launchBackgroundColor
-        bridgeViewController.webView?.scrollView.backgroundColor = launchBackgroundColor
+        if let scrollView = bridgeViewController.webView?.scrollView {
+            scrollView.backgroundColor = launchBackgroundColor
+            // CSS uses viewport-fit=cover + env(safe-area-inset-*); UIKit must not add a second horizontal inset.
+            scrollView.contentInsetAdjustmentBehavior = .never
+            scrollView.contentInset = .zero
+            scrollView.scrollIndicatorInsets = .zero
+            scrollView.automaticallyAdjustsScrollIndicatorInsets = false
+        }
 
         if launchBridgeHandlerInstalled, bridgeViewController.webView != nil {
             return
