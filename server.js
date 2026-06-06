@@ -4807,6 +4807,195 @@ async function suggestQuoteKeywordsWithAi(quoteText) {
   throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
 }
 
+function normalizeScheduleDateKey(val) {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(val || '').trim());
+  return m ? m[1] : '';
+}
+
+function isApprovedNotionCatalogRow(data) {
+  if (!data || data.source !== 'notion') return false;
+  const text = String(data.text || '').trim();
+  const author = String(data.author || '').trim();
+  if (!text || !author) return false;
+  const approved =
+    typeof data.approved === 'boolean'
+      ? data.approved
+      : typeof data.active === 'boolean'
+        ? data.active
+        : String(data.approved ?? data.active ?? '').trim().toLowerCase() !== 'false';
+  return approved;
+}
+
+function buildPreviewQuotePayloadFromFirestore(data, sourceId) {
+  const text = String(data?.text || '').trim();
+  const author = String(data?.author || '').trim();
+  if (!text) return null;
+  return {
+    text,
+    author,
+    sourceId: String(sourceId || data?.sourceId || '').trim() || undefined,
+    blessing: String(data?.blessing || '').trim() || undefined,
+    communityPrompt: String(data?.communityPrompt || data?.community_prompt || '').trim() || undefined,
+    community_prompt: String(data?.communityPrompt || data?.community_prompt || '').trim() || undefined,
+    goodDay: String(data?.goodDay || data?.good_day || '').trim() || undefined,
+    good_day: String(data?.goodDay || data?.good_day || '').trim() || undefined,
+    roughDay: String(data?.roughDay || data?.rough_day || '').trim() || undefined,
+    rough_day: String(data?.roughDay || data?.rough_day || '').trim() || undefined,
+    speakerImageUrl: String(data?.speakerImageUrl || data?.speaker_image_url || '').trim() || undefined,
+    speaker_image_url: String(data?.speakerImageUrl || data?.speaker_image_url || '').trim() || undefined,
+    speakerCutoutUrl: String(data?.speakerCutoutUrl || data?.speaker_cutout_url || '').trim() || undefined,
+    speaker_cutout_url: String(data?.speakerCutoutUrl || data?.speaker_cutout_url || '').trim() || undefined,
+    speakerDates: String(data?.speakerDates || data?.speaker_dates || '').trim() || undefined,
+    speaker_dates: String(data?.speakerDates || data?.speaker_dates || '').trim() || undefined,
+    speakerBorn: String(data?.speakerBorn || data?.speaker_born || '').trim() || undefined,
+    speaker_born: String(data?.speakerBorn || data?.speaker_born || '').trim() || undefined,
+    speakerDied: String(data?.speakerDied || data?.speaker_died || '').trim() || undefined,
+    speaker_died: String(data?.speakerDied || data?.speaker_died || '').trim() || undefined,
+    speakerGuideLine: String(data?.speakerGuideLine || data?.speaker_guide_line || '').trim() || undefined,
+    speaker_guide_line: String(data?.speakerGuideLine || data?.speaker_guide_line || '').trim() || undefined,
+    imageAttribution: String(data?.imageAttribution || data?.image_attribution || '').trim() || undefined,
+    image_attribution: String(data?.imageAttribution || data?.image_attribution || '').trim() || undefined
+  };
+}
+
+async function resolvePreviewQuotePayloadForDate(dateKey) {
+  if (!db) return { quote: null, resolution: 'no_db', assignmentExists: false };
+  const dk = String(dateKey || '').trim();
+  const assignSnap = await db.collection('dailyQuoteAssignments').doc(dk).get();
+  const assignData = assignSnap.exists ? assignSnap.data() || {} : null;
+
+  let catalogRow = null;
+  let catalogId = '';
+  const catalogSnap = await db.collection('quotes').where('source', '==', 'notion').get();
+  catalogSnap.forEach((docSnap) => {
+    if (catalogRow) return;
+    const data = docSnap.data() || {};
+    if (!isApprovedNotionCatalogRow(data)) return;
+    const ds = normalizeScheduleDateKey(data.date_scheduled || data.dateScheduled);
+    if (ds !== dk) return;
+    catalogRow = data;
+    catalogId = docSnap.id;
+  });
+
+  if (catalogRow) {
+    return {
+      quote: buildPreviewQuotePayloadFromFirestore(catalogRow, catalogId),
+      resolution: 'notion_schedule',
+      assignmentExists: assignSnap.exists
+    };
+  }
+
+  if (assignData) {
+    const sid = String(assignData.sourceId || '').trim();
+    if (sid) {
+      const srcSnap = await db.collection('quotes').doc(sid).get();
+      if (srcSnap.exists) {
+        const fromSource = buildPreviewQuotePayloadFromFirestore(srcSnap.data() || {}, sid);
+        if (fromSource) {
+          return {
+            quote: fromSource,
+            resolution: 'assignment_sourceId',
+            assignmentExists: true
+          };
+        }
+      }
+    }
+    const snapAuthor = String(assignData.authorSnapshot || assignData.author || '').trim();
+    const snapText = String(assignData.textSnapshot || assignData.text || '').trim();
+    if (snapText && snapAuthor) {
+      return {
+        quote: { text: snapText, author: snapAuthor, sourceId: sid || undefined },
+        resolution: 'assignment_snapshots',
+        assignmentExists: true
+      };
+    }
+  }
+
+  return { quote: null, resolution: 'not_found', assignmentExists: assignSnap.exists };
+}
+
+/** Admin preview: read Notion directly when Firestore catalog/assignment is stale or missing. */
+async function resolveNotionQuoteForPreviewDate(dateKey) {
+  const dk = String(dateKey || '').trim();
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!dk || !databaseId || !/^\d{4}-\d{2}-\d{2}$/.test(dk)) return null;
+  try {
+    const schema = await notionGetDatabaseProperties(databaseId);
+    const dateScheduledProp = findNotionPropName(
+      schema,
+      'date_scheduled',
+      'dateScheduled',
+      'Date scheduled',
+      'Date Scheduled'
+    );
+    if (!dateScheduledProp) return null;
+
+    const approvedProp = findNotionPropName(schema, 'approved', 'Approved', 'active', 'Active');
+    const filterParts = [
+      { property: dateScheduledProp, date: { on_or_after: dk } },
+      { property: dateScheduledProp, date: { on_or_before: dk } }
+    ];
+    if (approvedProp) {
+      const approvedSchema = schema[approvedProp];
+      if (approvedSchema?.type === 'checkbox') {
+        filterParts.push({ property: approvedProp, checkbox: { equals: true } });
+      }
+    }
+
+    const json = await notionFetchJson(`/databases/${databaseId}/query`, {
+      method: 'POST',
+      body: JSON.stringify({ filter: { and: filterParts }, page_size: 20 })
+    });
+    const rows = Array.isArray(json?.results) ? json.results : [];
+    for (const page of rows) {
+      const prop = page?.properties?.[dateScheduledProp];
+      const ds = normalizeScheduleDateKey(prop?.date?.start || prop?.date?.end);
+      if (ds !== dk) continue;
+      const text = String(extractQuoteTextFromNotionPage(page) || '').trim();
+      const author = String(extractAuthorFromNotionPage(page) || '').trim();
+      if (!text || !author) continue;
+      return {
+        quote: { text, author, sourceId: String(page.id || '').trim() || undefined },
+        resolution: 'notion_live',
+        assignmentExists: false
+      };
+    }
+  } catch (error) {
+    console.warn('resolveNotionQuoteForPreviewDate failed:', error?.message || error);
+  }
+  return null;
+}
+
+async function resolvePreviewQuotePayloadForDateWithNotion(dateKey) {
+  const firestoreResult = await resolvePreviewQuotePayloadForDate(dateKey);
+  if (firestoreResult?.quote) return firestoreResult;
+  const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
+  if (notionResult?.quote) return notionResult;
+  return firestoreResult;
+}
+
+app.options('/api/preview-quote-for-date/:dateKey', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return res.status(204).end();
+});
+
+app.get('/api/preview-quote-for-date/:dateKey', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  try {
+    const dateKey = String(req.params.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'Invalid dateKey' });
+    }
+    const payload = await resolvePreviewQuotePayloadForDateWithNotion(dateKey);
+    return res.json({ success: !!payload.quote, dateKey, ...payload });
+  } catch (error) {
+    console.warn('preview-quote-for-date failed:', error?.message || error);
+    return res.status(500).json({ success: false, error: error.message || 'Preview quote lookup failed' });
+  }
+});
+
 app.options('/api/quote-keywords', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -6485,6 +6674,7 @@ app.post('/api/quote-prefill-sweep', async (req, res) => {
  * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
  * After quotes sync, runs reconcile: apply Notion `date_scheduled` to `dailyQuoteAssignments`
  * (clear date → unschedule; change date → move). Then append-only scheduling (same as the daily cron), not swap mode.
+ * Near-term empty days are filled via `--fill-gaps-only` before the tail append.
  * Auth: header x-notion-sync-token must match NOTION_SYNC_TOKEN, or RESET_TOKEN if NOTION_SYNC_TOKEN is unset.
  * Requires NOTION_TOKEN, NOTION_DATABASE_ID, GOOGLE_APPLICATION_CREDENTIALS_JSON on the host.
  */
@@ -6592,7 +6782,26 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: appSubmissionsResult.code,
         stdout: tailOutput(appSubmissionsResult.stdout, 12000),
         stderr: tailOutput(appSubmissionsResult.stderr, 12000),
-        note: 'Quotes sync + date reconcile completed; approved app-submission scheduling (append-only) failed before rolling append.',
+        note: 'Quotes sync + date reconcile completed; approved app-submission scheduling (append-only) failed before near-term gap fill.',
+        startedAt,
+        finishedAt: getUtcIsoNow()
+      });
+    }
+
+    const gapFillResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
+      `--start=${scheduleStartDate}`,
+      '--cadence=1',
+      '--window=8',
+      '--fill-gaps-only'
+    ]);
+    if (gapFillResult.code !== 0) {
+      return res.status(500).json({
+        success: false,
+        step: 'schedule:fill-gaps',
+        exitCode: gapFillResult.code,
+        stdout: tailOutput(gapFillResult.stdout, 12000),
+        stderr: tailOutput(gapFillResult.stderr, 12000),
+        note: 'Quotes sync, reconcile, and app-submission scheduling completed; near-term gap fill failed before rolling append.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -6612,7 +6821,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         exitCode: scheduleResult.code,
         stdout: tailOutput(scheduleResult.stdout, 12000),
         stderr: tailOutput(scheduleResult.stderr, 12000),
-        note: 'Quotes sync, date reconcile, and app-submission scheduling completed; rolling append failed before usage sync.',
+        note: 'Quotes sync, reconcile, gap fill, and app-submission scheduling completed; rolling append failed before usage sync.',
         startedAt,
         finishedAt: getUtcIsoNow()
       });
@@ -6641,16 +6850,17 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         'sync:quotes',
         'schedule:reconcile-notion-dates',
         'schedule:app-submissions',
+        'schedule:fill-gaps',
         'schedule:rolling-append',
         'sync:usage'
       ],
       scheduleStartDate,
       stdout: tailOutput(
-        `${quotesResult.stdout}\n---\n${reconcileResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
+        `${quotesResult.stdout}\n---\n${reconcileResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${gapFillResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
         16000
       ),
       stderr: tailOutput(
-        `${quotesResult.stderr}\n---\n${reconcileResult.stderr}\n---\n${appSubmissionsResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
+        `${quotesResult.stderr}\n---\n${reconcileResult.stderr}\n---\n${appSubmissionsResult.stderr}\n---\n${gapFillResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
         8000
       ),
       startedAt,
