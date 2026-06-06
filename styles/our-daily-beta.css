@@ -12722,11 +12722,20 @@
 
     #screen-quilt .quote-speaker-portrait-wrap {
       position: relative;
-      z-index: 1;
+      z-index: 6;
       width: min(94%, 21.5rem);
       margin: 0 auto clamp(-3.25rem, -14vw, -2.4rem);
       transform: rotate(-1.35deg) translateX(-4px) translateY(0.4rem);
       transform-origin: center bottom;
+    }
+
+    /* Plain cutout: portrait above name slab; moderate overlap only. */
+    #screen-quilt .quote-speaker-widget:has(.quote-speaker-cutout--plain-cutout) .quote-speaker-portrait-wrap {
+      margin-bottom: clamp(-2.35rem, -11vw, -1.65rem);
+    }
+
+    #screen-quilt .quote-speaker-widget:has(.quote-speaker-cutout--plain-cutout) .quote-speaker-slab--identity .quote-speaker-slab-body {
+      padding-top: 1.35rem;
     }
 
     /* Magazine cutout — height from image aspect (JS); no forced 1:1 square */
@@ -12750,6 +12759,37 @@
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer.quote-speaker-cutout--loaded {
       overflow: visible;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-neutral-silhouette,
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer.quote-speaker-cutout--loaded::after {
+      display: none !important;
+      opacity: 0 !important;
+    }
+
+    /* B/W lithograph on ::before so multiply blends with wash/paper below (filter on <img> breaks this). */
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer::before {
+      display: block !important;
+      content: '';
+      position: absolute;
+      pointer-events: none;
+      z-index: 5;
+      inset: auto;
+      left: var(--speaker-cutout-pos-x, 0px);
+      top: var(--speaker-cutout-pos-y, 0px);
+      width: var(--speaker-cutout-bg-w, 100%);
+      height: var(--speaker-cutout-bg-h, 100%);
+      background-image: var(--speaker-image-url, none);
+      background-size: 100% 100%;
+      background-position: top left;
+      background-repeat: no-repeat;
+      filter: grayscale(1) contrast(1.48) brightness(1.56);
+      mix-blend-mode: multiply;
+      opacity: var(--speaker-cutout-portrait-opacity, 0.9) !important;
+      transform:
+        translate(var(--speaker-cutout-portrait-tx, 0%), var(--speaker-cutout-portrait-ty, 0%))
+        rotate(var(--speaker-cutout-portrait-rotate, 0.55deg))
+        scale(var(--speaker-cutout-portrait-scale, 1));
     }
 
     #screen-quilt .quote-speaker-cutout::before,
@@ -12965,12 +13005,15 @@
       opacity: 0.55;
     }
 
-    /* Firebase PNG cutout — paint via <img> + aligned wash/grain (no offset cream duplicate). */
-    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer::before,
+    /* Firebase PNG cutout — wash/paper in DOM; lithograph via ::before (img stays for measure/decode). */
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-neutral-silhouette,
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer.quote-speaker-cutout--loaded::after {
       display: none !important;
       opacity: 0 !important;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--paper-shapes .quote-speaker-cutout-mat {
+      display: none;
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-color-wash {
@@ -12980,7 +13023,7 @@
       left: var(--speaker-cutout-pos-x, 0px);
       top: var(--speaker-cutout-pos-y, 0px);
       width: var(--speaker-cutout-bg-w, 100%);
-      height: var(--speaker-cutout-bg-h, auto);
+      height: var(--speaker-cutout-bg-h, 100%);
       background-image: var(--speaker-wash-layer-url, none);
       background-color: transparent;
       background-size: 100% 100%;
@@ -13001,7 +13044,7 @@
       left: var(--speaker-cutout-pos-x, 0px);
       top: var(--speaker-cutout-pos-y, 0px);
       width: var(--speaker-cutout-bg-w, 100%);
-      height: var(--speaker-cutout-bg-h, auto);
+      height: var(--speaker-cutout-bg-h, 100%);
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-paper-layer {
@@ -13021,7 +13064,7 @@
       left: var(--speaker-cutout-pos-x, 0px);
       top: var(--speaker-cutout-pos-y, 0px);
       width: var(--speaker-cutout-bg-w, 100%);
-      height: var(--speaker-cutout-bg-h, auto);
+      height: var(--speaker-cutout-bg-h, 100%);
       transform: none;
       -webkit-mask-image: var(--speaker-image-url, none);
       mask-image: var(--speaker-image-url, none);
@@ -13040,7 +13083,7 @@
       left: var(--speaker-cutout-pos-x, 0px);
       top: var(--speaker-cutout-pos-y, 0px);
       width: var(--speaker-cutout-bg-w, 100%);
-      height: var(--speaker-cutout-bg-h, auto);
+      height: var(--speaker-cutout-bg-h, 100%);
       background-size: 100% 100%;
       transform:
         translate(var(--speaker-cutout-contour-tx, 0%), var(--speaker-cutout-contour-ty, 0%))
@@ -13049,12 +13092,53 @@
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-image {
-      opacity: 1;
+      opacity: 0;
       pointer-events: none;
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer .quote-speaker-image.is-loaded {
-      z-index: 5;
+      z-index: 0;
+      width: var(--speaker-cutout-bg-w, 100%);
+      height: var(--speaker-cutout-bg-h, auto);
+      max-width: 100%;
+      inset: auto;
+      left: var(--speaker-cutout-pos-x, 0px);
+      top: var(--speaker-cutout-pos-y, 0px);
+      object-fit: contain;
+      object-position: top left;
+      filter: none;
+      mix-blend-mode: normal;
+      opacity: 0;
+      transform: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-color-wash,
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-paper-layer,
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-paper-shape--backdrop,
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-xerox-grain,
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-contour {
+      display: none !important;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-cutout-mat,
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette,
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout > .odq-scanner-bed {
+      display: none !important;
+      opacity: 0 !important;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout.quote-speaker-cutout--loaded::after {
+      display: none !important;
+      opacity: 0 !important;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout::before {
+      display: none !important;
+      opacity: 0 !important;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-image.is-loaded {
+      z-index: 4;
       width: var(--speaker-cutout-bg-w, 100%);
       height: var(--speaker-cutout-bg-h, auto);
       max-width: 100%;
@@ -13066,10 +13150,7 @@
       filter: grayscale(1) contrast(1.48) brightness(1.56);
       mix-blend-mode: multiply;
       opacity: var(--speaker-cutout-portrait-opacity, 0.9);
-      transform:
-        translate(var(--speaker-cutout-portrait-tx, 0%), var(--speaker-cutout-portrait-ty, 0%))
-        rotate(var(--speaker-cutout-portrait-rotate, 0.55deg))
-        scale(var(--speaker-cutout-portrait-scale, 1));
+      pointer-events: none;
     }
 
     #screen-quilt .quote-speaker-cutout[hidden] {
@@ -15074,6 +15155,22 @@
       pointer-events: none;
     }
 
+    #screen-quilt .quilt-footer-icon-row {
+      justify-content: stretch;
+      padding-inline: clamp(0.35rem, 2vw, 0.75rem);
+    }
+
+    #screen-quilt .quilt-footer-icon-cluster {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      flex: 1 1 100%;
+      width: 100%;
+      max-width: 100%;
+      justify-items: center;
+      align-items: center;
+      gap: 0;
+    }
+
     /* Icon footer on `#screen-quilt` scroll end and `#screen-exit-chamber` (no wordmark —
        lockup was clipping on narrow phones once the remember bell joined the row). */
     .quilt-footer-icon-row {
@@ -15085,7 +15182,7 @@
       width: 100%;
       max-width: 100%;
       margin: 0 auto;
-      padding-top: var(--quilt-footer-icon-strip-peak-overhang, 5px);
+      padding-top: 0;
       padding-bottom: clamp(0.05rem, 0.35vw, 0.12rem);
       padding-inline: clamp(0.65rem, 3vw, 1rem);
       box-sizing: border-box;
@@ -15096,8 +15193,9 @@
       isolation: isolate;
     }
 
-    /* Full-bleed BYG paper behind icon row — top edge peaks in JS; sides + bottom square. */
+    /* Full-bleed BYG paper behind icon row — disabled; icons sit on the quilt directly. */
     .quilt-footer-icon-strip {
+      display: none;
       position: absolute;
       z-index: 0;
       top: calc(-1 * var(--quilt-footer-icon-strip-peak-overhang, 5px));
@@ -15138,19 +15236,75 @@
       flex: 0 0 auto;
       align-items: center;
       justify-content: center;
-      gap: clamp(1.02rem, 5.76vw, 1.8rem);
+      gap: clamp(1.15rem, 6.2vw, 2rem);
       min-width: 0;
       max-width: 100%;
       position: relative;
       z-index: 1;
     }
 
+    /* Quilt screen: one BYG tape scrap per icon; gaps stay open so the quilt shows through. */
+    #screen-quilt .quilt-footer-icon-slot {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
+      overflow: visible;
+      /* Tall tape scraps are painted only; don't let WKWebView grow scroll range. */
+      contain: layout style;
+    }
+
+    #screen-quilt .quilt-footer-icon-slot > .quilt-about-icon-link,
+    #screen-quilt .quilt-footer-icon-slot > .quilt-instagram-icon-link,
+    #screen-quilt .quilt-footer-icon-slot > .quilt-remember-icon-btn,
+    #screen-quilt .quilt-footer-icon-slot > .quilt-settings-icon-btn {
+      position: relative;
+      z-index: 1;
+      overflow: visible;
+    }
+
+    #screen-quilt .quilt-footer-icon-paper {
+      position: absolute;
+      z-index: 0;
+      top: var(--quilt-footer-icon-paper-top, -0.21rem);
+      left: 50%;
+      width: var(--quilt-footer-icon-paper-width, calc(100% + 0.55rem));
+      height: var(--quilt-footer-icon-paper-height, 0px);
+      transform: translateX(-50%);
+      bottom: auto;
+      pointer-events: none;
+      clip-path: var(--quilt-footer-icon-paper-cut, none);
+      -webkit-clip-path: var(--quilt-footer-icon-paper-cut, none);
+      background-color: var(--quilt-byg-tape, var(--odq-paper-tape, #f2eee6));
+      background-image:
+        linear-gradient(104deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 46%),
+        repeating-linear-gradient(
+          90deg,
+          rgba(110, 96, 72, 0.028) 0 1px,
+          transparent 1px 4px
+        ),
+        linear-gradient(
+          180deg,
+          rgba(72, 58, 42, 0.07) 0%,
+          rgba(72, 58, 42, 0.02) 45%,
+          rgba(72, 58, 42, 0.06) 100%
+        );
+      background-size: 100% 100%;
+      background-position: center;
+      background-repeat: no-repeat;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.34) inset,
+        0 1px 2px rgba(72, 58, 42, 0.1);
+    }
+
     /* Keep the gear above siblings in the same strip so stray compositor layers
        do not steal taps on the rightmost control (WKWebView + fixed footers). */
-    .quilt-footer-icon-cluster > .quilt-remember-icon-btn,
-    .quilt-footer-icon-cluster > .quilt-settings-icon-btn {
+    .quilt-footer-icon-slot > .quilt-remember-icon-btn,
+    .quilt-footer-icon-slot > .quilt-settings-icon-btn {
       position: relative;
-      z-index: 20;
+      z-index: 2;
     }
 
     .quilt-remember-icon-btn[hidden] {
@@ -15158,7 +15312,7 @@
     }
 
     .quilt-remember-icon-btn[aria-pressed="true"] {
-      color: rgba(0, 0, 0, 0.88);
+      color: var(--quilt-footer-icon-ink-pressed, rgba(36, 27, 20, 0.94));
     }
 
     /* Pin the chamber's wordmark + icons row to the *exact* same on-screen
@@ -15260,11 +15414,11 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 54px;
-      height: 54px;
+      width: 59.4px;
+      height: 59.4px;
       margin: 0;
       line-height: 0;
-      color: rgba(0, 0, 0, 0.58);
+      color: var(--quilt-footer-icon-ink, rgba(36, 27, 20, 0.68));
       text-decoration: none;
       border-radius: 999px;
       border: 0;
@@ -15281,11 +15435,11 @@
       align-items: center;
       justify-content: center;
       width: auto;
-      min-width: 74px;
-      min-height: 44px;
+      min-width: 81.4px;
+      min-height: 48.4px;
       margin: 0;
       line-height: normal;
-      color: rgba(0, 0, 0, 0.58);
+      color: var(--quilt-footer-icon-ink, rgba(36, 27, 20, 0.68));
       text-decoration: none;
       border-radius: 999px;
       border: 0;
@@ -15294,15 +15448,15 @@
       cursor: pointer;
       -webkit-appearance: none;
       appearance: none;
-      font-size: 0.72rem;
+      font-size: 0.792rem;
       font-weight: 650;
       letter-spacing: 0.05em;
       text-transform: uppercase;
     }
 
     #screen-quilt .quilt-backside-toggle[aria-pressed="true"] {
-      color: rgba(0, 0, 0, 0.88);
-      background: rgba(255, 255, 255, 0.58);
+      color: var(--quilt-footer-icon-ink-pressed, rgba(36, 27, 20, 0.94));
+      background: var(--quilt-footer-icon-pressed-bg, rgba(255, 255, 255, 0.58));
     }
 
     #screen-quilt .quilt-backside-toggle[hidden] {
@@ -15319,7 +15473,7 @@
     .quilt-settings-icon-btn:hover,
     #screen-quilt .quilt-backside-toggle:focus-visible,
     #screen-quilt .quilt-backside-toggle:hover {
-      color: rgba(0, 0, 0, 0.82);
+      color: var(--quilt-footer-icon-ink-strong, rgba(36, 27, 20, 0.88));
       outline: none;
     }
 
@@ -15327,8 +15481,8 @@
     .quilt-footer-icon-cluster .quilt-about-icon-link svg,
     .quilt-footer-icon-cluster .quilt-settings-icon-btn svg {
       display: block;
-      width: 38px;
-      height: 38px;
+      width: 41.8px;
+      height: 41.8px;
       stroke: currentColor;
       fill: none;
       stroke-width: 1.8;
@@ -15338,34 +15492,30 @@
 
     .quilt-footer-icon-cluster .quilt-remember-icon-btn .material-symbols-outlined {
       display: block;
-      font-size: 38px;
+      font-size: 41.8px;
       line-height: 1;
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     }
 
     @media (max-width: 420px) {
-      .quilt-footer-icon-cluster {
-        gap: clamp(0.54rem, 3vw, 1.02rem);
-      }
-
       .quilt-footer-icon-cluster .quilt-instagram-icon-link,
       .quilt-footer-icon-cluster .quilt-about-icon-link,
       .quilt-footer-icon-cluster .quilt-remember-icon-btn,
       .quilt-footer-icon-cluster .quilt-settings-icon-btn,
       #screen-quilt .quilt-footer-icon-cluster .quilt-backside-toggle {
-        width: 48px;
-        height: 48px;
+        width: 52.8px;
+        height: 52.8px;
       }
 
       .quilt-footer-icon-cluster .quilt-instagram-icon-link svg,
       .quilt-footer-icon-cluster .quilt-about-icon-link svg,
       .quilt-footer-icon-cluster .quilt-settings-icon-btn svg {
-        width: 32px;
-        height: 32px;
+        width: 35.2px;
+        height: 35.2px;
       }
 
       .quilt-footer-icon-cluster .quilt-remember-icon-btn .material-symbols-outlined {
-        font-size: 32px;
+        font-size: 35.2px;
       }
     }
 

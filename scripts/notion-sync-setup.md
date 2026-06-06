@@ -55,7 +55,7 @@ Windowed sync also pulls **approved + no `date_scheduled`** rows (the scheduling
 
 ### Deleting a quote in Notion
 
-Sync removes the row from the **`quotes`** catalog (full-catalog run deletes orphans; windowed sync detects missing pages assigned to upcoming days). It also clears any **`dailyQuoteAssignments/{date}`** slots that still pointed at that Notion page id, plus legacy `quotes/{date}` denormalized docs. The next **reconcile** / scheduler step in the nightly workflow re-fills empty days from remaining `date_scheduled` values.
+Sync removes the row from the **`quotes`** catalog (full-catalog run deletes orphans; windowed sync detects missing pages assigned to upcoming days). It also clears any **`dailyQuoteAssignments/{date}`** slots that still pointed at that Notion page id, plus legacy `quotes/{date}` denormalized docs. The nightly workflow then runs **`backfill-daily-assignments.cjs --fill-gaps-only`** to assign unscheduled quotes into empty days in the next 8 app-days (without moving quotes that already have a `date_scheduled` elsewhere). The append-only step only extends the tail when the queue is short.
 
 ## Notion column mapping
 

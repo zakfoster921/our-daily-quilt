@@ -113,6 +113,14 @@ jobs:
             node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8 --append-only
           fi
 
+      - name: Fill near-term schedule gaps
+        timeout-minutes: 5
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
+        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=8 --fill-gaps-only
+
       - name: Append rolling 7-day quote window
         timeout-minutes: 5
         env:
