@@ -10842,6 +10842,7 @@
         calc(100% - (2 * var(--quilt-float-card-gutter)))
       );
       align-items: center;
+      padding-top: 0;
       padding-left: 0;
       padding-right: 0;
     }
@@ -11623,8 +11624,9 @@
       background-color: var(--reflection-scrap-color);
     }
 
-    /* Reflection archive — BYG tape center fill only (no torn L/R caps) */
-    #screen-quilt .quilt-reflection-archive-link {
+    /* Reflection archive + report bug — BYG tape center fill only (no torn L/R caps) */
+    #screen-quilt .quilt-reflection-archive-link,
+    #screen-quilt .quilt-report-bug-link {
       --quilt-reflection-archive-strip-tape: #ebe4d8;
       --quilt-reflection-archive-tape-safe-y: 0.48rem;
       --quilt-reflection-archive-tape-safe-x: 1.05rem;
@@ -11655,13 +11657,21 @@
       transform-origin: center center;
     }
 
+    #screen-quilt .quilt-report-bug-link {
+      --quilt-reflection-archive-strip-tape: #f3efe8;
+      color: rgba(26, 21, 16, 0.72);
+      transform: rotate(1.35deg);
+    }
+
     @media (prefers-reduced-motion: reduce) {
-      #screen-quilt .quilt-reflection-archive-link {
+      #screen-quilt .quilt-reflection-archive-link,
+      #screen-quilt .quilt-report-bug-link {
         transform: none;
       }
     }
 
-    #screen-quilt .quilt-reflection-archive-link::before {
+    #screen-quilt .quilt-reflection-archive-link::before,
+    #screen-quilt .quilt-report-bug-link::before {
       content: '';
       position: absolute;
       z-index: 0;
@@ -11686,7 +11696,24 @@
       background-repeat: no-repeat;
     }
 
-    #screen-quilt .quilt-reflection-archive-link-body {
+    #screen-quilt .quilt-report-bug-link::before {
+      background-image:
+        linear-gradient(104deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 46%),
+        repeating-linear-gradient(
+          90deg,
+          rgba(110, 96, 72, 0.018) 0 1px,
+          transparent 1px 4px
+        ),
+        linear-gradient(
+          180deg,
+          rgba(72, 58, 42, 0.04) 0%,
+          rgba(72, 58, 42, 0.01) 45%,
+          rgba(72, 58, 42, 0.035) 100%
+        );
+    }
+
+    #screen-quilt .quilt-reflection-archive-link-body,
+    #screen-quilt .quilt-report-bug-link-stack {
       position: relative;
       z-index: 2;
       display: block;
@@ -11697,11 +11724,52 @@
         var(--quilt-reflection-archive-tape-safe-x);
     }
 
+    #screen-quilt .quilt-report-bug-link-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.18rem;
+    }
+
+    #screen-quilt .quilt-report-bug-link-kicker {
+      font-family: var(--quilt-dm-sans-font);
+      font-size: 0.75rem;
+      font-weight: 400;
+      letter-spacing: 0.03em;
+      line-height: 1.2;
+      text-transform: none;
+      color: rgba(26, 21, 16, 0.5);
+    }
+
+    #screen-quilt .quilt-report-bug-link-body {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35em;
+      padding: 0;
+    }
+
+    #screen-quilt .quilt-report-bug-link-icon {
+      font-size: 1.15em;
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+
+    #screen-quilt .quilt-scroll-icon-footer .quilt-report-bug-link {
+      margin: 0.35rem auto 1.1rem;
+    }
+
     #screen-quilt .quilt-reflection-archive-link:hover,
     #screen-quilt .quilt-reflection-archive-link:focus-visible {
       color: #1a1510;
       text-decoration: none;
       outline: 2px solid rgba(47, 41, 36, 0.28);
+      outline-offset: 3px;
+    }
+
+    #screen-quilt .quilt-report-bug-link:hover,
+    #screen-quilt .quilt-report-bug-link:focus-visible {
+      color: rgba(26, 21, 16, 0.84);
+      text-decoration: none;
+      outline: 2px solid rgba(47, 41, 36, 0.2);
       outline-offset: 3px;
     }
 
@@ -12873,6 +12941,7 @@
     }
 
     #screen-quilt .quote-speaker-cutout .quote-speaker-cutout-mat {
+      position: absolute;
       inset: 0;
       z-index: 1;
       background: rgb(255, 250, 236);
@@ -13152,10 +13221,49 @@
       display: none !important;
     }
 
-    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette,
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout > .odq-scanner-bed {
       display: none !important;
       opacity: 0 !important;
+    }
+
+    /* Plain cutout never uses the full-rect mat — silhouette backing only. */
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-cutout-mat {
+      display: none !important;
+    }
+
+    /* Hole-filled paper silhouette — masks remove.bg interior gaps on PNG cutouts. */
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette.quote-speaker-cutout-backing--filled {
+      display: block !important;
+      position: absolute;
+      z-index: 2;
+      left: var(--speaker-cutout-pos-x, 0px);
+      top: var(--speaker-cutout-pos-y, 0px);
+      width: var(--speaker-cutout-bg-w, 100%);
+      height: var(--speaker-cutout-bg-h, auto);
+      background-size: 100% 100%;
+      background-position: top left;
+      background-repeat: no-repeat;
+      background-color: transparent;
+      filter: none;
+      mix-blend-mode: normal;
+      opacity: 1;
+      transform: translate(0.7%, 0.6%) rotate(0.18deg) scale(1.004);
+      pointer-events: none;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette:not(.quote-speaker-cutout-backing--filled) {
+      display: none !important;
+      opacity: 0 !important;
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette.quote-speaker-cutout-backing--mask {
+      background-size: 100% 100%;
+      -webkit-mask-size: 100% 100%;
+      mask-size: 100% 100%;
+      -webkit-mask-position: top left;
+      mask-position: top left;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout.quote-speaker-cutout--loaded::after {

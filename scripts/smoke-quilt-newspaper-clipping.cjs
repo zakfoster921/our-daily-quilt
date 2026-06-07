@@ -299,16 +299,55 @@ async function main() {
   console.log(
     `[smoke] content-aware sizes — short crop: ${shortSize.width}x${shortSize.height}, short compose display: ${shortDisplayW}px @ ${shortSharpW}px png, long: ${longSize.width}x${longSize.height}, live: ${clippedWidth}px (legacy ${legacyOutW}px)`
   );
-  fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
+  const tmpDir = path.join(root, 'tmp');
+  fs.mkdirSync(tmpDir, { recursive: true });
   const writePng = (name, url) => {
-    const out = path.join(root, 'tmp', name);
-    fs.writeFileSync(out, Buffer.from(url.split(',')[1], 'base64'));
+    const buf = Buffer.from(url.split(',')[1], 'base64');
+    const out = path.join(tmpDir, name);
+    fs.writeFileSync(out, buf, { mode: 0o644 });
+    try {
+      fs.chmodSync(out, 0o644);
+    } catch (_) {
+      /* iCloud may reject chmod; file is still readable */
+    }
     console.log(`[smoke] wrote ${out} (${fs.statSync(out).size} bytes)`);
+    return { out, buf, name };
   };
-  if (dataUrl.spread) writePng('smoke-newspaper-spread.png', dataUrl.spread);
-  writePng('smoke-newspaper-clipping.png', dataUrl.clipped);
-  if (dataUrl.clippedFlat) writePng('smoke-newspaper-clipping-flat.png', dataUrl.clippedFlat);
-  if (dataUrl.altDate) writePng('smoke-newspaper-clipping-alt-date.png', dataUrl.altDate);
+  const written = {};
+  if (dataUrl.spread) written.spread = writePng('smoke-newspaper-spread.png', dataUrl.spread);
+  written.clipped = writePng('smoke-newspaper-clipping.png', dataUrl.clipped);
+  if (dataUrl.clippedFlat) written.flat = writePng('smoke-newspaper-clipping-flat.png', dataUrl.clippedFlat);
+  if (dataUrl.altDate) written.altDate = writePng('smoke-newspaper-clipping-alt-date.png', dataUrl.altDate);
+
+  // Mirror outside iCloud so Preview/Finder/Cursor are not blocked on CloudDocs paths.
+  const localMirror = '/tmp/our-daily-smoke-newspaper-clipping.png';
+  fs.writeFileSync(localMirror, written.clipped.buf, { mode: 0o644 });
+  console.log(`[smoke] mirror (open this if iCloud path is denied): ${localMirror}`);
+
+  const previewHtml = path.join(tmpDir, 'smoke-newspaper-clipping-preview.html');
+  fs.writeFileSync(
+    previewHtml,
+    `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" />
+<title>Newspaper clipping smoke preview</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #d8d4ce; margin: 0; padding: 24px; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 8px; }
+  p.meta { color: #444; font-size: 0.85rem; margin: 0 0 12px; }
+  img { display: block; max-width: 100%; height: auto; background: #fff; filter: drop-shadow(0 4px 14px rgba(45,36,29,.14)); }
+  .row { margin-bottom: 28px; }
+</style></head><body>
+<h1>Newspaper clipping smoke (rev ${dataUrl.exportRev || '?'})</h1>
+<div class="row"><h1>Peek clipping</h1><p class="meta">Zoom top/bottom hand-cut edges</p>
+<img src="smoke-newspaper-clipping.png" alt="clipping" /></div>
+${written.flat ? `<div class="row"><h1>Flat (no hand-cut)</h1><img src="smoke-newspaper-clipping-flat.png" alt="flat" /></div>` : ''}
+${written.altDate ? `<div class="row"><h1>Alt date hand-cut</h1><img src="smoke-newspaper-clipping-alt-date.png" alt="alt date" /></div>` : ''}
+</body></html>`,
+    'utf8'
+  );
+  console.log(`[smoke] preview page: ${previewHtml}`);
+  console.log(`[smoke] open mirror: open ${localMirror}`);
   console.log(
     `[smoke] export width ${dataUrl.exportWidth}px — compare clipping vs flat; alt-date for hand-cut shape`
   );
