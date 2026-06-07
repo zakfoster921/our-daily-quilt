@@ -1,6 +1,6 @@
-# Pre-render today's quilt-screen quote clipping PNG (active calendar day at 07:00 UTC):
+# Pre-render quilt-screen quote clipping PNGs (active calendar day at 07:00 UTC + tomorrow lookahead):
 # newspaper-clipping.png only. Mood clippings compose client-side on the quilt screen.
-# Runs before the full nightly IG stills job so the live quilt screen can load Storage URLs.
+# Tomorrow's PNG supports admin "Preview tomorrow's quilt screen" without client compose fallback.
 
 name: Today newspaper clipping PNG
 
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   today-newspaper-clipping:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -75,7 +75,18 @@ jobs:
             echo "Invalid resolved date key: ${EFFECTIVE_DATE_KEY}"
             exit 1
           fi
+          TOMORROW_DATE_KEY="$(node -e "
+            const { addDays } = require('./scripts/lib/app-date-key.cjs');
+            process.stdout.write(addDays('${EFFECTIVE_DATE_KEY}', 1));
+          ")"
           echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
+          echo "tomorrow_date_key=${TOMORROW_DATE_KEY}" >> "$GITHUB_OUTPUT"
+          if [ -n "${INPUT_DATE_KEY:-}" ]; then
+            echo "skip_tomorrow_lookahead=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_tomorrow_lookahead=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Tomorrow lookahead date: ${TOMORROW_DATE_KEY} (skip=$([ -n "${INPUT_DATE_KEY:-}" ] && echo yes || echo no))"
 
       - name: Start local app (same commit as workflow)
         run: |
@@ -120,6 +131,34 @@ jobs:
             NIGHTLY_IG_ARTIFACTS_DIR="${NIGHTLY_IG_ARTIFACTS_DIR}" \
             npm run nightly:newspaper-clipping
 
+      - name: Generate newspaper clipping for tomorrow (admin preview lookahead)
+        if: steps.resolve_date.outputs.skip_tomorrow_lookahead != 'true'
+        timeout-minutes: 15
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          DATE_KEY: ${{ steps.resolve_date.outputs.tomorrow_date_key }}
+          NIGHTLY_IG_CLIPPING_ONLY: "true"
+          NIGHTLY_IG_SKIP_SCHEDULE_GUARD: "true"
+          NIGHTLY_IG_MAX_ATTEMPTS: "3"
+          NIGHTLY_IG_ARTIFACTS_DIR: "tmp/nightly-ig-artifacts-tomorrow"
+        run: |
+          set -euo pipefail
+          if [ -z "${RESET_URL:-}" ]; then
+            echo "Missing RESET_URL secret"
+            exit 1
+          fi
+          API_BASE_URL="${RESET_URL%/api/daily-reset}"
+          APP_URL="http://127.0.0.1:8765/our-daily-beta.html"
+          echo "Tomorrow lookahead DATE_KEY=${DATE_KEY}"
+          echo "API_BASE_URL=${API_BASE_URL} (Firestore/API)"
+          echo "APP_URL=${APP_URL} (clipping JS from this commit)"
+          APP_URL="$APP_URL" API_BASE_URL="$API_BASE_URL" DATE_KEY="${DATE_KEY:-}" \
+            NIGHTLY_IG_CLIPPING_ONLY=true \
+            NIGHTLY_IG_SKIP_SCHEDULE_GUARD=true \
+            NIGHTLY_IG_MAX_ATTEMPTS="${NIGHTLY_IG_MAX_ATTEMPTS}" \
+            NIGHTLY_IG_ARTIFACTS_DIR="${NIGHTLY_IG_ARTIFACTS_DIR}" \
+            npm run nightly:newspaper-clipping
+
       - name: Stop local app server
         if: always()
         run: |
@@ -132,5 +171,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: today-newspaper-clipping-failure
-          path: tmp/nightly-ig-artifacts
+          path: |
+            tmp/nightly-ig-artifacts
+            tmp/nightly-ig-artifacts-tomorrow
           if-no-files-found: ignore

@@ -57,6 +57,7 @@ function parseArgs(argv) {
     force: argv.includes('--force'),
     scheduled: argv.includes('--scheduled'),
     todaySpeaker: argv.includes('--today-speaker'),
+    openingPlusOneSpeaker: argv.includes('--opening-plus-one-speaker'),
     softFail: argv.includes('--soft-fail'),
     requireReviewed: argv.includes('--require-reviewed'),
     recropExisting: argv.includes('--recrop-existing') || argv.includes('--crop-existing'),
@@ -375,6 +376,18 @@ async function resolveTodaySpeakerDocId(db) {
   return sourceId;
 }
 
+async function resolveOpeningPlusOneSpeakerDocId(db) {
+  const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const dateKey = addDays(getOpeningAppDateKey(), 1);
+  const snap = await db.collection(assignmentsCollection).doc(dateKey).get();
+  if (!snap.exists) throw new Error(`No assignment for opening+1 app-day ${dateKey}`);
+  const sourceId = String((snap.data() || {}).sourceId || '').trim();
+  if (!sourceId) throw new Error(`dailyQuoteAssignments/${dateKey} has no sourceId`);
+  const author = String((snap.data() || {}).authorSnapshot || '').trim();
+  console.log(`[cutout] opening-plus-one-speaker ${dateKey} ${author} -> ${sourceId}`);
+  return sourceId;
+}
+
 async function collectRows(db, collectionName, opts) {
   if (opts.doc) {
     const snap = await db.collection(collectionName).doc(opts.doc).get();
@@ -382,14 +395,22 @@ async function collectRows(db, collectionName, opts) {
   }
   if (opts.scheduled) {
     const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
-    const scheduledSourceIds = [];
+    const previewPriorityKey = addDays(opts.start, 1);
+    const byDate = [];
     const assignmentSnap = await db.collection(assignmentsCollection).get();
     const windowEnd = addDays(opts.start, Math.max(0, opts.window - 1));
     assignmentSnap.forEach((docSnap) => {
       if (!isDateKey(docSnap.id) || docSnap.id < opts.start || docSnap.id > windowEnd) return;
       const sourceId = String((docSnap.data() || {}).sourceId || '').trim();
-      if (sourceId && !scheduledSourceIds.includes(sourceId)) scheduledSourceIds.push(sourceId);
+      if (sourceId) byDate.push({ dateKey: docSnap.id, sourceId });
     });
+    byDate.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    const scheduledSourceIds = [];
+    const prioritySourceId = byDate.find((entry) => entry.dateKey === previewPriorityKey)?.sourceId;
+    if (prioritySourceId) scheduledSourceIds.push(prioritySourceId);
+    for (const { sourceId } of byDate) {
+      if (!scheduledSourceIds.includes(sourceId)) scheduledSourceIds.push(sourceId);
+    }
 
     const rows = [];
     for (const sourceId of scheduledSourceIds) {
@@ -398,7 +419,7 @@ async function collectRows(db, collectionName, opts) {
       else console.log(`[cutout] scheduled source doc missing: ${sourceId}`);
     }
     console.log(
-      `[cutout] scheduled mode start=${opts.start} window=${opts.window} sourceIds=${scheduledSourceIds.length} rows=${rows.length}`
+      `[cutout] scheduled mode start=${opts.start} window=${opts.window} previewPriority=${previewPriorityKey} sourceIds=${scheduledSourceIds.length} rows=${rows.length}`
     );
     return rows;
   }
@@ -531,6 +552,10 @@ async function main() {
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   if (opts.todaySpeaker && !opts.doc) {
     opts.doc = await resolveTodaySpeakerDocId(db);
+    opts.scheduled = false;
+  }
+  if (opts.openingPlusOneSpeaker && !opts.doc) {
+    opts.doc = await resolveOpeningPlusOneSpeakerDocId(db);
     opts.scheduled = false;
   }
   const rows = await collectRows(db, collectionName, opts);
