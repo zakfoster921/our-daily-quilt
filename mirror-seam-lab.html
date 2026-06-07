@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mirror Seam Lab — ODQ</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #d4d0c8;
+      color: #222;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 380px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      padding: 1rem 1.1rem 2rem;
+      background: #ebe8e3;
+      border-right: 1px solid rgba(0,0,0,0.08);
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+    .panel h1 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+    .panel .note {
+      font-size: 0.78rem;
+      color: #555;
+      line-height: 1.45;
+      margin-bottom: 1rem;
+    }
+    .panel section { margin-bottom: 1.1rem; }
+    .panel h2 {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #666;
+      margin: 0 0 0.5rem;
+      padding-top: 0.35rem;
+      border-top: 1px solid rgba(0,0,0,0.08);
+    }
+    label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #555;
+      margin: 0.5rem 0 0.2rem;
+    }
+    label span.val { font-weight: 400; color: #888; }
+    input[type="text"], input[type="date"], select {
+      width: 100%;
+      font: inherit;
+      font-size: 0.88rem;
+      padding: 0.4rem 0.5rem;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 4px;
+      background: #fff;
+    }
+    input[type="range"] { width: 100%; }
+    .checks { display: flex; flex-direction: column; gap: 0.35rem; }
+    .checks label.check {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.84rem;
+      font-weight: 400;
+      margin: 0;
+      cursor: pointer;
+    }
+    .checks input { width: auto; }
+    .btn {
+      display: inline-block;
+      margin-top: 0.35rem;
+      margin-right: 0.3rem;
+      padding: 0.42rem 0.7rem;
+      font: inherit;
+      font-size: 0.8rem;
+      border: 1px solid rgba(0,0,0,0.2);
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-primary { background: #111; color: #fff; border-color: #111; }
+    .preview-area {
+      padding: 1rem;
+      min-height: 100vh;
+      background:
+        repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0 8px, transparent 8px 16px),
+        #c8c4bc;
+    }
+    .preview-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      font-size: 0.78rem;
+      color: #444;
+    }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 1100px) {
+      .compare-grid { grid-template-columns: 1fr; }
+    }
+    .preview-col h3 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #555;
+      margin: 0 0 0.4rem;
+    }
+    .quilt-stage {
+      position: relative;
+      width: 70%;
+      height: min(72vh, 640px);
+      background: #f6f4f1;
+      overflow: hidden;
+      isolation: isolate;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    }
+    .quilt-stage::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+      background: radial-gradient(circle at center, rgba(255,182,193,0.03) 0%, transparent 70%);
+    }
+    .quilt-stage svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      filter: saturate(1.06) contrast(1.03) sepia(0.025);
+    }
+    .fold-guide {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: rgba(200, 40, 40, 0.75);
+      pointer-events: none;
+      z-index: 5;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.5);
+    }
+    .fold-label {
+      position: absolute;
+      right: 6px;
+      transform: translateY(-100%);
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: rgba(200, 40, 40, 0.9);
+      background: rgba(255,255,255,0.85);
+      padding: 1px 4px;
+      border-radius: 2px;
+      z-index: 6;
+      pointer-events: none;
+    }
+    .stats {
+      margin-top: 0.5rem;
+      font-size: 0.72rem;
+      line-height: 1.5;
+      color: #444;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+    }
+    pre.config {
+      margin: 1rem 0 0;
+      padding: 0.75rem;
+      font-size: 0.68rem;
+      background: rgba(0,0,0,0.06);
+      border-radius: 4px;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .status {
+      font-size: 0.78rem;
+      color: #444;
+      margin-top: 0.45rem;
+      min-height: 1.2em;
+      line-height: 1.4;
+    }
+    .status.err { color: #a22; }
+    .mock-only { display: none; }
+    body[data-source="mock"] .mock-only { display: block; }
+  </style>
+</head>
+<body data-source="live">
+  <div class="layout">
+    <aside class="panel">
+      <h1>Mirror seam lab</h1>
+      <p class="note">
+        Preview primary + reflected quilt framing before app integration.
+        Full-bleed <code>xMidYMin slice</code> — crop window slides inside quilt content only (no blank paper).
+      </p>
+
+      <section>
+        <h2>Mirror geometry</h2>
+        <label>Primary fraction <span class="val" id="primaryFractionVal">0.51</span></label>
+        <input type="range" id="primaryFraction" min="0.48" max="0.54" step="0.01" value="0.51">
+        <label>Seam overlap px <span class="val" id="seamOverlapPxVal">8</span></label>
+        <input type="range" id="seamOverlapPx" min="0" max="16" step="1" value="8">
+        <label>Horizontal stretch <span class="val" id="horizontalStretchVal">1.16</span></label>
+        <input type="range" id="horizontalStretch" min="1" max="1.25" step="0.01" value="1.16">
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="compareMode" checked> Compare current (0.68) vs proposed</label>
+          <label class="check"><input type="checkbox" id="showFoldGuide" checked> Show fold guide line</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Daily seam crop (40%–60%)</h2>
+        <label>Target seam on screen <span class="val" id="seamTargetVal">50%</span></label>
+        <input type="range" id="seamTarget" min="40" max="60" step="1" value="50">
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="useDailySeed"> Seed from date key</label>
+        </div>
+        <label>Min primary visible <span class="val" id="primaryVisibleMinVal">85%</span></label>
+        <input type="range" id="primaryVisibleMin" min="70" max="100" step="1" value="85">
+      </section>
+
+      <section>
+        <h2>Quilt data</h2>
+        <label>Source</label>
+        <select id="dataSource">
+          <option value="live" selected>Live quilt (Firestore)</option>
+          <option value="mock">Mock layout</option>
+        </select>
+        <label for="dateKey">Date key</label>
+        <input type="date" id="dateKey">
+        <button type="button" class="btn btn-primary" id="btnLoadQuilt">Load quilt</button>
+        <p class="status" id="loadStatus" aria-live="polite">Loading…</p>
+        <p class="note">Live mode reads <code>quilts/&#123;date&#125;</code> from Firestore (same public read as the app). Use <code>http://127.0.0.1:3000/mirror-seam-lab</code> so Firebase + config load.</p>
+      </section>
+
+      <section class="mock-only">
+        <h2>Mock quilt</h2>
+        <label>Block count <span class="val" id="blockCountVal">24</span></label>
+        <input type="range" id="blockCount" min="4" max="80" step="1" value="24">
+        <label>Layout seed <span class="val" id="layoutSeedVal">42</span></label>
+        <input type="range" id="layoutSeed" min="1" max="999" step="1" value="42">
+      </section>
+
+      <section>
+        <h2>Viewport</h2>
+        <label>Viewport preset</label>
+        <select id="viewportPreset">
+          <option value="desktop" selected>Desktop (70% × tall)</option>
+          <option value="mobile">Mobile portrait</option>
+          <option value="square">Square</option>
+        </select>
+      </section>
+
+      <div>
+        <button type="button" class="btn btn-primary" id="btnRender">Render</button>
+        <button type="button" class="btn" id="btnReset">Reset</button>
+        <button type="button" class="btn" id="btnCopy">Copy JSON</button>
+      </div>
+    </aside>
+
+    <main class="preview-area">
+      <div class="preview-toolbar">
+        <span>Red line = fold seam on screen. Stats below each preview.</span>
+      </div>
+      <div class="compare-grid" id="compareGrid">
+        <div class="preview-col" id="colCurrent">
+          <h3>Current (ratio 0.68)</h3>
+          <div class="quilt-stage" id="stageCurrent">
+            <svg id="svgCurrent" preserveAspectRatio="xMidYMin slice" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div class="fold-guide" id="foldCurrent" hidden></div>
+            <span class="fold-label" id="foldLabelCurrent" hidden></span>
+          </div>
+          <div class="stats" id="statsCurrent"></div>
+        </div>
+        <div class="preview-col" id="colProposed">
+          <h3>Proposed (primary fraction slider)</h3>
+          <div class="quilt-stage" id="stageProposed">
+            <svg id="svgProposed" preserveAspectRatio="xMidYMin slice" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div class="fold-guide" id="foldProposed" hidden></div>
+            <span class="fold-label" id="foldLabelProposed" hidden></span>
+          </div>
+          <div class="stats" id="statsProposed"></div>
+        </div>
+      </div>
+      <pre class="config" id="configOut"></pre>
+    </main>
+  </div>
+
+  <script src="/lib/app-config.js"></script>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, doc, getDocFromServer } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    window.__mirrorSeamLabFirestore = null;
+    try {
+      const app = initializeApp(CONFIG.FIREBASE);
+      window.__mirrorSeamLabFirestore = { db: getFirestore(app), doc, getDocFromServer };
+    } catch (err) {
+      console.warn('Firebase init failed:', err);
+    }
+  </script>
+  <script>
+    (function () {
+      const COLORS = [
+        '#e8a598', '#f2c14e', '#7ec8a4', '#8ab6f9', '#c9a0dc',
+        '#f4a261', '#2a9d8f', '#e76f51', '#457b9d', '#f72585',
+        '#d8d4cf', '#b5838d', '#6d6875', '#ffb703', '#219ebc'
+      ];
+
+      let liveBlocks = [];
+      let liveMeta = { blockCount: 0, contributorCount: 0, dateKey: '' };
+
+      function getAppTodayKey() {
+        const source = new Date();
+        const adjusted = new Date(source);
+        if (source.getUTCHours() < 7) {
+          adjusted.setUTCDate(adjusted.getUTCDate() - 1);
+        }
+        const year = adjusted.getUTCFullYear();
+        const month = String(adjusted.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(adjusted.getUTCDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+
+      function setLoadStatus(msg, isErr) {
+        const el = document.getElementById('loadStatus');
+        el.textContent = msg || '';
+        el.className = 'status' + (isErr ? ' err' : '');
+      }
+
+      function normalizeLabBlocks(rawBlocks) {
+        if (!Array.isArray(rawBlocks)) return [];
+        return rawBlocks
+          .map((block) => {
+            if (!block || typeof block !== 'object') return null;
+            const x = Number(block.x);
+            const y = Number(block.y);
+            const w = Number(block.width);
+            const h = Number(block.height);
+            if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+            const color = typeof block.color === 'string' && block.color ? block.color : '#d8d4cf';
+            return { x, y, w, h, color };
+          })
+          .filter(Boolean);
+      }
+
+      async function fetchLiveQuilt(dateKey) {
+        const fs = window.__mirrorSeamLabFirestore;
+        if (fs?.db && fs.doc && fs.getDocFromServer) {
+          const ref = fs.doc(fs.db, 'quilts', dateKey);
+          const snap = await fs.getDocFromServer(ref);
+          if (!snap.exists()) throw new Error(`No quilt found for ${dateKey}`);
+          const data = snap.data() || {};
+          const blocks = normalizeLabBlocks(data.blocks);
+          if (!blocks.length) throw new Error(`Quilt for ${dateKey} has no drawable blocks`);
+          return {
+            blocks,
+            blockCount: Array.isArray(data.blocks) ? data.blocks.length : blocks.length,
+            contributorCount: Number(data.contributorCount) || 1,
+            dateKey
+          };
+        }
+
+        const apiBase = window.location.protocol === 'file:' ? 'http://127.0.0.1:3000' : '';
+        const url = `${apiBase}/api/mirror-seam-lab/for-date?dateKey=${encodeURIComponent(dateKey)}`;
+        const res = await fetch(url);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        const blocks = normalizeLabBlocks(data.blocks);
+        if (!blocks.length) throw new Error('Quilt returned no drawable blocks');
+        return {
+          blocks,
+          blockCount: data.blockCount || blocks.length,
+          contributorCount: data.contributorCount || 1,
+          dateKey: data.dateKey || dateKey
+        };
+      }
+
+      async function waitForFirebase(maxMs = 4000) {
+        const start = Date.now();
+        while (!window.__mirrorSeamLabFirestore?.db && Date.now() - start < maxMs) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+
+      async function loadQuiltForUi(dateKey, { silent = false } = {}) {
+        if (!silent) setLoadStatus(`Loading quilts/${dateKey}…`);
+        try {
+          await waitForFirebase();
+          const payload = await fetchLiveQuilt(dateKey);
+          liveBlocks = payload.blocks;
+          liveMeta = payload;
+          setLoadStatus(`Live quilt: ${payload.blockCount} blocks, ${payload.contributorCount} contributors (${payload.dateKey})`);
+          render();
+          return true;
+        } catch (err) {
+          liveBlocks = [];
+          liveMeta = { blockCount: 0, contributorCount: 0, dateKey };
+          setLoadStatus(
+            window.location.protocol === 'file:'
+              ? `Cannot load live quilt from file:// — open http://127.0.0.1:3000/mirror-seam-lab (${err.message})`
+              : `Failed to load quilt: ${err.message}`,
+            true
+          );
+          render();
+          return false;
+        }
+      }
+
+      function getBlocksForRender(ui) {
+        if (ui.dataSource === 'mock') {
+          return buildMockBlocks(ui.blockCount, ui.layoutSeed);
+        }
+        if (liveBlocks.length) return liveBlocks;
+        return buildMockBlocks(ui.blockCount, ui.layoutSeed);
+      }
+
+      function mulberry32(seed) {
+        let h = seed >>> 0;
+        return function () {
+          h += 0x6D2B79F5;
+          let t = h;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function hashDateKey(dateKey) {
+        let h = 2166136261;
+        const s = String(dateKey || '');
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return (h >>> 0) / 4294967296;
+      }
+
+      function getDailySeamFraction(dateKey, min = 0.40, max = 0.60) {
+        return min + hashDateKey(dateKey) * (max - min);
+      }
+
+      function mirrorOffsetRatio(primaryFraction) {
+        return (1 / primaryFraction) - 1;
+      }
+
+      function buildMockBlocks(count, seed) {
+        const rand = mulberry32(seed);
+        const blocks = [];
+        let x = 0;
+        let y = 0;
+        let rowH = 0;
+        const maxW = 420;
+        for (let i = 0; i < count; i++) {
+          const w = 28 + Math.floor(rand() * 72);
+          const h = 28 + Math.floor(rand() * 72);
+          if (x + w > maxW) {
+            x = 0;
+            y += rowH + 4;
+            rowH = 0;
+          }
+          blocks.push({
+            x, y, w, h,
+            color: COLORS[Math.floor(rand() * COLORS.length)]
+          });
+          x += w + 3;
+          rowH = Math.max(rowH, h);
+        }
+        return blocks;
+      }
+
+      function bounds(blocks) {
+        const minX = Math.min(...blocks.map((b) => b.x));
+        const minY = Math.min(...blocks.map((b) => b.y));
+        const maxX = Math.max(...blocks.map((b) => b.x + b.w));
+        const maxY = Math.max(...blocks.map((b) => b.y + b.h));
+        return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+      }
+
+      function sliceScale(viewportW, viewportH, vbW, vbH) {
+        return Math.max(viewportW / vbW, viewportH / vbH);
+      }
+
+      function seamScreenY(vbY, foldY, scale) {
+        return scale * (foldY - vbY);
+      }
+
+      function solveCropWindow(opts) {
+        const {
+          quiltH,
+          mirroredFieldH,
+          foldY,
+          minY,
+          viewportW,
+          viewportH,
+          vbW,
+          targetFraction,
+          primaryVisibleMin
+        } = opts;
+
+        const mirrorTail = mirroredFieldH - quiltH;
+        let best = null;
+        let bestErr = Infinity;
+
+        const steps = 120;
+        for (let i = 0; i <= steps; i++) {
+          const cropTop = (mirrorTail * i) / steps;
+          const maxCropH = mirroredFieldH - cropTop;
+          for (let j = 20; j <= 100; j++) {
+            const cropH = maxCropH * (j / 100);
+            if (cropH <= 0) continue;
+            const primaryVisible = (quiltH - cropTop) / quiltH;
+            if (primaryVisible < primaryVisibleMin) continue;
+
+            const vbY = minY + cropTop;
+            const scale = sliceScale(viewportW, viewportH, vbW, cropH);
+            const seamY = seamScreenY(vbY, foldY, scale);
+            const frac = seamY / viewportH;
+            const err = Math.abs(frac - targetFraction);
+            if (err < bestErr) {
+              bestErr = err;
+              best = { cropTop, cropH, vbY, scale, seamY, frac, primaryVisible };
+            }
+          }
+        }
+
+        if (!best) {
+          const cropH = mirroredFieldH;
+          const vbY = minY;
+          const scale = sliceScale(viewportW, viewportH, vbW, cropH);
+          return {
+            cropTop: 0,
+            cropH,
+            vbY,
+            scale,
+            seamY: seamScreenY(vbY, foldY, scale),
+            frac: seamScreenY(vbY, foldY, scale) / viewportH,
+            primaryVisible: 1
+          };
+        }
+        return best;
+      }
+
+      function renderFieldSvg(svg, blocks, cfg) {
+        const b = bounds(blocks);
+        const H = b.h;
+        const minX = b.minX;
+        const minY = b.minY;
+        const ratio = cfg.ratio;
+        const mirrorSeamOffset = H * ratio;
+        const mirroredFieldH = H + mirrorSeamOffset;
+        const padding = -Math.max(6, b.w * 0.02);
+        const horizontalStretch = cfg.horizontalStretch;
+        const stretchAnchor = minX;
+        const vbW = b.w * horizontalStretch + padding * 2;
+        const foldY = minY + H;
+
+        let crop = cfg.useCrop
+          ? solveCropWindow({
+              quiltH: H,
+              mirroredFieldH,
+              foldY,
+              minY,
+              viewportW: cfg.viewportW,
+              viewportH: cfg.viewportH,
+              vbW,
+              targetFraction: cfg.targetFraction,
+              primaryVisibleMin: cfg.primaryVisibleMin
+            })
+          : null;
+
+        const vbX = minX - padding;
+        let vbY = cfg.useCrop ? crop.vbY : minY + padding;
+        let vbH = cfg.useCrop ? crop.cropH : mirroredFieldH + padding * 2;
+
+        if (!cfg.useCrop) {
+          const scale = sliceScale(cfg.viewportW, cfg.viewportH, vbW, vbH);
+          crop = {
+            cropTop: 0,
+            cropH: vbH,
+            vbY,
+            scale,
+            seamY: seamScreenY(vbY, foldY, scale),
+            frac: seamScreenY(vbY, foldY, scale) / cfg.viewportH,
+            primaryVisible: 1
+          };
+        }
+
+        const mirrorTy = minY + H + mirrorSeamOffset - cfg.seamOverlapPx;
+        const mirrorTx = minX + b.w;
+
+        svg.innerHTML = '';
+        const field = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        if (horizontalStretch !== 1) {
+          field.setAttribute('transform', `translate(${stretchAnchor} 0) scale(${horizontalStretch} 1) translate(${-stretchAnchor} 0)`);
+        }
+
+        const parallax = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        blocks.forEach((block) => {
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', String(block.x));
+          rect.setAttribute('y', String(block.y));
+          rect.setAttribute('width', String(block.w));
+          rect.setAttribute('height', String(block.h));
+          rect.setAttribute('fill', block.color);
+          rect.setAttribute('stroke', 'rgba(0,0,0,0.06)');
+          rect.setAttribute('stroke-width', '1');
+          parallax.appendChild(rect);
+        });
+        field.appendChild(parallax);
+
+        const mirrored = parallax.cloneNode(true);
+        mirrored.setAttribute('id', 'quiltMirroredFieldLayer');
+        mirrored.setAttribute('transform', `translate(${mirrorTx} ${mirrorTy}) scale(-1 -1)`);
+        field.appendChild(mirrored);
+        svg.appendChild(field);
+
+        svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+
+        return {
+          H,
+          ratio,
+          mirroredFieldH,
+          primaryFractionOfContent: H / mirroredFieldH,
+          viewBox: [vbX, vbY, vbW, vbH],
+          crop,
+          foldY,
+          padding
+        };
+      }
+
+      function updateFoldGuide(guide, label, seamY, frac, show) {
+        if (!show) {
+          guide.hidden = true;
+          label.hidden = true;
+          return;
+        }
+        guide.hidden = false;
+        label.hidden = false;
+        guide.style.top = `${seamY}px`;
+        label.style.top = `${seamY}px`;
+        label.textContent = `${(frac * 100).toFixed(1)}%`;
+      }
+
+      function stageViewport(el, preset) {
+        if (preset === 'mobile') {
+          el.style.width = '100%';
+          el.style.maxWidth = '390px';
+          el.style.height = 'min(80vh, 700px)';
+        } else if (preset === 'square') {
+          el.style.width = 'min(70vh, 520px)';
+          el.style.height = 'min(70vh, 520px)';
+        } else {
+          el.style.width = '70%';
+          el.style.maxWidth = 'none';
+          el.style.height = 'min(72vh, 640px)';
+        }
+        return el.getBoundingClientRect();
+      }
+
+      function readUi() {
+        const primaryFraction = Number(document.getElementById('primaryFraction').value);
+        const seamOverlapPx = Number(document.getElementById('seamOverlapPx').value);
+        const horizontalStretch = Number(document.getElementById('horizontalStretch').value);
+        const seamTargetPct = Number(document.getElementById('seamTarget').value);
+        const useDailySeed = document.getElementById('useDailySeed').checked;
+        const dateKey = document.getElementById('dateKey').value || new Date().toISOString().slice(0, 10);
+        const primaryVisibleMin = Number(document.getElementById('primaryVisibleMin').value) / 100;
+        const blockCount = Number(document.getElementById('blockCount').value);
+        const layoutSeed = Number(document.getElementById('layoutSeed').value);
+        const viewportPreset = document.getElementById('viewportPreset').value;
+        const compareMode = document.getElementById('compareMode').checked;
+        const showFoldGuide = document.getElementById('showFoldGuide').checked;
+        const dataSource = document.getElementById('dataSource').value;
+
+        let targetFraction = seamTargetPct / 100;
+        if (useDailySeed) {
+          targetFraction = getDailySeamFraction(dateKey);
+          document.getElementById('seamTarget').value = String(Math.round(targetFraction * 100));
+          document.getElementById('seamTargetVal').textContent = `${Math.round(targetFraction * 100)}%`;
+        }
+
+        return {
+          primaryFraction,
+          seamOverlapPx,
+          horizontalStretch,
+          targetFraction,
+          useDailySeed,
+          dateKey,
+          primaryVisibleMin,
+          blockCount,
+          layoutSeed,
+          viewportPreset,
+          compareMode,
+          showFoldGuide,
+          useCrop: true,
+          dataSource
+        };
+      }
+
+      function bindRange(id, valId, fmt) {
+        const input = document.getElementById(id);
+        const val = document.getElementById(valId);
+        const update = () => {
+          val.textContent = fmt ? fmt(input.value) : input.value;
+        };
+        input.addEventListener('input', () => { update(); render(); });
+        update();
+      }
+
+      function formatStats(meta, label) {
+        const vb = meta.viewBox.map((n) => n.toFixed(1)).join(', ');
+        return [
+          label,
+          `ratio: ${meta.ratio.toFixed(4)}  primary/content: ${(meta.primaryFractionOfContent * 100).toFixed(1)}%`,
+          `viewBox: ${vb}`,
+          `cropTop: ${meta.crop.cropTop.toFixed(1)}  cropH: ${meta.crop.cropH.toFixed(1)}  primary visible: ${(meta.crop.primaryVisible * 100).toFixed(1)}%`,
+          `seam on screen: ${(meta.crop.frac * 100).toFixed(1)}%  (${meta.crop.seamY.toFixed(1)}px)`
+        ].join('\n');
+      }
+
+      function render() {
+        const ui = readUi();
+        document.body.dataset.source = ui.dataSource;
+        const blocks = getBlocksForRender(ui);
+        if (!blocks.length) {
+          document.getElementById('statsCurrent').textContent = '';
+          document.getElementById('statsProposed').textContent = 'No blocks to render.';
+          return;
+        }
+
+        document.getElementById('colCurrent').hidden = !ui.compareMode;
+        document.getElementById('colProposed').style.gridColumn = ui.compareMode ? '' : '1 / -1';
+
+        const stageCurrent = document.getElementById('stageCurrent');
+        const stageProposed = document.getElementById('stageProposed');
+        const rectCurrent = stageViewport(stageCurrent, ui.viewportPreset);
+        const rectProposed = stageViewport(stageProposed, ui.viewportPreset);
+
+        let metaCurrent = null;
+        if (ui.compareMode) {
+          metaCurrent = renderFieldSvg(document.getElementById('svgCurrent'), blocks, {
+            ratio: 0.68,
+            seamOverlapPx: ui.seamOverlapPx,
+            horizontalStretch: ui.horizontalStretch,
+            viewportW: rectCurrent.width,
+            viewportH: rectCurrent.height,
+            targetFraction: ui.targetFraction,
+            primaryVisibleMin: ui.primaryVisibleMin,
+            useCrop: ui.useCrop
+          });
+          document.getElementById('statsCurrent').textContent = formatStats(metaCurrent, 'Current');
+          updateFoldGuide(
+            document.getElementById('foldCurrent'),
+            document.getElementById('foldLabelCurrent'),
+            metaCurrent.crop.seamY,
+            metaCurrent.crop.frac,
+            ui.showFoldGuide
+          );
+        }
+
+        const proposedRatio = mirrorOffsetRatio(ui.primaryFraction);
+        const metaProposed = renderFieldSvg(document.getElementById('svgProposed'), blocks, {
+          ratio: proposedRatio,
+          seamOverlapPx: ui.seamOverlapPx,
+          horizontalStretch: ui.horizontalStretch,
+          viewportW: rectProposed.width,
+          viewportH: rectProposed.height,
+          targetFraction: ui.targetFraction,
+          primaryVisibleMin: ui.primaryVisibleMin,
+          useCrop: ui.useCrop
+        });
+        document.getElementById('statsProposed').textContent = formatStats(metaProposed, 'Proposed');
+        updateFoldGuide(
+          document.getElementById('foldProposed'),
+          document.getElementById('foldLabelProposed'),
+          metaProposed.crop.seamY,
+          metaProposed.crop.frac,
+          ui.showFoldGuide
+        );
+
+        const config = {
+          dataSource: ui.dataSource,
+          liveMeta,
+          primaryFraction: ui.primaryFraction,
+          mirrorSeamOffsetRatio: proposedRatio,
+          seamOverlapPx: ui.seamOverlapPx,
+          horizontalStretch: ui.horizontalStretch,
+          targetSeamViewportFraction: ui.targetFraction,
+          dateKey: ui.dateKey,
+          useDailySeed: ui.useDailySeed,
+          primaryVisibleMin: ui.primaryVisibleMin,
+          proposed: {
+            viewBox: metaProposed.viewBox,
+            crop: metaProposed.crop,
+            primaryFractionOfContent: metaProposed.primaryFractionOfContent
+          },
+          current: metaCurrent ? {
+            viewBox: metaCurrent.viewBox,
+            crop: metaCurrent.crop,
+            primaryFractionOfContent: metaCurrent.primaryFractionOfContent
+          } : null
+        };
+        document.getElementById('configOut').textContent = JSON.stringify(config, null, 2);
+      }
+
+      bindRange('primaryFraction', 'primaryFractionVal', (v) => Number(v).toFixed(2));
+      bindRange('seamOverlapPx', 'seamOverlapPxVal');
+      bindRange('horizontalStretch', 'horizontalStretchVal', (v) => Number(v).toFixed(2));
+      bindRange('seamTarget', 'seamTargetVal', (v) => `${v}%`);
+      bindRange('primaryVisibleMin', 'primaryVisibleMinVal', (v) => `${v}%`);
+      bindRange('blockCount', 'blockCountVal');
+      bindRange('layoutSeed', 'layoutSeedVal');
+
+      document.getElementById('useDailySeed').addEventListener('change', render);
+      document.getElementById('compareMode').addEventListener('change', render);
+      document.getElementById('showFoldGuide').addEventListener('change', render);
+      document.getElementById('dateKey').addEventListener('change', () => {
+        if (document.getElementById('dataSource').value === 'live') {
+          loadQuiltForUi(document.getElementById('dateKey').value);
+        } else {
+          render();
+        }
+      });
+      document.getElementById('dataSource').addEventListener('change', () => {
+        const source = document.getElementById('dataSource').value;
+        document.body.dataset.source = source;
+        if (source === 'live') {
+          loadQuiltForUi(document.getElementById('dateKey').value);
+        } else {
+          setLoadStatus('Using mock layout');
+          render();
+        }
+      });
+      document.getElementById('btnLoadQuilt').addEventListener('click', () => {
+        document.getElementById('dataSource').value = 'live';
+        document.body.dataset.source = 'live';
+        loadQuiltForUi(document.getElementById('dateKey').value);
+      });
+      document.getElementById('viewportPreset').addEventListener('change', render);
+      document.getElementById('btnRender').addEventListener('click', render);
+      document.getElementById('btnReset').addEventListener('click', () => {
+        document.getElementById('primaryFraction').value = '0.51';
+        document.getElementById('seamOverlapPx').value = '8';
+        document.getElementById('horizontalStretch').value = '1.16';
+        document.getElementById('seamTarget').value = '50';
+        document.getElementById('useDailySeed').checked = false;
+        document.getElementById('primaryVisibleMin').value = '85';
+        document.getElementById('blockCount').value = '24';
+        document.getElementById('layoutSeed').value = '42';
+        document.getElementById('compareMode').checked = true;
+        document.getElementById('showFoldGuide').checked = true;
+        document.querySelectorAll('input[type="range"]').forEach((el) => el.dispatchEvent(new Event('input')));
+      });
+      document.getElementById('btnCopy').addEventListener('click', () => {
+        navigator.clipboard.writeText(document.getElementById('configOut').textContent);
+      });
+
+      document.getElementById('dateKey').value = getAppTodayKey();
+      window.addEventListener('resize', render);
+      loadQuiltForUi(getAppTodayKey(), { silent: false });
+    })();
+  </script>
+</body>
+</html>
