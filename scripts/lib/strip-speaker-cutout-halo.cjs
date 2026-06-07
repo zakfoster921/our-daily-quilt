@@ -19,6 +19,12 @@ function pixelIsGreyHalo(r, g, b, a) {
   return lum > 88 && lum < 238 && sat < 52 && a < 252;
 }
 
+/** Flood-fill connectivity — bright skin highlights must not block the fill. */
+function pixelIsFillable(r, g, b, a) {
+  if (a < 52) return false;
+  return !pixelIsGreyHalo(r, g, b, a);
+}
+
 function pixelIsSubject(r, g, b, a) {
   if (a < 52) return false;
   return !pixelIsWhiteMatte(r, g, b, a) && !pixelIsGreyHalo(r, g, b, a);
@@ -49,7 +55,7 @@ function stripSpeakerCutoutHaloRgba(data, width, height) {
   for (let y = y0; y < y1; y += 1) {
     for (let x = x0; x < x1; x += 1) {
       const i = (y * w + x) * 4;
-      if (!pixelIsSubject(d[i], d[i + 1], d[i + 2], d[i + 3])) continue;
+      if (!pixelIsFillable(d[i], d[i + 1], d[i + 2], d[i + 3])) continue;
       const lum = (d[i] + d[i + 1] + d[i + 2]) / 3;
       if (lum < bestLum) {
         bestLum = lum;
@@ -81,7 +87,7 @@ function stripSpeakerCutoutHaloRgba(data, width, height) {
         const idx = ny * w + nx;
         if (keep[idx]) continue;
         const i = idx * 4;
-        if (!pixelIsSubject(d[i], d[i + 1], d[i + 2], d[i + 3])) continue;
+        if (!pixelIsFillable(d[i], d[i + 1], d[i + 2], d[i + 3])) continue;
         keep[idx] = 1;
         queue.push([nx, ny]);
       }
@@ -108,6 +114,7 @@ function stripSpeakerCutoutHaloRgba(data, width, height) {
 
 module.exports = {
   stripSpeakerCutoutHaloRgba,
+  pixelIsFillable,
   pixelIsGreyHalo,
   pixelIsSubject,
   pixelIsWhiteMatte

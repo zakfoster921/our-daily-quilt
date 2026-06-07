@@ -63,4 +63,6 @@ Railway builds from `Dockerfile`: `server.js`, `our-daily-beta.html`, `lib/`, `s
 
 **iOS release:** `npm run ios` → Xcode Archive → `npm run ios:archive` → `npm run ios:upload` (or Transporter).
 
+After a version is **live on the App Store**, run `npm run ios:shipped` so the next prep knows to require a version bump (not just build). If prep blocks, run `npm run ios:bump-version` first.
+
 Health check: `GET /api/health`

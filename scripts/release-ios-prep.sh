@@ -18,6 +18,8 @@ for arg in "$@"; do
 done
 
 if [[ -f "ios/App/App.xcodeproj/project.pbxproj" ]]; then
+  echo "==> check iOS marketing version (vs last App Store release)"
+  node scripts/ios-version.cjs check
   echo "==> bump iOS build number"
   node scripts/bump-ios-build.cjs
 else
@@ -41,6 +43,7 @@ echo ""
 echo "iOS release prep finished."
 echo "Next in Xcode: open App.xcworkspace → pick a device / Any iOS Device → Product → Archive."
 echo "Build number was bumped above (run npm run ios once per App Store upload, before Archive)."
+echo "After a version goes live on the App Store: npm run ios:shipped"
 echo "After exporting for App Store Connect: npm run ios:verify-push"
 echo ""
 

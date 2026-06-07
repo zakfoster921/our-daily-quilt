@@ -255,7 +255,7 @@ try {
   <meta charset="UTF-8" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
-  <link rel="stylesheet" href="styles/our-daily-beta.css?v=46" />
+  <link rel="stylesheet" href="styles/our-daily-beta.css?v=49" />
   <!-- file:// Safari resolves ../ in the stylesheet against the HTML path, not styles/ — use document-relative assets/ here -->
   <style id="odq-document-asset-vars">
     @font-face {
@@ -1310,7 +1310,10 @@ try {
             </span>
           </button>
         </div>
-        <div class="quilt-footer-icon-row" aria-label="OUR DAILY QUILT links and settings">
+        <div
+          class="quilt-footer-icon-row quilt-footer-icon-row--chrome-pending"
+          aria-label="OUR DAILY QUILT links and settings"
+        >
           <span class="quilt-footer-icon-strip" aria-hidden="true"></span>
           <div class="quilt-footer-icon-cluster">
             <div class="quilt-footer-icon-slot">
@@ -2056,7 +2059,7 @@ try {
   <script src="lib/quilt-newspaper-clipping.js?v=80"></script>
   <script src="lib/odq-scanner-bed.js?v=4"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
-  <script src="lib/quilt-mood-triptych-widget.js?v=148"></script>
+  <script src="lib/quilt-mood-triptych-widget.js?v=161"></script>
   <script src="lib/quilt-mood-terminal.js?v=24"></script>
   <script src="lib/logger.js"></script>
   <script src="lib/ui-service.js"></script>
@@ -2083,7 +2086,7 @@ try {
   <script src="lib/app-config.js"></script>
   <script src="lib/speaker-cutout-render.js?v=3"></script>
   <script src="lib/layout-b-compose.js"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=43"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=47"></script>
   <script src="lib/simplified-quilt-app-quilt.js?v=30"></script>
   <script src="lib/simplified-quilt-app-share.js"></script>
   <script src="lib/simplified-quilt-app-admin.js?v=25"></script>
@@ -2687,47 +2690,18 @@ try {
       Utils.removeLegacyReflectionWallHeadings();
 
       const applyReflectionThemesDirect = async () => {
-        Utils.removeLegacyReflectionWallHeadings();
-        const notes = document.getElementById('quiltReflectionWallNotes');
-        const wall = document.getElementById('quiltReflectionWall');
-        if (!notes || !wall) return false;
-        try {
-          const dateKey = Utils.getTodayKey();
-          const baseUrl = String(CONFIG.BACKEND?.baseUrl || '').replace(/\/$/, '');
-          if (!baseUrl || !dateKey) return false;
-          const res = await fetch(`${baseUrl}/api/reflection-themes/${encodeURIComponent(dateKey)}?t=${Date.now()}`, { cache: 'no-store' });
-          if (!res.ok) return false;
-          const data = await res.json();
-          const communityThemes = Array.isArray(data?.themes)
-            ? data.themes
-              .map((theme) => app.normalizeReflectionWallTheme(theme))
-              .filter((entry) => entry?.text)
-            : [];
-          const themes =
-            window.app && typeof window.app.resolveReflectionWallThemes === 'function'
-              ? await window.app.resolveReflectionWallThemes(communityThemes, {
-                  first_response: data?.first_response || data?.firstResponse || ''
-                })
-              : communityThemes;
-          if (!themes.length) return false;
-          if (window.app && typeof window.app.renderReflectionAnonymousWall === 'function') {
-            window.app.renderReflectionAnonymousWall(themes);
+        if (window.app && typeof window.app.loadReflectionThemesForToday === 'function') {
+          try {
+            await window.app.loadReflectionThemesForToday();
             return true;
+          } catch (error) {
+            console.warn('Reflection themes refresh failed:', error);
+            return false;
           }
-          notes.innerHTML = window.app?.getReflectionCarouselMarkup?.(themes) || '';
-          if (window.app && typeof window.app.initReflectionCarouselLoop === 'function') {
-            window.app.initReflectionCarouselLoop(notes);
-          }
-          wall.hidden = false;
-          return true;
-        } catch (error) {
-          console.warn('Reflection themes direct refresh failed:', error);
-          return false;
         }
+        return false;
       };
       window.refreshReflectionThemesNow = applyReflectionThemesDirect;
-      setTimeout(applyReflectionThemesDirect, 600);
-      setTimeout(applyReflectionThemesDirect, 1800);
 
       // Before async initialize (Firebase, quilt) so the portal date is never a stale placeholder.
       Utils.refreshPortalDateText();
