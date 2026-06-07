@@ -5348,6 +5348,8 @@
       --quilt-hero-display-style: italic;
       --quilt-hero-display-size: 5.75rem;
       --quilt-hero-display-line-height: 1.05;
+      /* Speaker name strip: cap for short names only (long names shrink to fit below this). */
+      --quote-speaker-name-max-size: 3.25rem;
       --quilt-speaker-meta-font: var(--quilt-dm-sans-font);
       --quilt-quote-copy-size: clamp(1.044rem, 4.32vw, 1.728rem);
       --quilt-quote-font: var(--quilt-courier-font);
@@ -5509,11 +5511,9 @@
       overflow: hidden;
     }
 
-    /* Color card: half the section tunnel above and below the card only. */
-    #screen-quilt:has(#quiltUserColorCardWrap:not([hidden])) .quilt-reflection-story-gap {
-      flex: 0 0 calc(var(--quilt-section-gap) * 0.5) !important;
-      min-height: calc(var(--quilt-section-gap) * 0.5) !important;
-      height: calc(var(--quilt-section-gap) * 0.5) !important;
+    /* Color card sits above triptych — half tunnel between them when the card is visible. */
+    #screen-quilt:has(#quiltUserColorCardWrap:not([hidden])) .quilt-daily-colors-zone + .quote-card-stack {
+      margin-top: calc(var(--quilt-section-gap) * 0.5);
     }
 
     #screen-quilt .quote-card-stack + .quote-speaker-stage,
@@ -7733,6 +7733,10 @@
       
       #screen-quilt .quote-card-stack {
         --quilt-float-card-gutter: 20px;
+        margin-top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 20px);
+      }
+
+      #screen-quilt .quilt-daily-colors-zone:has(#quiltUserColorCardWrap:not([hidden])) {
         margin-top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 20px);
       }
 
@@ -12808,29 +12812,20 @@
       min-width: 0;
       box-sizing: border-box;
       position: relative;
-      isolation: isolate;
     }
 
     #screen-quilt .quote-speaker-portrait-wrap {
       position: relative;
-      z-index: 6;
+      z-index: 1;
       width: min(94%, 21.5rem);
-      margin: 0 auto clamp(-3.25rem, -14vw, -2.4rem);
-      transform: rotate(-1.35deg) translateX(-4px) translateY(0.4rem);
+      margin: 0 auto 0;
+      transform: rotate(-1.35deg) translateX(-4px) translateY(1.1rem);
       transform-origin: center bottom;
-      /* Lift cutout off the name/guide tape slabs (multiply on the img used to print into them). */
-      filter:
-        drop-shadow(2px 4px 0 rgba(35, 27, 20, 0.1))
-        drop-shadow(5px 14px 18px rgba(35, 27, 20, 0.14));
     }
 
     /* Plain cutout: portrait above name slab; moderate overlap only. */
     #screen-quilt .quote-speaker-widget:has(.quote-speaker-cutout--plain-cutout) .quote-speaker-portrait-wrap {
-      margin-bottom: clamp(-2.35rem, -11vw, -1.65rem);
-    }
-
-    #screen-quilt .quote-speaker-widget:has(.quote-speaker-cutout--plain-cutout) .quote-speaker-slab--identity .quote-speaker-slab-body {
-      padding-top: 1.35rem;
+      transform: rotate(-1.35deg) translateX(-4px) translateY(0.9rem);
     }
 
     /* Magazine cutout — height from image aspect (JS); no forced 1:1 square */
@@ -12850,6 +12845,9 @@
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--loaded {
       overflow: visible;
+      filter:
+        drop-shadow(2px 4px 0 rgba(35, 27, 20, 0.1))
+        drop-shadow(5px 14px 18px rgba(35, 27, 20, 0.14));
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--single-layer.quote-speaker-cutout--loaded {
@@ -13427,19 +13425,38 @@
     }
 
     #screen-quilt .quote-speaker-slab--identity {
-      z-index: 5;
-      margin-top: 0;
+      z-index: 8;
+      /* padding-top extends ::before tape up over the portrait bottom; margin-top pulls slab into overlap */
+      margin-top: clamp(-3.85rem, -15vw, -2.85rem);
+      padding-top: clamp(2.7rem, 10.5vw, 3.65rem);
       transform: rotate(-0.85deg) translateX(-2px);
     }
 
     #screen-quilt .quote-speaker-widget--no-image .quote-speaker-slab--identity {
       margin-top: 0;
+      padding-top: 0;
     }
 
     #screen-quilt .quote-speaker-slab--identity .quote-speaker-slab-body {
-      padding-top: 1.2rem;
+      margin-top: -1rem;
+      padding-top: 0.1rem;
       padding-bottom: 0.85rem;
       text-align: center;
+    }
+
+    #screen-quilt .quote-speaker-widget--no-image .quote-speaker-slab--identity .quote-speaker-slab-body {
+      margin-top: 0;
+      padding-top: var(--quilt-byg-tape-safe-y);
+    }
+
+    #screen-quilt .quote-speaker-widget:has(.quote-speaker-cutout--plain-cutout) .quote-speaker-slab--identity {
+      margin-top: clamp(-2.9rem, -12vw, -2.15rem);
+      padding-top: clamp(2.15rem, 8.5vw, 2.9rem);
+    }
+
+    #screen-quilt .quote-speaker-widget:has(.quote-speaker-cutout--plain-cutout) .quote-speaker-slab--identity .quote-speaker-slab-body {
+      margin-top: -0.75rem;
+      padding-top: 0.1rem;
     }
 
     #screen-quilt .quote-speaker-slab--bio {
@@ -13467,7 +13484,7 @@
       min-width: 0;
       box-sizing: border-box;
       font-family: var(--quilt-hero-display-font);
-      font-size: var(--quilt-hero-display-size);
+      font-size: var(--quote-speaker-name-max-size, var(--quilt-hero-display-size));
       line-height: var(--quilt-hero-display-line-height);
       font-weight: var(--quilt-hero-display-weight);
       font-style: var(--quilt-hero-display-style);
@@ -14092,8 +14109,9 @@
     /* Full-res Layout B story (1080×1920); same asset as share flow; image band is full viewport width. */
     #screen-quilt .quilt-layout-b-preview-wrap {
       --quilt-warm-neutral: var(--odq-paper-matte, #ebe8e3);
-      --quilt-story-preview-frame-pad: 0.65rem;
-      --quilt-story-preview-frame-pad-bottom: var(--quilt-story-preview-frame-pad);
+      /* Equal warm-neutral border on top + left + right; bottom is taller (share CTA below image). */
+      --quilt-story-preview-frame-inset: 0.5rem;
+      --quilt-story-preview-frame-pad: var(--quilt-story-preview-frame-inset);
       display: flex;
       flex-direction: column;
       align-items: stretch;
@@ -14110,16 +14128,9 @@
       z-index: 10;
     }
 
-    /* Color card → story only: pull story up half a section gap (flex gap stays full elsewhere). */
-    #screen-quilt
-      .quilt-layout-b-preview-wrap:has(#quiltUserColorCardWrap:not([hidden]))
-      > .quilt-daily-colors-zone {
-      margin-bottom: calc(var(--quilt-section-gap) * -0.5);
-    }
-
     #screen-quilt .quilt-layout-b-preview-sheet {
       background: var(--quilt-warm-neutral, #ebe8e3);
-      padding: calc(0.75rem * 1.33 * 0.8 * 0.8 * 0.8 * 0.7 * 0.85) 0 0;
+      padding: var(--quilt-story-preview-frame-inset) var(--quilt-story-preview-frame-inset) 0;
       box-sizing: border-box;
     }
 
@@ -14165,7 +14176,8 @@
       justify-content: center;
       gap: 0.45rem;
       margin: 0;
-      padding: 0.15rem 1rem 1rem;
+      /* Taller bottom warm-neutral band for the share CTA (sides/top use --quilt-story-preview-frame-inset). */
+      padding: 0.7rem 1rem 1.2rem;
       font-size: 0.8rem;
       font-weight: 400;
       letter-spacing: 0.02em;
@@ -14180,9 +14192,9 @@
     }
 
     #screen-quilt .quilt-layout-b-preview-frame {
-      width: calc(100% - 1rem);
+      width: 100%;
       max-width: none;
-      margin: 0 0.5rem 0.25rem;
+      margin: 0;
       aspect-ratio: 9 / 16;
       border-radius: 0;
       overflow: hidden;
@@ -14190,34 +14202,17 @@
       box-shadow: none;
       border: none;
       box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
+      position: relative;
       min-height: 0;
-      /* Top/bottom matte chins: ::before/::after avoid WebKit %height bugs inside aspect-ratio + overflow:hidden. */
-      padding-bottom: 0;
-    }
-
-    #screen-quilt .quilt-layout-b-preview-frame::before,
-    #screen-quilt .quilt-layout-b-preview-frame::after {
-      content: '';
-      flex: 0 0 var(--quilt-story-preview-frame-pad);
-      width: 100%;
-      background: var(--quilt-warm-neutral, #ebe8e3);
-      pointer-events: none;
-    }
-
-    #screen-quilt .quilt-layout-b-preview-frame::after {
-      margin-top: auto;
     }
 
     #screen-quilt .quilt-layout-b-preview-img {
+      position: absolute;
+      inset: 0;
       display: block;
-      flex: 1 1 auto;
-      min-height: 0;
       width: 100%;
       height: 100%;
-      max-height: 100%;
-      object-fit: contain;
+      object-fit: cover;
       object-position: center;
       -webkit-touch-callout: none;
       user-select: none;
@@ -14704,10 +14699,17 @@
       width: 100%;
       margin: 0 auto;
       box-sizing: border-box;
+      position: relative;
+      z-index: 10;
+      flex-shrink: 0;
     }
 
     #screen-quilt .quilt-daily-colors-zone:not(:has(#quiltUserColorCardWrap:not([hidden]))) {
       display: none;
+    }
+
+    #screen-quilt .quilt-daily-colors-zone:has(#quiltUserColorCardWrap:not([hidden])) {
+      margin-top: 100vh;
     }
 
     #screen-quilt .quilt-daily-colors-stage {
@@ -14922,6 +14924,7 @@
       transform-origin: center center;
       overflow: visible;
       position: relative;
+      filter: var(--quilt-color-card-cast-shadow);
     }
 
     #screen-quilt .quilt-user-color-card-wrap[hidden] {
@@ -14929,9 +14932,34 @@
     }
 
     #screen-quilt .quilt-user-shape-card {
-      --quilt-color-card-paper: var(--odq-paper-artifact, var(--quilt-quote-paper-bg, #f6f4f1));
-      --quilt-color-card-stock: var(--odq-paper-matte, #ebe8e3);
-      --quilt-color-card-note: var(--odq-paper-tape, #f2eee6);
+      --quilt-color-card-paper: #eef1f4;
+      --quilt-color-card-stock: #e4e8ed;
+      --quilt-color-card-edge: #d0d6de;
+      --quilt-color-card-edge-deep: #b8c0ca;
+      --quilt-color-card-thickness: 1.5px;
+      --quilt-color-card-edge-shadow:
+        1px 0 0 0 var(--quilt-color-card-edge),
+        1.5px 0 0 0 var(--quilt-color-card-edge),
+        0 1px 0 0 var(--quilt-color-card-edge),
+        0 1.5px 0 0 var(--quilt-color-card-edge),
+        1px 1px 0 0 var(--quilt-color-card-edge),
+        1.5px 1px 0 0 var(--quilt-color-card-edge),
+        1px 1.5px 0 0 var(--quilt-color-card-edge),
+        1.5px 1.5px 0 0 var(--quilt-color-card-edge);
+      --quilt-color-card-note: #f3f5f8;
+      --quilt-color-card-surface-wash:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 26%),
+        linear-gradient(0deg, rgba(36, 40, 48, 0.034) 0%, transparent 100%),
+        repeating-linear-gradient(
+          0deg,
+          rgba(36, 40, 48, 0.014) 0 1px,
+          transparent 1px 3px
+        );
+      --quilt-color-card-cast-shadow:
+        drop-shadow(1px 2px 0 rgba(36, 40, 48, 0.07))
+        drop-shadow(2px 5px 0 rgba(36, 40, 48, 0.045))
+        drop-shadow(0 16px 32px rgba(28, 32, 40, 0.15))
+        drop-shadow(0 5px 12px rgba(28, 32, 40, 0.1));
       position: relative;
       width: 100%;
       margin: 0;
@@ -14943,6 +14971,7 @@
       --slide-mount: var(--odq-paper-matte, #ebe8e3);
       --slide-mount-edge: #ddd6cb;
       --slide-mount-edge: color-mix(in srgb, var(--odq-paper-matte, #ebe8e3) 82%, #2f271f 18%);
+      container-type: inline-size;
       position: relative;
       box-sizing: border-box;
       border-radius: 3px;
@@ -14950,11 +14979,11 @@
       background: transparent;
       overflow: visible;
       box-shadow: none;
-      filter: var(--odq-artifact-shadow);
+      filter: none;
       isolation: isolate;
     }
 
-    /* Handled-edge staining on the swatch. */
+    /* Corner compression on thick stock — keep off bottom-right edge. */
     #screen-quilt .quilt-user-shape-card__mount::before {
       content: '';
       position: absolute;
@@ -14963,24 +14992,13 @@
       pointer-events: none;
       z-index: 1;
       background:
-        radial-gradient(ellipse 34% 28% at 0% 0%, rgba(88, 70, 48, 0.18) 0%, transparent 72%),
-        radial-gradient(ellipse 30% 24% at 100% 0%, rgba(88, 70, 48, 0.12) 0%, transparent 68%),
-        radial-gradient(ellipse 32% 28% at 100% 100%, rgba(88, 70, 48, 0.07) 0%, transparent 70%),
-        radial-gradient(ellipse 28% 24% at 0% 100%, rgba(88, 70, 48, 0.06) 0%, transparent 68%);
-      box-shadow: inset 0 0 36px rgba(92, 74, 52, 0.06);
+        radial-gradient(ellipse 38% 30% at 0% 0%, rgba(36, 40, 48, 0.045) 0%, transparent 70%);
+      box-shadow: inset 0 0 28px rgba(48, 54, 64, 0.028);
     }
 
-    /* Card edge thickness — bottom/right catch slightly darker than the face. */
+    /* Cardstock edge — crisp L on surface (single color, no corner overlap). */
     #screen-quilt .quilt-user-shape-card__mount::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      pointer-events: none;
-      z-index: 0;
-      box-shadow:
-        inset -2px -2px 0 rgba(58, 46, 34, 0.11),
-        inset 2px 2px 0 rgba(255, 255, 255, 0.28);
+      content: none;
     }
 
     #screen-quilt .quilt-user-shape-card__surface {
@@ -14991,30 +15009,37 @@
       width: 100%;
       border: none;
       border-radius: 3px;
-      overflow: hidden;
+      overflow: visible;
       box-sizing: border-box;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 18%),
-        linear-gradient(0deg, rgba(58, 46, 34, 0.05) 0%, rgba(58, 46, 34, 0.02) 100%),
-        var(--quilt-color-card-paper, var(--quilt-color-card-stock, #ebe5dc));
+      background-color: var(--quilt-color-card-paper, var(--quilt-color-card-stock, #eef1f4));
+      background-image: var(--quilt-color-card-surface-wash);
+      background-size: 100% 100%, 100% 100%, auto;
+      background-position: center;
+      background-repeat: no-repeat;
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.62),
-        inset 0 -2px 5px rgba(58, 46, 34, 0.07),
-        inset 2px 0 0 rgba(255, 255, 255, 0.2),
-        inset -2px 0 0 rgba(58, 46, 34, 0.04);
+        inset 0 0 0 1px rgba(36, 40, 48, 0.09),
+        inset 0 1px 0 rgba(255, 255, 255, 0.92),
+        inset 1px 0 0 rgba(255, 255, 255, 0.58),
+        inset 0 -1px 0 rgba(36, 40, 48, 0.08),
+        inset -1px 0 0 rgba(36, 40, 48, 0.07),
+        var(--quilt-color-card-edge-shadow);
       isolation: isolate;
     }
 
-    /* Stock rim + tooth across the full chip (footer included). */
+    /* Fiber tooth on dense cardstock face. */
     #screen-quilt .quilt-user-shape-card__surface::before {
       content: '';
       position: absolute;
       inset: 0;
-      z-index: 3;
+      z-index: 0;
       pointer-events: none;
       border-radius: inherit;
-      box-shadow: inset 0 0 0 1px rgba(58, 46, 34, 0.08);
-      opacity: 1;
+      background-image: var(--quilt-paper-card-texture);
+      background-size: 220% 220%;
+      background-position: center 38%;
+      background-repeat: no-repeat;
+      mix-blend-mode: soft-light;
+      opacity: 0.62;
     }
 
     #screen-quilt .quilt-user-shape-card__surface::after {
@@ -15023,7 +15048,7 @@
       inset: 0;
       z-index: 3;
       pointer-events: none;
-      opacity: 0.07;
+      opacity: 0.045;
       mix-blend-mode: multiply;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
       background-size: 96px 96px;
@@ -15052,24 +15077,19 @@
       isolation: isolate;
       transform: rotateY(-4.5deg);
       transform-origin: 0% 50%;
-      background-color: var(--quilt-color-card-note, #f5f1e9);
+      background-color: var(--quilt-color-card-note, #f3f5f8);
       background-image:
-        radial-gradient(ellipse 52% 44% at 16% 86%, rgba(98, 74, 48, 0.05) 0%, transparent 54%),
-        radial-gradient(ellipse 40% 36% at 84% 22%, rgba(168, 138, 98, 0.04) 0%, transparent 52%),
-        radial-gradient(ellipse 68% 48% at 10% 14%, rgba(255, 252, 245, 0.42) 0%, transparent 56%),
-        linear-gradient(152deg, #f7f3ec 0%, var(--quilt-color-card-note, #f5f1e9) 52%, #efe9df 100%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 38%),
-        repeating-linear-gradient(
-          90deg,
-          rgba(110, 96, 72, 0.01) 0 1px,
-          transparent 1px 4px
-        );
+        linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, transparent 42%),
+        linear-gradient(152deg, #fafbfc 0%, var(--quilt-color-card-note, #f3f5f8) 54%, #eceff3 100%);
+      background-size: 100% 100%, 100% 100%;
+      background-position: center;
+      background-repeat: no-repeat;
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.48),
-        inset -1px 0 0 rgba(58, 46, 34, 0.03),
-        1px 2px 0 rgba(58, 46, 34, 0.04),
-        2px 5px 10px rgba(45, 36, 29, 0.08),
-        5px 12px 20px rgba(45, 36, 29, 0.07);
+        inset 0 1px 0 rgba(255, 255, 255, 0.72),
+        inset -1px 0 0 rgba(36, 40, 48, 0.025),
+        1px 2px 0 rgba(36, 40, 48, 0.035),
+        2px 5px 10px rgba(28, 32, 40, 0.07),
+        5px 12px 20px rgba(28, 32, 40, 0.06);
     }
 
     #screen-quilt .quilt-user-shape-card__note-paper::before {
@@ -15078,10 +15098,12 @@
       inset: 0;
       z-index: 0;
       pointer-events: none;
-      background:
-        linear-gradient(118deg, rgba(72, 58, 42, 0.025) 0%, transparent 42%),
-        linear-gradient(298deg, rgba(58, 44, 30, 0.03) 0%, transparent 48%),
-        linear-gradient(90deg, transparent 76%, rgba(58, 46, 34, 0.03) 94%, rgba(58, 46, 34, 0.05) 100%);
+      background-image: var(--quilt-paper-card-texture);
+      background-size: 220% 220%;
+      background-position: center 36%;
+      background-repeat: no-repeat;
+      mix-blend-mode: soft-light;
+      opacity: 0.45;
     }
 
     #screen-quilt .quilt-user-shape-card__note-paper::after {
@@ -15090,7 +15112,7 @@
       inset: 0;
       z-index: 0;
       pointer-events: none;
-      opacity: 0.06;
+      opacity: 0.03;
       mix-blend-mode: multiply;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
       background-size: 88px 88px;
@@ -15099,24 +15121,27 @@
 
     #screen-quilt .quilt-user-shape-card__paperclip {
       position: absolute;
-      /* Tip sits on swatch top edge (asset tip ≈ y=2); cmin tracks card scale. */
-      top: clamp(-6px, -8.5cqmin, -16px);
+      /* Tip on card top edge; mount overflow visible so the loop clears the card. */
+      top: clamp(-5px, -2.4cqi, 4px);
       left: calc(7% + 0.52rem);
-      z-index: 4;
+      z-index: 5;
       display: block;
       width: auto;
-      height: clamp(2.75rem, 13cqmin, 4.5rem);
+      height: clamp(2.75rem, 13cqi, 4.5rem);
       aspect-ratio: 98 / 359;
       object-fit: contain;
       pointer-events: none;
-      transform: rotate(6.5deg) scale(2);
+      transform: rotate(6.5deg) scale(3);
       /* Tip pixel in asset ≈ (38, 2) — pivot there so tip stays on swatch top edge. */
       transform-origin: 38.8% 0.56%;
+      filter:
+        drop-shadow(0.5px 0.5px 0.5px rgba(36, 40, 48, 0.26))
+        drop-shadow(0 2.5px 4px rgba(36, 40, 48, 0.11));
     }
 
     @media (prefers-reduced-motion: reduce) {
       #screen-quilt .quilt-user-shape-card__paperclip {
-        transform: scale(2);
+        transform: scale(3);
       }
     }
 
@@ -15130,9 +15155,14 @@
       }
     }
 
-    /* Large color field (~Pantone top band) — ink on thick stock, not screen-fill. */
+    /* Large color field — printed ink on cool chip stock (Phase 2). */
     #screen-quilt .quilt-user-shape-card__swatch {
       --quilt-user-piece-color: #ea9b9a;
+      --quilt-color-card-ink: color-mix(
+        in srgb,
+        var(--quilt-user-piece-color) 88%,
+        var(--quilt-color-card-paper, #eef1f4)
+      );
       container-type: size;
       position: relative;
       z-index: 2;
@@ -15143,40 +15173,45 @@
       box-sizing: border-box;
       isolation: isolate;
       overflow: visible;
-      background:
-        linear-gradient(148deg, rgba(255, 255, 255, 0.12) 0%, transparent 38%),
-        linear-gradient(32deg, rgba(58, 46, 34, 0.08) 0%, transparent 52%),
-        linear-gradient(180deg, rgba(235, 229, 220, 0.16) 0%, transparent 24%),
-        var(--quilt-user-piece-color);
+      background-color: transparent;
     }
 
+    /* Ink patch — screen-printed on same cardstock face. */
     #screen-quilt .quilt-user-shape-card__swatch::before {
       content: '';
       position: absolute;
       inset: 0;
       z-index: 0;
       pointer-events: none;
-      opacity: 0.42;
-      background: repeating-linear-gradient(
-        168deg,
-        rgba(255, 255, 255, 0.1) 0,
-        rgba(255, 255, 255, 0.1) 1px,
-        transparent 1px,
-        transparent 5px
-      );
+      border-radius: 3px 3px 0 0;
+      background-color: var(--quilt-color-card-ink);
+      background-image:
+        linear-gradient(148deg, rgba(255, 255, 255, 0.18) 0%, transparent 40%),
+        var(--quilt-paper-card-texture);
+      background-size: 100% 100%, 220% 220%;
+      background-position: center, center 38%;
+      background-repeat: no-repeat;
+      background-blend-mode: normal, soft-light;
+      box-shadow: none;
     }
 
+    /* Micro halftone + grain over ink — fade out above footer seam. */
     #screen-quilt .quilt-user-shape-card__swatch::after {
       content: '';
       position: absolute;
       inset: 0;
       z-index: 1;
       pointer-events: none;
-      opacity: 0.11;
+      border-radius: 3px 3px 0 0;
+      opacity: 0.085;
       mix-blend-mode: multiply;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
-      background-size: 96px 96px;
-      background-repeat: repeat;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 3px), transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 3px), transparent 100%);
+      background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E"),
+        radial-gradient(circle at center, rgba(28, 32, 40, 0.38) 0.4px, transparent 0.52px);
+      background-size: 96px 96px, 4.5px 4.5px;
+      background-repeat: repeat, repeat;
     }
 
     #screen-quilt .quilt-user-shape-card__swatch-message {
@@ -15202,8 +15237,10 @@
       position: relative;
       z-index: 2;
       flex: 0 0 auto;
-      background: var(--quilt-color-card-paper, var(--quilt-color-card-stock, #ebe5dc));
-      padding: 0.9rem 1rem 1rem;
+      background: transparent;
+      border-radius: 0 0 3px 3px;
+      margin-top: -1px;
+      padding: calc(0.9rem + 1px) 1rem 1rem;
       text-align: left;
       box-sizing: border-box;
     }
@@ -15216,6 +15253,7 @@
       letter-spacing: 0.01em;
       line-height: 1.12;
       color: #2f2924;
+      text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.35);
     }
 
     #screen-quilt .quilt-user-shape-card__color-hex {
@@ -15227,6 +15265,7 @@
       line-height: 1.2;
       color: #2f2924;
       text-transform: uppercase;
+      text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.28);
     }
 
     @media (max-width: 360px) {
