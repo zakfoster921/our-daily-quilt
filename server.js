@@ -34,6 +34,10 @@ const fsSync = require('fs');
 const os = require('os');
 const dns = require('dns').promises;
 const net = require('net');
+const {
+  normalizeDailyQuotePreferredHour,
+  isDailyQuoteDueForToken
+} = require('./lib/daily-quote-push-time');
 
 let ffmpegStaticPath = null;
 try {
@@ -3875,59 +3879,71 @@ async function getDailyQuotePushText(dateKey) {
   return 'A new quote is waiting in Our Daily.';
 }
 
-async function collectDailyQuotePushTokens() {
+async function collectDailyQuotePushTokensDue(now = new Date(), options = {}) {
   const snap = await db
     .collection('pushTokens')
     .where('enabled', '==', true)
     .where('notificationTypes', 'array-contains', 'daily_quote')
     .get();
 
-  const tokens = [];
+  const dateKey = options.dateKey || getAppDateKey(now);
+  const force = options.force === true;
+  let totalCount = 0;
+  const due = [];
+
   snap.forEach((docSnap) => {
+    totalCount += 1;
     const data = docSnap.data() || {};
     const token = String(data.token || '').trim();
-    if (token) tokens.push({ id: docSnap.id, token });
+    if (!token) return;
+    if (!isDailyQuoteDueForToken(data, now, { force, dateKey })) return;
+    due.push({ id: docSnap.id, token, data });
   });
-  return tokens;
+
+  return { due, totalCount, dateKey };
 }
 
 async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), options = {}) {
   if (!db) throw new Error('Firestore not initialized');
   const force = options && options.force === true;
-  const opRef = db.collection('ops').doc(`daily-quote-push-${dateKey}`);
-  if (!force) {
-    const opSnap = await opRef.get();
-    const opData = opSnap.exists ? opSnap.data() || {} : null;
-    if (opData?.status === 'success') {
-      return {
-        success: true,
-        date: dateKey,
-        alreadySent: true,
-        sent: Number(opData.sent || 0),
-        failed: Number(opData.failed || 0),
-        pruned: Number(opData.pruned || 0)
-      };
-    }
-  }
+  const now = options.now instanceof Date ? options.now : new Date();
+  const resolvedDateKey = dateKey || getAppDateKey(now);
+  const utcHour = String(now.getUTCHours()).padStart(2, '0');
+  const opRef = db.collection('ops').doc(`daily-quote-push-${resolvedDateKey}-h${utcHour}`);
 
-  const recipients = await collectDailyQuotePushTokens();
+  const { due: recipients, totalCount } = await collectDailyQuotePushTokensDue(now, {
+    force,
+    dateKey: resolvedDateKey
+  });
+  const skipped = Math.max(0, totalCount - recipients.length);
+
   if (!recipients.length) {
     await opRef.set(
       {
         status: 'success',
-        date: dateKey,
+        date: resolvedDateKey,
         sent: 0,
         failed: 0,
         pruned: 0,
+        skipped,
+        dueCount: 0,
         quotePreview: '',
         completedAt: getUtcIsoNow()
       },
       { merge: true }
     );
-    return { success: true, date: dateKey, sent: 0, failed: 0, pruned: 0 };
+    return {
+      success: true,
+      date: resolvedDateKey,
+      sent: 0,
+      failed: 0,
+      pruned: 0,
+      skipped,
+      dueCount: 0
+    };
   }
 
-  const quoteText = await getDailyQuotePushText(dateKey);
+  const quoteText = await getDailyQuotePushText(resolvedDateKey);
   const body = truncatePushBody(quoteText);
   let sent = 0;
   let failed = 0;
@@ -3942,7 +3958,7 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
       },
       data: {
         type: 'daily_quote',
-        date: dateKey
+        date: resolvedDateKey
       },
       apns: {
         payload: {
@@ -3962,9 +3978,18 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
 
     await Promise.all(
       (response.responses || []).map(async (r, idx) => {
-        if (r.success) return;
         const recipient = chunk[idx];
         if (!recipient) return;
+        if (r.success) {
+          await db.collection('pushTokens').doc(recipient.id).set(
+            {
+              lastDailyQuotePushDateKey: resolvedDateKey,
+              lastDailyQuotePushAt: getUtcIsoNow()
+            },
+            { merge: true }
+          );
+          return;
+        }
         if (isInvalidPushTokenError(r.error)) {
           pruned += 1;
           await db.collection('pushTokens').doc(recipient.id).set(
@@ -3991,17 +4016,27 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
   await opRef.set(
     {
       status: 'success',
-      date: dateKey,
+      date: resolvedDateKey,
       sent,
       failed,
       pruned,
+      skipped,
+      dueCount: recipients.length,
       quotePreview: body,
       completedAt: getUtcIsoNow()
     },
     { merge: true }
   );
 
-  return { success: true, date: dateKey, sent, failed, pruned };
+  return {
+    success: true,
+    date: resolvedDateKey,
+    sent,
+    failed,
+    pruned,
+    skipped,
+    dueCount: recipients.length
+  };
 }
 
 /**
@@ -5594,6 +5629,8 @@ app.post('/api/push/register', limitPushRegister, async (req, res) => {
       ? req.body.notificationTypes.map((v) => String(v).trim()).filter(Boolean)
       : ['daily_quote'];
 
+    const preferredHour = normalizeDailyQuotePreferredHour(req.body?.dailyQuotePreferredHour);
+
     await db.collection('pushTokens').doc(tokenId).set(
       {
         token,
@@ -5601,6 +5638,7 @@ app.post('/api/push/register', limitPushRegister, async (req, res) => {
         timezone: String(req.body?.timezone || '').trim(),
         deviceId: String(req.body?.deviceId || '').trim(),
         notificationTypes: notificationTypes.includes('daily_quote') ? notificationTypes : ['daily_quote'],
+        dailyQuotePreferredHour: preferredHour,
         enabled: req.body?.enabled !== false,
         updatedAt: getUtcIsoNow(),
         createdAt: admin.firestore.FieldValue.serverTimestamp()

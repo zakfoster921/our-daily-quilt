@@ -2,13 +2,17 @@ name: Daily Quote Push
 
 on:
   schedule:
-    # Runs after the 07:00 UTC quilt reset so the app-day quote is ready.
-    - cron: "0 13 * * *"
+    # Hourly: send to tokens whose local preferred hour matches (app-day quote exists after 07:00 UTC reset).
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       date_key:
         description: "Optional app-date override (YYYY-MM-DD)"
         required: false
+      force:
+        description: "Bypass per-token already-sent check (true/false)"
+        required: false
+        default: "false"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,6 +28,7 @@ jobs:
           RESET_URL: ${{ secrets.RESET_URL }}
           RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
           DATE_KEY: ${{ inputs.date_key || '' }}
+          FORCE: ${{ inputs.force || 'false' }}
         run: |
           set -euo pipefail
 
@@ -42,6 +47,14 @@ jobs:
               exit 1
             fi
             BODY="{\"date\":\"${DATE_KEY}\"}"
+          fi
+
+          if [ "${FORCE:-false}" = "true" ]; then
+            if [ "$BODY" = "{}" ]; then
+              BODY='{"force":true}'
+            else
+              BODY="${BODY%\}},\"force\":true}"
+            fi
           fi
 
           echo "POST ${PUSH_URL}"
