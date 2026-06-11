@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ODQ Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #F5F0E8;
+      color: #2C2416;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+    }
+    textarea, input, select, button { font: inherit; }
+    textarea:focus, input:focus, select:focus { outline: none; }
+    textarea { overflow: hidden; resize: none; }
+
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #F5F0E8;
+      border-bottom: 1px solid rgba(120, 100, 60, 0.15);
+      padding: 0 24px;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #7A6A50;
+      flex: 1;
+      font-family: 'DM Mono', monospace;
+      letter-spacing: 0.06em;
+    }
+    .date-nav { display: flex; align-items: center; gap: 4px; }
+    .date-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(120, 100, 60, 0.15);
+      border-radius: 6px;
+      background: #FDFAF4;
+      color: #7A6A50;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+    }
+    .date-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #2C2416;
+      background: #FDFAF4;
+      border: 1px solid rgba(120, 100, 60, 0.28);
+      border-radius: 6px;
+      padding: 3px 10px;
+      min-width: 110px;
+      text-align: center;
+      font-family: 'DM Mono', monospace;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #B0A080;
+      font-family: 'DM Mono', monospace;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #B0A080;
+    }
+    .status-dot.loading { background: #A07030; animation: pulse 1s infinite; }
+    .status-dot.success { background: #4A8C6A; }
+    .status-dot.error { background: #A04040; }
+
+    .settings {
+      border-bottom: 1px solid rgba(120, 100, 60, 0.15);
+      background: rgba(120, 100, 60, 0.04);
+      padding: 8px 24px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .settings label {
+      font-size: 11px;
+      color: #7A6A50;
+      font-family: 'DM Mono', monospace;
+    }
+    .settings input {
+      flex: 1;
+      min-width: 180px;
+      max-width: 320px;
+      border: 1px solid rgba(120, 100, 60, 0.15);
+      border-radius: 6px;
+      background: #FDFAF4;
+      padding: 5px 8px;
+      font-size: 12px;
+      color: #2C2416;
+    }
+
+    .main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+    .empty {
+      text-align: center;
+      padding: 5rem 1rem;
+      color: #B0A080;
+      font-size: 14px;
+      line-height: 2;
+    }
+
+    .quote-sticky {
+      position: sticky;
+      top: 50px;
+      z-index: 9;
+      background: #F5F0E8;
+      padding-top: 16px;
+      padding-bottom: 8px;
+    }
+    .quote-card {
+      background: #FDFAF4;
+      border: 1px solid rgba(120, 100, 60, 0.15);
+      border-radius: 10px;
+      padding: 16px 20px;
+      box-shadow: 0 2px 8px rgba(80, 60, 20, 0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .quote-text {
+      font-size: 16px;
+      font-style: italic;
+      line-height: 1.6;
+      color: #2C2416;
+      margin-bottom: 6px;
+    }
+    .quote-meta {
+      font-size: 12px;
+      color: #7A6A50;
+      font-family: 'DM Mono', monospace;
+    }
+    .notion-link {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(120, 100, 60, 0.15);
+      border-radius: 6px;
+      color: #B0A080;
+      text-decoration: none;
+      font-size: 14px;
+      background: #EDE8DC;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 24px 0 12px;
+    }
+    .section-header span {
+      font-size: 9px;
+      font-weight: 700;
+      color: #B0A080;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-family: 'DM Mono', monospace;
+      flex-shrink: 0;
+    }
+    .section-header .line {
+      flex: 1;
+      height: 0.5px;
+      background: rgba(120, 100, 60, 0.28);
+      opacity: 0.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 8px;
+    }
+    .field {
+      background: #FDFAF4;
+      border: 1px solid rgba(120, 100, 60, 0.15);
+      border-radius: 8px;
+      padding: 10px 14px;
+      transition: border-color 0.15s;
+      box-shadow: 0 1px 3px rgba(80, 60, 20, 0.06);
+    }
+    .field.changed { border-color: #5B7FA6; }
+    .field.full { grid-column: 1 / -1; }
+    .field-label {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .field-label span {
+      font-size: 9px;
+      font-weight: 600;
+      color: #B0A080;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-family: 'DM Mono', monospace;
+    }
+    .field-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #5B7FA6;
+      margin-left: auto;
+      flex-shrink: 0;
+      display: none;
+    }
+    .field.changed .field-dot { display: block; }
+    .field-input {
+      width: 100%;
+      background: none;
+      border: none;
+      font-size: 14px;
+      color: #2C2416;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+    .field-input.select { cursor: pointer; display: block; }
+    .img-link {
+      display: inline-block;
+      margin-top: 8px;
+      font-size: 12px;
+      color: #5B7FA6;
+      text-decoration: none;
+      border: 1px solid #5B7FA6;
+      border-radius: 5px;
+      padding: 4px 10px;
+    }
+    .reviewed-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-top: 2px;
+    }
+    .reviewed-row label {
+      font-size: 14px;
+      color: #7A6A50;
+      cursor: pointer;
+    }
+
+    .action-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #F5F0E8;
+      border-top: 1px solid rgba(120, 100, 60, 0.15);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-save {
+      background: #3D2F1A;
+      color: #FDFAF4;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-save:disabled {
+      background: #B0A080;
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+    .btn-reset {
+      background: none;
+      border: 1px solid rgba(120, 100, 60, 0.15);
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 14px;
+      color: #7A6A50;
+      cursor: pointer;
+    }
+    .unsaved {
+      font-size: 11px;
+      color: #B0A080;
+      margin-left: auto;
+      font-family: 'DM Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <span class="header-title">ODQ · EDITOR</span>
+    <div class="date-nav">
+      <button type="button" class="date-btn" id="btnPrev" aria-label="Previous day">‹</button>
+      <span class="date-label" id="dateLabel"></span>
+      <button type="button" class="date-btn" id="btnNext" aria-label="Next day">›</button>
+    </div>
+    <div class="status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusMsg">Ready</span>
+    </div>
+  </header>
+
+  <div class="settings">
+    <label for="syncToken">Save token</label>
+    <input type="password" id="syncToken" placeholder="x-notion-sync-token (if server requires it)" autocomplete="off">
+  </div>
+
+  <main class="main" id="main"></main>
+  <div class="action-bar" id="actionBar" hidden>
+    <button type="button" class="btn-save" id="btnSave" disabled>✓ Save to Notion</button>
+    <button type="button" class="btn-reset" id="btnReset">Reset</button>
+    <span class="unsaved" id="unsavedCount"></span>
+  </div>
+
+  <script>
+    const AUTO_FIELDS = [
+      'good_day', 'rough_day', 'watch_for', 'community_prompt',
+      'notification_text', 'art_recs', 'speaker_guide_line'
+    ];
+
+    const state = {
+      date: tomorrow(),
+      data: null,
+      orig: null,
+      changed: {},
+      saving: false,
+      view: 'loading',
+      pageId: null,
+      pageUrl: null,
+      status: { state: 'idle', msg: 'Ready' }
+    };
+
+    const mainEl = document.getElementById('main');
+    const actionBarEl = document.getElementById('actionBar');
+    const dateLabelEl = document.getElementById('dateLabel');
+    const statusDotEl = document.getElementById('statusDot');
+    const statusMsgEl = document.getElementById('statusMsg');
+    const btnSaveEl = document.getElementById('btnSave');
+    const btnResetEl = document.getElementById('btnReset');
+    const unsavedCountEl = document.getElementById('unsavedCount');
+    const syncTokenEl = document.getElementById('syncToken');
+
+    function tomorrow() {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      return d;
+    }
+
+    function fmtDate(d) {
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    function isoDate(d) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function setStatus(stateName, msg) {
+      state.status = { state: stateName, msg };
+      statusMsgEl.textContent = msg;
+      statusDotEl.className = 'status-dot' + (stateName ? ` ${stateName}` : '');
+    }
+
+    function authHeaders() {
+      const token = String(syncTokenEl.value || localStorage.getItem('odqEditorToken') || '').trim();
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['x-notion-sync-token'] = token;
+      return headers;
+    }
+
+    function shiftDate(delta) {
+      const next = new Date(state.date);
+      next.setDate(next.getDate() + delta);
+      state.date = next;
+      state.changed = {};
+      loadQuote();
+    }
+
+    function fieldValuesEqual(key, a, b) {
+      const sa = String(a ?? '').trim();
+      const sb = String(b ?? '').trim();
+      if (key === 'first_line_count') {
+        if (!sa && !sb) return true;
+        const na = Number.parseInt(sa, 10);
+        const nb = Number.parseInt(sb, 10);
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
+      }
+      return sa === sb;
+    }
+
+    function updateField(key, value) {
+      if (!state.data) return;
+      state.data[key] = value;
+      state.changed[key] = !fieldValuesEqual(key, value, state.orig?.[key]);
+      updateChrome();
+    }
+
+    function updateChrome() {
+      const keys = changedKeys();
+      mainEl.querySelectorAll('.field[data-field]').forEach((fieldEl) => {
+        const key = fieldEl.dataset.field;
+        fieldEl.classList.toggle('changed', !!state.changed[key]);
+      });
+      actionBarEl.hidden = state.view !== 'ready' || !state.data;
+      btnSaveEl.disabled = state.saving || keys.length === 0;
+      unsavedCountEl.textContent = keys.length ? `${keys.length} unsaved` : '';
+    }
+
+    function changedKeys() {
+      return Object.keys(state.changed).filter((k) => state.changed[k]);
+    }
+
+    function resetEdits() {
+      if (!state.orig) return;
+      state.data = { ...state.orig };
+      state.changed = {};
+      render();
+    }
+
+    async function loadQuote() {
+      setStatus('loading', 'Fetching…');
+      state.view = 'loading';
+      state.data = null;
+      state.orig = null;
+      state.pageId = null;
+      state.pageUrl = null;
+      render();
+
+      try {
+        const res = await fetch(`/api/odq-editor/quote/${isoDate(state.date)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = await res.json();
+        if (!payload.success) {
+          state.view = payload.error === 'not_found' ? 'empty' : 'error';
+          setStatus('', '');
+          render();
+          return;
+        }
+
+        state.pageId = payload.page_id;
+        state.pageUrl = payload.page_url;
+        const base = { ...payload };
+        delete base.success;
+        delete base.dateKey;
+
+        const hasMissing = AUTO_FIELDS.some((k) => !String(base[k] || '').trim());
+        state.orig = { ...base };
+        state.data = { ...base };
+
+        if (hasMissing) {
+          setStatus('loading', 'Generating missing fields…');
+          try {
+            const genRes = await fetch('/api/odq-editor/generate-missing', {
+              method: 'POST',
+              headers: authHeaders(),
+              body: JSON.stringify({
+                Quote: base.Quote,
+                author: base.author,
+                existing: base
+              })
+            });
+            if (genRes.ok) {
+              const genPayload = await genRes.json();
+              const generated = genPayload.generated || {};
+              for (const key of Object.keys(generated)) {
+                state.data[key] = generated[key];
+                state.changed[key] = true;
+              }
+              setStatus('success', `Loaded · ${Object.keys(generated).length} fields generated`);
+            } else {
+              setStatus('success', 'Loaded (generation skipped)');
+            }
+          } catch (_) {
+            setStatus('success', 'Loaded (generation failed)');
+          }
+        } else {
+          setStatus('success', 'Loaded');
+        }
+
+        state.view = 'ready';
+        render();
+      } catch (err) {
+        state.view = 'error';
+        setStatus('error', err.message || 'Load failed');
+        render();
+      }
+    }
+
+    async function saveQuote() {
+      const keys = changedKeys();
+      if (!state.pageId || !keys.length || state.saving) return;
+
+      state.saving = true;
+      setStatus('loading', 'Saving…');
+      updateChrome();
+
+      const updates = {};
+      for (const key of keys) updates[key] = state.data[key] ?? null;
+
+      try {
+        const res = await fetch(`/api/odq-editor/quote/${state.pageId}`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({ updates })
+        });
+        const payload = await res.json();
+        if (!res.ok || !payload.success) {
+          throw new Error(payload.error || `HTTP ${res.status}`);
+        }
+        if ((payload.patched ?? 0) === 0 && keys.length > 0) {
+          const skipped = Array.isArray(payload.skipped) ? payload.skipped.join(', ') : '';
+          throw new Error(
+            payload.warning ||
+              (skipped ? `Notion wrote 0 fields (skipped: ${skipped}). Restart server: npm run editor` : 'Notion wrote 0 fields. Restart server: npm run editor')
+          );
+        }
+        state.orig = { ...state.data };
+        state.changed = {};
+        setStatus('success', 'Saved');
+      } catch (err) {
+        setStatus('error', err.message || 'Save failed');
+      } finally {
+        state.saving = false;
+        updateChrome();
+      }
+    }
+
+    function autoResize(textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    function fieldHtml(label, key, opts = {}) {
+      const changed = !!state.changed[key];
+      const value = state.data?.[key] || '';
+      const full = opts.full ? ' full' : '';
+      const changedCls = changed ? ' changed' : '';
+
+      let control = '';
+      if (opts.type === 'select') {
+        const options = (opts.options || []).map((v) => {
+          const text = v || '—';
+          return `<option value="${escapeAttr(v)}"${value === v ? ' selected' : ''}>${escapeHtml(text)}</option>`;
+        }).join('');
+        control = `<select class="field-input select" data-key="${key}">${options}</select>`;
+      } else if (opts.type === 'checkbox') {
+        const checked = value === '__YES__' || value === true;
+        control = `<div class="reviewed-row"><input type="checkbox" id="reviewed" data-key="${key}"${checked ? ' checked' : ''}><label for="reviewed">Yes</label></div>`;
+      } else if (opts.type === 'textarea') {
+        control = `<textarea class="field-input" rows="${opts.rows || 3}" data-key="${key}">${escapeHtml(value)}</textarea>`;
+      } else if (opts.type === 'number') {
+        control = `<input type="number" min="1" step="1" class="field-input" data-key="${key}" value="${escapeAttr(value)}">`;
+      } else {
+        control = `<input type="text" class="field-input" data-key="${key}" value="${escapeAttr(value)}">`;
+      }
+
+      let extra = '';
+      if (key === 'speaker_image_url' && value) {
+        extra = `<a class="img-link" href="${escapeAttr(value)}" target="_blank" rel="noreferrer">View image ↗</a>`;
+      }
+
+      return `<div class="field${full}${changedCls}" data-field="${key}">
+        <div class="field-label"><span>${escapeHtml(label)}</span><div class="field-dot"></div></div>
+        ${control}${extra}
+      </div>`;
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/'/g, '&#39;');
+    }
+
+    function render() {
+      dateLabelEl.textContent = fmtDate(state.date);
+
+      if (state.view === 'loading' && !state.data) {
+        mainEl.innerHTML = '<div class="empty">Loading…</div>';
+        actionBarEl.hidden = true;
+        return;
+      }
+
+      if (state.view === 'empty') {
+        mainEl.innerHTML = `<div class="empty">No quote scheduled for ${escapeHtml(fmtDate(state.date))}.</div>`;
+        actionBarEl.hidden = true;
+        return;
+      }
+
+      if (state.view === 'error') {
+        mainEl.innerHTML = `<div class="empty">Couldn't load. ${escapeHtml(state.status.msg)}</div>`;
+        actionBarEl.hidden = true;
+        return;
+      }
+
+      const d = state.data;
+      const notionLink = state.pageUrl
+        ? `<a class="notion-link" href="${escapeAttr(state.pageUrl)}" target="_blank" rel="noreferrer">↗</a>`
+        : '';
+
+      mainEl.innerHTML = `
+        <div class="quote-sticky">
+          <div class="quote-card">
+            <div>
+              <div class="quote-text">"${escapeHtml(d.Quote || '')}"</div>
+              <div class="quote-meta">— ${escapeHtml(d.author || '')}${d.speaker_dates ? ` · ${escapeHtml(d.speaker_dates)}` : ''}</div>
+            </div>
+            ${notionLink}
+          </div>
+        </div>
+
+        <div class="section-header"><span>Getting Started</span><div class="line"></div></div>
+        <div class="grid">
+          ${fieldHtml('Keyword', 'keyword')}
+          ${fieldHtml('First line count', 'first_line_count', { type: 'number' })}
+          ${fieldHtml('Notification text', 'notification_text', { type: 'textarea', rows: 2, full: true })}
+          ${fieldHtml('Good day', 'good_day', { type: 'textarea', rows: 2 })}
+          ${fieldHtml('Rough day', 'rough_day', { type: 'textarea', rows: 2 })}
+        </div>
+
+        <div class="section-header"><span>Community Reflection</span><div class="line"></div></div>
+        <div class="grid">
+          ${fieldHtml('Community prompt', 'community_prompt', { type: 'textarea', rows: 2, full: true })}
+          ${fieldHtml('First response', 'first_response', { type: 'textarea', rows: 3, full: true })}
+        </div>
+
+        <div class="section-header"><span>Speaker Card</span><div class="line"></div></div>
+        <div class="grid">
+          ${fieldHtml('Speaker image URL', 'speaker_image_url', { full: true })}
+          ${fieldHtml('Attribution', 'image_attribution')}
+          ${fieldHtml('Speaker dates', 'speaker_dates')}
+          ${fieldHtml('Speaker guide line', 'speaker_guide_line', { type: 'textarea', rows: 2, full: true })}
+          ${fieldHtml('Speaker guideline keywords', 'speaker_keywords', { type: 'textarea', rows: 2, full: true })}
+        </div>
+
+        <div class="section-header"><span>Before You Go</span><div class="line"></div></div>
+        <div class="grid">
+          ${fieldHtml('Watch for', 'watch_for', { type: 'textarea', rows: 2, full: true })}
+          ${fieldHtml('Art recs', 'art_recs', { type: 'textarea', rows: 3, full: true })}
+          ${fieldHtml('Art type', 'art_recs_type', { type: 'select', options: ['', 'music', 'book', 'movie', 'art', 'other'] })}
+        </div>
+
+        <div class="section-header"><span>Review</span><div class="line"></div></div>
+        <div class="grid">
+          ${fieldHtml('Approved', 'approved', { type: 'select', options: ['', 'TRUE', 'FALSE'] })}
+          ${fieldHtml('Reviewed', 'reviewed', { type: 'checkbox' })}
+        </div>
+      `;
+
+      mainEl.querySelectorAll('textarea[data-key]').forEach(autoResize);
+      updateChrome();
+    }
+
+    mainEl.addEventListener('input', (e) => {
+      const el = e.target;
+      if (!el.matches('[data-key]') || el.type === 'checkbox') return;
+      if (el.tagName === 'TEXTAREA') autoResize(el);
+      updateField(el.dataset.key, el.value);
+    });
+
+    mainEl.addEventListener('change', (e) => {
+      const el = e.target;
+      if (!el.matches('[data-key]')) return;
+      if (el.type === 'checkbox') {
+        updateField(el.dataset.key, el.checked ? '__YES__' : '');
+      } else {
+        updateField(el.dataset.key, el.value);
+      }
+    });
+
+    document.getElementById('btnPrev').addEventListener('click', () => shiftDate(-1));
+    document.getElementById('btnNext').addEventListener('click', () => shiftDate(1));
+    btnSaveEl.addEventListener('click', saveQuote);
+    btnResetEl.addEventListener('click', resetEdits);
+
+    syncTokenEl.value = localStorage.getItem('odqEditorToken') || '';
+    syncTokenEl.addEventListener('change', () => {
+      localStorage.setItem('odqEditorToken', syncTokenEl.value.trim());
+    });
+
+    loadQuote();
+  </script>
+</body>
+</html>

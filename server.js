@@ -73,6 +73,7 @@ const PUBLIC_ROOT_FILES = new Set([
   'index.html',
   'our-daily-beta.html',
   'speaker-cutout-lab.html',
+  'odq-editor.html',
   'privacy.html',
   'support.html',
   'rumi-colors.js'
@@ -91,6 +92,8 @@ app.get('/our-daily-beta', (_req, res) => sendPublicRootFile(res, 'our-daily-bet
 app.get('/our-daily-beta.html', (_req, res) => sendPublicRootFile(res, 'our-daily-beta.html'));
 app.get('/speaker-cutout-lab', (_req, res) => sendPublicRootFile(res, 'speaker-cutout-lab.html'));
 app.get('/speaker-cutout-lab.html', (_req, res) => sendPublicRootFile(res, 'speaker-cutout-lab.html'));
+app.get('/odq-editor', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
+app.get('/odq-editor.html', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
 app.get('/:fileName', (req, res, next) => {
   const fileName = String(req.params.fileName || '');
   if (!PUBLIC_ROOT_FILES.has(fileName)) return next();
@@ -1977,6 +1980,10 @@ function notionTextPropertyValue(prop, value) {
     case 'select': return { select: { name: text } };
     case 'status': return { status: { name: text } };
     case 'date': return /^\d{4}-\d{2}-\d{2}/.test(text) ? { date: { start: text.slice(0, 10) } } : null;
+    case 'number': {
+      const n = Number.parseFloat(text);
+      return Number.isFinite(n) ? { number: n } : null;
+    }
     default: return null;
   }
 }
@@ -4996,6 +5003,503 @@ app.get('/api/preview-quote-for-date/:dateKey', async (req, res) => {
   }
 });
 
+// --- ODQ Editor (local HTML → Notion) ----------------------------------------
+
+const ODQ_EDITOR_AUTO_FIELDS = [
+  'good_day',
+  'rough_day',
+  'watch_for',
+  'community_prompt',
+  'notification_text',
+  'art_recs',
+  'speaker_guide_line'
+];
+
+const ODQ_EDITOR_FIELD_ALIASES = {
+  keyword: ['keyword', 'Keyword'],
+  first_line_count: ['first_line_count', 'firstLineCount', 'First line count', 'First Line Count'],
+  notification_text: ['notification_text', 'notificationText', 'Notification text'],
+  good_day: ['good_day', 'goodDay', 'Good day', 'Good Day'],
+  rough_day: ['rough_day', 'roughDay', 'Rough day', 'Rough Day'],
+  community_prompt: ['community_prompt', 'community_prompt ', 'communityPrompt', 'Community prompt'],
+  first_response: ['first_response', 'firstResponse', 'First response', 'First Response'],
+  speaker_image_url: ['speaker_image_url', 'speakerImageUrl', 'Speaker image URL', 'image_url'],
+  image_attribution: ['image_attribution', 'imageAttribution', 'Image attribution', 'Image Attribution'],
+  speaker_dates: ['speaker_dates', 'speakerDates', 'Speaker dates', 'Speaker Dates'],
+  speaker_guide_line: ['speaker_guide_line', 'speakerGuideLine', 'Guide line', 'Speaker guide line'],
+  speaker_keywords: [
+    'speaker_keywords',
+    'speaker_keyword',
+    'speakerKeywords',
+    'Speaker keywords',
+    'Speaker keyword',
+    'Speaker Keywords'
+  ],
+  watch_for: ['watch_for', 'watchFor', 'Watch for'],
+  art_recs: ['art_recs', 'artRecs', 'Art recs', 'explore'],
+  art_recs_type: ['art_recs_type', 'artRecsType', 'Art recs type', 'Art type']
+};
+
+function setOdqEditorCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-notion-sync-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+function verifyOdqEditorWriteToken(req, res) {
+  const expectedToken = process.env.NOTION_SYNC_TOKEN || process.env.RESET_TOKEN || '';
+  if (!expectedToken) return true;
+  const providedToken = req.header('x-notion-sync-token');
+  if (!providedToken || providedToken !== expectedToken) {
+    res.status(401).json({ success: false, error: 'Unauthorized — set token in editor settings' });
+    return false;
+  }
+  return true;
+}
+
+function buildNotionPageUrl(page) {
+  if (page?.url) return String(page.url).trim();
+  const id = String(page?.id || '').trim();
+  if (!id) return '';
+  return `https://www.notion.so/${id.replace(/-/g, '')}`;
+}
+
+function readEditorTextField(pageProperties, ...aliases) {
+  return getNotionPropPlainByAliases(pageProperties, ...aliases);
+}
+
+function readEditorSpeakerKeywords(pageProperties) {
+  const aliases = [
+    'speaker_keywords',
+    'speaker_keyword',
+    'speakerKeywords',
+    'speakerKeyword',
+    'Speaker keywords',
+    'Speaker keyword',
+    'Speaker Keywords',
+    'Speaker Keyword'
+  ];
+  const targetKeys = new Set(aliases.map(normNotionPropKey).filter(Boolean));
+  const found = Object.entries(pageProperties || {}).find(([name]) => targetKeys.has(normNotionPropKey(name)));
+  if (!found) return '';
+  const prop = found[1];
+  if (prop?.type === 'multi_select' && Array.isArray(prop.multi_select)) {
+    return prop.multi_select
+      .map((s) => (s && s.name ? String(s.name).trim() : ''))
+      .filter(Boolean)
+      .join(', ');
+  }
+  return notionPropToPlain(prop);
+}
+
+function readEditorNumberField(pageProperties, ...aliases) {
+  const targetKeys = new Set(aliases.map(normNotionPropKey).filter(Boolean));
+  const found = Object.entries(pageProperties || {}).find(([name]) => targetKeys.has(normNotionPropKey(name)));
+  if (!found) return '';
+  const prop = found[1];
+  if (typeof prop?.number === 'number' && Number.isFinite(prop.number)) {
+    return String(Math.round(prop.number));
+  }
+  const text = notionPropToPlain(prop);
+  if (!text) return '';
+  const parsed = Number.parseInt(String(text).trim(), 10);
+  return Number.isFinite(parsed) ? String(parsed) : text;
+}
+
+function readEditorApproved(pageProperties, schema) {
+  const propName = findNotionPropName(schema, 'approved', 'Approved', 'active', 'Active');
+  if (!propName) return '';
+  const prop = pageProperties[propName];
+  if (prop?.type === 'checkbox') return prop.checkbox ? 'TRUE' : 'FALSE';
+  const text = notionPropToPlain(prop);
+  const upper = text.toUpperCase();
+  if (upper === 'TRUE' || upper === 'FALSE') return upper;
+  return text || '';
+}
+
+function readEditorReviewed(pageProperties, schema) {
+  const propName = findNotionPropName(schema, 'reviewed?', 'reviewed', 'Reviewed');
+  if (!propName) return '';
+  const prop = pageProperties[propName];
+  if (prop?.type === 'checkbox') return prop.checkbox ? '__YES__' : '';
+  const text = notionPropToPlain(prop).toLowerCase();
+  return ['true', 'yes', 'y', '1', 'checked', 'reviewed'].includes(text) ? '__YES__' : '';
+}
+
+function mapNotionPageToOdqEditorPayload(page, schema) {
+  const props = page?.properties || {};
+  const payload = {
+    page_id: String(page?.id || '').trim(),
+    page_url: buildNotionPageUrl(page),
+    Quote: extractQuoteTextFromNotionPage(page),
+    author: extractAuthorFromNotionPage(page),
+    speaker_dates: readEditorTextField(props, 'speaker_dates', 'speakerDates', 'Speaker dates'),
+    keyword: readEditorTextField(props, 'keyword', 'Keyword'),
+    first_line_count: readEditorNumberField(
+      props,
+      'first_line_count',
+      'firstLineCount',
+      'First line count',
+      'First Line Count'
+    ),
+    notification_text: readEditorTextField(props, 'notification_text', 'notificationText', 'Notification text'),
+    good_day: readEditorTextField(props, 'good_day', 'goodDay', 'Good day', 'Good Day'),
+    rough_day: readEditorTextField(props, 'rough_day', 'roughDay', 'Rough day', 'Rough Day'),
+    community_prompt: readEditorTextField(
+      props,
+      'community_prompt',
+      'community_prompt ',
+      'communityPrompt',
+      'Community prompt'
+    ),
+    first_response: readEditorTextField(props, 'first_response', 'firstResponse', 'First response'),
+    speaker_image_url: readEditorTextField(
+      props,
+      'speaker_image_url',
+      'speakerImageUrl',
+      'Speaker image URL',
+      'image_url'
+    ),
+    image_attribution: readEditorTextField(
+      props,
+      'image_attribution',
+      'imageAttribution',
+      'Image attribution',
+      'Image Attribution'
+    ),
+    speaker_guide_line: readEditorTextField(
+      props,
+      'speaker_guide_line',
+      'speakerGuideLine',
+      'Guide line',
+      'Speaker guide line'
+    ),
+    speaker_keywords: readEditorSpeakerKeywords(props),
+    watch_for: readEditorTextField(props, 'watch_for', 'watchFor', 'Watch for'),
+    art_recs: readEditorTextField(props, 'art_recs', 'artRecs', 'Art recs', 'explore'),
+    art_recs_type: readEditorTextField(props, 'art_recs_type', 'artRecsType', 'Art recs type', 'Art type'),
+    approved: readEditorApproved(props, schema),
+    reviewed: readEditorReviewed(props, schema)
+  };
+  return payload;
+}
+
+async function queryNotionEditorQuoteForDate(dateKey) {
+  const dk = String(dateKey || '').trim();
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!dk || !databaseId || !/^\d{4}-\d{2}-\d{2}$/.test(dk)) return null;
+  const schema = await notionGetDatabaseProperties(databaseId);
+  const dateScheduledProp = findNotionPropName(
+    schema,
+    'date_scheduled',
+    'dateScheduled',
+    'Date scheduled',
+    'Date Scheduled'
+  );
+  if (!dateScheduledProp) throw new Error('Notion database is missing date_scheduled');
+
+  const json = await notionFetchJson(`/databases/${databaseId}/query`, {
+    method: 'POST',
+    body: JSON.stringify({
+      filter: {
+        and: [
+          { property: dateScheduledProp, date: { on_or_after: dk } },
+          { property: dateScheduledProp, date: { on_or_before: dk } }
+        ]
+      },
+      page_size: 20
+    })
+  });
+  const rows = Array.isArray(json?.results) ? json.results : [];
+  for (const page of rows) {
+    const prop = page?.properties?.[dateScheduledProp];
+    const ds = normalizeScheduleDateKey(prop?.date?.start || prop?.date?.end);
+    if (ds !== dk) continue;
+    const mapped = mapNotionPageToOdqEditorPayload(page, schema);
+    if (!mapped.Quote && !mapped.author) continue;
+    return mapped;
+  }
+  return null;
+}
+
+function buildOdqEditorNotionPropertyValue(schema, fieldKey, rawValue) {
+  if (fieldKey === 'approved') {
+    const propName = findNotionPropName(schema, 'approved', 'Approved', 'active', 'Active');
+    if (!propName) return null;
+    const prop = schema[propName];
+    const text = String(rawValue || '').trim();
+    if (prop?.type === 'checkbox') {
+      const on = text.toUpperCase() === 'TRUE';
+      return { [propName]: { checkbox: on } };
+    }
+    if (!text) return { [propName]: { select: null } };
+    const payload = notionTextPropertyValue(prop, text);
+    return payload ? { [propName]: payload } : null;
+  }
+
+  if (fieldKey === 'reviewed') {
+    const propName = findNotionPropName(schema, 'reviewed?', 'reviewed', 'Reviewed');
+    if (!propName) return null;
+    const prop = schema[propName];
+    const on =
+      rawValue === true ||
+      rawValue === '__YES__' ||
+      String(rawValue || '').trim().toLowerCase() === 'true';
+    const payload = notionBooleanPropertyValue(prop, on);
+    return payload ? { [propName]: payload } : null;
+  }
+
+  if (fieldKey === 'speaker_keywords') {
+    const propName = findNotionPropName(
+      schema,
+      'speaker_keywords',
+      'speaker_keyword',
+      'speakerKeywords',
+      'Speaker keywords',
+      'Speaker keyword',
+      'Speaker Keywords'
+    );
+    if (!propName) return null;
+    const prop = schema[propName];
+    const text = String(rawValue ?? '').trim();
+    if (prop?.type === 'multi_select') {
+      if (!text) return { [propName]: { multi_select: [] } };
+      const names = text
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return { [propName]: { multi_select: names.map((name) => ({ name })) } };
+    }
+    if (!text) {
+      if (prop?.type === 'rich_text') return { [propName]: { rich_text: [] } };
+      if (prop?.type === 'select' || prop?.type === 'status') return { [propName]: { select: null } };
+      return null;
+    }
+    const skText = truncateForNotionRichText(text);
+    const payload =
+      prop?.type === 'rich_text'
+        ? { rich_text: [{ text: { content: skText } }] }
+        : notionTextPropertyValue(prop, skText);
+    return payload ? { [propName]: payload } : null;
+  }
+
+  if (fieldKey === 'first_line_count') {
+    const propName = findNotionPropName(
+      schema,
+      'first_line_count',
+      'firstLineCount',
+      'First line count',
+      'First Line Count'
+    );
+    if (!propName) return null;
+    const prop = schema[propName];
+    const text = String(rawValue ?? '').trim();
+    if (!text) {
+      if (prop?.type === 'number') return { [propName]: { number: null } };
+      return null;
+    }
+    const n = Number.parseInt(text, 10);
+    if (!Number.isFinite(n)) return null;
+    if (prop?.type === 'number') return { [propName]: { number: n } };
+    const payload = notionTextPropertyValue(prop, String(n));
+    return payload ? { [propName]: payload } : null;
+  }
+
+  const aliases = ODQ_EDITOR_FIELD_ALIASES[fieldKey];
+  if (!aliases) return null;
+  const propName = findNotionPropName(schema, ...aliases);
+  if (!propName) return null;
+  const prop = schema[propName];
+  const text = String(rawValue ?? '').trim();
+
+  if (fieldKey === 'art_recs_type') {
+    if (!text) return { [propName]: { select: null } };
+    const payload = notionTextPropertyValue(prop, text);
+    return payload ? { [propName]: payload } : null;
+  }
+
+  if (!text) {
+    switch (prop?.type) {
+      case 'rich_text':
+        return { [propName]: { rich_text: [] } };
+      case 'title':
+        return null;
+      case 'url':
+        return { [propName]: { url: null } };
+      case 'select':
+      case 'status':
+        return { [propName]: { select: null } };
+      default:
+        return null;
+    }
+  }
+
+  const payload = notionTextPropertyValue(prop, text);
+  return payload ? { [propName]: payload } : null;
+}
+
+async function patchOdqEditorNotionPage(pageId, updates) {
+  const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  if (!databaseId) throw new Error('NOTION_DATABASE_ID is not configured on server');
+  const schema = await notionGetDatabaseProperties(databaseId);
+  const properties = {};
+  const skipped = [];
+  for (const [fieldKey, value] of Object.entries(updates || {})) {
+    const built = buildOdqEditorNotionPropertyValue(schema, fieldKey, value);
+    if (built) Object.assign(properties, built);
+    else skipped.push(fieldKey);
+  }
+  if (!Object.keys(properties).length) {
+    return {
+      patched: 0,
+      skipped,
+      warning:
+        skipped.length > 0
+          ? 'No fields were written — restart the server (npm run editor) if you recently updated the editor.'
+          : 'No updates provided'
+    };
+  }
+  await notionFetchJson(`/pages/${pageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ properties })
+  });
+  return { patched: Object.keys(properties).length, skipped };
+}
+
+const ODQ_EDITOR_GENERATE_SYSTEM = `You are a content writer for Our Daily Quilt (ODQ). Given a quote and author, generate content for missing fields. Return ONLY a JSON object with the requested fields.
+
+Field specs:
+- good_day: Short declarative push, has edge, specific enough to act on. Sometimes a command. No questions, no filler. "Today" only when it earns it.
+- rough_day: Reframes without naming emotions or assuming how someone feels. No demands. Strips to essential permission or redirect. Can be as short as three words. Never diagnoses.
+- watch_for: A standalone sentence fragment naming a specific observable behavior. UI prepends "Watch for the moment today when..." so the value continues from that. No adverbs doing interpretive work.
+- community_prompt: Single question inviting users to share something from their experience useful to others. Transferable. Plain language. Does not mention quote or author. Ends with ?
+- notification_text: Format "[Full Name] on [what the quote is about]". The on... part intriguing and human. No period. One line.
+- art_recs: 5 recommendations across music, film, painting, literature, and one wildcard. Format: Title, Artist — one sentence why it connects. All 5 in one field.
+- speaker_guide_line: 1 sentence about who this person was and why their perspective matters. Start with a verb, omit name at start. Grounded in what they actually lived. No reverence.`;
+
+async function postOdqEditorGenerateToClaude({ apiKey, model, system, user }) {
+  const result = await postJsonWithHttps({
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: {
+      model,
+      max_tokens: 2000,
+      temperature: 0.4,
+      system,
+      messages: [{ role: 'user', content: user }]
+    }
+  });
+  return (result?.content || [])
+    .map((part) => (part?.type === 'text' ? part.text : ''))
+    .join('\n')
+    .trim();
+}
+
+async function generateOdqEditorMissingFields({ quote, author, existing = {} }) {
+  const missing = ODQ_EDITOR_AUTO_FIELDS.filter((key) => !String(existing[key] || '').trim());
+  if (!missing.length) return {};
+
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY is not configured on server');
+  }
+  const model = String(process.env.ANTHROPIC_PREFILL_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+  const userPrompt = `Quote: "${quote}" — ${author}\n\nGenerate ONLY these missing fields as JSON: ${missing.join(', ')}`;
+  const text = await postOdqEditorGenerateToClaude({
+    apiKey,
+    model,
+    system: ODQ_EDITOR_GENERATE_SYSTEM,
+    user: userPrompt
+  });
+  const parsed = extractPrefillJsonFromText(text);
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Claude returned no parseable JSON for missing fields');
+  }
+
+  const out = {};
+  for (const key of missing) {
+    let value = pickPrefillStringLoose(parsed, key);
+    if (key === 'watch_for') value = normalizeWatchForPrefillValue(value);
+    if (String(value || '').trim()) out[key] = String(value).trim();
+  }
+  return out;
+}
+
+app.options('/api/odq-editor/quote/:dateKey', (req, res) => {
+  setOdqEditorCors(res);
+  return res.status(204).end();
+});
+
+app.get('/api/odq-editor/quote/:dateKey', async (req, res) => {
+  setOdqEditorCors(res);
+  try {
+    const dateKey = String(req.params.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'Invalid dateKey' });
+    }
+    const payload = await queryNotionEditorQuoteForDate(dateKey);
+    if (!payload) {
+      return res.json({ success: false, error: 'not_found', dateKey });
+    }
+    return res.json({ success: true, dateKey, ...payload });
+  } catch (error) {
+    console.warn('odq-editor load failed:', error?.message || error);
+    return res.status(500).json({ success: false, error: error.message || 'Load failed' });
+  }
+});
+
+app.options('/api/odq-editor/generate-missing', (req, res) => {
+  setOdqEditorCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/odq-editor/generate-missing', async (req, res) => {
+  setOdqEditorCors(res);
+  if (!verifyOdqEditorWriteToken(req, res)) return;
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const quote = String(body.Quote || body.quote || '').trim();
+    const author = String(body.author || '').trim();
+    const existing = body.existing && typeof body.existing === 'object' ? body.existing : {};
+    if (!quote || !author) {
+      return res.status(400).json({ success: false, error: 'Quote and author are required' });
+    }
+    const generated = await generateOdqEditorMissingFields({ quote, author, existing });
+    return res.json({ success: true, generated });
+  } catch (error) {
+    console.warn('odq-editor generate-missing failed:', error?.message || error);
+    return res.status(500).json({ success: false, error: error.message || 'Generation failed' });
+  }
+});
+
+app.options('/api/odq-editor/quote/:pageId', (req, res) => {
+  setOdqEditorCors(res);
+  return res.status(204).end();
+});
+
+app.patch('/api/odq-editor/quote/:pageId', async (req, res) => {
+  setOdqEditorCors(res);
+  if (!verifyOdqEditorWriteToken(req, res)) return;
+  try {
+    const pageId = String(req.params.pageId || '').trim();
+    if (!pageId) {
+      return res.status(400).json({ success: false, error: 'pageId is required' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const updates = body.updates && typeof body.updates === 'object' ? body.updates : body;
+    const result = await patchOdqEditorNotionPage(pageId, updates);
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.warn('odq-editor save failed:', error?.message || error);
+    return res.status(500).json({ success: false, error: error.message || 'Save failed' });
+  }
+});
+
 app.options('/api/quote-keywords', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -6880,6 +7384,126 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
   }
 });
 
+/**
+ * Notion database automations always include the triggered page id, but not always as `pageId`.
+ * Accept several common payload shapes (automation webhooks + manual POST).
+ */
+function extractPageIdFromReviewedQuoteWebhookBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return '';
+
+  const direct = String(body.pageId || body.page_id || '').trim();
+  if (direct) return direct;
+
+  const entityId = String(body.entity?.id || '').trim();
+  if (entityId && String(body.entity?.type || 'page').trim().toLowerCase() === 'page') {
+    return entityId;
+  }
+
+  const dataId = String(body.data?.id || '').trim();
+  if (dataId) return dataId;
+
+  const nestedId = String(body.id || '').trim();
+  if (nestedId && /^[0-9a-f-]{32,36}$/i.test(nestedId)) return nestedId;
+
+  return '';
+}
+
+/**
+ * Queue GitHub Actions "Reviewed quote assets" for one Notion page.
+ * Requires GITHUB_DISPATCH_TOKEN (repo workflow scope) and GITHUB_REPOSITORY (owner/repo).
+ */
+async function dispatchReviewedQuoteAssetsWorkflow({ pageId, force = false }) {
+  const token = String(process.env.GITHUB_DISPATCH_TOKEN || process.env.GITHUB_TOKEN || '').trim();
+  const repo = String(process.env.GITHUB_REPOSITORY || '').trim();
+  if (!token || !repo) {
+    throw new Error(
+      'GITHUB_DISPATCH_TOKEN (or GITHUB_TOKEN) and GITHUB_REPOSITORY must be set on the server to queue GitHub Actions'
+    );
+  }
+  const res = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-06-28',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      event_type: 'reviewed-quote-assets',
+      client_payload: {
+        page_id: pageId,
+        force: !!force
+      }
+    })
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GitHub dispatch failed (${res.status}): ${text || res.statusText}`);
+  }
+}
+
+app.options('/api/process-reviewed-quote-assets', (req, res) => {
+  setNotionSyncCors(res);
+  return res.status(204).end();
+});
+
+/**
+ * When a Notion quote is marked reviewed, queue GitHub Actions to run speaker cutout +
+ * newspaper clipping and write speaker_cutout / quote_clipping back to Notion.
+ *
+ * Body: { "pageId": "<notion-page-id>", "force": false }
+ * Auth: x-notion-sync-token (NOTION_SYNC_TOKEN or RESET_TOKEN).
+ *
+ * Wire from Notion automations: trigger when Reviewed is checked → send webhook here.
+ */
+app.post('/api/process-reviewed-quote-assets', async (req, res) => {
+  setNotionSyncCors(res);
+
+  const expectedToken = process.env.NOTION_SYNC_TOKEN || process.env.RESET_TOKEN || '';
+  if (!expectedToken) {
+    return res.status(500).json({
+      success: false,
+      error: 'NOTION_SYNC_TOKEN or RESET_TOKEN must be set on the server'
+    });
+  }
+  const providedToken = req.header('x-notion-sync-token');
+  if (!providedToken || providedToken !== expectedToken) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const pageId = extractPageIdFromReviewedQuoteWebhookBody(body);
+  const force = !!(
+    body.force === true ||
+    body.force === 1 ||
+    body.force === '1' ||
+    body.force === 'true'
+  );
+  if (!pageId) {
+    return res.status(400).json({ success: false, error: 'pageId is required' });
+  }
+
+  try {
+    await dispatchReviewedQuoteAssetsWorkflow({ pageId, force });
+    return res.json({
+      success: true,
+      queued: true,
+      pageId,
+      force,
+      workflow: 'reviewed-quote-assets',
+      timestamp: getUtcIsoNow()
+    });
+  } catch (error) {
+    console.error('❌ process-reviewed-quote-assets dispatch failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to queue reviewed quote assets workflow',
+      pageId,
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
 app.options('/api/transcode-instagram-reel', (req, res) => {
   setInstagramApiCors(res);
   return res.status(204).end();
@@ -6938,6 +7562,23 @@ app.post('/api/transcode-instagram-reel', limitTranscodeReel, optionalInstagramA
   }
 });
 
+function openOdqEditorInBrowser(port) {
+  const flag = String(process.env.AUTO_OPEN_ODQ_EDITOR || '').trim().toLowerCase();
+  if (!['1', 'true', 'yes', 'on'].includes(flag)) return;
+  const url = `http://localhost:${port}/odq-editor`;
+  const { exec } = require('child_process');
+  const cmd =
+    process.platform === 'darwin'
+      ? `open "${url}"`
+      : process.platform === 'win32'
+        ? `start "" "${url}"`
+        : `xdg-open "${url}"`;
+  exec(cmd, (err) => {
+    if (err) console.warn(`⚠️ Could not open browser for ODQ editor: ${err.message}`);
+    else console.log(`📝 ODQ editor: ${url}`);
+  });
+}
+
 app.listen(PORT, () => {
   try {
     getNodeCanvas();
@@ -6952,4 +7593,5 @@ app.listen(PORT, () => {
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
   startQuotePrefillSweepScheduler();
+  openOdqEditorInBrowser(PORT);
 });

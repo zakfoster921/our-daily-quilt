@@ -24,6 +24,7 @@ function findSchemaPropName(properties, base) {
  *   dryRun: boolean,
  *   fullCatalog: boolean,
  *   noDeleteOrphans: boolean,
+ *   pageId: string,
  *   window: null | { startKey: string, endKey: string, windowDays: number }
  * }}
  */
@@ -33,6 +34,7 @@ function parseSyncWindowCli(argv) {
     fullCatalog: argv.includes('--full-catalog'),
     noDeleteOrphans: argv.includes('--no-delete-orphans'),
     start: '',
+    pageId: '',
     windowDays: DEFAULT_SYNC_WINDOW_DAYS
   };
 
@@ -44,6 +46,9 @@ function parseSyncWindowCli(argv) {
     if (a.startsWith('--start=')) args.start = a.slice('--start='.length);
     else if (a === '--start' && argv[i + 1]) {
       args.start = argv[++i];
+    } else if (a.startsWith('--page-id=')) args.pageId = a.slice('--page-id='.length).trim();
+    else if (a === '--page-id' && argv[i + 1]) {
+      args.pageId = String(argv[++i]).trim();
     } else if (a.startsWith('--window=')) {
       args.windowDays = Math.max(1, Number.parseInt(a.slice('--window='.length), 10) || DEFAULT_SYNC_WINDOW_DAYS);
     } else if (a === '--window' && argv[i + 1]) {
@@ -51,11 +56,22 @@ function parseSyncWindowCli(argv) {
     }
   }
 
+  if (args.pageId) {
+    return {
+      dryRun: args.dryRun,
+      fullCatalog: false,
+      noDeleteOrphans: true,
+      pageId: args.pageId,
+      window: null
+    };
+  }
+
   if (args.fullCatalog) {
     return {
       dryRun: args.dryRun,
       fullCatalog: true,
       noDeleteOrphans: args.noDeleteOrphans,
+      pageId: '',
       window: null
     };
   }
@@ -68,6 +84,7 @@ function parseSyncWindowCli(argv) {
     dryRun: args.dryRun,
     fullCatalog: false,
     noDeleteOrphans: true,
+    pageId: '',
     window: { startKey, endKey, windowDays }
   };
 }

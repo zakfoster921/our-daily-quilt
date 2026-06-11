@@ -1,0 +1,147 @@
+# Generate speaker cutout + quote clipping when a Notion quote is marked reviewed,
+# then upload preview URLs back to Notion (speaker_cutout, quote_clipping).
+#
+# Trigger options:
+#   1. Notion automation / Zapier → POST /api/process-reviewed-quote-assets (Railway)
+#   2. repository_dispatch event_type=reviewed-quote-assets
+#   3. Manual workflow_dispatch with page_id
+
+name: Reviewed quote assets
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  repository_dispatch:
+    types:
+      - reviewed-quote-assets
+  workflow_dispatch:
+    inputs:
+      page_id:
+        description: "Notion page id for the reviewed quote"
+        required: true
+      force:
+        description: "Regenerate even when Notion already has previews"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: reviewed-quote-assets-${{ github.event.client_payload.page_id || inputs.page_id || 'manual' }}
+  cancel-in-progress: false
+
+jobs:
+  reviewed-quote-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: npm ci --ignore-scripts
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}-chromium-headless-shell
+
+      - name: Install Playwright Chromium headless shell
+        timeout-minutes: 8
+        run: npx playwright install chromium-headless-shell
+
+      - name: Resolve Notion page id
+        id: resolve
+        env:
+          CLIENT_PAGE_ID: ${{ github.event.client_payload.page_id || '' }}
+          INPUT_PAGE_ID: ${{ inputs.page_id || '' }}
+          CLIENT_FORCE: ${{ github.event.client_payload.force || '' }}
+          INPUT_FORCE: ${{ inputs.force || '' }}
+        run: |
+          set -euo pipefail
+          PAGE_ID="${CLIENT_PAGE_ID:-${INPUT_PAGE_ID:-}}"
+          if [ -z "${PAGE_ID}" ]; then
+            echo "Missing page_id (workflow_dispatch input or repository_dispatch client_payload.page_id)"
+            exit 1
+          fi
+          FORCE="${CLIENT_FORCE:-${INPUT_FORCE:-false}}"
+          echo "page_id=${PAGE_ID}" >> "$GITHUB_OUTPUT"
+          echo "force=${FORCE}" >> "$GITHUB_OUTPUT"
+          echo "Processing reviewed quote assets for Notion page ${PAGE_ID} (force=${FORCE})"
+
+      - name: Validate required secrets
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
+          RESET_URL: ${{ secrets.RESET_URL }}
+        run: |
+          set -euo pipefail
+          for name in NOTION_TOKEN NOTION_DATABASE_ID GOOGLE_APPLICATION_CREDENTIALS_JSON REMOVE_BG_API_KEY RESET_URL; do
+            eval "val=\${${name}:-}"
+            if [ -z "${val}" ]; then
+              echo "Missing required secret: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Start local app (same commit as workflow)
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          npx --yes serve@14 -l 8765 . > tmp/serve-reviewed-assets.log 2>&1 &
+          echo "SERVE_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:8765/our-daily-beta.html" >/dev/null; then
+              echo "Local app ready on :8765"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat tmp/serve-reviewed-assets.log || true
+          echo "::error::Local static server failed to start"
+          exit 1
+
+      - name: Process reviewed quote assets
+        timeout-minutes: 35
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
+          RESET_URL: ${{ secrets.RESET_URL }}
+          APP_URL: http://127.0.0.1:8765/our-daily-beta.html
+          PAGE_ID: ${{ steps.resolve.outputs.page_id }}
+          FORCE: ${{ steps.resolve.outputs.force }}
+        run: |
+          set -euo pipefail
+          cmd=(node scripts/process-reviewed-quote-assets.cjs "--page-id=${PAGE_ID}")
+          if [ "${FORCE}" = "true" ]; then cmd+=(--force); fi
+          "${cmd[@]}"
+
+      - name: Stop local app server
+        if: always()
+        run: |
+          if [ -n "${SERVE_PID:-}" ]; then
+            kill "${SERVE_PID}" 2>/dev/null || true
+          fi
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: reviewed-quote-assets-failure-${{ steps.resolve.outputs.page_id }}
+          path: tmp/reviewed-quote-clipping
+          if-no-files-found: ignore

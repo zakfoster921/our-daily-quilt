@@ -1064,7 +1064,7 @@ async function syncNotionPagesToFirestore(db, options) {
 
 async function run() {
   const cli = parseSyncWindowCli(process.argv);
-  const { dryRun, noDeleteOrphans, window } = cli;
+  const { dryRun, noDeleteOrphans, window, pageId } = cli;
   const notionToken = requireEnv('NOTION_TOKEN');
   const databaseId = requireEnv('NOTION_DATABASE_ID');
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
@@ -1080,7 +1080,14 @@ async function run() {
   let assignmentSlotIds = 0;
   let extraPageFetches = 0;
 
-  if (window) {
+  if (pageId) {
+    console.log(`[sync] single-page sync pageId=${pageId}`);
+    const page = await notionGetPage(pageId, notionToken);
+    if (!page || !page.id) {
+      throw new Error(`Notion page not found: ${pageId}`);
+    }
+    rowsToSync = [page];
+  } else if (window) {
     console.log(
       `[sync] windowed sync ${window.startKey}..${window.endKey} (${window.windowDays} days); orphan delete disabled`
     );

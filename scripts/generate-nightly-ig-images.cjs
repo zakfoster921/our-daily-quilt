@@ -783,7 +783,15 @@ async function main() {
   throw lastError || new Error('Nightly IG images failed');
 }
 
-main().catch((err) => {
-  console.error('[nightly-ig] failure:', err && err.stack ? err.stack : err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[nightly-ig] failure:', err && err.stack ? err.stack : err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  runNightlyIgAttempt,
+  getActiveQuiltDateKey,
+  getCompletedQuiltDateKey
+};
