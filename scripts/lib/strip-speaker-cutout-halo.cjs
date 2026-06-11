@@ -30,10 +30,6 @@ function pixelIsSubject(r, g, b, a) {
   return !pixelIsWhiteMatte(r, g, b, a) && !pixelIsGreyHalo(r, g, b, a);
 }
 
-function inMarginBand(x, y, w, h) {
-  return x < w * 0.2 || x > w * 0.8 || y < h * 0.1 || y > h * 0.9;
-}
-
 /**
  * @param {Buffer} data RGBA
  * @param {number} width
@@ -96,17 +92,8 @@ function stripSpeakerCutoutHaloRgba(data, width, height) {
 
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
-      const i = (y * w + x) * 4;
-      const r = d[i];
-      const g = d[i + 1];
-      const b = d[i + 2];
-      const a = d[i + 3];
-      let drop = false;
-      if (seedX >= 0 && !keep[y * w + x]) drop = true;
-      if (!drop && inMarginBand(x, y, w, h) && (pixelIsGreyHalo(r, g, b, a) || pixelIsWhiteMatte(r, g, b, a))) {
-        drop = true;
-      }
-      if (drop) d[i + 3] = 0;
+      const idx = y * w + x;
+      if (seedX >= 0 && !keep[idx]) d[idx * 4 + 3] = 0;
     }
   }
   return data;
