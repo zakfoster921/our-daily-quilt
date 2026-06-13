@@ -1519,7 +1519,8 @@ function normalizeReflectionWallThemeEntry(entry) {
     if (!text) return null;
     const author = String(entry.author ?? entry.authorDisplayName ?? '').replace(/\s+/g, ' ').trim()
       || reflectionWallAuthorLabel(entry);
-    return { text, author };
+    const responseId = reflectionThemeEntryResponseId(entry);
+    return responseId ? { text, author, responseId } : { text, author };
   }
   const text = String(entry || '')
     .replace(/\s+/g, ' ')
@@ -1533,7 +1534,10 @@ function normalizeReflectionWallThemeEntry(entry) {
 function buildReflectionWallThemeEntry(data) {
   const text = reflectionResponseWallBody(data);
   if (!text) return null;
-  return { text, author: reflectionResponseStoredAuthor(data) };
+  const entry = { text, author: reflectionResponseStoredAuthor(data) };
+  const responseId = String(data?.responseId || data?.id || '').trim();
+  if (responseId) entry.responseId = responseId;
+  return entry;
 }
 
 function dedupeReflectionWallThemes(themes) {
@@ -1712,7 +1716,7 @@ function parseReflectionModerationResult(value) {
 /** Last-resort publish path when AI moderation is unavailable (basic safety only). */
 function moderateReflectionResponseLocally(responseText) {
   const raw = String(responseText || '').replace(/\s+/g, ' ').trim();
-  if (!raw || raw.length < 8 || raw.split(/\s+/).filter(Boolean).length < 2) {
+  if (!raw) {
     return { action: 'reject', text: '', provider: 'local-fallback', model: null };
   }
   if (REFLECTION_LOCAL_REJECT_PATTERNS.some((pattern) => pattern.test(raw))) {
