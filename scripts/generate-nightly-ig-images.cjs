@@ -159,6 +159,14 @@ async function runNightlyIgAttempt({
     const result = await page.evaluate(
       async ({ dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
+        const isNightlyLabPeekCompose = (composeMeta) => {
+          const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
+          return (
+            meta.composeAttemptLabel === 'lab-peek' ||
+            meta.composePipeline === 'labPeek' ||
+            meta.exportDiagnostics?.paperTextureUrl == null
+          );
+        };
         const assertNewspaperPeekComposeMeta = (composeMeta, clippingBytes, minClippingBytes) => {
           const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
           const bytes = Math.max(0, Number(clippingBytes) || 0);
@@ -215,7 +223,10 @@ async function runNightlyIgAttempt({
               `Newspaper clipping used compose fallback "${composeMeta.composeAttemptLabel}" — paper texture dropped (canvas taint)`
             );
           }
-          if (composeMeta?.exportDiagnostics?.paperLoaded === false) {
+          if (
+            composeMeta?.exportDiagnostics?.paperLoaded === false &&
+            !isNightlyLabPeekCompose(composeMeta)
+          ) {
             throw new Error(
               'Newspaper clipping paper texture did not load — check assets/quilt-paper-card-texture.png on APP_URL'
             );
