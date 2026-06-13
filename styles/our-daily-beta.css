@@ -12393,9 +12393,14 @@
     }
 
     #screen-quilt .quilt-reflection-carousel-viewport.is-scrollable {
-      scroll-snap-type: x proximity;
-      /* Horizontal pan on the viewport; vertical scroll stays on #screen-quilt (pan-y). */
-      touch-action: pan-x pinch-zoom;
+      /* Native horizontal scroll + momentum; browser picks axis vs parent pan-y. */
+      scroll-snap-type: x mandatory;
+      scroll-padding-inline: max(
+        0.6rem,
+        calc((100% - var(--reflection-patch-w, 52vw)) / 2)
+      );
+      touch-action: manipulation;
+      overscroll-behavior-y: auto;
     }
 
     #screen-quilt .quilt-reflection-carousel-viewport.is-scroll-hinting {
@@ -12469,6 +12474,7 @@
       overflow: visible;
       z-index: var(--reflection-slide-z, 1);
       scroll-snap-align: center;
+      scroll-snap-stop: always;
       /* Fills hand-cut notches and sub-patch row gaps (see ::before clip). */
       background-color: rgb(var(--reflection-fabric-rgb));
     }
@@ -12806,6 +12812,50 @@
       text-align: right;
       white-space: normal;
       max-width: 100%;
+    }
+
+    #screen-quilt .quilt-reflection-carousel-mine-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.35rem;
+      width: 100%;
+      margin-top: 0.45rem;
+      font-family: var(--reflection-clipping-font, 'DM Sans', system-ui, sans-serif);
+      font-size: 0.68rem;
+      line-height: 1.2;
+      letter-spacing: 0.02em;
+      color: rgba(42, 34, 28, 0.52);
+    }
+
+    #screen-quilt .quilt-reflection-carousel-slide--light .quilt-reflection-carousel-mine-actions {
+      color: rgba(42, 34, 28, 0.44);
+    }
+
+    #screen-quilt .quilt-reflection-carousel-edit-btn,
+    #screen-quilt .quilt-reflection-carousel-delete-btn {
+      appearance: none;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      background: transparent;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 0.12em;
+    }
+
+    #screen-quilt .quilt-reflection-carousel-edit-btn:hover,
+    #screen-quilt .quilt-reflection-carousel-edit-btn:focus-visible,
+    #screen-quilt .quilt-reflection-carousel-delete-btn:hover,
+    #screen-quilt .quilt-reflection-carousel-delete-btn:focus-visible {
+      color: rgba(42, 34, 28, 0.78);
+    }
+
+    #screen-quilt .quilt-reflection-carousel-mine-sep {
+      opacity: 0.55;
+      user-select: none;
     }
 
     /* Response patches — same newsprint + type as quilt quote clipping (not fabric weave). */
@@ -13499,24 +13549,15 @@
       display: none !important;
     }
 
-    /* Hole-filled paper silhouette — masks remove.bg interior gaps on PNG cutouts. */
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette {
+      display: none !important;
+      opacity: 0 !important;
+    }
+
+    /* Hole-filled paper silhouette — legacy fallback (unused; composite is baked in PNG). */
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette.quote-speaker-cutout-backing--filled {
-      display: block !important;
-      position: absolute;
-      z-index: 2;
-      left: var(--speaker-cutout-pos-x, 0px);
-      top: var(--speaker-cutout-pos-y, 0px);
-      width: var(--speaker-cutout-bg-w, 100%);
-      height: var(--speaker-cutout-bg-h, auto);
-      background-size: 100% 100%;
-      background-position: top left;
-      background-repeat: no-repeat;
-      background-color: transparent;
-      filter: none;
-      mix-blend-mode: normal;
-      opacity: 1;
-      transform: translate(0.7%, 0.6%) rotate(0.18deg) scale(1.004);
-      pointer-events: none;
+      display: none !important;
+      opacity: 0 !important;
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout .quote-speaker-neutral-silhouette:not(.quote-speaker-cutout-backing--filled) {
@@ -13558,11 +13599,19 @@
         grayscale(1)
         sepia(0.34)
         saturate(0.62)
-        contrast(1.28)
+        contrast(1.34)
         brightness(1.06);
       mix-blend-mode: normal;
       opacity: 1;
       pointer-events: none;
+    }
+
+    /* Baked newsprint composite — texture already in PNG; skip CSS re-filter. */
+    #screen-quilt
+      .quote-speaker-cutout.quote-speaker-cutout--plain-cutout
+      .quote-speaker-image.is-loaded[data-plain-cutout-composite='1'] {
+      filter: none;
+      mix-blend-mode: normal;
     }
 
     #screen-quilt .quote-speaker-cutout[hidden] {

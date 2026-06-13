@@ -1549,6 +1549,115 @@ function dedupeReflectionWallThemes(themes) {
     });
 }
 
+function reflectionThemeEntryResponseId(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return '';
+  return String(entry.responseId || entry.response_id || '').trim();
+}
+
+function reflectionThemeMatchesResponse(entry, responseId, fallbackBody, fallbackAuthor) {
+  const rid = String(responseId || '').trim();
+  if (rid && reflectionThemeEntryResponseId(entry) === rid) return true;
+  const normalized = normalizeReflectionWallThemeEntry(entry);
+  if (!normalized) return false;
+  const fbText = String(fallbackBody || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.+$/g, '')
+    .trim()
+    .toLowerCase();
+  if (!fbText) return false;
+  const fbAuthor = String(fallbackAuthor || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const textMatch = normalized.text.toLowerCase() === fbText;
+  if (!textMatch) return false;
+  if (!fbAuthor) return true;
+  return normalized.author.toLowerCase() === fbAuthor;
+}
+
+function buildReflectionThemeEntryForResponse(responseId, moderatedBody, authorDisplayName) {
+  const text = trimModeratedBodyAtWord(moderatedBody, REFLECTION_MODERATION_BODY_MAX);
+  const author = storedReflectionAuthorName(authorDisplayName);
+  const entry = { text, author };
+  const rid = String(responseId || '').trim();
+  if (rid) entry.responseId = rid;
+  return entry;
+}
+
+async function syncReflectionThemeForResponse(db, appDateKey, responseId, nextEntry, fallback = {}) {
+  const themeRef = db.collection('reflectionThemes').doc(appDateKey);
+  const themeSnap = await themeRef.get();
+  const priorThemes = themeSnap.exists && Array.isArray(themeSnap.data()?.themes) ? themeSnap.data().themes : [];
+  let matched = false;
+  const nextThemes = [];
+  for (const entry of priorThemes) {
+    if (reflectionThemeMatchesResponse(entry, responseId, fallback.text, fallback.author)) {
+      matched = true;
+      if (nextEntry) nextThemes.push(nextEntry);
+      continue;
+    }
+    nextThemes.push(entry);
+  }
+  if (!matched && nextEntry) {
+    nextThemes.push(nextEntry);
+    matched = true;
+  }
+  if (!matched) return { changed: false, themes: priorThemes };
+  const patch = { themes: nextThemes, updatedAtIso: getUtcIsoNow() };
+  if (matched && !nextEntry) {
+    patch.responseCount = admin.firestore.FieldValue.increment(-1);
+  }
+  await themeRef.set(patch, { merge: true });
+  return { changed: true, themes: nextThemes };
+}
+
+function reflectionClientOwnsResponse(data, clientId) {
+  const row = data && typeof data === 'object' ? data : {};
+  const storedClientId = String(row.clientId || '').trim();
+  const requestClientId = String(clientId || '').trim();
+  if (storedClientId && requestClientId && storedClientId === requestClientId) return true;
+  if (!requestClientId) return false;
+  const deviceKey = safeReflectionDeviceKey(requestClientId);
+  return Boolean(deviceKey && row.deviceKey === deviceKey);
+}
+
+function serializeReflectionResponseForClient(docSnap) {
+  if (!docSnap?.exists) return null;
+  const data = docSnap.data() || {};
+  const status = String(data.status || '').trim() || 'published';
+  if (status !== 'published') return null;
+  const rawText = String(data.rawText || data.responseText || '').replace(/\s+/g, ' ').trim();
+  const text = reflectionResponseWallBody(data);
+  const author = reflectionResponseStoredAuthor(data);
+  return {
+    responseId: docSnap.id,
+    appDateKey: String(data.appDateKey || '').trim(),
+    rawText,
+    text,
+    author,
+    status
+  };
+}
+
+async function findPublishedReflectionForClient(db, appDateKey, clientId) {
+  const requestClientId = String(clientId || '').trim();
+  if (!requestClientId || !db) return null;
+  const deviceKey = safeReflectionDeviceKey(requestClientId);
+  const snap = await db.collection('reflectionResponses')
+    .where('appDateKey', '==', appDateKey)
+    .where('clientId', '==', requestClientId)
+    .limit(12)
+    .get();
+  let match = snap.docs.find((doc) => String(doc.data()?.status || '') === 'published') || null;
+  if (!match && deviceKey) {
+    const byDevice = await db.collection('reflectionResponses')
+      .where('appDateKey', '==', appDateKey)
+      .where('deviceKey', '==', deviceKey)
+      .limit(12)
+      .get();
+    match = byDevice.docs.find((doc) => String(doc.data()?.status || '') === 'published') || null;
+  }
+  return match;
+}
+
 const REFLECTION_PUBLISHED_TEXT_MAX = 200;
 const REFLECTION_REJECT_USER_MESSAGE =
   'Something here got flagged. Try again?';
@@ -1815,6 +1924,7 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
       text: list[0].text,
       author: reflectionResponseStoredAuthor(list[0].data || {})
     });
+    if (solo) solo.responseId = list[0].id;
     return {
       visibleIds: [list[0].id],
       themes: solo ? [solo] : [],
@@ -1848,10 +1958,14 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   const visibleSet = new Set(visibleIds);
   const themes = list
     .filter((item) => visibleSet.has(item.id))
-    .map((item) => buildReflectionWallThemeEntry(item.data) || normalizeReflectionWallThemeEntry({
-      text: item.text,
-      author: reflectionResponseStoredAuthor(item.data || {})
-    }))
+    .map((item) => {
+      const entry = buildReflectionWallThemeEntry(item.data) || normalizeReflectionWallThemeEntry({
+        text: item.text,
+        author: reflectionResponseStoredAuthor(item.data || {})
+      });
+      if (entry) entry.responseId = item.id;
+      return entry;
+    })
     .filter(Boolean);
   return { visibleIds, themes: dedupeReflectionWallThemes(themes), model, provider };
 }
@@ -5746,6 +5860,95 @@ app.options('/api/reflection-response', (req, res) => {
   return res.status(204).end();
 });
 
+app.options('/api/reflection-response/mine', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+app.options('/api/reflection-response/:responseId', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+app.get('/api/reflection-response/mine', async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.appDateKey || req.query.date || '').trim())
+      ? String(req.query.appDateKey || req.query.date).trim()
+      : getAppDateKey();
+    const clientId = String(req.query.clientId || req.query.deviceId || req.query.userId || '').trim().slice(0, 160);
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+    const docSnap = await findPublishedReflectionForClient(db, appDateKey, clientId);
+    if (!docSnap) {
+      return res.json({ success: true, found: false, appDateKey });
+    }
+    const payload = serializeReflectionResponseForClient(docSnap);
+    if (!payload) {
+      return res.json({ success: true, found: false, appDateKey });
+    }
+    return res.json({ success: true, found: true, ...payload });
+  } catch (error) {
+    console.error('❌ Reflection response mine read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection response mine read failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+async function moderateAndPublishReflectionText({
+  rawText,
+  reflectionPromptSnapshot,
+  displayName
+}) {
+  let moderation;
+  try {
+    moderation = await moderateReflectionResponseWithAi({
+      reflectionPrompt: reflectionPromptSnapshot,
+      responseText: rawText
+    });
+  } catch (error) {
+    console.error('❌ Reflection moderation failed:', error);
+    moderation = moderateReflectionResponseLocally(rawText);
+    if (moderation.action !== 'publish') {
+      const err = new Error('Could not review your reflection right now. Please try again in a moment.');
+      err.status = 503;
+      throw err;
+    }
+    console.warn('Reflection published via local fallback after AI moderation failure.');
+  }
+
+  if (moderation.action === 'reject') {
+    const err = new Error(REFLECTION_REJECT_USER_MESSAGE);
+    err.status = 422;
+    err.rejected = true;
+    throw err;
+  }
+
+  const moderatedBody = reflectionModerationPublishBody(rawText, moderation);
+  const publishedText = buildPublishedReflectionText(moderatedBody, displayName);
+  if (!publishedText) {
+    const err = new Error(REFLECTION_REJECT_USER_MESSAGE);
+    err.status = 422;
+    err.rejected = true;
+    throw err;
+  }
+
+  const authorDisplayName = storedReflectionAuthorName(displayName);
+  const themeText = trimModeratedBodyAtWord(moderatedBody, REFLECTION_MODERATION_BODY_MAX);
+  return {
+    moderation,
+    moderatedBody,
+    publishedText,
+    authorDisplayName,
+    themeText
+  };
+}
+
 app.post('/api/reflection-response', limitReflectionResponse, async (req, res) => {
   setReflectionApiCors(res);
   try {
@@ -5770,48 +5973,48 @@ app.post('/api/reflection-response', limitReflectionResponse, async (req, res) =
       });
     }
 
-    let moderation;
+    if (clientId) {
+      const existing = await findPublishedReflectionForClient(db, appDateKey, clientId);
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          error: 'You already shared a reflection today. Edit your patch instead.',
+          existingResponseId: existing.id,
+          appDateKey
+        });
+      }
+    }
+
+    let publishResult;
     try {
-      moderation = await moderateReflectionResponseWithAi({
-        reflectionPrompt: reflectionPromptSnapshot,
-        responseText: rawText
+      publishResult = await moderateAndPublishReflectionText({
+        rawText,
+        reflectionPromptSnapshot,
+        displayName
       });
     } catch (error) {
-      console.error('❌ Reflection moderation failed:', error);
-      moderation = moderateReflectionResponseLocally(rawText);
-      if (moderation.action !== 'publish') {
+      if (error.status === 503) {
         return res.status(503).json({
           success: false,
-          error: 'Could not review your reflection right now. Please try again in a moment.',
+          error: error.message,
           timestamp: getUtcIsoNow()
         });
       }
-      console.warn('Reflection published via local fallback after AI moderation failure.');
+      if (error.status === 422 || error.rejected) {
+        return res.status(422).json({
+          success: false,
+          error: error.message || REFLECTION_REJECT_USER_MESSAGE,
+          rejected: true
+        });
+      }
+      throw error;
     }
 
-    if (moderation.action === 'reject') {
-      return res.status(422).json({
-        success: false,
-        error: REFLECTION_REJECT_USER_MESSAGE,
-        rejected: true
-      });
-    }
-
-    const moderatedBody = reflectionModerationPublishBody(rawText, moderation);
-
-    const publishedText = buildPublishedReflectionText(moderatedBody, displayName);
-    if (!publishedText) {
-      return res.status(422).json({
-        success: false,
-        error: REFLECTION_REJECT_USER_MESSAGE,
-        rejected: true
-      });
-    }
+    const { moderation, publishedText, authorDisplayName, themeText } = publishResult;
 
     const deviceKey = safeReflectionDeviceKey(clientId || `${req.ip || ''}|${req.get('user-agent') || ''}`);
     const responseRef = db.collection('reflectionResponses').doc();
     const responseId = responseRef.id;
-    const authorDisplayName = storedReflectionAuthorName(displayName);
     const responsePayload = {
       appDateKey,
       rawText,
@@ -5838,10 +6041,9 @@ app.post('/api/reflection-response', limitReflectionResponse, async (req, res) =
     const publishIso = getUtcIsoNow();
     const themePatch = {
       appDateKey,
-      themes: admin.firestore.FieldValue.arrayUnion({
-        text: trimModeratedBodyAtWord(moderatedBody, REFLECTION_MODERATION_BODY_MAX),
-        author: authorDisplayName
-      }),
+      themes: admin.firestore.FieldValue.arrayUnion(
+        buildReflectionThemeEntryForResponse(responseId, themeText, displayName)
+      ),
       responseCount: admin.firestore.FieldValue.increment(1),
       updatedAtIso: publishIso,
       lastPublishedAtIso: publishIso
@@ -5858,6 +6060,9 @@ app.post('/api/reflection-response', limitReflectionResponse, async (req, res) =
       responseId,
       appDateKey,
       publishedText,
+      rawText,
+      text: themeText,
+      author: authorDisplayName,
       status: 'published'
     });
   } catch (error) {
@@ -5865,6 +6070,177 @@ app.post('/api/reflection-response', limitReflectionResponse, async (req, res) =
     return res.status(500).json({
       success: false,
       error: error.message || 'Reflection response failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.patch('/api/reflection-response/:responseId', limitReflectionResponse, async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const responseId = String(req.params.responseId || '').trim();
+    if (!responseId) {
+      return res.status(400).json({ success: false, error: 'responseId is required' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const rawText = normalizeReflectionResponseText(body.responseText || body.text);
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const displayName = String(body.displayName || body.authorDisplayName || '').trim().slice(0, 80);
+    const reflectionPromptSnapshot = String(body.reflectionPromptSnapshot || '').trim().slice(0, 500);
+
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+    if (!rawText) {
+      return res.status(400).json({ success: false, error: 'Reflection response is required' });
+    }
+    if (rawText.length > REFLECTION_PUBLISHED_TEXT_MAX) {
+      return res.status(400).json({
+        success: false,
+        error: `Reflection response must be ${REFLECTION_PUBLISHED_TEXT_MAX} characters or fewer`
+      });
+    }
+
+    const responseRef = db.collection('reflectionResponses').doc(responseId);
+    const responseSnap = await responseRef.get();
+    if (!responseSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Reflection not found' });
+    }
+    const priorData = responseSnap.data() || {};
+    if (String(priorData.status || '') === 'deleted') {
+      return res.status(404).json({ success: false, error: 'Reflection not found' });
+    }
+    if (!reflectionClientOwnsResponse(priorData, clientId)) {
+      return res.status(403).json({ success: false, error: 'Not allowed to edit this reflection' });
+    }
+
+    const appDateKey = String(priorData.appDateKey || '').trim() || getAppDateKey();
+    const promptSnapshot = reflectionPromptSnapshot || String(priorData.reflectionPromptSnapshot || '').trim();
+    const authorName = displayName || String(priorData.authorDisplayName || '').trim();
+
+    let publishResult;
+    try {
+      publishResult = await moderateAndPublishReflectionText({
+        rawText,
+        reflectionPromptSnapshot: promptSnapshot,
+        displayName: authorName
+      });
+    } catch (error) {
+      if (error.status === 503) {
+        return res.status(503).json({
+          success: false,
+          error: error.message,
+          timestamp: getUtcIsoNow()
+        });
+      }
+      if (error.status === 422 || error.rejected) {
+        return res.status(422).json({
+          success: false,
+          error: error.message || REFLECTION_REJECT_USER_MESSAGE,
+          rejected: true
+        });
+      }
+      throw error;
+    }
+
+    const { moderation, publishedText, authorDisplayName, themeText } = publishResult;
+    const priorThemeText = reflectionResponseWallBody(priorData);
+    const priorAuthor = reflectionResponseStoredAuthor(priorData);
+
+    await responseRef.set({
+      rawText,
+      responseText: rawText,
+      publishedText,
+      status: 'published',
+      authorDisplayName,
+      moderationProvider: moderation.provider || null,
+      moderationModel: moderation.model || null,
+      moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    await syncReflectionThemeForResponse(
+      db,
+      appDateKey,
+      responseId,
+      buildReflectionThemeEntryForResponse(responseId, themeText, authorName),
+      { text: priorThemeText, author: priorAuthor }
+    );
+
+    return res.json({
+      success: true,
+      responseId,
+      appDateKey,
+      publishedText,
+      rawText,
+      text: themeText,
+      author: authorDisplayName,
+      status: 'published'
+    });
+  } catch (error) {
+    console.error('❌ Reflection response update failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection response update failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.delete('/api/reflection-response/:responseId', limitReflectionResponse, async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const responseId = String(req.params.responseId || '').trim();
+    if (!responseId) {
+      return res.status(400).json({ success: false, error: 'responseId is required' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const clientId = String(body.clientId || req.query.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const responseRef = db.collection('reflectionResponses').doc(responseId);
+    const responseSnap = await responseRef.get();
+    if (!responseSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Reflection not found' });
+    }
+    const priorData = responseSnap.data() || {};
+    if (String(priorData.status || '') === 'deleted') {
+      return res.json({ success: true, responseId, appDateKey: priorData.appDateKey || '', status: 'deleted' });
+    }
+    if (!reflectionClientOwnsResponse(priorData, clientId)) {
+      return res.status(403).json({ success: false, error: 'Not allowed to delete this reflection' });
+    }
+
+    const appDateKey = String(priorData.appDateKey || '').trim() || getAppDateKey();
+    const priorThemeText = reflectionResponseWallBody(priorData);
+    const priorAuthor = reflectionResponseStoredAuthor(priorData);
+
+    await responseRef.set({
+      status: 'deleted',
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    await syncReflectionThemeForResponse(db, appDateKey, responseId, null, {
+      text: priorThemeText,
+      author: priorAuthor
+    });
+
+    return res.json({
+      success: true,
+      responseId,
+      appDateKey,
+      status: 'deleted'
+    });
+  } catch (error) {
+    console.error('❌ Reflection response delete failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection response delete failed',
       timestamp: getUtcIsoNow()
     });
   }
