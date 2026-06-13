@@ -636,7 +636,9 @@ async function main() {
         : opts.recropExisting
           ? await cropTransparentPngWithMargin(await downloadBinaryFromUrl(existing), 0.1)
           : await removeBackgroundFromUrl(imageUrl, apiKey);
-      const optimized = await optimizeSpeakerCutoutPng(png);
+      const optimized = await optimizeSpeakerCutoutPng(png, {
+        xeroxSeed: portraitUrlHash(imageUrl || existing || row.id)
+      });
       logSpeakerCutoutOptimization(optimized, 'cutout');
       const hash = portraitUrlHash(imageUrl);
       const path = opts.uploadFile

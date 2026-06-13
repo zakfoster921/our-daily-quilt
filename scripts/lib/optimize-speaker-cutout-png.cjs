@@ -2,6 +2,7 @@
 /* eslint-disable no-console */
 const sharp = require('sharp');
 const { stripSpeakerCutoutHaloRgba } = require('./strip-speaker-cutout-halo.cjs');
+const { applySpeakerCutoutXeroxRgba } = require('./speaker-cutout-xerox-pass.cjs');
 
 const DEFAULT_MAX_EDGE = 1200;
 
@@ -22,7 +23,7 @@ function formatBytes(bytes) {
 /**
  * Resize and compress a transparent speaker cutout PNG for web delivery.
  * @param {Buffer} inputBuffer
- * @param {{ maxEdge?: number }} [options]
+ * @param {{ maxEdge?: number, xeroxSeed?: string, skipXerox?: boolean }} [options]
  * @returns {Promise<{ buffer: Buffer, width: number, height: number, bytesBefore: number, bytesAfter: number }>}
  */
 async function optimizeSpeakerCutoutPng(inputBuffer, options = {}) {
@@ -54,6 +55,9 @@ async function optimizeSpeakerCutoutPng(inputBuffer, options = {}) {
     .raw()
     .toBuffer({ resolveWithObject: true });
   stripSpeakerCutoutHaloRgba(raw, rawInfo.width, rawInfo.height);
+  if (options.skipXerox !== true) {
+    applySpeakerCutoutXeroxRgba(raw, rawInfo.width, rawInfo.height, options.xeroxSeed || 'odq');
+  }
 
   const { data, info } = await sharp(raw, {
     raw: { width: rawInfo.width, height: rawInfo.height, channels: 4 }
