@@ -99,11 +99,38 @@ function loadLayoutBComposeSandbox() {
   return sandbox.globalThis;
 }
 
+function maskQuotedStrings(src) {
+  return src
+    .replace(/'(?:\\.|[^'\\])*'/g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/"(?:\\.|[^"\\])*"/g, (m) => m.replace(/[^\n]/g, ' '));
+}
+
 function collectOdqRefs(filePath) {
-  const src = fs.readFileSync(path.join(ROOT, filePath), 'utf8');
+  const raw = fs.readFileSync(path.join(ROOT, filePath), 'utf8');
+  const src = maskQuotedStrings(raw);
   const names = new Set();
-  for (const m of src.matchAll(/\b(odq[A-Z][A-Za-z0-9_]*)\b/g)) names.add(m[1]);
-  for (const m of src.matchAll(/\b(ODQ_[A-Z0-9_]+)\b/g)) names.add(m[1]);
+  const patterns = [/\b(odq[A-Z][A-Za-z0-9_]*)\b/g, /\b(ODQ_[A-Z0-9_]+)\b/g];
+  for (const re of patterns) {
+    for (const m of src.matchAll(re)) {
+      const before = src.slice(Math.max(0, m.index - 12), m.index);
+      if (/\.dataset\.$/.test(before)) continue;
+      names.add(m[1]);
+    }
+  }
+  return names;
+}
+
+function collectScriptGlobalsFromHtml(html) {
+  const names = new Set();
+  const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((m) => m[1]);
+  for (const rel of scripts) {
+    const abs = path.join(ROOT, rel);
+    if (!fs.existsSync(abs)) continue;
+    const src = fs.readFileSync(abs, 'utf8');
+    for (const m of src.matchAll(/\b(?:root|globalThis|window)\.([A-Za-z_$][\w$]*)\s*=/g)) {
+      names.add(m[1]);
+    }
+  }
   return names;
 }
 
@@ -122,6 +149,7 @@ function main() {
   const htmlGlobals = new Set([
     ...[...html.matchAll(/globalThis\.([A-Za-z_$][\w$]*)/g)].map((m) => m[1]),
     ...[...html.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=/g)].map((m) => m[1]),
+    ...collectScriptGlobalsFromHtml(html),
   ]);
   for (const name of Object.keys(globals)) {
     htmlGlobals.add(name);
