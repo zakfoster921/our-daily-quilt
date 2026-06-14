@@ -378,6 +378,13 @@ async function runNightlyIgAttempt({
           }
           return '';
         };
+        const pickNumber = (...values) => {
+          for (const value of values) {
+            const n = Number(value);
+            if (Number.isFinite(n) && n > 0) return Math.round(n);
+          }
+          return null;
+        };
         const quoteFromFirestoreData = (data) => {
           if (!data || typeof data !== 'object') return null;
           const text = pickString(data.text, data.quote, data.body, data.textSnapshot);
@@ -386,8 +393,6 @@ async function runNightlyIgAttempt({
           const out = { text, body: text, author };
           const fieldMap = {
             keyword: [data.keyword, data.keywordSnapshot],
-            first_line_count: [data.first_line_count, data.firstLineCount],
-            firstLineCount: [data.firstLineCount, data.first_line_count],
             blessing: [data.blessing, data.Blessing, data.blessingSnapshot],
             whatIf: [data.whatIf, data.what_if, data.whatIfSnapshot],
             speakerName: [data.speakerName, data.speaker_name, data.author, data.authorSnapshot],
@@ -419,6 +424,18 @@ async function runNightlyIgAttempt({
           for (const [key, values] of Object.entries(fieldMap)) {
             const value = pickString(...values);
             if (value) out[key] = value;
+          }
+          const flc = pickNumber(
+            data.first_line_count,
+            data.firstLineCount,
+            data.firstLineCountSnapshot,
+            data.first_line_count_snapshot,
+            data.notionProperties?.first_line_count?.value,
+            data.notionProperties?.firstLineCount?.value
+          );
+          if (flc != null) {
+            out.first_line_count = flc;
+            out.firstLineCount = flc;
           }
           return out;
         };

@@ -6,7 +6,7 @@
  * upload needs a higher MARKETING_VERSION, not just a higher build number.
  *
  *   npm run ios              # runs check before prep (blocks if version stale)
- *   npm run ios:bump-version # 2.0.3 → 2.0.4 in Xcode + app-config
+ *   npm run ios:bump-version # 2.1 → 2.2 in Xcode + app-config
  *   npm run ios:shipped      # run after a version goes live on the App Store
  */
 const fs = require("node:fs");
@@ -78,6 +78,10 @@ function writeLastShipped(version) {
 
 function bumpPatch(version) {
   const parts = parseParts(version);
+  if (parts.length === 2) {
+    parts[1] += 1;
+    return parts.join(".");
+  }
   if (parts.length < 3) parts.push(0);
   parts[parts.length - 1] += 1;
   return parts.join(".");

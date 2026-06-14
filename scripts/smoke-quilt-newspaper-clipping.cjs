@@ -61,8 +61,19 @@ async function loadClippingQuotesFromFirestore(centerDateKey) {
     const out = { text, author };
     const keyword = String(d.keyword ?? d.keywordSnapshot ?? '').trim();
     if (keyword) out.keyword = keyword;
-    const flc = Number(d.first_line_count ?? d.firstLineCount);
-    if (Number.isFinite(flc) && flc > 0) out.first_line_count = Math.round(flc);
+    let flc = Number(d.first_line_count ?? d.firstLineCount);
+    if (!Number.isFinite(flc) || flc <= 0) {
+      flc = Number(
+        d.firstLineCountSnapshot ??
+          d.first_line_count_snapshot ??
+          d.notionProperties?.first_line_count?.value ??
+          d.notionProperties?.firstLineCount?.value
+      );
+    }
+    if (Number.isFinite(flc) && flc > 0) {
+      out.first_line_count = Math.round(flc);
+      out.firstLineCount = Math.round(flc);
+    }
     return out;
   }
 
