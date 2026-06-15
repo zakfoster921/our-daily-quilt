@@ -191,10 +191,20 @@ async function runNightlyIgAttempt({
           }
           const expectedFlc = Number(meta.firstLineCount);
           const gotUnits = Number(meta.firstLineUnits);
+          const lineText = String(meta.firstLineText || '').trim();
+          const sentenceEndPrefix =
+            Number.isFinite(expectedFlc) &&
+            expectedFlc > 0 &&
+            Number.isFinite(gotUnits) &&
+            gotUnits > 0 &&
+            gotUnits < expectedFlc &&
+            /[.;]\s*$/.test(lineText) &&
+            !/[.;]\s+\S/.test(lineText) &&
+            !/[.;][A-Za-z]/.test(lineText);
           if (Number.isFinite(expectedFlc) && expectedFlc > 0 && Number.isFinite(gotUnits) && gotUnits > 0) {
-            if (gotUnits !== expectedFlc) {
+            if (gotUnits !== expectedFlc && !sentenceEndPrefix) {
               throw new Error(
-                `Newspaper clipping first line has ${gotUnits} units but first_line_count=${expectedFlc} (line 1: "${meta.firstLineText || ''}")`
+                `Newspaper clipping first line has ${gotUnits} units but first_line_count=${expectedFlc} (line 1: "${lineText}")`
               );
             }
           }
