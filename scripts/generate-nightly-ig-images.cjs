@@ -189,6 +189,15 @@ async function runNightlyIgAttempt({
               'Newspaper clipping has no yesterday/tomorrow quote text — side columns will be empty; run Notion quote sync and re-pin assignments'
             );
           }
+          const expectedFlc = Number(meta.firstLineCount);
+          const gotUnits = Number(meta.firstLineUnits);
+          if (Number.isFinite(expectedFlc) && expectedFlc > 0 && Number.isFinite(gotUnits) && gotUnits > 0) {
+            if (gotUnits !== expectedFlc) {
+              throw new Error(
+                `Newspaper clipping first line has ${gotUnits} units but first_line_count=${expectedFlc} (line 1: "${meta.firstLineText || ''}")`
+              );
+            }
+          }
         };
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
