@@ -192,6 +192,11 @@ async function runNightlyIgAttempt({
           const expectedFlc = Number(meta.firstLineCount);
           const gotUnits = Number(meta.firstLineUnits);
           const lineText = String(meta.firstLineText || '').trim();
+          const visualWords = lineText
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((w) => w.replace(/^[("'[\{]+|[)"'"\}\],.;:!?]+$/g, ''))
+            .filter(Boolean).length;
           const sentenceEndPrefix =
             Number.isFinite(expectedFlc) &&
             expectedFlc > 0 &&
@@ -201,8 +206,20 @@ async function runNightlyIgAttempt({
             /[.;]\s*$/.test(lineText) &&
             !/[.;]\s+\S/.test(lineText) &&
             !/[.;][A-Za-z]/.test(lineText);
+          const shortUnitLine =
+            Number.isFinite(expectedFlc) &&
+            expectedFlc > 0 &&
+            Number.isFinite(gotUnits) &&
+            gotUnits > 0 &&
+            gotUnits < expectedFlc &&
+            visualWords <= expectedFlc;
           if (Number.isFinite(expectedFlc) && expectedFlc > 0 && Number.isFinite(gotUnits) && gotUnits > 0) {
-            if (gotUnits !== expectedFlc && !sentenceEndPrefix) {
+            if (visualWords > expectedFlc && gotUnits < expectedFlc) {
+              throw new Error(
+                `Newspaper clipping first line has ${visualWords} visible words but first_line_count=${expectedFlc} (line 1: "${lineText}")`
+              );
+            }
+            if (gotUnits !== expectedFlc && !sentenceEndPrefix && !shortUnitLine) {
               throw new Error(
                 `Newspaper clipping first line has ${gotUnits} units but first_line_count=${expectedFlc} (line 1: "${lineText}")`
               );
