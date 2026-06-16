@@ -1440,6 +1440,46 @@ function addDaysToDateKey(dateKey, delta) {
   return `${y}-${mo}-${da}`;
 }
 
+/** Earliest valid `lastNightlyIgImagesAt` when posting quilt `{dateKey}` the next app morning (07:00 UTC). */
+function getCompletedQuiltPostingMinReadyIso(quiltDateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(quiltDateKey || ''))) return null;
+  return `${addDaysToDateKey(quiltDateKey, 1)}T07:00:00.000Z`;
+}
+
+/** Completed quilt days need nightly stills; live today may still be in progress. */
+function assessInstagramReadyForZapier(dateUsed, raw = {}) {
+  const key = String(dateUsed || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    return { ready: true };
+  }
+  if (key >= getAppDateKey()) {
+    return { ready: true };
+  }
+  if (raw.readyForInstagram !== true) {
+    return {
+      ready: false,
+      reason:
+        'readyForInstagram is false — final nightly IG stills are not ready yet (wait for GitHub nightly job or pre-Zapier pass).'
+    };
+  }
+  const minIso = getCompletedQuiltPostingMinReadyIso(key);
+  const lastNightly = String(raw.lastNightlyIgImagesAt || '').trim();
+  if (!lastNightly) {
+    return {
+      ready: false,
+      reason:
+        'lastNightlyIgImagesAt is missing — only daytime quilt-save PNGs exist; nightly rebuild has not completed.'
+    };
+  }
+  if (minIso && lastNightly < minIso) {
+    return {
+      ready: false,
+      reason: `lastNightlyIgImagesAt (${lastNightly}) is before this posting morning (${minIso}).`
+    };
+  }
+  return { ready: true };
+}
+
 function getUtcIsoNow() {
   return new Date().toISOString();
 }
@@ -4426,6 +4466,28 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       bodyDate ? { date: bodyDate } : {}
     );
 
+    const readyCheck = assessInstagramReadyForZapier(imageData.date, {
+      readyForInstagram: imageData.readyForInstagram === true,
+      lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt
+    });
+    if (!readyCheck.ready) {
+      console.warn(`⏳ Instagram not ready for Zapier (${imageData.date}): ${readyCheck.reason}`);
+      res.set('Retry-After', '300');
+      return res.status(503).json({
+        success: false,
+        notReady: true,
+        date: imageData.date,
+        readyForInstagram: imageData.readyForInstagram === true,
+        lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
+        minNightlyReadyAfter: getCompletedQuiltPostingMinReadyIso(imageData.date) || '',
+        blockCount: Number(imageData.blockCount) || 0,
+        error: readyCheck.reason,
+        retryAfterSeconds: 300,
+        suggestion:
+          'Final IG stills are built by GitHub nightly-instagram-snapshot.yml at 07:45 UTC and again at 11:00 UTC (6 AM CT). Enable Zapier auto-retry on 503 or schedule the Zap after 7 AM CT.'
+      });
+    }
+
     let baseUrl = process.env.RAILWAY_STATIC_URL || `https://our-daily-quilt-production.up.railway.app`;
     if (!baseUrl.startsWith('https://')) {
       baseUrl = `https://${baseUrl}`;
@@ -4488,7 +4550,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-20-contributor-cloud-post';
+    const apiVersion = 'instagram-api-21-zapier-ready-gate';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Include quote + speaker post URLs explicitly when both exist.
     const imageUrls = [
@@ -4669,6 +4731,14 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
     if (qfp) {
       docPayload.quiltFingerprint = qfp;
       docPayload.imageQuiltFingerprint = qfp;
+    }
+    if (body.markReadyForInstagram === true) {
+      const readyAt = new Date().toISOString();
+      docPayload.readyForInstagram = true;
+      docPayload.lastNightlyIgImagesAt = readyAt;
+      docPayload.igImagesSource = 'app_backend_admin_push';
+    } else if (dateKey < getAppDateKey()) {
+      docPayload.readyForInstagram = false;
     }
 
     if (instagramImage) {
