@@ -142,6 +142,39 @@ function tailOutput(text, maxLen) {
   return `…(truncated)\n${text.slice(-maxLen)}`;
 }
 
+/** Manual Notion sync: 1–10 app-days, or full catalog (`all`). Default 7. */
+function parseNotionSyncScopeFromBody(body) {
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const scopeRaw = String(b.scope ?? b.window ?? '').trim().toLowerCase();
+  if (
+    b.fullCatalog === true ||
+    b.fullCatalog === 1 ||
+    b.fullCatalog === '1' ||
+    b.fullCatalog === 'true' ||
+    scopeRaw === 'all' ||
+    scopeRaw === 'full' ||
+    scopeRaw === 'full-catalog'
+  ) {
+    return { fullCatalog: true, windowDays: null, label: 'all' };
+  }
+  const raw = b.windowDays ?? b.days ?? (scopeRaw && scopeRaw !== 'all' ? scopeRaw : '');
+  const n = Number.parseInt(String(raw ?? ''), 10);
+  if (Number.isFinite(n) && n >= 1 && n <= 10) {
+    return { fullCatalog: false, windowDays: n, label: String(n) };
+  }
+  return { fullCatalog: false, windowDays: 7, label: '7' };
+}
+
+function notionSyncQuotesScriptArgs(startDate, syncScope) {
+  const args = [`--start=${startDate}`];
+  if (syncScope.fullCatalog) {
+    args.push('--full-catalog');
+  } else {
+    args.push(`--window=${syncScope.windowDays}`);
+  }
+  return args;
+}
+
 const JSON_SIZE_LIMITS = new Map([
   ['/api/push-instagram-assets', 30 * ONE_MB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
@@ -7594,6 +7627,7 @@ app.post('/api/quote-prefill-sweep', async (req, res) => {
 
 /**
  * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
+ * Body (optional): { windowDays: 1..10 } or { fullCatalog: true } / { scope: "all" }. Default: 7 days.
  * After quotes sync, runs reconcile: apply Notion `date_scheduled` to `dailyQuoteAssignments`
  * (clear date → unschedule; change date → move). Then append-only scheduling (same as the daily cron), not swap mode.
  * Near-term empty days are filled via `--fill-gaps-only` before the tail append.
@@ -7653,16 +7687,21 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     });
   }
 
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const syncScope = parseNotionSyncScopeFromBody(body);
+
   notionSyncInProgress = true;
   const startedAt = getUtcIsoNow();
-  console.log('🔄 Manual Notion–Firestore sync started');
+  console.log(
+    `🔄 Manual Notion–Firestore sync started (scope=${syncScope.fullCatalog ? 'all' : `${syncScope.windowDays} days`})`
+  );
 
   try {
     const scheduleStartDate = getAppDateKey();
-    const quotesResult = await runNodeScript('scripts/sync-notion-to-firestore.cjs', [
-      `--start=${scheduleStartDate}`,
-      '--window=7'
-    ]);
+    const quotesResult = await runNodeScript(
+      'scripts/sync-notion-to-firestore.cjs',
+      notionSyncQuotesScriptArgs(scheduleStartDate, syncScope)
+    );
     if (quotesResult.code !== 0) {
       return res.status(500).json({
         success: false,
@@ -7749,10 +7788,10 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
       });
     }
 
-    const usageResult = await runNodeScript('scripts/sync-usage-firestore-to-notion.cjs', [
-      `--start=${scheduleStartDate}`,
-      '--window=7'
-    ]);
+    const usageResult = await runNodeScript(
+      'scripts/sync-usage-firestore-to-notion.cjs',
+      notionSyncQuotesScriptArgs(scheduleStartDate, syncScope)
+    );
     if (usageResult.code !== 0) {
       return res.status(500).json({
         success: false,
@@ -7777,6 +7816,8 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         'sync:usage'
       ],
       scheduleStartDate,
+      syncScope: syncScope.fullCatalog ? 'all' : syncScope.windowDays,
+      fullCatalog: syncScope.fullCatalog,
       stdout: tailOutput(
         `${quotesResult.stdout}\n---\n${reconcileResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${gapFillResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
         16000
