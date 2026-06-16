@@ -243,7 +243,7 @@ async function main() {
     },
     {
       key: '02-seam-soften',
-      label: 'Seam soften 10%',
+      label: `Seam soften ${Math.round(SimpleQuiltEngine.SEAM_SOFTEN_STRENGTH * 100)}%`,
       subtitle: `Both sides of ΔE>${SimpleQuiltEngine.SEAM_SOFTEN_THRESHOLD} seams nudged ${Math.round(SimpleQuiltEngine.SEAM_SOFTEN_STRENGTH * 100)}% toward midpoint`,
       blocks: seamBlocks
     },
