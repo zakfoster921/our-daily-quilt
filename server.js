@@ -142,7 +142,7 @@ function tailOutput(text, maxLen) {
   return `…(truncated)\n${text.slice(-maxLen)}`;
 }
 
-/** Manual Notion sync: 1–10 app-days, or full catalog (`all`). Default 7. */
+/** Manual Notion sync: 1–10 app-days, or full catalog (`all`). Default 1. */
 function parseNotionSyncScopeFromBody(body) {
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
   const scopeRaw = String(b.scope ?? b.window ?? '').trim().toLowerCase();
@@ -162,7 +162,7 @@ function parseNotionSyncScopeFromBody(body) {
   if (Number.isFinite(n) && n >= 1 && n <= 10) {
     return { fullCatalog: false, windowDays: n, label: String(n) };
   }
-  return { fullCatalog: false, windowDays: 7, label: '7' };
+  return { fullCatalog: false, windowDays: 1, label: '1' };
 }
 
 function notionSyncQuotesScriptArgs(startDate, syncScope) {
@@ -7627,7 +7627,7 @@ app.post('/api/quote-prefill-sweep', async (req, res) => {
 
 /**
  * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
- * Body (optional): { windowDays: 1..10 } or { fullCatalog: true } / { scope: "all" }. Default: 7 days.
+ * Body (optional): { windowDays: 1..10 } or { fullCatalog: true } / { scope: "all" }. Default: 1 day.
  * After quotes sync, runs reconcile: apply Notion `date_scheduled` to `dailyQuoteAssignments`
  * (clear date → unschedule; change date → move). Then append-only scheduling (same as the daily cron), not swap mode.
  * Near-term empty days are filled via `--fill-gaps-only` before the tail append.
