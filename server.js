@@ -182,6 +182,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
   ['/api/social-posts', 24 * ONE_KB],
+  ['/api/social-posts/upload-media', 30 * ONE_MB],
   ['/api/social-posts/:postId', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments/:commentId', 24 * ONE_KB],
@@ -8114,21 +8115,6 @@ const SOCIAL_COMMENT_TEXT_MAX = 500;
 const SOCIAL_POST_MEDIA_MAX = 10;
 const SOCIAL_COMMENT_REJECT_MESSAGE = 'Something here got flagged. Try again?';
 
-function isSocialPostsFeatureEnabled() {
-  const raw = String(process.env.SOCIAL_POSTS_ENABLED || '').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(raw);
-}
-
-function rejectSocialPostsWhenDisabled(res) {
-  if (isSocialPostsFeatureEnabled()) return false;
-  res.status(503).json({
-    success: false,
-    error: 'Community posts are not enabled on this server yet',
-    timestamp: getUtcIsoNow()
-  });
-  return true;
-}
-
 function socialPostAdminExpectedToken() {
   return String(
     process.env.SOCIAL_POST_ADMIN_TOKEN ||
@@ -8176,6 +8162,26 @@ function validateSocialPostMediaUrl(url) {
   const u = String(url || '').trim();
   if (!u || !/^https:\/\/firebasestorage\.googleapis\.com\//i.test(u)) return false;
   return u.includes('/social-posts%2F') || u.includes('/social-posts/');
+}
+
+function parseSocialPostMediaDataUrl(dataUrl) {
+  const raw = String(dataUrl || '').trim();
+  const match = raw.match(/^data:((?:image\/[a-z0-9.+-]+)|(?:video\/[a-z0-9.+-]+));base64,([a-z0-9+/=\s]+)$/i);
+  if (!match) return null;
+  const contentType = String(match[1] || '').toLowerCase();
+  const base64 = String(match[2] || '').replace(/\s+/g, '');
+  if (!base64) return null;
+  const buffer = Buffer.from(base64, 'base64');
+  if (!buffer.length) return null;
+  return { contentType, buffer };
+}
+
+function socialPostMediaExtFromContentType(contentType) {
+  const mime = String(contentType || '').toLowerCase();
+  if (mime.startsWith('video/')) return 'mp4';
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  return 'jpg';
 }
 
 function normalizeSocialPostMediaList(media) {
@@ -8284,6 +8290,10 @@ app.options('/api/social-posts/admin/list', (req, res) => {
   setSocialApiCors(res);
   res.sendStatus(204);
 });
+app.options('/api/social-posts/upload-media', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
 app.options('/api/social-posts/:postId', (req, res) => {
   setSocialApiCors(res);
   res.sendStatus(204);
@@ -8299,7 +8309,6 @@ app.options('/api/social-posts/:postId/comments/:commentId', (req, res) => {
 
 app.get('/api/social-posts/feed', async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!db) throw new Error('Firestore not initialized');
     const pageLimit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
@@ -8339,9 +8348,40 @@ app.get('/api/social-posts/feed', async (req, res) => {
   }
 });
 
+app.post('/api/social-posts/upload-media', async (req, res) => {
+  setSocialApiCors(res);
+  try {
+    if (!requireSocialPostAdmin(req, res)) return;
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const postId = String(body.postId || '').trim().slice(0, 120);
+    const index = Math.max(0, Math.min(9, Number(body.index) || 0));
+    const parsed = parseSocialPostMediaDataUrl(body.dataUrl || body.dataURL || body.imageDataUrl);
+    if (!postId) {
+      return res.status(400).json({ success: false, error: 'postId is required' });
+    }
+    if (!parsed) {
+      return res.status(400).json({ success: false, error: 'Valid image or video data URL is required' });
+    }
+    const ext = socialPostMediaExtFromContentType(parsed.contentType);
+    const destination = `social-posts/${postId}/${index}.${ext}`;
+    const saved = await firebaseSaveDownloadableFile(destination, parsed.buffer, parsed.contentType);
+    const type = parsed.contentType.startsWith('video/') ? 'video' : 'image';
+    return res.json({
+      success: true,
+      media: { type, url: saved.publicUrl }
+    });
+  } catch (error) {
+    console.error('❌ Social post media upload failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post media upload failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
 app.get('/api/social-posts/admin/list', async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!requireSocialPostAdmin(req, res)) return;
     if (!db) throw new Error('Firestore not initialized');
@@ -8367,7 +8407,6 @@ app.get('/api/social-posts/admin/list', async (req, res) => {
 
 app.get('/api/social-posts/:postId', async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!db) throw new Error('Firestore not initialized');
     const postId = String(req.params.postId || '').trim();
@@ -8395,7 +8434,6 @@ app.get('/api/social-posts/:postId', async (req, res) => {
 
 app.post('/api/social-posts', async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!requireSocialPostAdmin(req, res)) return;
     if (!db) throw new Error('Firestore not initialized');
@@ -8446,7 +8484,6 @@ app.post('/api/social-posts', async (req, res) => {
 
 app.patch('/api/social-posts/:postId', async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!requireSocialPostAdmin(req, res)) return;
     if (!db) throw new Error('Firestore not initialized');
@@ -8510,7 +8547,6 @@ app.patch('/api/social-posts/:postId', async (req, res) => {
 
 app.delete('/api/social-posts/:postId', async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!requireSocialPostAdmin(req, res)) return;
     if (!db) throw new Error('Firestore not initialized');
@@ -8545,7 +8581,6 @@ app.delete('/api/social-posts/:postId', async (req, res) => {
 
 app.get('/api/social-posts/:postId/comments', async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!db) throw new Error('Firestore not initialized');
     const postId = String(req.params.postId || '').trim();
@@ -8596,7 +8631,6 @@ app.get('/api/social-posts/:postId/comments', async (req, res) => {
 
 app.post('/api/social-posts/:postId/comments', limitSocialComment, async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!db) throw new Error('Firestore not initialized');
     const postId = String(req.params.postId || '').trim();
@@ -8706,7 +8740,6 @@ app.post('/api/social-posts/:postId/comments', limitSocialComment, async (req, r
 
 app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!db) throw new Error('Firestore not initialized');
     const postId = String(req.params.postId || '').trim();
@@ -8790,7 +8823,6 @@ app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, a
 
 app.delete('/api/social-posts/:postId/comments/:commentId', limitSocialComment, async (req, res) => {
   setSocialApiCors(res);
-  if (rejectSocialPostsWhenDisabled(res)) return;
   try {
     if (!db) throw new Error('Firestore not initialized');
     const postId = String(req.params.postId || '').trim();
