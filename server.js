@@ -181,6 +181,10 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
+  ['/api/social-posts', 24 * ONE_KB],
+  ['/api/social-posts/:postId', 24 * ONE_KB],
+  ['/api/social-posts/:postId/comments', 24 * ONE_KB],
+  ['/api/social-posts/:postId/comments/:commentId', 24 * ONE_KB],
   ['/api/push/register', 12 * ONE_KB],
   ['/api/generate-instagram', 4 * ONE_KB]
 ]);
@@ -403,6 +407,11 @@ const limitReflectionResponse = createRateLimiter({
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_REFLECTION_RESPONSE_PER_10_MIN, 10)
 });
+const limitSocialComment = createRateLimiter({
+  name: 'social-comment',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_SOCIAL_COMMENT_PER_10_MIN, 20)
+});
 const limitPushRegister = createRateLimiter({
   name: 'push-register',
   windowMs: 10 * 60 * 1000,
@@ -555,6 +564,13 @@ function setReflectionApiCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token, x-reflection-theme-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+function setSocialApiCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token, x-reflection-theme-token, x-social-post-token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -8087,6 +8103,747 @@ app.post('/api/transcode-instagram-reel', limitTranscodeReel, optionalInstagramA
       success: false,
       error: error.message || 'Transcode failed',
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// --- Social posts (admin-authored feed + user comments) ---
+
+const SOCIAL_POST_CAPTION_MAX = 2200;
+const SOCIAL_COMMENT_TEXT_MAX = 500;
+const SOCIAL_POST_MEDIA_MAX = 10;
+const SOCIAL_COMMENT_REJECT_MESSAGE = 'Something here got flagged. Try again?';
+
+function isSocialPostsFeatureEnabled() {
+  const raw = String(process.env.SOCIAL_POSTS_ENABLED || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+}
+
+function rejectSocialPostsWhenDisabled(res) {
+  if (isSocialPostsFeatureEnabled()) return false;
+  res.status(503).json({
+    success: false,
+    error: 'Community posts are not enabled on this server yet',
+    timestamp: getUtcIsoNow()
+  });
+  return true;
+}
+
+function socialPostAdminExpectedToken() {
+  return String(
+    process.env.SOCIAL_POST_ADMIN_TOKEN ||
+      process.env.RESET_TOKEN ||
+      process.env.REFLECTION_THEME_TOKEN ||
+      ''
+  ).trim();
+}
+
+function socialPostAdminTokenFromRequest(req) {
+  return String(
+    req.header('x-social-post-token') ||
+      req.header('x-reset-token') ||
+      req.header('x-reflection-theme-token') ||
+      ''
+  ).trim();
+}
+
+function requireSocialPostAdmin(req, res) {
+  const expectedToken = socialPostAdminExpectedToken();
+  if (!expectedToken) {
+    res.status(500).json({
+      success: false,
+      error: 'SOCIAL_POST_ADMIN_TOKEN or RESET_TOKEN must be set on the server'
+    });
+    return false;
+  }
+  const providedToken = socialPostAdminTokenFromRequest(req);
+  if (!providedToken || providedToken !== expectedToken) {
+    res.status(401).json({ success: false, error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+function normalizeSocialPostCaption(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, SOCIAL_POST_CAPTION_MAX);
+}
+
+function normalizeSocialCommentText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, SOCIAL_COMMENT_TEXT_MAX);
+}
+
+function validateSocialPostMediaUrl(url) {
+  const u = String(url || '').trim();
+  if (!u || !/^https:\/\/firebasestorage\.googleapis\.com\//i.test(u)) return false;
+  return u.includes('/social-posts%2F') || u.includes('/social-posts/');
+}
+
+function normalizeSocialPostMediaList(media) {
+  if (!Array.isArray(media)) return [];
+  const out = [];
+  for (const item of media.slice(0, SOCIAL_POST_MEDIA_MAX)) {
+    if (!item || typeof item !== 'object') continue;
+    const type = String(item.type || '').trim().toLowerCase() === 'video' ? 'video' : 'image';
+    const url = String(item.url || '').trim();
+    if (!validateSocialPostMediaUrl(url)) continue;
+    const entry = { type, url };
+    const width = Number(item.width);
+    const height = Number(item.height);
+    const durationSec = Number(item.durationSec);
+    if (Number.isFinite(width) && width > 0) entry.width = Math.round(width);
+    if (Number.isFinite(height) && height > 0) entry.height = Math.round(height);
+    if (Number.isFinite(durationSec) && durationSec > 0) entry.durationSec = durationSec;
+    out.push(entry);
+  }
+  return out;
+}
+
+function serializeSocialPostDoc(doc) {
+  const data = doc.data() || {};
+  const createdAtIso = data.createdAtIso || '';
+  const publishedAtIso = data.publishedAtIso || '';
+  const updatedAtIso = data.updatedAtIso || '';
+  return {
+    postId: doc.id,
+    status: String(data.status || 'draft'),
+    caption: String(data.caption || ''),
+    media: Array.isArray(data.media) ? data.media : [],
+    mediaLayout: String(data.mediaLayout || 'single'),
+    authorLabel: String(data.authorLabel || 'Our Daily'),
+    commentCount: Number.isFinite(Number(data.commentCount)) ? Number(data.commentCount) : 0,
+    createdAtIso,
+    publishedAtIso,
+    updatedAtIso
+  };
+}
+
+function serializeSocialCommentDoc(doc) {
+  const data = doc.data() || {};
+  return {
+    commentId: doc.id,
+    postId: String(data.postId || ''),
+    text: String(data.text || ''),
+    displayName: String(data.displayName || ''),
+    clientId: String(data.clientId || ''),
+    parentCommentId: data.parentCommentId ? String(data.parentCommentId) : null,
+    depth: Number.isFinite(Number(data.depth)) ? Number(data.depth) : 0,
+    status: String(data.status || 'published'),
+    createdAtIso: String(data.createdAtIso || ''),
+    updatedAtIso: String(data.updatedAtIso || '')
+  };
+}
+
+async function moderateAndPublishCommentText({ rawText }) {
+  let moderation;
+  try {
+    moderation = await moderateReflectionResponseWithAi({
+      reflectionPrompt: 'Community comment on a social post',
+      responseText: rawText
+    });
+  } catch (error) {
+    console.error('❌ Social comment moderation failed:', error);
+    moderation = moderateReflectionResponseLocally(rawText);
+    if (moderation.action !== 'publish') {
+      const err = new Error('Could not review your comment right now. Please try again in a moment.');
+      err.status = 503;
+      throw err;
+    }
+    console.warn('Social comment published via local fallback after AI moderation failure.');
+  }
+
+  if (moderation.action === 'reject') {
+    const err = new Error(SOCIAL_COMMENT_REJECT_MESSAGE);
+    err.status = 422;
+    err.rejected = true;
+    throw err;
+  }
+
+  const text = reflectionModerationPublishBody(rawText, moderation);
+  if (!text) {
+    const err = new Error(SOCIAL_COMMENT_REJECT_MESSAGE);
+    err.status = 422;
+    err.rejected = true;
+    throw err;
+  }
+
+  return {
+    moderation,
+    text: trimModeratedBodyAtWord(text, SOCIAL_COMMENT_TEXT_MAX)
+  };
+}
+
+app.options('/api/social-posts', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+app.options('/api/social-posts/feed', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+app.options('/api/social-posts/admin/list', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+app.options('/api/social-posts/:postId', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+app.options('/api/social-posts/:postId/comments', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+app.options('/api/social-posts/:postId/comments/:commentId', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+
+app.get('/api/social-posts/feed', async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const pageLimit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
+    const cursorPostId = String(req.query.cursorPostId || '').trim();
+
+    let query = db.collection('socialPosts').orderBy('publishedAtIso', 'desc').limit(pageLimit + 10);
+
+    if (cursorPostId) {
+      const cursorDoc = await db.collection('socialPosts').doc(cursorPostId).get();
+      if (cursorDoc.exists) {
+        query = db
+          .collection('socialPosts')
+          .orderBy('publishedAtIso', 'desc')
+          .startAfter(cursorDoc)
+          .limit(pageLimit + 10);
+      }
+    }
+
+    const snap = await query.get();
+    const posts = snap.docs
+      .map(serializeSocialPostDoc)
+      .filter((post) => post.status === 'published' && post.publishedAtIso)
+      .slice(0, pageLimit);
+    return res.json({
+      success: true,
+      posts,
+      cursorPostId: posts.length ? posts[posts.length - 1].postId : cursorPostId,
+      hasMore: snap.docs.length > pageLimit
+    });
+  } catch (error) {
+    console.error('❌ Social posts feed read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social posts feed read failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.get('/api/social-posts/admin/list', async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!requireSocialPostAdmin(req, res)) return;
+    if (!db) throw new Error('Firestore not initialized');
+    const statusFilter = String(req.query.status || '').trim().toLowerCase();
+    const pageLimit = Math.min(40, Math.max(1, Number(req.query.limit) || 20));
+
+    const snap = await db.collection('socialPosts').orderBy('updatedAtIso', 'desc').limit(80).get();
+    let posts = snap.docs.map(serializeSocialPostDoc).filter((post) => post.status !== 'deleted');
+    if (statusFilter) {
+      posts = posts.filter((post) => post.status === statusFilter);
+    }
+    posts = posts.slice(0, pageLimit);
+    return res.json({ success: true, posts });
+  } catch (error) {
+    console.error('❌ Social posts admin list failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social posts admin list failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.get('/api/social-posts/:postId', async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    if (!postId) {
+      return res.status(400).json({ success: false, error: 'postId is required' });
+    }
+    const doc = await db.collection('socialPosts').doc(postId).get();
+    if (!doc.exists) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    const post = serializeSocialPostDoc(doc);
+    if (post.status !== 'published' && !requireSocialPostAdmin(req, res)) {
+      return;
+    }
+    return res.json({ success: true, post });
+  } catch (error) {
+    console.error('❌ Social post read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post read failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.post('/api/social-posts', async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!requireSocialPostAdmin(req, res)) return;
+    if (!db) throw new Error('Firestore not initialized');
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const caption = normalizeSocialPostCaption(body.caption);
+    const media = normalizeSocialPostMediaList(body.media);
+    const status = String(body.status || 'draft').trim().toLowerCase();
+    const allowedStatus = new Set(['draft', 'published', 'archived']);
+    const nextStatus = allowedStatus.has(status) ? status : 'draft';
+    const authorLabel = String(body.authorLabel || 'Our Daily').trim().slice(0, 80) || 'Our Daily';
+    const mediaLayout = Array.isArray(body.media) && body.media.length > 1 ? 'carousel' : 'single';
+
+    if (!media.length && nextStatus === 'published') {
+      return res.status(400).json({ success: false, error: 'Published posts require at least one media item' });
+    }
+
+    const postRef = db.collection('socialPosts').doc();
+    const postId = postRef.id;
+    const nowIso = getUtcIsoNow();
+    const payload = {
+      status: nextStatus,
+      caption,
+      media,
+      mediaLayout,
+      authorLabel,
+      commentCount: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAtIso: nowIso,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtIso: nowIso
+    };
+    if (nextStatus === 'published') {
+      payload.publishedAt = admin.firestore.FieldValue.serverTimestamp();
+      payload.publishedAtIso = nowIso;
+    }
+    await postRef.set(payload);
+    const saved = await postRef.get();
+    return res.json({ success: true, post: serializeSocialPostDoc(saved) });
+  } catch (error) {
+    console.error('❌ Social post create failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post create failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.patch('/api/social-posts/:postId', async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!requireSocialPostAdmin(req, res)) return;
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    if (!postId) {
+      return res.status(400).json({ success: false, error: 'postId is required' });
+    }
+    const postRef = db.collection('socialPosts').doc(postId);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const patch = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'caption')) {
+      patch.caption = normalizeSocialPostCaption(body.caption);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'media')) {
+      patch.media = normalizeSocialPostMediaList(body.media);
+      patch.mediaLayout = patch.media.length > 1 ? 'carousel' : 'single';
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'authorLabel')) {
+      patch.authorLabel = String(body.authorLabel || 'Our Daily').trim().slice(0, 80) || 'Our Daily';
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'status')) {
+      const status = String(body.status || '').trim().toLowerCase();
+      const allowedStatus = new Set(['draft', 'published', 'archived', 'deleted']);
+      if (!allowedStatus.has(status)) {
+        return res.status(400).json({ success: false, error: 'Invalid status' });
+      }
+      const existing = postSnap.data() || {};
+      const media = patch.media || (Array.isArray(existing.media) ? existing.media : []);
+      if (status === 'published' && !media.length) {
+        return res.status(400).json({ success: false, error: 'Published posts require at least one media item' });
+      }
+      patch.status = status;
+      if (status === 'published' && !existing.publishedAtIso) {
+        const nowIso = getUtcIsoNow();
+        patch.publishedAt = admin.firestore.FieldValue.serverTimestamp();
+        patch.publishedAtIso = nowIso;
+      }
+    }
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ success: false, error: 'No valid fields to update' });
+    }
+    const nowIso = getUtcIsoNow();
+    patch.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    patch.updatedAtIso = nowIso;
+    await postRef.set(patch, { merge: true });
+    const saved = await postRef.get();
+    return res.json({ success: true, post: serializeSocialPostDoc(saved) });
+  } catch (error) {
+    console.error('❌ Social post update failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post update failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.delete('/api/social-posts/:postId', async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!requireSocialPostAdmin(req, res)) return;
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    if (!postId) {
+      return res.status(400).json({ success: false, error: 'postId is required' });
+    }
+    const postRef = db.collection('socialPosts').doc(postId);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    const nowIso = getUtcIsoNow();
+    await postRef.set(
+      {
+        status: 'deleted',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAtIso: nowIso
+      },
+      { merge: true }
+    );
+    return res.json({ success: true, postId, status: 'deleted' });
+  } catch (error) {
+    console.error('❌ Social post delete failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post delete failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.get('/api/social-posts/:postId/comments', async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    if (!postId) {
+      return res.status(400).json({ success: false, error: 'postId is required' });
+    }
+    const postSnap = await db.collection('socialPosts').doc(postId).get();
+    if (!postSnap.exists || (postSnap.data() || {}).status !== 'published') {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    const pageLimit = Math.min(50, Math.max(1, Number(req.query.limit) || 30));
+    const parentCommentId = String(req.query.parentCommentId || '').trim();
+
+    const snap = await db
+      .collection('socialPosts')
+      .doc(postId)
+      .collection('comments')
+      .orderBy('createdAt', 'asc')
+      .limit(200)
+      .get();
+
+    let comments = snap.docs
+      .map(serializeSocialCommentDoc)
+      .filter((comment) => comment.status === 'published');
+
+    if (parentCommentId) {
+      comments = comments.filter((comment) => comment.parentCommentId === parentCommentId);
+    } else {
+      comments = comments.filter((comment) => !comment.parentCommentId);
+    }
+
+    comments = comments.slice(0, pageLimit);
+    return res.json({
+      success: true,
+      comments,
+      cursorCommentId: comments.length ? comments[comments.length - 1].commentId : '',
+      hasMore: false
+    });
+  } catch (error) {
+    console.error('❌ Social post comments read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post comments read failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.post('/api/social-posts/:postId/comments', limitSocialComment, async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    if (!postId) {
+      return res.status(400).json({ success: false, error: 'postId is required' });
+    }
+    const postSnap = await db.collection('socialPosts').doc(postId).get();
+    if (!postSnap.exists || (postSnap.data() || {}).status !== 'published') {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const rawText = normalizeSocialCommentText(body.text || body.commentText);
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const displayName = String(body.displayName || body.authorDisplayName || '').trim().slice(0, 80);
+    const parentCommentId = String(body.parentCommentId || '').trim();
+
+    if (!rawText) {
+      return res.status(400).json({ success: false, error: 'Comment text is required' });
+    }
+
+    let depth = 0;
+    if (parentCommentId) {
+      const parentSnap = await db
+        .collection('socialPosts')
+        .doc(postId)
+        .collection('comments')
+        .doc(parentCommentId)
+        .get();
+      if (!parentSnap.exists || (parentSnap.data() || {}).status !== 'published') {
+        return res.status(400).json({ success: false, error: 'Parent comment not found' });
+      }
+      const parentDepth = Number((parentSnap.data() || {}).depth) || 0;
+      if (parentDepth >= 1) {
+        return res.status(400).json({ success: false, error: 'Replies are limited to one level deep' });
+      }
+      depth = 1;
+    }
+
+    let publishResult;
+    try {
+      publishResult = await moderateAndPublishCommentText({ rawText });
+    } catch (error) {
+      if (error.status === 503) {
+        return res.status(503).json({
+          success: false,
+          error: error.message,
+          timestamp: getUtcIsoNow()
+        });
+      }
+      if (error.status === 422 || error.rejected) {
+        return res.status(422).json({
+          success: false,
+          error: error.message || SOCIAL_COMMENT_REJECT_MESSAGE,
+          rejected: true
+        });
+      }
+      throw error;
+    }
+
+    const { moderation, text } = publishResult;
+    const commentRef = db.collection('socialPosts').doc(postId).collection('comments').doc();
+    const nowIso = getUtcIsoNow();
+    const commentPayload = {
+      postId,
+      text,
+      rawText,
+      displayName: storedReflectionAuthorName(displayName),
+      clientId: clientId || null,
+      parentCommentId: parentCommentId || null,
+      depth,
+      status: 'published',
+      moderationProvider: moderation.provider || null,
+      moderationModel: moderation.model || null,
+      moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAtIso: nowIso,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtIso: nowIso
+    };
+    await commentRef.set(commentPayload);
+    await db
+      .collection('socialPosts')
+      .doc(postId)
+      .set(
+        {
+          commentCount: admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAtIso: nowIso
+        },
+        { merge: true }
+      );
+
+    return res.json({
+      success: true,
+      comment: serializeSocialCommentDoc(await commentRef.get())
+    });
+  } catch (error) {
+    console.error('❌ Social post comment create failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post comment create failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    const commentId = String(req.params.commentId || '').trim();
+    if (!postId || !commentId) {
+      return res.status(400).json({ success: false, error: 'postId and commentId are required' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const rawText = normalizeSocialCommentText(body.text || body.commentText);
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const displayName = String(body.displayName || body.authorDisplayName || '').trim().slice(0, 80);
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+    if (!rawText) {
+      return res.status(400).json({ success: false, error: 'Comment text is required' });
+    }
+
+    const commentRef = db.collection('socialPosts').doc(postId).collection('comments').doc(commentId);
+    const commentSnap = await commentRef.get();
+    if (!commentSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+    const existing = commentSnap.data() || {};
+    if (existing.status === 'deleted') {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+    if (String(existing.clientId || '') !== clientId) {
+      return res.status(403).json({ success: false, error: 'You can only edit your own comments' });
+    }
+
+    let publishResult;
+    try {
+      publishResult = await moderateAndPublishCommentText({ rawText });
+    } catch (error) {
+      if (error.status === 503) {
+        return res.status(503).json({
+          success: false,
+          error: error.message,
+          timestamp: getUtcIsoNow()
+        });
+      }
+      if (error.status === 422 || error.rejected) {
+        return res.status(422).json({
+          success: false,
+          error: error.message || SOCIAL_COMMENT_REJECT_MESSAGE,
+          rejected: true
+        });
+      }
+      throw error;
+    }
+
+    const { moderation, text } = publishResult;
+    const nowIso = getUtcIsoNow();
+    await commentRef.set(
+      {
+        text,
+        rawText,
+        displayName: storedReflectionAuthorName(displayName || existing.displayName),
+        moderationProvider: moderation.provider || null,
+        moderationModel: moderation.model || null,
+        moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAtIso: nowIso
+      },
+      { merge: true }
+    );
+    return res.json({
+      success: true,
+      comment: serializeSocialCommentDoc(await commentRef.get())
+    });
+  } catch (error) {
+    console.error('❌ Social post comment update failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post comment update failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.delete('/api/social-posts/:postId/comments/:commentId', limitSocialComment, async (req, res) => {
+  setSocialApiCors(res);
+  if (rejectSocialPostsWhenDisabled(res)) return;
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    const commentId = String(req.params.commentId || '').trim();
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!postId || !commentId) {
+      return res.status(400).json({ success: false, error: 'postId and commentId are required' });
+    }
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const commentRef = db.collection('socialPosts').doc(postId).collection('comments').doc(commentId);
+    const commentSnap = await commentRef.get();
+    if (!commentSnap.exists) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+    const existing = commentSnap.data() || {};
+    if (String(existing.clientId || '') !== clientId) {
+      return res.status(403).json({ success: false, error: 'You can only delete your own comments' });
+    }
+    if (existing.status === 'deleted') {
+      return res.json({ success: true, commentId, status: 'deleted' });
+    }
+
+    const nowIso = getUtcIsoNow();
+    await commentRef.set(
+      {
+        status: 'deleted',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAtIso: nowIso
+      },
+      { merge: true }
+    );
+    await db
+      .collection('socialPosts')
+      .doc(postId)
+      .set(
+        {
+          commentCount: admin.firestore.FieldValue.increment(-1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAtIso: nowIso
+        },
+        { merge: true }
+      );
+    return res.json({ success: true, commentId, status: 'deleted' });
+  } catch (error) {
+    console.error('❌ Social post comment delete failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post comment delete failed',
+      timestamp: getUtcIsoNow()
     });
   }
 });
