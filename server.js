@@ -8164,13 +8164,25 @@ function validateSocialPostMediaUrl(url) {
   return u.includes('/social-posts%2F') || u.includes('/social-posts/');
 }
 
-function parseSocialPostMediaDataUrl(dataUrl) {
+function normalizeSocialPostMediaContentType(contentType) {
+  const mime = String(contentType || '').trim().toLowerCase().split(';')[0];
+  if (!mime) return '';
+  if (mime.startsWith('image/') || mime.startsWith('video/')) return mime;
+  return '';
+}
+
+function parseSocialPostMediaDataUrl(dataUrl, contentTypeHint = '') {
   const raw = String(dataUrl || '').trim();
-  const match = raw.match(/^data:((?:image\/[a-z0-9.+-]+)|(?:video\/[a-z0-9.+-]+));base64,([a-z0-9+/=\s]+)$/i);
+  const hinted = normalizeSocialPostMediaContentType(contentTypeHint);
+  const match = raw.match(/^data:([^;]+);base64,([a-z0-9+/=\s]+)$/i);
   if (!match) return null;
-  const contentType = String(match[1] || '').toLowerCase();
+  let contentType = normalizeSocialPostMediaContentType(match[1]);
   const base64 = String(match[2] || '').replace(/\s+/g, '');
   if (!base64) return null;
+  if (!contentType) {
+    if (hinted) contentType = hinted;
+    else return null;
+  }
   const buffer = Buffer.from(base64, 'base64');
   if (!buffer.length) return null;
   return { contentType, buffer };
@@ -8355,7 +8367,10 @@ app.post('/api/social-posts/upload-media', async (req, res) => {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const postId = String(body.postId || '').trim().slice(0, 120);
     const index = Math.max(0, Math.min(9, Number(body.index) || 0));
-    const parsed = parseSocialPostMediaDataUrl(body.dataUrl || body.dataURL || body.imageDataUrl);
+    const parsed = parseSocialPostMediaDataUrl(
+      body.dataUrl || body.dataURL || body.imageDataUrl,
+      body.contentType || body.mimeType || body.mime
+    );
     if (!postId) {
       return res.status(400).json({ success: false, error: 'postId is required' });
     }
