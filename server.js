@@ -8312,6 +8312,36 @@ function validateSocialPostMediaUrl(url) {
   return u.includes('/social-posts%2F') || u.includes('/social-posts/');
 }
 
+async function deleteFirestoreCollectionDocs(collectionRef, batchSize = 200) {
+  const snap = await collectionRef.limit(batchSize).get();
+  if (snap.empty) return;
+  const batch = db.batch();
+  snap.docs.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
+  if (snap.size >= batchSize) {
+    await deleteFirestoreCollectionDocs(collectionRef, batchSize);
+  }
+}
+
+async function deleteSocialPostStoragePrefix(postId) {
+  try {
+    const bucket = admin.storage().bucket();
+    await bucket.deleteFiles({ prefix: `social-posts/${postId}/` });
+  } catch (error) {
+    console.warn(`⚠️ Social post storage cleanup failed for ${postId}:`, error.message || error);
+  }
+}
+
+async function hardDeleteSocialPost(postId) {
+  const postRef = db.collection('socialPosts').doc(postId);
+  const postSnap = await postRef.get();
+  if (!postSnap.exists) return false;
+  await deleteFirestoreCollectionDocs(postRef.collection('comments'));
+  await deleteSocialPostStoragePrefix(postId);
+  await postRef.delete();
+  return true;
+}
+
 function normalizeSocialPostMediaContentType(contentType) {
   const mime = String(contentType || '').trim().toLowerCase().split(';')[0];
   if (!mime) return '';
@@ -8759,21 +8789,11 @@ app.delete('/api/social-posts/:postId', async (req, res) => {
     if (!postId) {
       return res.status(400).json({ success: false, error: 'postId is required' });
     }
-    const postRef = db.collection('socialPosts').doc(postId);
-    const postSnap = await postRef.get();
-    if (!postSnap.exists) {
+    const deleted = await hardDeleteSocialPost(postId);
+    if (!deleted) {
       return res.status(404).json({ success: false, error: 'Post not found' });
     }
-    const nowIso = getUtcIsoNow();
-    await postRef.set(
-      {
-        status: 'deleted',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAtIso: nowIso
-      },
-      { merge: true }
-    );
-    return res.json({ success: true, postId, status: 'deleted' });
+    return res.json({ success: true, postId, deleted: true });
   } catch (error) {
     console.error('❌ Social post delete failed:', error);
     return res.status(500).json({
