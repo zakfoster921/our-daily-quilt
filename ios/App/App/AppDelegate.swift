@@ -2,6 +2,7 @@ import UIKit
 import WebKit
 import Capacitor
 import FirebaseCore
+import AVFoundation
 
 /// Exposes delegate methods to the Objective‑C runtime for Firebase / GoogleUtilities swizzling (`I-SWZ001014`).
 @UIApplicationMain
@@ -46,8 +47,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         window?.backgroundColor = launchBackgroundColor
         showLaunchCoverWindow()
+        configureAudioSession()
         configureNativeLaunchBridge()
         return true
+    }
+
+    private func configureAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            NSLog("AVAudioSession configure failed: \(error.localizedDescription)")
+        }
     }
 
     /// Transparent overlay — only the ring. Text stays on LaunchScreen / Capacitor splash (no duplicate label).
@@ -149,6 +160,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, WKScriptMessageHandler {
             return
         }
         if let webView = bridgeViewController.webView {
+            webView.configuration.allowsInlineMediaPlayback = true
+            if #available(iOS 10.0, *) {
+                webView.configuration.mediaTypesRequiringUserActionForPlayback = []
+            }
             if !nativeLaunchScriptInstalled {
                 let source = "window.__ODQ_NATIVE_LAUNCH_MS__=\(nativeLaunchUnixMs);"
                 let userScript = WKUserScript(

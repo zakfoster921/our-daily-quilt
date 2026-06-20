@@ -930,6 +930,90 @@ function runFfmpegWebmToMp4(ffmpegPath, inputPath, outputPath, moodLabel = '') {
   });
 }
 
+function runFfmpegSocialPostVideoToMp4(ffmpegPath, inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-y',
+      '-i',
+      inputPath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:0?',
+      '-c:v',
+      'libx264',
+      '-profile:v',
+      'high',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-ac',
+      '2',
+      '-movflags',
+      '+faststart',
+      outputPath
+    ];
+    const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    const timeoutMs = parsePositiveInt(process.env.SOCIAL_VIDEO_TRANSCODE_TIMEOUT_MS, 90000);
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      reject(new Error(`ffmpeg timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.stderr.on('data', (d) => {
+      stderr += String(d || '');
+    });
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) resolve(stderr);
+      else reject(new Error(`ffmpeg exited ${code}: ${tailOutput(stderr, 4000)}`));
+    });
+  });
+}
+
+async function normalizeSocialPostVideoUploadBuffer(buffer, contentType) {
+  const mime = String(contentType || '').toLowerCase();
+  if (!mime.startsWith('video/') || !buffer?.length) {
+    return { buffer, contentType: mime || contentType };
+  }
+  const ffmpegPath = getFfmpegBinaryPath();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'social-post-video-'));
+  const inPath = path.join(tmpDir, 'input');
+  const outPath = path.join(tmpDir, 'output.mp4');
+  try {
+    await fs.writeFile(inPath, buffer);
+    await runFfmpegSocialPostVideoToMp4(ffmpegPath, inPath, outPath);
+    const outBuffer = await fs.readFile(outPath);
+    if (!outBuffer.length) {
+      throw new Error('Transcoded social video was empty');
+    }
+    return { buffer: outBuffer, contentType: 'video/mp4' };
+  } catch (error) {
+    console.warn('⚠️ Social post video transcode failed; saving original upload:', error.message || error);
+    return { buffer, contentType: mime };
+  } finally {
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+}
+
 /**
  * Downloads the WebM from Firestore, transcodes to H.264 MP4 + AAC (bed music or silent), uploads next to it, merges URLs into the doc.
  * @param {string} dateKey YYYY-MM-DD
@@ -8188,8 +8272,29 @@ function parseSocialPostMediaDataUrl(dataUrl, contentTypeHint = '') {
   return { contentType, buffer };
 }
 
+function socialPostMediaUrlLooksLikeVideo(url) {
+  const raw = String(url || '').trim().toLowerCase();
+  if (!raw) return false;
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch (_) {
+    decoded = raw;
+  }
+  return /\.(mp4|mov|webm|m4v)(\?|#|$|&)/i.test(raw) || /\.(mp4|mov|webm|m4v)(\?|#|$|&)/i.test(decoded);
+}
+
+function resolveSocialPostMediaType(item) {
+  const explicit = String(item?.type || '').trim().toLowerCase();
+  const url = String(item?.url || '').trim();
+  if (explicit === 'video') return 'video';
+  if (socialPostMediaUrlLooksLikeVideo(url)) return 'video';
+  return 'image';
+}
+
 function socialPostMediaExtFromContentType(contentType) {
   const mime = String(contentType || '').toLowerCase();
+  if (mime.includes('quicktime')) return 'mov';
   if (mime.startsWith('video/')) return 'mp4';
   if (mime.includes('png')) return 'png';
   if (mime.includes('webp')) return 'webp';
@@ -8201,7 +8306,7 @@ function normalizeSocialPostMediaList(media) {
   const out = [];
   for (const item of media.slice(0, SOCIAL_POST_MEDIA_MAX)) {
     if (!item || typeof item !== 'object') continue;
-    const type = String(item.type || '').trim().toLowerCase() === 'video' ? 'video' : 'image';
+    const type = resolveSocialPostMediaType(item);
     const url = String(item.url || '').trim();
     if (!validateSocialPostMediaUrl(url)) continue;
     const entry = { type, url };
@@ -8225,7 +8330,7 @@ function serializeSocialPostDoc(doc) {
     postId: doc.id,
     status: String(data.status || 'draft'),
     caption: String(data.caption || ''),
-    media: Array.isArray(data.media) ? data.media : [],
+    media: normalizeSocialPostMediaList(Array.isArray(data.media) ? data.media : []),
     mediaLayout: String(data.mediaLayout || 'single'),
     authorLabel: String(data.authorLabel || 'Our Daily'),
     commentCount: Number.isFinite(Number(data.commentCount)) ? Number(data.commentCount) : 0,
@@ -8377,10 +8482,20 @@ app.post('/api/social-posts/upload-media', async (req, res) => {
     if (!parsed) {
       return res.status(400).json({ success: false, error: 'Valid image or video data URL is required' });
     }
-    const ext = socialPostMediaExtFromContentType(parsed.contentType);
+    let uploadBuffer = parsed.buffer;
+    let uploadContentType = parsed.contentType;
+    if (parsed.contentType.startsWith('video/')) {
+      const normalized = await normalizeSocialPostVideoUploadBuffer(parsed.buffer, parsed.contentType);
+      uploadBuffer = normalized.buffer;
+      uploadContentType = normalized.contentType;
+    }
+    const ext = socialPostMediaExtFromContentType(uploadContentType);
     const destination = `social-posts/${postId}/${index}.${ext}`;
-    const saved = await firebaseSaveDownloadableFile(destination, parsed.buffer, parsed.contentType);
-    const type = parsed.contentType.startsWith('video/') ? 'video' : 'image';
+    const saved = await firebaseSaveDownloadableFile(destination, uploadBuffer, uploadContentType);
+    const type = resolveSocialPostMediaType({
+      type: uploadContentType.startsWith('video/') ? 'video' : 'image',
+      url: saved.publicUrl
+    });
     return res.json({
       success: true,
       media: { type, url: saved.publicUrl }
