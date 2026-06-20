@@ -985,6 +985,70 @@ function runFfmpegSocialPostVideoToMp4(ffmpegPath, inputPath, outputPath) {
   });
 }
 
+const SOCIAL_POST_IMAGE_MAX_EDGE = 4096;
+const SOCIAL_POST_IMAGE_JPEG_QUALITY = 92;
+
+let socialPostSharpLib = null;
+function getSocialPostSharp() {
+  if (!socialPostSharpLib) socialPostSharpLib = require('sharp');
+  return socialPostSharpLib;
+}
+
+async function normalizeSocialPostImageUploadBuffer(buffer, contentType) {
+  const mime = String(contentType || '').toLowerCase().split(';')[0];
+  if (!mime.startsWith('image/') || !buffer?.length) {
+    return { buffer, contentType: mime || contentType, width: null, height: null };
+  }
+  try {
+    const sharp = getSocialPostSharp();
+    const meta = await sharp(buffer, { failOn: 'none' }).metadata();
+    let width = Number(meta.width) || null;
+    let height = Number(meta.height) || null;
+    const maxEdge = Math.max(width || 0, height || 0);
+    const needsRotate = Number(meta.orientation) > 1;
+    const isHeic = mime.includes('heic') || mime.includes('heif');
+    const needsResize = maxEdge > SOCIAL_POST_IMAGE_MAX_EDGE;
+    if (!needsRotate && !needsResize && !isHeic && (mime.includes('jpeg') || mime.includes('jpg'))) {
+      return { buffer, contentType: 'image/jpeg', width, height };
+    }
+    if (!needsRotate && !needsResize && !isHeic && mime.includes('png')) {
+      return { buffer, contentType: 'image/png', width, height };
+    }
+    if (!needsRotate && !needsResize && !isHeic && mime.includes('webp')) {
+      return { buffer, contentType: 'image/webp', width, height };
+    }
+
+    let pipeline = sharp(buffer, { failOn: 'none' }).rotate();
+    if (needsResize) {
+      pipeline = pipeline.resize({
+        width: width >= height ? SOCIAL_POST_IMAGE_MAX_EDGE : undefined,
+        height: height > width ? SOCIAL_POST_IMAGE_MAX_EDGE : undefined,
+        fit: 'inside',
+        withoutEnlargement: true
+      });
+    }
+    let outBuffer;
+    let outType = mime;
+    if (mime.includes('png') && !isHeic) {
+      outBuffer = await pipeline.png({ compressionLevel: 9 }).toBuffer();
+      outType = 'image/png';
+    } else if (mime.includes('webp') && !isHeic) {
+      outBuffer = await pipeline.webp({ quality: 90 }).toBuffer();
+      outType = 'image/webp';
+    } else {
+      outBuffer = await pipeline.jpeg({ quality: SOCIAL_POST_IMAGE_JPEG_QUALITY, mozjpeg: true }).toBuffer();
+      outType = 'image/jpeg';
+    }
+    const outMeta = await sharp(outBuffer).metadata();
+    width = Number(outMeta.width) || width;
+    height = Number(outMeta.height) || height;
+    return { buffer: outBuffer, contentType: outType, width, height };
+  } catch (error) {
+    console.warn('⚠️ Social post image normalize failed; saving original upload:', error.message || error);
+    return { buffer, contentType: mime, width: null, height: null };
+  }
+}
+
 async function normalizeSocialPostVideoUploadBuffer(buffer, contentType) {
   const mime = String(contentType || '').toLowerCase();
   if (!mime.startsWith('video/') || !buffer?.length) {
@@ -8484,10 +8548,18 @@ app.post('/api/social-posts/upload-media', async (req, res) => {
     }
     let uploadBuffer = parsed.buffer;
     let uploadContentType = parsed.contentType;
+    let mediaWidth = null;
+    let mediaHeight = null;
     if (parsed.contentType.startsWith('video/')) {
       const normalized = await normalizeSocialPostVideoUploadBuffer(parsed.buffer, parsed.contentType);
       uploadBuffer = normalized.buffer;
       uploadContentType = normalized.contentType;
+    } else if (parsed.contentType.startsWith('image/')) {
+      const normalized = await normalizeSocialPostImageUploadBuffer(parsed.buffer, parsed.contentType);
+      uploadBuffer = normalized.buffer;
+      uploadContentType = normalized.contentType;
+      mediaWidth = normalized.width;
+      mediaHeight = normalized.height;
     }
     const ext = socialPostMediaExtFromContentType(uploadContentType);
     const destination = `social-posts/${postId}/${index}.${ext}`;
@@ -8496,9 +8568,12 @@ app.post('/api/social-posts/upload-media', async (req, res) => {
       type: uploadContentType.startsWith('video/') ? 'video' : 'image',
       url: saved.publicUrl
     });
+    const media = { type, url: saved.publicUrl };
+    if (Number.isFinite(mediaWidth) && mediaWidth > 0) media.width = Math.round(mediaWidth);
+    if (Number.isFinite(mediaHeight) && mediaHeight > 0) media.height = Math.round(mediaHeight);
     return res.json({
       success: true,
-      media: { type, url: saved.publicUrl }
+      media
     });
   } catch (error) {
     console.error('❌ Social post media upload failed:', error);
