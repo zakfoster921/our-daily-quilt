@@ -170,7 +170,9 @@ async function runNightlyIgAttempt({
         const assertNewspaperPeekComposeMeta = (composeMeta, clippingBytes, minClippingBytes) => {
           const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
           const bytes = Math.max(0, Number(clippingBytes) || 0);
-          const minBytes = Math.max(120000, Number(minClippingBytes) || 140000);
+          const standardMin = Math.max(120000, Number(minClippingBytes) || 140000);
+          // labPeek skips warm paper JPEG — short quotes legitimately compress under standardMin.
+          const minBytes = isNightlyLabPeekCompose(meta) ? 80000 : standardMin;
           if (bytes < minBytes) {
             throw new Error(
               `Newspaper clipping PNG too small (${bytes} bytes < ${minBytes}) — likely flat export without grain/halftone`

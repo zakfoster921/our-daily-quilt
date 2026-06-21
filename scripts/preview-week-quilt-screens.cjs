@@ -239,7 +239,6 @@ function runSpeakerCutouts(dateKeys, forceRegen) {
   const args = [
     path.join(ROOT, 'scripts/process-speaker-cutouts.cjs'),
     '--scheduled',
-    '--require-reviewed',
     `--start=${start}`,
     `--window=${window}`,
     '--soft-fail'

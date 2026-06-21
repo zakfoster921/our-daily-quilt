@@ -59,7 +59,6 @@ function parseArgs(argv) {
     todaySpeaker: argv.includes('--today-speaker'),
     openingPlusOneSpeaker: argv.includes('--opening-plus-one-speaker'),
     softFail: argv.includes('--soft-fail'),
-    requireReviewed: argv.includes('--require-reviewed'),
     recropExisting: argv.includes('--recrop-existing') || argv.includes('--crop-existing'),
     limit: 0,
     start: 'today',
@@ -429,14 +428,6 @@ async function collectRows(db, collectionName, opts) {
   return rows;
 }
 
-function isReviewedQuote(data) {
-  if (!data || typeof data !== 'object') return false;
-  if (typeof data.reviewed === 'boolean') return data.reviewed;
-  if (typeof data.reviewed_ === 'boolean') return data.reviewed_;
-  const value = String(data.reviewed ?? data.reviewed_ ?? '').trim().toLowerCase();
-  return ['true', 'yes', 'y', '1', 'checked', 'reviewed'].includes(value);
-}
-
 function assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp) {
   const portrait = String(imageUrl || '').trim();
   return {
@@ -569,11 +560,6 @@ async function main() {
     const d = row.data;
     const author = String(d.author || '').trim();
     if (opts.author && !author.toLowerCase().includes(opts.author)) {
-      skipped += 1;
-      continue;
-    }
-    if (opts.requireReviewed && !isReviewedQuote(d)) {
-      console.log(`[cutout] skipped unreviewed quote ${row.id} ${author}`);
       skipped += 1;
       continue;
     }

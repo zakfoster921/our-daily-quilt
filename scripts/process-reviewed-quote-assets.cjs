@@ -177,7 +177,7 @@ async function main() {
   }
 
   if (!opts.skipCutout) {
-    const cutoutArgs = [`--doc=${opts.pageId}`, '--limit=1', '--require-reviewed'];
+    const cutoutArgs = [`--doc=${opts.pageId}`, '--limit=1'];
     if (opts.force) cutoutArgs.push('--force');
     try {
       runNodeScript('process-speaker-cutouts.cjs', cutoutArgs, 'speaker cutout');
