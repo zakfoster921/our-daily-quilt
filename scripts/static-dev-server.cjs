@@ -33,6 +33,8 @@ const CORS = {
 /** Same clean URLs as server.js (GET /our-daily-beta → our-daily-beta.html). */
 const HTML_ALIASES = new Map([
   ['our-daily-beta', 'our-daily-beta.html'],
+  ['mood-triptych-lab', 'mood-triptych-lab.html'],
+  ['speaker-cutout-lab', 'speaker-cutout-lab.html'],
   ['privacy', 'privacy.html'],
   ['support', 'support.html']
 ]);

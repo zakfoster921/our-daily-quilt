@@ -4395,6 +4395,129 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
   };
 }
 
+const PUSH_NOTIFICATION_TYPES = new Set(['daily_quote', 'studio_floor']);
+
+function normalizePushNotificationTypes(rawTypes) {
+  const list = Array.isArray(rawTypes)
+    ? rawTypes.map((v) => String(v || '').trim()).filter(Boolean)
+    : [];
+  const normalized = [...new Set(list.filter((type) => PUSH_NOTIFICATION_TYPES.has(type)))];
+  return normalized.length ? normalized : ['daily_quote'];
+}
+
+async function collectStudioFloorPushTokens() {
+  const snap = await db
+    .collection('pushTokens')
+    .where('enabled', '==', true)
+    .where('notificationTypes', 'array-contains', 'studio_floor')
+    .get();
+  const recipients = [];
+  snap.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    const token = String(data.token || '').trim();
+    if (!token) return;
+    recipients.push({ id: docSnap.id, token, data });
+  });
+  return recipients;
+}
+
+async function sendStudioFloorPostPushNotifications({ postId, caption } = {}) {
+  if (!db) throw new Error('Firestore not initialized');
+  const id = String(postId || '').trim();
+  if (!id) {
+    return { success: true, sent: 0, failed: 0, pruned: 0, dueCount: 0 };
+  }
+
+  const recipients = await collectStudioFloorPushTokens();
+  if (!recipients.length) {
+    return { success: true, sent: 0, failed: 0, pruned: 0, dueCount: 0 };
+  }
+
+  const body = truncatePushBody(caption || 'New post on Studio floor') || 'New post on Studio floor';
+  let sent = 0;
+  let failed = 0;
+  let pruned = 0;
+
+  for (let i = 0; i < recipients.length; i += 500) {
+    const chunk = recipients.slice(i, i + 500);
+    const message = {
+      tokens: chunk.map((r) => r.token),
+      notification: {
+        title: 'OUR DAILY QUILT',
+        body
+      },
+      data: {
+        type: 'studio_floor_post',
+        postId: id
+      },
+      apns: {
+        payload: {
+          aps: {
+            badge: 1,
+            sound: 'default'
+          }
+        }
+      },
+      android: {
+        notification: {
+          notificationCount: 1
+        }
+      }
+    };
+    const messaging = admin.messaging();
+    const response = typeof messaging.sendEachForMulticast === 'function'
+      ? await messaging.sendEachForMulticast(message)
+      : await messaging.sendMulticast(message);
+
+    sent += response.successCount || 0;
+    failed += response.failureCount || 0;
+
+    await Promise.all(
+      (response.responses || []).map(async (r, idx) => {
+        const recipient = chunk[idx];
+        if (!recipient) return;
+        if (r.success) {
+          await db.collection('pushTokens').doc(recipient.id).set(
+            {
+              lastStudioFloorPushPostId: id,
+              lastStudioFloorPushAt: getUtcIsoNow()
+            },
+            { merge: true }
+          );
+          return;
+        }
+        if (isInvalidPushTokenError(r.error)) {
+          pruned += 1;
+          await db.collection('pushTokens').doc(recipient.id).set(
+            {
+              enabled: false,
+              disabledAt: getUtcIsoNow(),
+              disabledReason: String(r.error?.code || 'invalid-token')
+            },
+            { merge: true }
+          );
+        } else {
+          await db.collection('pushTokens').doc(recipient.id).set(
+            {
+              lastErrorAt: getUtcIsoNow(),
+              lastError: String(r.error?.code || r.error?.message || 'unknown')
+            },
+            { merge: true }
+          );
+        }
+      })
+    );
+  }
+
+  return { success: true, sent, failed, pruned, dueCount: recipients.length, postId: id };
+}
+
+function scheduleStudioFloorPostPush({ postId, caption } = {}) {
+  void sendStudioFloorPostPushNotifications({ postId, caption }).catch((error) => {
+    console.error('❌ Studio floor post push failed:', error);
+  });
+}
+
 /**
  * @param {{ date?: string }} [options] - optional YYYY-MM-DD (e.g. from Zapier body) to force which "app day" to use
  */
@@ -6011,9 +6134,7 @@ app.post('/api/push/register', limitPushRegister, async (req, res) => {
     }
 
     const tokenId = getPushTokenDocId(token);
-    const notificationTypes = Array.isArray(req.body?.notificationTypes)
-      ? req.body.notificationTypes.map((v) => String(v).trim()).filter(Boolean)
-      : ['daily_quote'];
+    const notificationTypes = normalizePushNotificationTypes(req.body?.notificationTypes);
 
     const preferredHour = normalizeDailyQuotePreferredHour(req.body?.dailyQuotePreferredHour);
 
@@ -6023,7 +6144,7 @@ app.post('/api/push/register', limitPushRegister, async (req, res) => {
         platform: String(req.body?.platform || 'unknown').trim(),
         timezone: String(req.body?.timezone || '').trim(),
         deviceId: String(req.body?.deviceId || '').trim(),
-        notificationTypes: notificationTypes.includes('daily_quote') ? notificationTypes : ['daily_quote'],
+        notificationTypes,
         dailyQuotePreferredHour: preferredHour,
         enabled: req.body?.enabled !== false,
         updatedAt: getUtcIsoNow(),
@@ -8706,7 +8827,11 @@ app.post('/api/social-posts', async (req, res) => {
     }
     await postRef.set(payload);
     const saved = await postRef.get();
-    return res.json({ success: true, post: serializeSocialPostDoc(saved) });
+    const post = serializeSocialPostDoc(saved);
+    if (nextStatus === 'published') {
+      scheduleStudioFloorPostPush({ postId, caption: post.caption });
+    }
+    return res.json({ success: true, post });
   } catch (error) {
     console.error('❌ Social post create failed:', error);
     return res.status(500).json({
@@ -8732,6 +8857,8 @@ app.patch('/api/social-posts/:postId', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Post not found' });
     }
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const existing = postSnap.data() || {};
+    const wasPublished = String(existing.status || '') === 'published';
     const patch = {};
     if (Object.prototype.hasOwnProperty.call(body, 'caption')) {
       patch.caption = normalizeSocialPostCaption(body.caption);
@@ -8749,9 +8876,8 @@ app.patch('/api/social-posts/:postId', async (req, res) => {
       if (!allowedStatus.has(status)) {
         return res.status(400).json({ success: false, error: 'Invalid status' });
       }
-      const existing = postSnap.data() || {};
-      const media = patch.media || (Array.isArray(existing.media) ? existing.media : []);
-      if (status === 'published' && !media.length) {
+      const existingMedia = patch.media || (Array.isArray(existing.media) ? existing.media : []);
+      if (status === 'published' && !existingMedia.length) {
         return res.status(400).json({ success: false, error: 'Published posts require at least one media item' });
       }
       patch.status = status;
@@ -8769,7 +8895,11 @@ app.patch('/api/social-posts/:postId', async (req, res) => {
     patch.updatedAtIso = nowIso;
     await postRef.set(patch, { merge: true });
     const saved = await postRef.get();
-    return res.json({ success: true, post: serializeSocialPostDoc(saved) });
+    const post = serializeSocialPostDoc(saved);
+    if (patch.status === 'published' && !wasPublished) {
+      scheduleStudioFloorPostPush({ postId, caption: post.caption });
+    }
+    return res.json({ success: true, post });
   } catch (error) {
     console.error('❌ Social post update failed:', error);
     return res.status(500).json({

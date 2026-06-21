@@ -5,6 +5,9 @@ const {
   normalizeDailyQuotePreferredHour,
   getLocalHour,
   isDailyQuoteDueForToken,
+  buildDailyQuotePushBody,
+  tokenHasNewSocialPostSinceLastPush,
+  DAILY_QUOTE_NEW_POST_SUFFIX,
   DEFAULT_DAILY_QUOTE_PREFERRED_HOUR
 } = require('../lib/daily-quote-push-time');
 
@@ -74,10 +77,47 @@ function testIsDailyQuoteDueForToken() {
   );
 }
 
+function testBuildDailyQuotePushBody() {
+  const longQuote = 'A'.repeat(200);
+  assert.strictEqual(
+    buildDailyQuotePushBody('Hello world', { hasNewPost: false }),
+    'Hello world'
+  );
+  assert.strictEqual(
+    buildDailyQuotePushBody('Hello world', { hasNewPost: true }),
+    `Hello world${DAILY_QUOTE_NEW_POST_SUFFIX}`
+  );
+  const truncated = buildDailyQuotePushBody(longQuote, { hasNewPost: true, maxLen: 178 });
+  assert.ok(truncated.endsWith(DAILY_QUOTE_NEW_POST_SUFFIX));
+  assert.ok(truncated.length <= 178);
+}
+
+function testTokenHasNewSocialPostSinceLastPush() {
+  const latestPostIso = '2026-06-20T12:00:00.000Z';
+
+  assert.strictEqual(tokenHasNewSocialPostSinceLastPush({}, latestPostIso), false);
+  assert.strictEqual(
+    tokenHasNewSocialPostSinceLastPush(
+      { lastDailyQuotePushAt: '2026-06-20T11:00:00.000Z' },
+      latestPostIso
+    ),
+    true
+  );
+  assert.strictEqual(
+    tokenHasNewSocialPostSinceLastPush(
+      { lastDailyQuotePushAt: '2026-06-20T13:00:00.000Z' },
+      latestPostIso
+    ),
+    false
+  );
+}
+
 function main() {
   testNormalizeHour();
   testGetLocalHour();
   testIsDailyQuoteDueForToken();
+  testBuildDailyQuotePushBody();
+  testTokenHasNewSocialPostSinceLastPush();
   console.log('✅ daily quote push time tests passed');
 }
 
