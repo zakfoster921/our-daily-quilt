@@ -8724,6 +8724,8 @@ app.post('/api/social-posts/upload-media', async (req, res) => {
     if (Number.isFinite(mediaHeight) && mediaHeight > 0) media.height = Math.round(mediaHeight);
     return res.json({
       success: true,
+      type,
+      url: saved.publicUrl,
       media
     });
   } catch (error) {
