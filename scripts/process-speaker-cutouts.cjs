@@ -25,6 +25,13 @@ const {
 const WIKIMEDIA_USER_AGENT =
   process.env.WIKIMEDIA_USER_AGENT || 'OurDailyQuilt/1.0 (https://ourdailyquilt.com; speaker-cutouts)';
 
+/** Fallback only — prefer full-frame cutouts (crop=false); margin if crop is needed for edge cases. */
+const REMOVE_BG_CROP_MARGIN = String(process.env.REMOVE_BG_CROP_MARGIN || '25%').trim() || '25%';
+const RECROP_EXISTING_MARGIN_RATIO = Math.min(
+  0.35,
+  Math.max(0.1, Number(process.env.SPEAKER_CUTOUT_RECROP_MARGIN_RATIO) || 0.2)
+);
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -180,12 +187,12 @@ function isUnknownForegroundError(status, body) {
   return status === 400 && /unknown_foreground/i.test(String(body || ''));
 }
 
-/** Old sepia portraits often fail auto detection — try person + no-crop fallbacks. */
+/** Full canvas first (bg removal only); crop is a last resort for unknown_foreground. */
 const REMOVE_BG_STRATEGIES = [
-  { label: 'auto+crop', type: 'auto', crop: true, crop_margin: '10%' },
-  { label: 'person+crop', type: 'person', crop: true, crop_margin: '10%' },
   { label: 'person+full', type: 'person', crop: false },
-  { label: 'auto+full', type: 'auto', crop: false }
+  { label: 'auto+full', type: 'auto', crop: false },
+  { label: 'person+crop', type: 'person', crop: true, crop_margin: REMOVE_BG_CROP_MARGIN },
+  { label: 'auto+crop', type: 'auto', crop: true, crop_margin: REMOVE_BG_CROP_MARGIN }
 ];
 
 async function callRemoveBg(buffer, contentType, imageUrl, apiKey, strategy) {
@@ -239,35 +246,27 @@ async function removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey)
 
 /** Download portrait ourselves, then upload bytes — avoids Wikimedia 429 on remove.bg fetchers. */
 async function removeBackgroundFromUrl(imageUrl, apiKey) {
-  if (isWikimediaHost(imageUrl)) {
+  try {
     const { buffer, contentType } = await downloadSpeakerImageBuffer(imageUrl);
     return removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey);
-  }
+  } catch (downloadErr) {
+    const form = new FormData();
+    form.append('image_url', imageUrl);
+    form.append('size', 'auto');
+    form.append('format', 'png');
+    form.append('type', 'person');
 
-  const form = new FormData();
-  form.append('image_url', imageUrl);
-  form.append('size', 'auto');
-  form.append('format', 'png');
-  form.append('crop', 'true');
-  form.append('crop_margin', '10%');
-
-  const res = await fetch('https://api.remove.bg/v1.0/removebg', {
-    method: 'POST',
-    headers: { 'X-Api-Key': apiKey },
-    body: form
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    const failedDownload =
-      res.status === 400 && /failed_image_download|429/i.test(body);
-    if (failedDownload) {
-      console.log(`[cutout] remove.bg could not fetch URL; retrying with direct download`);
-      const { buffer, contentType } = await downloadSpeakerImageBuffer(imageUrl);
-      return removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey);
+    const res = await fetch('https://api.remove.bg/v1.0/removebg', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey },
+      body: form
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`remove.bg ${res.status}: ${body.slice(0, 500)} (download: ${downloadErr.message})`);
     }
-    throw new Error(`remove.bg ${res.status}: ${body.slice(0, 500)}`);
+    return Buffer.from(await res.arrayBuffer());
   }
-  return Buffer.from(await res.arrayBuffer());
 }
 
 async function downloadBinaryFromUrl(url) {
@@ -275,7 +274,7 @@ async function downloadBinaryFromUrl(url) {
   return buffer;
 }
 
-async function cropTransparentPngWithMargin(buffer, marginRatio = 0.1) {
+async function cropTransparentPngWithMargin(buffer, marginRatio = RECROP_EXISTING_MARGIN_RATIO) {
   const source = PNG.sync.read(buffer);
   const { width, height, data } = source;
   let minX = width;
@@ -620,7 +619,7 @@ async function main() {
       const png = opts.uploadFile
         ? fs.readFileSync(opts.uploadFile)
         : opts.recropExisting
-          ? await cropTransparentPngWithMargin(await downloadBinaryFromUrl(existing), 0.1)
+          ? await cropTransparentPngWithMargin(await downloadBinaryFromUrl(existing))
           : await removeBackgroundFromUrl(imageUrl, apiKey);
       const optimized = await optimizeSpeakerCutoutPng(png, {
         xeroxSeed: portraitUrlHash(imageUrl || existing || row.id)
