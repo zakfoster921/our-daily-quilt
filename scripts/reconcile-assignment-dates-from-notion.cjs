@@ -233,6 +233,49 @@ function normalizeDesiredDate(row) {
   return isDateKey(raw) ? raw : '';
 }
 
+function clearQuoteScheduleInMemory(quoteBySourceId, sid) {
+  const q = quoteBySourceId.get(sid);
+  if (!q) return;
+  q.dateScheduled = '';
+  q.date_scheduled = '';
+}
+
+/** When two catalog rows claim the same date, prefer the most recently edited Notion page. */
+function pickScheduleWinner(a, b) {
+  const aT = String(a?.notionLastEditedTime || '').trim();
+  const bT = String(b?.notionLastEditedTime || '').trim();
+  if (aT && bT && aT !== bT) return aT > bT ? a : b;
+  if (aT && !bT) return a;
+  if (bT && !aT) return b;
+  return String(a?.sourceId || '').localeCompare(String(b?.sourceId || '')) <= 0 ? a : b;
+}
+
+/**
+ * One quote per scheduled date. Losers keep stale `date_scheduled` in Firestore until cleared.
+ * @returns {{ placements: Array<{ sid: string, dateKey: string, q: object }>, losers: Array<{ sid: string, dateKey: string, q: object }> }}
+ */
+function resolveSchedulePlacements(quoteBySourceId, start) {
+  const byDate = new Map();
+  const losers = [];
+  for (const q of quoteBySourceId.values()) {
+    const want = normalizeDesiredDate(q);
+    if (!want || want < start) continue;
+    const prev = byDate.get(want);
+    if (!prev) {
+      byDate.set(want, q);
+      continue;
+    }
+    const winner = pickScheduleWinner(prev, q);
+    const loser = winner.sourceId === prev.sourceId ? q : prev;
+    byDate.set(want, winner);
+    losers.push({ sid: loser.sourceId, dateKey: want, q: loser });
+  }
+  const placements = [...byDate.entries()]
+    .map(([dateKey, q]) => ({ sid: q.sourceId, dateKey, q }))
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.sid.localeCompare(b.sid));
+  return { placements, losers };
+}
+
 function quoteRowFromFirestore(docSnap) {
   const d = docSnap.data() || {};
   if (d.source !== 'notion') return null;
@@ -270,7 +313,8 @@ function quoteRowFromFirestore(docSnap) {
     speakerKeywords: String(d.speakerKeywords ?? d.speaker_keywords ?? '').trim(),
     imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
     keyword: String(d.keyword ?? '').trim(),
-    first_response: String(d.first_response ?? '').trim()
+    first_response: String(d.first_response ?? '').trim(),
+    notionLastEditedTime: String(d.notionLastEditedTime || '').trim()
   };
 }
 
@@ -312,13 +356,7 @@ async function main() {
     }
   }
 
-  const placements = [];
-  for (const q of quoteBySourceId.values()) {
-    const want = normalizeDesiredDate(q);
-    if (!want || want < start) continue;
-    placements.push({ sid: q.sourceId, dateKey: want, q });
-  }
-  placements.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.sid.localeCompare(b.sid));
+  const { placements, losers: scheduleLosers } = resolveSchedulePlacements(quoteBySourceId, start);
 
   const instagramCollection = process.env.FIRESTORE_INSTAGRAM_IMAGES_COLLECTION || 'instagram-images';
   const igByDate = new Map();
@@ -338,13 +376,17 @@ async function main() {
       `[reconcile] dry-run start=${start} quotes=${quoteBySourceId.size} futureAssignments=${assignmentByDate.size} staleSlots=${staleDates.length} placements=${placements.length}`
     );
     staleDates.forEach((s) => console.log(`  stale ${s.dateKey} (was ${s.sid}) ${s.reason}`));
-    placements.forEach((p) => console.log(`  place ${p.sid} -> ${p.dateKey}`));
+    scheduleLosers.forEach((l) =>
+      console.log(`  conflict-loser ${l.sid} (clear ${l.dateKey}, keep newer Notion edit)`)
+    );
+    placements.forEach((p) => console.log(`  place ${p.sid} -> ${p.dateKey} (${p.q.author})`));
     return;
   }
 
   const batchState = { batch: db.batch(), ops: 0 };
   let clearedSlots = 0;
   let clearedQuoteDates = 0;
+  let scheduleConflictClears = 0;
   let placed = 0;
   let displaced = 0;
   let catalogFieldMirrors = 0;
@@ -402,9 +444,27 @@ async function main() {
       );
       batchState.ops += 1;
       clearedQuoteDates += 1;
+      clearQuoteScheduleInMemory(quoteBySourceId, sid);
     }
 
     assignmentByDate.delete(dateKey);
+    await commitBatchIfNeeded(db, batchState);
+  }
+
+  for (const { sid } of scheduleLosers) {
+    batchState.batch.set(
+      db.collection(quotesCollection).doc(sid),
+      {
+        dateScheduled: deleteField,
+        date_scheduled: deleteField,
+        scheduleUpdatedAt: updatedAt,
+        scheduleSource: 'notion-date-reconcile-conflict'
+      },
+      { merge: true }
+    );
+    batchState.ops += 1;
+    scheduleConflictClears += 1;
+    clearQuoteScheduleInMemory(quoteBySourceId, sid);
     await commitBatchIfNeeded(db, batchState);
   }
 
@@ -423,16 +483,17 @@ async function main() {
       );
       batchState.ops += 1;
       displaced += 1;
+      clearQuoteScheduleInMemory(quoteBySourceId, occupant);
     }
 
     const payload = assignmentPayloadForQuote(q, dateKey, 'notion-date-reconcile');
-    batchState.batch.set(db.collection(assignmentsCollection).doc(dateKey), payload, { merge: true });
+    // Full replace so a displaced occupant's snapshots cannot leak via merge.
+    batchState.batch.set(db.collection(assignmentsCollection).doc(dateKey), payload);
     batchState.ops += 1;
 
     batchState.batch.set(
       db.collection(quotesCollection).doc(dateKey),
-      dailyQuotePayloadForQuote(q, dateKey, payload.assignedBy, updatedAt),
-      { merge: true }
+      dailyQuotePayloadForQuote(q, dateKey, payload.assignedBy, updatedAt)
     );
     batchState.ops += 1;
 
@@ -467,7 +528,7 @@ async function main() {
   if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[reconcile] start=${start} catalogFieldMirrors=${catalogFieldMirrors} keywordEmphasisMirrors=${keywordEmphasisMirrors} clearedSlots=${clearedSlots} clearedQuoteDateFields=${clearedQuoteDates} placed=${placed} displacedOccupants=${displaced} (${assignmentsCollection} / ${quotesCollection})`
+    `[reconcile] start=${start} catalogFieldMirrors=${catalogFieldMirrors} keywordEmphasisMirrors=${keywordEmphasisMirrors} clearedSlots=${clearedSlots} clearedQuoteDateFields=${clearedQuoteDates} scheduleConflictClears=${scheduleConflictClears} placed=${placed} displacedOccupants=${displaced} (${assignmentsCollection} / ${quotesCollection})`
   );
 }
 

@@ -1040,6 +1040,36 @@ function initFirestore() {
   return admin.firestore();
 }
 
+/** Notion `date_scheduled` is one quote per day — clear stale catalog claims before reconcile. */
+async function clearConflictingCatalogScheduleDates(db, collectionName, dateKey, keepSourceId, dryRun) {
+  const key = String(dateKey || '').trim();
+  const keep = String(keepSourceId || '').trim();
+  if (!key || !keep) return 0;
+  const snap = await db.collection(collectionName).where('source', '==', 'notion').get();
+  const deleteField = admin.firestore.FieldValue.delete();
+  const updatedAt = new Date().toISOString();
+  let cleared = 0;
+  for (const docSnap of snap.docs) {
+    if (docSnap.id === keep || docSnap.id === key) continue;
+    const d = docSnap.data() || {};
+    const ds = String(d.date_scheduled ?? d.dateScheduled ?? '').trim();
+    if (ds !== key) continue;
+    cleared += 1;
+    if (!dryRun) {
+      await docSnap.ref.set(
+        {
+          dateScheduled: deleteField,
+          date_scheduled: deleteField,
+          scheduleUpdatedAt: updatedAt,
+          scheduleSource: 'notion-sync-displaced-date'
+        },
+        { merge: true }
+      );
+    }
+  }
+  return cleared;
+}
+
 async function syncNotionPagesToFirestore(db, options) {
   const {
     rows,
@@ -1053,6 +1083,7 @@ async function syncNotionPagesToFirestore(db, options) {
   let skipCount = 0;
   let assignmentMirrors = 0;
   let keywordEmphasisMirrors = 0;
+  let scheduleConflictClears = 0;
 
   for (const row of rows) {
     if (row && row.id) seenNotionIds.add(row.id);
@@ -1068,14 +1099,41 @@ async function syncNotionPagesToFirestore(db, options) {
       await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });
       const dateKey = String(parsed.data.date_scheduled || '').trim();
       if (dateKey) {
-        const mirrored = await mirrorCatalogFieldsToAssignment(db, {
-          sourceId: parsed.id,
+        scheduleConflictClears += await clearConflictingCatalogScheduleDates(
+          db,
+          collectionName,
           dateKey,
-          catalog: parsed.data,
-          assignmentsCollection,
-          dryRun: false
-        });
-        if (mirrored) assignmentMirrors += 1;
+          parsed.id,
+          false
+        );
+        const assignRef = db.collection(assignmentsCollection).doc(dateKey);
+        const assignSnap = await assignRef.get();
+        const occupant = assignSnap.exists ? String(assignSnap.data()?.sourceId || '').trim() : '';
+        if (!occupant || occupant === parsed.id) {
+          const mirrored = await mirrorCatalogFieldsToAssignment(db, {
+            sourceId: parsed.id,
+            dateKey,
+            catalog: parsed.data,
+            assignmentsCollection,
+            dryRun: false
+          });
+          if (mirrored) assignmentMirrors += 1;
+        } else {
+          // Notion date owner replaces the slot immediately; reconcile will full-replace snapshots.
+          await assignRef.set(
+            {
+              dateKey,
+              sourceId: parsed.id,
+              textSnapshot: String(parsed.data.text || '').slice(0, 160),
+              authorSnapshot: String(parsed.data.author || '').slice(0, 120),
+              ...catalogFieldsForAssignmentMirror(parsed.data),
+              assignedAt: new Date().toISOString(),
+              assignedBy: 'notion-sync'
+            },
+            { merge: false }
+          );
+          assignmentMirrors += 1;
+        }
         const kwMirrored = await mirrorKeywordEmphasisToInstagram(db, {
           dateKey,
           catalog: parsed.data,
@@ -1087,7 +1145,7 @@ async function syncNotionPagesToFirestore(db, options) {
     writeCount += 1;
   }
 
-  return { writeCount, fortuneCount, skipCount, assignmentMirrors, keywordEmphasisMirrors };
+  return { writeCount, fortuneCount, skipCount, assignmentMirrors, keywordEmphasisMirrors, scheduleConflictClears };
 }
 
 async function run() {
@@ -1193,7 +1251,8 @@ async function run() {
     fortuneCount,
     skipCount,
     assignmentMirrors,
-    keywordEmphasisMirrors
+    keywordEmphasisMirrors,
+    scheduleConflictClears
   } = await syncNotionPagesToFirestore(db, {
     rows: rowsToSync,
     dryRun,
@@ -1263,7 +1322,7 @@ async function run() {
 
   const windowLabel = window ? `${window.startKey}..${window.endKey}` : 'full-catalog';
   console.log(
-    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} assignmentsCleared=${assignmentsCleared} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} scheduleConflictClears=${scheduleConflictClears} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} assignmentsCleared=${assignmentsCleared} collection=${collectionName}`
   );
 }
 
