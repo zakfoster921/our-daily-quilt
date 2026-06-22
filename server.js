@@ -186,6 +186,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/social-posts/:postId', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments/:commentId', 24 * ONE_KB],
+  ['/api/social-posts/:postId/comments/:commentId/heart', 12 * ONE_KB],
   ['/api/push/register', 12 * ONE_KB],
   ['/api/generate-instagram', 4 * ONE_KB]
 ]);
@@ -412,6 +413,11 @@ const limitSocialComment = createRateLimiter({
   name: 'social-comment',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_SOCIAL_COMMENT_PER_10_MIN, 20)
+});
+const limitSocialCommentHeart = createRateLimiter({
+  name: 'social-comment-heart',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_SOCIAL_COMMENT_HEART_PER_10_MIN, 60)
 });
 const limitPushRegister = createRateLimiter({
   name: 'push-register',
@@ -8549,10 +8555,15 @@ function serializeSocialPostDoc(doc) {
     mediaLayout: String(data.mediaLayout || 'single'),
     authorLabel: String(data.authorLabel || 'Our Daily'),
     commentCount: Number.isFinite(Number(data.commentCount)) ? Number(data.commentCount) : 0,
+    lastCommentAtIso: String(data.lastCommentAtIso || ''),
     createdAtIso,
     publishedAtIso,
     updatedAtIso
   };
+}
+
+function socialCommentHeartDocId(clientId) {
+  return crypto.createHash('sha256').update(String(clientId || '')).digest('hex');
 }
 
 function serializeSocialCommentDoc(doc) {
@@ -8566,9 +8577,28 @@ function serializeSocialCommentDoc(doc) {
     parentCommentId: data.parentCommentId ? String(data.parentCommentId) : null,
     depth: Number.isFinite(Number(data.depth)) ? Number(data.depth) : 0,
     status: String(data.status || 'published'),
+    heartCount: Number.isFinite(Number(data.heartCount)) ? Math.max(0, Number(data.heartCount)) : 0,
     createdAtIso: String(data.createdAtIso || ''),
     updatedAtIso: String(data.updatedAtIso || '')
   };
+}
+
+async function serializeSocialCommentDocWithHeart(doc, { postId, clientId } = {}) {
+  const base = serializeSocialCommentDoc(doc);
+  if (!clientId || !postId || !db) {
+    base.hearted = false;
+    return base;
+  }
+  const heartSnap = await db
+    .collection('socialPosts')
+    .doc(postId)
+    .collection('comments')
+    .doc(doc.id)
+    .collection('hearts')
+    .doc(socialCommentHeartDocId(clientId))
+    .get();
+  base.hearted = heartSnap.exists;
+  return base;
 }
 
 async function moderateAndPublishCommentText({ rawText }) {
@@ -8635,6 +8665,10 @@ app.options('/api/social-posts/:postId/comments', (req, res) => {
   res.sendStatus(204);
 });
 app.options('/api/social-posts/:postId/comments/:commentId', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+app.options('/api/social-posts/:postId/comments/:commentId/heart', (req, res) => {
   setSocialApiCors(res);
   res.sendStatus(204);
 });
@@ -8950,6 +8984,7 @@ app.get('/api/social-posts/:postId/comments', async (req, res) => {
     }
     const pageLimit = Math.min(50, Math.max(1, Number(req.query.limit) || 30));
     const parentCommentId = String(req.query.parentCommentId || '').trim();
+    const clientId = String(req.query.clientId || req.query.deviceId || req.query.userId || '').trim().slice(0, 160);
 
     const snap = await db
       .collection('socialPosts')
@@ -8959,17 +8994,17 @@ app.get('/api/social-posts/:postId/comments', async (req, res) => {
       .limit(200)
       .get();
 
-    let comments = snap.docs
-      .map(serializeSocialCommentDoc)
-      .filter((comment) => comment.status === 'published');
-
+    let commentDocs = snap.docs.filter((doc) => (doc.data() || {}).status === 'published');
     if (parentCommentId) {
-      comments = comments.filter((comment) => comment.parentCommentId === parentCommentId);
+      commentDocs = commentDocs.filter((doc) => String((doc.data() || {}).parentCommentId || '') === parentCommentId);
     } else {
-      comments = comments.filter((comment) => !comment.parentCommentId);
+      commentDocs = commentDocs.filter((doc) => !(doc.data() || {}).parentCommentId);
     }
+    commentDocs = commentDocs.slice(0, pageLimit);
 
-    comments = comments.slice(0, pageLimit);
+    const comments = await Promise.all(
+      commentDocs.map((doc) => serializeSocialCommentDocWithHeart(doc, { postId, clientId }))
+    );
     return res.json({
       success: true,
       comments,
@@ -9060,6 +9095,7 @@ app.post('/api/social-posts/:postId/comments', limitSocialComment, async (req, r
       parentCommentId: parentCommentId || null,
       depth,
       status: 'published',
+      heartCount: 0,
       moderationProvider: moderation.provider || null,
       moderationModel: moderation.model || null,
       moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -9075,6 +9111,7 @@ app.post('/api/social-posts/:postId/comments', limitSocialComment, async (req, r
       .set(
         {
           commentCount: admin.firestore.FieldValue.increment(1),
+          lastCommentAtIso: nowIso,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAtIso: nowIso
         },
@@ -9173,6 +9210,84 @@ app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, a
     return res.status(500).json({
       success: false,
       error: error.message || 'Social post comment update failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.post('/api/social-posts/:postId/comments/:commentId/heart', limitSocialCommentHeart, async (req, res) => {
+  setSocialApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    const commentId = String(req.params.commentId || '').trim();
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!postId || !commentId) {
+      return res.status(400).json({ success: false, error: 'postId and commentId are required' });
+    }
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const postSnap = await db.collection('socialPosts').doc(postId).get();
+    if (!postSnap.exists || (postSnap.data() || {}).status !== 'published') {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+
+    const commentRef = db.collection('socialPosts').doc(postId).collection('comments').doc(commentId);
+    const commentSnap = await commentRef.get();
+    if (!commentSnap.exists || (commentSnap.data() || {}).status !== 'published') {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+
+    const heartRef = commentRef.collection('hearts').doc(socialCommentHeartDocId(clientId));
+    const heartSnap = await heartRef.get();
+    const nowIso = getUtcIsoNow();
+    let hearted = false;
+
+    if (heartSnap.exists) {
+      await heartRef.delete();
+      await commentRef.set(
+        {
+          heartCount: admin.firestore.FieldValue.increment(-1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAtIso: nowIso
+        },
+        { merge: true }
+      );
+      hearted = false;
+    } else {
+      await heartRef.set({
+        clientId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAtIso: nowIso
+      });
+      await commentRef.set(
+        {
+          heartCount: admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAtIso: nowIso
+        },
+        { merge: true }
+      );
+      hearted = true;
+    }
+
+    const updatedSnap = await commentRef.get();
+    const updatedData = updatedSnap.data() || {};
+    const heartCount = Math.max(0, Number(updatedData.heartCount) || 0);
+    return res.json({
+      success: true,
+      hearted,
+      heartCount,
+      comment: await serializeSocialCommentDocWithHeart(updatedSnap, { postId, clientId })
+    });
+  } catch (error) {
+    console.error('❌ Social post comment heart failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post comment heart failed',
       timestamp: getUtcIsoNow()
     });
   }
