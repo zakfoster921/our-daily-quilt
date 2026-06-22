@@ -204,7 +204,9 @@ async function runNightlyIgAttempt({
             !/[.;]\s+\S/.test(lineText) &&
             !/[.;][A-Za-z]/.test(lineText);
           if (Number.isFinite(expectedFlc) && expectedFlc > 0 && Number.isFinite(gotUnits) && gotUnits > 0) {
-            if (gotUnits !== expectedFlc && !sentenceEndPrefix) {
+            if (meta.hasHardLineBreaks) {
+              log(`poem layout: skipping first_line_count check (${gotUnits} words on line 1)`);
+            } else if (gotUnits !== expectedFlc && !sentenceEndPrefix) {
               throw new Error(
                 `Newspaper clipping first line has ${gotUnits} words but first_line_count=${expectedFlc} (line 1: "${lineText}")`
               );

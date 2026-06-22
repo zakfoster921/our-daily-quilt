@@ -92,7 +92,7 @@ function requireEnv(name) {
 function getTitle(prop) {
   if (!prop) return '';
   if (Array.isArray(prop.title)) {
-    return prop.title.map(plainFromRichTextSegment).join('').trim();
+    return plainTextFromNotionRichTextSegments(prop.title);
   }
   return '';
 }
@@ -109,9 +109,30 @@ function withCamelCaseDeletes(data) {
 function getRichText(prop) {
   if (!prop) return '';
   if (Array.isArray(prop.rich_text)) {
-    return prop.rich_text.map(plainFromRichTextSegment).join('').trim();
+    return plainTextFromNotionRichTextSegments(prop.rich_text);
   }
   return '';
+}
+
+/** Preserve Notion line breaks across rich_text segments (poems, multi-line quotes). */
+function plainTextFromNotionRichTextSegments(segments) {
+  if (!Array.isArray(segments) || !segments.length) return '';
+  const parts = segments.map(plainFromRichTextSegment);
+  if (parts.length === 1) return parts[0].trim();
+  let out = parts[0] || '';
+  for (let i = 1; i < parts.length; i += 1) {
+    const cur = parts[i];
+    if (!cur) continue;
+    if (out.endsWith('\n') || cur.startsWith('\n')) {
+      out += cur;
+      continue;
+    }
+    const prevTrim = out.replace(/\n+$/, '');
+    const likelyLineBreak =
+      /[,;:.!?]$/.test(prevTrim) && /^[a-z("'(\u2014-]/.test(cur);
+    out += likelyLineBreak ? `\n${cur}` : cur;
+  }
+  return out.trim();
 }
 
 function getCheckbox(prop, fallback = false) {
