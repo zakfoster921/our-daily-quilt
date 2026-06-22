@@ -148,19 +148,23 @@ async function runNightlyIgAttempt({
       console.log(
         `[nightly-ig:page] pinned ${dateKey}: author=${author || '?'} resolution=${resolution || '?'} text="${preview}…"`
       );
-      if (typeof qs.offsetQuoteCalendarKey === 'function' && typeof qs.resolveAndPinCalendarKey === 'function') {
+      if (typeof qs.offsetQuoteCalendarKey === 'function') {
         const yKey = qs.offsetQuoteCalendarKey(dateKey, -1);
         const tKey = qs.offsetQuoteCalendarKey(dateKey, 1);
-        const [y, t] = await Promise.all([
-          yKey ? qs.resolveAndPinCalendarKey(yKey, { requireLive: true }) : null,
-          tKey ? qs.resolveAndPinCalendarKey(tKey, { requireLive: true }) : null
-        ]);
+        const resolveNeighbor = async (key) => {
+          if (!key) return null;
+          if (typeof qs.resolveQuoteForCalendarKeyFresh === 'function') {
+            const fresh = await qs.resolveQuoteForCalendarKeyFresh(key);
+            if (fresh?.quote?.text) return fresh.quote;
+          }
+          return qs.resolveAndPinCalendarKey?.(key, { requireLive: true }) || null;
+        };
+        const [y, t] = await Promise.all([resolveNeighbor(yKey), resolveNeighbor(tKey)]);
         const line = (q) => String(q?.text ?? q?.body ?? '').trim();
         console.log(
           `[nightly-ig:page] peek neighbors for ${dateKey}: yesterday=${line(y) ? 'ok' : 'empty'} tomorrow=${line(t) ? 'ok' : 'empty'}`
         );
       }
-      await qs.primeQuoteAssignmentsNearTerm?.();
       void apiBase;
     }, { dateKey, apiBase });
 
@@ -234,7 +238,15 @@ async function runNightlyIgAttempt({
           throw new Error('Utils.writeInstagramImagesDocForZapier missing');
         }
         const app = window.app;
-        if (app.quoteService?.getQuoteResolvedForInstagramDateKey) {
+        if (app.quoteService?.resolveQuoteForCalendarKeyFresh) {
+          const fresh = await app.quoteService.resolveQuoteForCalendarKeyFresh(dateKey);
+          const q = fresh?.quote;
+          const author = String(q?.author || '').trim();
+          const preview = String(q?.text ?? q?.body ?? '').trim().slice(0, 72);
+          log(
+            `compose pin ${dateKey}: author=${author || '?'} resolution=${String(fresh?.resolution || '').trim() || '?'} text="${preview}…"`
+          );
+        } else if (app.quoteService?.getQuoteResolvedForInstagramDateKey) {
           const pinned = await app.quoteService.getQuoteResolvedForInstagramDateKey(dateKey);
           const kw = String(pinned?.keyword ?? pinned?.keywordSnapshot ?? '').trim();
           log(`pinned quote for ${dateKey}; keyword=${kw || '(missing)'}`);
@@ -254,6 +266,15 @@ async function runNightlyIgAttempt({
             Math.round(((String(newspaperClippingImageData).length - 22) * 3) / 4)
           );
           const composeMeta = arch._lastNewspaperClippingComposeMeta || null;
+          const expected = app.quoteService?._pinnedByDateKey?.[dateKey];
+          const expectedText = String(expected?.text ?? expected?.body ?? '').trim();
+          const expectedAuthor = String(expected?.author || '').trim();
+          const gotLine = String(composeMeta?.firstLineText || '').trim();
+          if (expectedText && gotLine && !expectedText.startsWith(gotLine.slice(0, Math.min(24, gotLine.length)))) {
+            throw new Error(
+              `Newspaper clipping center quote mismatch for ${dateKey}: expected ${expectedAuthor || 'quote'} ("${expectedText.slice(0, 40)}…") but first line is "${gotLine}"`
+            );
+          }
           log(
             `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
           );
