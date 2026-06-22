@@ -233,8 +233,13 @@ function clearQuoteScheduleInMemory(quoteBySourceId, sid) {
   q.date_scheduled = '';
 }
 
-/** When two catalog rows claim the same date, prefer the most recently edited Notion page. */
+/** When two catalog rows claim the same date, editorial schedule beats community submissions. */
 function pickScheduleWinner(a, b) {
+  const aVia = String(a?.submittedVia ?? a?.submitted_via ?? '').trim().toLowerCase();
+  const bVia = String(b?.submittedVia ?? b?.submitted_via ?? '').trim().toLowerCase();
+  const aCommunity = aVia === 'app' || String(a?.submittedBy ?? a?.submitted_by ?? '').trim() || String(a?.submittedAt ?? a?.submitted_at ?? '').trim();
+  const bCommunity = bVia === 'app' || String(b?.submittedBy ?? b?.submitted_by ?? '').trim() || String(b?.submittedAt ?? b?.submitted_at ?? '').trim();
+  if (!!aCommunity !== !!bCommunity) return aCommunity ? b : a;
   const aT = String(a?.notionLastEditedTime || '').trim();
   const bT = String(b?.notionLastEditedTime || '').trim();
   if (aT && bT && aT !== bT) return aT > bT ? a : b;
@@ -307,7 +312,13 @@ function quoteRowFromFirestore(docSnap) {
     imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
     keyword: String(d.keyword ?? '').trim(),
     first_response: String(d.first_response ?? '').trim(),
-    notionLastEditedTime: String(d.notionLastEditedTime || '').trim()
+    notionLastEditedTime: String(d.notionLastEditedTime || '').trim(),
+    submittedVia: String(d.submittedVia ?? d.submitted_via ?? '').trim(),
+    submitted_via: String(d.submitted_via ?? d.submittedVia ?? '').trim(),
+    submittedBy: String(d.submittedBy ?? d.submitted_by ?? '').trim(),
+    submitted_by: String(d.submitted_by ?? d.submittedBy ?? '').trim(),
+    submittedAt: String(d.submittedAt ?? d.submitted_at ?? '').trim(),
+    submitted_at: String(d.submitted_at ?? d.submittedAt ?? '').trim()
   };
 }
 

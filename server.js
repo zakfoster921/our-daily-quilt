@@ -3458,6 +3458,41 @@ function extractAuthorFromNotionPage(page) {
   return '';
 }
 
+function extractSubmittedViaFromNotionPage(page) {
+  const props = page?.properties || {};
+  for (const alias of ['submitted_via', 'submittedVia', 'Submitted via', 'Submitted Via']) {
+    if (props[alias]) {
+      const t = notionRichTextToPlain(props[alias]);
+      if (t) return t;
+    }
+  }
+  return '';
+}
+
+function extractSubmittedByFromNotionPage(page) {
+  const props = page?.properties || {};
+  for (const alias of ['submitted_by', 'submittedBy', 'Submitted by', 'Submitted By']) {
+    if (props[alias]) {
+      const t = notionRichTextToPlain(props[alias]);
+      if (t) return t;
+    }
+  }
+  return '';
+}
+
+function extractSubmittedAtFromNotionPage(page) {
+  const props = page?.properties || {};
+  for (const alias of ['submitted_at', 'submittedAt', 'Submitted at', 'Submitted At']) {
+    if (props[alias]?.type === 'date') {
+      const t = String(props[alias]?.date?.start || props[alias]?.date?.end || '').trim();
+      if (t) return t;
+    }
+    const t = notionRichTextToPlain(props[alias]);
+    if (t) return t;
+  }
+  return '';
+}
+
 async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   const quoteTextName = getNotionTitlePropName(schema);
   const communityPromptName = findNotionPropName(
@@ -5369,9 +5404,42 @@ function normalizeScheduleDateKey(val) {
   return m ? m[1] : '';
 }
 
+function scheduleEntryIsCommunitySubmission(entry) {
+  const via = String(
+    entry?.submittedVia ??
+      entry?.submitted_via ??
+      entry?.data?.submittedVia ??
+      entry?.data?.submitted_via ??
+      ''
+  )
+    .trim()
+    .toLowerCase();
+  if (via === 'app') return true;
+  const by = String(
+    entry?.submittedBy ??
+      entry?.submitted_by ??
+      entry?.data?.submittedBy ??
+      entry?.data?.submitted_by ??
+      ''
+  ).trim();
+  if (by) return true;
+  const at = String(
+    entry?.submittedAt ??
+      entry?.submitted_at ??
+      entry?.data?.submittedAt ??
+      entry?.data?.submitted_at ??
+      ''
+  ).trim();
+  return !!at;
+}
+
+/** One quote per date: editorial schedule beats community submissions, then newest Notion edit. */
 function pickScheduleWinner(a, b) {
   if (!a) return b;
   if (!b) return a;
+  const aCommunity = scheduleEntryIsCommunitySubmission(a);
+  const bCommunity = scheduleEntryIsCommunitySubmission(b);
+  if (aCommunity !== bCommunity) return aCommunity ? b : a;
   const aT = String(a.notionLastEditedTime || '').trim();
   const bT = String(b.notionLastEditedTime || '').trim();
   if (aT && bT && aT !== bT) return aT > bT ? a : b;
@@ -5449,8 +5517,22 @@ async function resolvePreviewQuotePayloadForDate(dateKey) {
       return;
     }
     const winner = pickScheduleWinner(
-      { data: catalogRow, id: catalogId, notionLastEditedTime: catalogEdited },
-      { data, id: docSnap.id, notionLastEditedTime: edited }
+      {
+        data: catalogRow,
+        id: catalogId,
+        notionLastEditedTime: catalogEdited,
+        submittedVia: String(catalogRow.submittedVia || catalogRow.submitted_via || '').trim(),
+        submittedBy: String(catalogRow.submittedBy || catalogRow.submitted_by || '').trim(),
+        submittedAt: String(catalogRow.submittedAt || catalogRow.submitted_at || '').trim()
+      },
+      {
+        data,
+        id: docSnap.id,
+        notionLastEditedTime: edited,
+        submittedVia: String(data.submittedVia || data.submitted_via || '').trim(),
+        submittedBy: String(data.submittedBy || data.submitted_by || '').trim(),
+        submittedAt: String(data.submittedAt || data.submitted_at || '').trim()
+      }
     );
     catalogRow = winner.data;
     catalogId = winner.id;
@@ -5462,7 +5544,8 @@ async function resolvePreviewQuotePayloadForDate(dateKey) {
       quote: buildPreviewQuotePayloadFromFirestore(catalogRow, catalogId),
       resolution: 'notion_schedule',
       assignmentExists: assignSnap.exists,
-      notionLastEditedTime: catalogEdited
+      notionLastEditedTime: catalogEdited,
+      submittedVia: String(catalogRow.submittedVia || catalogRow.submitted_via || '').trim()
     };
   }
 
@@ -5525,7 +5608,7 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
 
     const json = await notionFetchJson(`/databases/${databaseId}/query`, {
       method: 'POST',
-      body: JSON.stringify({ filter: { and: filterParts }, page_size: 20 })
+      body: JSON.stringify({ filter: { and: filterParts }, page_size: 100 })
     });
     const rows = Array.isArray(json?.results) ? json.results : [];
     let best = null;
@@ -5536,9 +5619,15 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
       const text = String(extractQuoteTextFromNotionPage(page) || '').trim();
       const author = String(extractAuthorFromNotionPage(page) || '').trim();
       if (!text || !author) continue;
+      const submittedVia = String(extractSubmittedViaFromNotionPage(page) || '').trim();
+      const submittedBy = String(extractSubmittedByFromNotionPage(page) || '').trim();
+      const submittedAt = String(extractSubmittedAtFromNotionPage(page) || '').trim();
       const candidate = {
         id: String(page.id || '').trim(),
         notionLastEditedTime: String(page.last_edited_time || '').trim(),
+        submittedVia,
+        submittedBy,
+        submittedAt,
         quote: { text, author, sourceId: String(page.id || '').trim() || undefined }
       };
       best = best ? pickScheduleWinner(best, candidate) : candidate;
@@ -5548,7 +5637,8 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
         quote: best.quote,
         resolution: 'notion_live',
         assignmentExists: false,
-        notionLastEditedTime: best.notionLastEditedTime
+        notionLastEditedTime: best.notionLastEditedTime,
+        submittedVia: String(best.submittedVia || '').trim()
       };
     }
   } catch (error) {
@@ -5566,7 +5656,10 @@ async function resolvePreviewQuotePayloadForDateWithNotion(dateKey) {
     return {
       payload: result,
       id: String(result.quote.sourceId || '').trim(),
-      notionLastEditedTime: String(result.notionLastEditedTime || '').trim()
+      notionLastEditedTime: String(result.notionLastEditedTime || '').trim(),
+      submittedVia: String(result.submittedVia || result.quote?.submittedVia || '').trim(),
+      submittedBy: String(result.submittedBy || result.quote?.submittedBy || '').trim(),
+      submittedAt: String(result.submittedAt || result.quote?.submittedAt || '').trim()
     };
   };
 

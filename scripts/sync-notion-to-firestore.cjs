@@ -1064,8 +1064,19 @@ function initFirestore() {
   return admin.firestore();
 }
 
-/** When two synced rows claim the same date, prefer the most recently edited Notion page. */
+/** When two synced rows claim the same date, editorial schedule beats community submissions. */
 function pickNotionScheduleWinner(a, b) {
+  const aVia = String(a?.data?.submitted_via ?? a?.data?.submittedVia ?? '').trim().toLowerCase();
+  const bVia = String(b?.data?.submitted_via ?? b?.data?.submittedVia ?? '').trim().toLowerCase();
+  const aCommunity =
+    aVia === 'app' ||
+    String(a?.data?.submitted_by ?? a?.data?.submittedBy ?? '').trim() ||
+    String(a?.data?.submitted_at ?? a?.data?.submittedAt ?? '').trim();
+  const bCommunity =
+    bVia === 'app' ||
+    String(b?.data?.submitted_by ?? b?.data?.submittedBy ?? '').trim() ||
+    String(b?.data?.submitted_at ?? b?.data?.submittedAt ?? '').trim();
+  if (!!aCommunity !== !!bCommunity) return aCommunity ? b : a;
   const aT = String(a?.data?.notionLastEditedTime || '').trim();
   const bT = String(b?.data?.notionLastEditedTime || '').trim();
   if (aT && bT && aT !== bT) return aT > bT ? a : b;
