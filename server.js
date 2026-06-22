@@ -5369,6 +5369,17 @@ function normalizeScheduleDateKey(val) {
   return m ? m[1] : '';
 }
 
+function pickScheduleWinner(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const aT = String(a.notionLastEditedTime || '').trim();
+  const bT = String(b.notionLastEditedTime || '').trim();
+  if (aT && bT && aT !== bT) return aT > bT ? a : b;
+  if (aT && !bT) return a;
+  if (bT && !aT) return b;
+  return String(a.id || '').localeCompare(String(b.id || '')) <= 0 ? a : b;
+}
+
 function isApprovedNotionCatalogRow(data) {
   if (!data || data.source !== 'notion') return false;
   const text = String(data.text || '').trim();
@@ -5423,15 +5434,27 @@ async function resolvePreviewQuotePayloadForDate(dateKey) {
 
   let catalogRow = null;
   let catalogId = '';
+  let catalogEdited = '';
   const catalogSnap = await db.collection('quotes').where('source', '==', 'notion').get();
   catalogSnap.forEach((docSnap) => {
-    if (catalogRow) return;
     const data = docSnap.data() || {};
     if (!isApprovedNotionCatalogRow(data)) return;
     const ds = normalizeScheduleDateKey(data.date_scheduled || data.dateScheduled);
     if (ds !== dk) return;
-    catalogRow = data;
-    catalogId = docSnap.id;
+    const edited = String(data.notionLastEditedTime || '').trim();
+    if (!catalogRow) {
+      catalogRow = data;
+      catalogId = docSnap.id;
+      catalogEdited = edited;
+      return;
+    }
+    const winner = pickScheduleWinner(
+      { data: catalogRow, id: catalogId, notionLastEditedTime: catalogEdited },
+      { data, id: docSnap.id, notionLastEditedTime: edited }
+    );
+    catalogRow = winner.data;
+    catalogId = winner.id;
+    catalogEdited = String(winner.notionLastEditedTime || '').trim();
   });
 
   if (catalogRow) {
@@ -5524,10 +5547,10 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
 }
 
 async function resolvePreviewQuotePayloadForDateWithNotion(dateKey) {
-  const firestoreResult = await resolvePreviewQuotePayloadForDate(dateKey);
-  if (firestoreResult?.quote) return firestoreResult;
   const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
   if (notionResult?.quote) return notionResult;
+  const firestoreResult = await resolvePreviewQuotePayloadForDate(dateKey);
+  if (firestoreResult?.quote) return firestoreResult;
   return firestoreResult;
 }
 

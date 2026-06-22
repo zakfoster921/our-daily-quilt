@@ -116,7 +116,7 @@ async function runNightlyIgAttempt({
     }
 
     console.log('[nightly-ig] loading Firestore quote catalog + pinning assignment…');
-    await page.evaluate(async (dateKey) => {
+    await page.evaluate(async ({ dateKey, apiBase }) => {
       const qs = window.app?.quoteService;
       if (!qs?.loadQuotesFromFirestore) {
         throw new Error('quoteService.loadQuotesFromFirestore missing');
@@ -129,10 +129,25 @@ async function runNightlyIgAttempt({
       if (indexesOk === false) {
         throw new Error('Firestore shuffled quote indexes failed to load');
       }
-      const pinned = await qs.resolveAndPinCalendarKey?.(dateKey, { requireLive: true });
+      let pinned = null;
+      let resolution = '';
+      if (typeof qs.resolveQuoteForCalendarKeyFresh === 'function') {
+        const fresh = await qs.resolveQuoteForCalendarKeyFresh(dateKey);
+        pinned = fresh?.quote || null;
+        resolution = String(fresh?.resolution || '').trim();
+      }
+      if (!pinned) {
+        pinned = await qs.resolveAndPinCalendarKey?.(dateKey, { requireLive: true });
+        resolution = resolution || 'resolveAndPinCalendarKey';
+      }
       if (!pinned) {
         throw new Error(`Could not pin quote assignment for ${dateKey}`);
       }
+      const author = String(pinned.author || '').trim();
+      const preview = String(pinned.text ?? pinned.body ?? '').trim().slice(0, 72);
+      console.log(
+        `[nightly-ig:page] pinned ${dateKey}: author=${author || '?'} resolution=${resolution || '?'} text="${preview}…"`
+      );
       if (typeof qs.offsetQuoteCalendarKey === 'function' && typeof qs.resolveAndPinCalendarKey === 'function') {
         const yKey = qs.offsetQuoteCalendarKey(dateKey, -1);
         const tKey = qs.offsetQuoteCalendarKey(dateKey, 1);
@@ -146,7 +161,8 @@ async function runNightlyIgAttempt({
         );
       }
       await qs.primeQuoteAssignmentsNearTerm?.();
-    }, dateKey);
+      void apiBase;
+    }, { dateKey, apiBase });
 
     console.log(
       `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
