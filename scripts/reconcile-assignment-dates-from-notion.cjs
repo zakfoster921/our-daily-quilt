@@ -136,11 +136,10 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
   };
 }
 
-function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
+function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
   const artRecs = q.artRecs ?? q.art_recs ?? '';
   const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
   return {
-    ...camelCaseDeletePayload(),
     dateKey,
     text: q.text,
     quote: q.text,
@@ -214,15 +213,9 @@ function initFirestore() {
       projectId: sa.project_id || process.env.FIREBASE_PROJECT_ID
     });
   } else {
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    if (!projectId) {
-      throw new Error(
-        'Missing GOOGLE_APPLICATION_CREDENTIALS_JSON or FIREBASE_PROJECT_ID (load .env from project root)'
-      );
-    }
     admin.initializeApp({
       credential: admin.credential.applicationDefault(),
-      projectId
+      projectId: process.env.FIREBASE_PROJECT_ID
     });
   }
   return admin.firestore();
@@ -493,7 +486,7 @@ async function main() {
 
     batchState.batch.set(
       db.collection(quotesCollection).doc(dateKey),
-      dailyQuotePayloadForQuote(q, dateKey, payload.assignedBy, updatedAt)
+      dailyQuoteSnakePayloadForQuote(q, dateKey, payload.assignedBy, updatedAt)
     );
     batchState.ops += 1;
 

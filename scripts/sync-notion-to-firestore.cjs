@@ -1043,20 +1043,28 @@ function initFirestore() {
   return admin.firestore();
 }
 
+/** When two synced rows claim the same date, prefer the most recently edited Notion page. */
+function pickNotionScheduleWinner(a, b) {
+  const aT = String(a?.data?.notionLastEditedTime || '').trim();
+  const bT = String(b?.data?.notionLastEditedTime || '').trim();
+  if (aT && bT && aT !== bT) return aT > bT ? a : b;
+  if (aT && !bT) return a;
+  if (bT && !aT) return b;
+  return String(a?.id || '').localeCompare(String(b?.id || '')) <= 0 ? a : b;
+}
+
 /** Notion `date_scheduled` is one quote per day — clear stale catalog claims before reconcile. */
-async function clearConflictingCatalogScheduleDates(db, collectionName, dateKey, keepSourceId, dryRun) {
-  const key = String(dateKey || '').trim();
-  const keep = String(keepSourceId || '').trim();
-  if (!key || !keep) return 0;
+async function clearConflictingCatalogScheduleDates(db, collectionName, winnersByDate, dryRun) {
+  if (!winnersByDate?.size) return 0;
   const snap = await db.collection(collectionName).where('source', '==', 'notion').get();
   const deleteField = admin.firestore.FieldValue.delete();
   const updatedAt = new Date().toISOString();
   let cleared = 0;
   for (const docSnap of snap.docs) {
-    if (docSnap.id === keep || docSnap.id === key) continue;
     const d = docSnap.data() || {};
     const ds = String(d.date_scheduled ?? d.dateScheduled ?? '').trim();
-    if (ds !== key) continue;
+    const winner = winnersByDate.get(ds);
+    if (!winner || docSnap.id === winner.id || docSnap.id === ds) continue;
     cleared += 1;
     if (!dryRun) {
       await docSnap.ref.set(
@@ -1073,6 +1081,67 @@ async function clearConflictingCatalogScheduleDates(db, collectionName, dateKey,
   return cleared;
 }
 
+async function applyScheduledDatesFromNotionSync(db, options) {
+  const {
+    winnersByDate,
+    collectionName,
+    assignmentsCollection,
+    dryRun
+  } = options;
+  let scheduleConflictClears = 0;
+  let assignmentMirrors = 0;
+  let keywordEmphasisMirrors = 0;
+  if (!winnersByDate?.size) {
+    return { scheduleConflictClears, assignmentMirrors, keywordEmphasisMirrors };
+  }
+
+  if (!dryRun) {
+    scheduleConflictClears = await clearConflictingCatalogScheduleDates(
+      db,
+      collectionName,
+      winnersByDate,
+      false
+    );
+    for (const [dateKey, parsed] of winnersByDate) {
+      const assignRef = db.collection(assignmentsCollection).doc(dateKey);
+      const assignSnap = await assignRef.get();
+      const occupant = assignSnap.exists ? String(assignSnap.data()?.sourceId || '').trim() : '';
+      if (!occupant || occupant === parsed.id) {
+        const mirrored = await mirrorCatalogFieldsToAssignment(db, {
+          sourceId: parsed.id,
+          dateKey,
+          catalog: parsed.data,
+          assignmentsCollection,
+          dryRun: false
+        });
+        if (mirrored) assignmentMirrors += 1;
+      } else {
+        await assignRef.set(
+          {
+            dateKey,
+            sourceId: parsed.id,
+            textSnapshot: String(parsed.data.text || '').slice(0, 160),
+            authorSnapshot: String(parsed.data.author || '').slice(0, 120),
+            ...catalogFieldsForAssignmentMirror(parsed.data),
+            assignedAt: new Date().toISOString(),
+            assignedBy: 'notion-sync'
+          },
+          { merge: false }
+        );
+        assignmentMirrors += 1;
+      }
+      const kwMirrored = await mirrorKeywordEmphasisToInstagram(db, {
+        dateKey,
+        catalog: parsed.data,
+        updatedBy: 'notion-sync'
+      });
+      if (kwMirrored) keywordEmphasisMirrors += 1;
+    }
+  }
+
+  return { scheduleConflictClears, assignmentMirrors, keywordEmphasisMirrors };
+}
+
 async function syncNotionPagesToFirestore(db, options) {
   const {
     rows,
@@ -1087,6 +1156,7 @@ async function syncNotionPagesToFirestore(db, options) {
   let assignmentMirrors = 0;
   let keywordEmphasisMirrors = 0;
   let scheduleConflictClears = 0;
+  const scheduledByDate = new Map();
 
   for (const row of rows) {
     if (row && row.id) seenNotionIds.add(row.id);
@@ -1100,52 +1170,25 @@ async function syncNotionPagesToFirestore(db, options) {
     }
     if (!dryRun) {
       await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });
-      const dateKey = String(parsed.data.date_scheduled || '').trim();
-      if (dateKey) {
-        scheduleConflictClears += await clearConflictingCatalogScheduleDates(
-          db,
-          collectionName,
-          dateKey,
-          parsed.id,
-          false
-        );
-        const assignRef = db.collection(assignmentsCollection).doc(dateKey);
-        const assignSnap = await assignRef.get();
-        const occupant = assignSnap.exists ? String(assignSnap.data()?.sourceId || '').trim() : '';
-        if (!occupant || occupant === parsed.id) {
-          const mirrored = await mirrorCatalogFieldsToAssignment(db, {
-            sourceId: parsed.id,
-            dateKey,
-            catalog: parsed.data,
-            assignmentsCollection,
-            dryRun: false
-          });
-          if (mirrored) assignmentMirrors += 1;
-        } else {
-          // Notion date owner replaces the slot immediately; reconcile will full-replace snapshots.
-          await assignRef.set(
-            {
-              dateKey,
-              sourceId: parsed.id,
-              textSnapshot: String(parsed.data.text || '').slice(0, 160),
-              authorSnapshot: String(parsed.data.author || '').slice(0, 120),
-              ...catalogFieldsForAssignmentMirror(parsed.data),
-              assignedAt: new Date().toISOString(),
-              assignedBy: 'notion-sync'
-            },
-            { merge: false }
-          );
-          assignmentMirrors += 1;
-        }
-        const kwMirrored = await mirrorKeywordEmphasisToInstagram(db, {
-          dateKey,
-          catalog: parsed.data,
-          updatedBy: 'notion-sync'
-        });
-        if (kwMirrored) keywordEmphasisMirrors += 1;
-      }
+    }
+    const dateKey = String(parsed.data.date_scheduled || '').trim();
+    if (dateKey) {
+      const prev = scheduledByDate.get(dateKey);
+      scheduledByDate.set(dateKey, prev ? pickNotionScheduleWinner(prev, parsed) : parsed);
     }
     writeCount += 1;
+  }
+
+  if (!dryRun && scheduledByDate.size) {
+    const scheduleResults = await applyScheduledDatesFromNotionSync(db, {
+      winnersByDate: scheduledByDate,
+      collectionName,
+      assignmentsCollection,
+      dryRun: false
+    });
+    scheduleConflictClears = scheduleResults.scheduleConflictClears;
+    assignmentMirrors = scheduleResults.assignmentMirrors;
+    keywordEmphasisMirrors = scheduleResults.keywordEmphasisMirrors;
   }
 
   return { writeCount, fortuneCount, skipCount, assignmentMirrors, keywordEmphasisMirrors, scheduleConflictClears };
