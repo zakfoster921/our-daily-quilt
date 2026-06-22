@@ -362,28 +362,90 @@ function shouldReuseExistingCutout(data, imageUrl, existingCutoutUrl, opts) {
   return true;
 }
 
-async function resolveTodaySpeakerDocId(db) {
+async function resolveAssignmentSourceId(db, dateKey, opts) {
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
-  const dateKey = getOpeningAppDateKey();
-  const snap = await db.collection(assignmentsCollection).doc(dateKey).get();
-  if (!snap.exists) throw new Error(`No assignment for opening app-day ${dateKey}`);
-  const sourceId = String((snap.data() || {}).sourceId || '').trim();
-  if (!sourceId) throw new Error(`dailyQuoteAssignments/${dateKey} has no sourceId`);
-  const author = String((snap.data() || {}).authorSnapshot || '').trim();
-  console.log(`[cutout] today-speaker ${dateKey} ${author} -> ${sourceId}`);
+  const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const key = String(dateKey || '').trim();
+  const snap = await db.collection(assignmentsCollection).doc(key).get();
+  if (!snap.exists) {
+    const msg = `No assignment for ${key}`;
+    if (opts.softFail) {
+      console.warn(`[cutout] ${msg}; soft-fail skip`);
+      return null;
+    }
+    throw new Error(msg);
+  }
+
+  const data = snap.data() || {};
+  let sourceId = String(data.sourceId || '').trim();
+  const author = String(data.authorSnapshot || data.author || '').trim();
+
+  if (!sourceId) {
+    const dailySnap = await db.collection(quotesCollection).doc(key).get();
+    if (dailySnap.exists) {
+      sourceId = String(dailySnap.data()?.sourceId || '').trim();
+    }
+  }
+
+  if (!sourceId) {
+    for (const field of ['date_scheduled', 'dateScheduled']) {
+      try {
+        const qsnap = await db
+          .collection(quotesCollection)
+          .where('source', '==', 'notion')
+          .where(field, '==', key)
+          .limit(1)
+          .get();
+        if (!qsnap.empty) {
+          sourceId = qsnap.docs[0].id;
+          break;
+        }
+      } catch (_) {
+        /* composite index may be missing — fall through to scan */
+      }
+    }
+  }
+
+  if (!sourceId && author) {
+    const catalogSnap = await db.collection(quotesCollection).where('source', '==', 'notion').get();
+    let fallbackSid = '';
+    catalogSnap.forEach((docSnap) => {
+      if (sourceId) return;
+      const d = docSnap.data() || {};
+      if (String(d.author || '').trim().toLowerCase() !== author.toLowerCase()) return;
+      const ds = String(d.date_scheduled ?? d.dateScheduled ?? '').trim();
+      if (ds === key) sourceId = docSnap.id;
+      else if (!fallbackSid) fallbackSid = docSnap.id;
+    });
+    if (!sourceId && fallbackSid) sourceId = fallbackSid;
+  }
+
+  if (!sourceId) {
+    const msg = `dailyQuoteAssignments/${key} has no sourceId`;
+    if (opts.softFail) {
+      console.warn(`[cutout] ${msg}${author ? ` (${author})` : ''}; soft-fail skip`);
+      return null;
+    }
+    throw new Error(msg);
+  }
+
+  if (!String(data.sourceId || '').trim()) {
+    console.log(`[cutout] resolved missing sourceId for ${key}${author ? ` ${author}` : ''} -> ${sourceId}`);
+    if (!opts.dryRun) {
+      await db.collection(assignmentsCollection).doc(key).set({ sourceId }, { merge: true });
+    }
+  }
+
+  console.log(`[cutout] assignment ${key}${author ? ` ${author}` : ''} -> ${sourceId}`);
   return sourceId;
 }
 
-async function resolveOpeningPlusOneSpeakerDocId(db) {
-  const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
-  const dateKey = addDays(getOpeningAppDateKey(), 1);
-  const snap = await db.collection(assignmentsCollection).doc(dateKey).get();
-  if (!snap.exists) throw new Error(`No assignment for opening+1 app-day ${dateKey}`);
-  const sourceId = String((snap.data() || {}).sourceId || '').trim();
-  if (!sourceId) throw new Error(`dailyQuoteAssignments/${dateKey} has no sourceId`);
-  const author = String((snap.data() || {}).authorSnapshot || '').trim();
-  console.log(`[cutout] opening-plus-one-speaker ${dateKey} ${author} -> ${sourceId}`);
-  return sourceId;
+async function resolveTodaySpeakerDocId(db, opts) {
+  return resolveAssignmentSourceId(db, getOpeningAppDateKey(), opts);
+}
+
+async function resolveOpeningPlusOneSpeakerDocId(db, opts) {
+  return resolveAssignmentSourceId(db, addDays(getOpeningAppDateKey(), 1), opts);
 }
 
 async function collectRows(db, collectionName, opts) {
@@ -541,11 +603,13 @@ async function main() {
   const db = initFirebase();
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   if (opts.todaySpeaker && !opts.doc) {
-    opts.doc = await resolveTodaySpeakerDocId(db);
+    opts.doc = await resolveTodaySpeakerDocId(db, opts);
+    if (!opts.doc) return;
     opts.scheduled = false;
   }
   if (opts.openingPlusOneSpeaker && !opts.doc) {
-    opts.doc = await resolveOpeningPlusOneSpeakerDocId(db);
+    opts.doc = await resolveOpeningPlusOneSpeakerDocId(db, opts);
+    if (!opts.doc) return;
     opts.scheduled = false;
   }
   const rows = await collectRows(db, collectionName, opts);
@@ -657,5 +721,10 @@ async function main() {
 
 main().catch((error) => {
   console.error('[cutout] failed:', error.message);
+  const softFail = process.argv.includes('--soft-fail');
+  if (softFail) {
+    console.log('[cutout] soft-fail enabled; leaving workflow successful despite fatal error');
+    process.exit(0);
+  }
   process.exit(1);
 });
