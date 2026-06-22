@@ -35,7 +35,8 @@ const {
   assignmentSourceIdsInWindow,
   buildNotionDateScheduledFilter,
   buildNotionSchedulingPoolFilter,
-  findSchemaPropName
+  findSchemaPropName,
+  isDateInSyncWindow
 } = require('./lib/sync-window.cjs');
 const {
   isNotionPageMissingError,
@@ -130,6 +131,15 @@ function getNumber(prop, fallback = 0) {
 
 function getDateStart(prop) {
   return prop?.date?.start ? String(prop.date.start).trim() : '';
+}
+
+/** Date columns vary in Notion (date_scheduled vs "Date scheduled"); match other mapped fields. */
+function getMappedDateStart(props, base, ...directKeys) {
+  for (const key of directKeys) {
+    const v = getDateStart(props[key]);
+    if (v) return v;
+  }
+  return getDateStart(findPropByBaseName(props, base));
 }
 
 function getSelect(prop) {
@@ -611,7 +621,7 @@ function parseNotionRow(page) {
         pageId: page?.id,
         text: text.slice(0, 80),
         author,
-        dateScheduled: getDateStart(props.date_scheduled),
+        dateScheduled: getMappedDateStart(props, 'date_scheduled', 'date_scheduled', 'Date scheduled', 'Date Scheduled'),
         artRecs: String(artRecs || '').slice(0, 80),
         hasProp: !!artRecsTypeProp,
         propType: artRecsTypeProp ? Object.keys(artRecsTypeProp).filter((k) => k !== 'id' && k !== 'type').join(',') : null,
@@ -702,7 +712,7 @@ function parseNotionRow(page) {
       console.log('[sync] speaker_keywords debug', {
         pageId: page?.id,
         author,
-        dateScheduled: getDateStart(props.date_scheduled),
+        dateScheduled: getMappedDateStart(props, 'date_scheduled', 'date_scheduled', 'Date scheduled', 'Date Scheduled'),
         hasProp: !!rawProp,
         propType: rawProp?.type || null,
         propKeys: rawProp ? Object.keys(rawProp).filter((k) => k !== 'id') : [],
@@ -737,8 +747,20 @@ function parseNotionRow(page) {
     getRichText(props.notification_text) || getTitle(props.notification_text);
   const theme = getSelect(props.theme) || getRichText(props.theme) || getTitle(props.theme);
   const sortOrder = getNumber(props.sort_order, 0);
-  const dateScheduled = getDateStart(props.date_scheduled);
-  const submittedAt = getDateStart(props.submitted_at);
+  const dateScheduled = getMappedDateStart(
+    props,
+    'date_scheduled',
+    'date_scheduled',
+    'Date scheduled',
+    'Date Scheduled'
+  );
+  const submittedAt = getMappedDateStart(
+    props,
+    'submitted_at',
+    'submitted_at',
+    'Submitted at',
+    'Submitted At'
+  );
   const submittedVia = getMappedText(
     props,
     'submitted_via',
@@ -747,7 +769,13 @@ function parseNotionRow(page) {
     'Submitted Via'
   );
   const itemNo = typeof props.item_no?.number === 'number' ? props.item_no.number : null;
-  const lastUsedDate = getDateStart(props.last_used_date);
+  const lastUsedDate = getMappedDateStart(
+    props,
+    'last_used_date',
+    'last_used_date',
+    'Last used date',
+    'Last Used Date'
+  );
   const reviewed = getCheckbox(props['reviewed?'] || props.reviewed || props.Reviewed, false);
   const sourceNotes = getSelect(props.source_notes) || getRichText(props.source_notes) || getTitle(props.source_notes);
   const status = getSelect(props.status) || getRichText(props.status) || getTitle(props.status);
@@ -1126,7 +1154,14 @@ async function run() {
     } else {
       console.warn('[sync] could not build scheduling-pool filter; new approvals may not sync until full-catalog run');
     }
-    for (const pageId of assignmentIds) {
+    const extraFetchIds = new Set(assignmentIds);
+    const catalogSnap = await db.collection(collectionName).where('source', '==', 'notion').get();
+    catalogSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const ds = String(data.date_scheduled ?? data.dateScheduled ?? '').trim();
+      if (isDateInSyncWindow(ds, window)) extraFetchIds.add(docSnap.id);
+    });
+    for (const pageId of extraFetchIds) {
       if (byId.has(pageId)) continue;
       try {
         const page = await notionGetPage(pageId, notionToken);
@@ -1145,7 +1180,7 @@ async function run() {
     }
     rowsToSync = [...byId.values()];
     console.log(
-      `[sync] window sources dateFilter=${filtered.length} schedulingPool=${poolPages} assignmentSlots=${assignmentSlotIds} extraPageFetches=${extraPageFetches} total=${rowsToSync.length}`
+      `[sync] window sources dateFilter=${filtered.length} schedulingPool=${poolPages} assignmentSlots=${assignmentSlotIds} extraPageFetches=${extraPageFetches} extraFetchTargets=${extraFetchIds.size} total=${rowsToSync.length}`
     );
   } else {
     console.log('[sync] full-catalog sync (all Notion rows)');

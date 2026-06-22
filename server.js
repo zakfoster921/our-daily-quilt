@@ -162,7 +162,7 @@ function parseNotionSyncScopeFromBody(body) {
   if (Number.isFinite(n) && n >= 1 && n <= 10) {
     return { fullCatalog: false, windowDays: n, label: String(n) };
   }
-  return { fullCatalog: false, windowDays: 1, label: '1' };
+  return { fullCatalog: false, windowDays: 7, label: '7' };
 }
 
 function notionSyncQuotesScriptArgs(startDate, syncScope) {
@@ -7989,7 +7989,7 @@ app.post('/api/quote-prefill-sweep', async (req, res) => {
 
 /**
  * Manual Notion ↔ Firestore sync (same steps as GitHub Actions notion-firestore-sync workflow).
- * Body (optional): { windowDays: 1..10 } or { fullCatalog: true } / { scope: "all" }. Default: 1 day.
+ * Body (optional): { windowDays: 1..10 } or { fullCatalog: true } / { scope: "all" }. Default: 7 days.
  * After quotes sync, runs reconcile: apply Notion `date_scheduled` to `dailyQuoteAssignments`
  * (clear date → unschedule; change date → move). Then append-only scheduling (same as the daily cron), not swap mode.
  * Near-term empty days are filled via `--fill-gaps-only` before the tail append.
@@ -8694,15 +8694,19 @@ app.get('/api/social-posts/feed', async (req, res) => {
     }
 
     const snap = await query.get();
-    const posts = snap.docs
+    const overFetchLimit = pageLimit + 10;
+    const allPublished = snap.docs
       .map(serializeSocialPostDoc)
-      .filter((post) => post.status === 'published' && post.publishedAtIso)
-      .slice(0, pageLimit);
+      .filter((post) => post.status === 'published' && post.publishedAtIso);
+    const posts = allPublished.slice(0, pageLimit);
+    const hasMore =
+      allPublished.length > pageLimit ||
+      (snap.docs.length >= overFetchLimit && posts.length >= pageLimit);
     return res.json({
       success: true,
       posts,
       cursorPostId: posts.length ? posts[posts.length - 1].postId : cursorPostId,
-      hasMore: snap.docs.length > pageLimit
+      hasMore
     });
   } catch (error) {
     console.error('❌ Social posts feed read failed:', error);
