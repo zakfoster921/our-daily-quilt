@@ -5461,7 +5461,8 @@ async function resolvePreviewQuotePayloadForDate(dateKey) {
     return {
       quote: buildPreviewQuotePayloadFromFirestore(catalogRow, catalogId),
       resolution: 'notion_schedule',
-      assignmentExists: assignSnap.exists
+      assignmentExists: assignSnap.exists,
+      notionLastEditedTime: catalogEdited
     };
   }
 
@@ -5527,6 +5528,7 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
       body: JSON.stringify({ filter: { and: filterParts }, page_size: 20 })
     });
     const rows = Array.isArray(json?.results) ? json.results : [];
+    let best = null;
     for (const page of rows) {
       const prop = page?.properties?.[dateScheduledProp];
       const ds = normalizeScheduleDateKey(prop?.date?.start || prop?.date?.end);
@@ -5534,10 +5536,19 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
       const text = String(extractQuoteTextFromNotionPage(page) || '').trim();
       const author = String(extractAuthorFromNotionPage(page) || '').trim();
       if (!text || !author) continue;
+      const candidate = {
+        id: String(page.id || '').trim(),
+        notionLastEditedTime: String(page.last_edited_time || '').trim(),
+        quote: { text, author, sourceId: String(page.id || '').trim() || undefined }
+      };
+      best = best ? pickScheduleWinner(best, candidate) : candidate;
+    }
+    if (best?.quote) {
       return {
-        quote: { text, author, sourceId: String(page.id || '').trim() || undefined },
+        quote: best.quote,
         resolution: 'notion_live',
-        assignmentExists: false
+        assignmentExists: false,
+        notionLastEditedTime: best.notionLastEditedTime
       };
     }
   } catch (error) {
@@ -5548,8 +5559,24 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
 
 async function resolvePreviewQuotePayloadForDateWithNotion(dateKey) {
   const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
-  if (notionResult?.quote) return notionResult;
   const firestoreResult = await resolvePreviewQuotePayloadForDate(dateKey);
+
+  const wrapPreviewWinner = (result) => {
+    if (!result?.quote?.text) return null;
+    return {
+      payload: result,
+      id: String(result.quote.sourceId || '').trim(),
+      notionLastEditedTime: String(result.notionLastEditedTime || '').trim()
+    };
+  };
+
+  const notionWrap = wrapPreviewWinner(notionResult);
+  const firestoreWrap = wrapPreviewWinner(firestoreResult);
+  if (notionWrap && firestoreWrap) {
+    const winner = pickScheduleWinner(notionWrap, firestoreWrap);
+    return winner.payload;
+  }
+  if (notionResult?.quote) return notionResult;
   if (firestoreResult?.quote) return firestoreResult;
   return firestoreResult;
 }
