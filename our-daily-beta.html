@@ -269,7 +269,7 @@ try {
   <meta charset="UTF-8" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
-  <link rel="stylesheet" href="styles/our-daily-beta.css?v=54" />
+  <link rel="stylesheet" href="styles/our-daily-beta.css?v=65" />
   <!-- file:// Safari resolves ../ in the stylesheet against the HTML path, not styles/ — use document-relative assets/ here -->
   <style id="odq-document-asset-vars">
     @font-face {
@@ -284,6 +284,12 @@ try {
       --triptych-halftone-image: url("assets/mood-triptych-halftone.png") !important;
       --triptych-halftone-mask: url("assets/mood-triptych-halftone-alpha.png") !important;
       --quilt-chalk-squiggle: url("assets/chalk-squiggle-alpha.png") !important;
+      --reflection-prompt-card-image: url("assets/reflection-prompt-card.webp?v=5") !important;
+      --reflection-prompt-card-aspect: 450 / 563;
+      /* Measured from reflection-prompt-card.webp alpha (450×563). */
+      --reflection-card-inset-top: 17%;
+      --reflection-card-inset-x: 5%;
+      --reflection-card-inset-bottom: 17%;
     }
   </style>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -823,7 +829,7 @@ try {
             <div class="color-picker-container color-picker-container--sliders">
               <div class="slider-stack">
                 <input type="range" id="hueSlider" class="picker-slider" min="0" max="360" value="0" aria-label="Hue">
-                <input type="range" id="satSlider" class="picker-slider" min="0" max="100" value="68" aria-label="Saturation">
+                <input type="range" id="satSlider" class="picker-slider" min="0" max="100" value="50" aria-label="Saturation">
                 <input type="range" id="valueSlider" min="25" max="90" value="90" class="picker-slider" aria-label="Adjust color brightness">
               </div>
             </div>
@@ -863,51 +869,53 @@ try {
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" tabindex="0" aria-label="OUR DAILY QUILT — community quilt with colorful blocks. Tap to find your color."></svg>
         <canvas id="quiltFilmGrainOverlay" width="1" height="1" aria-hidden="true"></canvas>
       </div>
-      <div class="quilt-daily-colors-zone">
-        <div class="quilt-daily-colors-stage">
-          <div
-            class="quilt-user-color-card-wrap"
-            id="quiltUserColorCardWrap"
-            hidden
-            aria-hidden="true"
-          >
-            <div class="quilt-user-shape-card" id="quiltUserShapeCard">
-                <div class="quilt-user-shape-card__mount">
-                  <img
-                    class="quilt-user-shape-card__paperclip"
-                    src="assets/color-card-paperclip.png?v=4"
-                    alt=""
-                    width="98"
-                    height="359"
-                    decoding="async"
+      <div class="quilt-mood-duo" id="quiltMoodDuo">
+        <div class="quilt-daily-colors-zone">
+          <div class="quilt-daily-colors-stage">
+            <div
+              class="quilt-user-color-card-wrap"
+              id="quiltUserColorCardWrap"
+              hidden
+              aria-hidden="true"
+            >
+              <div class="quilt-user-shape-card" id="quiltUserShapeCard">
+                <div class="quilt-user-shape-card__body">
+                  <div
+                    class="quilt-user-shape-card__fabric"
+                    id="quiltUserShapeSwatch"
                     aria-hidden="true"
-                  />
-                  <div class="quilt-user-shape-card__surface">
-                    <div class="quilt-user-shape-card__swatch" id="quiltUserShapeSwatch">
-                      <div class="quilt-user-shape-card__thanks-note" aria-hidden="true">
-                        <div class="quilt-user-shape-card__note-paper">
-                          <img
-                            class="quilt-user-shape-card__swatch-message"
-                            src="assets/color-card-thanks-note.png?v=1"
-                            alt="Thank you for adding this color!"
-                            width="697"
-                            height="423"
-                            decoding="async"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div class="quilt-user-shape-card__footer">
-                      <p class="quilt-user-shape-card__color-name" id="quiltUserShapeColorName"></p>
-                      <p class="quilt-user-shape-card__color-hex" id="quiltUserShapeColorHex"></p>
+                  >
+                    <div class="quilt-user-shape-card__fabric-art">
+                      <img
+                        class="quilt-user-shape-card__thanks-print"
+                        src="assets/color-card-thanks-note.png?v=1"
+                        alt=""
+                        width="697"
+                        height="423"
+                        decoding="async"
+                        draggable="false"
+                      />
                     </div>
                   </div>
+                  <div class="quilt-user-shape-card__tab">
+                    <p class="quilt-user-shape-card__label" id="quiltUserShapeColorLabel"></p>
+                  </div>
                 </div>
+              </div>
             </div>
           </div>
         </div>
+        <div class="quilt-mood-duo__quote" id="quiltMoodDuoQuote" hidden aria-hidden="true">
+          <span class="quilt-mood-duo__quote-tape" aria-hidden="true"></span>
+          <img
+            class="quilt-mood-duo__quote-img quilt-mood-spread__quote-img"
+            alt="Today's quote"
+            decoding="async"
+            draggable="false"
+          />
+        </div>
       </div>
-      <!-- Quote card stack — mood collage (scratch strips) or triptych (?moodSpread=triptych). -->
+      <!-- Mood collage (doily + strips + penny) or triptych (?moodSpread=triptych). -->
       <div class="quote-card-stack">
         <div
           id="quiltMoodSpread"
@@ -954,6 +962,7 @@ try {
       <aside class="quote-speaker-widget" id="quoteSpeakerWidget" aria-labelledby="quoteSpeakerName" hidden>
         <div class="quote-speaker-stack">
           <div class="quote-speaker-portrait-wrap">
+          <div class="quote-speaker-portrait-tilt">
           <figure class="quote-speaker-cutout" id="quoteSpeakerImageWrap" aria-hidden="true" hidden>
             <img
               class="quote-speaker-image"
@@ -977,8 +986,9 @@ try {
             <span class="quote-speaker-avatar" id="quoteSpeakerAvatar" hidden></span>
             <span class="quote-speaker-xerox-grain" aria-hidden="true"></span>
             <span class="quote-speaker-contour" hidden aria-hidden="true"></span>
+            <p class="quote-speaker-attribution" id="quoteSpeakerAttribution" hidden></p>
           </figure>
-          <p class="quote-speaker-attribution" id="quoteSpeakerAttribution" hidden></p>
+          </div>
           </div>
           <div class="quote-speaker-slab quote-speaker-slab--identity" id="quoteSpeakerIdentitySlab">
             <div class="quote-speaker-slab-body">
@@ -1025,6 +1035,16 @@ try {
         <section class="quilt-reflection-scrap-widget" id="quiltReflectionScrapWidget" aria-label="Reflections and shared themes">
           <p class="quilt-reflection-scrap-kicker" id="quiltReflectionScrapTitle">Share one small thought</p>
           <div class="quilt-reflection-question-paper">
+            <picture class="quilt-reflection-question-paper__sheet" aria-hidden="true">
+              <source srcset="assets/reflection-prompt-card.webp?v=5" type="image/webp" />
+              <img
+                src="assets/reflection-prompt-card.png?v=5"
+                alt=""
+                width="450"
+                height="563"
+                decoding="async"
+              />
+            </picture>
             <div class="quilt-reflection-question-paper-body">
               <p class="quilt-reflection-scrap-text" id="quiltReflectionScrapText"></p>
               <form class="quilt-reflection-response-form" id="quiltReflectionResponseForm" aria-label="Anonymous reflection response">
@@ -2319,6 +2339,16 @@ try {
         <p class="reflection-guidance">Here's a question to sit with quietly or free-write in a journal — set a timer, fill some pages, write by hand or type.</p>
         <div class="reflection-cards-stack">
           <div class="reflection-prompt-card">
+            <picture class="reflection-prompt-card__sheet" aria-hidden="true">
+              <source srcset="assets/reflection-prompt-card.webp?v=5" type="image/webp" />
+              <img
+                src="assets/reflection-prompt-card.png?v=5"
+                alt=""
+                width="450"
+                height="563"
+                decoding="async"
+              />
+            </picture>
             <div class="reflection-prompt-row">
               <span class="reflection-prompt-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" role="img" focusable="false">
@@ -2368,10 +2398,10 @@ try {
   <script src="lib/quote-keyword-emphasis.js"></script>
   <script src="lib/speaker-guide-marker.js?v=21"></script>
   <script src="lib/layout-b-keyword-emphasis.js"></script>
-  <script src="lib/quilt-newspaper-clipping.js?v=94"></script>
-  <script src="lib/odq-scanner-bed.js?v=4"></script>
+  <script src="lib/quilt-newspaper-clipping.js?v=103"></script>
+  <script src="lib/odq-scanner-bed.js?v=3"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
-  <script src="lib/quilt-mood-collage-widget.js?v=73"></script>
+  <script src="lib/quilt-mood-collage-widget.js?v=136"></script>
   <script src="lib/quilt-mood-triptych-widget.js?v=1102"></script>
   <script src="lib/quilt-mood-terminal.js?v=24"></script>
   <script src="lib/analytics.js"></script>
@@ -2401,8 +2431,8 @@ try {
   <script src="lib/app-config.js"></script>
   <script src="lib/speaker-cutout-render.js?v=11"></script>
   <script src="lib/layout-b-compose.js?v=2a"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=54"></script>
-  <script src="lib/simplified-quilt-app-quilt.js?v=32"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=55"></script>
+  <script src="lib/simplified-quilt-app-quilt.js?v=45"></script>
   <script src="lib/simplified-quilt-app-share.js?v=2a"></script>
   <script src="lib/simplified-quilt-app-social.js?v=3"></script>
   <script src="lib/simplified-quilt-app-admin.js?v=25"></script>
@@ -2597,7 +2627,7 @@ try {
         
         // Color picker — start on first palette swatch (= defaultColor), reset once per calendar day after load
         const startupHsv = Utils.hexToHsv(CONFIG.APP.defaultColor);
-        const pickerSat = Number(CONFIG.COLOR_PICKER?.hueBarSaturation) || 68;
+        const pickerSat = Number(CONFIG.COLOR_PICKER?.hueBarSaturation) || 50;
         this.selectedHue = startupHsv.h;
         this.selectedSaturation = pickerSat;
         this.selectedLightness = startupHsv.v;
@@ -2630,6 +2660,8 @@ try {
         this._quiltScrollCuePlayed = false;
         /** Set when user taps a remember-today local notification (before live sync finishes). */
         this._pendingRememberTodayViewDateKey = null;
+        /** Set when user taps the daily-quote push/local notification before live sync finishes. */
+        this._pendingDailyQuoteNotificationOpen = false;
         /** Blocks returning-user portal→quilt fast path after a remember-today notification open. */
         this._skipFastPathForRememberToday = false;
         /** One-shot guard: daily push opt-in after user scrolls quilt to the bottom. */
@@ -2887,6 +2919,8 @@ try {
 
       const app = new SimplifiedQuiltAppV2();
       window.app = app;
+      // Capture notification tap intent before deferred initialize() (cold start).
+      app.setupPushNotificationListeners?.();
       if (window.db && window.firestore?.getDoc) {
         app.prefetchReflectionThemesArchivePage();
       } else {

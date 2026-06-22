@@ -294,11 +294,11 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
       const STORY_H = 1920;
       const padX = 72;
       const headerPadTop = 192;
-      const gapHeaderImage = 32;
+      const gapHeaderCta = 20;
+      const gapCtaImage = 32;
       const padBottom = 88;
       const gapImageText = 44;
-      const gapTextCta = 40;
-      const backingColor = '#ebe8e3';
+      const backingColor = '#f6f4f1';
       const inkColor = 'rgba(36, 27, 20, 0.92)';
       const ctaColor = 'rgba(47, 36, 27, 0.72)';
       const ctaText = 'See more on @ourdailyquilt';
@@ -339,11 +339,18 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
 
       const ctaSize = 46;
       const ctaLineH = ctaSize * 1.35;
-      const footerTop = STORY_H - padBottom - ctaLineH;
+      const ctaTop = headerBottom + gapHeaderCta;
+      ctx.fillStyle = ctaColor;
+      ctx.font = '600 ' + ctaSize + 'px ' + FONT;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(ctaText, padX, ctaTop);
+
+      const contentTop = ctaTop + ctaLineH + gapCtaImage;
       const minCaptionReserve = 120;
       const maxImageH = Math.max(
         360,
-        footerTop - gapTextCta - minCaptionReserve - gapImageText - headerBottom - gapHeaderImage
+        STORY_H - padBottom - minCaptionReserve - gapImageText - contentTop
       );
 
       const iw = Math.max(1, postImage.naturalWidth || postImage.width);
@@ -352,12 +359,12 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
       const drawW = Math.round(iw * fitScale);
       const drawH = Math.round(ih * fitScale);
       const drawX = Math.round(padX + (imageSlotW - drawW) / 2);
-      const drawY = headerBottom + gapHeaderImage;
+      const drawY = contentTop;
       ctx.drawImage(postImage, drawX, drawY, drawW, drawH);
       const imageBottom = drawY + drawH;
 
       const textTop = imageBottom + gapImageText;
-      const textAreaH = Math.max(120, footerTop - gapTextCta - textTop);
+      const textAreaH = Math.max(120, STORY_H - padBottom - textTop);
 
       let textSize = 38;
       let captionLayout = layoutDateCaption(ctx, dateLabel, caption, textMaxW, textSize, FONT);
@@ -368,11 +375,6 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
         textSize -= 2;
       }
       drawDateCaption(ctx, captionLayout, padX, textTop, textSize, FONT, inkColor);
-
-      ctx.fillStyle = ctaColor;
-      ctx.font = '600 ' + ctaSize + 'px ' + FONT;
-      ctx.textAlign = 'center';
-      ctx.fillText(ctaText, STORY_W / 2, footerTop);
 
       window.__previewDataUrl = canvas.toDataURL('image/png');
     }
