@@ -24,7 +24,10 @@ try {
   }
 }
 const admin = require('firebase-admin');
-const { mirrorCatalogFieldsToAssignment } = require('./lib/first-response-fields.cjs');
+const {
+  catalogFieldsForAssignmentMirror,
+  mirrorCatalogFieldsToAssignment
+} = require('./lib/first-response-fields.cjs');
 const {
   layoutBKeywordEmphasisFirestorePatch,
   pickQuoteKeywordRaw,
