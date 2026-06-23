@@ -238,10 +238,14 @@ async function installAuditHelpers(page) {
       if (screenId === 'screen-intro-zak') {
         const nameEl = document.getElementById('introZakName');
         if (nameEl) nameEl.textContent = 'Friend';
-        document.getElementById('screen-intro-zak')?.classList.add('intro-persona-visible');
+        const zakEl = document.getElementById('screen-intro-zak');
+        zakEl?.classList.add('intro-persona-visible');
+        zakEl?.querySelectorAll('.intro-zak-line-fade-in').forEach((el) => el.classList.add('visible'));
       }
       if (screenId === 'screen-intro-mission') {
-        document.getElementById('screen-intro-mission')?.classList.add('intro-persona-visible');
+        const missionEl = document.getElementById('screen-intro-mission');
+        missionEl?.classList.add('intro-persona-visible');
+        missionEl?.querySelectorAll('.intro-zak-line-fade-in').forEach((el) => el.classList.add('visible'));
       }
       if (screenId === 'screen-name-thanks') {
         const line = document.getElementById('nameThanksLine');

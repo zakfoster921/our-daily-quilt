@@ -23,13 +23,15 @@ const EXPORTS = [
   {
     out: 'intro-zak-peace.webp',
     src: '2-86b6aa59-aae3-4215-bb89-fc472987d289.png',
-    extractRatio: { top: 0.24, height: 0.58 },
-    postTrimScale: 1.55
+    // Crop below staggered copy — mockup text was baked into older exports.
+    extractRatio: { top: 0.52, height: 0.48 },
+    postTrimScale: 1
   },
   {
     out: 'intro-mission-heart.webp',
     src: '3-144df618-0cb5-425c-b78f-5359ce3ea749.png',
-    extractRatio: { top: 0.48, height: 0.52 }
+    // Crop below mission copy + “together” line.
+    extractRatio: { top: 0.52, height: 0.40 }
   },
   {
     out: 'intro-welcome-lean.webp',
