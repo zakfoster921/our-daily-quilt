@@ -3236,12 +3236,25 @@
 
     #screen-social-posts .settings-intro {
       margin: 0 0 1.7rem;
+      padding-left: var(--social-post-pad-left);
+      padding-right: var(--social-post-pad-right);
       font-size: 0.95rem;
       font-weight: 400;
       line-height: 1.12;
       letter-spacing: 0.02em;
       color: rgba(36, 27, 20, 0.78);
       text-align: left;
+    }
+
+    #screen-social-posts .social-posts-intro__icon {
+      display: inline-block;
+      vertical-align: -0.12em;
+      margin-left: 0.2em;
+      margin-right: 0.12em;
+      font-family: 'Material Symbols Outlined';
+      font-size: 1.2em;
+      line-height: 1;
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     }
 
     #screen-settings .settings-items {
@@ -5608,6 +5621,11 @@
       --contributor-cloud-row: 1.05em;
       --quilt-quote-reflection-gap: clamp(1.25rem, 5vw, 2.5rem);
       --quilt-quote-speaker-gap: calc(var(--quilt-quote-reflection-gap) * 1.2);
+      --quilt-fabric-peek-delay: 1000ms;
+      --quilt-fabric-peek-lift: min(8.5dvh, 76px);
+      --quilt-fabric-peek-hide: min(1.5dvh, 16px);
+      --quilt-fabric-peek-duration: 1.65s;
+      --quilt-fabric-peek-ease: cubic-bezier(0.42, 0, 0.58, 1);
       /* Single knob: transparent quilt tunnels between scroll sections (one section per viewport). */
       --quilt-section-tunnel: 60vh;
       --quilt-section-gap: var(--quilt-section-tunnel);
@@ -5615,6 +5633,8 @@
       /* Scroll room above the icon footer (not the section tunnel); large names + nudge need extra. */
       --quilt-footer-clearance: max(1rem, calc(5rem + env(safe-area-inset-bottom, 0px)));
       --quilt-byg-inner-gap: clamp(1.1rem, 3.5dvh, 1.75rem);
+      --quilt-quote-tape-width: clamp(4.8rem, 30vw, 7.2rem);
+      --quilt-quote-tape-height: clamp(2.7rem, 10.2vw, 3.6rem);
       /* Scroll design system — artifact | matte | tape */
       --odq-paper-artifact: #f6f4f1;
       --odq-paper-matte: #ebe8e3;
@@ -5734,12 +5754,47 @@
       }
     }
 
+    @keyframes quilt-fabric-peek-hint {
+      0%,
+      100% {
+        transform: rotate(var(--quilt-color-card-tilt, -2deg)) translateY(0);
+      }
+      50% {
+        transform: rotate(var(--quilt-color-card-tilt, -2deg))
+          translateY(calc(-1 * var(--quilt-fabric-peek-lift, min(8.5dvh, 76px))));
+      }
+    }
+
+    @keyframes quilt-fabric-stage-peek-hint {
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(calc(-1 * var(--quilt-fabric-peek-lift, min(8.5dvh, 76px))));
+      }
+    }
+
     #screen-quilt .quote-card-stack.is-triptych-peek-hint {
       animation: quilt-triptych-peek-hint 1.35s cubic-bezier(0.22, 1, 0.36, 1) both;
     }
 
+    #screen-quilt .quilt-fabric-color-stage.is-triptych-peek-hint {
+      animation: quilt-fabric-stage-peek-hint var(--quilt-fabric-peek-duration, 1.65s)
+        var(--quilt-fabric-peek-ease, cubic-bezier(0.42, 0, 0.58, 1)) both;
+      z-index: 12;
+    }
+
+    #screen-quilt .quilt-user-color-card-wrap.is-triptych-peek-hint {
+      animation: quilt-fabric-peek-hint var(--quilt-fabric-peek-duration, 1.65s)
+        var(--quilt-fabric-peek-ease, cubic-bezier(0.42, 0, 0.58, 1)) both;
+      z-index: 12;
+    }
+
     @media (prefers-reduced-motion: reduce) {
-      #screen-quilt .quote-card-stack.is-triptych-peek-hint {
+      #screen-quilt .quote-card-stack.is-triptych-peek-hint,
+      #screen-quilt .quilt-fabric-color-stage.is-triptych-peek-hint,
+      #screen-quilt .quilt-user-color-card-wrap.is-triptych-peek-hint {
         animation: none;
       }
     }
@@ -5763,9 +5818,37 @@
       overflow: hidden;
     }
 
-    /* Color card sits above triptych — half tunnel between them when the card is visible. */
+    /* Color card section — full section tunnel before quote clipping; half tunnel before collage when visible. */
     #screen-quilt:has(#quiltUserColorCardWrap:not([hidden])) .quilt-mood-duo + .quote-card-stack {
       margin-top: calc(var(--quilt-section-gap) * 0.35);
+    }
+
+    /* User fabric swatch — own scroll section before quote clipping. */
+    #screen-quilt .quilt-fabric-color-stage {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: var(--quilt-float-sheet-width, 460px);
+      margin-inline: auto;
+      z-index: 10;
+      flex-shrink: 0;
+      box-sizing: border-box;
+      padding: 0.35rem 0 0;
+      overflow: visible;
+    }
+
+    #screen-quilt .quilt-fabric-color-stage:not(:has(#quiltUserColorCardWrap:not([hidden]))) {
+      display: none;
+    }
+
+    #screen-quilt .quilt-fabric-color-stage .quilt-daily-colors-zone {
+      width: 100%;
+    }
+
+    #screen-quilt .quilt-fabric-color-stage + .quilt-mood-duo {
+      margin-top: var(--quilt-section-gap);
     }
 
     /* Mood duo — quote clipping (+ tape when collage is live). */
@@ -5777,7 +5860,7 @@
       margin-inline: auto;
       z-index: 10;
       flex-shrink: 0;
-      min-height: clamp(10.5rem, 42vw, 15.5rem);
+      min-height: 0;
       overflow-x: clip;
     }
 
@@ -5817,6 +5900,42 @@
       width: 100%;
       height: auto;
       filter: drop-shadow(0 2px 6px rgba(45, 36, 29, 0.12));
+    }
+
+    #screen-quilt .quilt-mood-duo__quote-tape {
+      display: none;
+    }
+
+    #screen-quilt:has(#quiltMoodSpread.quilt-mood-collage.is-layer-ready:not([hidden])) .quilt-mood-duo,
+    #screen-quilt:has(#quiltMoodSpread.quilt-mood-collage.is-ready:not([hidden])) .quilt-mood-duo {
+      overflow: visible;
+    }
+
+    #screen-quilt:has(#quiltMoodSpread.quilt-mood-collage.is-layer-ready:not([hidden])) .quilt-mood-duo__quote,
+    #screen-quilt:has(#quiltMoodSpread.quilt-mood-collage.is-ready:not([hidden])) .quilt-mood-duo__quote {
+      overflow: visible;
+    }
+
+    #screen-quilt:has(#quiltMoodSpread.quilt-mood-collage.is-layer-ready:not([hidden])) .quilt-mood-duo__quote-tape,
+    #screen-quilt:has(#quiltMoodSpread.quilt-mood-collage.is-ready:not([hidden])) .quilt-mood-duo__quote-tape {
+      --quilt-byg-tape-strip: url("../assets/before-you-go-tape-alpha.png");
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: var(--quilt-quote-tape-width);
+      height: var(--quilt-quote-tape-height);
+      transform: translateX(-50%) translateY(-50%) rotate(-1.5deg);
+      transform-origin: center center;
+      z-index: 3;
+      pointer-events: none;
+      opacity: 0.94;
+      background: transparent;
+      background-image: var(--quilt-byg-tape-strip);
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+      background-position: center;
+      filter: drop-shadow(0 1px 3px rgba(45, 36, 29, 0.12));
     }
 
 
@@ -7689,6 +7808,41 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    .odq-speaker-tune-prep-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100055;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.35);
+      pointer-events: auto;
+    }
+
+    .odq-speaker-tune-prep-overlay__panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      background: rgba(255, 255, 255, 0.96);
+      border-radius: 8px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .odq-speaker-tune-prep-overlay__spinner {
+      width: 28px;
+      height: 28px;
+      margin-bottom: 0;
+      border-width: 2px;
+    }
+
+    .odq-speaker-tune-prep-overlay__label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #222;
+    }
     
 
     /* ===== TOAST ===== */
@@ -8349,7 +8503,21 @@
       
 
       
-      #screen-quilt .quilt-mood-duo {
+      #screen-quilt .quilt-fabric-color-stage {
+        --quilt-float-card-gutter: 20px;
+      }
+
+      #screen-quilt:has(#quiltUserColorCardWrap:not([hidden])) .quilt-fabric-color-stage {
+        margin-top: calc(
+          var(--quilt-fixed-top) + var(--quilt-fixed-height) + var(--quilt-fabric-peek-hide, min(1.5dvh, 16px))
+        );
+      }
+
+      #screen-quilt:has(#quiltUserColorCardWrap:not([hidden])) .quilt-mood-duo + .quote-card-stack {
+        margin-top: calc(var(--quilt-section-gap) * 0.35);
+      }
+
+      #screen-quilt:not(:has(#quiltUserColorCardWrap:not([hidden]))) .quilt-mood-duo {
         --quilt-float-card-gutter: 20px;
         margin-top: calc(var(--quilt-fixed-top) + var(--quilt-fixed-height) + 20px);
       }
@@ -11917,6 +12085,7 @@
     }
 
     #screen-quilt .quilt-reflection-question-paper-body {
+      --reflection-prompt-response-gap: clamp(0.75rem, 3vw, 1.05rem);
       position: absolute;
       top: var(--reflection-card-inset-top, 17%);
       left: var(--reflection-card-inset-x, 5%);
@@ -11928,13 +12097,17 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 0.4rem;
+      gap: var(--reflection-prompt-response-gap);
       width: auto;
       max-width: none;
       margin: 0;
       padding: 0;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+    }
+
+    #screen-quilt .quilt-reflection-question-paper-body.is-long-prompt {
+      --reflection-prompt-response-gap: 0.4rem;
     }
 
     #screen-quilt .quilt-reflection-question-paper .quilt-reflection-scrap-text {
@@ -13753,7 +13926,7 @@
       position: absolute;
       inset: 0;
       z-index: 1;
-      background: rgb(255, 250, 236);
+      background: var(--speaker-cutout-paper-color, var(--quilt-byg-tape, var(--odq-paper-tape, #f2eee6)));
       pointer-events: none;
     }
 
@@ -14091,7 +14264,7 @@
       object-position: bottom center;
     }
 
-    /* Baked lithograph-on-paper composite — portrait ink multiply baked in canvas. */
+    /* Baked Layout B story cutout — tone/newsprint/scanner bed baked in canvas; no CSS re-filter. */
     #screen-quilt
       .quote-speaker-cutout.quote-speaker-cutout--plain-cutout.quote-speaker-cutout--paper-backed.quote-speaker-cutout--plain-composite {
       background-color: transparent;
@@ -14115,25 +14288,16 @@
       .quote-speaker-image.is-loaded[data-plain-cutout-composite='1'] {
       z-index: 5;
       opacity: 1 !important;
-      filter:
-        grayscale(1)
-        sepia(0.22)
-        contrast(1.38)
-        brightness(1.48) !important;
+      filter: none !important;
       mix-blend-mode: normal !important;
       object-fit: contain;
       object-position: bottom center;
     }
 
-    /* Baked newsprint composite — optional export path only. */
     #screen-quilt
       .quote-speaker-cutout.quote-speaker-cutout--plain-cutout
       .quote-speaker-image.is-loaded[data-plain-cutout-composite='1'] {
-      filter:
-        grayscale(1)
-        sepia(0.22)
-        contrast(1.38)
-        brightness(1.48);
+      filter: none;
       mix-blend-mode: normal;
       opacity: 1;
     }
@@ -14342,6 +14506,12 @@
     #screen-quilt .quote-speaker-widget--no-image .quote-speaker-slab--identity .quote-speaker-slab-body {
       margin-top: 0;
       padding-top: var(--quilt-byg-tape-safe-y);
+    }
+
+    #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout.quote-speaker-cutout--subject-fill,
+    #screen-quilt
+      .quote-speaker-cutout.quote-speaker-cutout--plain-cutout.quote-speaker-cutout--subject-fill.quote-speaker-cutout--loaded {
+      overflow: hidden;
     }
 
     #screen-quilt .quote-speaker-cutout.quote-speaker-cutout--plain-cutout.quote-speaker-cutout--loaded {
@@ -15828,11 +15998,23 @@
       display: none !important;
     }
 
-    /* Mood collage — swatch is mounted inside the collage stage (see quilt-mood-collage-widget). */
+    /* Fabric swatch lives in .quilt-fabric-color-stage (above quote clipping). */
 
     #screen-quilt .quilt-user-shape-card {
       --quilt-user-piece-color: #3d8f6e;
-      --quilt-color-swatch-tab: #dad2c8;
+      --quilt-color-swatch-tab: #eef1f4;
+      --quilt-color-swatch-tab-cut: polygon(
+        0% 0%,
+        100% 0%,
+        100% 100%,
+        93% 99.2%,
+        77% 100%,
+        61% 98.4%,
+        45% 100%,
+        29% 98.6%,
+        13% 100%,
+        0% 95.5%
+      );
       /* Thanks print — anchored to fabric artboard (percent of swatch, not viewport). */
       --quilt-thanks-bottom: 12%;
       --quilt-thanks-left: 5%;
@@ -15961,16 +16143,49 @@
       align-self: center;
       width: var(--quilt-color-swatch-tab-width);
       margin: 0;
-      padding: 0.34rem 0.5rem 0.22rem 0.58rem;
+      padding: 0.34rem 0.5rem 0.34rem 0.58rem;
       box-sizing: border-box;
-      background-color: var(--quilt-color-swatch-tab);
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.35),
-        0 1px 0 rgba(36, 40, 48, 0.06);
       isolation: isolate;
+      clip-path: var(--quilt-color-swatch-tab-cut);
+      -webkit-clip-path: var(--quilt-color-swatch-tab-cut);
+      background:
+        radial-gradient(ellipse 78% 58% at 14% 10%, rgba(255, 252, 245, 0.58) 0%, transparent 54%),
+        radial-gradient(ellipse 58% 42% at 90% 86%, rgba(98, 74, 48, 0.07) 0%, transparent 48%),
+        radial-gradient(ellipse 85% 38% at 72% 22%, rgba(168, 138, 98, 0.09) 0%, transparent 52%),
+        linear-gradient(152deg, #f7f2e8 0%, var(--quilt-color-swatch-tab, #eef1f4) 46%, #e5ddd0 100%);
+      box-shadow: 0 1px 0 rgba(36, 40, 48, 0.06);
+    }
+
+    #screen-quilt .quilt-user-shape-card__tab::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: linear-gradient(
+        128deg,
+        transparent 58%,
+        rgba(72, 58, 42, 0.04) 84%,
+        rgba(58, 46, 34, 0.06) 100%
+      );
+    }
+
+    #screen-quilt .quilt-user-shape-card__tab::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.09;
+      mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.62'/%3E%3C/svg%3E");
+      background-size: 88px 88px;
+      background-repeat: repeat;
     }
 
     #screen-quilt .quilt-user-shape-card__label {
+      position: relative;
+      z-index: 2;
       margin: 0;
       width: 100%;
       font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -16466,7 +16681,7 @@
       height: 41.8px;
       stroke: currentColor;
       fill: none;
-      stroke-width: 1.8;
+      stroke-width: 1.4;
       stroke-linecap: round;
       stroke-linejoin: round;
     }
@@ -16477,7 +16692,7 @@
       display: block;
       font-size: 41.8px;
       line-height: 1;
-      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
     }
 
     .quilt-footer-icon-cluster .quilt-studio-floor-icon-btn,
@@ -16821,8 +17036,14 @@
       width: 100%;
       height: auto;
       max-width: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
+    }
+
+    #screen-social-posts .social-post-media-frame:not(:has(.social-post-video-frame)),
+    #screen-social-posts .social-post-carousel:not(:has(.social-post-video-frame)) {
+      aspect-ratio: auto;
+      height: auto;
     }
 
     #screen-social-posts .social-post-media-frame video,
