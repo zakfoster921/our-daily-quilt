@@ -534,8 +534,25 @@ async function runNightlyIgAttempt({
           throw new Error(`Missing canonical quote for ${dateKey}`);
         }
 
-        log('generating classic 4:5…');
-        const instagramImage = await arch.generateInstagramImage(blocks);
+        log('generating IG carousel slides 4:5…');
+        if (!arch.generateInstagramCarouselSlideImageData) {
+          throw new Error(
+            'generateInstagramCarouselSlideImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
+          );
+        }
+        const carouselSlides = await arch.generateInstagramCarouselSlideImageData(
+          blocks,
+          contributors,
+          dateKey
+        );
+        if (!carouselSlides?.slide1 || !carouselSlides?.slide2) {
+          throw new Error(`Carousel slides were not generated for ${dateKey}`);
+        }
+        const carouselSlide1ImageData = carouselSlides.slide1;
+        const carouselSlide2ImageData = carouselSlides.slide2;
+        if (carouselSlides.meta) {
+          log(`carousel compose meta=${JSON.stringify(carouselSlides.meta)}`);
+        }
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
             `generateInstagramQuiltScreen9x16ImageData missing on deployed app — deploy our-daily-beta.html before nightly IG`
@@ -666,7 +683,8 @@ async function runNightlyIgAttempt({
         log('uploading PNGs to Storage + Firestore…');
         const doc = await Utils.writeInstagramImagesDocForZapier({
           dateKey,
-          instagramImage,
+          carouselSlide1ImageData,
+          carouselSlide2ImageData,
           quiltScreen9x16ImageData,
           newspaperClippingImageData,
           postLayoutBImageData,
@@ -684,8 +702,11 @@ async function runNightlyIgAttempt({
             ? { quiltScreen9x16: quiltExportMeta, nightly: true }
             : { nightly: true }
         });
-        if (!doc.imageStorageUrl && !doc.classicUrl) {
-          throw new Error('classic image URL missing after nightly upload');
+        if (!doc.carouselSlide1Url && !doc.classicUrl) {
+          throw new Error('carousel slide 1 URL missing after nightly upload');
+        }
+        if (!doc.carouselSlide2Url) {
+          throw new Error('carousel slide 2 URL missing after nightly upload');
         }
         if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
           throw new Error('layout B story URL missing after nightly upload');
@@ -705,7 +726,9 @@ async function runNightlyIgAttempt({
           contributorCount,
           contributorNameCount: contributors.length,
           readyForInstagram: !!doc.readyForInstagram,
-          classicUrl: doc.classicUrl || doc.imageStorageUrl || '',
+          classicUrl: doc.carouselSlide1Url || doc.classicUrl || doc.imageStorageUrl || '',
+          carouselSlide1Url: doc.carouselSlide1Url || doc.classicUrl || '',
+          carouselSlide2Url: doc.carouselSlide2Url || '',
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
           layoutBUrl: doc.layoutBUrl || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
@@ -742,8 +765,11 @@ async function runNightlyIgAttempt({
         `verify failed: HTTP ${verifyRes.status} ${verify.error || verify.message || ''}`.trim()
       );
     }
-    if (!verify.classicImageUrl && !verify.imageUrl) {
-      throw new Error('verify failed: classic image URL missing');
+    if (!verify.carouselSlide1Url && !verify.classicImageUrl && !verify.imageUrl) {
+      throw new Error('verify failed: carousel slide 1 URL missing');
+    }
+    if (!verify.carouselSlide2Url) {
+      throw new Error('verify failed: carousel slide 2 URL missing');
     }
     const verifyBlocks = Number(verify.blockCount) || 0;
     if (verifyBlocks <= 1) {
@@ -777,7 +803,9 @@ async function runNightlyIgAttempt({
       blockCount: result.blockCount,
       contributorCount: result.contributorCount,
       readyForInstagram: result.readyForInstagram,
-      classicImageUrl: verify.classicImageUrl || verify.imageUrl,
+      classicImageUrl: verify.carouselSlide1Url || verify.classicImageUrl || verify.imageUrl,
+      carouselSlide1Url: verify.carouselSlide1Url || verify.classicImageUrl || verify.imageUrl || '',
+      carouselSlide2Url: verify.carouselSlide2Url || '',
       quiltScreen9x16ImageUrl: quiltScreen9x16Url,
       layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || verify.layoutBPlainImageUrl || result.layoutBUrl,
       layoutBPlainImageUrl: verify.layoutBPlainImageUrl || verify.postLayoutBPlainImageUrl || '',

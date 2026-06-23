@@ -24,8 +24,10 @@ const SCREENS = [
   { slug: 'connection-problem', id: 'screen-connection-problem', label: 'Connection problem' },
   { slug: 'portal', id: 'screen-portal', label: 'Portal' },
   { slug: 'first-name', id: 'screen-first-name', label: 'First name' },
-  { slug: 'name-thanks', id: 'screen-name-thanks', label: 'Name thanks' },
-  { slug: 'welcome', id: 'screen-welcome', label: 'Welcome / how it works' },
+  { slug: 'intro-zak', id: 'screen-intro-zak', label: 'Intro — Meet Zak' },
+  { slug: 'intro-mission', id: 'screen-intro-mission', label: 'Intro — mission' },
+  { slug: 'name-thanks', id: 'screen-name-thanks', label: 'Name thanks (legacy)' },
+  { slug: 'welcome', id: 'screen-welcome', label: 'How it works' },
   { slug: 'first-quote-bridge', id: 'screen-first-quote-bridge', label: 'Quote bridge' },
   { slug: 'quote', id: 'screen-quote', label: 'Quote + color picker' },
   { slug: 'quilt', id: 'screen-quilt', label: 'Quilt (top)' },
@@ -233,6 +235,14 @@ async function installAuditHelpers(page) {
     };
 
     window.__odqAuditPrepScreen = (screenId) => {
+      if (screenId === 'screen-intro-zak') {
+        const nameEl = document.getElementById('introZakName');
+        if (nameEl) nameEl.textContent = 'Friend';
+        document.getElementById('screen-intro-zak')?.classList.add('intro-persona-visible');
+      }
+      if (screenId === 'screen-intro-mission') {
+        document.getElementById('screen-intro-mission')?.classList.add('intro-persona-visible');
+      }
       if (screenId === 'screen-name-thanks') {
         const line = document.getElementById('nameThanksLine');
         if (line) {
