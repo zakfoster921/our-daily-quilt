@@ -23,8 +23,8 @@ const EXPORTS = [
   {
     out: 'intro-zak-peace.webp',
     src: '2-86b6aa59-aae3-4215-bb89-fc472987d289.png',
-    /** Bottom half — peace-sign figure */
-    extractRatio: { top: 0.42, height: 0.58 }
+    extractRatio: { top: 0.24, height: 0.58 },
+    postTrimScale: 1.55
   },
   {
     out: 'intro-mission-heart.webp',
@@ -34,7 +34,7 @@ const EXPORTS = [
   {
     out: 'intro-welcome-lean.webp',
     src: '4-5c66352a-32b6-4e0f-8a83-2f0ad33fb2b8.png',
-    extractRatio: { top: 0.55, height: 0.45 }
+    extractRatio: { top: 0.34, height: 0.66 }
   }
 ];
 
@@ -51,7 +51,7 @@ function keyWhite(data, w, h) {
   }
 }
 
-async function exportOne({ out, src, extractRatio }) {
+async function exportOne({ out, src, extractRatio, postTrimScale = 1 }) {
   const srcPath = path.join(ASSETS_CURSOR, src);
   const outPath = path.join(ROOT, 'assets', out);
   if (!fs.existsSync(srcPath)) {
@@ -80,12 +80,22 @@ async function exportOne({ out, src, extractRatio }) {
     .toBuffer();
 
   const trimMeta = await sharp(trimmed).metadata();
-  const scale = trimMeta.width > MAX_W ? MAX_W / trimMeta.width : 1;
-  const outW = Math.max(1, Math.round(trimMeta.width * scale));
-  const outH = Math.max(1, Math.round(trimMeta.height * scale));
+  const scaledW = Math.max(1, Math.round(trimMeta.width * postTrimScale));
+  const scaledH = Math.max(1, Math.round(trimMeta.height * postTrimScale));
+  const scaled =
+    postTrimScale === 1
+      ? trimmed
+      : await sharp(trimmed)
+          .resize(scaledW, scaledH, { fit: 'inside' })
+          .png()
+          .toBuffer();
+  const scaledMeta = await sharp(scaled).metadata();
+  const scale = scaledMeta.width > MAX_W ? MAX_W / scaledMeta.width : 1;
+  const outW = Math.max(1, Math.round(scaledMeta.width * scale));
+  const outH = Math.max(1, Math.round(scaledMeta.height * scale));
 
-  const outBuf = await sharp(trimmed)
-    .resize(outW, outH, { fit: 'inside', withoutEnlargement: true })
+  const outBuf = await sharp(scaled)
+    .resize(outW, outH, { fit: 'inside' })
     .webp({ quality: WEBP_Q, effort: 6, alphaQuality: 80 })
     .toBuffer();
 
