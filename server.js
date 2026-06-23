@@ -78,6 +78,7 @@ const PUBLIC_ROOT_FILES = new Set([
   'our-daily-beta.html',
   'speaker-cutout-lab.html',
   'intro-persona-triptych-lab.html',
+  'intro-persona-nav-lab.html',
   'intro-persona-frame.html',
   'odq-editor.html',
   'privacy.html',
@@ -102,6 +103,8 @@ app.get('/intro-persona-triptych-lab', (_req, res) => sendPublicRootFile(res, 'i
 app.get('/intro-persona-triptych-lab.html', (_req, res) => sendPublicRootFile(res, 'intro-persona-triptych-lab.html'));
 app.get('/intro-persona-frame', (_req, res) => sendPublicRootFile(res, 'intro-persona-frame.html'));
 app.get('/intro-persona-frame.html', (_req, res) => sendPublicRootFile(res, 'intro-persona-frame.html'));
+app.get('/intro-persona-nav-lab', (_req, res) => sendPublicRootFile(res, 'intro-persona-nav-lab.html'));
+app.get('/intro-persona-nav-lab.html', (_req, res) => sendPublicRootFile(res, 'intro-persona-nav-lab.html'));
 app.get('/odq-editor', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
 app.get('/odq-editor.html', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
 app.get('/:fileName', (req, res, next) => {

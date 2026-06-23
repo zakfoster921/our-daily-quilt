@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zak intro — single-screen preview</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1e1c1a;
+      color: #ece8e2;
+    }
+    .lab-header {
+      padding: 1.25rem 1.5rem 0.75rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .lab-header h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .lab-header p {
+      margin: 0 0 0.65rem;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      color: #9a9590;
+    }
+    .lab-header code {
+      font-size: 0.78rem;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+    }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      padding: 0 1.5rem 1rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .nav a {
+      display: inline-block;
+      padding: 0.38rem 0.72rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-decoration: none;
+      color: #ece8e2;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+    }
+    .nav a:hover,
+    .nav a.is-active {
+      background: #d4c4a8;
+      color: #1e1c1a;
+      border-color: #d4c4a8;
+    }
+    .preview-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 0 1rem 2rem;
+    }
+    .phone {
+      width: 390px;
+    }
+    .phone-label {
+      margin: 0 0 0.45rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #b8b2aa;
+    }
+    .phone-frame {
+      width: 390px;
+      height: 844px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+      background: #f6f4f1;
+    }
+    .phone-frame iframe {
+      display: block;
+      width: 390px;
+      height: 844px;
+      border: 0;
+    }
+    .lab-footer {
+      padding: 0 1.5rem 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+      font-size: 0.78rem;
+      color: #7a7570;
+      line-height: 1.55;
+    }
+    .lab-footer a { color: #d4c4a8; }
+    .lab-footer ul {
+      margin: 0.35rem 0 0;
+      padding-left: 1.1rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="lab-header">
+    <h1>Zak intro — one screen at a time</h1>
+    <p>
+      Pick a screen below. <strong>Layout</strong> = frozen final state (fast). <strong>Live app</strong> =
+      real animations + tap-to-advance (needs <code>npm start</code>).
+    </p>
+  </header>
+
+  <nav class="nav" id="screenNav" aria-label="Intro screens"></nav>
+
+  <div class="preview-wrap">
+    <div class="phone">
+      <p class="phone-label" id="phoneLabel">Layout preview</p>
+      <div class="phone-frame">
+        <iframe id="previewFrame" title="Screen preview" src="intro-persona-frame.html?screen=zak"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <footer class="lab-footer">
+    <p><strong>Direct layout URLs</strong> (open in a tab — 390×844 phone frame):</p>
+    <ul id="directUrls"></ul>
+    <p style="margin-top: 1rem;"><strong>Live app URLs</strong> (tap through, stagger animations):</p>
+    <ul id="liveUrls"></ul>
+    <p style="margin-top: 1rem;">
+      Full first-visit walkthrough: clear visit state, then open
+      <a href="our-daily-beta.html">our-daily-beta.html</a> and tap through from portal.
+    </p>
+    <pre style="margin: 0.5rem 0 0; padding: 0.65rem; background: rgba(255,255,255,0.05); border-radius: 6px; overflow-x: auto;"><code>localStorage.removeItem('ourDailyHasVisited');
+localStorage.removeItem('ourDailyUserFirstName');
+location.reload();</code></pre>
+  </footer>
+
+  <script>
+    (function () {
+      var screens = [
+        { key: 'zak', label: '1 — Meet Zak' },
+        { key: 'mission', label: '2 — Mission' },
+        { key: 'welcome', label: '3 — How it works' },
+        { key: 'bridge', label: '4 — Quote bridge' }
+      ];
+      var origin = location.origin;
+      var nav = document.getElementById('screenNav');
+      var frame = document.getElementById('previewFrame');
+      var label = document.getElementById('phoneLabel');
+      var directList = document.getElementById('directUrls');
+      var liveList = document.getElementById('liveUrls');
+      var params = new URLSearchParams(location.search);
+      var current = (params.get('screen') || 'zak').toLowerCase();
+
+      function layoutUrl(key) {
+        return 'intro-persona-frame.html?screen=' + encodeURIComponent(key);
+      }
+      function liveUrl(key) {
+        return origin + '/our-daily-beta.html?screen=' + encodeURIComponent(key);
+      }
+
+      screens.forEach(function (s) {
+        var a = document.createElement('a');
+        a.href = '?screen=' + s.key;
+        a.textContent = s.label;
+        a.dataset.key = s.key;
+        if (s.key === current) a.classList.add('is-active');
+        nav.appendChild(a);
+
+        var li1 = document.createElement('li');
+        var link1 = document.createElement('a');
+        link1.href = layoutUrl(s.key);
+        link1.textContent = s.label + ' — ' + layoutUrl(s.key);
+        li1.appendChild(link1);
+        directList.appendChild(li1);
+
+        var li2 = document.createElement('li');
+        var link2 = document.createElement('a');
+        link2.href = liveUrl(s.key);
+        link2.textContent = s.label + ' — ' + liveUrl(s.key);
+        li2.appendChild(link2);
+        liveList.appendChild(li2);
+      });
+
+      var active = screens.find(function (s) { return s.key === current; }) || screens[0];
+      label.textContent = active.label + ' — layout preview';
+      frame.src = layoutUrl(active.key);
+    })();
+  </script>
+</body>
+</html>
