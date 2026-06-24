@@ -30,6 +30,30 @@ function getCompletedQuiltDateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+/** Compare composed line 1 to quote body — keyword emphasis renders ALL CAPS but words must match. */
+function clippingFirstLineMatchesQuote(gotLine, expectedText) {
+  const normWord = (w) =>
+    String(w || '')
+      .replace(/[.;,:!?]+$/, '')
+      .trim()
+      .toLowerCase();
+  const gotWords = String(gotLine || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const expWords = String(expectedText || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!gotWords.length || !expWords.length) return true;
+  for (let i = 0; i < gotWords.length; i += 1) {
+    if (normWord(gotWords[i]) !== normWord(expWords[i] || '')) return false;
+  }
+  return true;
+}
+
 async function writeFailureArtifacts(page, attempt, outDir) {
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -295,7 +319,7 @@ async function runNightlyIgAttempt({
           const expectedText = String(expected?.text ?? expected?.body ?? '').trim();
           const expectedAuthor = String(expected?.author || '').trim();
           const gotLine = String(composeMeta?.firstLineText || '').trim();
-          if (expectedText && gotLine && !expectedText.startsWith(gotLine.slice(0, Math.min(24, gotLine.length)))) {
+          if (expectedText && gotLine && !clippingFirstLineMatchesQuote(gotLine, expectedText)) {
             throw new Error(
               `Newspaper clipping center quote mismatch for ${dateKey}: expected ${expectedAuthor || 'quote'} ("${expectedText.slice(0, 40)}…") but first line is "${gotLine}"`
             );
@@ -568,26 +592,72 @@ async function runNightlyIgAttempt({
           })
         );
 
-        log('generating IG carousel slides 4:5…');
-        if (!arch.generateInstagramCarouselSlideImageData) {
+        const blobToDataUrl = async (blob, label) => {
+          if (!blob) throw new Error(`${label}: compose returned null`);
+          if (typeof Utils.blobToDataUrl !== 'function') {
+            throw new Error('Utils.blobToDataUrl missing');
+          }
+          const dataUrl = await Utils.blobToDataUrl(blob);
+          if (!dataUrl) throw new Error(`${label}: empty data URL`);
+          return dataUrl;
+        };
+
+        log('generating integrated IG carousel (layout B + quilt pair + speaker seam)…');
+        if (!arch.buildIntegratedInstagramCarouselImageData) {
           throw new Error(
-            'generateInstagramCarouselSlideImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
+            'buildIntegratedInstagramCarouselImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
           );
         }
-        const carouselSlides = await timed('IG carousel slides', () =>
-          arch.generateInstagramCarouselSlideImageData(blocks, contributors, dateKey)
+        if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
+          arch._clearLayoutBStoryRefStripPlan();
+        }
+        let storyLayoutBImageData = null;
+        if (arch.generateInstagramStoryLayoutBBlob) {
+          log('generating layout B story 9:16…');
+          const storyBlob = await timed('layout B story', () =>
+            arch.generateInstagramStoryLayoutBBlob(blocks, quote, dateKey)
+          );
+          const refCount = Array.isArray(arch._layoutBStoryRefStripPlan)
+            ? arch._layoutBStoryRefStripPlan.length
+            : 0;
+          log(`layout B story strip ref: ${refCount} strips`);
+          storyLayoutBImageData = await blobToDataUrl(storyBlob, 'layout B story');
+        } else if (arch.generateInstagramStoryLayoutBImage) {
+          log('generating layout B story 9:16…');
+          storyLayoutBImageData = await timed('layout B story', () =>
+            arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey)
+          );
+        }
+        if (!storyLayoutBImageData) {
+          throw new Error(`Layout B story image was not generated for ${dateKey}`);
+        }
+        const integratedCarousel = await timed('integrated IG carousel', () =>
+          arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey)
         );
-        if (!carouselSlides?.slide1 || !carouselSlides?.slide2) {
-          throw new Error(`Carousel slides were not generated for ${dateKey}`);
+        if (
+          !integratedCarousel?.carouselSlide1 ||
+          !integratedCarousel?.carouselSlide2 ||
+          !integratedCarousel?.carouselSlide3
+        ) {
+          throw new Error(`Integrated carousel slides were not generated for ${dateKey}`);
         }
-        const carouselSlide1ImageData = carouselSlides.slide1;
-        const carouselSlide2ImageData = carouselSlides.slide2;
-        if (carouselSlides.meta) {
-          const m = carouselSlides.meta;
+        const carouselSlide1ImageData = integratedCarousel.carouselSlide1;
+        const carouselSlide2ImageData = integratedCarousel.carouselSlide2;
+        const carouselSlide3ImageData = integratedCarousel.carouselSlide3;
+        if (integratedCarousel.meta) {
+          const m = integratedCarousel.meta;
           log(
-            `carousel compose meta names=${m.nameCount ?? '?'} clip=${m.clippingContentWidth ?? '?'}×${m.clippingContentHeight ?? '?'} rev=${m.contributorList?.exportRev ?? m.exportRev ?? '?'}`
+            `integrated carousel meta names=${m.nameCount ?? '?'} clip=${m.clippingContentWidth ?? '?'}×${m.clippingContentHeight ?? '?'} rev=${m.contributorList?.exportRev ?? m.exportRev ?? '?'}`
           );
+          if (m.speakerSeam?.overlapPx) {
+            log(
+              `carousel speaker seam overlap=${m.speakerSeam.overlapPx}px (${Math.round((m.speakerSeam.overlapFraction || 0) * 100)}% of cutout width)`
+            );
+          } else {
+            log('carousel speaker seam skipped (no cutout or compose unavailable)');
+          }
         }
+        log('integrated carousel: slide 1 = layout B (+ speaker seam), slides 2–3 = quilt pair');
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
             `generateInstagramQuiltScreen9x16ImageData missing on deployed app — deploy our-daily-beta.html before nightly IG`
@@ -624,49 +694,6 @@ async function runNightlyIgAttempt({
           console.warn(
             `[nightly-ig:page] quilt-screen 9:16 used non-SVG path: ${JSON.stringify(quiltExportMeta)}`
           );
-        }
-        const blobToDataUrl = async (blob, label) => {
-          if (!blob) throw new Error(`${label}: compose returned null`);
-          if (typeof Utils.blobToDataUrl !== 'function') {
-            throw new Error('Utils.blobToDataUrl missing');
-          }
-          const dataUrl = await Utils.blobToDataUrl(blob);
-          if (!dataUrl) throw new Error(`${label}: empty data URL`);
-          return dataUrl;
-        };
-        if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
-          arch._clearLayoutBStoryRefStripPlan();
-        }
-        let storyLayoutBImageData = null;
-        if (arch.generateInstagramStoryLayoutBBlob) {
-          log('generating layout B story 9:16…');
-          const storyBlob = await timed('layout B story', () =>
-            arch.generateInstagramStoryLayoutBBlob(blocks, quote, dateKey)
-          );
-          const refCount = Array.isArray(arch._layoutBStoryRefStripPlan)
-            ? arch._layoutBStoryRefStripPlan.length
-            : 0;
-          log(`layout B story strip ref: ${refCount} strips`);
-          storyLayoutBImageData = await blobToDataUrl(storyBlob, 'layout B story');
-        } else if (arch.generateInstagramStoryLayoutBImage) {
-          log('generating layout B story 9:16…');
-          storyLayoutBImageData = await timed('layout B story', () =>
-            arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey)
-          );
-        }
-        if (!storyLayoutBImageData) {
-          throw new Error(`Layout B story image was not generated for ${dateKey}`);
-        }
-        let postLayoutBImageData = null;
-        if (arch.generateInstagramPostLayoutBBlob) {
-          log('generating layout B post 4:5…');
-          const postBlob = await timed('layout B post', () =>
-            arch.generateInstagramPostLayoutBBlob(blocks, quote, dateKey)
-          );
-          postLayoutBImageData = await blobToDataUrl(postBlob, 'layout B post');
-        } else if (arch.generateInstagramPostLayoutBImage) {
-          log('generating layout B post 4:5…');
-          postLayoutBImageData = await arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey);
         }
         let postLayoutBSpeakerImageData = null;
         const expectedSpeakerImageUrl = pickString(
@@ -743,9 +770,9 @@ async function runNightlyIgAttempt({
           dateKey,
           carouselSlide1ImageData,
           carouselSlide2ImageData,
+          carouselSlide3ImageData,
           quiltScreen9x16ImageData,
           newspaperClippingImageData,
-          postLayoutBImageData,
           postLayoutBSpeakerImageData,
           storyLayoutBImageData,
           contributorCloudImageData,
@@ -778,10 +805,13 @@ async function runNightlyIgAttempt({
           throw new Error('No Instagram upload helper available');
         }
         if (!doc.carouselSlide1Url && !doc.classicUrl) {
-          throw new Error('carousel slide 1 URL missing after nightly upload');
+          throw new Error('carousel slide 1 (layout B) URL missing after nightly upload');
         }
         if (!doc.carouselSlide2Url) {
           throw new Error('carousel slide 2 URL missing after nightly upload');
+        }
+        if (!doc.carouselSlide3Url) {
+          throw new Error('carousel slide 3 URL missing after nightly upload');
         }
         if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
           throw new Error('layout B story URL missing after nightly upload');
@@ -804,8 +834,9 @@ async function runNightlyIgAttempt({
           classicUrl: doc.carouselSlide1Url || doc.classicUrl || doc.imageStorageUrl || '',
           carouselSlide1Url: doc.carouselSlide1Url || doc.classicUrl || '',
           carouselSlide2Url: doc.carouselSlide2Url || '',
+          carouselSlide3Url: doc.carouselSlide3Url || '',
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
-          layoutBUrl: doc.layoutBUrl || doc.postLayoutBImageStorageUrl || '',
+          layoutBUrl: doc.layoutBUrl || doc.carouselSlide1Url || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || '',
           contributorCloudUrl,
@@ -841,10 +872,13 @@ async function runNightlyIgAttempt({
       );
     }
     if (!verify.carouselSlide1Url && !verify.classicImageUrl && !verify.imageUrl) {
-      throw new Error('verify failed: carousel slide 1 URL missing');
+      throw new Error('verify failed: carousel slide 1 (layout B) URL missing');
     }
     if (!verify.carouselSlide2Url) {
       throw new Error('verify failed: carousel slide 2 URL missing');
+    }
+    if (!verify.carouselSlide3Url) {
+      throw new Error('verify failed: carousel slide 3 URL missing');
     }
     const verifyBlocks = Number(verify.blockCount) || 0;
     if (verifyBlocks <= 1) {
@@ -881,8 +915,14 @@ async function runNightlyIgAttempt({
       classicImageUrl: verify.carouselSlide1Url || verify.classicImageUrl || verify.imageUrl,
       carouselSlide1Url: verify.carouselSlide1Url || verify.classicImageUrl || verify.imageUrl || '',
       carouselSlide2Url: verify.carouselSlide2Url || '',
+      carouselSlide3Url: verify.carouselSlide3Url || '',
       quiltScreen9x16ImageUrl: quiltScreen9x16Url,
-      layoutBImageUrl: verify.layoutBImageUrl || verify.postLayoutBImageUrl || verify.layoutBPlainImageUrl || result.layoutBUrl,
+      layoutBImageUrl:
+        verify.layoutBImageUrl ||
+        verify.postLayoutBImageUrl ||
+        verify.layoutBPlainImageUrl ||
+        verify.carouselSlide1Url ||
+        result.layoutBUrl,
       layoutBPlainImageUrl: verify.layoutBPlainImageUrl || verify.postLayoutBPlainImageUrl || '',
       layoutBSpeakerImageUrl:
         verify.layoutBSpeakerImageUrl || verify.postLayoutBSpeakerImageUrl || '',

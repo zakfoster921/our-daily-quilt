@@ -211,21 +211,39 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
       if (line) lines.push(line);
       return lines;
     }
+    function normalizeSocialPostCaptionText(value) {
+      return String(value || '')
+        .replace(/\\r\\n/g, '\\n')
+        .replace(/\\r/g, '\\n')
+        .split('\\n')
+        .map((line) => line.replace(/[^\\S\\n]+/g, ' ').trimEnd())
+        .join('\\n')
+        .trim();
+    }
     function layoutDateCaption(ctx, dateLabel, caption, textMaxW, textSize, font) {
       const safeDate = String(dateLabel || '').trim();
-      const safeCaption = String(caption || '').replace(/\\s+/g, ' ').trim();
+      const safeCaption = normalizeSocialPostCaptionText(caption);
       const datePrefix = safeDate ? safeDate + ': ' : '';
       ctx.font = '700 ' + textSize + 'px ' + font;
       const prefixW = datePrefix ? ctx.measureText(datePrefix).width : 0;
       ctx.font = '400 ' + textSize + 'px ' + font;
-      let bodyLines = [];
-      if (safeCaption) {
-        bodyLines = datePrefix
-          ? wrapLinesContinued(ctx, safeCaption, Math.max(80, textMaxW - prefixW), textMaxW)
-          : wrapLines(ctx, safeCaption, textMaxW);
-      } else if (datePrefix) {
-        bodyLines = [''];
+      const paragraphs = safeCaption ? safeCaption.split('\\n') : [];
+      const bodyLines = [];
+      if (!paragraphs.length && datePrefix) {
+        bodyLines.push('');
       }
+      paragraphs.forEach((paragraph, paragraphIndex) => {
+        const trimmed = String(paragraph || '').trim();
+        if (!trimmed) {
+          bodyLines.push('');
+          return;
+        }
+        const isFirstParagraph = paragraphIndex === 0;
+        const wrapped = (datePrefix && isFirstParagraph && bodyLines.length === 0)
+          ? wrapLinesContinued(ctx, trimmed, Math.max(80, textMaxW - prefixW), textMaxW)
+          : wrapLines(ctx, trimmed, textMaxW);
+        bodyLines.push(...wrapped);
+      });
       return { datePrefix, bodyLines, lineH: textSize * 1.45 };
     }
     function drawDateCaption(ctx, layout, padX, top, textSize, font, inkColor) {

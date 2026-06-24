@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Preview seamless IG carousel PNGs for a quilt day (writes tmp/carousel-*.png).
+ * Preview integrated IG carousel PNGs for a quilt day (writes tmp/carousel-*.png).
+ * Slide 1 = layout B (+ speaker cutout seam into slide 2), slides 2–3 = quilt pair.
  * Usage: APP_URL=https://… DATE_KEY=2026-06-22 node scripts/preview-ig-carousel.cjs
  */
 const fs = require('fs');
@@ -34,8 +35,9 @@ async function main() {
     const result = await page.evaluate(async ({ dateKey }) => {
       const app = window.app;
       const arch = app?.archiveService;
-      if (!arch?.generateInstagramCarouselSlideImageData) {
-        throw new Error('generateInstagramCarouselSlideImageData missing');
+      const qs = app?.quoteService;
+      if (!arch?.buildIntegratedInstagramCarouselImageData) {
+        throw new Error('buildIntegratedInstagramCarouselImageData missing');
       }
       let blocks = [];
       let contributors = [];
@@ -55,21 +57,49 @@ async function main() {
         const state = app.quiltEngine.getState();
         app.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
       }
-      const slides = await arch.generateInstagramCarouselSlideImageData(blocks, contributors, dateKey);
-      if (!slides?.slide1 || !slides?.slide2) {
-        throw new Error('Carousel generation returned empty slides');
+      let quote = null;
+      if (qs && typeof qs.getQuoteResolvedForInstagramDateKey === 'function') {
+        quote = (await qs.getQuoteResolvedForInstagramDateKey(dateKey)) || null;
+      } else if (qs && typeof qs.getTodayQuote === 'function') {
+        quote = qs.getTodayQuote() || null;
       }
-      return { slide1: slides.slide1, slide2: slides.slide2, meta: slides.meta || null };
+      quote = quote || { text: '', body: '', author: '' };
+      if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
+        arch._clearLayoutBStoryRefStripPlan();
+      }
+      if (arch.generateInstagramStoryLayoutBImage) {
+        await arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey);
+      }
+      const integrated = await arch.buildIntegratedInstagramCarouselImageData(
+        blocks,
+        contributors,
+        quote,
+        dateKey
+      );
+      if (!integrated?.carouselSlide1 || !integrated?.carouselSlide2 || !integrated?.carouselSlide3) {
+        throw new Error('Integrated carousel generation returned empty slides');
+      }
+      return {
+        slide1: integrated.carouselSlide1,
+        slide2: integrated.carouselSlide2,
+        slide3: integrated.carouselSlide3,
+        meta: integrated.meta || null
+      };
     }, { dateKey });
 
     const writeDataUrl = (dataUrl, filename) => {
       const b64 = String(dataUrl).replace(/^data:image\/png;base64,/, '');
       fs.writeFileSync(path.join(outDir, filename), Buffer.from(b64, 'base64'));
     };
-    writeDataUrl(result.slide1, `carousel-slide-1-${dateKey}.png`);
+    writeDataUrl(result.slide1, `carousel-slide-1-layout-b-${dateKey}.png`);
     writeDataUrl(result.slide2, `carousel-slide-2-${dateKey}.png`);
-    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-${dateKey}.png`);
+    writeDataUrl(result.slide3, `carousel-slide-3-${dateKey}.png`);
+    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-${dateKey}.png`);
+    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-3-${dateKey}.png`);
+    if (result.meta?.speakerSeam) {
+      console.log(`[preview-ig-carousel] speakerSeam=${JSON.stringify(result.meta.speakerSeam)}`);
+    }
     if (result.meta) {
       console.log(`[preview-ig-carousel] meta=${JSON.stringify(result.meta)}`);
     }
