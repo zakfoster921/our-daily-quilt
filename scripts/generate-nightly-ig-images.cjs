@@ -557,7 +557,10 @@ async function runNightlyIgAttempt({
         const carouselSlide1ImageData = carouselSlides.slide1;
         const carouselSlide2ImageData = carouselSlides.slide2;
         if (carouselSlides.meta) {
-          log(`carousel compose meta=${JSON.stringify(carouselSlides.meta)}`);
+          const m = carouselSlides.meta;
+          log(
+            `carousel compose meta names=${m.nameCount ?? '?'} clip=${m.clippingContentWidth ?? '?'}×${m.clippingContentHeight ?? '?'} rev=${m.contributorList?.exportRev ?? m.exportRev ?? '?'}`
+          );
         }
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
