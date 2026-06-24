@@ -226,6 +226,17 @@ try {
     } catch (_) {
       /* ignore */
     }
+    function odqIsBenignGlobalError(event, desc) {
+      try {
+        var text = String(desc || event?.message || event?.error || '').toLowerCase();
+        return (
+          text.includes('resizeobserver loop') ||
+          text.includes('resizeobserver loop completed with undelivered notifications')
+        );
+      } catch (_) {
+        return false;
+      }
+    }
     function odqDescribeGlobalError(event) {
       try {
         var err = event && event.error;
@@ -252,6 +263,10 @@ try {
     });
     window.addEventListener('error', function(event) {
       var desc = odqDescribeGlobalError(event);
+      if (odqIsBenignGlobalError(event, desc)) {
+        event.preventDefault();
+        return;
+      }
       if (odqIsCapacitorNative()) {
         console.warn('Global error:', desc || '(no details)');
         return;

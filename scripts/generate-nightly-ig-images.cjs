@@ -69,14 +69,20 @@ async function runNightlyIgAttempt({
   let lastPageError = null;
   page.on('console', (msg) => {
     const text = msg.text();
+    if (/resizeobserver loop completed/i.test(text)) return;
     if (
       text.includes('[nightly-ig:page]') ||
       text.includes('[archive]') ||
       text.includes('QuiltNewspaperClipping') ||
       text.includes('Firestore') ||
       text.includes('Storage') ||
-      msg.type() === 'warning' ||
-      msg.type() === 'error'
+      msg.type() === 'error' ||
+      (msg.type() === 'warning' &&
+        (text.includes('[nightly-ig') ||
+          text.includes('[archive]') ||
+          text.includes('QuiltNewspaperClipping') ||
+          text.includes('Firestore') ||
+          text.includes('Storage')))
     ) {
       console.log(`[nightly-ig:browser] ${text}`);
     }
