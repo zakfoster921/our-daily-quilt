@@ -30,30 +30,6 @@ function getCompletedQuiltDateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
-/** Compare composed line 1 to quote body — keyword emphasis renders ALL CAPS but words must match. */
-function clippingFirstLineMatchesQuote(gotLine, expectedText) {
-  const normWord = (w) =>
-    String(w || '')
-      .replace(/[.;,:!?]+$/, '')
-      .trim()
-      .toLowerCase();
-  const gotWords = String(gotLine || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  const expWords = String(expectedText || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (!gotWords.length || !expWords.length) return true;
-  for (let i = 0; i < gotWords.length; i += 1) {
-    if (normWord(gotWords[i]) !== normWord(expWords[i] || '')) return false;
-  }
-  return true;
-}
-
 async function writeFailureArtifacts(page, attempt, outDir) {
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -235,6 +211,29 @@ async function runNightlyIgAttempt({
             meta.composePipeline === 'labPeek' ||
             meta.exportDiagnostics?.paperTextureUrl == null
           );
+        };
+        /** Keyword emphasis renders ALL CAPS on line 1 — compare words case-insensitively. */
+        const clippingFirstLineMatchesQuote = (gotLine, expectedText) => {
+          const normWord = (w) =>
+            String(w || '')
+              .replace(/[.;,:!?]+$/, '')
+              .trim()
+              .toLowerCase();
+          const gotWords = String(gotLine || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+          const expWords = String(expectedText || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+          if (!gotWords.length || !expWords.length) return true;
+          for (let i = 0; i < gotWords.length; i += 1) {
+            if (normWord(gotWords[i]) !== normWord(expWords[i] || '')) return false;
+          }
+          return true;
         };
         const assertNewspaperPeekComposeMeta = (composeMeta, clippingBytes, minClippingBytes) => {
           const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
