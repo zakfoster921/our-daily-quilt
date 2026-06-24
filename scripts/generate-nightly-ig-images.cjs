@@ -559,40 +559,15 @@ async function runNightlyIgAttempt({
           })
         );
 
-        log('phase 1: carousel + newspaper clipping (parallel)…');
+        log('generating IG carousel slides 4:5…');
         if (!arch.generateInstagramCarouselSlideImageData) {
           throw new Error(
             'generateInstagramCarouselSlideImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
           );
         }
-        const [carouselSlides, newspaperClippingImageData] = await Promise.all([
-          (async () => {
-            log('generating IG carousel slides 4:5…');
-            return timed('IG carousel slides', () =>
-              arch.generateInstagramCarouselSlideImageData(blocks, contributors, dateKey)
-            );
-          })(),
-          (async () => {
-            if (!arch.generateNewspaperClippingImageData) return null;
-            log('generating newspaper clipping PNG…');
-            const data = await timed('newspaper clipping', () =>
-              arch.generateNewspaperClippingImageData(dateKey)
-            );
-            if (!data) {
-              throw new Error(`Newspaper clipping was not generated for ${dateKey}`);
-            }
-            const clippingBytes = Math.max(
-              0,
-              Math.round(((String(data).length - 22) * 3) / 4)
-            );
-            const composeMeta = arch._lastNewspaperClippingComposeMeta || null;
-            log(
-              `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
-            );
-            assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
-            return data;
-          })()
-        ]);
+        const carouselSlides = await timed('IG carousel slides', () =>
+          arch.generateInstagramCarouselSlideImageData(blocks, contributors, dateKey)
+        );
         if (!carouselSlides?.slide1 || !carouselSlides?.slide2) {
           throw new Error(`Carousel slides were not generated for ${dateKey}`);
         }
@@ -601,10 +576,38 @@ async function runNightlyIgAttempt({
         if (carouselSlides.meta) {
           log(`carousel compose meta=${JSON.stringify(carouselSlides.meta)}`);
         }
+
+        let newspaperClippingImageData = null;
+        if (arch.generateNewspaperClippingImageData) {
+          log('generating newspaper clipping PNG…');
+          newspaperClippingImageData = await timed('newspaper clipping', () =>
+            arch.generateNewspaperClippingImageData(dateKey)
+          );
+          if (!newspaperClippingImageData) {
+            throw new Error(`Newspaper clipping was not generated for ${dateKey}`);
+          }
+          const clippingBytes = Math.max(
+            0,
+            Math.round(((String(newspaperClippingImageData).length - 22) * 3) / 4)
+          );
+          const composeMeta = arch._lastNewspaperClippingComposeMeta || null;
+          log(
+            `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
+          );
+          assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
+        }
+
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
             `generateInstagramQuiltScreen9x16ImageData missing on deployed app — deploy our-daily-beta.html before nightly IG`
           );
+        }
+        log('generating quilt-screen 9:16…');
+        const quiltScreen9x16ImageData = await timed('quilt-screen 9:16', () =>
+          arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey)
+        );
+        if (!quiltScreen9x16ImageData) {
+          throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
         }
 
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
@@ -617,107 +620,76 @@ async function runNightlyIgAttempt({
         if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
           arch._clearLayoutBStoryRefStripPlan();
         }
+        let storyLayoutBImageData = null;
+        if (arch.generateInstagramStoryLayoutBBlob) {
+          log('generating layout B story 9:16…');
+          const storyBlob = await timed('layout B story', () =>
+            arch.generateInstagramStoryLayoutBBlob(blocks, quote, dateKey)
+          );
+          const refCount = Array.isArray(arch._layoutBStoryRefStripPlan)
+            ? arch._layoutBStoryRefStripPlan.length
+            : 0;
+          log(`layout B story strip ref: ${refCount} strips`);
+          storyLayoutBImageData = await blobToDataUrl(storyBlob, 'layout B story');
+        } else if (arch.generateInstagramStoryLayoutBImage) {
+          log('generating layout B story 9:16…');
+          storyLayoutBImageData = await timed('layout B story', () =>
+            arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey)
+          );
+        }
+        if (!storyLayoutBImageData) {
+          throw new Error(`Layout B story image was not generated for ${dateKey}`);
+        }
+
+        let postLayoutBImageData = null;
+        if (arch.generateInstagramPostLayoutBBlob) {
+          log('generating layout B post 4:5…');
+          const postBlob = await timed('layout B post', () =>
+            arch.generateInstagramPostLayoutBBlob(blocks, quote, dateKey)
+          );
+          postLayoutBImageData = await blobToDataUrl(postBlob, 'layout B post');
+        } else if (arch.generateInstagramPostLayoutBImage) {
+          log('generating layout B post 4:5…');
+          postLayoutBImageData = await timed('layout B post', () =>
+            arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey)
+          );
+        }
+
+        let postLayoutBSpeakerImageData = null;
         const expectedSpeakerImageUrl = pickString(
           quote.speakerCutoutUrl,
           quote.speaker_cutout_url,
           quote.speakerImageUrl,
           quote.speaker_image_url
         );
+        if (expectedSpeakerImageUrl && arch.generateInstagramPostLayoutBSpeakerImage) {
+          log('generating layout B speaker hero post 4:5…');
+          postLayoutBSpeakerImageData = await timed('layout B speaker', () =>
+            arch.generateInstagramPostLayoutBSpeakerImage(blocks, quote, dateKey)
+          );
+        }
 
-        log('phase 2: quilt 9x16 + layout B + contributor cloud (parallel)…');
-        const [
-          quiltScreen9x16ImageData,
-          storyLayoutBImageData,
-          postLayoutBImageData,
-          postLayoutBSpeakerImageData,
-          contributorCloudImageData
-        ] = await Promise.all([
-          (async () => {
-            log('generating quilt-screen 9:16…');
-            const data = await timed('quilt-screen 9:16', () =>
-              arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey)
-            );
-            if (!data) {
-              throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
-            }
-            return data;
-          })(),
-          (async () => {
-            if (arch.generateInstagramStoryLayoutBBlob) {
-              log('generating layout B story 9:16…');
-              const storyBlob = await timed('layout B story', () =>
-                arch.generateInstagramStoryLayoutBBlob(blocks, quote, dateKey)
-              );
-              const refCount = Array.isArray(arch._layoutBStoryRefStripPlan)
-                ? arch._layoutBStoryRefStripPlan.length
-                : 0;
-              log(`layout B story strip ref: ${refCount} strips`);
-              return blobToDataUrl(storyBlob, 'layout B story');
-            }
-            if (arch.generateInstagramStoryLayoutBImage) {
-              log('generating layout B story 9:16…');
-              return timed('layout B story', () =>
-                arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey)
-              );
-            }
-            return null;
-          })(),
-          (async () => {
-            if (arch.generateInstagramPostLayoutBBlob) {
-              log('generating layout B post 4:5…');
-              const postBlob = await timed('layout B post', () =>
-                arch.generateInstagramPostLayoutBBlob(blocks, quote, dateKey)
-              );
-              return blobToDataUrl(postBlob, 'layout B post');
-            }
-            if (arch.generateInstagramPostLayoutBImage) {
-              log('generating layout B post 4:5…');
-              return timed('layout B post', () =>
-                arch.generateInstagramPostLayoutBImage(blocks, quote, dateKey)
-              );
-            }
-            return null;
-          })(),
-          (async () => {
-            if (!expectedSpeakerImageUrl || !arch.generateInstagramPostLayoutBSpeakerImage) {
-              return null;
-            }
-            log('generating layout B speaker hero post 4:5…');
-            return timed('layout B speaker', () =>
-              arch.generateInstagramPostLayoutBSpeakerImage(blocks, quote, dateKey)
-            );
-          })(),
-          (async () => {
-            if (!arch.generateInstagramContributorCloudImage) {
-              log('contributor cloud skipped (generateInstagramContributorCloudImage missing on ArchiveService)');
-              return null;
-            }
-            if (!contributors.length) {
-              log('contributor cloud skipped (quilts/{dateKey}.contributors is empty)');
-              return null;
-            }
-            if (typeof globalThis.composeContributorCloudPostFromQuiltBlob !== 'function') {
-              log('contributor cloud skipped (contributor-cloud-compose.js did not load)');
-              return null;
-            }
-            log(`generating contributor cloud post 4:5 (${contributors.length} names)…`);
-            const data = await timed('contributor cloud', () =>
-              arch.generateInstagramContributorCloudImage(blocks, contributors, dateKey)
-            );
-            if (!data) {
-              log('contributor cloud failed (compose returned null — check browser console for ArchiveService error)');
-              return null;
-            }
+        let contributorCloudImageData = null;
+        if (!arch.generateInstagramContributorCloudImage) {
+          log('contributor cloud skipped (generateInstagramContributorCloudImage missing on ArchiveService)');
+        } else if (!contributors.length) {
+          log('contributor cloud skipped (quilts/{dateKey}.contributors is empty)');
+        } else if (typeof globalThis.composeContributorCloudPostFromQuiltBlob !== 'function') {
+          log('contributor cloud skipped (contributor-cloud-compose.js did not load)');
+        } else {
+          log(`generating contributor cloud post 4:5 (${contributors.length} names)…`);
+          contributorCloudImageData = await timed('contributor cloud', () =>
+            arch.generateInstagramContributorCloudImage(blocks, contributors, dateKey)
+          );
+          if (!contributorCloudImageData) {
+            log('contributor cloud failed (compose returned null — check browser console for ArchiveService error)');
+          } else {
             const ccBytes = Math.max(
               0,
-              Math.round(((String(data).length - 22) * 3) / 4)
+              Math.round(((String(contributorCloudImageData).length - 22) * 3) / 4)
             );
             log(`contributor cloud PNG ~${ccBytes} bytes`);
-            return data;
-          })()
-        ]);
-        if (!storyLayoutBImageData) {
-          throw new Error(`Layout B story image was not generated for ${dateKey}`);
+          }
         }
 
         const zapierCaption =
