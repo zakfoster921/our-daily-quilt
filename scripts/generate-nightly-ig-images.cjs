@@ -169,7 +169,7 @@ async function runNightlyIgAttempt({
     }, { dateKey, apiBase });
 
     console.log(
-      `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
+      `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 2–5 min; logs tagged [nightly-ig:page])…`
     );
     page.setDefaultTimeout(evaluateTimeoutMs);
     const minNewspaperClippingBytes = Math.max(
@@ -179,6 +179,12 @@ async function runNightlyIgAttempt({
     const result = await page.evaluate(
       async ({ dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
+        const timed = async (label, fn) => {
+          const t0 = performance.now();
+          const out = await fn();
+          log(`${label} done in ${Math.round(performance.now() - t0)}ms`);
+          return out;
+        };
         const isNightlyLabPeekCompose = (composeMeta) => {
           const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
           return (
@@ -540,10 +546,8 @@ async function runNightlyIgAttempt({
             'generateInstagramCarouselSlideImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
           );
         }
-        const carouselSlides = await arch.generateInstagramCarouselSlideImageData(
-          blocks,
-          contributors,
-          dateKey
+        const carouselSlides = await timed('IG carousel slides', () =>
+          arch.generateInstagramCarouselSlideImageData(blocks, contributors, dateKey)
         );
         if (!carouselSlides?.slide1 || !carouselSlides?.slide2) {
           throw new Error(`Carousel slides were not generated for ${dateKey}`);
@@ -559,7 +563,9 @@ async function runNightlyIgAttempt({
           );
         }
         log('generating quilt-screen 9:16…');
-        let quiltScreen9x16ImageData = await arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey);
+        let quiltScreen9x16ImageData = await timed('quilt-screen 9:16', () =>
+          arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey)
+        );
         if (!quiltScreen9x16ImageData) {
           throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
         }
