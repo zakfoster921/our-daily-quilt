@@ -70,6 +70,8 @@ async function runNightlyIgAttempt({
   page.on('console', (msg) => {
     const text = msg.text();
     if (/resizeobserver loop completed/i.test(text)) return;
+    if (/Failed to save to Firestore, using localStorage fallback/i.test(text)) return;
+    if (/Failed to load resource/i.test(text)) return;
     if (
       text.includes('[nightly-ig:page]') ||
       text.includes('[archive]') ||
@@ -192,7 +194,8 @@ async function runNightlyIgAttempt({
         strictQuote,
         clippingOnly,
         minNewspaperClippingBytes,
-        contributorCloudTimeoutMs
+        contributorCloudTimeoutMs,
+        apiBase
       }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         const timed = async (label, fn) => {
@@ -736,7 +739,7 @@ async function runNightlyIgAttempt({
         }
 
         log('uploading PNGs to Storage + Firestore…');
-        const doc = await Utils.writeInstagramImagesDocForZapier({
+        const uploadPayload = {
           dateKey,
           carouselSlide1ImageData,
           carouselSlide2ImageData,
@@ -751,12 +754,29 @@ async function runNightlyIgAttempt({
           quiltFingerprint,
           blockCount: blocks.length,
           contributorCount,
-          markReadyForInstagram: true,
-          storageCacheControl: 'no-store',
-          exportDebug: quiltExportMeta
-            ? { quiltScreen9x16: quiltExportMeta, nightly: true }
-            : { nightly: true }
-        });
+          markReadyForInstagram: true
+        };
+        let doc;
+        if (typeof Utils.writeInstagramImagesDocForZapierViaServer === 'function' && apiBase) {
+          doc = await timed('upload + Firestore (server admin)', () =>
+            Utils.writeInstagramImagesDocForZapierViaServer({
+              ...uploadPayload,
+              apiBaseOverride: apiBase
+            })
+          );
+        } else if (typeof Utils.writeInstagramImagesDocForZapier === 'function') {
+          doc = await timed('upload + Firestore (browser SDK)', () =>
+            Utils.writeInstagramImagesDocForZapier({
+              ...uploadPayload,
+              storageCacheControl: 'no-store',
+              exportDebug: quiltExportMeta
+                ? { quiltScreen9x16: quiltExportMeta, nightly: true }
+                : { nightly: true }
+            })
+          );
+        } else {
+          throw new Error('No Instagram upload helper available');
+        }
         if (!doc.carouselSlide1Url && !doc.classicUrl) {
           throw new Error('carousel slide 1 URL missing after nightly upload');
         }
@@ -792,7 +812,7 @@ async function runNightlyIgAttempt({
           hasContributorCloud: !!contributorCloudUrl
         };
       },
-      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, contributorCloudTimeoutMs }
+      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, contributorCloudTimeoutMs, apiBase }
     );
 
     if (clippingOnly) {
