@@ -182,9 +182,25 @@ async function runNightlyIgAttempt({
       120000,
       Number(process.env.NIGHTLY_MIN_NEWSPAPER_CLIPPING_BYTES) || 140000
     );
+    const contributorCloudTimeoutMs = Math.max(
+      30000,
+      Number(process.env.NIGHTLY_IG_CONTRIBUTOR_CLOUD_TIMEOUT_MS) || 120000
+    );
     const result = await page.evaluate(
-      async ({ dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }) => {
+      async ({
+        dateKey,
+        strictQuote,
+        clippingOnly,
+        minNewspaperClippingBytes,
+        contributorCloudTimeoutMs
+      }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
+        const timed = async (label, fn) => {
+          const t0 = performance.now();
+          const out = await fn();
+          log(`${label} done in ${Math.round(performance.now() - t0)}ms`);
+          return out;
+        };
         const isNightlyLabPeekCompose = (composeMeta) => {
           const meta = composeMeta && typeof composeMeta === 'object' ? composeMeta : {};
           return (
@@ -540,16 +556,23 @@ async function runNightlyIgAttempt({
           throw new Error(`Missing canonical quote for ${dateKey}`);
         }
 
+        log('prewarming shared Instagram quilt source…');
+        await timed('quilt source prewarm', () =>
+          arch.getInstagramQuiltSourceBlob(blocks, {
+            dateKey,
+            skipFilmGrain: true,
+            exportModeLabel: 'nightly_ig_shared_source'
+          })
+        );
+
         log('generating IG carousel slides 4:5…');
         if (!arch.generateInstagramCarouselSlideImageData) {
           throw new Error(
             'generateInstagramCarouselSlideImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
           );
         }
-        const carouselSlides = await arch.generateInstagramCarouselSlideImageData(
-          blocks,
-          contributors,
-          dateKey
+        const carouselSlides = await timed('IG carousel slides', () =>
+          arch.generateInstagramCarouselSlideImageData(blocks, contributors, dateKey)
         );
         if (!carouselSlides?.slide1 || !carouselSlides?.slide2) {
           throw new Error(`Carousel slides were not generated for ${dateKey}`);
@@ -568,14 +591,18 @@ async function runNightlyIgAttempt({
           );
         }
         log('generating quilt-screen 9:16…');
-        let quiltScreen9x16ImageData = await arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey);
+        let quiltScreen9x16ImageData = await timed('quilt-screen 9:16', () =>
+          arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey)
+        );
         if (!quiltScreen9x16ImageData) {
           throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
         }
         let newspaperClippingImageData = null;
         if (arch.generateNewspaperClippingImageData) {
           log('generating newspaper clipping PNG…');
-          newspaperClippingImageData = await arch.generateNewspaperClippingImageData(dateKey);
+          newspaperClippingImageData = await timed('newspaper clipping', () =>
+            arch.generateNewspaperClippingImageData(dateKey)
+          );
           if (!newspaperClippingImageData) {
             throw new Error(`Newspaper clipping was not generated for ${dateKey}`);
           }
@@ -610,7 +637,9 @@ async function runNightlyIgAttempt({
         let storyLayoutBImageData = null;
         if (arch.generateInstagramStoryLayoutBBlob) {
           log('generating layout B story 9:16…');
-          const storyBlob = await arch.generateInstagramStoryLayoutBBlob(blocks, quote, dateKey);
+          const storyBlob = await timed('layout B story', () =>
+            arch.generateInstagramStoryLayoutBBlob(blocks, quote, dateKey)
+          );
           const refCount = Array.isArray(arch._layoutBStoryRefStripPlan)
             ? arch._layoutBStoryRefStripPlan.length
             : 0;
@@ -618,7 +647,9 @@ async function runNightlyIgAttempt({
           storyLayoutBImageData = await blobToDataUrl(storyBlob, 'layout B story');
         } else if (arch.generateInstagramStoryLayoutBImage) {
           log('generating layout B story 9:16…');
-          storyLayoutBImageData = await arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey);
+          storyLayoutBImageData = await timed('layout B story', () =>
+            arch.generateInstagramStoryLayoutBImage(blocks, quote, dateKey)
+          );
         }
         if (!storyLayoutBImageData) {
           throw new Error(`Layout B story image was not generated for ${dateKey}`);
@@ -626,7 +657,9 @@ async function runNightlyIgAttempt({
         let postLayoutBImageData = null;
         if (arch.generateInstagramPostLayoutBBlob) {
           log('generating layout B post 4:5…');
-          const postBlob = await arch.generateInstagramPostLayoutBBlob(blocks, quote, dateKey);
+          const postBlob = await timed('layout B post', () =>
+            arch.generateInstagramPostLayoutBBlob(blocks, quote, dateKey)
+          );
           postLayoutBImageData = await blobToDataUrl(postBlob, 'layout B post');
         } else if (arch.generateInstagramPostLayoutBImage) {
           log('generating layout B post 4:5…');
@@ -656,11 +689,24 @@ async function runNightlyIgAttempt({
           log('contributor cloud skipped (contributor-cloud-compose.js did not load)');
         } else {
           log(`generating contributor cloud post 4:5 (${contributors.length} names)…`);
-          contributorCloudImageData = await arch.generateInstagramContributorCloudImage(
-            blocks,
-            contributors,
-            dateKey
-          );
+          try {
+            contributorCloudImageData = await timed('contributor cloud', () =>
+              Promise.race([
+                arch.generateInstagramContributorCloudImage(blocks, contributors, dateKey),
+                new Promise((_, reject) =>
+                  setTimeout(
+                    () =>
+                      reject(
+                        new Error(`contributor cloud timed out after ${contributorCloudTimeoutMs}ms`)
+                      ),
+                    contributorCloudTimeoutMs
+                  )
+                )
+              ])
+            );
+          } catch (cloudErr) {
+            log(`contributor cloud skipped: ${cloudErr?.message || cloudErr}`);
+          }
           if (!contributorCloudImageData) {
             log('contributor cloud failed (compose returned null — check browser console for ArchiveService error)');
           } else {
@@ -746,7 +792,7 @@ async function runNightlyIgAttempt({
           hasContributorCloud: !!contributorCloudUrl
         };
       },
-      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes }
+      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, contributorCloudTimeoutMs }
     );
 
     if (clippingOnly) {
