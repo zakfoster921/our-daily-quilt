@@ -640,16 +640,23 @@ async function runNightlyIgAttempt({
         const allSpeakerDiag = globalThis.__odqSpeakerDrawDiag || [];
         const speakerDiag = allSpeakerDiag.slice(-10);
         const overQuiltStarts = allSpeakerDiag.filter((e) => e.message === 'overQuilt draw start');
-        const lastOverQuiltStart = overQuiltStarts[overQuiltStarts.length - 1];
         const overQuiltEnds = allSpeakerDiag.filter((e) => e.message === 'overQuilt draw end');
-        const lastOverQuiltEnd = overQuiltEnds[overQuiltEnds.length - 1];
+        const slide1Start = overQuiltStarts.filter((e) => e.data?.bleedPhase === 'layout-b-slide1').pop();
+        const slide1End = overQuiltEnds.filter((e) => e.data?.bleedPhase === 'layout-b-slide1').pop();
+        const lastOverQuiltStart = slide1Start || overQuiltStarts[overQuiltStarts.length - 1];
+        const lastOverQuiltEnd = slide1End || overQuiltEnds[overQuiltEnds.length - 1];
         const scriptTags = [
           ...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')
         ].map((el) => el.getAttribute('src') || '');
         console.log(`[nightly-ig:script-tags] ${JSON.stringify(scriptTags)}`);
         console.log(
-          `[nightly-ig:speaker-bleed] build=${lastOverQuiltStart?.data?.debugBuild || '(none)'} portraitA=${lastOverQuiltStart?.data?.portraitPx?.a ?? 'missing'} preserve=${lastOverQuiltEnd?.data?.highlightPreserveRatio ?? 'missing'}`
+          `[nightly-ig:speaker-bleed] phase=${lastOverQuiltStart?.data?.bleedPhase || '(none)'} build=${lastOverQuiltStart?.data?.debugBuild || '(none)'} portraitA=${lastOverQuiltStart?.data?.portraitPx?.a ?? 'missing'} preserve=${lastOverQuiltEnd?.data?.highlightPreserveRatio ?? 'missing'}`
         );
+        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio < 0.58) {
+          console.warn(
+            `[nightly-ig:speaker-bleed] slide1 preserve below target: ${slide1End.data.highlightPreserveRatio} (want >= 0.58)`
+          );
+        }
         console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
         const bleedBuild = String(lastOverQuiltStart?.data?.debugBuild || '');
         if (!bleedBuild.startsWith('cream-tune-v4')) {
