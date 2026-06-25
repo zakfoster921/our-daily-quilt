@@ -2496,7 +2496,7 @@ try {
   <script src="lib/quilt-data-service.js"></script>
   <script src="lib/contributor-cloud-compose.js"></script>
   <script src="lib/carousel-quilt-bg.js?v=1"></script>
-  <script src="lib/ig-contributor-carousel-compose.js?v=6"></script>
+  <script src="lib/ig-contributor-carousel-compose.js?v=7"></script>
   <script src="lib/quilt-mirror-layout.js"></script>
   <script src="lib/archive-service.js?v=2f"></script>
   <script src="lib/quote-service.js"></script>
@@ -2541,7 +2541,7 @@ try {
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js'),
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js'),
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js')
-    ]).then(([{ initializeApp }, { getFirestore, initializeFirestore, collection, doc, setDoc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, orderBy, limit, startAfter, addDoc, updateDoc, deleteDoc, deleteField }, { getStorage }, { getAuth, signInAnonymously }]) => {
+    ]).then(([{ initializeApp }, { getFirestore, initializeFirestore, memoryLocalCache, collection, doc, setDoc, getDoc, getDocFromServer, getDocs, getDocsFromServer, onSnapshot, query, where, orderBy, limit, startAfter, addDoc, updateDoc, deleteDoc, deleteField }, { getStorage }, { getAuth, signInAnonymously }]) => {
       try {
         // Initialize Firebase
         const firebaseApp = initializeApp(CONFIG.FIREBASE);
@@ -2550,6 +2550,8 @@ try {
         const db =
           shouldForceLongPolling && typeof initializeFirestore === 'function'
             ? initializeFirestore(firebaseApp, {
+                // Avoid stale IndexedDB quilt snapshots on iOS WebView after server reads fail.
+                localCache: typeof memoryLocalCache === 'function' ? memoryLocalCache() : undefined,
                 experimentalForceLongPolling: true,
                 useFetchStreams: false
               })
@@ -2561,7 +2563,7 @@ try {
         window.db = db;
         window.firebaseStorage = getStorage(firebaseApp);
         window.firebaseAuth = auth;
-        window.firestore = { collection, doc, setDoc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, orderBy, limit, startAfter, addDoc, updateDoc, deleteDoc, deleteField };
+        window.firestore = { collection, doc, setDoc, getDoc, getDocFromServer, getDocs, getDocsFromServer, onSnapshot, query, where, orderBy, limit, startAfter, addDoc, updateDoc, deleteDoc, deleteField };
 
         void (async () => {
           try {
