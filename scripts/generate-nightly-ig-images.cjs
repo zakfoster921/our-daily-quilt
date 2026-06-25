@@ -652,9 +652,14 @@ async function runNightlyIgAttempt({
         console.log(
           `[nightly-ig:speaker-bleed] phase=${lastOverQuiltStart?.data?.bleedPhase || '(none)'} build=${lastOverQuiltStart?.data?.debugBuild || '(none)'} portraitA=${lastOverQuiltStart?.data?.portraitPx?.a ?? 'missing'} preserve=${lastOverQuiltEnd?.data?.highlightPreserveRatio ?? 'missing'}`
         );
-        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio < 0.58) {
+        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio < 0.48) {
           console.warn(
-            `[nightly-ig:speaker-bleed] slide1 preserve below target: ${slide1End.data.highlightPreserveRatio} (want >= 0.58)`
+            `[nightly-ig:speaker-bleed] slide1 preserve too low (speaker crushed): ${slide1End.data.highlightPreserveRatio} (want 0.48–0.75)`
+          );
+        }
+        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio > 0.75) {
+          console.warn(
+            `[nightly-ig:speaker-bleed] slide1 preserve too high (speaker faded): ${slide1End.data.highlightPreserveRatio} (want 0.48–0.75)`
           );
         }
         console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
