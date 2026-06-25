@@ -77,6 +77,8 @@ async function runNightlyIgAttempt({
       text.includes('[nightly-ig:speaker-diag]') ||
       text.includes('[nightly-ig:layout-b-speaker]') ||
       text.includes('[nightly-ig:script-tags]') ||
+      text.includes('[nightly-ig:slide1-bytes]') ||
+      text.includes('[nightly-ig:speaker-render-build]') ||
       text.includes('speaker-diag ') ||
       text.includes('[archive]') ||
       text.includes('QuiltNewspaperClipping') ||
@@ -719,6 +721,13 @@ async function runNightlyIgAttempt({
         }
 
         log('uploading PNGs to Storage + Firestore…');
+        const speakerRenderBuild =
+          (globalThis.__odqSpeakerDrawDiag || [])
+            .map((entry) => entry?.data?.debugBuild)
+            .filter(Boolean)
+            .pop() || '';
+        console.log(`[nightly-ig:slide1-bytes] ${carouselSlide1ImageData?.length || 0}`);
+        console.log(`[nightly-ig:speaker-render-build] ${speakerRenderBuild}`);
         const uploadPayload = {
           dateKey,
           carouselSlide1ImageData,
@@ -731,7 +740,8 @@ async function runNightlyIgAttempt({
           quiltFingerprint,
           blockCount: blocks.length,
           contributorCount,
-          markReadyForInstagram: true
+          markReadyForInstagram: true,
+          speakerRenderBuild
         };
         let doc;
         if (typeof Utils.writeInstagramImagesDocForZapierViaServer === 'function' && apiBase) {
@@ -784,7 +794,9 @@ async function runNightlyIgAttempt({
           storyLayoutBUrl:
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || '',
           speakerDiag,
-          scriptTags
+          scriptTags,
+          speakerRenderBuild,
+          slide1Bytes: carouselSlide1ImageData?.length || 0
         };
       },
       { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase }
@@ -807,6 +819,8 @@ async function runNightlyIgAttempt({
 
     console.log(`[nightly-ig:script-tags] ${JSON.stringify(result?.scriptTags || [])}`);
     console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(result?.speakerDiag || [])}`);
+    console.log(`[nightly-ig:slide1-bytes] ${result?.slide1Bytes || 0}`);
+    console.log(`[nightly-ig:speaker-render-build] ${result?.speakerRenderBuild || ''}`);
 
     if (clippingOnly) {
       console.log('[nightly-ig] clipping-only run complete (skipping full IG verify)');

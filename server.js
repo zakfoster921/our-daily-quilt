@@ -604,7 +604,7 @@ function parsePngDataUrlToBuffer(dataUrl) {
   return Buffer.from(m[1], 'base64');
 }
 
-async function firebaseSaveDownloadableFile(destination, buffer, contentType) {
+async function firebaseSaveDownloadableFile(destination, buffer, contentType, cacheControl = 'public, max-age=31536000') {
   const bucket = admin.storage().bucket();
   const bucketName = bucket.name;
   const token = crypto.randomUUID();
@@ -613,7 +613,7 @@ async function firebaseSaveDownloadableFile(destination, buffer, contentType) {
     resumable: false,
     metadata: {
       contentType,
-      cacheControl: 'public, max-age=31536000',
+      cacheControl,
       metadata: {
         firebaseStorageDownloadTokens: token
       }
@@ -3655,7 +3655,13 @@ function formatNotificationTextFromQuoteData(quoteData = {}) {
 
 function pickClassicImageUrlFromInstagramDoc(data) {
   if (!data || typeof data !== 'object') return '';
-  return String(data.classicUrl || data.imageStorageUrl || '').trim();
+  return String(
+    data.carouselSlide1Url ||
+      data.carouselSlide1ImageStorageUrl ||
+      data.classicUrl ||
+      data.imageStorageUrl ||
+      ''
+  ).trim();
 }
 
 function pickNewspaperClippingUrlFromInstagramDoc(data) {
@@ -4935,7 +4941,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-23-carousel-3-slide';
+    const apiVersion = 'instagram-api-24-carousel-slide1-canonical';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Integrated carousel: slide 1 = layout B, slides 2–3 = seamless quilt pair.
     const imageUrls = [
@@ -4956,13 +4962,10 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       postLayoutBImageUrl: primaryLayoutBImageUrl,
       postLayoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
       postLayoutBPlainImageUrl: postLayoutBImageUrl || '',
-      classicImageUrl: carouselSlide1Url || imageUrl,
       carouselSlide1Url: carouselSlide1Url || imageUrl,
       carouselSlide2Url: carouselSlide2Url || '',
       carouselSlide3Url: carouselSlide3Url || '',
-      layoutBImageUrl: primaryLayoutBImageUrl,
       layoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
-      layoutBPlainImageUrl: postLayoutBImageUrl || '',
       storyLayoutBImageUrl,
       layoutBStoryImageUrl: storyLayoutBImageUrl,
       storyLayoutBUrl: storyLayoutBImageUrl,
@@ -4999,7 +5002,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'Integrated IG carousel: carouselSlide1Url = layout B (4:5). carouselSlide2Url + carouselSlide3Url = seamless quilt pair. classicImageUrl/imageUrl and layoutBImageUrl alias slide 1. layoutBSpeakerImageUrl = layout-b-speaker.png. contributorCloudImageUrl = contributor-cloud.png. quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
+        'Integrated IG carousel: carouselSlide1Url = layout B (4:5). carouselSlide2Url + carouselSlide3Url = seamless quilt pair. imageUrl aliases carouselSlide1Url. layoutBSpeakerImageUrl = layout-b-speaker.png when present. quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
     };
     
     console.log(
@@ -5109,6 +5112,10 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
     }
 
     const basePath = `instagram-zapier/${dateKey}`;
+    const saveIgPng = async (dest, dataUrl) => {
+      const buf = parsePngDataUrlToBuffer(dataUrl);
+      return firebaseSaveDownloadableFile(dest, buf, 'image/png', 'no-store');
+    };
     const docPayload = {
       date: dateKey,
       lastUpdated: new Date().toISOString(),
@@ -5133,6 +5140,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.quiltFingerprint = qfp;
       docPayload.imageQuiltFingerprint = qfp;
     }
+    const speakerRenderBuild = String(body.speakerRenderBuild || '').trim();
+    if (speakerRenderBuild) docPayload.speakerRenderBuild = speakerRenderBuild;
     if (body.markReadyForInstagram === true) {
       const readyAt = new Date().toISOString();
       docPayload.readyForInstagram = true;
@@ -5151,19 +5160,22 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
     }
 
     if (instagramImage) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/classic.png`,
-        parsePngDataUrlToBuffer(instagramImage),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/classic.png`, instagramImage);
       docPayload.imageStorageUrl = publicUrl;
       docPayload.classicUrl = publicUrl;
     }
     if (carouselSlide1ImageData) {
+      const slide1Buf = parsePngDataUrlToBuffer(carouselSlide1ImageData);
+      const slide1Md5 = crypto.createHash('md5').update(slide1Buf).digest('hex');
+      docPayload.carouselSlide1ContentMd5 = slide1Md5;
+      console.log(
+        `[push-instagram-assets] slide1 bytes=${slide1Buf.length} md5=${slide1Md5} speakerRenderBuild=${speakerRenderBuild || '(none)'}`
+      );
       const { publicUrl } = await firebaseSaveDownloadableFile(
         `${basePath}/carousel-slide-1.png`,
-        parsePngDataUrlToBuffer(carouselSlide1ImageData),
-        'image/png'
+        slide1Buf,
+        'image/png',
+        'no-store'
       );
       docPayload.carouselSlide1ImageStorageUrl = publicUrl;
       docPayload.carouselSlide1Url = publicUrl;
@@ -5175,29 +5187,17 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.layoutBPlainUrl = publicUrl;
     }
     if (carouselSlide2ImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/carousel-slide-2.png`,
-        parsePngDataUrlToBuffer(carouselSlide2ImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/carousel-slide-2.png`, carouselSlide2ImageData);
       docPayload.carouselSlide2ImageStorageUrl = publicUrl;
       docPayload.carouselSlide2Url = publicUrl;
     }
     if (carouselSlide3ImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/carousel-slide-3.png`,
-        parsePngDataUrlToBuffer(carouselSlide3ImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/carousel-slide-3.png`, carouselSlide3ImageData);
       docPayload.carouselSlide3ImageStorageUrl = publicUrl;
       docPayload.carouselSlide3Url = publicUrl;
     }
     if (postLayoutBImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/layout-b.png`,
-        parsePngDataUrlToBuffer(postLayoutBImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/layout-b.png`, postLayoutBImageData);
       if (!docPayload.layoutBUrl) {
         docPayload.postLayoutBImageStorageUrl = publicUrl;
         docPayload.layoutBUrl = publicUrl;
@@ -5210,69 +5210,41 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       }
     }
     if (postLayoutBSpeakerImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/layout-b-speaker.png`,
-        parsePngDataUrlToBuffer(postLayoutBSpeakerImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/layout-b-speaker.png`, postLayoutBSpeakerImageData);
       docPayload.postLayoutBSpeakerImageStorageUrl = publicUrl;
       docPayload.layoutBSpeakerUrl = publicUrl;
     }
     if (storyLayoutBImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/layout-b-story.png`,
-        parsePngDataUrlToBuffer(storyLayoutBImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/layout-b-story.png`, storyLayoutBImageData);
       docPayload.storyLayoutBImageStorageUrl = publicUrl;
       docPayload.layoutBStoryUrl = publicUrl;
       docPayload.storyLayoutBUrl = publicUrl;
     }
     if (quiltScreen9x16ImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/quilt-screen-9x16.png`,
-        parsePngDataUrlToBuffer(quiltScreen9x16ImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/quilt-screen-9x16.png`, quiltScreen9x16ImageData);
       docPayload.quiltScreen9x16ImageStorageUrl = publicUrl;
       docPayload.quiltScreen9x16Url = publicUrl;
       docPayload.quiltScreenUrl = publicUrl;
     }
     if (newspaperClippingImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/newspaper-clipping.png`,
-        parsePngDataUrlToBuffer(newspaperClippingImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/newspaper-clipping.png`, newspaperClippingImageData);
       docPayload.newspaperClippingImageStorageUrl = publicUrl;
       docPayload.newspaperClippingUrl = publicUrl;
       docPayload.newspaperClippingReady = true;
     }
     if (contributorCloudImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/contributor-cloud.png`,
-        parsePngDataUrlToBuffer(contributorCloudImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/contributor-cloud.png`, contributorCloudImageData);
       docPayload.contributorCloudImageStorageUrl = publicUrl;
       docPayload.contributorCloudUrl = publicUrl;
     }
     if (moodClippingGoodImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/mood-clipping-good.png`,
-        parsePngDataUrlToBuffer(moodClippingGoodImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/mood-clipping-good.png`, moodClippingGoodImageData);
       docPayload.moodClippingGoodImageStorageUrl = publicUrl;
       docPayload.moodClippingGoodUrl = publicUrl;
       docPayload.moodClippingGoodReady = true;
     }
     if (moodClippingRoughImageData) {
-      const { publicUrl } = await firebaseSaveDownloadableFile(
-        `${basePath}/mood-clipping-rough.png`,
-        parsePngDataUrlToBuffer(moodClippingRoughImageData),
-        'image/png'
-      );
+      const { publicUrl } = await saveIgPng(`${basePath}/mood-clipping-rough.png`, moodClippingRoughImageData);
       docPayload.moodClippingRoughImageStorageUrl = publicUrl;
       docPayload.moodClippingRoughUrl = publicUrl;
       docPayload.moodClippingRoughReady = true;
