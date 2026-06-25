@@ -5138,6 +5138,14 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.readyForInstagram = true;
       docPayload.lastNightlyIgImagesAt = readyAt;
       docPayload.igImagesSource = 'app_backend_admin_push';
+      if (!postLayoutBSpeakerImageData) {
+        docPayload.postLayoutBSpeakerImageStorageUrl = '';
+        docPayload.layoutBSpeakerUrl = '';
+      }
+      if (!contributorCloudImageData) {
+        docPayload.contributorCloudImageStorageUrl = '';
+        docPayload.contributorCloudUrl = '';
+      }
     } else if (dateKey < getAppDateKey()) {
       docPayload.readyForInstagram = false;
     }
@@ -5278,10 +5286,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
         docPayload.carouselSlide1Url || docPayload.classicUrl,
         docPayload.carouselSlide2Url,
         docPayload.carouselSlide3Url,
-        docPayload.layoutBSpeakerUrl,
         docPayload.storyLayoutBUrl || docPayload.layoutBStoryUrl,
-        docPayload.quiltScreen9x16Url,
-        docPayload.contributorCloudUrl
+        docPayload.quiltScreen9x16Url
       ].filter(Boolean);
     }
 
