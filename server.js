@@ -186,6 +186,7 @@ function notionSyncQuotesScriptArgs(startDate, syncScope) {
 
 const JSON_SIZE_LIMITS = new Map([
   ['/api/push-instagram-assets', 30 * ONE_MB],
+  ['/api/push-layout-b-tune', 48 * ONE_KB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
@@ -5291,6 +5292,54 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
     res.json({ success: true, date: dateKey, docPayload });
   } catch (error) {
     console.error('❌ push-instagram-assets failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || String(error),
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.options('/api/push-layout-b-tune', (req, res) => {
+  setInstagramApiCors(res);
+  res.status(204).end();
+});
+
+/**
+ * Admin tune modal: merge Layout B speaker/keyword/strip/zoom fields without client Firebase Auth.
+ * iOS WebView often hangs on signInAnonymously; Admin SDK writes bypass that path.
+ */
+app.post('/api/push-layout-b-tune', limitInstagramAssetPush, optionalInstagramAssetAuth, async (req, res) => {
+  setInstagramApiCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore admin not initialized' });
+    }
+    const body = req.body || {};
+    const dateKey = String(body.dateKey || body.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'Invalid dateKey' });
+    }
+    const setFields =
+      body.set && typeof body.set === 'object' && !Array.isArray(body.set) ? body.set : {};
+    const deleteFields = Array.isArray(body.deleteFields)
+      ? body.deleteFields.map((f) => String(f || '').trim()).filter(Boolean)
+      : [];
+    const patch = { ...setFields, date: dateKey };
+    for (const field of deleteFields) {
+      patch[field] = admin.firestore.FieldValue.delete();
+    }
+    await db.collection('instagram-images').doc(dateKey).set(patch, { merge: true });
+    const snap = await db.collection('instagram-images').doc(dateKey).get();
+    const data = snap.exists ? snap.data() || {} : {};
+    console.log(`✅ Layout B tune saved via server for ${dateKey}`);
+    res.json({
+      success: true,
+      dateKey,
+      layoutBTuneUpdatedAt: data.layoutBTuneUpdatedAt || null
+    });
+  } catch (error) {
+    console.error('❌ push-layout-b-tune failed:', error);
     res.status(500).json({
       success: false,
       error: error.message || String(error),

@@ -43,9 +43,11 @@ const REQUIRED_LAYOUT_B_EXPORTS = [
   'odqWriteLayoutBStripLayoutSeed',
   'odqWriteLayoutBSpeakerCutoutPresetFirestore',
   'odqVerifyLayoutBTuneOnServer',
+  'odqWriteLayoutBTuneViaServer',
   'odqReadInstagramImagesDocWithFallback',
   'ODQ_SPEAKER_PRESETS',
   'ODQ_SPEAKER_NUDGE_STEP',
+  'ODQ_SPEAKER_BIG_NUDGE_MUL',
   'ODQ_SPEAKER_ROTATE_STEP_DEG',
 ];
 
@@ -96,6 +98,11 @@ function loadLayoutBComposeSandbox() {
   vm.createContext(sandbox);
   const src = fs.readFileSync(path.join(ROOT, 'lib/layout-b-compose.js'), 'utf8');
   vm.runInContext(src, sandbox, { filename: 'layout-b-compose.js' });
+  const carouselSrc = fs.readFileSync(
+    path.join(ROOT, 'lib/layout-b-carousel-strips.js'),
+    'utf8'
+  );
+  vm.runInContext(carouselSrc, sandbox, { filename: 'layout-b-carousel-strips.js' });
   return sandbox.globalThis;
 }
 

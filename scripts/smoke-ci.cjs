@@ -60,6 +60,7 @@ function smokeSyntax() {
     'lib/app-config.js',
     'lib/daily-quote-push-time.js',
     'lib/layout-b-compose.js',
+    'lib/layout-b-carousel-strips.js',
     'lib/simplified-quilt-app-boot.js',
     'lib/simplified-quilt-app-quilt.js',
     'lib/simplified-quilt-app-share.js',

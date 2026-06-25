@@ -2495,17 +2495,18 @@ try {
   <script src="lib/live-daily-data-sync.js"></script>
   <script src="lib/quilt-data-service.js"></script>
   <script src="lib/contributor-cloud-compose.js"></script>
-  <script src="lib/ig-contributor-carousel-compose.js"></script>
+  <script src="lib/ig-contributor-carousel-compose.js?v=3"></script>
   <script src="lib/quilt-mirror-layout.js"></script>
-  <script src="lib/archive-service.js?v=2b"></script>
+  <script src="lib/archive-service.js?v=2c"></script>
   <script src="lib/quote-service.js"></script>
   <script src="lib/quilt-renderer-v2.js"></script>
   <script src="lib/app-config.js"></script>
   <script src="lib/speaker-cutout-render.js?v=16"></script>
-  <script src="lib/layout-b-compose.js?v=2b"></script>
+  <script src="lib/layout-b-compose.js?v=77"></script>
+  <script src="lib/layout-b-carousel-strips.js?v=71"></script>
   <script src="lib/simplified-quilt-app-boot.js?v=55"></script>
   <script src="lib/simplified-quilt-app-quilt.js?v=45"></script>
-  <script src="lib/simplified-quilt-app-share.js?v=2a"></script>
+  <script src="lib/simplified-quilt-app-share.js?v=2d"></script>
   <script src="lib/simplified-quilt-app-social.js?v=3"></script>
   <script src="lib/simplified-quilt-app-admin.js?v=25"></script>
   <script src="lib/simplified-quilt-app-mood.js"></script>
@@ -2537,8 +2538,9 @@ try {
     Promise.all([
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js'),
-      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js')
-    ]).then(([{ initializeApp }, { getFirestore, initializeFirestore, collection, doc, setDoc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, orderBy, limit, startAfter, addDoc, updateDoc, deleteDoc, deleteField }, { getStorage }]) => {
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js'),
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js')
+    ]).then(([{ initializeApp }, { getFirestore, initializeFirestore, collection, doc, setDoc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, orderBy, limit, startAfter, addDoc, updateDoc, deleteDoc, deleteField }, { getStorage }, { getAuth, signInAnonymously }]) => {
       try {
         // Initialize Firebase
         const firebaseApp = initializeApp(CONFIG.FIREBASE);
@@ -2551,12 +2553,28 @@ try {
                 useFetchStreams: false
               })
             : getFirestore(firebaseApp);
+        const auth = getAuth(firebaseApp);
         
         // Make Firebase available globally
         window.firebaseApp = firebaseApp;
         window.db = db;
         window.firebaseStorage = getStorage(firebaseApp);
+        window.firebaseAuth = auth;
         window.firestore = { collection, doc, setDoc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, orderBy, limit, startAfter, addDoc, updateDoc, deleteDoc, deleteField };
+
+        void (async () => {
+          try {
+            if (typeof auth.authStateReady === 'function') {
+              await auth.authStateReady();
+            }
+            if (!auth.currentUser) {
+              await signInAnonymously(auth);
+            }
+            window.odqFirebaseAuthUser = auth.currentUser || null;
+          } catch (authErr) {
+            console.warn('Anonymous Firebase auth at boot failed (will retry on write):', authErr);
+          }
+        })();
         
         
         // Dispatch event to notify that Firebase is ready
