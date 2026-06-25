@@ -695,7 +695,7 @@ async function runNightlyIgAttempt({
             log('carousel speaker seam skipped (no cutout or compose unavailable)');
           }
         }
-        log('integrated carousel: slide 1 = layout B (+ speaker seam), slides 2–3 = quilt pair');
+        log('integrated carousel: slide 1 = layout B (+ speaker seam), slides 2–3 = shared quilt bg (flip A, A)');
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
             `generateInstagramQuiltScreen9x16ImageData missing on deployed app — deploy our-daily-beta.html before nightly IG`

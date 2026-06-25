@@ -2,7 +2,7 @@
 /* eslint-disable no-console */
 /**
  * Preview integrated IG carousel PNGs for a quilt day (writes tmp/carousel-*.png).
- * Slide 1 = layout B (+ speaker cutout seam into slide 2), slides 2–3 = quilt pair.
+ * Slide 1 = layout B (+ speaker cutout seam into slide 2), slides 2–3 = shared quilt bg (flip A, A).
  * Usage: APP_URL=https://… DATE_KEY=2026-06-22 node scripts/preview-ig-carousel.cjs
  */
 const fs = require('fs');
