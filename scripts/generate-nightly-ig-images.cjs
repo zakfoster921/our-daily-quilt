@@ -74,6 +74,10 @@ async function runNightlyIgAttempt({
     if (/Failed to load resource/i.test(text)) return;
     if (
       text.includes('[nightly-ig:page]') ||
+      text.includes('[nightly-ig:speaker-diag]') ||
+      text.includes('[nightly-ig:layout-b-speaker]') ||
+      text.includes('[nightly-ig:script-tags]') ||
+      text.includes('speaker-diag ') ||
       text.includes('[archive]') ||
       text.includes('QuiltNewspaperClipping') ||
       text.includes('Firestore') ||
@@ -184,7 +188,9 @@ async function runNightlyIgAttempt({
       120000,
       Number(process.env.NIGHTLY_MIN_NEWSPAPER_CLIPPING_BYTES) || 140000
     );
-    const result = await page.evaluate(
+    let result;
+    try {
+      result = await page.evaluate(
       async ({
         dateKey,
         strictQuote,
@@ -632,8 +638,8 @@ async function runNightlyIgAttempt({
         const scriptTags = [
           ...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')
         ].map((el) => el.getAttribute('src') || '');
-        log(`script-tags ${JSON.stringify(scriptTags)}`);
-        log(`speaker-diag ${JSON.stringify(speakerDiag)}`);
+        console.log(`[nightly-ig:script-tags] ${JSON.stringify(scriptTags)}`);
+        console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
         if (
           !integratedCarousel?.carouselSlide1 ||
           !integratedCarousel?.carouselSlide2 ||
@@ -783,6 +789,21 @@ async function runNightlyIgAttempt({
       },
       { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase }
     );
+    } catch (evaluateErr) {
+      try {
+        const fallbackDiag = await page.evaluate(() => ({
+          speakerDiag: globalThis.__odqSpeakerDrawDiag || [],
+          scriptTags: [
+            ...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')
+          ].map((el) => el.getAttribute('src') || '')
+        }));
+        console.log(`[nightly-ig:script-tags] ${JSON.stringify(fallbackDiag?.scriptTags || [])}`);
+        console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(fallbackDiag?.speakerDiag || [])}`);
+      } catch (_) {
+        /* page may be gone */
+      }
+      throw evaluateErr;
+    }
 
     console.log(`[nightly-ig:script-tags] ${JSON.stringify(result?.scriptTags || [])}`);
     console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(result?.speakerDiag || [])}`);
