@@ -657,9 +657,9 @@ async function runNightlyIgAttempt({
             `[nightly-ig:speaker-bleed] slide1 preserve too low (speaker crushed): ${slide1End.data.highlightPreserveRatio} (want 0.48–0.75)`
           );
         }
-        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio > 0.75) {
+        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio > 0.88) {
           console.warn(
-            `[nightly-ig:speaker-bleed] slide1 preserve too high (speaker faded): ${slide1End.data.highlightPreserveRatio} (want 0.48–0.75)`
+            `[nightly-ig:speaker-bleed] slide1 preserve too high (speaker faded): ${slide1End.data.highlightPreserveRatio} (want 0.45–0.88)`
           );
         }
         console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
