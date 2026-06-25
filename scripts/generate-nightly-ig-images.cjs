@@ -79,6 +79,7 @@ async function runNightlyIgAttempt({
       text.includes('[nightly-ig:script-tags]') ||
       text.includes('[nightly-ig:slide1-bytes]') ||
       text.includes('[nightly-ig:speaker-render-build]') ||
+      text.includes('[nightly-ig:speaker-bleed]') ||
       text.includes('speaker-diag ') ||
       text.includes('[archive]') ||
       text.includes('QuiltNewspaperClipping') ||
@@ -636,12 +637,29 @@ async function runNightlyIgAttempt({
         const integratedCarousel = await timed('integrated IG carousel', () =>
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey)
         );
-        const speakerDiag = (globalThis.__odqSpeakerDrawDiag || []).slice(-10);
+        const allSpeakerDiag = globalThis.__odqSpeakerDrawDiag || [];
+        const speakerDiag = allSpeakerDiag.slice(-10);
+        const overQuiltStarts = allSpeakerDiag.filter((e) => e.message === 'overQuilt draw start');
+        const lastOverQuiltStart = overQuiltStarts[overQuiltStarts.length - 1];
+        const overQuiltEnds = allSpeakerDiag.filter((e) => e.message === 'overQuilt draw end');
+        const lastOverQuiltEnd = overQuiltEnds[overQuiltEnds.length - 1];
         const scriptTags = [
           ...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')
         ].map((el) => el.getAttribute('src') || '');
         console.log(`[nightly-ig:script-tags] ${JSON.stringify(scriptTags)}`);
+        console.log(
+          `[nightly-ig:speaker-bleed] build=${lastOverQuiltStart?.data?.debugBuild || '(none)'} portraitA=${lastOverQuiltStart?.data?.portraitPx?.a ?? 'missing'} preserve=${lastOverQuiltEnd?.data?.highlightPreserveRatio ?? 'missing'}`
+        );
         console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
+        const bleedBuild = String(lastOverQuiltStart?.data?.debugBuild || '');
+        if (!bleedBuild.startsWith('cream-tune-v4')) {
+          throw new Error(
+            `Stale speaker-cutout-render.js (debugBuild=${bleedBuild || 'missing'}). Expected cream-tune-v4.x with portraitPx.`
+          );
+        }
+        if (lastOverQuiltStart?.data?.portraitPx?.a == null) {
+          throw new Error('speaker bleed diag missing portraitPx.a — stale speaker-cutout-render.js');
+        }
         if (
           !integratedCarousel?.carouselSlide1 ||
           !integratedCarousel?.carouselSlide2 ||
