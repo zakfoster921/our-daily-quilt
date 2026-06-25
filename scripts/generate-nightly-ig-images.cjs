@@ -628,6 +628,16 @@ async function runNightlyIgAttempt({
         const integratedCarousel = await timed('integrated IG carousel', () =>
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey)
         );
+        const speakerDiag = await page.evaluate(() =>
+          (globalThis.__odqSpeakerDrawDiag || []).slice(-10)
+        );
+        const scriptTags = await page.evaluate(() =>
+          [...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')].map(
+            (el) => el.getAttribute('src') || ''
+          )
+        );
+        log(`[nightly-ig:script-tags] ${JSON.stringify(scriptTags)}`);
+        log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
         if (
           !integratedCarousel?.carouselSlide1 ||
           !integratedCarousel?.carouselSlide2 ||
@@ -801,7 +811,7 @@ async function runNightlyIgAttempt({
         `verify failed: HTTP ${verifyRes.status} ${verify.error || verify.message || ''}`.trim()
       );
     }
-    if (!verify.carouselSlide1Url && !verify.classicImageUrl && !verify.imageUrl) {
+    if (!verify.carouselSlide1Url && !verify.imageUrl) {
       throw new Error('verify failed: carousel slide 1 (layout B) URL missing');
     }
     if (!verify.carouselSlide2Url) {
@@ -834,18 +844,10 @@ async function runNightlyIgAttempt({
       blockCount: result.blockCount,
       contributorCount: result.contributorCount,
       readyForInstagram: result.readyForInstagram,
-      classicImageUrl: verify.carouselSlide1Url || verify.classicImageUrl || verify.imageUrl,
-      carouselSlide1Url: verify.carouselSlide1Url || verify.classicImageUrl || verify.imageUrl || '',
+      carouselSlide1Url: verify.carouselSlide1Url || verify.imageUrl || '',
       carouselSlide2Url: verify.carouselSlide2Url || '',
       carouselSlide3Url: verify.carouselSlide3Url || '',
       quiltScreen9x16ImageUrl: quiltScreen9x16Url,
-      layoutBImageUrl:
-        verify.layoutBImageUrl ||
-        verify.postLayoutBImageUrl ||
-        verify.layoutBPlainImageUrl ||
-        verify.carouselSlide1Url ||
-        result.layoutBUrl,
-      layoutBPlainImageUrl: verify.layoutBPlainImageUrl || verify.postLayoutBPlainImageUrl || '',
       storyLayoutBImageUrl: storyUrl
     };
   } catch (err) {
