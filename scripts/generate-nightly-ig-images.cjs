@@ -628,16 +628,12 @@ async function runNightlyIgAttempt({
         const integratedCarousel = await timed('integrated IG carousel', () =>
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey)
         );
-        const speakerDiag = await page.evaluate(() =>
-          (globalThis.__odqSpeakerDrawDiag || []).slice(-10)
-        );
-        const scriptTags = await page.evaluate(() =>
-          [...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')].map(
-            (el) => el.getAttribute('src') || ''
-          )
-        );
-        log(`[nightly-ig:script-tags] ${JSON.stringify(scriptTags)}`);
-        log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
+        const speakerDiag = (globalThis.__odqSpeakerDrawDiag || []).slice(-10);
+        const scriptTags = [
+          ...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')
+        ].map((el) => el.getAttribute('src') || '');
+        log(`script-tags ${JSON.stringify(scriptTags)}`);
+        log(`speaker-diag ${JSON.stringify(speakerDiag)}`);
         if (
           !integratedCarousel?.carouselSlide1 ||
           !integratedCarousel?.carouselSlide2 ||
@@ -780,11 +776,16 @@ async function runNightlyIgAttempt({
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
           layoutBUrl: doc.layoutBUrl || doc.carouselSlide1Url || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
-            doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
+            doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || '',
+          speakerDiag,
+          scriptTags
         };
       },
       { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase }
     );
+
+    console.log(`[nightly-ig:script-tags] ${JSON.stringify(result?.scriptTags || [])}`);
+    console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(result?.speakerDiag || [])}`);
 
     if (clippingOnly) {
       console.log('[nightly-ig] clipping-only run complete (skipping full IG verify)');
