@@ -5802,13 +5802,52 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
       const submittedVia = String(extractSubmittedViaFromNotionPage(page) || '').trim();
       const submittedBy = String(extractSubmittedByFromNotionPage(page) || '').trim();
       const submittedAt = String(extractSubmittedAtFromNotionPage(page) || '').trim();
+      const props = page?.properties || {};
+      const goodDay = getNotionPropPlainByAliases(props, 'good_day', 'goodDay', 'Good day');
+      const roughDay = getNotionPropPlainByAliases(props, 'rough_day', 'roughDay', 'Rough day');
+      const speakerImageUrl = getNotionPropPlainByAliases(
+        props,
+        'speaker_image_url',
+        'speakerImageUrl',
+        'Speaker image URL',
+        'image_url'
+      );
+      const speakerCutoutUrl = getNotionPropPlainByAliases(
+        props,
+        'speaker_cutout_url',
+        'speakerCutoutUrl',
+        'Speaker cutout URL'
+      );
+      const speakerGuideLine = getNotionPropPlainByAliases(
+        props,
+        'speaker_guide_line',
+        'speakerGuideLine',
+        'Guide line',
+        'Speaker guide line'
+      );
+      const imageAttribution = getNotionPropPlainByAliases(
+        props,
+        'image_attribution',
+        'imageAttribution',
+        'Image attribution'
+      );
       const candidate = {
         id: String(page.id || '').trim(),
         notionLastEditedTime: String(page.last_edited_time || '').trim(),
         submittedVia,
         submittedBy,
         submittedAt,
-        quote: { text, author, sourceId: String(page.id || '').trim() || undefined }
+        quote: {
+          text,
+          author,
+          sourceId: String(page.id || '').trim() || undefined,
+          ...(goodDay ? { goodDay, good_day: goodDay } : {}),
+          ...(roughDay ? { roughDay, rough_day: roughDay } : {}),
+          ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
+          ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
+          ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
+          ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
+        }
       };
       best = best ? pickScheduleWinner(best, candidate) : candidate;
     }
