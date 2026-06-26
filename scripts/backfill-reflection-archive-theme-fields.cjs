@@ -130,7 +130,13 @@ function getQuoteFromData(data) {
 
 function pickClassicImageUrlFromInstagramDoc(data) {
   if (!data || typeof data !== 'object') return '';
-  return String(data.classicUrl || data.imageStorageUrl || data.classicImageUrl || '').trim();
+  return String(
+    data.carouselSlide1Url ||
+      data.carouselSlide1ImageStorageUrl ||
+      data.classicUrl ||
+      data.imageStorageUrl ||
+      ''
+  ).trim();
 }
 
 function pickFinalArchiveQuiltImageUrl(data) {

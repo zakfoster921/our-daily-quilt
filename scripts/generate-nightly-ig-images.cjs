@@ -74,13 +74,6 @@ async function runNightlyIgAttempt({
     if (/Failed to load resource/i.test(text)) return;
     if (
       text.includes('[nightly-ig:page]') ||
-      text.includes('[nightly-ig:speaker-diag]') ||
-      text.includes('[nightly-ig:layout-b-speaker]') ||
-      text.includes('[nightly-ig:script-tags]') ||
-      text.includes('[nightly-ig:slide1-bytes]') ||
-      text.includes('[nightly-ig:speaker-render-build]') ||
-      text.includes('[nightly-ig:speaker-bleed]') ||
-      text.includes('speaker-diag ') ||
       text.includes('[archive]') ||
       text.includes('QuiltNewspaperClipping') ||
       text.includes('Firestore') ||
@@ -192,8 +185,7 @@ async function runNightlyIgAttempt({
       Number(process.env.NIGHTLY_MIN_NEWSPAPER_CLIPPING_BYTES) || 140000
     );
     let result;
-    try {
-      result = await page.evaluate(
+    result = await page.evaluate(
       async ({
         dateKey,
         strictQuote,
@@ -637,41 +629,6 @@ async function runNightlyIgAttempt({
         const integratedCarousel = await timed('integrated IG carousel', () =>
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey)
         );
-        const allSpeakerDiag = globalThis.__odqSpeakerDrawDiag || [];
-        const speakerDiag = allSpeakerDiag.slice(-10);
-        const overQuiltStarts = allSpeakerDiag.filter((e) => e.message === 'overQuilt draw start');
-        const overQuiltEnds = allSpeakerDiag.filter((e) => e.message === 'overQuilt draw end');
-        const slide1Start = overQuiltStarts.filter((e) => e.data?.bleedPhase === 'layout-b-slide1').pop();
-        const slide1End = overQuiltEnds.filter((e) => e.data?.bleedPhase === 'layout-b-slide1').pop();
-        const lastOverQuiltStart = slide1Start || overQuiltStarts[overQuiltStarts.length - 1];
-        const lastOverQuiltEnd = slide1End || overQuiltEnds[overQuiltEnds.length - 1];
-        const scriptTags = [
-          ...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')
-        ].map((el) => el.getAttribute('src') || '');
-        console.log(`[nightly-ig:script-tags] ${JSON.stringify(scriptTags)}`);
-        console.log(
-          `[nightly-ig:speaker-bleed] phase=${lastOverQuiltStart?.data?.bleedPhase || '(none)'} build=${lastOverQuiltStart?.data?.debugBuild || '(none)'} portraitA=${lastOverQuiltStart?.data?.portraitPx?.a ?? 'missing'} preserve=${lastOverQuiltEnd?.data?.highlightPreserveRatio ?? 'missing'}`
-        );
-        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio < 0.48) {
-          console.warn(
-            `[nightly-ig:speaker-bleed] slide1 preserve too low (speaker crushed): ${slide1End.data.highlightPreserveRatio} (want 0.48–0.75)`
-          );
-        }
-        if (slide1End?.data?.highlightPreserveRatio != null && slide1End.data.highlightPreserveRatio > 0.88) {
-          console.warn(
-            `[nightly-ig:speaker-bleed] slide1 preserve too high (speaker faded): ${slide1End.data.highlightPreserveRatio} (want 0.45–0.88)`
-          );
-        }
-        console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(speakerDiag)}`);
-        const bleedBuild = String(lastOverQuiltStart?.data?.debugBuild || '');
-        if (!bleedBuild.startsWith('cream-tune-v4')) {
-          throw new Error(
-            `Stale speaker-cutout-render.js (debugBuild=${bleedBuild || 'missing'}). Expected cream-tune-v4.x with portraitPx.`
-          );
-        }
-        if (lastOverQuiltStart?.data?.portraitPx?.a == null) {
-          throw new Error('speaker bleed diag missing portraitPx.a — stale speaker-cutout-render.js');
-        }
         if (
           !integratedCarousel?.carouselSlide1 ||
           !integratedCarousel?.carouselSlide2 ||
@@ -751,13 +708,6 @@ async function runNightlyIgAttempt({
         }
 
         log('uploading PNGs to Storage + Firestore…');
-        const speakerRenderBuild =
-          (globalThis.__odqSpeakerDrawDiag || [])
-            .map((entry) => entry?.data?.debugBuild)
-            .filter(Boolean)
-            .pop() || '';
-        console.log(`[nightly-ig:slide1-bytes] ${carouselSlide1ImageData?.length || 0}`);
-        console.log(`[nightly-ig:speaker-render-build] ${speakerRenderBuild}`);
         const uploadPayload = {
           dateKey,
           carouselSlide1ImageData,
@@ -770,8 +720,7 @@ async function runNightlyIgAttempt({
           quiltFingerprint,
           blockCount: blocks.length,
           contributorCount,
-          markReadyForInstagram: true,
-          speakerRenderBuild
+          markReadyForInstagram: true
         };
         let doc;
         if (typeof Utils.writeInstagramImagesDocForZapierViaServer === 'function' && apiBase) {
@@ -822,35 +771,11 @@ async function runNightlyIgAttempt({
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
           layoutBUrl: doc.layoutBUrl || doc.carouselSlide1Url || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
-            doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || '',
-          speakerDiag,
-          scriptTags,
-          speakerRenderBuild,
-          slide1Bytes: carouselSlide1ImageData?.length || 0
+            doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
       { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase }
     );
-    } catch (evaluateErr) {
-      try {
-        const fallbackDiag = await page.evaluate(() => ({
-          speakerDiag: globalThis.__odqSpeakerDrawDiag || [],
-          scriptTags: [
-            ...document.querySelectorAll('script[src*="speaker-cutout"],script[src*="archive-service"]')
-          ].map((el) => el.getAttribute('src') || '')
-        }));
-        console.log(`[nightly-ig:script-tags] ${JSON.stringify(fallbackDiag?.scriptTags || [])}`);
-        console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(fallbackDiag?.speakerDiag || [])}`);
-      } catch (_) {
-        /* page may be gone */
-      }
-      throw evaluateErr;
-    }
-
-    console.log(`[nightly-ig:script-tags] ${JSON.stringify(result?.scriptTags || [])}`);
-    console.log(`[nightly-ig:speaker-diag] ${JSON.stringify(result?.speakerDiag || [])}`);
-    console.log(`[nightly-ig:slide1-bytes] ${result?.slide1Bytes || 0}`);
-    console.log(`[nightly-ig:speaker-render-build] ${result?.speakerRenderBuild || ''}`);
 
     if (clippingOnly) {
       console.log('[nightly-ig] clipping-only run complete (skipping full IG verify)');
