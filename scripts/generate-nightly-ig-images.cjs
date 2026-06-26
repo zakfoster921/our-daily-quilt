@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Nightly Zapier stills only (no reel): classic + layout B post + layout B story + quilt-screen 9:16.
+ * Nightly Zapier stills only (no reel): carousel + layout B story + quilt-only story 9:16.
  * Loads the live app in Playwright, reads quilts/{dateKey} from Firestore, uploads PNGs,
  * sets instagram-images/{dateKey}.readyForInstagram = true.
  */
@@ -755,7 +755,7 @@ async function runNightlyIgAttempt({
         if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
           throw new Error('layout B story URL missing after nightly upload');
         }
-        if (!doc.quiltScreen9x16Url && !doc.quiltScreen9x16ImageStorageUrl) {
+        if (!doc.quiltStoryUrl && !doc.storyQuiltUrl && !doc.quiltScreen9x16Url && !doc.quiltScreen9x16ImageStorageUrl) {
           throw new Error('quilt screen 9:16 URL missing after nightly upload');
         }
         return {
@@ -769,6 +769,12 @@ async function runNightlyIgAttempt({
           carouselSlide2Url: doc.carouselSlide2Url || '',
           carouselSlide3Url: doc.carouselSlide3Url || '',
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
+          quiltStoryUrl:
+            doc.quiltStoryUrl ||
+            doc.storyQuiltUrl ||
+            doc.quiltScreen9x16Url ||
+            doc.quiltScreen9x16ImageStorageUrl ||
+            '',
           layoutBUrl: doc.layoutBUrl || doc.carouselSlide1Url || doc.postLayoutBImageStorageUrl || '',
           storyLayoutBUrl:
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
@@ -821,8 +827,13 @@ async function runNightlyIgAttempt({
       throw new Error('verify failed: layout B story image URL missing');
     }
     const quiltScreen9x16Url =
+      verify.quiltStoryImageUrl ||
+      verify.quiltStoryUrl ||
+      verify.storyQuiltImageUrl ||
+      verify.storyQuiltUrl ||
       verify.quiltScreen9x16ImageUrl ||
       verify.quiltScreen9x16Url ||
+      result.quiltStoryUrl ||
       result.quiltScreen9x16Url ||
       '';
     if (!quiltScreen9x16Url) {

@@ -3670,6 +3670,20 @@ function pickClassicImageUrlFromInstagramDoc(data) {
   ).trim();
 }
 
+function pickQuiltStoryImageUrlFromInstagramDoc(data) {
+  if (!data || typeof data !== 'object') return '';
+  return String(
+    data.quiltStoryUrl ||
+      data.quiltStoryImageStorageUrl ||
+      data.storyQuiltUrl ||
+      data.storyQuiltImageStorageUrl ||
+      data.quiltScreen9x16Url ||
+      data.quiltScreen9x16ImageStorageUrl ||
+      data.quiltScreenUrl ||
+      ''
+  ).trim();
+}
+
 function pickNewspaperClippingUrlFromInstagramDoc(data) {
   if (!data || typeof data !== 'object') return '';
   return String(data.newspaperClippingUrl || data.newspaperClippingImageStorageUrl || '').trim();
@@ -3694,6 +3708,10 @@ async function resolveReflectionArchiveNewspaperClippingForApi(db, dateKey) {
 function classicImageMatchesFinalBlockCount(igData, finalBlockCount) {
   const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
   if (!classicUrl) return false;
+  return instagramImageMatchesFinalBlockCount(igData, finalBlockCount);
+}
+
+function instagramImageMatchesFinalBlockCount(igData, finalBlockCount) {
   const igBlockCount = Number(igData?.blockCount) || 0;
   const finalCount = Number(finalBlockCount) || 0;
   if (finalCount <= 1) return igBlockCount > 1;
@@ -3919,7 +3937,7 @@ async function uploadFinalArchiveQuiltPreview(db, dateKey, blocks) {
 
 /**
  * Stable quilt preview URL for reflection archive / archives.
- * Priority: instagram-images classicUrl when blockCount matches final quilt, else render from archive blocks.
+ * Priority: nightly quilt-only story image, else render from archive blocks.
  */
 async function resolveQuiltImageUrlForDateKey(db, dateKey, blocks = null) {
   const key = String(dateKey || '').trim();
@@ -3927,19 +3945,19 @@ async function resolveQuiltImageUrlForDateKey(db, dateKey, blocks = null) {
 
   const igSnap = await db.collection('instagram-images').doc(key).get();
   const igData = igSnap.exists ? igSnap.data() || {} : {};
-  const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
+  const quiltStoryUrl = pickQuiltStoryImageUrlFromInstagramDoc(igData);
   const finalBlockCount = Array.isArray(blocks) && blocks.length > 1 ? blocks.length : 0;
-  if (classicUrl && (!finalBlockCount || classicImageMatchesFinalBlockCount(igData, finalBlockCount))) {
+  if (quiltStoryUrl && (!finalBlockCount || instagramImageMatchesFinalBlockCount(igData, finalBlockCount))) {
     await db.collection('archives').doc(key).set(
       {
-        quiltImageUrl: classicUrl,
-        quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC,
+        quiltImageUrl: quiltStoryUrl,
+        quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE,
         quiltImageBlockCount: Number(igData.blockCount) || 0,
         quiltImageUpdatedAt: getUtcIsoNow()
       },
       { merge: true }
     );
-    return classicUrl;
+    return quiltStoryUrl;
   }
 
   const archiveSnap = await db.collection('archives').doc(key).get();
@@ -4041,13 +4059,13 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
         archivePayload.quiltImageUrl = quiltImageUrl;
         const igSnap = await db.collection('instagram-images').doc(closingKey).get();
         const igData = igSnap.exists ? igSnap.data() || {} : {};
-        const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
+        const quiltStoryUrl = pickQuiltStoryImageUrlFromInstagramDoc(igData);
         if (
-          classicUrl &&
-          classicUrl === quiltImageUrl &&
-          classicImageMatchesFinalBlockCount(igData, closingQuiltData.blocks.length)
+          quiltStoryUrl &&
+          quiltStoryUrl === quiltImageUrl &&
+          instagramImageMatchesFinalBlockCount(igData, closingQuiltData.blocks.length)
         ) {
-          archivePayload.quiltImageSource = ARCHIVE_QUILT_IMAGE_SOURCE_CLASSIC;
+          archivePayload.quiltImageSource = ARCHIVE_QUILT_IMAGE_SOURCE;
           archivePayload.quiltImageBlockCount =
             Number(igData.blockCount) || closingQuiltData.blocks.length;
         } else {
@@ -4692,6 +4710,8 @@ async function getTodayInstagramImage(options = {}) {
       raw.storyLayoutBImageStorageUrl || raw.layoutBStoryUrl || raw.storyLayoutBUrl || null;
     const storageQuiltScreen9x16Url =
       raw.quiltScreen9x16ImageStorageUrl || raw.quiltScreen9x16Url || raw.quiltScreenUrl || null;
+    const storageQuiltStoryUrl =
+      pickQuiltStoryImageUrlFromInstagramDoc(raw) || storageQuiltScreen9x16Url || null;
     const storageContributorCloudUrl =
       raw.contributorCloudImageStorageUrl || raw.contributorCloudUrl || null;
     const storageReelWebmUrl = raw.reelWebmStorageUrl || raw.reelUrl || null;
@@ -4827,6 +4847,7 @@ async function getTodayInstagramImage(options = {}) {
       storageLayoutBSpeakerUrl,
       storageStoryLayoutBUrl,
       storageQuiltScreen9x16Url,
+      storageQuiltStoryUrl,
       storageContributorCloudUrl,
       storageReelWebmUrl,
       storageReelMp4Url,
@@ -4889,6 +4910,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     let postLayoutBSpeakerImageUrl = '';
     let storyLayoutBImageUrl = '';
     let quiltScreen9x16ImageUrl = '';
+    let quiltStoryImageUrl = '';
     let contributorCloudImageUrl = '';
     let carouselSlide1Url = '';
     let carouselSlide2Url = '';
@@ -4931,6 +4953,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     if (imageData.storageQuiltScreen9x16Url) {
       quiltScreen9x16ImageUrl = imageData.storageQuiltScreen9x16Url;
     }
+    quiltStoryImageUrl = imageData.storageQuiltStoryUrl || quiltScreen9x16ImageUrl || '';
 
     if (imageData.storageContributorCloudUrl) {
       contributorCloudImageUrl = imageData.storageContributorCloudUrl;
@@ -4957,6 +4980,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       postLayoutBSpeakerImageUrl,
       storyLayoutBImageUrl,
       quiltScreen9x16ImageUrl,
+      quiltStoryImageUrl,
       contributorCloudImageUrl
     ].filter(Boolean);
     const mediaUrls = [...imageUrls];
@@ -4978,6 +5002,10 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       quiltScreen9x16ImageUrl,
       quiltScreen9x16Url: quiltScreen9x16ImageUrl,
       quiltScreenUrl: quiltScreen9x16ImageUrl,
+      quiltStoryImageUrl,
+      quiltStoryUrl: quiltStoryImageUrl,
+      storyQuiltImageUrl: quiltStoryImageUrl,
+      storyQuiltUrl: quiltStoryImageUrl,
       contributorCloudImageUrl,
       contributorCloudUrl: contributorCloudImageUrl,
       imageUrls,
@@ -4999,6 +5027,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       hasPostLayoutBSpeaker: hasLayoutBSpeaker,
       hasStoryLayoutB: !!storyLayoutBImageUrl,
       hasQuiltScreen9x16: !!quiltScreen9x16ImageUrl,
+      hasQuiltStory: !!quiltStoryImageUrl,
       hasContributorCloud: !!contributorCloudImageUrl,
       hasCarouselSlide1: !!(carouselSlide1Url || imageUrl),
       hasCarouselSlide2: !!carouselSlide2Url,
@@ -5008,7 +5037,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'Integrated IG carousel: carouselSlide1Url = layout B (4:5). carouselSlide2Url + carouselSlide3Url = seamless quilt pair. imageUrl aliases carouselSlide1Url. layoutBSpeakerImageUrl = layout-b-speaker.png when present. quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
+        'Integrated IG carousel: carouselSlide1Url = layout B (4:5). carouselSlide2Url + carouselSlide3Url = seamless quilt pair. imageUrl aliases carouselSlide1Url. layoutBSpeakerImageUrl = layout-b-speaker.png when present. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png (quilt-only 9:16). storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
     };
     
     console.log(
@@ -5227,6 +5256,10 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.quiltScreen9x16ImageStorageUrl = publicUrl;
       docPayload.quiltScreen9x16Url = publicUrl;
       docPayload.quiltScreenUrl = publicUrl;
+      docPayload.quiltStoryImageStorageUrl = publicUrl;
+      docPayload.quiltStoryUrl = publicUrl;
+      docPayload.storyQuiltImageStorageUrl = publicUrl;
+      docPayload.storyQuiltUrl = publicUrl;
     }
     if (newspaperClippingImageData) {
       const { publicUrl } = await saveIgPng(`${basePath}/newspaper-clipping.png`, newspaperClippingImageData);
@@ -5261,7 +5294,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
         docPayload.carouselSlide2Url,
         docPayload.carouselSlide3Url,
         docPayload.storyLayoutBUrl || docPayload.layoutBStoryUrl,
-        docPayload.quiltScreen9x16Url
+        docPayload.quiltStoryUrl || docPayload.quiltScreen9x16Url
       ].filter(Boolean);
     }
 
@@ -7177,12 +7210,12 @@ async function resolveReflectionArchiveQuiltForApi(db, dateKey, themeData) {
 
   const igSnap = await db.collection('instagram-images').doc(key).get();
   const igData = igSnap.exists ? igSnap.data() || {} : {};
-  const classicUrl = pickClassicImageUrlFromInstagramDoc(igData);
-  if (classicUrl) {
+  const quiltStoryUrl = pickQuiltStoryImageUrlFromInstagramDoc(igData);
+  if (quiltStoryUrl) {
     return {
-      quiltImageUrl: classicUrl,
+      quiltImageUrl: quiltStoryUrl,
       quiltImageFallbackBlocks: null,
-      quiltImageIsClassic: true
+      quiltImageIsClassic: false
     };
   }
 
@@ -7307,9 +7340,10 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
     try {
       const igSnap = await db.collection('instagram-images').doc(appDateKey).get();
       const igData = igSnap.exists ? igSnap.data() || {} : {};
+      const quiltStoryUrl = pickQuiltStoryImageUrlFromInstagramDoc(igData);
       classicImageUrl = pickClassicImageUrlFromInstagramDoc(igData);
-      if (classicImageUrl) {
-        quiltImageUrl = classicImageUrl;
+      if (quiltStoryUrl) {
+        quiltImageUrl = quiltStoryUrl;
       } else if (!quiltImageUrl) {
         const archiveSnap = await db.collection('archives').doc(appDateKey).get();
         if (archiveSnap.exists) {
