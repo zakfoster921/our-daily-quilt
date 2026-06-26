@@ -2508,8 +2508,6 @@ try {
   <script src="lib/simplified-quilt-app-boot.js?v=63"></script>
   <script src="lib/simplified-quilt-app-quilt.js?v=52"></script>
   <script src="lib/simplified-quilt-app-share.js?v=2d"></script>
-  <script src="lib/simplified-quilt-app-social.js?v=3"></script>
-  <script src="lib/simplified-quilt-app-admin.js?v=25"></script>
   <script src="lib/simplified-quilt-app-mood.js"></script>
   <script src="lib/simplified-quilt-app-quote-ui.js"></script>
   <script src="lib/simplified-quilt-app-nav.js"></script>
@@ -2967,21 +2965,19 @@ try {
       }
 
       const SimplifiedQuiltAppV2Social = globalThis.SimplifiedQuiltAppV2Social;
-      if (typeof SimplifiedQuiltAppV2Social !== 'function') {
-        throw new Error('lib/simplified-quilt-app-social.js must load before the app module');
-      }
-      for (const name of Object.getOwnPropertyNames(SimplifiedQuiltAppV2Social.prototype)) {
-        if (name === 'constructor') continue;
-        SimplifiedQuiltAppV2.prototype[name] = SimplifiedQuiltAppV2Social.prototype[name];
+      if (typeof SimplifiedQuiltAppV2Social === 'function') {
+        for (const name of Object.getOwnPropertyNames(SimplifiedQuiltAppV2Social.prototype)) {
+          if (name === 'constructor') continue;
+          SimplifiedQuiltAppV2.prototype[name] = SimplifiedQuiltAppV2Social.prototype[name];
+        }
       }
 
       const SimplifiedQuiltAppV2Admin = globalThis.SimplifiedQuiltAppV2Admin;
-      if (typeof SimplifiedQuiltAppV2Admin !== 'function') {
-        throw new Error('lib/simplified-quilt-app-admin.js must load before the app module');
-      }
-      for (const name of Object.getOwnPropertyNames(SimplifiedQuiltAppV2Admin.prototype)) {
-        if (name === 'constructor') continue;
-        SimplifiedQuiltAppV2.prototype[name] = SimplifiedQuiltAppV2Admin.prototype[name];
+      if (typeof SimplifiedQuiltAppV2Admin === 'function') {
+        for (const name of Object.getOwnPropertyNames(SimplifiedQuiltAppV2Admin.prototype)) {
+          if (name === 'constructor') continue;
+          SimplifiedQuiltAppV2.prototype[name] = SimplifiedQuiltAppV2Admin.prototype[name];
+        }
       }
 
       const SimplifiedQuiltAppV2Mood = globalThis.SimplifiedQuiltAppV2Mood;
@@ -3025,6 +3021,7 @@ try {
       // Capture notification tap intent before deferred initialize() (cold start).
       app.setupPushNotificationListeners?.();
       app.scheduleReflectionThemesArchivePrefetch?.();
+      app.scheduleDeferredAppSlices?.();
 
       /**
        * Quote Collage Lab iframe bridge — load quilt raster + quote + speaker cutout for a date.
@@ -3212,9 +3209,18 @@ try {
 
       if (CONFIG.APP.enableAdminTools) {
         // Admin console commands
-        window.enableAdmin = () => app.requestAdminAccess();
-        window.disableAdmin = () => app.disableAdminMode();
-        window.clearAdminFlag = () => app.clearAdminFlag();
+        window.enableAdmin = async () => {
+          await app.loadDeferredAdminSlice?.();
+          return app.requestAdminAccess?.();
+        };
+        window.disableAdmin = async () => {
+          await app.loadDeferredAdminSlice?.();
+          return app.disableAdminMode?.();
+        };
+        window.clearAdminFlag = async () => {
+          await app.loadDeferredAdminSlice?.();
+          return app.clearAdminFlag?.();
+        };
       }
     window.regenerateQuoteIndexes = async () => {
       console.log('🔄 Regenerating quote indexes to fix out-of-bounds errors...');
