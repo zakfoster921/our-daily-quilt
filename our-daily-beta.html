@@ -2493,7 +2493,7 @@ try {
   <script src="lib/quilt-shape-v2.js"></script>
   <script src="lib/simple-quilt-engine.js?v=harmony-retro"></script>
   <script src="lib/live-daily-data-sync.js"></script>
-  <script src="lib/quilt-data-service.js?v=2"></script>
+  <script src="lib/quilt-data-service.js?v=3"></script>
   <script src="lib/contributor-cloud-compose.js"></script>
   <script src="lib/carousel-quilt-bg.js?v=1"></script>
   <script src="lib/ig-contributor-carousel-compose.js?v=9"></script>
@@ -2502,11 +2502,11 @@ try {
   <script src="lib/quote-service.js"></script>
   <script src="lib/quilt-renderer-v2.js"></script>
   <script src="lib/app-config.js"></script>
-  <script src="lib/speaker-cutout-render.js?v=30"></script>
+  <script src="lib/speaker-cutout-render.js?v=31"></script>
   <script src="lib/layout-b-compose.js?v=81"></script>
   <script src="lib/layout-b-carousel-strips.js?v=71"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=56"></script>
-  <script src="lib/simplified-quilt-app-quilt.js?v=46"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=57"></script>
+  <script src="lib/simplified-quilt-app-quilt.js?v=47"></script>
   <script src="lib/simplified-quilt-app-share.js?v=2d"></script>
   <script src="lib/simplified-quilt-app-social.js?v=3"></script>
   <script src="lib/simplified-quilt-app-admin.js?v=25"></script>
@@ -2547,15 +2547,24 @@ try {
         const firebaseApp = initializeApp(CONFIG.FIREBASE);
         const shouldForceLongPolling =
           typeof odqIsCapacitorNative === 'function' && odqIsCapacitorNative();
-        const db =
-          shouldForceLongPolling && typeof initializeFirestore === 'function'
-            ? initializeFirestore(firebaseApp, {
-                // Avoid stale IndexedDB quilt snapshots on iOS WebView after server reads fail.
-                localCache: typeof memoryLocalCache === 'function' ? memoryLocalCache() : undefined,
-                experimentalForceLongPolling: true,
-                useFetchStreams: false
-              })
-            : getFirestore(firebaseApp);
+        let db;
+        if (shouldForceLongPolling && typeof initializeFirestore === 'function') {
+          const firestoreOpts = {
+            experimentalForceLongPolling: true,
+            useFetchStreams: false
+          };
+          if (typeof memoryLocalCache === 'function') {
+            firestoreOpts.localCache = memoryLocalCache();
+          }
+          try {
+            db = initializeFirestore(firebaseApp, firestoreOpts);
+          } catch (firestoreInitErr) {
+            console.warn('initializeFirestore failed; falling back to getFirestore:', firestoreInitErr);
+            db = getFirestore(firebaseApp);
+          }
+        } else {
+          db = getFirestore(firebaseApp);
+        }
         const auth = getAuth(firebaseApp);
         
         // Make Firebase available globally
