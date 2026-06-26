@@ -5831,23 +5831,46 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
         'imageAttribution',
         'Image attribution'
       );
+      let quotePayload = {
+        text,
+        author,
+        sourceId: String(page.id || '').trim() || undefined,
+        ...(goodDay ? { goodDay, good_day: goodDay } : {}),
+        ...(roughDay ? { roughDay, rough_day: roughDay } : {}),
+        ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
+        ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
+        ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
+        ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
+      };
+      const sourceId = String(page.id || '').trim();
+      if (sourceId) {
+        try {
+          const sourceSnap = await db.collection('quotes').doc(sourceId).get();
+          if (sourceSnap.exists) {
+            const fromFirestore = buildPreviewQuotePayloadFromFirestore(sourceSnap.data() || {}, sourceId);
+            if (fromFirestore) {
+              quotePayload = { ...fromFirestore, ...quotePayload };
+              if (!quotePayload.speakerCutoutUrl && fromFirestore.speakerCutoutUrl) {
+                quotePayload.speakerCutoutUrl = fromFirestore.speakerCutoutUrl;
+                quotePayload.speaker_cutout_url = fromFirestore.speakerCutoutUrl;
+              }
+              if (!quotePayload.speakerImageUrl && fromFirestore.speakerImageUrl) {
+                quotePayload.speakerImageUrl = fromFirestore.speakerImageUrl;
+                quotePayload.speaker_image_url = fromFirestore.speakerImageUrl;
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('preview notion speaker enrichment failed:', error?.message || error);
+        }
+      }
       const candidate = {
         id: String(page.id || '').trim(),
         notionLastEditedTime: String(page.last_edited_time || '').trim(),
         submittedVia,
         submittedBy,
         submittedAt,
-        quote: {
-          text,
-          author,
-          sourceId: String(page.id || '').trim() || undefined,
-          ...(goodDay ? { goodDay, good_day: goodDay } : {}),
-          ...(roughDay ? { roughDay, rough_day: roughDay } : {}),
-          ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
-          ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
-          ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
-          ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
-        }
+        quote: quotePayload
       };
       best = best ? pickScheduleWinner(best, candidate) : candidate;
     }
