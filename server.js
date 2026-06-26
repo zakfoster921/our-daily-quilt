@@ -6413,6 +6413,62 @@ app.options('/api/quilt/:dateKey', (req, res) => {
   res.status(204).end();
 });
 
+app.options('/api/daily-quote/:dateKey', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  res.status(204).end();
+});
+
+async function loadDailyQuotePayloadForApi(dateKey) {
+  const assignmentsCol = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const assignSnap = await db.collection(assignmentsCol).doc(dateKey).get();
+  const assignment = assignSnap.exists ? assignSnap.data() || {} : null;
+  let quoteDoc = null;
+  const sourceId = String(assignment?.sourceId || '').trim();
+  if (sourceId) {
+    const quoteSnap = await db.collection('quotes').doc(sourceId).get();
+    if (quoteSnap.exists) quoteDoc = quoteSnap.data() || {};
+  }
+  if (!quoteDoc) {
+    const daySnap = await db.collection('quotes').doc(dateKey).get();
+    if (daySnap.exists) quoteDoc = daySnap.data() || {};
+  }
+  const text = String(quoteDoc?.text || assignment?.textSnapshot || assignment?.text || '').trim();
+  const author = String(quoteDoc?.author || assignment?.authorSnapshot || assignment?.author || '').trim();
+  if (!text) return null;
+  const quote = {
+    ...(quoteDoc || {}),
+    text,
+    author,
+    ...(sourceId ? { sourceId } : {})
+  };
+  return { assignment, quote };
+}
+
+/** Public read fallback when iOS WebView Firestore client hangs (Admin SDK is reliable). */
+app.get('/api/daily-quote/:dateKey', limitProxyImage, async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    if (!db) {
+      return res.status(503).json({ ok: false, error: 'Firestore not initialized' });
+    }
+    const dateKey = String(req.params.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ ok: false, error: 'Invalid dateKey' });
+    }
+    const payload = await loadDailyQuotePayloadForApi(dateKey);
+    if (!payload) {
+      return res.status(404).json({ ok: false, error: 'No daily quote for dateKey' });
+    }
+    return res.json({ ok: true, dateKey, ...payload });
+  } catch (error) {
+    console.warn('GET /api/daily-quote failed:', error?.message || error);
+    return res.status(500).json({ ok: false, error: error?.message || 'daily quote read failed' });
+  }
+});
+
 /** Public read fallback when iOS WebView Firestore client hangs (Admin SDK is reliable). */
 app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
