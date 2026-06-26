@@ -5140,8 +5140,6 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.quiltFingerprint = qfp;
       docPayload.imageQuiltFingerprint = qfp;
     }
-    const speakerRenderBuild = String(body.speakerRenderBuild || '').trim();
-    if (speakerRenderBuild) docPayload.speakerRenderBuild = speakerRenderBuild;
     if (body.markReadyForInstagram === true) {
       const readyAt = new Date().toISOString();
       docPayload.readyForInstagram = true;
@@ -5168,9 +5166,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       const slide1Buf = parsePngDataUrlToBuffer(carouselSlide1ImageData);
       const slide1Md5 = crypto.createHash('md5').update(slide1Buf).digest('hex');
       docPayload.carouselSlide1ContentMd5 = slide1Md5;
-      console.log(
-        `[push-instagram-assets] slide1 bytes=${slide1Buf.length} md5=${slide1Md5} speakerRenderBuild=${speakerRenderBuild || '(none)'}`
-      );
+      console.log(`[push-instagram-assets] slide1 bytes=${slide1Buf.length} md5=${slide1Md5}`);
       const { publicUrl } = await firebaseSaveDownloadableFile(
         `${basePath}/carousel-slide-1.png`,
         slide1Buf,
@@ -6408,6 +6404,50 @@ app.get('/api/health', (req, res) => {
     resetApiVersion: 'manual-force-reset-1',
     firestoreReady: !!db
   });
+});
+
+app.options('/api/quilt/:dateKey', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  res.status(204).end();
+});
+
+/** Public read fallback when iOS WebView Firestore client hangs (Admin SDK is reliable). */
+app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    if (!db) {
+      return res.status(503).json({ ok: false, error: 'Firestore not initialized' });
+    }
+    const dateKey = String(req.params.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ ok: false, error: 'Invalid dateKey' });
+    }
+    const snap = await db.collection('quilts').doc(dateKey).get();
+    if (!snap.exists) {
+      return res.json({ ok: true, dateKey, serverConfirmedEmpty: true, blocks: [] });
+    }
+    const data = snap.data() || {};
+    const blocks = Array.isArray(data.blocks) ? data.blocks : [];
+    if (blocks.length === 0) {
+      return res.json({ ok: true, dateKey, serverConfirmedEmpty: true, blocks: [] });
+    }
+    return res.json({
+      ok: true,
+      dateKey,
+      date: data.date || dateKey,
+      blocks,
+      contributorCount: data.contributorCount || 1,
+      colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
+      contributors: Array.isArray(data.contributors) ? data.contributors : [],
+      macroStructureFrozen: data.macroStructureFrozen === true
+    });
+  } catch (error) {
+    console.warn('GET /api/quilt failed:', error?.message || error);
+    return res.status(500).json({ ok: false, error: error?.message || 'quilt read failed' });
+  }
 });
 
 app.options('/api/push/register', (req, res) => {
