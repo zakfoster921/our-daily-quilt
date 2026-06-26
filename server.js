@@ -9540,7 +9540,10 @@ app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, a
     const rawText = normalizeSocialCommentText(body.text || body.commentText);
     const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
     const displayName = String(body.displayName || body.authorDisplayName || '').trim().slice(0, 80);
-    if (!clientId) {
+    const expectedAdminToken = socialPostAdminExpectedToken();
+    const isAdminEdit =
+      !!expectedAdminToken && socialPostAdminTokenFromRequest(req) === expectedAdminToken;
+    if (!clientId && !isAdminEdit) {
       return res.status(400).json({ success: false, error: 'clientId is required' });
     }
     if (!rawText) {
@@ -9556,7 +9559,7 @@ app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, a
     if (existing.status === 'deleted') {
       return res.status(404).json({ success: false, error: 'Comment not found' });
     }
-    if (String(existing.clientId || '') !== clientId) {
+    if (!isAdminEdit && String(existing.clientId || '') !== clientId) {
       return res.status(403).json({ success: false, error: 'You can only edit your own comments' });
     }
 
@@ -9587,7 +9590,7 @@ app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, a
       {
         text,
         rawText,
-        displayName: storedReflectionAuthorName(displayName || existing.displayName),
+        displayName: storedReflectionAuthorName(isAdminEdit ? existing.displayName : displayName || existing.displayName),
         moderationProvider: moderation.provider || null,
         moderationModel: moderation.model || null,
         moderatedAt: admin.firestore.FieldValue.serverTimestamp(),
