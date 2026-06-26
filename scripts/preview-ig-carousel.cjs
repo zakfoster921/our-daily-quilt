@@ -50,6 +50,25 @@ async function main() {
         }
       }
       if (blocks.length <= 1) throw new Error(`Need blocks for ${dateKey}`);
+      let tuneMeta = null;
+      if (window.db && window.firestore) {
+        const igSnap = await window.firestore.getDoc(window.firestore.doc(window.db, 'instagram-images', dateKey));
+        if (igSnap.exists()) {
+          const ig = igSnap.data() || {};
+          tuneMeta = {
+            layoutBTuneUpdatedAt: ig.layoutBTuneUpdatedAt || null,
+            layoutBQuiltBgZoomPost: ig.layoutBQuiltBgZoomPost ?? null,
+            layoutBStripLayoutSeedPost: ig.layoutBStripLayoutSeedPost ?? null,
+            layoutBQuoteStripOffsetXPost: ig.layoutBQuoteStripOffsetXPost ?? null,
+            layoutBQuoteStripOffsetYPost: ig.layoutBQuoteStripOffsetYPost ?? null,
+            layoutBSpeakerCutoutPresetPost: ig.layoutBSpeakerCutoutPresetPost || null,
+            layoutBSpeakerCutoutNudgeCxPost: ig.layoutBSpeakerCutoutNudgeCxPost ?? null,
+            layoutBSpeakerCutoutNudgeCyPost: ig.layoutBSpeakerCutoutNudgeCyPost ?? null,
+            layoutBSpeakerCutoutNudgeRotateDegPost: ig.layoutBSpeakerCutoutNudgeRotateDegPost ?? null,
+            layoutBSpeakerCutoutScaleMulPost: ig.layoutBSpeakerCutoutScaleMulPost ?? null
+          };
+        }
+      }
       if (typeof app.applyQuiltDataFromPayload === 'function') {
         await app.applyQuiltDataFromPayload({ blocks, contributors, dateKey, date: dateKey });
       }
@@ -83,7 +102,8 @@ async function main() {
         slide1: integrated.carouselSlide1,
         slide2: integrated.carouselSlide2,
         slide3: integrated.carouselSlide3,
-        meta: integrated.meta || null
+        meta: integrated.meta || null,
+        tuneMeta
       };
     }, { dateKey });
 
@@ -102,6 +122,9 @@ async function main() {
     }
     if (result.meta) {
       console.log(`[preview-ig-carousel] meta=${JSON.stringify(result.meta)}`);
+    }
+    if (result.tuneMeta) {
+      console.log(`[preview-ig-carousel] tune=${JSON.stringify(result.tuneMeta)}`);
     }
   } finally {
     await context.close();
