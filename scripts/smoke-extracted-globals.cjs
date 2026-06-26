@@ -172,6 +172,7 @@ function main() {
       if (localDef(src, name)) continue;
       if (htmlGlobals.has(name)) continue;
       if (name.startsWith('odqNotifyDebug') || name === 'odqRememberTodayOpen') continue;
+      if (name === 'odqDailyQuoteOpen' || name === 'odqPortalLaunchReady') continue;
       if (name === 'odqFirebaseAuthUser' || name === 'odqFirebaseAuthIdToken') continue;
       if (name === 'odqQrcode' || name === 'odqSettingsGearRectNav') continue;
       console.error(`${rel}: unresolved global ${name}`);

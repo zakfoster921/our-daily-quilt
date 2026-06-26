@@ -1,4 +1,5 @@
 const express = require('express');
+const compression = require('compression');
 const admin = require('firebase-admin');
 
 /** Lazy-load native canvas so `npm run dev` works when node-canvas is not rebuilt (proxy-image does not need it). */
@@ -85,7 +86,21 @@ const PUBLIC_ROOT_FILES = new Set([
   'support.html',
   'rumi-colors.js'
 ]);
+const STATIC_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=86400';
 
+function staticAssetOptions() {
+  return {
+    dotfiles: 'deny',
+    index: false,
+    etag: true,
+    lastModified: true,
+    setHeaders(res) {
+      res.setHeader('Cache-Control', STATIC_CACHE_CONTROL);
+    }
+  };
+}
+
+app.use(compression({ threshold: 1024 }));
 app.use(enforceJsonSizeByRoute);
 app.use(express.json({ limit: '35mb', verify: verifyJsonSizeByRoute }));
 app.use(handleJsonBodyError);
@@ -114,24 +129,15 @@ app.get('/:fileName', (req, res, next) => {
 });
 app.use(
   '/assets',
-  express.static(path.join(ROOT_DIR, 'assets'), {
-    dotfiles: 'deny',
-    index: false
-  })
+  express.static(path.join(ROOT_DIR, 'assets'), staticAssetOptions())
 );
 app.use(
   '/lib',
-  express.static(path.join(ROOT_DIR, 'lib'), {
-    dotfiles: 'deny',
-    index: false
-  })
+  express.static(path.join(ROOT_DIR, 'lib'), staticAssetOptions())
 );
 app.use(
   '/styles',
-  express.static(path.join(ROOT_DIR, 'styles'), {
-    dotfiles: 'deny',
-    index: false
-  })
+  express.static(path.join(ROOT_DIR, 'styles'), staticAssetOptions())
 );
 
 // In-memory storage for generated images
