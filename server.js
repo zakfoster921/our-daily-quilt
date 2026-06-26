@@ -9618,10 +9618,13 @@ app.post('/api/social-posts/:postId/comments/:commentId/heart', limitSocialComme
     const commentId = String(req.params.commentId || '').trim();
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const expectedAdminToken = socialPostAdminExpectedToken();
+    const isAdminDelete =
+      !!expectedAdminToken && socialPostAdminTokenFromRequest(req) === expectedAdminToken;
     if (!postId || !commentId) {
       return res.status(400).json({ success: false, error: 'postId and commentId are required' });
     }
-    if (!clientId) {
+    if (!clientId && !isAdminDelete) {
       return res.status(400).json({ success: false, error: 'clientId is required' });
     }
 
@@ -9709,7 +9712,7 @@ app.delete('/api/social-posts/:postId/comments/:commentId', limitSocialComment, 
       return res.status(404).json({ success: false, error: 'Comment not found' });
     }
     const existing = commentSnap.data() || {};
-    if (String(existing.clientId || '') !== clientId) {
+    if (!isAdminDelete && String(existing.clientId || '') !== clientId) {
       return res.status(403).json({ success: false, error: 'You can only delete your own comments' });
     }
     if (existing.status === 'deleted') {
