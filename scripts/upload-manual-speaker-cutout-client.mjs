@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -60,18 +61,35 @@ function safeName(value) {
   );
 }
 
+function portraitUrlHash(imageUrl) {
+  return crypto.createHash('sha256').update(String(imageUrl || '').trim()).digest('hex').slice(0, 12);
+}
+
 function cutoutPayload(cutoutUrl, imageUrl) {
+  const portrait = String(imageUrl || '').trim();
   return {
+    speakerCutoutUrl: cutoutUrl,
     speaker_cutout_url: cutoutUrl,
-    speaker_cutout_source_url: imageUrl,
+    speakerCutoutSourceUrl: portrait,
+    speaker_cutout_source_url: portrait,
+    ...(portrait ? { speakerImageUrl: portrait, speaker_image_url: portrait } : {}),
     speaker_cutout_updated_at: serverTimestamp()
   };
 }
 
 function assignmentCutoutPayload(cutoutUrl, imageUrl) {
+  const portrait = String(imageUrl || '').trim();
   return {
     speakerCutoutUrlSnapshot: cutoutUrl,
-    speakerCutoutSourceUrlSnapshot: imageUrl,
+    speaker_cutout_url_snapshot: cutoutUrl,
+    speakerCutoutSourceUrlSnapshot: portrait,
+    speaker_cutout_source_url_snapshot: portrait,
+    ...(portrait
+      ? {
+          speakerImageUrlSnapshot: portrait.slice(0, 500),
+          speaker_image_url_snapshot: portrait.slice(0, 500)
+        }
+      : {}),
     speaker_cutout_updated_at: serverTimestamp()
   };
 }
@@ -80,10 +98,6 @@ async function main() {
   const args = parseArgs(process.argv);
   if (!args.uploadFile) throw new Error('Missing --upload-file=/path/to/cutout.png');
   const uploadFile = path.resolve(args.uploadFile);
-  const rawPng = fs.readFileSync(uploadFile);
-  const optimized = await optimizeSpeakerCutoutPng(rawPng);
-  logSpeakerCutoutOptimization(optimized, 'manual-cutout');
-  const png = optimized.buffer;
   const dateKey = args.date === 'today' ? getAppDateKey() : args.date;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error(`Invalid --date value: ${args.date}`);
 
@@ -108,7 +122,13 @@ async function main() {
   ).trim();
   if (!sourceId) throw new Error(`dailyQuoteAssignments/${dateKey} has no sourceId`);
 
-  const objectPath = `quilt-reveals/${safeName(author)}-${dateKey}-speaker-cutout-manual.png`;
+  const rawPng = fs.readFileSync(uploadFile);
+  const optimized = await optimizeSpeakerCutoutPng(rawPng, {
+    xeroxSeed: portraitUrlHash(imageUrl || sourceId || dateKey)
+  });
+  logSpeakerCutoutOptimization(optimized, 'manual-cutout');
+  const png = optimized.buffer;
+  const objectPath = `speaker-cutouts/${safeName(author)}-${portraitUrlHash(imageUrl)}-manual.png`;
   const fileRef = ref(storage, objectPath);
   await uploadBytes(fileRef, png, {
     contentType: 'image/png',
