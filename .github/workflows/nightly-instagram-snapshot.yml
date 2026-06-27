@@ -127,6 +127,85 @@ jobs:
             NIGHTLY_IG_ARTIFACTS_DIR="${NIGHTLY_IG_ARTIFACTS_DIR}" \
             npm run nightly:ig-images
 
+      - name: Resolve tomorrow's date key
+        id: resolve_tomorrow
+        env:
+          DATE_KEY: ${{ steps.resolve_date.outputs.date_key }}
+        run: |
+          set -euo pipefail
+          TOMORROW_DATE_KEY="$(node -e "
+            const { addDays } = require('./scripts/lib/app-date-key.cjs');
+            process.stdout.write(addDays(process.env.DATE_KEY, 1));
+          ")"
+          echo "tomorrow_date_key=${TOMORROW_DATE_KEY}" >> "$GITHUB_OUTPUT"
+          echo "Tomorrow preview date: ${TOMORROW_DATE_KEY}"
+
+      - name: Speaker cutout for tomorrow (skip if exists)
+        timeout-minutes: 5
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" ]; then
+            echo "Missing GOOGLE_APPLICATION_CREDENTIALS_JSON — skipping tomorrow speaker cutout"
+            exit 0
+          fi
+          node scripts/process-speaker-cutouts.cjs --opening-plus-one-speaker --soft-fail --limit=1
+
+      - name: Check if tomorrow's newspaper clipping already exists
+        id: check_tomorrow_clipping
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          TOMORROW_DATE_KEY: ${{ steps.resolve_tomorrow.outputs.tomorrow_date_key }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" ]; then
+            echo "skip_tomorrow_clipping=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          SKIP=$(node -e "
+            const admin = require('firebase-admin');
+            const sa = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+            admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.project_id });
+            admin.firestore().collection('instagram-images').doc(process.env.TOMORROW_DATE_KEY).get()
+              .then(snap => {
+                const url = String((snap.exists && snap.data()?.newspaperClippingUrl) || '').trim();
+                process.stdout.write(url ? 'true' : 'false');
+              })
+              .catch(() => process.stdout.write('false'));
+          ")
+          echo "skip_tomorrow_clipping=${SKIP}" >> "$GITHUB_OUTPUT"
+          echo "Tomorrow clipping exists: ${SKIP}"
+
+      - name: Generate newspaper clipping for tomorrow (admin preview lookahead)
+        if: steps.check_tomorrow_clipping.outputs.skip_tomorrow_clipping != 'true'
+        timeout-minutes: 15
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          DATE_KEY: ${{ steps.resolve_tomorrow.outputs.tomorrow_date_key }}
+          NIGHTLY_IG_CLIPPING_ONLY: "true"
+          NIGHTLY_IG_SKIP_SCHEDULE_GUARD: "true"
+          NIGHTLY_IG_MAX_ATTEMPTS: "3"
+          NIGHTLY_IG_ARTIFACTS_DIR: "tmp/nightly-ig-artifacts-tomorrow"
+        run: |
+          set -euo pipefail
+          if [ -z "${RESET_URL:-}" ]; then
+            echo "Missing RESET_URL secret — skipping tomorrow clipping"
+            exit 0
+          fi
+          API_BASE_URL="${RESET_URL%/api/daily-reset}"
+          APP_URL="http://127.0.0.1:8765/our-daily-beta.html"
+          echo "Tomorrow DATE_KEY=${DATE_KEY}"
+          APP_URL="$APP_URL" API_BASE_URL="$API_BASE_URL" DATE_KEY="${DATE_KEY:-}" \
+            NIGHTLY_IG_CLIPPING_ONLY=true \
+            NIGHTLY_IG_SKIP_SCHEDULE_GUARD=true \
+            NIGHTLY_IG_MAX_ATTEMPTS="${NIGHTLY_IG_MAX_ATTEMPTS}" \
+            NIGHTLY_IG_ARTIFACTS_DIR="${NIGHTLY_IG_ARTIFACTS_DIR}" \
+            npm run nightly:newspaper-clipping
+
       - name: Stop local app server
         if: always()
         run: |
@@ -139,7 +218,9 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: nightly-ig-failure-artifacts
-          path: tmp/nightly-ig-artifacts
+          path: |
+            tmp/nightly-ig-artifacts
+            tmp/nightly-ig-artifacts-tomorrow
           if-no-files-found: ignore
 
       - name: Report failure

@@ -203,6 +203,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/social-posts/:postId/comments', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments/:commentId', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments/:commentId/heart', 12 * ONE_KB],
+  ['/api/reflection-response/:responseId/heart', 12 * ONE_KB],
   ['/api/push/register', 12 * ONE_KB],
   ['/api/generate-instagram', 4 * ONE_KB]
 ]);
@@ -435,6 +436,11 @@ const limitSocialCommentHeart = createRateLimiter({
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_SOCIAL_COMMENT_HEART_PER_10_MIN, 60)
 });
+const limitReflectionHeart = createRateLimiter({
+  name: 'reflection-heart',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_REFLECTION_HEART_PER_10_MIN, 120)
+});
 const limitPushRegister = createRateLimiter({
   name: 'push-register',
   windowMs: 10 * 60 * 1000,
@@ -585,7 +591,7 @@ function setQuoteSubmissionCors(res) {
 
 function setReflectionApiCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-reset-token, x-reflection-theme-token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
@@ -7130,6 +7136,107 @@ app.delete('/api/reflection-response/:responseId', limitReflectionResponse, asyn
   }
 });
 
+app.options('/api/reflection-response/:responseId/heart', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/reflection-response/:responseId/heart', limitReflectionHeart, async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const responseId = String(req.params.responseId || '').trim();
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.dateKey || '').trim())
+      ? String(body.dateKey).trim()
+      : '';
+    if (!responseId) {
+      return res.status(400).json({ success: false, error: 'responseId is required' });
+    }
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+    const clientDocId = crypto.createHash('sha256').update(clientId).digest('hex');
+    const nowIso = getUtcIsoNow();
+    let hearted = false;
+    let heartCount = 0;
+
+    if (responseId === 'first') {
+      if (!dateKey) {
+        return res.status(400).json({ success: false, error: 'dateKey is required for first-response heart' });
+      }
+      const themeRef = db.collection('reflectionThemes').doc(dateKey);
+      const heartRef = themeRef.collection('firstResponseHearts').doc(clientDocId);
+      const heartSnap = await heartRef.get();
+      if (heartSnap.exists) {
+        await heartRef.delete();
+        await themeRef.set(
+          { firstResponseHeartCount: admin.firestore.FieldValue.increment(-1), updatedAtIso: nowIso },
+          { merge: true }
+        );
+        hearted = false;
+      } else {
+        await heartRef.set({ clientId, createdAtIso: nowIso });
+        await themeRef.set(
+          { firstResponseHeartCount: admin.firestore.FieldValue.increment(1), updatedAtIso: nowIso },
+          { merge: true }
+        );
+        hearted = true;
+      }
+      const updatedSnap = await themeRef.get();
+      heartCount = Math.max(0, Number(updatedSnap.data()?.firstResponseHeartCount) || 0);
+    } else {
+      const responseRef = db.collection('reflectionResponses').doc(responseId);
+      const responseSnap = await responseRef.get();
+      if (!responseSnap.exists || (responseSnap.data() || {}).status === 'deleted') {
+        return res.status(404).json({ success: false, error: 'Response not found' });
+      }
+      const heartRef = responseRef.collection('hearts').doc(clientDocId);
+      const heartSnap = await heartRef.get();
+      if (heartSnap.exists) {
+        await heartRef.delete();
+        await responseRef.set(
+          { heartCount: admin.firestore.FieldValue.increment(-1), updatedAtIso: nowIso },
+          { merge: true }
+        );
+        hearted = false;
+      } else {
+        await heartRef.set({ clientId, createdAtIso: nowIso });
+        await responseRef.set(
+          { heartCount: admin.firestore.FieldValue.increment(1), updatedAtIso: nowIso },
+          { merge: true }
+        );
+        hearted = true;
+      }
+      const updatedSnap = await responseRef.get();
+      heartCount = Math.max(0, Number(updatedSnap.data()?.heartCount) || 0);
+      if (dateKey) {
+        const themeRef = db.collection('reflectionThemes').doc(dateKey);
+        const themeSnap = await themeRef.get();
+        if (themeSnap.exists) {
+          const themes = Array.isArray(themeSnap.data()?.themes) ? themeSnap.data().themes : [];
+          const nextThemes = themes.map((entry) =>
+            String(entry.responseId || '') === responseId ? { ...entry, heartCount } : entry
+          );
+          if (JSON.stringify(nextThemes) !== JSON.stringify(themes)) {
+            await themeRef.set({ themes: nextThemes, updatedAtIso: nowIso }, { merge: true });
+          }
+        }
+      }
+    }
+
+    return res.json({ success: true, hearted, heartCount });
+  } catch (error) {
+    console.error('❌ Reflection response heart failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection response heart failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
 app.options('/api/reflection-themes/generate', (req, res) => {
   setReflectionApiCors(res);
   return res.status(204).end();
@@ -7422,6 +7529,7 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
       themes,
       first_response,
       user_name,
+      firstResponseHeartCount: Math.max(0, Number(data.firstResponseHeartCount) || 0),
       reflectionPrompt: String(data.reflectionPrompt || data.communityPrompt || '').trim(),
       responseCount: Number(data.responseCount) || 0,
       provider: data.provider || null,

@@ -233,13 +233,13 @@ function clearQuoteScheduleInMemory(quoteBySourceId, sid) {
   q.date_scheduled = '';
 }
 
-/** When two catalog rows claim the same date, editorial schedule beats community submissions. */
+/** When two catalog rows claim the same date, community submissions beat editorial so approved user quotes land on their intended date. */
 function pickScheduleWinner(a, b) {
   const aVia = String(a?.submittedVia ?? a?.submitted_via ?? '').trim().toLowerCase();
   const bVia = String(b?.submittedVia ?? b?.submitted_via ?? '').trim().toLowerCase();
   const aCommunity = aVia === 'app' || String(a?.submittedBy ?? a?.submitted_by ?? '').trim() || String(a?.submittedAt ?? a?.submitted_at ?? '').trim();
   const bCommunity = bVia === 'app' || String(b?.submittedBy ?? b?.submitted_by ?? '').trim() || String(b?.submittedAt ?? b?.submitted_at ?? '').trim();
-  if (!!aCommunity !== !!bCommunity) return aCommunity ? b : a;
+  if (!!aCommunity !== !!bCommunity) return aCommunity ? a : b;
   const aT = String(a?.notionLastEditedTime || '').trim();
   const bT = String(b?.notionLastEditedTime || '').trim();
   if (aT && bT && aT !== bT) return aT > bT ? a : b;
