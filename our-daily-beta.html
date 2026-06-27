@@ -313,6 +313,9 @@ try {
   <title>OUR DAILY QUILT</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://our-daily-quilt-production.up.railway.app" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'">
@@ -3020,7 +3023,11 @@ try {
       window.app = app;
       // Capture notification tap intent before deferred initialize() (cold start).
       app.setupPushNotificationListeners?.();
-      app.scheduleReflectionThemesArchivePrefetch?.();
+      // Skip archive prefetch on first-ever launch; no prior data to show and the
+      // background fetch competes with the main sync on a cold start.
+      if (localStorage.getItem('ourDailyQuilt')) {
+        app.scheduleReflectionThemesArchivePrefetch?.();
+      }
       app.scheduleDeferredAppSlices?.();
 
       /**
