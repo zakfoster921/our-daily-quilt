@@ -21,6 +21,11 @@ const {
   logSpeakerCutoutOptimization,
   optimizeSpeakerCutoutPng
 } = require('./lib/optimize-speaker-cutout-png.cjs');
+const {
+  buildNotionQuoteAssetProperties,
+  notionGetDatabaseSchema,
+  notionPatchPage
+} = require('./lib/notion-quote-assets.cjs');
 
 const WIKIMEDIA_USER_AGENT =
   process.env.WIKIMEDIA_USER_AGENT || 'OurDailyQuilt/1.0 (https://ourdailyquilt.com; speaker-cutouts)';
@@ -614,6 +619,32 @@ async function main() {
   }
   const rows = await collectRows(db, collectionName, opts);
 
+  const notionToken = String(process.env.NOTION_TOKEN || '').trim();
+  const notionDatabaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
+  let notionSchema = null;
+  if (notionToken && notionDatabaseId) {
+    try {
+      notionSchema = await notionGetDatabaseSchema(notionDatabaseId, notionToken);
+    } catch (err) {
+      console.warn(`[cutout] could not fetch Notion schema; skipping Notion sync: ${err.message}`);
+    }
+  }
+
+  const NOTION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  async function syncCutoutToNotion(docId, cutoutUrl) {
+    const pageId = NOTION_UUID_RE.test(docId) ? docId : null;
+    if (!notionSchema || !notionToken || !pageId || !cutoutUrl) return;
+    try {
+      const { properties } = buildNotionQuoteAssetProperties(notionSchema, { speakerCutoutUrl: cutoutUrl });
+      if (Object.keys(properties).length) {
+        await notionPatchPage(pageId, notionToken, { properties });
+        console.log(`[cutout] synced to Notion page ${pageId}`);
+      }
+    } catch (err) {
+      console.warn(`[cutout] Notion sync failed for ${pageId}: ${err.message}`);
+    }
+  }
+
   let processed = 0;
   let generated = 0;
   let skipped = 0;
@@ -643,6 +674,7 @@ async function main() {
         });
         const derivedWrites = await patchDerivedQuoteDocs(db, collectionName, sourceIds, d, existing, imageUrl);
         console.log(`[cutout] patched ${derivedWrites} derived doc(s)`);
+        await syncCutoutToNotion(row.id, existing);
       }
       processed += 1;
       continue;
@@ -703,6 +735,7 @@ async function main() {
       processed += 1;
       console.log(`[cutout] wrote ${path}`);
       console.log(`[cutout] patched ${derivedWrites} derived doc(s)`);
+      await syncCutoutToNotion(row.id, cutoutUrl);
     } catch (error) {
       failed += 1;
       console.error(`[cutout] failed ${row.id} ${author}: ${error.message}`);

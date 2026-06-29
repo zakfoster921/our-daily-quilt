@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const compression = require('compression');
 const admin = require('firebase-admin');
@@ -3622,30 +3623,38 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
   const t0 = Date.now();
   let reflections = 0;
   let comments = 0;
+  const PAGE = 500;
+  const PAUSE_MS = 100; // breathe between pages so we don't starve the connection pool
+
   try {
     const nowIso = getUtcIsoNow();
 
-    // Bump heartCount in batches of 500 (Firestore batch limit)
-    async function bumpHeartCounts(docs) {
+    // Page through a query, bumping heartCount one page at a time
+    async function bumpPaginated(baseQuery) {
       let count = 0;
-      const eligible = docs.filter((d) => (d.data().status || '') !== 'deleted');
-      for (let i = 0; i < eligible.length; i += 500) {
-        const chunk = eligible.slice(i, i + 500);
-        const b = db.batch();
-        chunk.forEach((doc) => {
-          b.set(doc.ref, { heartCount: admin.firestore.FieldValue.increment(1), updatedAtIso: nowIso }, { merge: true });
-        });
-        await b.commit();
-        count += chunk.length;
+      let cursor = null;
+      for (;;) {
+        const q = cursor ? baseQuery.startAfter(cursor).limit(PAGE) : baseQuery.limit(PAGE);
+        const snap = await q.get();
+        if (snap.empty) break;
+        const eligible = snap.docs.filter((d) => (d.data().status || '') !== 'deleted');
+        if (eligible.length > 0) {
+          const b = db.batch();
+          eligible.forEach((doc) => {
+            b.set(doc.ref, { heartCount: admin.firestore.FieldValue.increment(1), updatedAtIso: nowIso }, { merge: true });
+          });
+          await b.commit();
+          count += eligible.length;
+        }
+        cursor = snap.docs[snap.docs.length - 1];
+        if (snap.docs.length < PAGE) break;
+        await new Promise((r) => setTimeout(r, PAUSE_MS));
       }
       return count;
     }
 
-    const reflSnap = await db.collection('reflectionResponses').get();
-    reflections = await bumpHeartCounts(reflSnap.docs);
-
-    const commSnap = await db.collectionGroup('comments').get();
-    comments = await bumpHeartCounts(commSnap.docs);
+    reflections = await bumpPaginated(db.collection('reflectionResponses').orderBy('__name__'));
+    comments = await bumpPaginated(db.collectionGroup('comments').orderBy('__name__'));
 
     const ms = Date.now() - t0;
     console.log(`💛 Heart sweep (${trigger}): +1 on ${reflections} reflections, ${comments} comments in ${ms}ms`);
@@ -4442,12 +4451,11 @@ async function collectDailyQuotePushTokensDue(now = new Date(), options = {}) {
 async function getLastDailyQuotePushCompletedAt() {
   try {
     const snap = await db.collection('ops')
-      .where('status', '==', 'success')
       .orderBy('completedAt', 'desc')
-      .limit(20)
+      .limit(40)
       .get();
     for (const doc of snap.docs) {
-      if (doc.id.startsWith('daily-quote-push-')) {
+      if (doc.id.startsWith('daily-quote-push-') && doc.data().status === 'success') {
         return String(doc.data().completedAt || '').trim() || null;
       }
     }
@@ -4457,17 +4465,18 @@ async function getLastDailyQuotePushCompletedAt() {
 
 async function getLatestStudioFloorPostSince(sinceIso) {
   try {
-    let query = db.collection('socialPosts')
-      .where('status', '==', 'published')
+    const snap = await db.collection('socialPosts')
       .orderBy('publishedAtIso', 'desc')
-      .limit(1);
-    const snap = await query.get();
-    if (snap.empty) return null;
-    const post = snap.docs[0].data();
-    const publishedAt = String(post.publishedAtIso || '').trim();
-    if (!publishedAt) return null;
-    if (sinceIso && publishedAt <= sinceIso) return null;
-    return { postId: snap.docs[0].id, publishedAtIso: publishedAt };
+      .limit(5)
+      .get();
+    for (const doc of snap.docs) {
+      const post = doc.data();
+      if (post.status !== 'published') continue;
+      const publishedAt = String(post.publishedAtIso || '').trim();
+      if (!publishedAt) continue;
+      if (sinceIso && publishedAt <= sinceIso) return null;
+      return { postId: doc.id, publishedAtIso: publishedAt };
+    }
   } catch (_) { /* */ }
   return null;
 }
@@ -4515,7 +4524,7 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
   const quoteText = await getDailyQuotePushText(resolvedDateKey);
   const lastPushAt = await getLastDailyQuotePushCompletedAt();
   const newStudioPost = await getLatestStudioFloorPostSince(lastPushAt);
-  const studioSuffix = ' (+ new post on STUDIO FLOOR)';
+  const studioSuffix = ' (+ new post on STUDIO FLOOR ✂️)';
   const rawBody = newStudioPost ? `${quoteText}${studioSuffix}` : quoteText;
   const body = truncatePushBody(rawBody);
   let sent = 0;
@@ -10093,6 +10102,6 @@ app.listen(PORT, () => {
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
   startQuotePrefillSweepScheduler();
-  // startHeartSweepScheduler(); // disabled — full collection scan blocks Firestore connection pool
+  startHeartSweepScheduler();
   openOdqEditorInBrowser(PORT);
 });

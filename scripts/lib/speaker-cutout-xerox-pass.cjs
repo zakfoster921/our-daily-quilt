@@ -1,92 +1,93 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 
-/** Punk-flyer / photocopier portrait tone — high contrast, lifted blacks, band grain. */
-const XEROX_TONE = Object.freeze({
-  contrast: 1.68,
-  brightness: 1.08,
-  /** No deep ink — darkest visible tone stays charcoal, not true black. */
-  blackFloor: 62,
-  /** Highlights stay dusty/off-white, not pure paper white. */
-  whiteCap: 236,
-  /** Horizontal copier drum / scanner streaks. */
-  bandStrength: 0.11,
-  bandPeriodPx: 5.5,
-  /** Per-pixel photocopy grit. */
-  grainAmp: 14
+/**
+ * 1990s local newspaper portrait treatment.
+ * grayscale → adaptive contrast (luminance-aware) → brightness → sepia warm tint
+ *
+ * Replaces the old "punk flyer / photocopier" pass (high contrast, lifted blacks, band grain).
+ * Registration offset and scan lines are applied in CSS/UI layer on top of this.
+ */
+const NEWSPAPER_TONE = Object.freeze({
+  brightness: 1.32,
+  sepia: 0.32,
 });
 
-function hashSeedToUnit(seed, x, y) {
-  let h = 0;
-  const s = `${String(seed || 'odq')}:${x}:${y}`;
-  for (let i = 0; i < s.length; i += 1) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+/**
+ * Two-factor adaptive contrast:
+ * - Low stdDev (flat image) → more boost
+ * - Low mean (dark/dark-skinned subject) → softer ceiling regardless of stdDev
+ * Range: 1.05–1.35
+ */
+function computeAdaptiveContrast(data, width, height) {
+  const len = width * height * 4;
+  let sum = 0, count = 0;
+  for (let i = 0; i < len; i += 4) {
+    if (data[i + 3] < 28) continue;
+    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    count++;
   }
-  h ^= h >>> 13;
-  h = Math.imul(h, 0x5bd1e995);
-  h ^= h >>> 15;
-  return ((h >>> 0) % 10000) / 10000;
-}
-
-function bandPhaseFromSeed(seed) {
-  let h = 0;
-  const s = String(seed || 'odq');
-  for (let i = 0; i < s.length; i += 1) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  if (!count) return 1.15;
+  const mean = sum / count;
+  let variance = 0;
+  for (let i = 0; i < len; i += 4) {
+    if (data[i + 3] < 28) continue;
+    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    variance += (lum - mean) ** 2;
   }
-  return ((h >>> 0) % 6283) / 1000;
+  const stdDev = Math.sqrt(variance / count);
+  const stdNorm = Math.min(1, Math.max(0, (stdDev - 20) / 60));
+  const meanFactor = Math.min(1, mean / 140) ** 2;
+  const combined = meanFactor * (1 - stdNorm * 0.5);
+  return Math.round((1.05 + 0.30 * combined) * 100) / 100;
 }
 
 /**
- * Apply xerox tone to RGBA buffer (opaque speaker pixels only; alpha preserved).
- * @param {Buffer|Uint8ClampedArray} data
+ * Apply newspaper tone to RGBA buffer (opaque speaker pixels only; alpha preserved).
+ * @param {Buffer|Uint8ClampedArray} data  Raw RGBA pixels, modified in place.
  * @param {number} width
  * @param {number} height
- * @param {string} [seed]
+ * @param {string} [_seed]  Unused — kept for API compatibility with old xerox pass.
  */
-function applySpeakerCutoutXeroxRgba(data, width, height, seed = 'odq') {
+function applySpeakerCutoutXeroxRgba(data, width, height, _seed = 'odq') {
   const d = data;
   const w = Math.max(1, width | 0);
   const h = Math.max(1, height | 0);
-  const bandPhase = bandPhaseFromSeed(seed);
-  const {
-    contrast,
-    brightness,
-    blackFloor,
-    whiteCap,
-    bandStrength,
-    bandPeriodPx,
-    grainAmp
-  } = XEROX_TONE;
+  const { brightness, sepia } = NEWSPAPER_TONE;
 
+  // Pass 1: compute adaptive contrast from source luminance
+  const contrast = computeAdaptiveContrast(d, w, h);
+
+  // Pass 2: grayscale → contrast → brightness → sepia
   for (let y = 0; y < h; y += 1) {
-    const bandMul =
-      1 -
-      bandStrength *
-        0.5 *
-        (1 + Math.sin(y / Math.max(0.8, bandPeriodPx) + bandPhase));
     for (let x = 0; x < w; x += 1) {
       const i = (y * w + x) * 4;
-      const alpha = d[i + 3];
-      if (alpha < 8) {
-        d[i + 3] = 0;
-        continue;
-      }
+      if (d[i + 3] < 8) { d[i + 3] = 0; continue; }
+
+      // grayscale(1)
       let lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      lum = ((lum / 255 - 0.5) * contrast + 0.5) * 255 * brightness;
-      lum *= bandMul;
-      lum += hashSeedToUnit(seed, x, y) * grainAmp * 2 - grainAmp;
-      lum = Math.max(blackFloor, Math.min(whiteCap, lum));
-      const v = Math.round(lum);
-      d[i] = v;
-      d[i + 1] = v;
-      d[i + 2] = v;
+
+      // contrast (CSS spec: slope*(val - 128) + 128)
+      lum = contrast * (lum - 128) + 128;
+
+      // brightness
+      lum = Math.max(0, Math.min(255, lum * brightness));
+
+      // sepia(amount) — interpolate toward full-sepia matrix
+      const r = lum, g = lum, b = lum;
+      const sr = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+      const sg = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+      const sb = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+      d[i]     = Math.round(r + (sr - r) * sepia);
+      d[i + 1] = Math.round(g + (sg - g) * sepia);
+      d[i + 2] = Math.round(b + (sb - b) * sepia);
     }
   }
 }
 
 /**
- * True when RGBA already looks like a server xerox pass (grayscale, lifted blacks).
+ * True when RGBA already looks like a newspaper tone pass (warm-tinted grayscale).
+ * Used to avoid re-processing already-processed cutouts.
  * @param {Buffer|Uint8ClampedArray} data
  * @param {number} width
  * @param {number} height
@@ -95,26 +96,23 @@ function rgbaLooksSpeakerCutoutXerox(data, width, height) {
   const d = data;
   const w = Math.max(1, width | 0);
   const h = Math.max(1, height | 0);
-  let opaque = 0;
-  let gray = 0;
-  let inRange = 0;
+  let opaque = 0, warm = 0;
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       const i = (y * w + x) * 4;
       if (d[i + 3] < 20) continue;
       opaque += 1;
-      const r = d[i];
-      const g = d[i + 1];
-      const b = d[i + 2];
-      if (Math.abs(r - g) <= 8 && Math.abs(r - b) <= 8) gray += 1;
-      if (r >= XEROX_TONE.blackFloor - 4 && r <= XEROX_TONE.whiteCap + 4) inRange += 1;
+      const r = d[i], b = d[i + 2];
+      // Sepia tint: red channel meaningfully higher than blue
+      if (r > b + 4) warm += 1;
     }
   }
-  return opaque > 400 && gray / opaque > 0.97 && inRange / opaque > 0.85;
+  return opaque > 400 && warm / opaque > 0.65;
 }
 
 module.exports = {
-  XEROX_TONE,
+  NEWSPAPER_TONE,
+  computeAdaptiveContrast,
   applySpeakerCutoutXeroxRgba,
   rgbaLooksSpeakerCutoutXerox
 };
