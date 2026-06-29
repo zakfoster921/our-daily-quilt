@@ -1786,7 +1786,10 @@ function normalizeReflectionWallThemeEntry(entry) {
     const author = String(entry.author ?? entry.authorDisplayName ?? '').replace(/\s+/g, ' ').trim()
       || reflectionWallAuthorLabel(entry);
     const responseId = reflectionThemeEntryResponseId(entry);
-    return responseId ? { text, author, responseId } : { text, author };
+    const heartCount = Math.max(0, Number(entry.heartCount) || 0);
+    const base = responseId ? { text, author, responseId } : { text, author };
+    if (heartCount > 0) base.heartCount = heartCount;
+    return base;
   }
   const text = String(entry || '')
     .replace(/\s+/g, ' ')
@@ -3606,6 +3609,68 @@ async function runQuotePrefillSweep({ limit = PREFILL_SWEEP_BATCH_LIMIT, trigger
   }
 }
 
+// --- Hourly heart sweep: give every comment/reflection a +1 so nothing feels unseen ---
+
+const HEART_SWEEP_TICK_MS = 60 * 60 * 1000; // 1 hour
+let heartSweepRunning = false;
+let heartSweepTimer = null;
+
+async function runHeartSweep({ trigger = 'cron' } = {}) {
+  if (!db) return { skipped: true, reason: 'no db' };
+  if (heartSweepRunning) return { skipped: true, reason: 'already running' };
+  heartSweepRunning = true;
+  const t0 = Date.now();
+  let reflections = 0;
+  let comments = 0;
+  try {
+    const nowIso = getUtcIsoNow();
+
+    // Bump heartCount in batches of 500 (Firestore batch limit)
+    async function bumpHeartCounts(docs) {
+      let count = 0;
+      const eligible = docs.filter((d) => (d.data().status || '') !== 'deleted');
+      for (let i = 0; i < eligible.length; i += 500) {
+        const chunk = eligible.slice(i, i + 500);
+        const b = db.batch();
+        chunk.forEach((doc) => {
+          b.set(doc.ref, { heartCount: admin.firestore.FieldValue.increment(1), updatedAtIso: nowIso }, { merge: true });
+        });
+        await b.commit();
+        count += chunk.length;
+      }
+      return count;
+    }
+
+    const reflSnap = await db.collection('reflectionResponses').get();
+    reflections = await bumpHeartCounts(reflSnap.docs);
+
+    const commSnap = await db.collectionGroup('comments').get();
+    comments = await bumpHeartCounts(commSnap.docs);
+
+    const ms = Date.now() - t0;
+    console.log(`💛 Heart sweep (${trigger}): +1 on ${reflections} reflections, ${comments} comments in ${ms}ms`);
+    return { reflections, comments, ms };
+  } catch (err) {
+    console.warn('⚠️ Heart sweep failed:', err?.message || err);
+    return { skipped: true, reason: err?.message || 'error' };
+  } finally {
+    heartSweepRunning = false;
+  }
+}
+
+function startHeartSweepScheduler() {
+  if (heartSweepTimer) return;
+  // Delay the first run so startup Firestore reads don't compete with quilt load
+  setTimeout(() => runHeartSweep({ trigger: 'startup' }).catch(() => {}), 30000);
+  heartSweepTimer = setInterval(() => {
+    runHeartSweep({ trigger: 'cron' }).catch((e) => {
+      console.warn('⚠️ Heart sweep tick failed:', e?.message || e);
+    });
+  }, HEART_SWEEP_TICK_MS);
+  if (typeof heartSweepTimer.unref === 'function') heartSweepTimer.unref();
+  console.log('💛 Heart sweep scheduled every hour.');
+}
+
 let quotePrefillSweepTimer = null;
 function startQuotePrefillSweepScheduler() {
   if (quotePrefillSweepTimer) return;
@@ -4374,6 +4439,39 @@ async function collectDailyQuotePushTokensDue(now = new Date(), options = {}) {
   return { due, totalCount, dateKey };
 }
 
+async function getLastDailyQuotePushCompletedAt() {
+  try {
+    const snap = await db.collection('ops')
+      .where('status', '==', 'success')
+      .orderBy('completedAt', 'desc')
+      .limit(20)
+      .get();
+    for (const doc of snap.docs) {
+      if (doc.id.startsWith('daily-quote-push-')) {
+        return String(doc.data().completedAt || '').trim() || null;
+      }
+    }
+  } catch (_) { /* */ }
+  return null;
+}
+
+async function getLatestStudioFloorPostSince(sinceIso) {
+  try {
+    let query = db.collection('socialPosts')
+      .where('status', '==', 'published')
+      .orderBy('publishedAtIso', 'desc')
+      .limit(1);
+    const snap = await query.get();
+    if (snap.empty) return null;
+    const post = snap.docs[0].data();
+    const publishedAt = String(post.publishedAtIso || '').trim();
+    if (!publishedAt) return null;
+    if (sinceIso && publishedAt <= sinceIso) return null;
+    return { postId: snap.docs[0].id, publishedAtIso: publishedAt };
+  } catch (_) { /* */ }
+  return null;
+}
+
 async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), options = {}) {
   if (!db) throw new Error('Firestore not initialized');
   const force = options && options.force === true;
@@ -4415,7 +4513,11 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
   }
 
   const quoteText = await getDailyQuotePushText(resolvedDateKey);
-  const body = truncatePushBody(quoteText);
+  const lastPushAt = await getLastDailyQuotePushCompletedAt();
+  const newStudioPost = await getLatestStudioFloorPostSince(lastPushAt);
+  const studioSuffix = ' (+ new post on STUDIO FLOOR)';
+  const rawBody = newStudioPost ? `${quoteText}${studioSuffix}` : quoteText;
+  const body = truncatePushBody(rawBody);
   let sent = 0;
   let failed = 0;
   let pruned = 0;
@@ -4429,7 +4531,8 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
       },
       data: {
         type: 'daily_quote',
-        date: resolvedDateKey
+        date: resolvedDateKey,
+        has_studio_floor_post: newStudioPost ? '1' : '0'
       },
       apns: {
         payload: {
@@ -4548,19 +4651,15 @@ async function sendStudioFloorPostPushNotifications({ postId, caption } = {}) {
     return { success: true, sent: 0, failed: 0, pruned: 0, dueCount: 0 };
   }
 
-  const body = truncatePushBody(caption || 'New post on Studio floor') || 'New post on Studio floor';
   let sent = 0;
   let failed = 0;
   let pruned = 0;
 
   for (let i = 0; i < recipients.length; i += 500) {
     const chunk = recipients.slice(i, i + 500);
+    // Silent badge-only push — visual notification comes via the daily quote
     const message = {
       tokens: chunk.map((r) => r.token),
-      notification: {
-        title: 'OUR DAILY QUILT',
-        body
-      },
       data: {
         type: 'studio_floor_post',
         postId: id
@@ -4569,13 +4668,13 @@ async function sendStudioFloorPostPushNotifications({ postId, caption } = {}) {
         payload: {
           aps: {
             badge: 1,
-            sound: 'default'
+            'content-available': 1
           }
         }
       },
       android: {
-        notification: {
-          notificationCount: 1
+        data: {
+          notificationCount: '1'
         }
       }
     };
@@ -8840,7 +8939,7 @@ async function dispatchReviewedQuoteAssetsWorkflow({ pageId, force = false }) {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-06-28',
+      'X-GitHub-Api-Version': '2022-11-28',
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -9994,5 +10093,6 @@ app.listen(PORT, () => {
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
   startQuotePrefillSweepScheduler();
+  // startHeartSweepScheduler(); // disabled — full collection scan blocks Firestore connection pool
   openOdqEditorInBrowser(PORT);
 });
