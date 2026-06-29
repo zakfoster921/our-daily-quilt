@@ -337,14 +337,23 @@ async function runNightlyIgAttempt({
           }
           assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
           log('uploading newspaper clipping PNG to Storage + Firestore…');
-          if (typeof Utils?.writeInstagramImagesDocForZapier !== 'function') {
+          let doc;
+          if (typeof Utils?.writeInstagramImagesDocForZapierViaServer === 'function' && apiBase) {
+            doc = await Utils.writeInstagramImagesDocForZapierViaServer({
+              dateKey,
+              newspaperClippingImageData,
+              storageCacheControl: 'no-store',
+              apiBaseOverride: apiBase
+            });
+          } else if (typeof Utils?.writeInstagramImagesDocForZapier === 'function') {
+            doc = await Utils.writeInstagramImagesDocForZapier({
+              dateKey,
+              newspaperClippingImageData,
+              storageCacheControl: 'no-store'
+            });
+          } else {
             throw new Error('Utils.writeInstagramImagesDocForZapier missing — deploy utils-instagram.js');
           }
-          const doc = await Utils.writeInstagramImagesDocForZapier({
-            dateKey,
-            newspaperClippingImageData,
-            storageCacheControl: 'no-store'
-          });
           const clippingUrl = String(
             doc.newspaperClippingUrl || doc.newspaperClippingImageStorageUrl || ''
           ).trim();
