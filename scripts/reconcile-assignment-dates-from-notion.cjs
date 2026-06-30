@@ -451,6 +451,22 @@ async function main() {
       clearQuoteScheduleInMemory(quoteBySourceId, sid);
     }
 
+    // Clear the pre-rendered clipping PNG for this date — it was built for the old quote.
+    if (igByDate.get(dateKey)) {
+      batchState.batch.set(
+        db.collection(instagramCollection).doc(dateKey),
+        {
+          newspaperClippingUrl: deleteField,
+          newspaperClippingImageStorageUrl: deleteField,
+          newspaperClippingGeneratedAt: deleteField,
+          newspaperClippingExportRev: deleteField,
+          clippingInvalidatedAt: updatedAt,
+          clippingInvalidatedReason: 'notion-date-reconcile-cleared'
+        },
+        { merge: true }
+      );
+      batchState.ops += 1;
+    }
     assignmentByDate.delete(dateKey);
     await commitBatchIfNeeded(db, batchState);
   }
@@ -488,6 +504,25 @@ async function main() {
       batchState.ops += 1;
       displaced += 1;
       clearQuoteScheduleInMemory(quoteBySourceId, occupant);
+
+      // The pre-rendered clipping PNG was built for the displaced quote — clear it so the
+      // app falls back to client-side rendering for the new quote instead of showing the
+      // wrong speaker's clipping image.
+      if (igByDate.get(dateKey)) {
+        batchState.batch.set(
+          db.collection(instagramCollection).doc(dateKey),
+          {
+            newspaperClippingUrl: deleteField,
+            newspaperClippingImageStorageUrl: deleteField,
+            newspaperClippingGeneratedAt: deleteField,
+            newspaperClippingExportRev: deleteField,
+            clippingInvalidatedAt: updatedAt,
+            clippingInvalidatedReason: 'notion-date-reconcile-displaced'
+          },
+          { merge: true }
+        );
+        batchState.ops += 1;
+      }
     }
 
     const payload = assignmentPayloadForQuote(q, dateKey, 'notion-date-reconcile');
