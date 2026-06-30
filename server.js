@@ -6934,6 +6934,7 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
     const word = String(body.word || '').trim();
+    const previousWord = String(body.previousWord || '').trim();
     if (!word) return res.status(400).json({ success: false, error: 'word is required' });
     const submittedWords = normalizeQuiltNameVoteWords(body.words);
 
@@ -6948,12 +6949,17 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
       if (!freshTarget && !words.length) throw new Error('No words found');
       if (!freshTarget) throw new Error('Word not found or already eliminated');
 
+      const isChangedVote = !!previousWord && previousWord !== word;
+      if (isChangedVote) {
+        const previousTarget = words.find((w) => w.word === previousWord);
+        if (previousTarget) previousTarget.votes = Math.max(0, (previousTarget.votes || 0) - 1);
+      }
       freshTarget.votes = (freshTarget.votes || 0) + 1;
 
       const active = words.filter((w) => !w.eliminated);
       let status = data.status || 'active';
 
-      if (active.length > 4) {
+      if (!isChangedVote && active.length > 4) {
         const minVotes = Math.min(...active.filter((w) => w.word !== word).map((w) => w.votes || 0));
         const candidates = active.filter((w) => w.word !== word && (w.votes || 0) === minVotes);
         const loser = candidates[Math.floor(Math.random() * candidates.length)];
