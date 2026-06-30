@@ -196,6 +196,8 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/push-layout-b-tune', 48 * ONE_KB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
   ['/api/quilt-name-words', 4 * ONE_KB],
+  ['/api/quilt-name-generate', 4 * ONE_KB],
+  ['/api/quilt-vote', 4 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
@@ -417,6 +419,16 @@ const limitQuiltNameWords = createRateLimiter({
   name: 'quilt-name-words',
   windowMs: 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_NAME_WORDS_PER_MIN, 10)
+});
+const limitQuiltNameGenerate = createRateLimiter({
+  name: 'quilt-name-generate',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_NAME_GENERATE_PER_MIN, 5)
+});
+const limitQuiltVote = createRateLimiter({
+  name: 'quilt-vote',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_VOTE_PER_MIN, 30)
 });
 const limitQuoteKeywords = createRateLimiter({
   name: 'quote-keywords',
@@ -6636,6 +6648,170 @@ Rules:
       error: error.message || 'quilt-name-words failed',
       timestamp: getUtcIsoNow()
     });
+  }
+});
+
+function hexToHslServer(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = max === r ? (g - b) / d + (g < b ? 6 : 0)
+        : max === g ? (b - r) / d + 2
+        : (r - g) / d + 4;
+  return { h: (h / 6) * 360, s, l };
+}
+
+function getColorFamilyServer(hex) {
+  if (!hex || hex.length < 7) return 'Gray';
+  const { h, s, l } = hexToHslServer(hex);
+  if (s < 0.1) {
+    if (l > 0.8) return 'White';
+    if (l < 0.2) return 'Black';
+    return 'Gray';
+  }
+  if (h < 30) return 'Red';
+  if (h < 60) return 'Orange';
+  if (h < 90) return 'Yellow';
+  if (h < 150) return 'Green';
+  if (h < 210) return 'Cyan';
+  if (h < 270) return 'Blue';
+  if (h < 330) return 'Magenta';
+  return 'Pink';
+}
+
+function analyzeColorFamiliesServer(blocks) {
+  const familyCounts = {};
+  (blocks || []).forEach((block) => {
+    const name = getColorFamilyServer(block.color || '');
+    if (!familyCounts[name]) familyCounts[name] = { name, count: 0 };
+    familyCounts[name].count += 1;
+  });
+  return Object.values(familyCounts).sort((a, b) => b.count - a.count);
+}
+
+app.options('/api/quilt-name-generate', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+
+    const nameRef = db.collection('quiltNames').doc(dateKey);
+    const nameSnap = await nameRef.get();
+    if (nameSnap.exists && Array.isArray(nameSnap.data()?.words) && nameSnap.data().words.length >= 10) {
+      return res.json({ success: true, words: nameSnap.data().words, cached: true });
+    }
+
+    const quiltSnap = await db.collection('quilts').doc(dateKey).get();
+    const blocks = quiltSnap.exists ? (quiltSnap.data()?.blocks || []) : [];
+    const families = analyzeColorFamiliesServer(blocks);
+    const topColors = families.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
+
+    const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+    if (!apiKey) return res.status(503).json({ success: false, error: 'ANTHROPIC_API_KEY not configured' });
+    const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
+
+    const prompt = `You are naming a collaborative daily quilt. Generate exactly 20 evocative single-word names for today's quilt.
+
+Quilt details:
+- Date: ${dateKey}
+- Dominant colors: ${topColors}
+- Total blocks contributed: ${blocks.length}
+
+Rules:
+- Every word must be a single word (no phrases, no hyphens)
+- Words should feel poetic, tactile, or atmospheric — not generic
+- Mix concrete nouns, adjectives, and unexpected plain-language words
+- Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
+- Some words should feel specific to the colors, some to the scale/density, some should be surprising wildcards
+- Do NOT include color names literally (no "Blue", "Red", etc.)
+- Output ONLY a JSON array of 20 strings, nothing else: ["Word1","Word2",...]`;
+
+    const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
+    const match = raw.match(/\[[\s\S]*?\]/);
+    if (!match) throw new Error('Claude returned no JSON array');
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed) || parsed.length < 10) throw new Error('Claude returned too few words');
+
+    const words = parsed.slice(0, 20).map((w) => ({
+      word: String(w).trim(),
+      votes: 0,
+      eliminated: false
+    }));
+
+    await nameRef.set({
+      status: 'active',
+      words,
+      generatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    return res.json({ success: true, words, cached: false });
+  } catch (error) {
+    console.error('❌ quilt-name-generate failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'quilt-name-generate failed' });
+  }
+});
+
+app.options('/api/quilt-vote', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const word = String(body.word || '').trim();
+    if (!word) return res.status(400).json({ success: false, error: 'word is required' });
+
+    const nameRef = db.collection('quiltNames').doc(dateKey);
+    let updatedDoc;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(nameRef);
+      if (!snap.exists) throw new Error('Voting not started for this date');
+      const data = snap.data();
+      if (!Array.isArray(data.words)) throw new Error('No words found');
+
+      const words = data.words.map((w) => ({ ...w }));
+      const target = words.find((w) => w.word === word && !w.eliminated);
+      if (!target) throw new Error('Word not found or already eliminated');
+
+      target.votes = (target.votes || 0) + 1;
+
+      const active = words.filter((w) => !w.eliminated);
+      let status = data.status;
+
+      if (active.length > 4) {
+        const minVotes = Math.min(...active.filter((w) => w.word !== word).map((w) => w.votes || 0));
+        const candidates = active.filter((w) => w.word !== word && (w.votes || 0) === minVotes);
+        const loser = candidates[Math.floor(Math.random() * candidates.length)];
+        if (loser) {
+          const idx = words.findIndex((w) => w.word === loser.word);
+          words[idx].eliminated = true;
+        }
+        const remaining = words.filter((w) => !w.eliminated);
+        if (remaining.length <= 4) status = 'final';
+      }
+
+      updatedDoc = { ...data, words, status };
+      tx.set(nameRef, { words, status }, { merge: true });
+    });
+
+    return res.json({ success: true, doc: updatedDoc });
+  } catch (error) {
+    console.error('❌ quilt-vote failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'quilt-vote failed' });
   }
 });
 
