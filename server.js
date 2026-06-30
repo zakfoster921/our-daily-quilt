@@ -5192,6 +5192,19 @@ async function getTodayInstagramImage(options = {}) {
       contributorCount = 1;
     }
 
+    let winningQuiltName = '';
+    try {
+      const nameSnap = await db.collection('quiltNames').doc(dateUsed).get();
+      if (nameSnap.exists) {
+        const nameData = nameSnap.data() || {};
+        winningQuiltName =
+          (typeof nameData.winningQuiltName === 'string' && nameData.winningQuiltName.trim()) ||
+          getWinningQuiltNameFromWords(nameData.words);
+      }
+    } catch (nameErr) {
+      console.warn(`⚠️ Could not load winning quilt name for ${dateUsed}:`, nameErr.message);
+    }
+
     return {
       imageData: imageDataField,
       postLayoutBImageData: postLayoutBField || null,
@@ -5211,6 +5224,7 @@ async function getTodayInstagramImage(options = {}) {
       quote: quote,
       captionSource,
       date: dateUsed,
+      winningQuiltName,
       blockCount,
       contributorCount,
       readyForInstagram: raw.readyForInstagram === true,
@@ -5246,6 +5260,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
         readyForInstagram: imageData.readyForInstagram === true,
         lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
         minNightlyReadyAfter: getCompletedQuiltPostingMinReadyIso(imageData.date) || '',
+        winningQuiltName: imageData.winningQuiltName || '',
         blockCount: Number(imageData.blockCount) || 0,
         error: readyCheck.reason,
         retryAfterSeconds: 300,
@@ -5378,6 +5393,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       igCaption: imageData.quote,
       captionSource: imageData.captionSource || 'default',
       date: imageData.date,
+      winningQuiltName: imageData.winningQuiltName || '',
       captionLength: imageData.quote.length,
       hasPostLayoutB: !!primaryLayoutBImageUrl,
       hasPostLayoutBPlain: hasLayoutB,
@@ -6984,6 +7000,17 @@ function normalizeQuiltNameVoteWords(rawWords) {
     .slice(0, 20);
 }
 
+function getWinningQuiltNameFromWords(rawWords) {
+  const active = normalizeQuiltNameVoteWords(rawWords)
+    .filter((item) => !item.eliminated && item.word);
+  if (!active.length) return '';
+  const hasVotes = active.some((item) => (Number(item.votes) || 0) > 0);
+  if (!hasVotes) return '';
+  return active
+    .slice()
+    .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))[0]?.word || '';
+}
+
 app.options('/api/quilt-name-generate', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -7090,6 +7117,7 @@ Rules:
         await nameRef.set({
           status: 'active',
           words,
+          winningQuiltName: '',
           provider,
           ...(aiWarning ? { aiWarning } : {}),
           generatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -7165,7 +7193,7 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
         if (remaining.length <= 4) status = 'final';
       }
 
-      return { ...data, words, status };
+      return { ...data, words, status, winningQuiltName: getWinningQuiltNameFromWords(words) };
     };
 
     if (!db || typeof db.collection !== 'function') {
@@ -7180,7 +7208,11 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
       const snap = await tx.get(nameRef);
       const data = snap.exists ? snap.data() : { words: submittedWords, status: 'active' };
       updatedDoc = applyVote(data);
-      tx.set(nameRef, { words: updatedDoc.words, status: updatedDoc.status }, { merge: true });
+      tx.set(nameRef, {
+        words: updatedDoc.words,
+        status: updatedDoc.status,
+        winningQuiltName: updatedDoc.winningQuiltName || ''
+      }, { merge: true });
     });
 
     return res.json({ success: true, doc: updatedDoc });
