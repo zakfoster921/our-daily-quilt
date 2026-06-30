@@ -3647,8 +3647,120 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
   try {
     const nowIso = getUtcIsoNow();
 
+    async function commitBatchIfNeeded(state, force = false) {
+      if (!state.batch || state.ops === 0) return;
+      if (!force && state.ops < 450) return;
+      await state.batch.commit();
+      state.batch = db.batch();
+      state.ops = 0;
+    }
+
+    function queueBatchSet(state, ref, data, options = { merge: true }) {
+      state.batch.set(ref, data, options);
+      state.ops += 1;
+    }
+
+    async function sweepVisibleReflectionThemes() {
+      let count = 0;
+      let repairs = 0;
+      const handledResponseIds = new Set();
+      const state = { batch: db.batch(), ops: 0 };
+      let cursor = null;
+
+      for (;;) {
+        const q = cursor
+          ? db.collection('reflectionThemes').orderBy('__name__').startAfter(cursor).limit(PAGE)
+          : db.collection('reflectionThemes').orderBy('__name__').limit(PAGE);
+        const snap = await q.get();
+        if (snap.empty) break;
+
+        for (const doc of snap.docs) {
+          const data = doc.data() || {};
+          const themes = Array.isArray(data.themes) ? data.themes : [];
+          const responseIds = [...new Set(themes.map(reflectionThemeEntryResponseId).filter(Boolean))];
+          const responseSnaps = responseIds.length
+            ? await Promise.all(responseIds.map((id) => db.collection('reflectionResponses').doc(id).get()))
+            : [];
+          const responsesById = new Map(responseSnaps.map((responseSnap) => [responseSnap.id, responseSnap]));
+
+          let themesChanged = false;
+          const nextThemes = themes.map((entry) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+            const text = String(entry.text ?? entry.body ?? entry.theme ?? '').replace(/\s+/g, ' ').trim();
+            if (!text) return entry;
+
+            const responseId = reflectionThemeEntryResponseId(entry);
+            const currentHeartCount = Math.max(0, Number(entry.heartCount) || 0);
+            const entryAdminHearted = entry.adminHearted === true;
+
+            if (responseId) {
+              handledResponseIds.add(responseId);
+              const responseSnap = responsesById.get(responseId);
+              const responseData = responseSnap?.exists ? responseSnap.data() || {} : {};
+              const responseDeleted = String(responseData.status || '') === 'deleted';
+              const responseAdminHearted = responseData.adminHearted === true;
+              const responseHeartCount = Math.max(0, Number(responseData.heartCount) || 0);
+
+              if (responseSnap?.exists && !responseDeleted && !responseAdminHearted && !entryAdminHearted) {
+                queueBatchSet(state, responseSnap.ref, {
+                  heartCount: admin.firestore.FieldValue.increment(1),
+                  adminHearted: true,
+                  updatedAtIso: nowIso
+                });
+                count += 1;
+                themesChanged = true;
+                return { ...entry, heartCount: currentHeartCount + 1, adminHearted: true };
+              }
+
+              if (responseSnap?.exists && !responseDeleted && !responseAdminHearted && entryAdminHearted) {
+                queueBatchSet(state, responseSnap.ref, {
+                  heartCount: Math.max(responseHeartCount, currentHeartCount),
+                  adminHearted: true,
+                  updatedAtIso: nowIso
+                });
+              }
+
+              const repairedHeartCount = Math.max(currentHeartCount, responseHeartCount);
+              if (!entryAdminHearted || repairedHeartCount !== currentHeartCount) {
+                repairs += 1;
+                themesChanged = true;
+                return { ...entry, heartCount: repairedHeartCount, adminHearted: true };
+              }
+              return entry;
+            }
+
+            if (entryAdminHearted) return entry;
+            count += 1;
+            themesChanged = true;
+            return { ...entry, heartCount: currentHeartCount + 1, adminHearted: true };
+          });
+
+          const firstResponse = String(data.first_response || '').replace(/\s+/g, ' ').trim();
+          const patch = {};
+          if (themesChanged) patch.themes = nextThemes;
+          if (firstResponse && data.adminFirstResponseHearted !== true) {
+            patch.firstResponseHeartCount = admin.firestore.FieldValue.increment(1);
+            patch.adminFirstResponseHearted = true;
+            count += 1;
+          }
+          if (Object.keys(patch).length) {
+            patch.updatedAtIso = nowIso;
+            queueBatchSet(state, doc.ref, patch);
+          }
+          await commitBatchIfNeeded(state);
+        }
+
+        cursor = snap.docs[snap.docs.length - 1];
+        if (snap.docs.length < PAGE) break;
+        await new Promise((r) => setTimeout(r, PAUSE_MS));
+      }
+
+      await commitBatchIfNeeded(state, true);
+      return { count, repairs, handledResponseIds };
+    }
+
     // Page through a query, bumping heartCount one page at a time
-    async function bumpPaginated(baseQuery) {
+    async function bumpPaginated(baseQuery, { skipIds = null } = {}) {
       let count = 0;
       let cursor = null;
       for (;;) {
@@ -3656,6 +3768,7 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
         const snap = await q.get();
         if (snap.empty) break;
         const eligible = snap.docs.filter((d) => {
+          if (skipIds?.has?.(d.id)) return false;
           const data = d.data();
           return (data.status || '') !== 'deleted' && !data.adminHearted;
         });
@@ -3674,7 +3787,11 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
       return count;
     }
 
-    reflections = await bumpPaginated(db.collection('reflectionResponses').orderBy('__name__'));
+    const visibleReflectionSweep = await sweepVisibleReflectionThemes();
+    reflections = visibleReflectionSweep.count + await bumpPaginated(
+      db.collection('reflectionResponses').orderBy('__name__'),
+      { skipIds: visibleReflectionSweep.handledResponseIds }
+    );
     comments = await bumpPaginated(db.collectionGroup('comments').orderBy('__name__'));
 
     // Send admin naming reminder at 17:00 UTC (noon CDT / 1pm CST)
@@ -3684,8 +3801,9 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
     }
 
     const ms = Date.now() - t0;
-    console.log(`💛 Heart sweep (${trigger}): +1 on ${reflections} reflections, ${comments} comments in ${ms}ms`);
-    return { reflections, comments, ms };
+    const repairSuffix = visibleReflectionSweep.repairs ? ` (${visibleReflectionSweep.repairs} reflection display repairs)` : '';
+    console.log(`💛 Heart sweep (${trigger}): +1 on ${reflections} reflections, ${comments} comments in ${ms}ms${repairSuffix}`);
+    return { reflections, comments, ms, reflectionDisplayRepairs: visibleReflectionSweep.repairs };
   } catch (err) {
     console.warn('⚠️ Heart sweep failed:', err?.message || err);
     return { skipped: true, reason: err?.message || 'error' };
