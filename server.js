@@ -5198,8 +5198,8 @@ async function getTodayInstagramImage(options = {}) {
       if (nameSnap.exists) {
         const nameData = nameSnap.data() || {};
         winningQuiltName =
-          (typeof nameData.winningQuiltName === 'string' && nameData.winningQuiltName.trim()) ||
-          getWinningQuiltNameFromWords(nameData.words);
+          getWinningQuiltNameFromWords(nameData.words, contributorCount) ||
+          formatWinningQuiltName(nameData.winningQuiltName, contributorCount);
       }
     } catch (nameErr) {
       console.warn(`⚠️ Could not load winning quilt name for ${dateUsed}:`, nameErr.message);
@@ -7000,7 +7000,7 @@ function normalizeQuiltNameVoteWords(rawWords) {
     .slice(0, 20);
 }
 
-function getWinningQuiltNameFromWords(rawWords) {
+function getWinningQuiltNameWordFromWords(rawWords) {
   const active = normalizeQuiltNameVoteWords(rawWords)
     .filter((item) => !item.eliminated && item.word);
   if (!active.length) return '';
@@ -7009,6 +7009,34 @@ function getWinningQuiltNameFromWords(rawWords) {
   return active
     .slice()
     .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))[0]?.word || '';
+}
+
+function formatWinningQuiltName(rawName, contributorCount) {
+  const name = String(rawName || '')
+    .trim()
+    .replace(/\s+\(?\d+\)?$/, '')
+    .trim();
+  if (!name) return '';
+  const count = Math.max(1, Math.floor(Number(contributorCount) || 1));
+  return `${name.toUpperCase()} ${count}`;
+}
+
+function getWinningQuiltNameFromWords(rawWords, contributorCount) {
+  return formatWinningQuiltName(getWinningQuiltNameWordFromWords(rawWords), contributorCount);
+}
+
+async function getQuiltContributorCountForDate(dateKey) {
+  if (!db || typeof db.collection !== 'function') return 1;
+  try {
+    const quiltSnap = await db.collection('quilts').doc(dateKey).get();
+    if (!quiltSnap.exists) return 1;
+    const data = quiltSnap.data() || {};
+    const count = Number(data.contributorCount);
+    if (Number.isFinite(count) && count >= 0) return Math.max(1, Math.floor(count));
+  } catch (error) {
+    console.warn(`⚠️ Could not load contributor count for ${dateKey}:`, error.message);
+  }
+  return 1;
 }
 
 app.options('/api/quilt-name-generate', (req, res) => {
@@ -7159,6 +7187,10 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
     const previousWord = String(body.previousWord || '').trim();
     if (!word) return res.status(400).json({ success: false, error: 'word is required' });
     const submittedWords = normalizeQuiltNameVoteWords(body.words);
+    const requestContributorCount = Number(body.contributorCount ?? body.blockCount);
+    const contributorCount = Number.isFinite(requestContributorCount) && requestContributorCount >= 0
+      ? Math.max(1, Math.floor(requestContributorCount))
+      : await getQuiltContributorCountForDate(dateKey);
 
     const applyVote = (data = {}) => {
       let words = normalizeQuiltNameVoteWords(data.words);
@@ -7193,7 +7225,7 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
         if (remaining.length <= 4) status = 'final';
       }
 
-      return { ...data, words, status, winningQuiltName: getWinningQuiltNameFromWords(words) };
+      return { ...data, words, status, winningQuiltName: getWinningQuiltNameFromWords(words, contributorCount) };
     };
 
     if (!db || typeof db.collection !== 'function') {
