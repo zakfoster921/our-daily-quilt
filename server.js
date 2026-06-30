@@ -3923,6 +3923,20 @@ function startHeartSweepScheduler() {
   console.log('💛 Heart sweep scheduled every hour.');
 }
 
+let dailyQuotePushTimer = null;
+function startDailyQuotePushScheduler() {
+  if (dailyQuotePushTimer) return;
+  // Delay first run slightly so startup Firestore reads settle
+  setTimeout(() => sendDailyQuotePushNotifications().catch(() => {}), 60000);
+  dailyQuotePushTimer = setInterval(() => {
+    sendDailyQuotePushNotifications().catch((e) => {
+      console.warn('⚠️ Daily quote push tick failed:', e?.message || e);
+    });
+  }, 60 * 60 * 1000);
+  if (typeof dailyQuotePushTimer.unref === 'function') dailyQuotePushTimer.unref();
+  console.log('🔔 Daily quote push scheduled every hour.');
+}
+
 let quotePrefillSweepTimer = null;
 function startQuotePrefillSweepScheduler() {
   if (quotePrefillSweepTimer) return;
@@ -10823,5 +10837,6 @@ app.listen(PORT, () => {
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
   startQuotePrefillSweepScheduler();
   startHeartSweepScheduler();
+  startDailyQuotePushScheduler();
   openOdqEditorInBrowser(PORT);
 });
