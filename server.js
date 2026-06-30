@@ -195,6 +195,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/push-instagram-assets', 30 * ONE_MB],
   ['/api/push-layout-b-tune', 48 * ONE_KB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
+  ['/api/quilt-name-words', 4 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
@@ -411,6 +412,11 @@ const limitProxyImage = createRateLimiter({
   name: 'proxy-image',
   windowMs: 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_PROXY_IMAGE_PER_MIN, 60)
+});
+const limitQuiltNameWords = createRateLimiter({
+  name: 'quilt-name-words',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_NAME_WORDS_PER_MIN, 10)
 });
 const limitQuoteKeywords = createRateLimiter({
   name: 'quote-keywords',
@@ -3637,11 +3643,14 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
         const q = cursor ? baseQuery.startAfter(cursor).limit(PAGE) : baseQuery.limit(PAGE);
         const snap = await q.get();
         if (snap.empty) break;
-        const eligible = snap.docs.filter((d) => (d.data().status || '') !== 'deleted');
+        const eligible = snap.docs.filter((d) => {
+          const data = d.data();
+          return (data.status || '') !== 'deleted' && !data.adminHearted;
+        });
         if (eligible.length > 0) {
           const b = db.batch();
           eligible.forEach((doc) => {
-            b.set(doc.ref, { heartCount: admin.firestore.FieldValue.increment(1), updatedAtIso: nowIso }, { merge: true });
+            b.set(doc.ref, { heartCount: admin.firestore.FieldValue.increment(1), adminHearted: true, updatedAtIso: nowIso }, { merge: true });
           });
           await b.commit();
           count += eligible.length;
@@ -3656,6 +3665,12 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
     reflections = await bumpPaginated(db.collection('reflectionResponses').orderBy('__name__'));
     comments = await bumpPaginated(db.collectionGroup('comments').orderBy('__name__'));
 
+    // Send admin naming reminder at 17:00 UTC (noon CDT / 1pm CST)
+    const nowUtcHour = new Date().getUTCHours();
+    if (nowUtcHour === 17) {
+      sendAdminNamingReminder().catch((e) => console.warn('⚠️ Admin naming reminder failed:', e?.message || e));
+    }
+
     const ms = Date.now() - t0;
     console.log(`💛 Heart sweep (${trigger}): +1 on ${reflections} reflections, ${comments} comments in ${ms}ms`);
     return { reflections, comments, ms };
@@ -3665,6 +3680,28 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
   } finally {
     heartSweepRunning = false;
   }
+}
+
+// Admin-only daily reminder to name the quilt — triggered by Railway cron via POST /api/admin-naming-reminder.
+const ADMIN_NAMING_TOKEN_ID = '4f498f9ee1ce94a11cb5e4a2abed68a79d1f38244a1e29284908184ac85af44d';
+
+async function sendAdminNamingReminder() {
+  const tokenDoc = await db.collection('pushTokens').doc(ADMIN_NAMING_TOKEN_ID).get();
+  if (!tokenDoc.exists) throw new Error('Admin token doc not found');
+  const { token, enabled } = tokenDoc.data();
+  if (!enabled || !token) return { skipped: true, reason: 'token disabled' };
+
+  const dateKey = getAppDateKey();
+  const nameDoc = await db.collection('quiltNames').doc(dateKey).get();
+  if (nameDoc.exists) return { skipped: true, reason: `already named: ${nameDoc.data().name}` };
+
+  await admin.messaging().send({
+    token,
+    notification: { title: 'Name today\'s quilt', body: 'Open admin → ✏️ Name today\'s quilt' },
+    data: { type: 'admin_naming_reminder', date: dateKey },
+    apns: { payload: { aps: { sound: 'default' } } },
+  });
+  return { sent: true, date: dateKey };
 }
 
 function startHeartSweepScheduler() {
@@ -6549,6 +6586,59 @@ app.patch('/api/odq-editor/quote/:pageId', async (req, res) => {
   }
 });
 
+app.options('/api/quilt-name-words', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-name-words', limitQuiltNameWords, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const colorFamilies = Array.isArray(body.colorFamilies) ? body.colorFamilies : [];
+    const blockCount = Number(body.blockCount) || 0;
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+
+    const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+    if (!apiKey) {
+      return res.status(503).json({ success: false, error: 'ANTHROPIC_API_KEY not configured on server' });
+    }
+    const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
+
+    const topColors = colorFamilies.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
+    const prompt = `You are naming a collaborative daily quilt. Generate exactly 20 evocative single-word names for today's quilt.
+
+Quilt details:
+- Date: ${dateKey}
+- Dominant colors: ${topColors}
+- Total blocks contributed: ${blockCount}
+
+Rules:
+- Every word must be a single word (no phrases, no hyphens)
+- Words should feel poetic, tactile, or atmospheric — not generic
+- Mix concrete nouns, adjectives, and unexpected plain-language words
+- Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
+- Some words should feel specific to the colors, some to the scale/density, some should be surprising wildcards
+- Do NOT include color names literally (no "Blue", "Red", etc.)
+- Output ONLY a JSON array of 20 strings, nothing else: ["Word1","Word2",...]`;
+
+    const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
+    const match = raw.match(/\[[\s\S]*?\]/);
+    if (!match) throw new Error('Claude returned no JSON array');
+    const words = JSON.parse(match[0]);
+    if (!Array.isArray(words) || words.length < 10) throw new Error('Claude returned too few words');
+
+    return res.json({ success: true, words: words.slice(0, 20) });
+  } catch (error) {
+    console.error('❌ quilt-name-words failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'quilt-name-words failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
 app.options('/api/quote-keywords', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -8236,6 +8326,21 @@ app.get('/api/simple-test', (req, res) => {
     server: 'Instagram Quilt Generator (Firestore)',
     ready: true
   });
+});
+
+app.post('/api/admin-naming-reminder', async (req, res) => {
+  const expectedToken = process.env.RESET_TOKEN;
+  if (!expectedToken || req.headers['x-reset-token'] !== expectedToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const result = await sendAdminNamingReminder();
+    console.log('✏️ Admin naming reminder:', result);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('❌ Admin naming reminder failed:', err?.message || err);
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
 });
 
 app.options('/api/daily-reset', (req, res) => {
