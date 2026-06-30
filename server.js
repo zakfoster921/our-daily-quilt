@@ -6613,7 +6613,12 @@ app.post('/api/quilt-name-words', limitQuiltNameWords, async (req, res) => {
 
     const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
     if (!apiKey) {
-      return res.status(503).json({ success: false, error: 'ANTHROPIC_API_KEY not configured on server' });
+      return res.json({
+        success: true,
+        words: buildFallbackQuiltNameWords({ colorFamilies, blockCount, dateKey }),
+        provider: 'fallback',
+        warning: 'ANTHROPIC_API_KEY not configured on server; used fallback words'
+      });
     }
     const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
 
@@ -6643,9 +6648,16 @@ Rules:
     return res.json({ success: true, words: words.slice(0, 20) });
   } catch (error) {
     console.error('❌ quilt-name-words failed:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'quilt-name-words failed',
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    return res.json({
+      success: true,
+      words: buildFallbackQuiltNameWords({
+        colorFamilies: Array.isArray(body.colorFamilies) ? body.colorFamilies : [],
+        blockCount: Number(body.blockCount) || 0,
+        dateKey: String(body.dateKey || '').trim() || getAppDateKey()
+      }),
+      provider: 'fallback',
+      warning: error.message || 'quilt-name-words failed; used fallback words',
       timestamp: getUtcIsoNow()
     });
   }
@@ -6694,6 +6706,72 @@ function analyzeColorFamiliesServer(blocks) {
   return Object.values(familyCounts).sort((a, b) => b.count - a.count);
 }
 
+function seededShuffle(values, seedText) {
+  let seed = 0;
+  const text = String(seedText || 'odq');
+  for (let i = 0; i < text.length; i += 1) {
+    seed = (seed * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  const next = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  const out = [...values];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(next() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function buildFallbackQuiltNameWords({ colorFamilies = [], blockCount = 0, dateKey = '' } = {}) {
+  const colorWords = {
+    Red: ['Ember', 'Cinder', 'Cardinal', 'Cinnabar', 'Hearth', 'Rouge', 'Brick'],
+    Orange: ['Copper', 'Ochre', 'Persimmon', 'Harvest', 'Marigold', 'Kindling', 'Clay'],
+    Yellow: ['Saffron', 'Gilt', 'Flax', 'Beeswax', 'Straw', 'Lantern', 'Pollen'],
+    Green: ['Moss', 'Fern', 'Juniper', 'Clover', 'Thicket', 'Meadow', 'Lichen'],
+    Cyan: ['Lagoon', 'Seafoam', 'Brine', 'Shoal', 'Glacial', 'Tidepool', 'Mist'],
+    Blue: ['Indigo', 'Cobalt', 'Woad', 'Dusk', 'Harbor', 'Periwinkle', 'Rain'],
+    Magenta: ['Plum', 'Violet', 'Mauve', 'Heather', 'Mulberry', 'Orchid', 'Fig'],
+    Pink: ['Blush', 'Petal', 'Rose', 'Bloom', 'Quartz', 'Peony', 'Ribbon'],
+    White: ['Linen', 'Chalk', 'Ivory', 'Alabaster', 'Birch', 'Calico', 'Milkweed'],
+    Black: ['Onyx', 'Ink', 'Coal', 'Raven', 'Pitch', 'Nightjar', 'Basalt'],
+    Gray: ['Ash', 'Stone', 'Pewter', 'Fog', 'Flint', 'Graphite', 'Pumice']
+  };
+  const scaleWords =
+    blockCount < 10
+      ? ['Sparse', 'Open', 'Early', 'Quiet', 'Waiting']
+      : blockCount < 25
+        ? ['Gathered', 'Settled', 'Even', 'Whole', 'Steady']
+        : ['Layered', 'Dense', 'Crowded', 'Full', 'Stacked'];
+  const plainWords = [
+    'Almost', 'Borrowed', 'Overnight', 'Sideways', 'Familiar',
+    'Spare', 'Crooked', 'Passing', 'Found', 'Loose',
+    'Halfway', 'Taken', 'Careful', 'Missing', 'Shared',
+    'Pocket', 'Threshold', 'Patchwork', 'Weather', 'Elsewhere'
+  ];
+
+  const families = Array.isArray(colorFamilies) && colorFamilies.length
+    ? colorFamilies
+    : [{ name: 'Gray' }];
+  const candidates = [];
+  families.slice(0, 3).forEach((family) => {
+    candidates.push(...(colorWords[family?.name] || []));
+  });
+  candidates.push(...scaleWords, ...plainWords);
+
+  const seen = new Set();
+  return seededShuffle(candidates, `${dateKey}:${families.map((f) => f?.name || '').join(',')}:${blockCount}`)
+    .map((word) => String(word || '').replace(/[^A-Za-z]/g, '').trim())
+    .filter((word) => {
+      const key = word.toLowerCase();
+      if (!word || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+}
+
 app.options('/api/quilt-name-generate', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -6717,10 +6795,13 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
     const topColors = families.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
 
     const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
-    if (!apiKey) return res.status(503).json({ success: false, error: 'ANTHROPIC_API_KEY not configured' });
     const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
+    let parsed = null;
+    let provider = 'fallback';
+    let aiWarning = null;
 
-    const prompt = `You are naming a collaborative daily quilt. Generate exactly 20 evocative single-word names for today's quilt.
+    if (apiKey) {
+      const prompt = `You are naming a collaborative daily quilt. Generate exactly 20 evocative single-word names for today's quilt.
 
 Quilt details:
 - Date: ${dateKey}
@@ -6736,11 +6817,23 @@ Rules:
 - Do NOT include color names literally (no "Blue", "Red", etc.)
 - Output ONLY a JSON array of 20 strings, nothing else: ["Word1","Word2",...]`;
 
-    const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
-    const match = raw.match(/\[[\s\S]*?\]/);
-    if (!match) throw new Error('Claude returned no JSON array');
-    const parsed = JSON.parse(match[0]);
-    if (!Array.isArray(parsed) || parsed.length < 10) throw new Error('Claude returned too few words');
+      try {
+        const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
+        const match = raw.match(/\[[\s\S]*?\]/);
+        if (!match) throw new Error('Claude returned no JSON array');
+        parsed = JSON.parse(match[0]);
+        if (!Array.isArray(parsed) || parsed.length < 10) throw new Error('Claude returned too few words');
+        provider = 'anthropic';
+      } catch (error) {
+        aiWarning = error.message || 'AI generation failed; used fallback words';
+      }
+    } else {
+      aiWarning = 'ANTHROPIC_API_KEY not configured; used fallback words';
+    }
+
+    if (!Array.isArray(parsed)) {
+      parsed = buildFallbackQuiltNameWords({ colorFamilies: families, blockCount: blocks.length, dateKey });
+    }
 
     const words = parsed.slice(0, 20).map((w) => ({
       word: String(w).trim(),
@@ -6751,13 +6844,15 @@ Rules:
     await nameRef.set({
       status: 'active',
       words,
+      provider,
+      ...(aiWarning ? { aiWarning } : {}),
       generatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
-    return res.json({ success: true, words, cached: false });
+    return res.json({ success: true, words, cached: false, provider, ...(aiWarning ? { warning: aiWarning } : {}) });
   } catch (error) {
     console.error('❌ quilt-name-generate failed:', error);
-    return res.status(500).json({ success: false, error: error.message || 'quilt-name-generate failed' });
+    return res.status(500).json({ success: false, error: error.message || String(error) || 'quilt-name-generate failed' });
   }
 });
 
