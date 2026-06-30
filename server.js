@@ -6772,6 +6772,24 @@ function buildFallbackQuiltNameWords({ colorFamilies = [], blockCount = 0, dateK
     .slice(0, 20);
 }
 
+function normalizeQuiltNameVoteWords(rawWords) {
+  if (!Array.isArray(rawWords)) return [];
+  const seen = new Set();
+  return rawWords
+    .map((item) => ({
+      word: String(item?.word || item || '').trim(),
+      votes: Math.max(0, Number(item?.votes) || 0),
+      eliminated: !!item?.eliminated
+    }))
+    .filter((item) => {
+      const key = item.word.toLowerCase();
+      if (!item.word || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+}
+
 app.options('/api/quilt-name-generate', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -6917,24 +6935,23 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
     const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
     const word = String(body.word || '').trim();
     if (!word) return res.status(400).json({ success: false, error: 'word is required' });
+    const submittedWords = normalizeQuiltNameVoteWords(body.words);
 
-    const nameRef = db.collection('quiltNames').doc(dateKey);
-    let updatedDoc;
-
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(nameRef);
-      if (!snap.exists) throw new Error('Voting not started for this date');
-      const data = snap.data();
-      if (!Array.isArray(data.words)) throw new Error('No words found');
-
-      const words = data.words.map((w) => ({ ...w }));
+    const applyVote = (data = {}) => {
+      let words = normalizeQuiltNameVoteWords(data.words);
+      if (!words.length && submittedWords.length) words = submittedWords.map((w) => ({ ...w }));
       const target = words.find((w) => w.word === word && !w.eliminated);
-      if (!target) throw new Error('Word not found or already eliminated');
+      if (!target && submittedWords.some((w) => w.word === word && !w.eliminated)) {
+        words = submittedWords.map((w) => ({ ...w }));
+      }
+      const freshTarget = words.find((w) => w.word === word && !w.eliminated);
+      if (!freshTarget && !words.length) throw new Error('No words found');
+      if (!freshTarget) throw new Error('Word not found or already eliminated');
 
-      target.votes = (target.votes || 0) + 1;
+      freshTarget.votes = (freshTarget.votes || 0) + 1;
 
       const active = words.filter((w) => !w.eliminated);
-      let status = data.status;
+      let status = data.status || 'active';
 
       if (active.length > 4) {
         const minVotes = Math.min(...active.filter((w) => w.word !== word).map((w) => w.votes || 0));
@@ -6948,8 +6965,22 @@ app.post('/api/quilt-vote', limitQuiltVote, async (req, res) => {
         if (remaining.length <= 4) status = 'final';
       }
 
-      updatedDoc = { ...data, words, status };
-      tx.set(nameRef, { words, status }, { merge: true });
+      return { ...data, words, status };
+    };
+
+    if (!db || typeof db.collection !== 'function') {
+      const doc = applyVote({ words: submittedWords, status: 'active' });
+      return res.json({ success: true, doc, transient: true });
+    }
+
+    const nameRef = db.collection('quiltNames').doc(dateKey);
+    let updatedDoc;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(nameRef);
+      const data = snap.exists ? snap.data() : { words: submittedWords, status: 'active' };
+      updatedDoc = applyVote(data);
+      tx.set(nameRef, { words: updatedDoc.words, status: updatedDoc.status }, { merge: true });
     });
 
     return res.json({ success: true, doc: updatedDoc });
