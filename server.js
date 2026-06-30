@@ -3660,6 +3660,72 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
       state.ops += 1;
     }
 
+    function dateKeyFromDocId(docId) {
+      const key = String(docId || '').trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : '';
+    }
+
+    function firstResponseFromData(data) {
+      return String(data?.first_response ?? data?.firstResponse ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    async function sweepAssignmentFirstResponses() {
+      let count = 0;
+      const currentDateKey = getAppDateKey();
+      const state = { batch: db.batch(), ops: 0 };
+      let cursor = null;
+
+      for (;;) {
+        const q = cursor
+          ? db.collection('dailyQuoteAssignments').orderBy('__name__').startAfter(cursor).limit(PAGE)
+          : db.collection('dailyQuoteAssignments').orderBy('__name__').limit(PAGE);
+        const snap = await q.get();
+        if (snap.empty) break;
+
+        for (const doc of snap.docs) {
+          const dateKey = dateKeyFromDocId(doc.id);
+          if (!dateKey) continue;
+          if (currentDateKey && dateKey > currentDateKey) continue;
+          const assignment = doc.data() || {};
+          const firstResponse = firstResponseFromData(assignment);
+          if (!firstResponse) continue;
+
+          const themeRef = db.collection('reflectionThemes').doc(dateKey);
+          const themeSnap = await themeRef.get();
+          const themeData = themeSnap.exists ? themeSnap.data() || {} : {};
+          if (themeData.adminFirstResponseHearted === true) continue;
+
+          const userName = String(assignment.user_name ?? assignment.userName ?? '').trim();
+          const patch = {
+            appDateKey: dateKey,
+            first_response: String(themeData.first_response || '').trim() || firstResponse,
+            firstResponseHeartCount: admin.firestore.FieldValue.increment(1),
+            adminFirstResponseHearted: true,
+            updatedAtIso: nowIso
+          };
+          if (userName && !String(themeData.user_name ?? themeData.userName ?? '').trim()) {
+            patch.user_name = userName;
+          }
+          if (!themeSnap.exists || !themeData.generatedAt) {
+            patch.generatedAt = admin.firestore.FieldValue.serverTimestamp();
+            patch.generatedAtIso = String(themeData.generatedAtIso || '').trim() || nowIso;
+          }
+          queueBatchSet(state, themeRef, patch);
+          count += 1;
+          await commitBatchIfNeeded(state);
+        }
+
+        cursor = snap.docs[snap.docs.length - 1];
+        if (snap.docs.length < PAGE) break;
+        await new Promise((r) => setTimeout(r, PAUSE_MS));
+      }
+
+      await commitBatchIfNeeded(state, true);
+      return count;
+    }
+
     async function sweepVisibleReflectionThemes() {
       let count = 0;
       let repairs = 0;
@@ -3787,8 +3853,9 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
       return count;
     }
 
+    const assignmentFirstResponses = await sweepAssignmentFirstResponses();
     const visibleReflectionSweep = await sweepVisibleReflectionThemes();
-    reflections = visibleReflectionSweep.count + await bumpPaginated(
+    reflections = assignmentFirstResponses + visibleReflectionSweep.count + await bumpPaginated(
       db.collection('reflectionResponses').orderBy('__name__'),
       { skipIds: visibleReflectionSweep.handledResponseIds }
     );
@@ -3801,9 +3868,18 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
     }
 
     const ms = Date.now() - t0;
-    const repairSuffix = visibleReflectionSweep.repairs ? ` (${visibleReflectionSweep.repairs} reflection display repairs)` : '';
+    const detail = [];
+    if (assignmentFirstResponses) detail.push(`${assignmentFirstResponses} first-response repairs`);
+    if (visibleReflectionSweep.repairs) detail.push(`${visibleReflectionSweep.repairs} reflection display repairs`);
+    const repairSuffix = detail.length ? ` (${detail.join(', ')})` : '';
     console.log(`💛 Heart sweep (${trigger}): +1 on ${reflections} reflections, ${comments} comments in ${ms}ms${repairSuffix}`);
-    return { reflections, comments, ms, reflectionDisplayRepairs: visibleReflectionSweep.repairs };
+    return {
+      reflections,
+      comments,
+      ms,
+      firstResponseRepairs: assignmentFirstResponses,
+      reflectionDisplayRepairs: visibleReflectionSweep.repairs
+    };
   } catch (err) {
     console.warn('⚠️ Heart sweep failed:', err?.message || err);
     return { skipped: true, reason: err?.message || 'error' };
