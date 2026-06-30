@@ -6782,16 +6782,47 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
   try {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const requestFamilies = Array.isArray(body.colorFamilies)
+      ? body.colorFamilies
+          .map((family) => ({
+            name: String(family?.name || '').trim(),
+            count: Number(family?.count) || 0
+          }))
+          .filter((family) => family.name)
+      : [];
+    const requestBlockCount = Number(body.blockCount) || 0;
 
-    const nameRef = db.collection('quiltNames').doc(dateKey);
-    const nameSnap = await nameRef.get();
-    if (nameSnap.exists && Array.isArray(nameSnap.data()?.words) && nameSnap.data().words.length >= 10) {
-      return res.json({ success: true, words: nameSnap.data().words, cached: true });
+    let nameRef = null;
+    let cacheWarning = null;
+    if (db && typeof db.collection === 'function') {
+      nameRef = db.collection('quiltNames').doc(dateKey);
+      try {
+        const nameSnap = await nameRef.get();
+        if (nameSnap.exists && Array.isArray(nameSnap.data()?.words) && nameSnap.data().words.length >= 10) {
+          return res.json({ success: true, words: nameSnap.data().words, cached: true, provider: nameSnap.data()?.provider || 'cached' });
+        }
+      } catch (error) {
+        cacheWarning = error.message || 'Could not read cached quilt name words';
+      }
     }
 
-    const quiltSnap = await db.collection('quilts').doc(dateKey).get();
-    const blocks = quiltSnap.exists ? (quiltSnap.data()?.blocks || []) : [];
-    const families = analyzeColorFamiliesServer(blocks);
+    let blocks = [];
+    let families = requestFamilies;
+    let blockCount = requestBlockCount;
+    let quiltWarning = null;
+    if (db && typeof db.collection === 'function') {
+      try {
+        const quiltSnap = await db.collection('quilts').doc(dateKey).get();
+        blocks = quiltSnap.exists ? (quiltSnap.data()?.blocks || []) : [];
+        if (blocks.length) {
+          families = analyzeColorFamiliesServer(blocks);
+          blockCount = blocks.length;
+        }
+      } catch (error) {
+        quiltWarning = error.message || 'Could not read quilt colors from Firestore';
+      }
+    }
+    if (!families.length) families = [{ name: 'Gray', count: 1 }];
     const topColors = families.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
 
     const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
@@ -6806,7 +6837,7 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
 Quilt details:
 - Date: ${dateKey}
 - Dominant colors: ${topColors}
-- Total blocks contributed: ${blocks.length}
+- Total blocks contributed: ${blockCount}
 
 Rules:
 - Every word must be a single word (no phrases, no hyphens)
@@ -6832,7 +6863,7 @@ Rules:
     }
 
     if (!Array.isArray(parsed)) {
-      parsed = buildFallbackQuiltNameWords({ colorFamilies: families, blockCount: blocks.length, dateKey });
+      parsed = buildFallbackQuiltNameWords({ colorFamilies: families, blockCount, dateKey });
     }
 
     const words = parsed.slice(0, 20).map((w) => ({
@@ -6841,15 +6872,33 @@ Rules:
       eliminated: false
     }));
 
-    await nameRef.set({
-      status: 'active',
-      words,
-      provider,
-      ...(aiWarning ? { aiWarning } : {}),
-      generatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+    let persistenceWarning = null;
+    if (nameRef) {
+      try {
+        await nameRef.set({
+          status: 'active',
+          words,
+          provider,
+          ...(aiWarning ? { aiWarning } : {}),
+          generatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (error) {
+        persistenceWarning = error.message || 'Could not save quilt name words';
+      }
+    } else {
+      persistenceWarning = 'Firestore is not configured; generated words were not saved';
+    }
 
-    return res.json({ success: true, words, cached: false, provider, ...(aiWarning ? { warning: aiWarning } : {}) });
+    return res.json({
+      success: true,
+      words,
+      cached: false,
+      provider,
+      ...(aiWarning ? { warning: aiWarning } : {}),
+      ...(cacheWarning ? { cacheWarning } : {}),
+      ...(quiltWarning ? { quiltWarning } : {}),
+      ...(persistenceWarning ? { persistenceWarning } : {})
+    });
   } catch (error) {
     console.error('❌ quilt-name-generate failed:', error);
     return res.status(500).json({ success: false, error: error.message || String(error) || 'quilt-name-generate failed' });
