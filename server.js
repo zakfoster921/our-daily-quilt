@@ -7109,14 +7109,6 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
     let cacheWarning = null;
     if (db && typeof db.collection === 'function') {
       nameRef = db.collection('quiltNames').doc(dateKey);
-      try {
-        const nameSnap = await nameRef.get();
-        if (nameSnap.exists && Array.isArray(nameSnap.data()?.words) && nameSnap.data().words.length >= 10) {
-          return res.json({ success: true, words: nameSnap.data().words, cached: true, provider: nameSnap.data()?.provider || 'cached' });
-        }
-      } catch (error) {
-        cacheWarning = error.message || 'Could not read cached quilt name words';
-      }
     }
 
     let blocks = [];
@@ -7145,6 +7137,16 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
         requiredBlockCount: minQuiltNameColorCount,
         message: 'Waiting for more colors before generating quilt name words'
       });
+    }
+    if (nameRef) {
+      try {
+        const nameSnap = await nameRef.get();
+        if (nameSnap.exists && Array.isArray(nameSnap.data()?.words) && nameSnap.data().words.length >= 10) {
+          return res.json({ success: true, words: nameSnap.data().words, cached: true, provider: nameSnap.data()?.provider || 'cached' });
+        }
+      } catch (error) {
+        cacheWarning = error.message || 'Could not read cached quilt name words';
+      }
     }
     const topColors = families.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
 
