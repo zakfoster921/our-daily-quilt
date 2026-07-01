@@ -740,7 +740,10 @@ async function main() {
       {
         dateScheduled: deleteField,
         date_scheduled: deleteField,
-        scheduleUpdatedAt: updatedAt
+        scheduleUpdatedAt: updatedAt,
+        // Notion may still show the old date_scheduled for this page; force the
+        // usage-sync script to patch it clear regardless of sync window.
+        notionDateClearPending: true
       },
       { merge: true }
     );

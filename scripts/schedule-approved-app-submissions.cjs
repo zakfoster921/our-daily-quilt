@@ -26,6 +26,7 @@ try {
 const admin = require('firebase-admin');
 const { addDays, getAppDateKey, getOpeningAppDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
 const { speakerCutoutUrlForPortrait } = require('./lib/speaker-cutout-portrait-match.cjs');
+const { catalogFieldsForAssignmentMirror } = require('./lib/first-response-fields.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
   'artRecsType',
@@ -135,7 +136,11 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     speakerKeywordsSnapshot: String(q.speakerKeywords ?? q.speaker_keywords ?? '').slice(0, 200),
     imageAttributionSnapshot: q.imageAttribution.slice(0, 260),
     assignedAt: new Date().toISOString(),
-    assignedBy
+    assignedBy,
+    // Swap mode replaces the assignment doc wholesale (no merge) to avoid leaking the
+    // previous occupant's snapshots — without this, that same replace silently drops
+    // any first_response Zak already typed in Notion for this quote.
+    ...catalogFieldsForAssignmentMirror(q)
   };
 }
 
@@ -266,7 +271,8 @@ async function main() {
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
       dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim(),
       notionLastEditedTime: String(d.notionLastEditedTime || '').trim(),
-      scheduleSource: String(d.scheduleSource || '').trim()
+      scheduleSource: String(d.scheduleSource || '').trim(),
+      first_response: String(d.first_response || '').trim()
     });
   });
 
@@ -569,7 +575,11 @@ async function main() {
         dateScheduled: deleteField,
         date_scheduled: deleteField,
         scheduleUpdatedAt: updatedAt,
-        scheduleSource: deleteField
+        scheduleSource: deleteField,
+        // Notion may still show the old date_scheduled for this page; the usage-sync
+        // script's windowed scan can't see a doc whose date was just removed, so it
+        // needs this out-of-band signal to force a Notion patch regardless of window.
+        notionDateClearPending: true
       },
       { merge: true }
     );

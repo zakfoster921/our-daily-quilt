@@ -1104,7 +1104,10 @@ async function clearConflictingCatalogScheduleDates(db, collectionName, winnersB
           dateScheduled: deleteField,
           date_scheduled: deleteField,
           scheduleUpdatedAt: updatedAt,
-          scheduleSource: 'notion-sync-displaced-date'
+          scheduleSource: 'notion-sync-displaced-date',
+          // This row's own Notion date_scheduled still shows the contested date; force
+          // the usage-sync script to patch it clear regardless of sync window.
+          notionDateClearPending: true
         },
         { merge: true }
       );
@@ -1174,6 +1177,24 @@ async function applyScheduledDatesFromNotionSync(db, options) {
   return { scheduleConflictClears, assignmentMirrors, keywordEmphasisMirrors };
 }
 
+/**
+ * A corrective usage-sync patch (clearing a displaced quote's stale date_scheduled)
+ * bumps Notion's own last_edited_time, which would otherwise make the page look
+ * freshly-edited and re-arm swap-mode's "recently touched" candidacy on the next
+ * sync — bouncing the quote right back into the near-term queue. Treat a fresh
+ * last_edited_time within this window of our own last self-patch as us, not a
+ * genuine human edit.
+ */
+const SELF_PATCH_SUPPRESS_WINDOW_MS = 15 * 60 * 1000;
+
+function isLikelySelfPatchEdit(freshLastEditedIso, selfPatchedIso) {
+  if (!freshLastEditedIso || !selfPatchedIso) return false;
+  const fresh = Date.parse(freshLastEditedIso);
+  const self = Date.parse(selfPatchedIso);
+  if (!Number.isFinite(fresh) || !Number.isFinite(self)) return false;
+  return Math.abs(fresh - self) <= SELF_PATCH_SUPPRESS_WINDOW_MS;
+}
+
 async function syncNotionPagesToFirestore(db, options) {
   const {
     rows,
@@ -1190,6 +1211,13 @@ async function syncNotionPagesToFirestore(db, options) {
   let scheduleConflictClears = 0;
   const scheduledByDate = new Map();
 
+  const selfPatchedAtById = new Map();
+  const existingSnap = await db.collection(collectionName).where('source', '==', 'notion').get();
+  existingSnap.forEach((docSnap) => {
+    const v = docSnap.data()?.selfPatchedNotionAt;
+    if (v) selfPatchedAtById.set(docSnap.id, String(v));
+  });
+
   for (const row of rows) {
     if (row && row.id) seenNotionIds.add(row.id);
     const parsed = parseNotionRow(row);
@@ -1199,6 +1227,11 @@ async function syncNotionPagesToFirestore(db, options) {
     }
     if (String(parsed.data.fortune || '').trim()) {
       fortuneCount += 1;
+    }
+    if (isLikelySelfPatchEdit(parsed.data.notionLastEditedTime, selfPatchedAtById.get(parsed.id))) {
+      // Keep whatever notionLastEditedTime is already stored — don't let our own
+      // corrective patch look like a fresh human edit to swap-mode candidacy.
+      delete parsed.data.notionLastEditedTime;
     }
     if (!dryRun) {
       await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });

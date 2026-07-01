@@ -478,7 +478,11 @@ async function main() {
         dateScheduled: deleteField,
         date_scheduled: deleteField,
         scheduleUpdatedAt: updatedAt,
-        scheduleSource: 'notion-date-reconcile-conflict'
+        scheduleSource: 'notion-date-reconcile-conflict',
+        // This row's own Notion date_scheduled still shows the contested date (it lost
+        // the conflict); force the usage-sync script to patch it clear on its next run
+        // regardless of sync window.
+        notionDateClearPending: true
       },
       { merge: true }
     );
@@ -497,7 +501,10 @@ async function main() {
           dateScheduled: deleteField,
           date_scheduled: deleteField,
           scheduleUpdatedAt: updatedAt,
-          scheduleSource: 'notion-date-reconcile-displaced'
+          scheduleSource: 'notion-date-reconcile-displaced',
+          // Occupant may have had this date patched into Notion by a previous usage-sync
+          // run; force a clear regardless of window so Notion doesn't keep showing it.
+          notionDateClearPending: true
         },
         { merge: true }
       );

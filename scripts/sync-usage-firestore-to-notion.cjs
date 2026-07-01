@@ -257,7 +257,9 @@ async function run() {
     if (!text || !author || !sourceId) continue;
     const key = quoteKey(text, author);
     const dateScheduled = dateScheduledFromQuoteData(data);
-    const rec = { sourceId, text, author, key, dateScheduled };
+    const notionDateClearPending = data.notionDateClearPending === true;
+    const catalogFirstResponse = String(data.first_response || '').trim();
+    const rec = { sourceId, text, author, key, dateScheduled, notionDateClearPending, catalogFirstResponse };
     notionDocs.push(rec);
     byKey.set(key, rec);
   }
@@ -330,9 +332,12 @@ async function run() {
   let firstResponseFirestoreWrites = 0;
   const patchedNormIds = new Set();
 
-  async function applyFirstResponseForDate(dateKey, sourceId, properties) {
+  async function applyFirstResponseForDate(dateKey, sourceId, properties, catalogFallback = '') {
     if (!dateKey || !sourceId) return;
-    const firstResponse = firstResponseByDate.get(dateKey) || '';
+    // The assignment doc's first_response can be momentarily behind the catalog (e.g. a
+    // scheduler just replaced the assignment doc). Fall back to the catalog's own value
+    // instead of blindly patching Notion blank when Firestore hasn't caught up yet.
+    const firstResponse = firstResponseByDate.get(dateKey) || catalogFallback || '';
     if (hasFirstResponseFields) {
       const notionProps = buildFirstResponseNotionProperties(notionSchema, {
         firstResponse,
@@ -353,6 +358,7 @@ async function run() {
   for (const q of notionDocs) {
     if (
       window &&
+      !q.notionDateClearPending &&
       !quoteTouchesSyncWindow(
         q,
         window,
@@ -384,23 +390,52 @@ async function run() {
       properties[dateScheduledProp] = { date: scheduledDate ? { start: scheduledDate } : null };
     }
     if (scheduledDate) {
-      await applyFirstResponseForDate(scheduledDate, q.sourceId, properties);
+      await applyFirstResponseForDate(scheduledDate, q.sourceId, properties, q.catalogFirstResponse);
     }
     // Do not require dailyQuoteUsage rows: many quotes are scheduled but not yet "used",
     // and they still need date_scheduled written to Notion.
-    if (!Object.keys(properties).length) continue;
+    if (!Object.keys(properties).length) {
+      if (q.notionDateClearPending && !dryRun) {
+        await db
+          .collection(collectionName)
+          .doc(q.sourceId)
+          .set({ notionDateClearPending: admin.firestore.FieldValue.delete() }, { merge: true });
+      }
+      continue;
+    }
 
     updates += 1;
     if (!dryRun) {
       try {
         await notionPatchPage(q.sourceId, notionToken, { properties });
         patchedNormIds.add(normalizeNotionPageId(q.sourceId));
+        if (q.notionDateClearPending) {
+          // This patch bumps Notion's own last_edited_time. Stamp when *we* touched
+          // the page so sync-notion-to-firestore.cjs can tell this apart from a
+          // genuine human edit and avoid re-arming swap-mode's recency candidacy.
+          await db
+            .collection(collectionName)
+            .doc(q.sourceId)
+            .set(
+              {
+                notionDateClearPending: admin.firestore.FieldValue.delete(),
+                selfPatchedNotionAt: new Date().toISOString()
+              },
+              { merge: true }
+            );
+        }
       } catch (e) {
         if (isSkippableNotionUsagePatchError(e)) {
           skipped += 1;
           console.warn(
             `[usage-sync] skip page ${q.sourceId} (archived, deleted, or not patchable): ${(e.message || '').slice(0, 220)}`
           );
+          if (q.notionDateClearPending) {
+            await db
+              .collection(collectionName)
+              .doc(q.sourceId)
+              .set({ notionDateClearPending: admin.firestore.FieldValue.delete() }, { merge: true });
+          }
           continue;
         }
         throw e;
