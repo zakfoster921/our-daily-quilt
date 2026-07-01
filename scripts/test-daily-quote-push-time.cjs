@@ -64,6 +64,26 @@ function testIsDailyQuoteDueForToken() {
     isDailyQuoteDueForToken({ ...token, dailyQuotePreferredHour: 10 }, now, { dateKey }),
     false
   );
+  assert.strictEqual(
+    isDailyQuoteDueForToken({ ...token, dailyQuotePreferredHour: 8 }, now, { dateKey, catchUp: true }),
+    true
+  );
+  assert.strictEqual(
+    isDailyQuoteDueForToken({ ...token, dailyQuotePreferredHour: 9 }, now, { dateKey, catchUp: true }),
+    true
+  );
+  assert.strictEqual(
+    isDailyQuoteDueForToken({ ...token, dailyQuotePreferredHour: 10 }, now, { dateKey, catchUp: true }),
+    false
+  );
+  assert.strictEqual(
+    isDailyQuoteDueForToken(
+      { ...token, dailyQuotePreferredHour: 8, lastDailyQuotePushDateKey: dateKey },
+      now,
+      { dateKey, catchUp: true }
+    ),
+    false
+  );
 
   const indiaMorning = new Date('2026-01-15T03:30:00.000Z');
   const indiaDateKey = getAppDateKey(indiaMorning);

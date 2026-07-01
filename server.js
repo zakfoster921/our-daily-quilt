@@ -3926,10 +3926,26 @@ function startHeartSweepScheduler() {
 }
 
 let dailyQuotePushTimer = null;
+async function runDailyQuotePushStartupCatchUp() {
+  const now = new Date();
+  const result = await sendDailyQuotePushNotifications(getAppDateKey(now), {
+    catchUp: true,
+    now
+  });
+  console.log(
+    `🔔 Daily quote push startup catch-up complete: sent=${result.sent || 0}, due=${result.dueCount || 0}, skipped=${result.skipped || 0}`
+  );
+  return result;
+}
+
 function startDailyQuotePushScheduler() {
   if (dailyQuotePushTimer) return;
   // Delay first run slightly so startup Firestore reads settle
-  setTimeout(() => sendDailyQuotePushNotifications().catch(() => {}), 60000);
+  setTimeout(() => {
+    runDailyQuotePushStartupCatchUp().catch((e) => {
+      console.warn('⚠️ Daily quote push startup catch-up failed:', e?.message || e);
+    });
+  }, 60000);
   dailyQuotePushTimer = setInterval(() => {
     sendDailyQuotePushNotifications().catch((e) => {
       console.warn('⚠️ Daily quote push tick failed:', e?.message || e);
@@ -4692,6 +4708,7 @@ async function collectDailyQuotePushTokensDue(now = new Date(), options = {}) {
 
   const dateKey = options.dateKey || getAppDateKey(now);
   const force = options.force === true;
+  const catchUp = options.catchUp === true;
   let totalCount = 0;
   const due = [];
 
@@ -4700,7 +4717,7 @@ async function collectDailyQuotePushTokensDue(now = new Date(), options = {}) {
     const data = docSnap.data() || {};
     const token = String(data.token || '').trim();
     if (!token) return;
-    if (!isDailyQuoteDueForToken(data, now, { force, dateKey })) return;
+    if (!isDailyQuoteDueForToken(data, now, { force, catchUp, dateKey })) return;
     due.push({ id: docSnap.id, token, data });
   });
 
@@ -4743,13 +4760,18 @@ async function getLatestStudioFloorPostSince(sinceIso) {
 async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), options = {}) {
   if (!db) throw new Error('Firestore not initialized');
   const force = options && options.force === true;
+  const catchUp = options && options.catchUp === true;
   const now = options.now instanceof Date ? options.now : new Date();
   const resolvedDateKey = dateKey || getAppDateKey(now);
   const utcHour = String(now.getUTCHours()).padStart(2, '0');
-  const opRef = db.collection('ops').doc(`daily-quote-push-${resolvedDateKey}-h${utcHour}`);
+  const opId = catchUp
+    ? `daily-quote-push-${resolvedDateKey}-startup-catchup-h${utcHour}`
+    : `daily-quote-push-${resolvedDateKey}-h${utcHour}`;
+  const opRef = db.collection('ops').doc(opId);
 
   const { due: recipients, totalCount } = await collectDailyQuotePushTokensDue(now, {
     force,
+    catchUp,
     dateKey: resolvedDateKey
   });
   const skipped = Math.max(0, totalCount - recipients.length);
@@ -4759,6 +4781,7 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
       {
         status: 'success',
         date: resolvedDateKey,
+        trigger: catchUp ? 'startup-catchup' : 'hourly',
         sent: 0,
         failed: 0,
         pruned: 0,
@@ -4859,6 +4882,7 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
     {
       status: 'success',
       date: resolvedDateKey,
+      trigger: catchUp ? 'startup-catchup' : 'hourly',
       sent,
       failed,
       pruned,
