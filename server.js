@@ -6961,6 +6961,49 @@ function analyzeColorFamiliesServer(blocks) {
   return Object.values(familyCounts).sort((a, b) => b.count - a.count);
 }
 
+function analyzeCompositionServer(blocks) {
+  if (!blocks || !blocks.length) return '';
+
+  // Contrast: spread of lightness values
+  const lightnesses = blocks.map((b) => {
+    const { l } = hexToHslServer(b.color || '#808080');
+    return l;
+  });
+  const minL = Math.min(...lightnesses);
+  const maxL = Math.max(...lightnesses);
+  const spread = maxL - minL;
+  const contrast = spread > 0.5 ? 'high contrast' : spread > 0.25 ? 'mid-range contrast' : 'tonal / muted';
+
+  // Warmth: warm vs cool families
+  const warmFamilies = new Set(['Red', 'Orange', 'Yellow', 'Pink', 'Magenta']);
+  const warmCount = blocks.filter((b) => warmFamilies.has(getColorFamilyServer(b.color || ''))).length;
+  const warmRatio = warmCount / blocks.length;
+  const warmth = warmRatio > 0.6 ? 'warm-dominant' : warmRatio < 0.4 ? 'cool-dominant' : 'balanced warm/cool';
+
+  // Diagonal presence
+  const diagCount = blocks.filter((b) => b.specialPatternType === 'diagonalAxis').length;
+  const diagRatio = diagCount / blocks.length;
+  const structure = diagRatio > 0.5 ? 'strongly diagonal' : diagRatio > 0.2 ? 'partly diagonal' : 'mostly rectilinear';
+
+  // Axis angle from diagonalAxisUx/Uy (ux=cos, uy=sin of the axis direction)
+  const diagBlocks = blocks.filter((b) => b.diagonalAxisUx != null && b.diagonalAxisUy != null);
+  let angleDesc = '';
+  if (diagBlocks.length) {
+    const avgAngle = diagBlocks.reduce((sum, b) => sum + Math.abs(Math.atan2(b.diagonalAxisUy, b.diagonalAxisUx) * 180 / Math.PI), 0) / diagBlocks.length;
+    angleDesc = avgAngle > 60 ? ', steep angles' : avgAngle < 30 ? ', shallow angles' : ', mid-range angles';
+  }
+
+  // Spatial weight: average y-center of the largest blocks (top 20% by area)
+  const withArea = blocks.map((b) => ({ ...b, area: (b.width || 0) * (b.height || 0), cy: (b.y || 0) + (b.height || 0) / 2 }));
+  const sorted = [...withArea].sort((a, b) => b.area - a.area);
+  const topN = Math.max(1, Math.floor(sorted.length * 0.2));
+  const avgCy = sorted.slice(0, topN).reduce((s, b) => s + b.cy, 0) / topN;
+  const totalH = Math.max(...blocks.map((b) => (b.y || 0) + (b.height || 0))) || 1;
+  const weight = avgCy / totalH < 0.4 ? 'top-heavy' : avgCy / totalH > 0.6 ? 'bottom-heavy' : 'center-weighted';
+
+  return `${structure}${angleDesc}, ${contrast}, ${warmth}, ${weight}`;
+}
+
 function seededShuffle(values, seedText) {
   let seed = 0;
   const text = String(seedText || 'odq');
@@ -7149,6 +7192,7 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
       }
     }
     const topColors = families.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
+    const composition = analyzeCompositionServer(blocks);
 
     let quoteText = '';
     if (db && typeof db.collection === 'function') {
@@ -7174,14 +7218,18 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
 Quilt details:
 - Date: ${dateKey}
 - Dominant colors: ${topColors}
-- Total blocks contributed: ${blockCount}
+- Total blocks contributed: ${blockCount}${composition ? `\n- Composition: ${composition}` : ''}
 
 Rules:
 - Every word must be a single word (no phrases, no hyphens)
 - Words should feel poetic, tactile, or atmospheric — not generic
 - Mix concrete nouns, adjectives, and unexpected plain-language words
 - Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
-- Some words should feel specific to the colors, some to the scale/density, some should be surprising wildcards
+- Avoid esoteric or niche words that most people wouldn't know (e.g. no "tessera", "meridian", "shibori", "gloaming")
+- Use present-tense verbs only — no past tense (e.g. "beckon" not "beckoned", "cherish" not "cherished")
+- At least 3 words must evoke or reference the dominant colors above (e.g. a word conjured by ${topColors}) — without literally naming the color
+- Let the composition description above inform a few words — e.g. words that feel diagonal, weighty, airy, or tonal
+- Some words should feel specific to the colors, some to the composition, some should be surprising wildcards
 - Do NOT include color names literally (no "Blue", "Red", etc.)
 ${quoteRule}
 - Output ONLY a JSON array of 20 strings, nothing else: ["Word1","Word2",...]`;
@@ -7208,7 +7256,7 @@ ${quoteRule}
       word: String(w).trim(),
       votes: 0,
       eliminated: false
-    }));
+    })).sort(() => Math.random() - 0.5);
 
     let persistenceWarning = null;
     if (nameRef) {

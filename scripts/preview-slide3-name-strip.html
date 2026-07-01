@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Slide 3 Name Strip Preview</title>
+<style>
+  body { background: #222; display: flex; flex-direction: column; align-items: center; padding: 24px; font-family: sans-serif; color: #eee; gap: 16px; }
+  canvas { max-width: 540px; border: 1px solid #444; }
+  label { font-size: 14px; }
+  input[type=text] { font-size: 16px; padding: 6px 10px; width: 280px; }
+  button { font-size: 15px; padding: 8px 20px; cursor: pointer; }
+  #status { font-size: 13px; color: #aaa; min-height: 20px; }
+  #drop { border: 2px dashed #555; padding: 14px 28px; cursor: pointer; text-align: center; border-radius: 6px; font-size: 13px; color: #aaa; }
+  #drop.over { border-color: #aaa; }
+</style>
+</head>
+<body>
+<h2 style="margin:0">Slide 3 Name Strip Preview</h2>
+<div id="status">Loading today's quilt…</div>
+<div>
+  <label>Quilt name: <input type="text" id="nameInput" placeholder="loading…"></label>
+  <button id="renderBtn">Render</button>
+</div>
+<div id="drop">or drop / choose a different quilt image
+  <input type="file" id="fileInput" accept="image/*" style="display:none">
+</div>
+<canvas id="out" width="1080" height="1350"></canvas>
+
+<!-- Firebase (same versions as the app) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script src="../lib/app-config.js"></script>
+<script src="../lib/carousel-quilt-bg.js"></script>
+<script src="../lib/ig-contributor-carousel-compose.js"></script>
+<script>
+  const status = document.getElementById('status');
+  const nameInput = document.getElementById('nameInput');
+  const renderBtn = document.getElementById('renderBtn');
+  const canvas = document.getElementById('out');
+  const ctx = canvas.getContext('2d');
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('fileInput');
+
+  let quiltImg = null;
+
+  // Drop / file pick
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); loadFile(e.dataTransfer.files[0]); });
+  fileInput.addEventListener('change', (e) => loadFile(e.target.files[0]));
+  renderBtn.addEventListener('click', render);
+
+  function loadFile(file) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    loadImageUrl(url);
+  }
+
+  function loadImageUrl(url) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { quiltImg = img; status.textContent = `Quilt loaded (${img.naturalWidth}×${img.naturalHeight})`; render(); };
+    img.onerror = () => { status.textContent = 'Failed to load image — try dropping a file instead'; };
+    img.src = url;
+  }
+
+  function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  async function loadTodayData() {
+    try {
+      const cfg = globalThis.CONFIG?.FIREBASE || globalThis.APP_CONFIG?.FIREBASE || globalThis.firebaseConfig;
+      if (!cfg?.projectId) { status.textContent = 'Firebase config not found in app-config.js — drop a quilt image manually'; return; }
+
+      if (!firebase.apps.length) firebase.initializeApp(cfg);
+      const db = firebase.firestore();
+      const dk = todayKey();
+
+      // Load quilt image URL and winning name in parallel
+      const [igSnap, nameSnap] = await Promise.all([
+        db.collection('instagram-images').doc(dk).get(),
+        db.collection('quiltNames').doc(dk).get()
+      ]);
+
+      // Winning name
+      if (nameSnap.exists) {
+        const nameData = nameSnap.data() || {};
+        const words = Array.isArray(nameData.words) ? nameData.words : [];
+        const winner = words
+          .filter((w) => !w.eliminated && w.word)
+          .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))[0];
+        if (winner?.word) nameInput.value = String(winner.word).trim().toUpperCase();
+      }
+      if (!nameInput.value) nameInput.value = 'EMBER 47';
+
+      // Quilt image
+      if (igSnap.exists) {
+        const data = igSnap.data() || {};
+        const url = data.quiltImageUrl || data.classicUrl || data.imageStorageUrl || '';
+        if (url) { loadImageUrl(url); return; }
+      }
+      status.textContent = `No quilt image stored for ${dk} yet — drop one manually`;
+    } catch (err) {
+      status.textContent = `Firestore error: ${err.message} — drop a quilt image manually`;
+      console.error(err);
+    }
+  }
+
+  function render() {
+    if (!quiltImg) { status.textContent = 'Waiting for quilt image…'; return; }
+
+    const PANEL_W = 1080;
+    const PANEL_H = 1350;
+    ctx.clearRect(0, 0, PANEL_W, PANEL_H);
+
+    const CQB = globalThis.CarouselQuiltBg;
+    let quiltRect;
+    if (CQB?.resolveLayoutBCarouselQuiltRect) {
+      quiltRect = CQB.resolveLayoutBCarouselQuiltRect(quiltImg, PANEL_W, PANEL_H)?.rect;
+    }
+    if (!quiltRect) {
+      const iw = quiltImg.naturalWidth;
+      const ih = quiltImg.naturalHeight;
+      const scale = Math.max(PANEL_W / iw, PANEL_H / ih) * 1.04;
+      quiltRect = { x: Math.round((PANEL_W - iw * scale) / 2), y: Math.round((PANEL_H - ih * scale) / 2), width: Math.round(iw * scale), height: Math.round(ih * scale), sourceWidth: iw, sourceHeight: ih };
+    }
+
+    // Layout B blurred bg
+    if (CQB?.drawLayoutBCarouselQuiltBg) {
+      CQB.drawLayoutBCarouselQuiltBg(ctx, quiltImg, quiltRect, PANEL_W, PANEL_H, {});
+    } else {
+      ctx.fillStyle = '#f6f4f1';
+      ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+    }
+
+    // Framed quilt card
+    const FRAME_PX = 28, BG_GUTTER = 16, QUILT_SCALE = 0.95, TILT_DEG = 2.25;
+    const tiltRad = (TILT_DEG * Math.PI) / 180;
+    const iw = quiltImg.naturalWidth, ih = quiltImg.naturalHeight;
+    const maxQuiltW = PANEL_W - BG_GUTTER * 2 - FRAME_PX * 2;
+    const maxQuiltH = PANEL_H - BG_GUTTER * 2 - FRAME_PX * 2;
+    const scale = Math.min(maxQuiltW / iw, maxQuiltH / ih);
+    const dw = Math.round(iw * scale * QUILT_SCALE), dh = Math.round(ih * scale * QUILT_SCALE);
+    const cardW = dw + FRAME_PX * 2, cardH = dh + FRAME_PX * 2;
+    const cardX = Math.round((PANEL_W - cardW) / 2), cardY = Math.round((PANEL_H - cardH) / 2);
+
+    ctx.save();
+    ctx.translate(cardX + cardW / 2, cardY + cardH / 2);
+    ctx.rotate(tiltRad);
+    ctx.shadowColor = 'rgba(0,0,0,0.18)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 4;
+    ctx.fillStyle = '#f6f4f1';
+    ctx.fillRect(-cardW / 2, -cardH / 2, cardW, cardH);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(quiltImg, 0, 0, iw, ih, -cardW / 2 + FRAME_PX, -cardH / 2 + FRAME_PX, dw, dh);
+    ctx.restore();
+
+    // Name strip
+    const name = nameInput.value.trim() || 'EMBER 47';
+    const FONT_PX = 58, PAD_X = 52, PAD_Y = 22, GAP = 32;
+    const letterSpacingPx = FONT_PX * 0.12;
+    ctx.save();
+    ctx.font = `600 ${FONT_PX}px "DM Sans", system-ui, sans-serif`;
+    ctx.letterSpacing = `${letterSpacingPx}px`;
+    const textW = ctx.measureText(name).width + letterSpacingPx;
+    const stripW = textW + PAD_X * 2, stripH = FONT_PX + PAD_Y * 2;
+    const stripCX = PANEL_W / 2, stripCY = cardY + cardH + GAP + stripH / 2;
+    ctx.translate(stripCX, stripCY);
+    ctx.rotate(tiltRad);
+    ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 16; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = '#636363';
+    ctx.fillRect(-stripW / 2, -stripH / 2, stripW, stripH);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.fillStyle = '#f3eee4';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(name, 0, 0);
+    ctx.restore();
+
+    status.textContent = `Rendered — name: "${name}"`;
+  }
+
+  loadTodayData();
+</script>
+</body>
+</html>
