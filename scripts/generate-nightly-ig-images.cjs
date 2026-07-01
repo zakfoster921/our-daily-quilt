@@ -635,8 +635,41 @@ async function runNightlyIgAttempt({
         if (!storyLayoutBImageData) {
           throw new Error(`Layout B story image was not generated for ${dateKey}`);
         }
+        // Fetch winning quilt name for slide 3 name strip
+        let winningQuiltName = '';
+        try {
+          if (window.db && window.firestore && typeof window.firestore.getDoc === 'function') {
+            const nameSnap = await window.firestore.getDoc(
+              window.firestore.doc(window.db, 'quiltNames', dateKey)
+            );
+            if (nameSnap.exists()) {
+              const nameData = nameSnap.data() || {};
+              const rawWords = nameData.words;
+              if (Array.isArray(rawWords) && rawWords.length > 0) {
+                const winner = rawWords
+                  .filter((w) => !w.eliminated && w.word)
+                  .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))[0];
+                if (winner?.word) {
+                  const contributorCount = Math.max(
+                    1,
+                    Number(dateQuilt?.contributorCount) || contributors.length || blocks.length || 1
+                  );
+                  winningQuiltName = `${String(winner.word).trim().toUpperCase()} ${contributorCount}`;
+                }
+              }
+            }
+            if (winningQuiltName) {
+              log(`slide 3 winning quilt name: "${winningQuiltName}"`);
+            } else {
+              log('slide 3 winning quilt name: none (quiltNames doc missing or no votes yet)');
+            }
+          }
+        } catch (nameErr) {
+          log(`slide 3 quilt name fetch failed: ${nameErr?.message || nameErr}`);
+        }
+        const carouselOptions = { winningQuiltName };
         const integratedCarousel = await timed('integrated IG carousel', () =>
-          arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey)
+          arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey, carouselOptions)
         );
         if (
           !integratedCarousel?.carouselSlide1 ||

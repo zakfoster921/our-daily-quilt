@@ -123,6 +123,8 @@ app.get('/intro-persona-nav-lab', (_req, res) => sendPublicRootFile(res, 'intro-
 app.get('/intro-persona-nav-lab.html', (_req, res) => sendPublicRootFile(res, 'intro-persona-nav-lab.html'));
 app.get('/odq-editor', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
 app.get('/odq-editor.html', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
+app.get('/preview-slide3-name-strip', (_req, res) => sendPublicRootFile(res, 'preview-slide3-name-strip.html'));
+app.get('/preview-slide3-name-strip.html', (_req, res) => sendPublicRootFile(res, 'preview-slide3-name-strip.html'));
 app.get('/:fileName', (req, res, next) => {
   const fileName = String(req.params.fileName || '');
   if (!PUBLIC_ROOT_FILES.has(fileName)) return next();
@@ -6834,6 +6836,7 @@ app.post('/api/quilt-name-words', limitQuiltNameWords, async (req, res) => {
     const colorFamilies = Array.isArray(body.colorFamilies) ? body.colorFamilies : [];
     const blockCount = Number(body.blockCount) || 0;
     const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const quoteText = String(body.quoteText || '').trim();
 
     const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
     if (!apiKey) {
@@ -6847,6 +6850,9 @@ app.post('/api/quilt-name-words', limitQuiltNameWords, async (req, res) => {
     const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
 
     const topColors = colorFamilies.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
+    const quoteRule = quoteText
+      ? `- Exactly 2 of the 20 words must be significant nouns or verbs drawn directly from this quote (choose positive, uplifting words only — avoid anything with dark or heavy connotations): "${quoteText}"\n- Include 3 more words that are synonyms or closely related words of those 2 quote words (also positive/uplifting) — so 5 of the 20 words total connect to the quote`
+      : '';
     const prompt = `You are naming a collaborative daily quilt. Generate exactly 20 evocative single-word names for today's quilt.
 
 Quilt details:
@@ -6861,6 +6867,7 @@ Rules:
 - Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
 - Some words should feel specific to the colors, some to the scale/density, some should be surprising wildcards
 - Do NOT include color names literally (no "Blue", "Red", etc.)
+${quoteRule}
 - Output ONLY a JSON array of 20 strings, nothing else: ["Word1","Word2",...]`;
 
     const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
@@ -7106,6 +7113,15 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
     if (!families.length) families = [{ name: 'Gray', count: 1 }];
     const topColors = families.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
 
+    let quoteText = '';
+    if (db && typeof db.collection === 'function') {
+      try {
+        const quoteSnap = await db.collection('quotes').doc(dateKey).get();
+        const qd = quoteSnap.exists ? (quoteSnap.data() || {}) : {};
+        quoteText = String(qd.text ?? qd.body ?? '').trim();
+      } catch (_) {}
+    }
+
     const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
     const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
     let parsed = null;
@@ -7113,6 +7129,9 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
     let aiWarning = null;
 
     if (apiKey) {
+      const quoteRule = quoteText
+        ? `- Exactly 2 of the 20 words must be significant nouns or verbs drawn directly from this quote (choose positive, uplifting words only — avoid anything with dark or heavy connotations): "${quoteText}"\n- Include 3 more words that are synonyms or closely related words of those 2 quote words (also positive/uplifting) — so 5 of the 20 words total connect to the quote`
+        : '';
       const prompt = `You are naming a collaborative daily quilt. Generate exactly 20 evocative single-word names for today's quilt.
 
 Quilt details:
@@ -7127,6 +7146,7 @@ Rules:
 - Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
 - Some words should feel specific to the colors, some to the scale/density, some should be surprising wildcards
 - Do NOT include color names literally (no "Blue", "Red", etc.)
+${quoteRule}
 - Output ONLY a JSON array of 20 strings, nothing else: ["Word1","Word2",...]`;
 
       try {

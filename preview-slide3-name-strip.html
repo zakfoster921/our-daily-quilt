@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Slide 3 Name Strip Preview</title>
+<style>
+  body { background: #222; display: flex; flex-direction: column; align-items: center; padding: 24px; font-family: sans-serif; color: #eee; gap: 16px; }
+  canvas { max-width: 540px; border: 1px solid #444; display: block; }
+  input[type=text] { font-size: 16px; padding: 6px 10px; width: 240px; }
+  button { font-size: 15px; padding: 8px 20px; cursor: pointer; }
+  #status { font-size: 13px; color: #aaa; min-height: 18px; }
+  #dropzone { border: 2px dashed #666; border-radius: 6px; padding: 16px 32px; color: #aaa; font-size: 13px; text-align: center; cursor: pointer; transition: border-color 0.15s; }
+  #dropzone.over { border-color: #eee; color: #eee; }
+</style>
+</head>
+<body>
+<h2 style="margin:0">Slide 3 Preview</h2>
+<div id="status">Drop a quilt image or choose a file below</div>
+<div>
+  <label>Name: <input type="text" id="nameInput" value="EMBER 47"></label>
+  <button id="renderBtn">Render</button>
+</div>
+<div id="dropzone">
+  Drop quilt image here
+  <br><br>
+  <input type="file" id="fileInput" accept="image/*">
+</div>
+<canvas id="out" width="1080" height="1350"></canvas>
+<script>
+  const status  = document.getElementById('status');
+  const nameIn  = document.getElementById('nameInput');
+  const btn     = document.getElementById('renderBtn');
+  const canvas  = document.getElementById('out');
+  const ctx     = canvas.getContext('2d');
+  const dz      = document.getElementById('dropzone');
+  const fi      = document.getElementById('fileInput');
+
+  let quiltImg = null;
+
+  fi.addEventListener('change', e => loadFile(e.target.files[0]));
+  btn.addEventListener('click', render);
+
+  document.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) dz.classList.remove('over'); });
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) loadFile(file);
+  });
+
+  function loadFile(file) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { quiltImg = img; status.textContent = `Loaded ${img.naturalWidth}×${img.naturalHeight}`; render(); };
+    img.onerror = () => { status.textContent = 'Failed to load image'; };
+    img.src = url;
+  }
+
+  function render() {
+    if (!quiltImg) { status.textContent = 'Drop an image first'; return; }
+
+    const W = 1080, H = 1350;
+    ctx.clearRect(0, 0, W, H);
+
+    // White fill + quilt cover-scaled at 1.04x bleed — matches drawLayoutBCarouselQuiltBg exactly
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    const bgScale = Math.max(W / quiltImg.naturalWidth, H / quiltImg.naturalHeight) * 1.04;
+    const bgW = Math.round(quiltImg.naturalWidth * bgScale);
+    const bgH = Math.round(quiltImg.naturalHeight * bgScale);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(quiltImg, 0, 0, quiltImg.naturalWidth, quiltImg.naturalHeight, Math.round((W - bgW) / 2), Math.round((H - bgH) / 2), bgW, bgH);
+
+    // Framed quilt card
+    const FRAME = 28, GUTTER = 16, SCALE = 0.95, TILT = 2.25;
+    const tilt = TILT * Math.PI / 180;
+    const iw = quiltImg.naturalWidth, ih = quiltImg.naturalHeight;
+    const maxQW = W - GUTTER*2 - FRAME*2;
+    const maxQH = H - GUTTER*2 - FRAME*2;
+    const s = Math.min(maxQW / iw, maxQH / ih);
+    const dw = Math.round(iw * s * SCALE), dh = Math.round(ih * s * SCALE);
+    const cardW = dw + FRAME*2, cardH = dh + FRAME*2;
+    const cardX = Math.round((W - cardW) / 2), cardY = Math.round((H - cardH) / 2);
+
+    ctx.save();
+    ctx.translate(cardX + cardW/2, cardY + cardH/2);
+    ctx.rotate(tilt);
+    ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 28; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 5;
+    ctx.fillStyle = '#f6f4f1';
+    ctx.fillRect(-cardW/2, -cardH/2, cardW, cardH);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(quiltImg, 0, 0, iw, ih, -cardW/2 + FRAME, -cardH/2 + FRAME, dw, dh);
+    ctx.restore();
+
+    // Name strip — left-anchored, straddling the top of the white frame
+    const name = nameIn.value.trim() || 'EMBER 47';
+    const FPX = 52, PX = 48, PY = 20;
+    const lsPx = FPX * 0.12;
+    ctx.font = `600 ${FPX}px "DM Sans", system-ui, sans-serif`;
+    ctx.letterSpacing = `${lsPx}px`;
+    const tw = ctx.measureText(name).width + lsPx;
+    const sw = tw + PX*2, sh = FPX + PY*2;
+    const scx = GUTTER + sw/2;
+    const scy = cardY + FRAME + sh/2 + 8;
+
+    ctx.save();
+    ctx.translate(scx, scy); ctx.rotate(tilt);
+    ctx.shadowColor = 'rgba(0,0,0,0.12)'; ctx.shadowBlur = 14; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
+    ctx.fillStyle = '#f3eee4';
+    ctx.fillRect(-sw/2, -sh/2, sw, sh);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.fillStyle = '#404040'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(name, 0, 0);
+    ctx.restore();
+
+    status.textContent = `"${name}" — strip top ${Math.round(scy - sh/2)}px  card top ${cardY}px`;
+  }
+</script>
+</body>
+</html>
