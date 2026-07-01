@@ -7092,6 +7092,7 @@ app.options('/api/quilt-name-generate', (req, res) => {
 app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) => {
   setQuoteSubmissionCors(res);
   try {
+    const minQuiltNameColorCount = 5;
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
     const requestFamilies = Array.isArray(body.colorFamilies)
@@ -7135,6 +7136,16 @@ app.post('/api/quilt-name-generate', limitQuiltNameGenerate, async (req, res) =>
       }
     }
     if (!families.length) families = [{ name: 'Gray', count: 1 }];
+    if (blockCount < minQuiltNameColorCount) {
+      return res.status(202).json({
+        success: true,
+        status: 'pending',
+        words: [],
+        blockCount,
+        requiredBlockCount: minQuiltNameColorCount,
+        message: 'Waiting for more colors before generating quilt name words'
+      });
+    }
     const topColors = families.slice(0, 3).map((f) => f.name).join(', ') || 'mixed colors';
 
     let quoteText = '';
