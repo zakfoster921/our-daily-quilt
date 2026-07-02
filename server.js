@@ -69,6 +69,11 @@ const {
 } = require('./scripts/lib/first-response-fields.cjs');
 const { repairFirstResponseFromCatalog } = require('./scripts/lib/repair-first-response-from-catalog-lib.cjs');
 const { repairReflectionPublishedFromRaw } = require('./scripts/lib/repair-reflection-published-from-raw-lib.cjs');
+const {
+  createServerQuiltEngine,
+  serializeServerQuiltBlocks,
+  computeQuiltFingerprint
+} = require('./scripts/lib/server-quilt-engine.cjs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
@@ -200,6 +205,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-words', 4 * ONE_KB],
   ['/api/quilt-name-generate', 4 * ONE_KB],
   ['/api/quilt-vote', 4 * ONE_KB],
+  ['/api/color-submission', 8 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
@@ -431,6 +437,11 @@ const limitQuiltVote = createRateLimiter({
   name: 'quilt-vote',
   windowMs: 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_VOTE_PER_MIN, 30)
+});
+const limitColorSubmission = createRateLimiter({
+  name: 'color-submission',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_COLOR_SUBMISSION_PER_10_MIN, 10)
 });
 const limitQuoteKeywords = createRateLimiter({
   name: 'quote-keywords',
@@ -1723,6 +1734,66 @@ function safeReflectionDeviceKey(value) {
   const raw = String(value || '').trim();
   if (!raw) return crypto.randomUUID();
   return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32);
+}
+
+function normalizeSubmittedColorHex(value) {
+  const raw = String(value || '').trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw.toLowerCase() : '';
+}
+
+function safeColorSubmissionId(dateKey, clientId) {
+  const key = `${String(dateKey || '').trim()}|${String(clientId || '').trim()}`;
+  return `${String(dateKey || 'unknown').replace(/[^0-9-]/g, '')}_${crypto
+    .createHash('sha256')
+    .update(key)
+    .digest('hex')
+    .slice(0, 32)}`;
+}
+
+function normalizeQuiltContributorEntries(items) {
+  const out = [];
+  const seen = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    const userId = String(item.userId || '').trim().slice(0, 160);
+    const rawName = String(item.name || '').replace(/\s+/g, ' ').trim();
+    const name = (rawName || 'Friend').slice(0, 40);
+    const firstContributedAt = String(item.firstContributedAt || item.timestamp || getUtcIsoNow()).trim();
+    const key = userId || `${name.toLowerCase()}:${firstContributedAt}`;
+    if (!key) return;
+    const existingIndex = seen.get(key);
+    if (typeof existingIndex === 'number') {
+      if (out[existingIndex]?.name === 'Friend' && name !== 'Friend') {
+        out[existingIndex].name = name;
+      }
+      return;
+    }
+    seen.set(key, out.length);
+    out.push({ userId, name, firstContributedAt });
+  });
+  return out;
+}
+
+function deriveServerQuiltSubmissionCount(data = {}) {
+  const blocks = Array.isArray(data.blocks) ? data.blocks : [];
+  const maxBlockSubmission = blocks.reduce((max, block) => {
+    const n = Number(block?.submissionIndex);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  if (maxBlockSubmission > 0) return Math.floor(maxBlockSubmission);
+  const stored = Number(data.contributorCount);
+  return Number.isFinite(stored) && stored > 0 && blocks.length > 1 ? Math.floor(stored) : 0;
+}
+
+function buildServerQuiltWriteProvenance(reason, req, extra = {}) {
+  return {
+    writer: 'server',
+    reason,
+    at: getUtcIsoNow(),
+    ipHash: crypto.createHash('sha256').update(String(req?.ip || '')).digest('hex').slice(0, 16),
+    userAgent: String(req?.get?.('user-agent') || '').slice(0, 180),
+    ...extra
+  };
 }
 
 function postJsonWithHttps({ hostname, path: requestPath, headers, body }) {
@@ -7542,6 +7613,169 @@ app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
   } catch (error) {
     console.warn('GET /api/quilt failed:', error?.message || error);
     return res.status(500).json({ ok: false, error: error?.message || 'quilt read failed' });
+  }
+});
+
+app.options('/api/color-submission', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const color = normalizeSubmittedColorHex(body.color || body.hex || body.selectedColor);
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const displayName = normalizeSubmittedAuthorName(body.displayName || body.name || '').slice(0, 80);
+    const clientBuildId = String(body.clientBuildId || body.buildId || '').trim().slice(0, 80);
+    const clientQuiltFingerprint = String(body.clientQuiltFingerprint || '').trim().slice(0, 160);
+
+    if (!color) {
+      return res.status(400).json({ success: false, error: 'Valid #RRGGBB color is required' });
+    }
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const quiltRef = db.collection('quilts').doc(appDateKey);
+    const submissionId = safeColorSubmissionId(appDateKey, clientId);
+    const submissionRef = db.collection('colorSubmissions').doc(submissionId);
+    const nowIso = getUtcIsoNow();
+    let responsePayload = null;
+
+    await db.runTransaction(async (tx) => {
+      const submissionSnap = await tx.get(submissionRef);
+      const quiltSnap = await tx.get(quiltRef);
+      const currentQuilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
+      const currentBlocks = Array.isArray(currentQuilt.blocks) ? currentQuilt.blocks : [];
+
+      if (submissionSnap.exists) {
+        const existingSubmission = submissionSnap.data() || {};
+        responsePayload = {
+          success: true,
+          duplicate: true,
+          submissionId,
+          appDateKey,
+          color: existingSubmission.color || color,
+          status: existingSubmission.status || 'success',
+          dedicatedBlockId: existingSubmission.dedicatedBlockId || '',
+          blocks: currentBlocks,
+          contributorCount: currentQuilt.contributorCount || Math.max(1, deriveServerQuiltSubmissionCount(currentQuilt)),
+          colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
+          contributors: Array.isArray(currentQuilt.contributors) ? currentQuilt.contributors : [],
+          macroStructureFrozen: currentQuilt.macroStructureFrozen === true,
+          quiltFingerprint:
+            typeof currentQuilt.quiltFingerprint === 'string' && currentQuilt.quiltFingerprint
+              ? currentQuilt.quiltFingerprint
+              : computeQuiltFingerprint(currentBlocks)
+        };
+        return;
+      }
+
+      const engine = createServerQuiltEngine({
+        userId: clientId,
+        blocks: currentBlocks,
+        submissionCount: deriveServerQuiltSubmissionCount(currentQuilt),
+        colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
+        macroStructureFrozen: currentQuilt.macroStructureFrozen === true
+      });
+      const addResult = engine.addColor(color);
+      if (!addResult) {
+        throw new Error('Could not place color on quilt');
+      }
+
+      const blocks = serializeServerQuiltBlocks(engine);
+      const contributorEntry = {
+        userId: clientId,
+        name: displayName || 'Friend',
+        firstContributedAt: nowIso
+      };
+      const contributors = normalizeQuiltContributorEntries([
+        ...(Array.isArray(currentQuilt.contributors) ? currentQuilt.contributors : []),
+        contributorEntry
+      ]);
+      const contributorCount = Math.max(
+        1,
+        Number(engine.submissionCount) || 0,
+        contributors.length
+      );
+      const colorReplayEvents =
+        typeof engine.getColorReplayEvents === 'function' ? engine.getColorReplayEvents() : [];
+      const quiltFingerprint = computeQuiltFingerprint(blocks);
+      const macroStructureFrozen = engine.macroStructureFrozen === true;
+      const writeProvenance = buildServerQuiltWriteProvenance('color-submission', req, {
+        submissionId,
+        clientBuildId: clientBuildId || null
+      });
+
+      tx.set(quiltRef, {
+        blocks,
+        contributorCount,
+        lastUpdated: nowIso,
+        date: appDateKey,
+        quiltFingerprint,
+        colorReplayEvents,
+        contributors,
+        writeProvenance,
+        macroStructureFrozen
+      }, { merge: true });
+
+      tx.set(submissionRef, {
+        submissionId,
+        appDateKey,
+        color,
+        status: 'success',
+        clientId,
+        deviceKey: safeReflectionDeviceKey(clientId),
+        displayName: displayName || 'Friend',
+        clientBuildId: clientBuildId || null,
+        clientQuiltFingerprint: clientQuiltFingerprint || null,
+        quiltFingerprint,
+        contributorCount,
+        blockCount: blocks.length,
+        dedicatedBlockId: addResult.dedicatedBlockId || '',
+        submissionIndex: Number(addResult.submissionIndex) || Number(engine.submissionCount) || 0,
+        source: 'server-color-submission',
+        createdAtIso: nowIso,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      responsePayload = {
+        success: true,
+        duplicate: false,
+        submissionId,
+        appDateKey,
+        color,
+        status: 'success',
+        dedicatedBlockId: addResult.dedicatedBlockId || '',
+        appliedColor: addResult.appliedColor || color,
+        submissionIndex: Number(addResult.submissionIndex) || Number(engine.submissionCount) || 0,
+        blocks,
+        contributorCount,
+        colorReplayEvents,
+        contributors,
+        macroStructureFrozen,
+        quiltFingerprint
+      };
+    });
+
+    return res.json(responsePayload || { success: false, error: 'Color submission failed' });
+  } catch (error) {
+    console.error('❌ Color submission failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Color submission failed',
+      timestamp: getUtcIsoNow()
+    });
   }
 });
 
