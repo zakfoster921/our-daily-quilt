@@ -192,7 +192,7 @@ async function main() {
   const { SimpleQuiltEngine, Utils } = loadEngineRuntime();
   const { blocks, submissionCount, macroStructureFrozen } = await fetchQuiltBlocks(dateKey);
 
-  const engine = new SimpleQuiltEngine('harmony_compare');
+  const engine = new SimpleQuiltEngine('harmony_compare', { recordColorReplayEvents: false });
   engine.blocks = JSON.parse(JSON.stringify(blocks));
   engine.submissionCount = submissionCount;
   engine.macroStructureFrozen = macroStructureFrozen;

@@ -203,7 +203,7 @@ function blocksToSvg(blocks, Utils, label, subtitle) {
 }
 
 function makeEngine(SimpleQuiltEngine, blocks, submissionCount, macroStructureFrozen, deviceId) {
-  const engine = new SimpleQuiltEngine(deviceId);
+  const engine = new SimpleQuiltEngine(deviceId, { recordColorReplayEvents: false });
   engine.blocks = JSON.parse(JSON.stringify(blocks));
   engine.submissionCount = submissionCount;
   engine.macroStructureFrozen = macroStructureFrozen;
