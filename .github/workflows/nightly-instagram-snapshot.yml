@@ -155,7 +155,7 @@ jobs:
           fi
           node scripts/process-speaker-cutouts.cjs --opening-plus-one-speaker --soft-fail --limit=1
 
-      - name: Check if tomorrow's newspaper clipping already exists
+      - name: Check if tomorrow's newspaper clipping is fresh
         id: check_tomorrow_clipping
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
@@ -170,15 +170,33 @@ jobs:
             const admin = require('firebase-admin');
             const sa = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
             admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.project_id });
-            admin.firestore().collection('instagram-images').doc(process.env.TOMORROW_DATE_KEY).get()
-              .then(snap => {
-                const url = String((snap.exists && snap.data()?.newspaperClippingUrl) || '').trim();
-                process.stdout.write(url ? 'true' : 'false');
+            const db = admin.firestore();
+            const dateKey = process.env.TOMORROW_DATE_KEY;
+            Promise.all([
+              db.collection(process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments').doc(dateKey).get(),
+              db.collection('instagram-images').doc(dateKey).get()
+            ])
+              .then(([assignSnap, igSnap]) => {
+                const assign = assignSnap.exists ? assignSnap.data() || {} : {};
+                const ig = igSnap.exists ? igSnap.data() || {} : {};
+                const url = String(ig.newspaperClippingUrl || ig.newspaperClippingImageStorageUrl || '').trim();
+                const assignedAt = Date.parse(String(assign.assignedAt || '').trim());
+                const clippingAt = Date.parse(String(
+                  ig.newspaperClippingGeneratedAt ||
+                    ig.lastIgPushCompletedAt ||
+                    ig.lastUpdated ||
+                    ''
+                ).trim());
+                const fresh =
+                  !!url &&
+                  (!Number.isFinite(assignedAt) ||
+                    (Number.isFinite(clippingAt) && clippingAt >= assignedAt));
+                process.stdout.write(fresh ? 'true' : 'false');
               })
               .catch(() => process.stdout.write('false'));
           ")
           echo "skip_tomorrow_clipping=${SKIP}" >> "$GITHUB_OUTPUT"
-          echo "Tomorrow clipping exists: ${SKIP}"
+          echo "Tomorrow clipping fresh: ${SKIP}"
 
       - name: Generate newspaper clipping for tomorrow (admin preview lookahead)
         if: steps.check_tomorrow_clipping.outputs.skip_tomorrow_clipping != 'true'

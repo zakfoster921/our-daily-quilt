@@ -129,7 +129,7 @@ async function runNightlyIgAttempt({
       if (!qs?.loadQuotesFromFirestore) {
         throw new Error('quoteService.loadQuotesFromFirestore missing');
       }
-      const catalogOk = await qs.loadQuotesFromFirestore({ requireServer: true });
+      const catalogOk = await qs.loadQuotesFromFirestore({ requireServer: true, timeoutMs: 45000 });
       if (!catalogOk) {
         throw new Error('Firestore quote catalog failed to load (keyword / first_line_count need server catalog)');
       }
