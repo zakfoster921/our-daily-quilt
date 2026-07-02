@@ -33,6 +33,19 @@ android {
     }
 }
 
+tasks.register("cleanICloudDuplicateXmlResources") {
+    doLast {
+        fileTree(dir: "src/main/res/xml", include: "config *.xml").each { duplicate ->
+            logger.lifecycle("Removing iCloud duplicate Android XML resource: ${duplicate.name}")
+            duplicate.delete()
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Resources") }.configureEach {
+    dependsOn("cleanICloudDuplicateXmlResources")
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
