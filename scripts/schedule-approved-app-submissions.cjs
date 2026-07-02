@@ -24,7 +24,7 @@ try {
 }
 
 const admin = require('firebase-admin');
-const { addDays, getAppDateKey, getOpeningAppDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
+const { addDays, resolveStartDateKey } = require('./lib/app-date-key.cjs');
 const { speakerCutoutUrlForPortrait } = require('./lib/speaker-cutout-portrait-match.cjs');
 const { catalogFieldsForAssignmentMirror } = require('./lib/first-response-fields.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
@@ -48,22 +48,6 @@ const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
 function camelCaseDeletePayload() {
   const deleteField = admin.firestore.FieldValue.delete();
   return Object.fromEntries(DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE.map((key) => [key, deleteField]));
-}
-
-function queueNewspaperClippingInvalidation(batchState, db, instagramCollection, dateKey, updatedAt, reason, deleteField) {
-  batchState.batch.set(
-    db.collection(instagramCollection).doc(dateKey),
-    {
-      newspaperClippingUrl: deleteField,
-      newspaperClippingImageStorageUrl: deleteField,
-      newspaperClippingGeneratedAt: deleteField,
-      newspaperClippingExportRev: deleteField,
-      clippingInvalidatedAt: updatedAt,
-      clippingInvalidatedReason: reason
-    },
-    { merge: true }
-  );
-  batchState.ops += 1;
 }
 
 function requireDateArg(value, name) {
@@ -110,6 +94,13 @@ function isApprovedQuoteData(d) {
   return String(d.approved ?? d.active ?? '').trim().toLowerCase() !== 'false';
 }
 
+function isCommunitySubmittedQuote(q) {
+  if (String(q?.submittedVia || '').trim().toLowerCase() === 'app') return true;
+  if (String(q?.submittedBy || '').trim()) return true;
+  if (String(q?.submittedAt || '').trim()) return true;
+  return false;
+}
+
 function artRecsSnapshotValue(value) {
   if (value == null) return '';
   if (typeof value === 'string') return value.trim();
@@ -153,9 +144,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     imageAttributionSnapshot: q.imageAttribution.slice(0, 260),
     assignedAt: new Date().toISOString(),
     assignedBy,
-    // Swap mode replaces the assignment doc wholesale (no merge) to avoid leaking the
-    // previous occupant's snapshots — without this, that same replace silently drops
-    // any first_response Zak already typed in Notion for this quote.
+    // Keep first_response mirrored onto scheduled assignment rows.
     ...catalogFieldsForAssignmentMirror(q)
   };
 }
@@ -219,14 +208,6 @@ function commitBatchIfNeeded(db, state, threshold = 450) {
   return batch.commit();
 }
 
-async function readExistingInstagramDateKeys(db, instagramCollection, dateKeys) {
-  const keys = [...new Set([...dateKeys].filter(isDateKey))];
-  if (!keys.length) return new Set();
-  const refs = keys.map((dateKey) => db.collection(instagramCollection).doc(dateKey));
-  const snaps = await db.getAll(...refs);
-  return new Set(snaps.filter((snap) => snap.exists).map((snap) => snap.id));
-}
-
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
@@ -255,7 +236,6 @@ async function main() {
   const db = initFirestore();
   const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
-  const instagramCollection = 'instagram-images';
 
   const quotesSnap = await db.collection(quotesCollection).get();
   const notionQuotes = [];
@@ -294,9 +274,11 @@ async function main() {
       imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
       submittedAt: String(d.submittedAt || '').trim(),
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
+      submittedBy: String(d.submittedBy || d.submitted_by || '').trim(),
       dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim(),
       notionLastEditedTime: String(d.notionLastEditedTime || '').trim(),
       scheduleSource: String(d.scheduleSource || '').trim(),
+      schedulePriorityAt: String(d.schedulePriorityAt || '').trim(),
       first_response: String(d.first_response || '').trim()
     });
   });
@@ -324,35 +306,49 @@ async function main() {
   futureAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
   const submissionsToInsert = notionQuotes.filter((q) => {
-    // Previously gated on submittedVia === 'app'. Now any approved Notion quote
-    // without an explicit date_scheduled is eligible for auto-scheduling so rows
-    // added directly in Notion flow through the same path as app submissions.
+    if (!isCommunitySubmittedQuote(q)) return false;
     if (scheduledSourceIds.has(q.sourceId)) return false;
     if (isDateKey(q.dateScheduled)) return false;
     return true;
   });
+  submissionsToInsert.sort((a, b) => {
+    const aPriority = a.schedulePriorityAt || a.submittedAt || '';
+    const bPriority = b.schedulePriorityAt || b.submittedAt || '';
+    if (aPriority !== bPriority) return aPriority.localeCompare(bPriority);
+    const aSubmitted = a.submittedAt || '';
+    const bSubmitted = b.submittedAt || '';
+    if (aSubmitted !== bSubmitted) return aSubmitted.localeCompare(bSubmitted);
+    return a.sourceId.localeCompare(b.sourceId);
+  });
 
-  if (opts.appendOnly) {
+  {
+    const windowEnd = addDays(opts.start, (opts.window - 1) * opts.cadence);
+    const windowAssignments = futureAssignments.filter((row) => row.dateKey <= windowEnd);
+    const targetCount = opts.window;
+    const appendCount = Math.max(0, targetCount - windowAssignments.length);
     const assignedDateKeys = new Set(futureAssignments.map((row) => row.dateKey));
     let cursorDate =
-      futureAssignments.length > 0
-        ? futureAssignments[futureAssignments.length - 1].dateKey
+      windowAssignments.length > 0
+        ? windowAssignments[windowAssignments.length - 1].dateKey
         : addDays(opts.start, -1);
 
-    const scheduled = submissionsToInsert.map((quote) => {
+    const scheduled = [];
+    for (const quote of submissionsToInsert) {
+      if (scheduled.length >= appendCount) break;
       const dateKey = firstOpenDateAfter(cursorDate, assignedDateKeys);
+      if (dateKey > windowEnd) break;
       assignedDateKeys.add(dateKey);
       cursorDate = dateKey;
-      return {
+      scheduled.push({
         dateKey,
         quote,
         payload: assignmentPayloadForQuote(quote, dateKey, 'approved-app-submission-append-scheduler')
-      };
-    });
+      });
+    }
 
     if (opts.dryRun) {
       console.log(
-        `[app-submissions] dry-run append-only newSubmissions=${submissionsToInsert.length} appending=${scheduled.length} preserved=${futureAssignments.length} start=${opts.start}`
+        `[app-submissions] dry-run priority-append candidates=${submissionsToInsert.length} appending=${scheduled.length} preserved=${futureAssignments.length} window=${opts.window} start=${opts.start}`
       );
       console.log('[app-submissions] appended assignments:');
       scheduled.forEach((row) => {
@@ -363,7 +359,7 @@ async function main() {
 
     if (!scheduled.length) {
       console.log(
-        `[app-submissions] append-only no newly approved app submissions (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
+        `[app-submissions] priority-append no-op candidates=${submissionsToInsert.length} windowAssignments=${windowAssignments.length}/${targetCount} (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
       );
       return;
     }
@@ -407,259 +403,11 @@ async function main() {
     if (batchState.ops > 0) await batchState.batch.commit();
 
     console.log(
-      `[app-submissions] append-only wrote ${writes} assignments + ${quoteWrites} quote date fields, preserved ${futureAssignments.length} existing assignments (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
+      `[app-submissions] priority-append wrote ${writes} assignments + ${quoteWrites} quote date fields, preserved ${futureAssignments.length} existing assignments (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window})`
     );
     return;
   }
 
-  // ─── Swap mode ───────────────────────────────────────────────────────────
-  // Default mode (used by the admin "Notion ↔ Firestore sync" button).
-  //
-  // Goal: when the user approves a quote in Notion and clicks sync, that quote
-  // takes tomorrow's slot. Whatever was at tomorrow gets its date cleared and
-  // returns to the pool — the next append-only run (or backfill) re-schedules
-  // it at the end of the queue. No cascade; just a 1-for-1 swap.
-  //
-  // A quote is a "swap candidate" if it is approved AND either:
-  //   - It has no future assignment AND was edited in Notion recently, OR
-  //   - Its current assignment was written by the append-only scheduler
-  //     (i.e. the daily GH Action auto-appended it; the user hasn't manually
-  //     pinned a date) AND it was either appended or edited recently.
-  //
-  // "Recently" = within `RECENT_CANDIDATE_MS`. This stops the entire 70+ day
-  // queue from being treated as candidates on every sync.
-  const RECENT_CANDIDATE_MS = (() => {
-    const fromEnv = Number(process.env.SWAP_RECENT_CANDIDATE_HOURS);
-    const hours = Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 48;
-    return hours * 60 * 60 * 1000;
-  })();
-  const nowMs = Date.now();
-
-  const assignmentBySourceId = new Map();
-  const sourceIdByDate = new Map();
-  for (const row of futureAssignments) {
-    const sid = String(row.data.sourceId || '').trim();
-    if (sid) assignmentBySourceId.set(sid, row);
-    sourceIdByDate.set(row.dateKey, sid);
-  }
-
-  const appendSource = 'approved-app-submission-append-scheduler';
-  const swapSource = 'approved-app-submission-swap-scheduler';
-
-  function withinRecentMs(iso) {
-    if (!iso) return false;
-    const t = Date.parse(iso);
-    if (!Number.isFinite(t)) return false;
-    return nowMs - t <= RECENT_CANDIDATE_MS;
-  }
-
-  const candidates = notionQuotes.filter((q) => {
-    const assignment = assignmentBySourceId.get(q.sourceId);
-    const wasAppendScheduled = !!(
-      assignment && String(assignment.data.assignedBy || '').trim() === appendSource
-    );
-
-    if (isDateKey(q.dateScheduled) && !wasAppendScheduled) {
-      // User (or some other writer) pinned this row to a specific date. Leave it alone.
-      return false;
-    }
-
-    if (!assignment) {
-      // Truly unscheduled approved quote — must be recently edited in Notion.
-      return withinRecentMs(q.notionLastEditedTime);
-    }
-
-    if (!wasAppendScheduled) return false; // assigned by a non-append source — pinned
-
-    if (withinRecentMs(assignment.data.assignedAt)) return true;
-    if (withinRecentMs(q.notionLastEditedTime)) return true;
-    return false;
-  });
-
-  // Most-recently edited in Notion wins the closest target date (tomorrow).
-  candidates.sort((a, b) => {
-    const aT = a.notionLastEditedTime || '';
-    const bT = b.notionLastEditedTime || '';
-    if (aT !== bT) return bT.localeCompare(aT);
-    // Tiebreaker: most recent assignedAt (newer append wins).
-    const aA = assignmentBySourceId.get(a.sourceId)?.data?.assignedAt || '';
-    const bA = assignmentBySourceId.get(b.sourceId)?.data?.assignedAt || '';
-    if (aA !== bA) return bA.localeCompare(aA);
-    return a.sourceId.localeCompare(b.sourceId);
-  });
-
-  // Before 07:00 UTC, --start=opening is the quilt day opening imminently — place
-  // the first swap there. Otherwise "tomorrow" is the calendar day after --start.
-  const firstSwapDate =
-    new Date().getUTCHours() < 7 && opts.start === getOpeningAppDateKey()
-      ? opts.start
-      : addDays(opts.start, 1);
-  const targetByCandidate = new Map();
-  candidates.forEach((cand, idx) => {
-    targetByCandidate.set(cand.sourceId, addDays(firstSwapDate, idx));
-  });
-  const candidateSourceIds = new Set(candidates.map((c) => c.sourceId));
-  const targetDateSet = new Set(targetByCandidate.values());
-
-  const clippingInvalidations = new Map();
-  for (const cand of candidates) {
-    const target = targetByCandidate.get(cand.sourceId);
-    const occupant = sourceIdByDate.get(target);
-    if (occupant !== cand.sourceId) {
-      clippingInvalidations.set(target, 'approved-app-submission-swap-replaced');
-    }
-  }
-
-  // Quotes currently occupying a target date that AREN'T a candidate get displaced
-  // (their date_scheduled is cleared and they return to the pool).
-  const displacedSourceIds = new Set();
-  for (const target of targetDateSet) {
-    const occupant = sourceIdByDate.get(target);
-    if (!occupant) continue;
-    if (candidateSourceIds.has(occupant)) continue;
-    displacedSourceIds.add(occupant);
-    clippingInvalidations.set(target, 'approved-app-submission-swap-displaced');
-  }
-
-  // Vacated dates = candidates' old dates that no other candidate is moving into.
-  // These get their assignment + daily quote docs deleted.
-  const datesToDelete = new Set();
-  for (const cand of candidates) {
-    const oldAssignment = assignmentBySourceId.get(cand.sourceId);
-    if (!oldAssignment) continue;
-    const oldDate = oldAssignment.dateKey;
-    const newDate = targetByCandidate.get(cand.sourceId);
-    if (oldDate === newDate) continue;
-    if (targetDateSet.has(oldDate)) continue; // another candidate's write will replace
-    datesToDelete.add(oldDate);
-    clippingInvalidations.set(oldDate, 'approved-app-submission-swap-vacated');
-  }
-
-  if (opts.dryRun) {
-    console.log(
-      `[app-submissions] dry-run swap-mode candidates=${candidates.length} displaced=${displacedSourceIds.size} vacated=${datesToDelete.size} start=${opts.start} firstSwapDate=${firstSwapDate} recentHours=${RECENT_CANDIDATE_MS / 3600000}`
-    );
-    for (const cand of candidates) {
-      const target = targetByCandidate.get(cand.sourceId);
-      const old = assignmentBySourceId.get(cand.sourceId);
-      const oldDate = old ? old.dateKey : '(unscheduled)';
-      console.log(`  ${oldDate} -> ${target}: ${cand.text.slice(0, 60)} — ${cand.author}`);
-    }
-    return;
-  }
-
-  if (!candidates.length) {
-    console.log(
-      `[app-submissions] swap-mode no recently approved candidates to place from ${firstSwapDate}+ (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
-    );
-    return;
-  }
-
-  const batchState = { batch: db.batch(), ops: 0 };
-  const updatedAt = new Date().toISOString();
-  const deleteField = admin.firestore.FieldValue.delete();
-  let assignmentWrites = 0;
-  let assignmentDeletes = 0;
-  let displacedClears = 0;
-  let clippingInvalidationWrites = 0;
-  const existingInstagramDateKeys = await readExistingInstagramDateKeys(
-    db,
-    instagramCollection,
-    clippingInvalidations.keys()
-  );
-
-  for (const cand of candidates) {
-    const target = targetByCandidate.get(cand.sourceId);
-    const payload = assignmentPayloadForQuote(cand, target, swapSource);
-
-    // Full replace at the target date (no merge) so we don't leak any stale
-    // fields from the previous occupant.
-    batchState.batch.set(db.collection(assignmentsCollection).doc(target), payload);
-    batchState.ops += 1;
-    assignmentWrites += 1;
-
-    // Full document replace (no merge): snake_case only — FieldValue.delete() is
-    // invalid inside set() without merge:true (Firestore rejects artRecs: delete()).
-    batchState.batch.set(
-      db.collection(quotesCollection).doc(target),
-      dailyQuoteSnakePayloadForQuote(cand, target, swapSource, updatedAt)
-    );
-    batchState.ops += 1;
-
-    batchState.batch.set(
-      db.collection(quotesCollection).doc(cand.sourceId),
-      {
-        dateScheduled: target,
-        date_scheduled: target,
-        scheduleUpdatedAt: updatedAt,
-        scheduleSource: swapSource
-      },
-      { merge: true }
-    );
-    batchState.ops += 1;
-
-    if (existingInstagramDateKeys.has(target)) {
-      queueNewspaperClippingInvalidation(
-        batchState,
-        db,
-        instagramCollection,
-        target,
-        updatedAt,
-        clippingInvalidations.get(target) || 'approved-app-submission-swap-replaced',
-        deleteField
-      );
-      clippingInvalidationWrites += 1;
-    }
-
-    await commitBatchIfNeeded(db, batchState);
-  }
-
-  for (const dateKey of datesToDelete) {
-    batchState.batch.delete(db.collection(assignmentsCollection).doc(dateKey));
-    batchState.ops += 1;
-    batchState.batch.delete(db.collection(quotesCollection).doc(dateKey));
-    batchState.ops += 1;
-    if (existingInstagramDateKeys.has(dateKey)) {
-      queueNewspaperClippingInvalidation(
-        batchState,
-        db,
-        instagramCollection,
-        dateKey,
-        updatedAt,
-        clippingInvalidations.get(dateKey) || 'approved-app-submission-swap-vacated',
-        deleteField
-      );
-      clippingInvalidationWrites += 1;
-    }
-    assignmentDeletes += 1;
-    await commitBatchIfNeeded(db, batchState);
-  }
-
-  for (const sid of displacedSourceIds) {
-    batchState.batch.set(
-      db.collection(quotesCollection).doc(sid),
-      {
-        dateScheduled: deleteField,
-        date_scheduled: deleteField,
-        scheduleUpdatedAt: updatedAt,
-        scheduleSource: deleteField,
-        // Notion may still show the old date_scheduled for this page; the usage-sync
-        // script's windowed scan can't see a doc whose date was just removed, so it
-        // needs this out-of-band signal to force a Notion patch regardless of window.
-        notionDateClearPending: true
-      },
-      { merge: true }
-    );
-    batchState.ops += 1;
-    displacedClears += 1;
-    await commitBatchIfNeeded(db, batchState);
-  }
-
-  if (batchState.ops > 0) await batchState.batch.commit();
-
-  console.log(
-    `[app-submissions] swap-mode placed=${assignmentWrites} vacated=${assignmentDeletes} displaced=${displacedClears} clippingInvalidations=${clippingInvalidationWrites} (start=${opts.start}, firstSwapDate=${firstSwapDate}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
-  );
 }
 
 main().catch((err) => {

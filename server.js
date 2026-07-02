@@ -6488,29 +6488,10 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
 }
 
 async function resolvePreviewQuotePayloadForDateWithNotion(dateKey) {
-  const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
   const firestoreResult = await resolvePreviewQuotePayloadForDate(dateKey);
-
-  const wrapPreviewWinner = (result) => {
-    if (!result?.quote?.text) return null;
-    return {
-      payload: result,
-      id: String(result.quote.sourceId || '').trim(),
-      notionLastEditedTime: String(result.notionLastEditedTime || '').trim(),
-      submittedVia: String(result.submittedVia || result.quote?.submittedVia || '').trim(),
-      submittedBy: String(result.submittedBy || result.quote?.submittedBy || '').trim(),
-      submittedAt: String(result.submittedAt || result.quote?.submittedAt || '').trim()
-    };
-  };
-
-  const notionWrap = wrapPreviewWinner(notionResult);
-  const firestoreWrap = wrapPreviewWinner(firestoreResult);
-  if (notionWrap && firestoreWrap) {
-    const winner = pickScheduleWinner(notionWrap, firestoreWrap);
-    return winner.payload;
-  }
-  if (notionResult?.quote) return notionResult;
   if (firestoreResult?.quote) return firestoreResult;
+  const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
+  if (notionResult?.quote) return notionResult;
   return firestoreResult;
 }
 
@@ -10323,7 +10304,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const appSubmissionsResult = await runNodeScript('scripts/schedule-approved-app-submissions.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=8',
+      '--window=7',
       '--append-only'
     ]);
     if (appSubmissionsResult.code !== 0) {
@@ -10342,7 +10323,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const gapFillResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=8',
+      '--window=7',
       '--fill-gaps-only'
     ]);
     if (gapFillResult.code !== 0) {
@@ -10361,8 +10342,8 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const scheduleResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=8',
-      '--min-count=9',
+      '--window=7',
+      '--min-count=7',
       '--append-only'
     ]);
     if (scheduleResult.code !== 0) {

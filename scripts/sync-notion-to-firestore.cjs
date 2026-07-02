@@ -813,8 +813,7 @@ function parseNotionRow(page) {
   const approvedProp = props.approved || props.Approved || props.active || props.Active;
   const approved = getBoolean(approvedProp, true);
   const notificationEnabled = getBoolean(props.notification_enabled, true);
-  // Page-level (not a property) — used by swap-mode scheduler to pick the
-  // most-recently-edited approved quote for the next-day slot.
+  // Page-level (not a property) — useful for audit/debugging without driving queue order.
   const notionLastEditedTime = page?.last_edited_time ? String(page.last_edited_time).trim() : '';
   const notionCreatedTime = page?.created_time ? String(page.created_time).trim() : '';
 
@@ -1064,6 +1063,20 @@ function initFirestore() {
   return admin.firestore();
 }
 
+function isApprovedQuoteData(d) {
+  if (typeof d?.approved === 'boolean') return d.approved;
+  if (typeof d?.active === 'boolean') return d.active;
+  return String(d?.approved ?? d?.active ?? '').trim().toLowerCase() !== 'false';
+}
+
+function isCommunitySubmittedQuoteData(d) {
+  const via = String(d?.submitted_via ?? d?.submittedVia ?? '').trim().toLowerCase();
+  if (via === 'app') return true;
+  if (String(d?.submitted_by ?? d?.submittedBy ?? '').trim()) return true;
+  if (String(d?.submitted_at ?? d?.submittedAt ?? '').trim()) return true;
+  return false;
+}
+
 /** When two synced rows claim the same date, editorial schedule beats community submissions. */
 function pickNotionScheduleWinner(a, b) {
   const aVia = String(a?.data?.submitted_via ?? a?.data?.submittedVia ?? '').trim().toLowerCase();
@@ -1178,12 +1191,9 @@ async function applyScheduledDatesFromNotionSync(db, options) {
 }
 
 /**
- * A corrective usage-sync patch (clearing a displaced quote's stale date_scheduled)
- * bumps Notion's own last_edited_time, which would otherwise make the page look
- * freshly-edited and re-arm swap-mode's "recently touched" candidacy on the next
- * sync — bouncing the quote right back into the near-term queue. Treat a fresh
- * last_edited_time within this window of our own last self-patch as us, not a
- * genuine human edit.
+ * A corrective usage-sync patch bumps Notion's own last_edited_time. Treat a
+ * fresh last_edited_time within this window of our own last self-patch as us,
+ * not a genuine human edit.
  */
 const SELF_PATCH_SUPPRESS_WINDOW_MS = 15 * 60 * 1000;
 
@@ -1212,9 +1222,12 @@ async function syncNotionPagesToFirestore(db, options) {
   const scheduledByDate = new Map();
 
   const selfPatchedAtById = new Map();
+  const existingById = new Map();
   const existingSnap = await db.collection(collectionName).where('source', '==', 'notion').get();
   existingSnap.forEach((docSnap) => {
-    const v = docSnap.data()?.selfPatchedNotionAt;
+    const data = docSnap.data() || {};
+    existingById.set(docSnap.id, data);
+    const v = data.selfPatchedNotionAt;
     if (v) selfPatchedAtById.set(docSnap.id, String(v));
   });
 
@@ -1229,9 +1242,20 @@ async function syncNotionPagesToFirestore(db, options) {
       fortuneCount += 1;
     }
     if (isLikelySelfPatchEdit(parsed.data.notionLastEditedTime, selfPatchedAtById.get(parsed.id))) {
-      // Keep whatever notionLastEditedTime is already stored — don't let our own
-      // corrective patch look like a fresh human edit to swap-mode candidacy.
+      // Keep whatever notionLastEditedTime is already stored; our own corrective
+      // patch should not masquerade as a fresh human edit.
       delete parsed.data.notionLastEditedTime;
+    }
+    const existing = existingById.get(parsed.id) || {};
+    const existingPriority = String(existing.schedulePriorityAt || '').trim();
+    const entersApprovedUnscheduledPool =
+      isApprovedQuoteData(parsed.data) &&
+      !String(parsed.data.date_scheduled || '').trim() &&
+      isCommunitySubmittedQuoteData(parsed.data);
+    if (entersApprovedUnscheduledPool && existingPriority) {
+      parsed.data.schedulePriorityAt = existingPriority;
+    } else if (entersApprovedUnscheduledPool) {
+      parsed.data.schedulePriorityAt = new Date().toISOString();
     }
     if (!dryRun) {
       await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });

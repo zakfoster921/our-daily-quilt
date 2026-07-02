@@ -185,6 +185,47 @@ function firstOpenDateAfter(dateKey, assignedDateKeys) {
   return next;
 }
 
+const SCHEDULER_OWNED_SOURCES = new Set([
+  'approved-app-submission-append-scheduler',
+  'approved-app-submission-swap-scheduler',
+  'near-term-gap-fill-scheduler',
+  'rolling-7-day-scheduler',
+  'rolling-append-scheduler'
+]);
+
+function isSchedulerOwnedAssignment(row, quoteBySourceId) {
+  const assignedBy = String(row?.data?.assignedBy || '').trim();
+  if (!SCHEDULER_OWNED_SOURCES.has(assignedBy)) return false;
+  const sourceId = String(row?.data?.sourceId || '').trim();
+  if (!sourceId) return true;
+  const quote = quoteBySourceId.get(sourceId);
+  const scheduleSource = String(quote?.scheduleSource || '').trim();
+  return !scheduleSource || SCHEDULER_OWNED_SOURCES.has(scheduleSource);
+}
+
+function isCommunitySubmittedQuote(q) {
+  if (String(q?.submittedVia || '').trim().toLowerCase() === 'app') return true;
+  if (String(q?.submittedBy || '').trim()) return true;
+  if (String(q?.submittedAt || '').trim()) return true;
+  return false;
+}
+
+function compareSchedulingPoolQuotes(a, b) {
+  const aCommunity = isCommunitySubmittedQuote(a);
+  const bCommunity = isCommunitySubmittedQuote(b);
+  if (aCommunity !== bCommunity) return aCommunity ? -1 : 1;
+  if (aCommunity && bCommunity) {
+    const aPriority = a.schedulePriorityAt || a.submittedAt || '';
+    const bPriority = b.schedulePriorityAt || b.submittedAt || '';
+    if (aPriority !== bPriority) return aPriority.localeCompare(bPriority);
+    const aSubmitted = a.submittedAt || '';
+    const bSubmitted = b.submittedAt || '';
+    if (aSubmitted !== bSubmitted) return aSubmitted.localeCompare(bSubmitted);
+  }
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  return a.sourceId.localeCompare(b.sourceId);
+}
+
 function commitBatchIfNeeded(db, state, threshold = 450) {
   if (state.ops < threshold) return Promise.resolve();
   const batch = state.batch;
@@ -281,28 +322,14 @@ async function main() {
       imageAttribution: String(d.imageAttribution ?? d.image_attribution ?? '').trim(),
       submittedAt: String(d.submittedAt || '').trim(),
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
-      dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim()
+      submittedBy: String(d.submittedBy || d.submitted_by || '').trim(),
+      dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim(),
+      scheduleSource: String(d.scheduleSource || '').trim(),
+      schedulePriorityAt: String(d.schedulePriorityAt || '').trim()
     });
   });
 
-  notionQuotes.sort((a, b) => {
-    const aSubmittedPriority =
-      a.submittedVia.toLowerCase() === 'app' &&
-      (!/^\d{4}-\d{2}-\d{2}$/.test(a.dateScheduled) || a.dateScheduled >= opts.start);
-    const bSubmittedPriority =
-      b.submittedVia.toLowerCase() === 'app' &&
-      (!/^\d{4}-\d{2}-\d{2}$/.test(b.dateScheduled) || b.dateScheduled >= opts.start);
-    if (aSubmittedPriority !== bSubmittedPriority) return aSubmittedPriority ? -1 : 1;
-    if (aSubmittedPriority && bSubmittedPriority) {
-      const at = a.submittedAt || '';
-      const bt = b.submittedAt || '';
-      if (at !== bt) return at.localeCompare(bt);
-    }
-    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-    if (a.text !== b.text) return a.text.localeCompare(b.text);
-    if (a.author !== b.author) return a.author.localeCompare(b.author);
-    return a.sourceId.localeCompare(b.sourceId);
-  });
+  notionQuotes.sort(compareSchedulingPoolQuotes);
 
   if (!notionQuotes.length) {
     throw new Error('No Notion-backed quotes found in Firestore');
@@ -375,8 +402,7 @@ async function main() {
       const ra = rank(a);
       const rb = rank(b);
       if (ra !== rb) return ra - rb;
-      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-      return a.sourceId.localeCompare(b.sourceId);
+      return compareSchedulingPoolQuotes(a, b);
     });
 
     const scheduled = [];
@@ -484,17 +510,20 @@ async function main() {
         .map((row) => String(row.data.sourceId || '').trim())
         .filter(Boolean)
     );
+    const windowAssignments = futureAssignments.filter((row) => row.dateKey <= windowEnd);
+    const pruneAssignments = futureAssignments.filter(
+      (row) => row.dateKey > windowEnd && isSchedulerOwnedAssignment(row, quoteBySourceId)
+    );
     const targetCount = opts.minCount || opts.window;
-    const appendCount = Math.max(0, targetCount - futureAssignments.length);
+    const appendCount = Math.max(0, targetCount - windowAssignments.length);
     const lastDate =
-      futureAssignments.length > 0
-        ? futureAssignments[futureAssignments.length - 1].dateKey
+      windowAssignments.length > 0
+        ? windowAssignments[windowAssignments.length - 1].dateKey
         : addDays(opts.start, -1);
 
     const fillQueue = notionQuotes.filter((q) => {
       if (usedSourceIds.has(q.sourceId)) return false;
       if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
-      if (q.submittedVia.toLowerCase() === 'app') return false;
       return true;
     });
 
@@ -504,6 +533,7 @@ async function main() {
     while (scheduled.length < appendCount && fillIdx < fillQueue.length) {
       const quote = fillQueue[fillIdx++];
       const dateKey = firstOpenDateAfter(cursorDate, assignedDateKeys);
+      if (dateKey > windowEnd) break;
       assignedDateKeys.add(dateKey);
       usedSourceIds.add(quote.sourceId);
       cursorDate = dateKey;
@@ -516,18 +546,24 @@ async function main() {
 
     if (opts.dryRun) {
       console.log(
-        `[backfill] dry-run append-only existing=${futureAssignments.length} target=${targetCount} appending=${scheduled.length} start=${opts.start}`
+        `[backfill] dry-run append-only existing=${windowAssignments.length} target=${targetCount} appending=${scheduled.length} pruning=${pruneAssignments.length} start=${opts.start}`
       );
       console.log('[backfill] appended assignments:');
       scheduled.forEach((row) => {
         console.log(`  ${row.dateKey} -> ${row.payload.textSnapshot} — ${row.payload.authorSnapshot}`);
       });
+      if (pruneAssignments.length) {
+        console.log('[backfill] scheduler-owned assignments to prune:');
+        pruneAssignments.forEach((row) => {
+          console.log(`  ${row.dateKey} -> ${String(row.data?.sourceId || '').trim() || '(no sourceId)'}`);
+        });
+      }
       return;
     }
 
-    if (!scheduled.length) {
+    if (!scheduled.length && !pruneAssignments.length) {
       console.log(
-        `[backfill] append-only no-op existing=${futureAssignments.length} target=${targetCount} (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
+        `[backfill] append-only no-op existing=${windowAssignments.length} target=${targetCount} (${assignmentsCollection} / ${quotesCollection}, start=${opts.start})`
       );
       return;
     }
@@ -535,6 +571,7 @@ async function main() {
     const batchState = { batch: db.batch(), ops: 0 };
     let writes = 0;
     let quoteWrites = 0;
+    let pruned = 0;
     const updatedAt = new Date().toISOString();
     for (const row of scheduled) {
       batchState.batch.set(db.collection(assignmentsCollection).doc(row.dateKey), row.payload, { merge: true });
@@ -567,9 +604,34 @@ async function main() {
       await commitBatchIfNeeded(db, batchState);
     }
 
+    const deleteField = admin.firestore.FieldValue.delete();
+    for (const row of pruneAssignments) {
+      batchState.batch.delete(db.collection(assignmentsCollection).doc(row.dateKey));
+      batchState.ops += 1;
+      batchState.batch.delete(db.collection(quotesCollection).doc(row.dateKey));
+      batchState.ops += 1;
+      const sid = String(row.data?.sourceId || '').trim();
+      if (sid) {
+        batchState.batch.set(
+          db.collection(quotesCollection).doc(sid),
+          {
+            dateScheduled: deleteField,
+            date_scheduled: deleteField,
+            scheduleUpdatedAt: updatedAt,
+            scheduleSource: deleteField,
+            notionDateClearPending: true
+          },
+          { merge: true }
+        );
+        batchState.ops += 1;
+      }
+      pruned += 1;
+      await commitBatchIfNeeded(db, batchState);
+    }
+
     if (batchState.ops > 0) await batchState.batch.commit();
     console.log(
-      `[backfill] append-only wrote ${writes} assignments + ${quoteWrites} quote date fields, preserved ${futureAssignments.length} existing assignments (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, target=${targetCount})`
+      `[backfill] append-only wrote ${writes} assignments + ${quoteWrites} quote date fields, pruned ${pruned} scheduler-owned tail assignments, preserved ${futureAssignments.length - pruned} existing assignments (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, target=${targetCount})`
     );
 
     if (opts.syncNotion) {

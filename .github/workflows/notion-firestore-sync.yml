@@ -7,14 +7,6 @@ on:
     - cron: "30 6 * * *"
   workflow_dispatch:
     inputs:
-      mode:
-        description: "Schedule mode for manual runs only. Cron always uses swap. 'append' tacks new approvals at end of queue; 'swap' places them on the day after --start (displaces that slot)."
-        required: false
-        default: "append"
-        type: choice
-        options:
-          - append
-          - swap
       sync_window:
         description: "How many app-days to sync quotes + usage (manual runs only; cron always uses 7 days)."
         required: false
@@ -129,9 +121,7 @@ jobs:
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: node scripts/reconcile-assignment-dates-from-notion.cjs "${START_ARG}"
 
-      # Nightly cron: swap — newly approved (recent Notion edit, no pinned date) takes
-      # the day after --start=opening and bumps the previous occupant back to the pool.
-      # Manual dispatch: append unless you pick "swap" in the workflow input.
+      # Approved user submissions are priority queued for the next newly scheduled slot.
       - name: Schedule approved app-submitted quotes
         timeout-minutes: 5
         env:
@@ -139,14 +129,8 @@ jobs:
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: |
-          MODE="${{ github.event.inputs.mode }}"
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "$MODE" = "swap" ]; then
-            echo "[workflow] running schedule script in swap mode (new approvals → day after start)"
-            node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8
-          else
-            echo "[workflow] running schedule script in --append-only mode"
-            node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8 --append-only
-          fi
+          echo "[workflow] running priority append scheduler"
+          node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=7 --append-only
 
       - name: Fill near-term schedule gaps
         timeout-minutes: 5
@@ -154,7 +138,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=8 --fill-gaps-only
+        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=7 --fill-gaps-only
 
       - name: Append rolling 7-day quote window
         timeout-minutes: 5
@@ -162,7 +146,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=8 --min-count=9 --append-only
+        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=7 --min-count=7 --append-only
 
       - name: Process speaker cutouts for scheduled quotes
         timeout-minutes: 10
@@ -172,7 +156,7 @@ jobs:
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
           REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
-        run: node scripts/process-speaker-cutouts.cjs --scheduled "${START_ARG}" --window=9 --limit=3 --soft-fail
+        run: node scripts/process-speaker-cutouts.cjs --scheduled "${START_ARG}" --window=7 --limit=3 --soft-fail
 
       - name: Process tomorrow's speaker cutout (admin preview lookahead)
         timeout-minutes: 5

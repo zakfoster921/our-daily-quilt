@@ -412,7 +412,7 @@ async function run() {
         if (q.notionDateClearPending) {
           // This patch bumps Notion's own last_edited_time. Stamp when *we* touched
           // the page so sync-notion-to-firestore.cjs can tell this apart from a
-          // genuine human edit and avoid re-arming swap-mode's recency candidacy.
+          // genuine human edit.
           await db
             .collection(collectionName)
             .doc(q.sourceId)
