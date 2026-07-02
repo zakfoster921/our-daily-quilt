@@ -50,6 +50,22 @@ function camelCaseDeletePayload() {
   return Object.fromEntries(DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE.map((key) => [key, deleteField]));
 }
 
+function queueNewspaperClippingInvalidation(batchState, db, instagramCollection, dateKey, updatedAt, reason, deleteField) {
+  batchState.batch.set(
+    db.collection(instagramCollection).doc(dateKey),
+    {
+      newspaperClippingUrl: deleteField,
+      newspaperClippingImageStorageUrl: deleteField,
+      newspaperClippingGeneratedAt: deleteField,
+      newspaperClippingExportRev: deleteField,
+      clippingInvalidatedAt: updatedAt,
+      clippingInvalidatedReason: reason
+    },
+    { merge: true }
+  );
+  batchState.ops += 1;
+}
+
 function requireDateArg(value, name) {
   const v = String(value || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
@@ -203,6 +219,14 @@ function commitBatchIfNeeded(db, state, threshold = 450) {
   return batch.commit();
 }
 
+async function readExistingInstagramDateKeys(db, instagramCollection, dateKeys) {
+  const keys = [...new Set([...dateKeys].filter(isDateKey))];
+  if (!keys.length) return new Set();
+  const refs = keys.map((dateKey) => db.collection(instagramCollection).doc(dateKey));
+  const snaps = await db.getAll(...refs);
+  return new Set(snaps.filter((snap) => snap.exists).map((snap) => snap.id));
+}
+
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
@@ -231,6 +255,7 @@ async function main() {
   const db = initFirestore();
   const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   const assignmentsCollection = process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const instagramCollection = 'instagram-images';
 
   const quotesSnap = await db.collection(quotesCollection).get();
   const notionQuotes = [];
@@ -476,6 +501,15 @@ async function main() {
   const candidateSourceIds = new Set(candidates.map((c) => c.sourceId));
   const targetDateSet = new Set(targetByCandidate.values());
 
+  const clippingInvalidations = new Map();
+  for (const cand of candidates) {
+    const target = targetByCandidate.get(cand.sourceId);
+    const occupant = sourceIdByDate.get(target);
+    if (occupant !== cand.sourceId) {
+      clippingInvalidations.set(target, 'approved-app-submission-swap-replaced');
+    }
+  }
+
   // Quotes currently occupying a target date that AREN'T a candidate get displaced
   // (their date_scheduled is cleared and they return to the pool).
   const displacedSourceIds = new Set();
@@ -484,6 +518,7 @@ async function main() {
     if (!occupant) continue;
     if (candidateSourceIds.has(occupant)) continue;
     displacedSourceIds.add(occupant);
+    clippingInvalidations.set(target, 'approved-app-submission-swap-displaced');
   }
 
   // Vacated dates = candidates' old dates that no other candidate is moving into.
@@ -497,6 +532,7 @@ async function main() {
     if (oldDate === newDate) continue;
     if (targetDateSet.has(oldDate)) continue; // another candidate's write will replace
     datesToDelete.add(oldDate);
+    clippingInvalidations.set(oldDate, 'approved-app-submission-swap-vacated');
   }
 
   if (opts.dryRun) {
@@ -525,6 +561,12 @@ async function main() {
   let assignmentWrites = 0;
   let assignmentDeletes = 0;
   let displacedClears = 0;
+  let clippingInvalidationWrites = 0;
+  const existingInstagramDateKeys = await readExistingInstagramDateKeys(
+    db,
+    instagramCollection,
+    clippingInvalidations.keys()
+  );
 
   for (const cand of candidates) {
     const target = targetByCandidate.get(cand.sourceId);
@@ -556,6 +598,19 @@ async function main() {
     );
     batchState.ops += 1;
 
+    if (existingInstagramDateKeys.has(target)) {
+      queueNewspaperClippingInvalidation(
+        batchState,
+        db,
+        instagramCollection,
+        target,
+        updatedAt,
+        clippingInvalidations.get(target) || 'approved-app-submission-swap-replaced',
+        deleteField
+      );
+      clippingInvalidationWrites += 1;
+    }
+
     await commitBatchIfNeeded(db, batchState);
   }
 
@@ -564,6 +619,18 @@ async function main() {
     batchState.ops += 1;
     batchState.batch.delete(db.collection(quotesCollection).doc(dateKey));
     batchState.ops += 1;
+    if (existingInstagramDateKeys.has(dateKey)) {
+      queueNewspaperClippingInvalidation(
+        batchState,
+        db,
+        instagramCollection,
+        dateKey,
+        updatedAt,
+        clippingInvalidations.get(dateKey) || 'approved-app-submission-swap-vacated',
+        deleteField
+      );
+      clippingInvalidationWrites += 1;
+    }
     assignmentDeletes += 1;
     await commitBatchIfNeeded(db, batchState);
   }
@@ -591,7 +658,7 @@ async function main() {
   if (batchState.ops > 0) await batchState.batch.commit();
 
   console.log(
-    `[app-submissions] swap-mode placed=${assignmentWrites} vacated=${assignmentDeletes} displaced=${displacedClears} (start=${opts.start}, firstSwapDate=${firstSwapDate}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
+    `[app-submissions] swap-mode placed=${assignmentWrites} vacated=${assignmentDeletes} displaced=${displacedClears} clippingInvalidations=${clippingInvalidationWrites} (start=${opts.start}, firstSwapDate=${firstSwapDate}, recentHours=${RECENT_CANDIDATE_MS / 3600000})`
   );
 }
 
