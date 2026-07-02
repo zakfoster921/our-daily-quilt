@@ -6434,8 +6434,8 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
       const submittedBy = String(extractSubmittedByFromNotionPage(page) || '').trim();
       const submittedAt = String(extractSubmittedAtFromNotionPage(page) || '').trim();
       const props = page?.properties || {};
-      const goodDay = getNotionPropPlainByAliases(props, 'good_day', 'goodDay', 'Good day');
-      const roughDay = getNotionPropPlainByAliases(props, 'rough_day', 'roughDay', 'Rough day');
+      const goodDay = getNotionPropPlainByAliases(props, 'good_day', 'goodDay', 'Good day', 'Good Day');
+      const roughDay = getNotionPropPlainByAliases(props, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
       const speakerImageUrl = getNotionPropPlainByAliases(
         props,
         'speaker_image_url',
@@ -6520,12 +6520,77 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
   return null;
 }
 
+async function resolveNotionQuoteForPreviewSourceId(sourceId) {
+  const sid = String(sourceId || '').trim();
+  if (!sid) return null;
+  try {
+    const page = await notionGetPage(sid);
+    if (!page?.id) return null;
+    const text = String(extractQuoteTextFromNotionPage(page) || '').trim();
+    const author = String(extractAuthorFromNotionPage(page) || '').trim();
+    if (!text || !author) return null;
+    const props = page?.properties || {};
+    const goodDay = getNotionPropPlainByAliases(props, 'good_day', 'goodDay', 'Good day', 'Good Day');
+    const roughDay = getNotionPropPlainByAliases(props, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
+    const speakerImageUrl = getNotionPropPlainByAliases(
+      props,
+      'speaker_image_url',
+      'speakerImageUrl',
+      'Speaker image URL',
+      'image_url'
+    );
+    const speakerCutoutUrl = getNotionPropPlainByAliases(
+      props,
+      'speaker_cutout_url',
+      'speakerCutoutUrl',
+      'Speaker cutout URL'
+    );
+    const speakerGuideLine = getNotionPropPlainByAliases(
+      props,
+      'speaker_guide_line',
+      'speakerGuideLine',
+      'Guide line',
+      'Speaker guide line'
+    );
+    const imageAttribution = getNotionPropPlainByAliases(
+      props,
+      'image_attribution',
+      'imageAttribution',
+      'Image attribution'
+    );
+    const submittedVia = String(extractSubmittedViaFromNotionPage(page) || '').trim();
+    return {
+      quote: {
+        text,
+        author,
+        sourceId: sid,
+        ...(goodDay ? { goodDay, good_day: goodDay } : {}),
+        ...(roughDay ? { roughDay, rough_day: roughDay } : {}),
+        ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
+        ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
+        ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
+        ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
+      },
+      resolution: 'notion_live_source',
+      assignmentExists: false,
+      notionLastEditedTime: String(page.last_edited_time || '').trim(),
+      submittedVia
+    };
+  } catch (error) {
+    console.warn('resolveNotionQuoteForPreviewSourceId failed:', error?.message || error);
+    return null;
+  }
+}
+
 async function resolvePreviewQuotePayloadForDateWithNotion(dateKey) {
   const firestoreResult = await resolvePreviewQuotePayloadForDate(dateKey);
-  const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
   if (firestoreResult?.quote) {
+    const sourceResult = await resolveNotionQuoteForPreviewSourceId(firestoreResult.quote.sourceId);
+    if (sourceResult?.quote) return mergeSameQuoteLivePreviewFields(firestoreResult, sourceResult);
+    const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
     return mergeSameQuoteLivePreviewFields(firestoreResult, notionResult);
   }
+  const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
   if (notionResult?.quote) return notionResult;
   return firestoreResult;
 }
