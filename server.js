@@ -2068,6 +2068,15 @@ function buildReflectionThemeEntryForResponse(responseId, moderatedBody, authorD
   return entry;
 }
 
+function carryReflectionThemeEngagementFields(entry, nextEntry) {
+  if (!nextEntry || !entry || typeof entry !== 'object' || Array.isArray(entry)) return nextEntry;
+  const merged = { ...nextEntry };
+  const heartCount = Math.max(0, Number(entry.heartCount) || 0);
+  if (heartCount > 0) merged.heartCount = heartCount;
+  if (entry.adminHearted === true) merged.adminHearted = true;
+  return merged;
+}
+
 async function syncReflectionThemeForResponse(db, appDateKey, responseId, nextEntry, fallback = {}) {
   const themeRef = db.collection('reflectionThemes').doc(appDateKey);
   const themeSnap = await themeRef.get();
@@ -2077,7 +2086,7 @@ async function syncReflectionThemeForResponse(db, appDateKey, responseId, nextEn
   for (const entry of priorThemes) {
     if (reflectionThemeMatchesResponse(entry, responseId, fallback.text, fallback.author)) {
       matched = true;
-      if (nextEntry) nextThemes.push(nextEntry);
+      if (nextEntry) nextThemes.push(carryReflectionThemeEngagementFields(entry, nextEntry));
       continue;
     }
     nextThemes.push(entry);
@@ -2093,6 +2102,36 @@ async function syncReflectionThemeForResponse(db, appDateKey, responseId, nextEn
   }
   await themeRef.set(patch, { merge: true });
   return { changed: true, themes: nextThemes };
+}
+
+async function syncReflectionThemeHeartCount(db, appDateKey, responseId, responseData, heartCount, nowIso) {
+  const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(appDateKey || '').trim())
+    ? String(appDateKey).trim()
+    : String(responseData?.appDateKey || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false;
+  const themeRef = db.collection('reflectionThemes').doc(dateKey);
+  const themeSnap = await themeRef.get();
+  if (!themeSnap.exists) return false;
+  const themes = Array.isArray(themeSnap.data()?.themes) ? themeSnap.data().themes : [];
+  let changed = false;
+  const fallbackText = reflectionResponseWallBody(responseData);
+  const fallbackAuthor = reflectionResponseStoredAuthor(responseData);
+  const nextThemes = themes.map((entry) => {
+    if (!reflectionThemeMatchesResponse(entry, responseId, fallbackText, fallbackAuthor)) return entry;
+    const nextEntry = { ...entry };
+    const nextHeartCount = Math.max(0, Number(heartCount) || 0);
+    if (nextHeartCount > 0) {
+      if (nextEntry.heartCount !== nextHeartCount) changed = true;
+      nextEntry.heartCount = nextHeartCount;
+    } else if (Object.prototype.hasOwnProperty.call(nextEntry, 'heartCount')) {
+      changed = true;
+      delete nextEntry.heartCount;
+    }
+    return nextEntry;
+  });
+  if (!changed) return false;
+  await themeRef.set({ themes: nextThemes, updatedAtIso: nowIso }, { merge: true });
+  return true;
 }
 
 function reflectionClientOwnsResponse(data, clientId) {
@@ -8896,7 +8935,8 @@ app.post('/api/reflection-response/:responseId/heart', limitReflectionHeart, asy
     } else {
       const responseRef = db.collection('reflectionResponses').doc(responseId);
       const responseSnap = await responseRef.get();
-      if (!responseSnap.exists || (responseSnap.data() || {}).status === 'deleted') {
+      const responseData = responseSnap.exists ? responseSnap.data() || {} : {};
+      if (!responseSnap.exists || responseData.status === 'deleted') {
         return res.status(404).json({ success: false, error: 'Response not found' });
       }
       const heartRef = responseRef.collection('hearts').doc(clientDocId);
@@ -8918,19 +8958,7 @@ app.post('/api/reflection-response/:responseId/heart', limitReflectionHeart, asy
       }
       const updatedSnap = await responseRef.get();
       heartCount = Math.max(0, Number(updatedSnap.data()?.heartCount) || 0);
-      if (dateKey) {
-        const themeRef = db.collection('reflectionThemes').doc(dateKey);
-        const themeSnap = await themeRef.get();
-        if (themeSnap.exists) {
-          const themes = Array.isArray(themeSnap.data()?.themes) ? themeSnap.data().themes : [];
-          const nextThemes = themes.map((entry) =>
-            String(entry.responseId || '') === responseId ? { ...entry, heartCount } : entry
-          );
-          if (JSON.stringify(nextThemes) !== JSON.stringify(themes)) {
-            await themeRef.set({ themes: nextThemes, updatedAtIso: nowIso }, { merge: true });
-          }
-        }
-      }
+      await syncReflectionThemeHeartCount(db, dateKey, responseId, responseData, heartCount, nowIso);
     }
 
     return res.json({ success: true, hearted, heartCount });
