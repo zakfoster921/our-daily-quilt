@@ -55,7 +55,13 @@ function loadServerQuiltRuntime() {
   sandbox.self = sandbox;
 
   const ctx = vm.createContext(sandbox);
-  for (const rel of ['lib/utils-core.js', 'lib/utils-quilt.js', 'lib/utils-zapier.js', 'lib/simple-quilt-engine.js']) {
+  for (const rel of [
+    'lib/utils-core.js',
+    'lib/utils-color.js',
+    'lib/utils-quilt.js',
+    'lib/utils-zapier.js',
+    'lib/simple-quilt-engine.js'
+  ]) {
     const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     vm.runInContext(src, ctx, { filename: rel });
   }

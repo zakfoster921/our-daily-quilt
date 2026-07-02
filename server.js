@@ -209,6 +209,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
+  ['/api/admin/quilt-mutation', 2 * ONE_MB],
   ['/api/social-posts', 24 * ONE_KB],
   ['/api/social-posts/upload-media', 30 * ONE_MB],
   ['/api/social-posts/:postId', 24 * ONE_KB],
@@ -442,6 +443,11 @@ const limitColorSubmission = createRateLimiter({
   name: 'color-submission',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_COLOR_SUBMISSION_PER_10_MIN, 10)
+});
+const limitAdminQuiltMutation = createRateLimiter({
+  name: 'admin-quilt-mutation',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_ADMIN_QUILT_MUTATION_PER_10_MIN, 60)
 });
 const limitQuoteKeywords = createRateLimiter({
   name: 'quote-keywords',
@@ -1794,6 +1800,113 @@ function buildServerQuiltWriteProvenance(reason, req, extra = {}) {
     userAgent: String(req?.get?.('user-agent') || '').slice(0, 180),
     ...extra
   };
+}
+
+function serverNormalizeHexColor(value) {
+  const match = String(value || '').trim().match(/^#?([0-9A-Fa-f]{6})$/);
+  return match ? `#${match[1].toLowerCase()}` : '';
+}
+
+function serverHexToHsl(hex) {
+  const normalized = serverNormalizeHexColor(hex) || '#ea9b9a';
+  const r = parseInt(normalized.slice(1, 3), 16) / 255;
+  const g = parseInt(normalized.slice(3, 5), 16) / 255;
+  const b = parseInt(normalized.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h *= 60;
+  }
+  return { h, s, l };
+}
+
+function serverHslToHex(h, s, l) {
+  const hue = (((Number(h) || 0) % 360) + 360) % 360;
+  const sat = Math.max(0, Math.min(1, Number(s) || 0));
+  const light = Math.max(0, Math.min(1, Number(l) || 0));
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = light - c / 2;
+  let r = 0; let g = 0; let b = 0;
+  if (hue < 60) [r, g, b] = [c, x, 0];
+  else if (hue < 120) [r, g, b] = [x, c, 0];
+  else if (hue < 180) [r, g, b] = [0, c, x];
+  else if (hue < 240) [r, g, b] = [0, x, c];
+  else if (hue < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const channel = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${channel(r)}${channel(g)}${channel(b)}`;
+}
+
+function createSubtleServerQuiltColorVariant(hex) {
+  const normalized = serverNormalizeHexColor(hex);
+  if (!normalized) return null;
+  const hsl = serverHexToHsl(normalized);
+  const direction = Math.random() < 0.5 ? -1 : 1;
+  const light = Math.max(0.12, Math.min(0.9, hsl.l + direction * (0.06 + Math.random() * 0.06)));
+  const sat = Math.max(0.08, Math.min(1, hsl.s + (Math.random() - 0.5) * 0.08));
+  return serverHslToHex(hsl.h, sat, light);
+}
+
+function getServerRumiColorPool() {
+  return [
+    '#ea9b9a', '#de6c61', '#df9368', '#d57d39', '#d8a746',
+    '#caa22b', '#f6eed5', '#decd61', '#dbcc57', '#ded561',
+    '#9ab125', '#6ade61', '#1f931f', '#61de61', '#61de76',
+    '#209750', '#1f938a', '#61dedb', '#2bcaca', '#61c9de',
+    '#afd8ee', '#3177d3', '#6182de', '#617cde', '#7e7de3',
+    '#251f93', '#6c61de', '#4024a8', '#8061de', '#9361de',
+    '#ae61de', '#c961de', '#ce2cb0', '#de61ba', '#eba2ce',
+    '#de6193', '#bd283c', '#931f25'
+  ];
+}
+
+function getServerQuiltColorPool(blocks = []) {
+  return (Array.isArray(blocks) ? blocks : [])
+    .flatMap((block) => [block?.color, block?.insetInnerColor, block?.hstColorB])
+    .map(serverNormalizeHexColor)
+    .filter(Boolean);
+}
+
+function pickLargestServerQuiltBlock(blocks = [], predicate = null) {
+  const candidates = (Array.isArray(blocks) ? blocks : []).filter((block) => {
+    if (!block || !(Number(block.width) > 0) || !(Number(block.height) > 0)) return false;
+    return typeof predicate === 'function' ? predicate(block) : true;
+  });
+  if (!candidates.length) return null;
+  return candidates.reduce((best, block) => (
+    Number(block.width) * Number(block.height) > Number(best.width) * Number(best.height) ? block : best
+  ));
+}
+
+function pickServerSpecialInsertColorPair(blocks, anchorBlock) {
+  const palette = [...new Set(getServerQuiltColorPool(blocks))];
+  const fallback = '#ea9b9a';
+  const base1 = serverNormalizeHexColor(anchorBlock?.color) || palette[0] || fallback;
+  const base2 = palette.find((hex) => hex !== base1) || base1;
+  let c1 = createSubtleServerQuiltColorVariant(base1) || base1;
+  let c2 = createSubtleServerQuiltColorVariant(base2) || base2;
+  if (c1 === c2) {
+    const hsl = serverHexToHsl(c2);
+    c2 = serverHslToHex(hsl.h, hsl.s, Math.max(0.12, Math.min(0.9, hsl.l + 0.08)));
+  }
+  return { c1, c2 };
 }
 
 function postJsonWithHttps({ hostname, path: requestPath, headers, body }) {
@@ -7774,6 +7887,222 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'Color submission failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/quilt-mutation', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) => {
+  setResetApiCors(res);
+  try {
+    const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+    const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+    if (!expectedToken) {
+      return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    }
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const command = String(body.command || body.mutation || '').trim();
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientBuildId = String(body.clientBuildId || body.buildId || '').trim().slice(0, 80);
+    if (!command) {
+      return res.status(400).json({ success: false, error: 'command is required' });
+    }
+
+    const quiltRef = db.collection('quilts').doc(appDateKey);
+    const mutationRef = db.collection('adminQuiltMutations').doc();
+    const nowIso = getUtcIsoNow();
+    let responsePayload = null;
+
+    await db.runTransaction(async (tx) => {
+      const quiltSnap = await tx.get(quiltRef);
+      const currentQuilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
+      const currentBlocks = Array.isArray(currentQuilt.blocks) ? currentQuilt.blocks : [];
+      let blocks = [];
+      let contributorCount = Number(currentQuilt.contributorCount) || Math.max(1, deriveServerQuiltSubmissionCount(currentQuilt));
+      let colorReplayEvents = Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [];
+      let contributors = normalizeQuiltContributorEntries(currentQuilt.contributors || []);
+      let macroStructureFrozen = currentQuilt.macroStructureFrozen === true;
+      let appliedCount = 0;
+      let dedicatedBlockId = '';
+      let lastColor = '';
+
+      if (command === 'replace-state') {
+        blocks = Array.isArray(body.blocks) ? body.blocks : [];
+        if (!blocks.length) throw new Error('replace-state requires blocks');
+        colorReplayEvents = Array.isArray(body.colorReplayEvents) ? body.colorReplayEvents : colorReplayEvents;
+        contributors = normalizeQuiltContributorEntries(body.contributors || contributors);
+        contributorCount = Math.max(
+          1,
+          Number(body.contributorCount) || 0,
+          contributors.length,
+          blocks.reduce((max, block) => {
+            const n = Number(block?.submissionIndex);
+            return Number.isFinite(n) && n > max ? n : max;
+          }, 0)
+        );
+        macroStructureFrozen = body.macroStructureFrozen === true;
+        appliedCount = 1;
+      } else {
+        const engine = createServerQuiltEngine({
+          userId: 'admin-server',
+          blocks: currentBlocks,
+          submissionCount: deriveServerQuiltSubmissionCount(currentQuilt),
+          colorReplayEvents,
+          macroStructureFrozen
+        });
+        const addAdminContributor = () => {
+          appliedCount += 1;
+          contributors.push({
+            userId: `admin-server-${nowIso}-${appliedCount}`,
+            name: 'Admin',
+            firstContributedAt: nowIso
+          });
+        };
+        const addColor = (hex) => {
+          const color = serverNormalizeHexColor(hex);
+          if (!color) return false;
+          const result = engine.addColor(color);
+          if (!result) return false;
+          lastColor = result.appliedColor || color;
+          dedicatedBlockId = result.dedicatedBlockId || dedicatedBlockId;
+          addAdminContributor();
+          return true;
+        };
+
+        if (command === 'add-random-block') {
+          const pool = getServerQuiltColorPool(engine.blocks);
+          const base = pool.length
+            ? pool[Math.floor(Math.random() * pool.length)]
+            : getServerRumiColorPool()[Math.floor(Math.random() * getServerRumiColorPool().length)];
+          if (!addColor(createSubtleServerQuiltColorVariant(base) || base)) {
+            throw new Error('Could not add random admin block');
+          }
+        } else if (command === 'add-color-variations') {
+          const requested = Math.max(1, Math.min(50, Math.floor(Number(body.count) || 25)));
+          for (let i = 0; i < requested; i++) {
+            const pool = getServerQuiltColorPool(engine.blocks);
+            const base = pool.length
+              ? pool[Math.floor(Math.random() * pool.length)]
+              : getServerRumiColorPool()[Math.floor(Math.random() * getServerRumiColorPool().length)];
+            if (!addColor(createSubtleServerQuiltColorVariant(base) || base)) break;
+          }
+          if (appliedCount <= 0) throw new Error('Could not add color variations');
+        } else if (command === 'split-largest-popular') {
+          const target = pickLargestServerQuiltBlock(engine.blocks);
+          if (!target) throw new Error('No eligible block found');
+          const counts = new Map();
+          getServerQuiltColorPool(engine.blocks).forEach((hex) => counts.set(hex, (counts.get(hex) || 0) + 1));
+          const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+          let popularHex = (ranked.find(([hex]) => hex !== serverNormalizeHexColor(target.color)) || ranked[0] || [])[0];
+          if (!popularHex) popularHex = '#ea9b9a';
+          if (popularHex === serverNormalizeHexColor(target.color)) {
+            const hsl = serverHexToHsl(popularHex);
+            popularHex = serverHslToHex(hsl.h, hsl.s, Math.max(0.12, Math.min(0.9, hsl.l + 0.08)));
+          }
+          const split = engine.splitSpecificBlock(target, popularHex);
+          if (!split) throw new Error('Could not split largest block');
+          dedicatedBlockId = split.dedicatedBlockId || '';
+          lastColor = split.appliedColor || popularHex;
+          addAdminContributor();
+        } else if (command === 'add-hst-sample' || command === 'insert-circle') {
+          const kind = command === 'insert-circle' ? 'circle' : 'hst';
+          const target = pickLargestServerQuiltBlock(engine.blocks, (block) => {
+            if (kind === 'circle') return block?.specialPatternType !== 'insetCircle';
+            return block?.specialPatternType !== 'hst';
+          }) || pickLargestServerQuiltBlock(engine.blocks);
+          if (!target) throw new Error('No eligible block found');
+          const idx = engine.blocks.findIndex((block) => block && block.id === target.id);
+          if (idx < 0) throw new Error('Target block not found');
+          const { c1, c2 } = pickServerSpecialInsertColorPair(engine.blocks, target);
+          const [replacement] = kind === 'circle'
+            ? engine.createInsetCircle({ ...target, color: c1 }, c2)
+            : engine.createHalfSquareTriangle({ ...target, color: c1 }, c2);
+          if (!replacement) throw new Error(`Could not ${kind === 'circle' ? 'insert circle' : 'add HST sample'}`);
+          engine.blocks.splice(idx, 1, replacement);
+          dedicatedBlockId = replacement.id || '';
+          lastColor = replacement.color || c1;
+          appliedCount = 1;
+        } else {
+          throw new Error(`Unsupported admin quilt mutation command: ${command}`);
+        }
+
+        blocks = serializeServerQuiltBlocks(engine);
+        colorReplayEvents = typeof engine.getColorReplayEvents === 'function' ? engine.getColorReplayEvents() : [];
+        macroStructureFrozen = engine.macroStructureFrozen === true;
+        contributors = normalizeQuiltContributorEntries(contributors);
+        contributorCount = Math.max(1, Number(engine.submissionCount) || 0, contributors.length);
+      }
+
+      const quiltFingerprint = computeQuiltFingerprint(blocks);
+      const writeProvenance = buildServerQuiltWriteProvenance(`admin-quilt-mutation:${command}`, req, {
+        mutationId: mutationRef.id,
+        clientBuildId: clientBuildId || null
+      });
+      tx.set(quiltRef, {
+        blocks,
+        contributorCount,
+        lastUpdated: nowIso,
+        date: appDateKey,
+        quiltFingerprint,
+        colorReplayEvents,
+        contributors,
+        writeProvenance,
+        macroStructureFrozen
+      }, { merge: true });
+      tx.set(mutationRef, {
+        mutationId: mutationRef.id,
+        appDateKey,
+        command,
+        appliedCount,
+        status: 'success',
+        blockCount: blocks.length,
+        contributorCount,
+        quiltFingerprint,
+        dedicatedBlockId,
+        color: lastColor || null,
+        clientBuildId: clientBuildId || null,
+        createdAtIso: nowIso,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      responsePayload = {
+        success: true,
+        mutationId: mutationRef.id,
+        appDateKey,
+        dateKey: appDateKey,
+        date: appDateKey,
+        command,
+        appliedCount,
+        dedicatedBlockId,
+        color: lastColor || null,
+        blocks,
+        contributorCount,
+        colorReplayEvents,
+        contributors,
+        macroStructureFrozen,
+        quiltFingerprint
+      };
+    });
+
+    return res.json(responsePayload || { success: false, error: 'Admin quilt mutation failed' });
+  } catch (error) {
+    console.error('❌ Admin quilt mutation failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Admin quilt mutation failed',
       timestamp: getUtcIsoNow()
     });
   }
