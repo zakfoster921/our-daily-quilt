@@ -6278,6 +6278,32 @@ async function resolvePreviewQuotePayloadForDate(dateKey) {
   const assignSnap = await db.collection('dailyQuoteAssignments').doc(dk).get();
   const assignData = assignSnap.exists ? assignSnap.data() || {} : null;
 
+  if (assignData) {
+    const sid = String(assignData.sourceId || '').trim();
+    if (sid) {
+      const srcSnap = await db.collection('quotes').doc(sid).get();
+      if (srcSnap.exists) {
+        const fromSource = buildPreviewQuotePayloadFromFirestore(srcSnap.data() || {}, sid);
+        if (fromSource) {
+          return {
+            quote: fromSource,
+            resolution: 'assignment_sourceId',
+            assignmentExists: true
+          };
+        }
+      }
+    }
+    const snapAuthor = String(assignData.authorSnapshot || assignData.author || '').trim();
+    const snapText = String(assignData.textSnapshot || assignData.text || '').trim();
+    if (snapText && snapAuthor) {
+      return {
+        quote: { text: snapText, author: snapAuthor, sourceId: sid || undefined },
+        resolution: 'assignment_snapshots',
+        assignmentExists: true
+      };
+    }
+  }
+
   let catalogRow = null;
   let catalogId = '';
   let catalogEdited = '';
@@ -6325,32 +6351,6 @@ async function resolvePreviewQuotePayloadForDate(dateKey) {
       notionLastEditedTime: catalogEdited,
       submittedVia: String(catalogRow.submittedVia || catalogRow.submitted_via || '').trim()
     };
-  }
-
-  if (assignData) {
-    const sid = String(assignData.sourceId || '').trim();
-    if (sid) {
-      const srcSnap = await db.collection('quotes').doc(sid).get();
-      if (srcSnap.exists) {
-        const fromSource = buildPreviewQuotePayloadFromFirestore(srcSnap.data() || {}, sid);
-        if (fromSource) {
-          return {
-            quote: fromSource,
-            resolution: 'assignment_sourceId',
-            assignmentExists: true
-          };
-        }
-      }
-    }
-    const snapAuthor = String(assignData.authorSnapshot || assignData.author || '').trim();
-    const snapText = String(assignData.textSnapshot || assignData.text || '').trim();
-    if (snapText && snapAuthor) {
-      return {
-        quote: { text: snapText, author: snapAuthor, sourceId: sid || undefined },
-        resolution: 'assignment_snapshots',
-        assignmentExists: true
-      };
-    }
   }
 
   return { quote: null, resolution: 'not_found', assignmentExists: assignSnap.exists };
