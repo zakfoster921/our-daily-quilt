@@ -98,6 +98,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /adminTuneReminders/{dateKey} {
+      // One admin-only UI reminder completion marker, shared across devices.
+      allow read: if true;
+      allow create, update: if isSignedIn()
+        && isDateKey(dateKey)
+        && request.resource.data.completed == true;
+      allow delete: if false;
+    }
+
     match /ops/{opId} {
       // Operational idempotency/status docs are server/Admin SDK only.
       allow read, write: if false;
