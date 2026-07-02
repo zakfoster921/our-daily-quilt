@@ -6272,6 +6272,39 @@ function buildPreviewQuotePayloadFromFirestore(data, sourceId) {
   };
 }
 
+function normalizePreviewSourceId(value) {
+  return String(value || '').replace(/-/g, '').toLowerCase().trim();
+}
+
+function previewResultsReferToSameQuote(a, b) {
+  const aSource = normalizePreviewSourceId(a?.quote?.sourceId);
+  const bSource = normalizePreviewSourceId(b?.quote?.sourceId);
+  if (aSource && bSource) return aSource === bSource;
+  const aText = String(a?.quote?.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const bText = String(b?.quote?.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const aAuthor = String(a?.quote?.author || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const bAuthor = String(b?.quote?.author || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return !!aText && !!aAuthor && aText === bText && aAuthor === bAuthor;
+}
+
+function mergeSameQuoteLivePreviewFields(firestoreResult, notionResult) {
+  if (!firestoreResult?.quote || !notionResult?.quote) return firestoreResult;
+  if (!previewResultsReferToSameQuote(firestoreResult, notionResult)) return firestoreResult;
+  return {
+    ...firestoreResult,
+    notionLastEditedTime: notionResult.notionLastEditedTime || firestoreResult.notionLastEditedTime,
+    submittedVia: notionResult.submittedVia || firestoreResult.submittedVia,
+    resolution: `${firestoreResult.resolution || 'firestore'}+notion_live_same_quote`,
+    quote: {
+      ...firestoreResult.quote,
+      ...notionResult.quote,
+      text: firestoreResult.quote.text,
+      author: firestoreResult.quote.author,
+      sourceId: firestoreResult.quote.sourceId || notionResult.quote.sourceId
+    }
+  };
+}
+
 async function resolvePreviewQuotePayloadForDate(dateKey) {
   if (!db) return { quote: null, resolution: 'no_db', assignmentExists: false };
   const dk = String(dateKey || '').trim();
@@ -6489,8 +6522,10 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
 
 async function resolvePreviewQuotePayloadForDateWithNotion(dateKey) {
   const firestoreResult = await resolvePreviewQuotePayloadForDate(dateKey);
-  if (firestoreResult?.quote) return firestoreResult;
   const notionResult = await resolveNotionQuoteForPreviewDate(dateKey);
+  if (firestoreResult?.quote) {
+    return mergeSameQuoteLivePreviewFields(firestoreResult, notionResult);
+  }
   if (notionResult?.quote) return notionResult;
   return firestoreResult;
 }
