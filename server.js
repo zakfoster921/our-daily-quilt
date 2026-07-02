@@ -210,6 +210,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
   ['/api/admin/quilt-mutation', 2 * ONE_MB],
+  ['/api/admin/submission-audit', 8 * ONE_KB],
   ['/api/social-posts', 24 * ONE_KB],
   ['/api/social-posts/upload-media', 30 * ONE_MB],
   ['/api/social-posts/:postId', 24 * ONE_KB],
@@ -8103,6 +8104,129 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
     return res.status(500).json({
       success: false,
       error: error.message || 'Admin quilt mutation failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/submission-audit', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res) => {
+  setResetApiCors(res);
+  try {
+    const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+    const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+    if (!expectedToken) {
+      return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    }
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+
+    const [quiltSnap, reflectionSnap, colorSnap] = await Promise.all([
+      db.collection('quilts').doc(appDateKey).get(),
+      db.collection('reflectionResponses').where('appDateKey', '==', appDateKey).get(),
+      db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get()
+    ]);
+
+    const quilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
+    const blocks = Array.isArray(quilt.blocks) ? quilt.blocks : [];
+    const contributors = normalizeQuiltContributorEntries(quilt.contributors || []);
+    const fingerprint = typeof quilt.quiltFingerprint === 'string' && quilt.quiltFingerprint
+      ? quilt.quiltFingerprint
+      : computeQuiltFingerprint(blocks);
+    const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
+    const summarize = (doc) => {
+      const data = doc.data() || {};
+      return {
+        id: doc.id,
+        clientId: String(data.clientId || '').slice(0, 80),
+        deviceKey: String(data.deviceKey || '').slice(0, 80),
+        status: String(data.status || '').slice(0, 40),
+        name: String(data.displayName || data.authorDisplayName || data.name || '').slice(0, 80),
+        color: String(data.color || '').slice(0, 20),
+        text: String(data.text || data.publishedText || data.rawText || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+      };
+    };
+    const reflections = reflectionSnap.docs.map(summarize);
+    const colors = colorSnap.docs.map(summarize);
+    const reflectionByKey = new Map();
+    const colorByKey = new Map();
+    reflections.forEach((row) => {
+      const key = keyFor(row);
+      if (!key) return;
+      if (!reflectionByKey.has(key)) reflectionByKey.set(key, []);
+      reflectionByKey.get(key).push(row);
+    });
+    colors.forEach((row) => {
+      const key = keyFor(row);
+      if (!key) return;
+      if (!colorByKey.has(key)) colorByKey.set(key, []);
+      colorByKey.get(key).push(row);
+    });
+    const reflectionOnly = [];
+    const colorOnly = [];
+    const duplicateReflections = [];
+    const duplicateColors = [];
+    const failedColors = colors.filter((row) => row.status && row.status !== 'success');
+    reflectionByKey.forEach((rows, key) => {
+      if (!colorByKey.has(key)) reflectionOnly.push(...rows);
+      if (rows.length > 1) duplicateReflections.push({ key, count: rows.length, items: rows.slice(0, 5) });
+    });
+    colorByKey.forEach((rows, key) => {
+      if (!reflectionByKey.has(key)) colorOnly.push(...rows);
+      if (rows.length > 1) duplicateColors.push({ key, count: rows.length, items: rows.slice(0, 5) });
+    });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      generatedAt: getUtcIsoNow(),
+      counts: {
+        reflections: reflections.length,
+        colors: colors.length,
+        successfulColors: colors.filter((row) => !row.status || row.status === 'success').length,
+        quiltBlocks: blocks.length,
+        quiltContributorCount: Number(quilt.contributorCount) || contributors.length || 0,
+        contributors: contributors.length
+      },
+      quilt: {
+        exists: quiltSnap.exists,
+        lastUpdated: quilt.lastUpdated || '',
+        fingerprint,
+        macroStructureFrozen: quilt.macroStructureFrozen === true
+      },
+      mismatches: {
+        reflectionOnly: reflectionOnly.slice(0, 25),
+        colorOnly: colorOnly.slice(0, 25),
+        duplicateReflections: duplicateReflections.slice(0, 25),
+        duplicateColors: duplicateColors.slice(0, 25),
+        failedColors: failedColors.slice(0, 25)
+      },
+      warnings: [
+        reflectionOnly.length ? `${reflectionOnly.length} reflection response(s) without matching color submission` : '',
+        colorOnly.length ? `${colorOnly.length} color submission(s) without matching reflection response` : '',
+        duplicateReflections.length ? `${duplicateReflections.length} user/device key(s) with duplicate reflections` : '',
+        duplicateColors.length ? `${duplicateColors.length} user/device key(s) with duplicate color submissions` : '',
+        failedColors.length ? `${failedColors.length} non-success color submission(s)` : ''
+      ].filter(Boolean)
+    });
+  } catch (error) {
+    console.error('❌ Admin submission audit failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Admin submission audit failed',
       timestamp: getUtcIsoNow()
     });
   }
