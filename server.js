@@ -628,6 +628,13 @@ function setQuoteSubmissionCors(res) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
+function setAdminDailyTaskCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
 function setReflectionApiCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -9828,6 +9835,78 @@ app.get('/api/simple-test', (req, res) => {
     server: 'Instagram Quilt Generator (Firestore)',
     ready: true
   });
+});
+
+app.options('/api/admin-daily-tasks/:dateKey', (req, res) => {
+  setAdminDailyTaskCors(res);
+  return res.status(204).send('');
+});
+
+app.get('/api/admin-daily-tasks/:dateKey', async (req, res) => {
+  setAdminDailyTaskCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const dateKey = String(req.params.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'Invalid dateKey' });
+    }
+    const snap = await db.collection('adminDailyTasks').doc(dateKey).get();
+    return res.json({
+      success: true,
+      dateKey,
+      tasks: snap.exists ? snap.data() || {} : {}
+    });
+  } catch (err) {
+    console.error('❌ admin daily tasks read failed:', err?.message || err);
+    return res.status(500).json({ success: false, error: err?.message || String(err) });
+  }
+});
+
+app.post('/api/admin-daily-tasks/:dateKey', async (req, res) => {
+  setAdminDailyTaskCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const dateKey = String(req.params.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'Invalid dateKey' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const patch = { updatedAtIso: getUtcIsoNow(), updatedBy: 'admin_daily_task_api' };
+    if (body.igPostCompleted === true) {
+      patch.igPostCompleted = true;
+      patch.igPostCompletedAtIso = String(body.igPostCompletedAtIso || patch.updatedAtIso).trim();
+      patch.igPostSource = String(body.igPostSource || 'admin').trim().slice(0, 80);
+    }
+    if (body.previewTomorrowCompleted === true) {
+      patch.previewTomorrowCompleted = true;
+      patch.previewTomorrowCompletedAtIso = String(body.previewTomorrowCompletedAtIso || patch.updatedAtIso).trim();
+      const previewKey = String(body.previewTomorrowDateKey || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(previewKey)) {
+        patch.previewTomorrowDateKey = previewKey;
+      }
+    }
+    if (!patch.igPostCompleted && !patch.previewTomorrowCompleted) {
+      return res.status(400).json({ success: false, error: 'No completed task fields provided' });
+    }
+    const ref = db.collection('adminDailyTasks').doc(dateKey);
+    await ref.set(patch, { merge: true });
+    const snap = await ref.get();
+    const tasks = snap.exists ? snap.data() || {} : {};
+    if (tasks.igPostCompleted && tasks.previewTomorrowCompleted) {
+      await db.collection('adminTuneReminders').doc(dateKey).set(
+        {
+          completed: true,
+          completedAtIso: patch.updatedAtIso,
+          source: 'admin_daily_tasks'
+        },
+        { merge: true }
+      );
+    }
+    return res.json({ success: true, dateKey, tasks });
+  } catch (err) {
+    console.error('❌ admin daily tasks write failed:', err?.message || err);
+    return res.status(500).json({ success: false, error: err?.message || String(err) });
+  }
 });
 
 app.post('/api/admin-naming-reminder', async (req, res) => {
