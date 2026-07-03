@@ -206,6 +206,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-generate', 4 * ONE_KB],
   ['/api/quilt-vote', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
+  ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
   ['/api/reflection-response', 24 * ONE_KB],
@@ -444,6 +445,11 @@ const limitColorSubmission = createRateLimiter({
   name: 'color-submission',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_COLOR_SUBMISSION_PER_10_MIN, 10)
+});
+const limitFeatureFeedback = createRateLimiter({
+  name: 'feature-feedback',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_FEATURE_FEEDBACK_PER_10_MIN, 10)
 });
 const limitAdminQuiltMutation = createRateLimiter({
   name: 'admin-quilt-mutation',
@@ -8017,6 +8023,66 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
       error: error.message || 'Color submission failed',
       timestamp: getUtcIsoNow()
     });
+  }
+});
+
+app.options('/api/feature-feedback', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/feature-feedback', limitFeatureFeedback, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const selectedFeatureIds = Array.isArray(body.selectedFeatureIds)
+      ? body.selectedFeatureIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 10)
+      : [];
+    const selectedFeatureLabels = Array.isArray(body.selectedFeatureLabels)
+      ? body.selectedFeatureLabels.map((label) => String(label || '').trim()).filter(Boolean).slice(0, 10)
+      : [];
+    const note = String(body.note || '').trim().slice(0, 600);
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || '').trim())
+      ? String(body.appDateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const firebaseUid = String(body.firebaseUid || '').trim().slice(0, 160);
+    const docBase = String(clientId || firebaseUid || `anonymous-${crypto.randomUUID()}`);
+    const docId = `${docBase}_${appDateKey}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180);
+    const nowIso = getUtcIsoNow();
+
+    if (!selectedFeatureIds.length && !note) {
+      return res.status(400).json({ success: false, error: 'Select at least one feature or leave a note' });
+    }
+
+    const payload = {
+      source: 'hidden_visual_feed',
+      appDateKey,
+      selectedFeatureIds,
+      selectedFeatureLabels,
+      note,
+      clientId,
+      firebaseUid,
+      appVersion: String(body.appVersion || '').trim().slice(0, 80),
+      buildId: String(body.buildId || '').trim().slice(0, 80),
+      userAgent: String(body.userAgent || req.get('user-agent') || '').slice(0, 500),
+      submitted: true,
+      hasSubmittedFeatureFeedback: true,
+      submittedAtIso: String(body.submittedAtIso || nowIso).trim().slice(0, 80),
+      updatedAtIso: nowIso,
+      featureCount: Math.min(20, Math.max(0, Number.parseInt(String(body.featureCount || 0), 10) || selectedFeatureIds.length)),
+      saveSource: 'server_api'
+    };
+
+    await db.collection('featureFeedbackResponses').doc(docId).set(payload, { merge: true });
+    return res.json({ success: true, docId, appDateKey });
+  } catch (error) {
+    console.warn('POST /api/feature-feedback failed:', error?.message || error);
+    return res.status(500).json({ success: false, error: error?.message || 'feature feedback save failed' });
   }
 });
 
