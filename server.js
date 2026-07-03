@@ -2981,22 +2981,28 @@ function parseSpeakerDatesFromExtract(extract) {
   if (!text) return '';
   // Wikipedia lead usually puts birth/death years in a parenthetical, but the
   // first paren may be IPA/pronunciation only (e.g. "Audre Lorde (/ˈɔːdri lɔːrd/) (1934–1992)").
-  // Collect every parenthetical and pick the one that contains years; if nothing
-  // there, fall back to the first sentence, then the whole extract.
+  // Collect every parenthetical and use only clear lifespan patterns. Avoid
+  // treating unrelated prose years (publication dates, centuries, awards) as life dates.
   const parenContents = [];
   const re = /\(([^)]*)\)/g;
   let m;
   while ((m = re.exec(text)) !== null) parenContents.push(m[1]);
   const firstSentence = text.split(/[.!?](?:\s|$)/)[0] || text;
   // Years 1000–2099 covers everyone whose dates the app would plausibly cite.
-  const yearRe = /\b(1[0-9]{3}|20[0-9]{2})\b/g;
+  const year = '(1[0-9]{3}|20[0-9]{2})';
+  const yearRe = new RegExp(`\\b${year}\\b`, 'g');
+  const spanRe = new RegExp(`\\b(?:c\\.?\\s*)?${year}\\s*(?:–|—|-|to)\\s*(?:c\\.?\\s*)?${year}\\b`, 'i');
+  const bornDiedRe = new RegExp(`\\b(?:b\\.?|born)\\s*${year}\\b.*\\b(?:d\\.?|died)\\s*${year}\\b`, 'i');
 
-  const candidates = [...parenContents, firstSentence, text].map((h) => String(h || ''));
+  const candidates = [...parenContents, firstSentence].map((h) => String(h || ''));
   for (const haystack of candidates) {
+    const bornDiedMatch = haystack.match(bornDiedRe);
+    if (bornDiedMatch) return `${parseInt(bornDiedMatch[1], 10)} \u2013 ${parseInt(bornDiedMatch[2], 10)}`;
+    const spanMatch = haystack.match(spanRe);
+    if (spanMatch) return `${parseInt(spanMatch[1], 10)} \u2013 ${parseInt(spanMatch[2], 10)}`;
     const yearTokens = haystack.match(yearRe) || [];
     const years = Array.from(new Set(yearTokens.map((y) => parseInt(y, 10)))).sort((a, b) => a - b);
     if (!years.length) continue;
-    if (years.length >= 2) return `${years[0]} \u2013 ${years[years.length - 1]}`;
     if (/\bborn\b/i.test(haystack) || /\bb\.\s*\d/i.test(haystack)) return `born ${years[0]}`;
     if (/\bdied\b/i.test(haystack) || /\bd\.\s*\d/i.test(haystack)) return `died ${years[0]}`;
   }
@@ -3004,8 +3010,9 @@ function parseSpeakerDatesFromExtract(extract) {
 }
 
 /**
- * Wikidata structured dates (P569 birth, P570 death) when Wikipedia REST extract
- * has no parseable years — needed for Notion `speaker_dates` without manual entry.
+ * Wikidata structured dates (P569 birth, P570 death) are preferred for Notion
+ * `speaker_dates`; Wikipedia prose is too easy to misread when an intro contains
+ * publication years, movement years, or unrelated historical dates.
  */
 function yearFromWikidataTimeValue(value) {
   if (!value || typeof value !== 'object') return null;
@@ -3042,6 +3049,86 @@ function formatLifeSpanYears(birthY, deathY) {
   return '';
 }
 
+function normalizeWikidataSpeakerName(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/\b(?:jr|sr|ii|iii|iv)\.?\b/gi, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function speakerNameMatchesWikidataEntity(authorName, entity) {
+  const query = normalizeWikidataSpeakerName(authorName);
+  if (!query) return false;
+  const labels = entity?.labels || {};
+  const aliases = entity?.aliases || {};
+  const candidates = [
+    labels.en?.value,
+    ...(Array.isArray(aliases.en) ? aliases.en.map((a) => a?.value) : [])
+  ]
+    .map(normalizeWikidataSpeakerName)
+    .filter(Boolean);
+  if (candidates.includes(query)) return true;
+
+  const queryTokens = query.split(' ').filter(Boolean);
+  if (queryTokens.length < 2) return false;
+  const queryTokenSet = new Set(queryTokens);
+  const queryLast = queryTokens[queryTokens.length - 1];
+  return candidates.some((candidate) => {
+    const candidateTokens = candidate.split(' ').filter(Boolean);
+    if (candidateTokens.length < queryTokens.length || candidateTokens.length > queryTokens.length + 2) return false;
+    if (candidateTokens[candidateTokens.length - 1] !== queryLast) return false;
+    const candidateTokenSet = new Set(candidateTokens);
+    return [...queryTokenSet].every((token) => candidateTokenSet.has(token));
+  });
+}
+
+async function fetchWikidataEntityForSpeakerDates(entityId) {
+  const id = String(entityId || '').trim();
+  if (!/^Q\d+$/.test(id)) return null;
+  try {
+    const ep = new URLSearchParams({
+      action: 'wbgetentities',
+      ids: id,
+      format: 'json',
+      props: 'claims|labels|aliases|descriptions',
+      languages: 'en'
+    });
+    const er = await fetch(`https://www.wikidata.org/w/api.php?${ep}`, {
+      headers: { 'User-Agent': WIKIPEDIA_USER_AGENT }
+    });
+    if (!er.ok) return null;
+    const entityJson = await er.json();
+    return entityJson?.entities?.[id] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikidataSpeakerDatesById(entityId, authorName, options = {}) {
+  const id = String(entityId || '').trim();
+  const entity = await fetchWikidataEntityForSpeakerDates(id);
+  const claims = entity?.claims;
+  if (!claims || !wikidataEntityIsHuman(claims)) return '';
+  if (options.requireNameMatch !== false && !speakerNameMatchesWikidataEntity(authorName, entity)) {
+    console.warn(`⚠️ Wikidata ${id} label/alias did not confidently match "${authorName}"`);
+    return '';
+  }
+  const birthY = yearFromWikidataClaim(claims.P569);
+  const deathY = yearFromWikidataClaim(claims.P570);
+  const span = formatLifeSpanYears(birthY, deathY);
+  if (span) {
+    const source = options.source ? ` via ${options.source}` : '';
+    console.log(`ℹ️ speaker_dates from Wikidata ${id}${source} for "${authorName}": ${span}`);
+  }
+  return span;
+}
+
 async function fetchWikidataSpeakerDates(authorName) {
   const q = String(authorName || '').trim();
   if (!q) return '';
@@ -3068,32 +3155,10 @@ async function fetchWikidataSpeakerDates(authorName) {
   for (const h of hits) {
     const id = h?.id;
     if (!id || !/^Q\d+$/.test(id)) continue;
-    let entityJson;
-    try {
-      const ep = new URLSearchParams({
-        action: 'wbgetentities',
-        ids: id,
-        format: 'json',
-        props: 'claims'
-      });
-      const er = await fetch(`https://www.wikidata.org/w/api.php?${ep}`, {
-        headers: { 'User-Agent': WIKIPEDIA_USER_AGENT }
-      });
-      if (!er.ok) continue;
-      entityJson = await er.json();
-    } catch {
-      continue;
-    }
-    const claims = entityJson?.entities?.[id]?.claims;
-    if (!claims || !wikidataEntityIsHuman(claims)) continue;
-    const birthY = yearFromWikidataClaim(claims.P569);
-    const deathY = yearFromWikidataClaim(claims.P570);
-    const span = formatLifeSpanYears(birthY, deathY);
-    if (span) {
-      console.log(`ℹ️ speaker_dates from Wikidata ${id} for "${q}": ${span}`);
-      return span;
-    }
+    const span = await fetchWikidataSpeakerDatesById(id, q, { source: 'search' });
+    if (span) return span;
   }
+  console.warn(`⚠️ No confident Wikidata speaker_dates match for "${q}"`);
   return '';
 }
 
@@ -3235,6 +3300,7 @@ async function fetchWikipediaSpeakerInfo(authorName) {
   let extract = '';
   let desc = '';
   let isDisambiguation = false;
+  let wikidataEntityId = '';
 
   if (summary) {
     if (summary.type === 'disambiguation') {
@@ -3246,13 +3312,24 @@ async function fetchWikipediaSpeakerInfo(authorName) {
       imageUrl = commonsUploadUrlToThumbnail(wikiImage, 500) || wikiImage;
       extract = String(summary?.extract || '');
       desc = String(summary?.description || '').trim();
+      wikidataEntityId = String(summary?.wikibase_item || '').trim();
     }
   }
 
   let dates = '';
-  if (!isDisambiguation && (extract || desc)) {
+  if (!isDisambiguation && wikidataEntityId) {
+    dates = (await fetchWikidataSpeakerDatesById(wikidataEntityId, name, { source: 'Wikipedia summary' })) || '';
+  }
+
+  if (!dates) {
+    dates = (await fetchWikidataSpeakerDates(name)) || '';
+  }
+
+  if (!dates && !isDisambiguation && (extract || desc)) {
     dates = parseSpeakerDatesFromExtract(desc ? `${desc} ${extract}` : extract) || '';
-    if (!dates) {
+    if (dates) {
+      console.warn(`⚠️ speaker_dates for "${name}" came from Wikipedia prose fallback: ${dates}`);
+    } else {
       const preview = String(desc ? `${desc} ${extract}` : extract)
         .replace(/\s+/g, ' ')
         .trim()
@@ -3261,10 +3338,6 @@ async function fetchWikipediaSpeakerInfo(authorName) {
         `⚠️ No speaker_dates from Wikipedia extract for "${name}". Preview: ${preview || '(empty)'}`
       );
     }
-  }
-
-  if (!dates) {
-    dates = (await fetchWikidataSpeakerDates(name)) || '';
   }
 
   let attribution = '';
