@@ -31,20 +31,23 @@ const {
 } = require('../lib/submitted-quote-prefill-prompts');
 
 const NOTION_API_VERSION = '2022-06-28';
+const WIKIPEDIA_USER_AGENT = 'OurDailyQuilt/1.0 (https://ourdailyquilt.com)';
 const FINAL_FIELDS = ['community_prompt', 'watch_for', 'good_day', 'rough_day', 'ig_caption'];
 const FIELD_ALIASES = {
   community_prompt: ['community_prompt', 'communityPrompt', 'Community prompt'],
   watch_for: ['watch_for', 'watchFor', 'Watch for'],
   good_day: ['good_day', 'goodDay', 'Good day', 'Good Day'],
   rough_day: ['rough_day', 'roughDay', 'Rough day', 'Rough Day'],
-  ig_caption: ['ig_caption', 'igCaption', 'IG Caption']
+  ig_caption: ['ig_caption', 'igCaption', 'IG Caption'],
+  speaker_dates: ['speaker_dates', 'speakerDates', 'Speaker dates', 'Speaker Dates']
 };
 const ASSIGNMENT_SNAPSHOT_FIELDS = {
   community_prompt: 'communityPromptSnapshot',
   watch_for: 'watch_for_snapshot',
   good_day: 'goodDaySnapshot',
   rough_day: 'roughDaySnapshot',
-  ig_caption: 'igCaptionSnapshot'
+  ig_caption: 'igCaptionSnapshot',
+  speaker_dates: 'speakerDatesSnapshot'
 };
 
 function parseArgs(argv) {
@@ -199,6 +202,177 @@ function mapPrefillFields(parsed, model) {
   };
 }
 
+function parseSpeakerDatesFromExtract(extract) {
+  const text = String(extract || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const parenContents = [];
+  const re = /\(([^)]*)\)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) parenContents.push(m[1]);
+  const firstSentence = text.split(/[.!?](?:\s|$)/)[0] || text;
+  const year = '(1[0-9]{3}|20[0-9]{2})';
+  const yearRe = new RegExp(`\\b${year}\\b`, 'g');
+  const spanRe = new RegExp(`\\b(?:c\\.?\\s*)?${year}\\s*(?:–|—|-|to)\\s*(?:c\\.?\\s*)?${year}\\b`, 'i');
+  const bornDiedRe = new RegExp(`\\b(?:b\\.?|born)\\s*${year}\\b.*\\b(?:d\\.?|died)\\s*${year}\\b`, 'i');
+  const candidates = [...parenContents, firstSentence].map((h) => String(h || ''));
+  for (const haystack of candidates) {
+    const bornDiedMatch = haystack.match(bornDiedRe);
+    if (bornDiedMatch) return `${parseInt(bornDiedMatch[1], 10)} \u2013 ${parseInt(bornDiedMatch[2], 10)}`;
+    const spanMatch = haystack.match(spanRe);
+    if (spanMatch) return `${parseInt(spanMatch[1], 10)} \u2013 ${parseInt(spanMatch[2], 10)}`;
+    const yearTokens = haystack.match(yearRe) || [];
+    const years = Array.from(new Set(yearTokens.map((y) => parseInt(y, 10)))).sort((a, b) => a - b);
+    if (!years.length) continue;
+    if (/\bborn\b/i.test(haystack) || /\bb\.\s*\d/i.test(haystack)) return `born ${years[0]}`;
+    if (/\bdied\b/i.test(haystack) || /\bd\.\s*\d/i.test(haystack)) return `died ${years[0]}`;
+  }
+  return '';
+}
+
+function yearFromWikidataTimeValue(value) {
+  if (!value || typeof value !== 'object') return null;
+  const t = String(value.time || '').replace(/^\+/, '');
+  const y = parseInt(t.slice(0, 4), 10);
+  return Number.isFinite(y) && y >= 1000 && y <= 2100 ? y : null;
+}
+
+function yearFromWikidataClaim(claimArray) {
+  if (!Array.isArray(claimArray) || !claimArray.length) return null;
+  const rankOrder = (r) => (r === 'preferred' ? 0 : r === 'normal' ? 1 : 2);
+  const sorted = [...claimArray].sort((a, b) => rankOrder(a?.rank) - rankOrder(b?.rank));
+  for (const c of sorted) {
+    if (c?.mainsnak?.datatype !== 'time') continue;
+    const y = yearFromWikidataTimeValue(c?.mainsnak?.datavalue?.value);
+    if (y) return y;
+  }
+  return null;
+}
+
+function wikidataEntityIsHuman(claims) {
+  const p31 = claims?.P31;
+  if (!Array.isArray(p31)) return false;
+  return p31.some((c) => c?.mainsnak?.datavalue?.value?.id === 'Q5');
+}
+
+function formatLifeSpanYears(birthY, deathY) {
+  if (birthY && deathY) return `${birthY} \u2013 ${deathY}`;
+  if (birthY) return `born ${birthY}`;
+  if (deathY) return `died ${deathY}`;
+  return '';
+}
+
+function normalizeSpeakerName(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/\b(?:jr|sr|ii|iii|iv)\.?\b/gi, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function speakerNameMatchesWikidataEntity(authorName, entity) {
+  const query = normalizeSpeakerName(authorName);
+  if (!query) return false;
+  const candidates = [
+    entity?.labels?.en?.value,
+    ...(Array.isArray(entity?.aliases?.en) ? entity.aliases.en.map((a) => a?.value) : [])
+  ]
+    .map(normalizeSpeakerName)
+    .filter(Boolean);
+  if (candidates.includes(query)) return true;
+  const queryTokens = query.split(' ').filter(Boolean);
+  if (queryTokens.length < 2) return false;
+  const queryTokenSet = new Set(queryTokens);
+  const queryLast = queryTokens[queryTokens.length - 1];
+  return candidates.some((candidate) => {
+    const candidateTokens = candidate.split(' ').filter(Boolean);
+    if (candidateTokens.length < queryTokens.length || candidateTokens.length > queryTokens.length + 2) return false;
+    if (candidateTokens[candidateTokens.length - 1] !== queryLast) return false;
+    const candidateTokenSet = new Set(candidateTokens);
+    return [...queryTokenSet].every((token) => candidateTokenSet.has(token));
+  });
+}
+
+async function fetchWikidataEntity(entityId) {
+  const id = String(entityId || '').trim();
+  if (!/^Q\d+$/.test(id)) return null;
+  const ep = new URLSearchParams({
+    action: 'wbgetentities',
+    ids: id,
+    format: 'json',
+    props: 'claims|labels|aliases',
+    languages: 'en'
+  });
+  const res = await fetch(`https://www.wikidata.org/w/api.php?${ep}`, {
+    headers: { 'User-Agent': WIKIPEDIA_USER_AGENT }
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+  return json?.entities?.[id] || null;
+}
+
+async function fetchWikidataSpeakerDatesById(entityId, authorName) {
+  const entity = await fetchWikidataEntity(entityId);
+  const claims = entity?.claims;
+  if (!claims || !wikidataEntityIsHuman(claims)) return '';
+  if (!speakerNameMatchesWikidataEntity(authorName, entity)) return '';
+  return formatLifeSpanYears(yearFromWikidataClaim(claims.P569), yearFromWikidataClaim(claims.P570));
+}
+
+async function fetchWikidataSpeakerDates(authorName) {
+  const q = String(authorName || '').trim();
+  if (!q) return '';
+  const searchParams = new URLSearchParams({
+    action: 'wbsearchentities',
+    search: q,
+    language: 'en',
+    type: 'item',
+    format: 'json',
+    limit: '10'
+  });
+  const res = await fetch(`https://www.wikidata.org/w/api.php?${searchParams}`, {
+    headers: { 'User-Agent': WIKIPEDIA_USER_AGENT }
+  });
+  if (!res.ok) return '';
+  const json = await res.json();
+  for (const hit of json?.search || []) {
+    const span = await fetchWikidataSpeakerDatesById(hit?.id, q);
+    if (span) return span;
+  }
+  return '';
+}
+
+async function fetchSpeakerDates(authorName) {
+  const name = String(authorName || '').trim();
+  if (!name) return '';
+  let summary = null;
+  try {
+    const title = encodeURIComponent(name.replace(/\s+/g, '_'));
+    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${title}`, {
+      headers: { 'User-Agent': WIKIPEDIA_USER_AGENT, Accept: 'application/json' },
+      redirect: 'follow'
+    });
+    if (res.ok) summary = await res.json();
+  } catch (_) {
+    summary = null;
+  }
+  if (summary && summary.type !== 'disambiguation') {
+    const direct = await fetchWikidataSpeakerDatesById(summary?.wikibase_item, name);
+    if (direct) return direct;
+  }
+  const search = await fetchWikidataSpeakerDates(name);
+  if (search) return search;
+  if (summary && summary.type !== 'disambiguation') {
+    const text = `${String(summary?.description || '').trim()} ${String(summary?.extract || '').trim()}`.trim();
+    return parseSpeakerDatesFromExtract(text);
+  }
+  return '';
+}
+
 async function postClaude({ apiKey, model, prompt }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -280,6 +454,7 @@ function readField(data, field) {
   if (field === 'good_day') return String(data.good_day ?? data.goodDay ?? '').trim();
   if (field === 'rough_day') return String(data.rough_day ?? data.roughDay ?? '').trim();
   if (field === 'ig_caption') return String(data.ig_caption ?? data.igCaption ?? '').trim();
+  if (field === 'speaker_dates') return String(data.speaker_dates ?? data.speakerDates ?? '').trim();
   return '';
 }
 
@@ -326,7 +501,7 @@ function buildAssignmentPatch(patch) {
 function buildNotionProperties(schema, patch) {
   const properties = {};
   if (!schema) return properties;
-  for (const field of FINAL_FIELDS) {
+  for (const field of [...FINAL_FIELDS, 'speaker_dates']) {
     if (!patch[field]) continue;
     const propName = findNotionPropName(schema, ...(FIELD_ALIASES[field] || [field]));
     const payload = notionTextPropertyValue(schema[propName], patch[field]);
@@ -338,10 +513,6 @@ function buildNotionProperties(schema, patch) {
 async function main() {
   const opts = parseArgs(process.argv);
   const hasAi = String(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY || '').trim();
-  if (!hasAi) {
-    console.log('[finalize-prefill] skipped: no ANTHROPIC_API_KEY or GEMINI_API_KEY configured');
-    return;
-  }
 
   const db = initFirestore();
   const quotesCollection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
@@ -365,8 +536,18 @@ async function main() {
     const authorName = String(data.author || '').trim();
     if (!quoteText || !authorName) continue;
     const chosen = chooseFieldsToPatch(data);
-    if (!chosen.fields.length) continue;
-    candidates.push({ dateKey, sourceId, quoteText, authorName, fields: chosen.fields, reason: chosen.reason, data });
+    const needsSpeakerDates = !readField(data, 'speaker_dates');
+    if (!chosen.fields.length && !needsSpeakerDates) continue;
+    candidates.push({
+      dateKey,
+      sourceId,
+      quoteText,
+      authorName,
+      fields: chosen.fields,
+      reason: chosen.fields.length ? chosen.reason : 'missing_speaker_dates',
+      needsSpeakerDates,
+      data
+    });
   }
 
   const limited = candidates.slice(0, opts.limit);
@@ -374,13 +555,24 @@ async function main() {
   let failed = 0;
   for (const item of limited) {
     try {
-      const generated = await generateFinalPrefill({ quoteText: item.quoteText, authorName: item.authorName });
-      const patch = buildPatch(item.fields, generated, new Date().toISOString());
+      let patch = {};
+      if (item.fields.length) {
+        if (!hasAi) {
+          console.log(`[finalize-prefill] skipped creative fields for ${item.dateKey} ${item.sourceId}: no AI key configured`);
+        } else {
+          const generated = await generateFinalPrefill({ quoteText: item.quoteText, authorName: item.authorName });
+          patch = buildPatch(item.fields, generated, new Date().toISOString());
+        }
+      }
+      if (item.needsSpeakerDates) {
+        const speakerDates = await fetchSpeakerDates(item.authorName);
+        if (speakerDates) patch.speaker_dates = speakerDates;
+      }
       if (!Object.keys(patch).length) continue;
       const assignmentPatch = buildAssignmentPatch(patch);
       const notionProperties = buildNotionProperties(schema, patch);
       if (opts.dryRun) {
-        console.log(`[finalize-prefill] dry-run ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(patch).filter((k) => FINAL_FIELDS.includes(k)).join(',')}`);
+        console.log(`[finalize-prefill] dry-run ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(patch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
         continue;
       }
       await db.collection(quotesCollection).doc(item.sourceId).set({ ...patch, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
@@ -393,7 +585,7 @@ async function main() {
         });
       }
       patched += 1;
-      console.log(`[finalize-prefill] patched ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(patch).filter((k) => FINAL_FIELDS.includes(k)).join(',')}`);
+      console.log(`[finalize-prefill] patched ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(patch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
     } catch (e) {
       failed += 1;
       console.warn(`[finalize-prefill] failed ${item.dateKey} ${item.sourceId}: ${e.message}`);
