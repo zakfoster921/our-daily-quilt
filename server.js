@@ -48,7 +48,10 @@ try {
   console.warn('⚠️ FFmpeg installer unavailable:', e.message);
 }
 
-const { buildSubmittedQuotePrefillPrompt } = require('./lib/submitted-quote-prefill-prompts');
+const {
+  buildSubmittedQuotePrefillPrompt,
+  PREFILL_CREATIVE_PROMPT_VERSION
+} = require('./lib/submitted-quote-prefill-prompts');
 const {
   buildKeywordEmphasisPrompt,
   parseKeywordEmphasisResponse,
@@ -3544,6 +3547,10 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   if (ai?.rough_day) {
     payload.rough_day = ai.rough_day;
   }
+  payload.creativePrefillVersion = PREFILL_CREATIVE_PROMPT_VERSION;
+  payload.creativePrefillUpdatedAt = new Date().toISOString();
+  payload.creativePrefillModel = String(ai?._model || '').trim();
+  payload.creativePrefillSource = 'submission-prefill';
   const reuseCutout = speakerReuse?.speakerCutoutUrl ? String(speakerReuse.speakerCutoutUrl).trim() : '';
   const reusePortrait = speakerReuse?.speakerImageUrl ? String(speakerReuse.speakerImageUrl).trim() : '';
   const wikiPortrait = wiki?.speaker_image_url ? String(wiki.speaker_image_url).trim() : '';
@@ -10705,6 +10712,24 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
       });
     }
 
+    const finalizePrefillResult = await runNodeScript('scripts/finalize-scheduled-prefill.cjs', [
+      `--start=${scheduleStartDate}`,
+      '--window=7',
+      '--limit=7'
+    ]);
+    if (finalizePrefillResult.code !== 0) {
+      return res.status(500).json({
+        success: false,
+        step: 'schedule:finalize-prefill',
+        exitCode: finalizePrefillResult.code,
+        stdout: tailOutput(finalizePrefillResult.stdout, 12000),
+        stderr: tailOutput(finalizePrefillResult.stderr, 12000),
+        note: 'Scheduling completed; scheduled quote final prefill failed before usage sync.',
+        startedAt,
+        finishedAt: getUtcIsoNow()
+      });
+    }
+
     const usageResult = await runNodeScript(
       'scripts/sync-usage-firestore-to-notion.cjs',
       notionSyncQuotesScriptArgs(scheduleStartDate, syncScope)
@@ -10730,17 +10755,18 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
         'schedule:app-submissions',
         'schedule:fill-gaps',
         'schedule:rolling-append',
+        'schedule:finalize-prefill',
         'sync:usage'
       ],
       scheduleStartDate,
       syncScope: syncScope.fullCatalog ? 'all' : syncScope.windowDays,
       fullCatalog: syncScope.fullCatalog,
       stdout: tailOutput(
-        `${quotesResult.stdout}\n---\n${reconcileResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${gapFillResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${usageResult.stdout}`,
+        `${quotesResult.stdout}\n---\n${reconcileResult.stdout}\n---\n${appSubmissionsResult.stdout}\n---\n${gapFillResult.stdout}\n---\n${scheduleResult.stdout}\n---\n${finalizePrefillResult.stdout}\n---\n${usageResult.stdout}`,
         16000
       ),
       stderr: tailOutput(
-        `${quotesResult.stderr}\n---\n${reconcileResult.stderr}\n---\n${appSubmissionsResult.stderr}\n---\n${gapFillResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${usageResult.stderr}`,
+        `${quotesResult.stderr}\n---\n${reconcileResult.stderr}\n---\n${appSubmissionsResult.stderr}\n---\n${gapFillResult.stderr}\n---\n${scheduleResult.stderr}\n---\n${finalizePrefillResult.stderr}\n---\n${usageResult.stderr}`,
         8000
       ),
       startedAt,

@@ -148,6 +148,23 @@ jobs:
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=7 --min-count=7 --append-only
 
+      - name: Finalize scheduled quote prefill
+        timeout-minutes: 8
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
+          FIRESTORE_DAILY_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_DAILY_QUOTES_COLLECTION }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          ANTHROPIC_PREFILL_MODEL: ${{ secrets.ANTHROPIC_PREFILL_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          GEMINI_PREFILL_MODEL: ${{ secrets.GEMINI_PREFILL_MODEL }}
+        run: node scripts/finalize-scheduled-prefill.cjs "${START_ARG}" --window=7 --limit=7
+
       - name: Process speaker cutouts for scheduled quotes
         timeout-minutes: 10
         env:
