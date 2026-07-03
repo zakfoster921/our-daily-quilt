@@ -2890,7 +2890,7 @@ const REQUIRED_PREFILL_FIELDS = [
   {
     key: 'good_day',
     requirement:
-      'good_day is required: a short, declarative push with edge — one or two short sentences, no questions, no filler.'
+      'good_day is required: a short, quirky declarative push with odd verbs or playful specificity — one or two short sentences, no questions, no generic pep-talk filler.'
   },
   {
     key: 'rough_day',
@@ -7109,7 +7109,7 @@ async function patchOdqEditorNotionPage(pageId, updates) {
 const ODQ_EDITOR_GENERATE_SYSTEM = `You are a content writer for Our Daily Quilt (ODQ). Given a quote and author, generate content for missing fields. Return ONLY a JSON object with the requested fields.
 
 Field specs:
-- good_day: Short declarative push, has edge, specific enough to act on. Sometimes a command. No questions, no filler. "Today" only when it earns it.
+- good_day: Short quirky declarative push, specific enough to act on. Prefer odd verbs, tiny images, and concrete little imperatives over abstract advice. Sometimes a command. No questions, no generic pep-talk filler. "Today" only when it earns it.
 - rough_day: Reframes without naming emotions or assuming how someone feels. No demands. Strips to essential permission or redirect. Can be as short as three words. Never diagnoses.
 - watch_for: A standalone sentence fragment naming a specific observable behavior. UI prepends "Watch for the moment today when..." so the value continues from that. No adverbs doing interpretive work.
 - community_prompt: Single question inviting users to share something from their experience useful to others. Transferable. Plain language. Does not mention quote or author. Ends with ?
