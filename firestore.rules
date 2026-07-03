@@ -10,6 +10,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isFeatureFeedbackResponse(data) {
+      return data.source == 'hidden_visual_feed'
+        && data.submitted == true
+        && data.hasSubmittedFeatureFeedback == true
+        && isDateKey(data.appDateKey)
+        && data.selectedFeatureIds is list
+        && data.selectedFeatureIds.size() <= 10
+        && data.selectedFeatureLabels is list
+        && data.selectedFeatureLabels.size() <= 10
+        && data.note is string
+        && data.note.size() <= 600
+        && data.featureCount is int
+        && data.featureCount <= 20;
+    }
+
     match /quilts/{dateKey} {
       allow read: if true;
       // Prevent stale browser/client bundles from clearing production quilts.
@@ -85,6 +100,13 @@ service cloud.firestore {
       // Best-effort client analytics. Never required for core quilt saving.
       allow create, update: if true;
       allow read, delete: if false;
+    }
+
+    match /featureFeedbackResponses/{responseId} {
+      // Hidden visual survey responses. The UI gathers anonymous/device identifiers
+      // for follow-up targeting, but only this narrow survey payload can be written.
+      allow create, update: if isFeatureFeedbackResponse(request.resource.data);
+      allow delete: if false;
     }
 
     match /popularColorResponses/{dateKey}/responses/{responseId} {
