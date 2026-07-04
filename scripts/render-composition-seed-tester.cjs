@@ -863,6 +863,16 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
       undefined,
       { timeout: 120000 }
     );
+    await page.evaluate(() => {
+      const app = window.app;
+      if (!app) return;
+      app.applyQuiltDataFromPayload = async () => {};
+      app.attachQuiltLiveListener = () => {};
+      app.loadQuiltFromServer = async () => ({ ok: false, reason: 'composition_tester_disabled' });
+      if (app.dataService) {
+        app.dataService.loadQuiltFromServer = async () => ({ ok: false, reason: 'composition_tester_disabled' });
+      }
+    });
     await page.addStyleTag({
       content: `
         html, body {
@@ -905,7 +915,7 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
 
     const out = [];
     for (const panel of renderPanels) {
-      await page.evaluate(async ({ blocks, submissionCount, dateKey: panelDateKey }) => {
+      const renderCheck = await page.evaluate(async ({ blocks, submissionCount, dateKey: panelDateKey }) => {
         const app = window.app;
         document.querySelectorAll('.screen').forEach((screen) => {
           screen.classList.remove('active');
@@ -918,30 +928,38 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
         screen?.setAttribute('aria-hidden', 'false');
         if (screen) screen.style.display = 'flex';
 
-        if (typeof app.applyQuiltDataFromPayload === 'function') {
-          await app.applyQuiltDataFromPayload({
-            blocks,
-            contributors: [],
-            contributorCount: submissionCount,
-            dateKey: panelDateKey,
-            date: panelDateKey
-          });
-        } else {
-          app.quiltEngine.blocks = JSON.parse(JSON.stringify(blocks));
-          app.quiltEngine.submissionCount = submissionCount;
-        }
+        const clonedBlocks = JSON.parse(JSON.stringify(blocks));
+        app._loadedSharedQuiltDateKey = panelDateKey;
+        app.dailyContributors = [];
+        app.quiltEngine.blocks = clonedBlocks;
+        app.quiltEngine.submissionCount = submissionCount;
 
         app.renderer?.setBacksidePreviewEnabled?.(app._isBacksidePreviewMode === true);
         if (app.renderer?.renderBlocks) {
-          app.renderer.renderBlocks(blocks, [], submissionCount);
+          app.renderer.quiltSVG = document.getElementById('quilt');
+          app.renderer.renderBlocks(clonedBlocks, [], submissionCount);
         } else if (typeof app.renderQuilt === 'function') {
           await app.renderQuilt();
         }
+        const fingerprint = window.Utils?.computeQuiltFingerprint?.(app.quiltEngine.blocks) || '';
+        return {
+          dateKey: app._loadedSharedQuiltDateKey,
+          blockCount: Array.isArray(app.quiltEngine.blocks) ? app.quiltEngine.blocks.length : 0,
+          submissionCount: app.quiltEngine.submissionCount,
+          fingerprint
+        };
       }, {
         blocks: panel.blocks,
         submissionCount: panel.submissionCount,
         dateKey
       });
+      if (renderCheck.blockCount !== panel.blocks.length || Number(renderCheck.submissionCount) !== Number(panel.submissionCount)) {
+        throw new Error(
+          `Browser renderer did not keep injected panel ${panel.mode}: ` +
+            `got ${renderCheck.blockCount}/${renderCheck.submissionCount}, ` +
+            `expected ${panel.blocks.length}/${panel.submissionCount}`
+        );
+      }
 
       await page.waitForFunction(
         () => {
