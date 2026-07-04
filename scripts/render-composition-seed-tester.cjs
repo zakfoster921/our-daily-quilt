@@ -47,6 +47,7 @@ const { chromium } = require('playwright');
 const sharp = require('sharp');
 const { getAppDateKey } = require('./lib/app-date-key.cjs');
 const { createServerQuiltEngine, loadServerQuiltRuntime, serializeServerQuiltBlocks } = require('./lib/server-quilt-engine.cjs');
+const { buildCompositionPreviewFromQuiltData } = require('./lib/composition-preview.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
@@ -1044,39 +1045,30 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
 async function renderDate(dateKey) {
   const { Utils, QuiltMirrorLayout } = loadServerQuiltRuntime();
   const quilt = await fetchQuiltData(dateKey);
-  const lockColors = quilt.colors.slice(0, BIAS_LOCK_AT);
-  const metrics = analyzeColors(lockColors);
-  const inferredMode = inferMode(metrics);
-  const replayCoverage = quilt.liveContributorCount > 0 ? quilt.colors.length / quilt.liveContributorCount : 0;
-  const archiveLockSnapshot = BRANCH_FROM_ARCHIVE_LOCK && quilt.source === 'colorReplayEvents'
-    ? reconstructArchiveSnapshotAt(quilt.replayEvents, BIAS_LOCK_AT)
-    : null;
-  const replayOptions = archiveLockSnapshot
-    ? {
-        initialBlocks: archiveLockSnapshot.blocks,
-        initialSubmissionCount: archiveLockSnapshot.submissionCount,
-        startIndex: archiveLockSnapshot.submissionCount,
-        macroStructureFrozen: false,
-        enforcePalette: false
-      }
-    : {};
-  const modeKeys = MODE_KEYS.length
-    ? [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))]
-    : ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
+  const preview = buildCompositionPreviewFromQuiltData(dateKey, {
+    blocks: quilt.liveBlocks,
+    contributorCount: quilt.liveContributorCount,
+    colorReplayEvents: quilt.replayEvents,
+    macroStructureFrozen: quilt.macroStructureFrozen
+  }, {
+    lockAt: BIAS_LOCK_AT,
+    modeKey: MODE_KEYS.find((mode) => mode && mode !== 'baseline'),
+    includeStoredOriginal: INCLUDE_STORED_ORIGINAL
+  });
   const outDir = path.join(ROOT, 'tmp', 'composition-seed-tester', dateKey);
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(
-    `[composition-tester] ${dateKey}: replaying ${quilt.colors.length} ordered colors from ${quilt.source}; ${Math.round(replayCoverage * 100)}% day coverage; bias locks at ${BIAS_LOCK_AT} as ${inferredMode}`
+    `[composition-tester] ${dateKey}: replaying ${preview.colorCount} ordered colors from ${quilt.source}; ${Math.round(preview.replayCoverage * 100)}% day coverage; bias locks at ${BIAS_LOCK_AT} as ${preview.inferredMode}`
   );
-  if (archiveLockSnapshot) {
+  if (preview.branchFromArchiveLock) {
     console.log(
-      `[composition-tester] ${dateKey}: branching from archived snapshot after color ${archiveLockSnapshot.submissionCount} (${archiveLockSnapshot.blocks.length} blocks)`
+      `[composition-tester] ${dateKey}: branching from archived snapshot after color ${preview.biasLockAt} (${preview.archiveLockBlockCount} blocks)`
     );
   } else if (BRANCH_FROM_ARCHIVE_LOCK) {
     console.warn(`[composition-tester] ${dateKey}: no archived lock snapshot available; falling back to fresh replay`);
   }
-  if (replayCoverage < 0.95) {
+  if (preview.replayCoverage < 0.95) {
     console.warn(`[composition-tester] ${dateKey}: ordered history is partial; this compares the available ordered colors only`);
   }
 
@@ -1086,71 +1078,7 @@ async function renderDate(dateKey) {
     }
   }
 
-  const renderPanels = [];
-  const panels = [];
-  const inputPalette = new Set(quilt.colors.map(normalizeHex).filter(Boolean));
-  if (INCLUDE_STORED_ORIGINAL) {
-    const actualHexes = collectBlockHexes(quilt.liveBlocks);
-    const actualPalette = [...new Set(actualHexes)];
-    const actualMissing = missingSubmissionIndices(quilt.liveBlocks, quilt.colors.length);
-    renderPanels.push({
-      mode: 'actual',
-      label: `Stored Original — ${dateKey}`,
-      subtitle: `${quilt.liveContributorCount} stored contributors · ${quilt.liveBlockCount} stored blocks · ${actualMissing.length} missing indices`,
-      blocks: quilt.liveBlocks,
-      submissionCount: quilt.liveContributorCount || quilt.liveSubmissionCount || quilt.liveBlockCount
-    });
-    panels.push({
-      mode: 'actual',
-      label: MODE_CONFIG.actual.label,
-      description: MODE_CONFIG.actual.description,
-      blockCount: quilt.liveBlockCount,
-      submissionCount: quilt.liveContributorCount || quilt.liveSubmissionCount || quilt.liveBlockCount,
-      skippedCount: 0,
-      skippedColors: [],
-      outputUniqueColorCount: actualPalette.length,
-      outOfPaletteColors: actualPalette.filter((hex) => !inputPalette.has(hex)),
-      missingSubmissionIndices: actualMissing,
-      macroStructureFrozen: quilt.macroStructureFrozen,
-      storedOriginal: true
-    });
-  }
-  for (const mode of modeKeys) {
-    const config = MODE_CONFIG[mode];
-    const replay = replaySequence(dateKey, quilt.colors, mode, BIAS_LOCK_AT, replayOptions);
-    const outputHexes = collectBlockHexes(replay.blocks);
-    const outputPalette = [...new Set(outputHexes)];
-    const outOfPaletteColors = outputPalette.filter((hex) => !inputPalette.has(hex));
-    const missingIndices = missingSubmissionIndices(replay.blocks, quilt.colors.length);
-    const isCurrent = mode === 'baseline';
-    const label = isCurrent
-      ? `${archiveLockSnapshot ? 'Stored Lock + Current Continuation' : 'Current Code Replay'} — ${dateKey}`
-      : `New Bias: ${config.label} after color ${BIAS_LOCK_AT} — ${dateKey}`;
-    const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
-    const missingText = missingIndices.length ? ` · ${missingIndices.length} missing indices` : '';
-    const branchText = archiveLockSnapshot ? ` · stored through ${BIAS_LOCK_AT}` : '';
-    const subtitle = `${quilt.colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${branchText}${skippedText}${missingText}`;
-    renderPanels.push({
-      mode,
-      label,
-      subtitle,
-      blocks: replay.blocks,
-      submissionCount: replay.submissionCount
-    });
-    panels.push({
-      mode,
-      label: config.label,
-      description: config.description,
-      blockCount: replay.blocks.length,
-      submissionCount: replay.submissionCount,
-      skippedCount: replay.skippedColors.length,
-      skippedColors: replay.skippedColors,
-      outputUniqueColorCount: outputPalette.length,
-      outOfPaletteColors,
-      missingSubmissionIndices: missingIndices,
-      macroStructureFrozen: replay.macroStructureFrozen
-    });
-  }
+  const renderPanels = preview.panels;
 
   const panelImages = USE_BROWSER_RENDERER
     ? await renderPanelsWithRealQuiltRenderer(renderPanels, dateKey)
@@ -1166,20 +1094,10 @@ async function renderDate(dateKey) {
   const contactPath = path.join(outDir, 'contact-sheet.png');
   await writeContactSheet(panelImages, contactPath);
   const summary = {
-    dateKey,
-    source: quilt.source,
-    colorCount: quilt.colors.length,
-    inputUniqueColorCount: inputPalette.size,
+    ...preview,
+    panels: undefined,
     paletteLocked: LOCK_REPLAY_PALETTE,
-    replayCoverage,
     testerMode: 'ordered-color-replay',
-    branchFromArchiveLock: !!archiveLockSnapshot,
-    biasLockAt: BIAS_LOCK_AT,
-    liveBlockCount: quilt.liveBlockCount,
-    liveContributorCount: quilt.liveContributorCount,
-    inferredMode,
-    metrics,
-    modes: panels,
     contactSheet: path.relative(ROOT, contactPath)
   };
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);

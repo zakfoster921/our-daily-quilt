@@ -78,6 +78,10 @@ const {
   serializeServerQuiltBlocks,
   computeQuiltFingerprint
 } = require('./scripts/lib/server-quilt-engine.cjs');
+const {
+  buildCompositionPreviewFromQuiltData,
+  MODE_CONFIG: COMPOSITION_PREVIEW_MODE_CONFIG
+} = require('./scripts/lib/composition-preview.cjs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
@@ -216,6 +220,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/reflection-response', 24 * ONE_KB],
   ['/api/admin/quilt-mutation', 2 * ONE_MB],
   ['/api/admin/submission-audit', 8 * ONE_KB],
+  ['/api/admin/composition-bias-preview', 8 * ONE_KB],
   ['/api/social-posts', 24 * ONE_KB],
   ['/api/social-posts/upload-media', 30 * ONE_MB],
   ['/api/social-posts/:postId', 24 * ONE_KB],
@@ -8396,6 +8401,64 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
     return res.status(500).json({
       success: false,
       error: error.message || 'Admin quilt mutation failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/composition-bias-preview', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/admin/composition-bias-preview', limitAdminQuiltMutation, async (req, res) => {
+  setResetApiCors(res);
+  try {
+    const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+    const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+    if (!expectedToken) {
+      return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    }
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const lockAt = Math.max(1, Math.min(50, Math.floor(Number(body.lockAt) || 10)));
+    const requestedMode = String(body.modeKey || body.mode || '').trim();
+    const modeKey = COMPOSITION_PREVIEW_MODE_CONFIG[requestedMode] && requestedMode !== 'actual'
+      ? requestedMode
+      : '';
+
+    const quiltSnap = await db.collection('quilts').doc(appDateKey).get();
+    if (!quiltSnap.exists) {
+      return res.status(404).json({ success: false, error: `No quilt found for ${appDateKey}` });
+    }
+
+    const preview = buildCompositionPreviewFromQuiltData(appDateKey, quiltSnap.data() || {}, {
+      lockAt,
+      modeKey: modeKey || undefined,
+      includeStoredOriginal: true
+    });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      dateKey: appDateKey,
+      generatedAtIso: getUtcIsoNow(),
+      ...preview
+    });
+  } catch (error) {
+    console.error('❌ Admin composition bias preview failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Admin composition bias preview failed',
       timestamp: getUtcIsoNow()
     });
   }
