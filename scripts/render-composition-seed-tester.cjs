@@ -50,6 +50,7 @@ const { createServerQuiltEngine, loadServerQuiltRuntime, serializeServerQuiltBlo
 const ROOT = path.resolve(__dirname, '..');
 const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
 const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
+const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 72));
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
 const SIM_ADDS = Math.max(1, Math.floor(Number(process.env.SIM_ADDS) || 18));
 const MIN_REPLAY_COVERAGE = Math.max(0, Math.min(1, Number(process.env.MIN_REPLAY_COVERAGE) || 0.85));
@@ -677,29 +678,29 @@ function blocksToSvg(blocks, Utils, QuiltMirrorLayout, label, subtitle, dateKey)
 </svg>`;
 }
 
-async function writeContactSheet(pngPaths, contactPath) {
-  const cols = Math.min(2, pngPaths.length);
-  const rows = Math.ceil(pngPaths.length / cols);
+async function writeContactSheet(panelImages, contactPath) {
+  const cols = Math.min(2, panelImages.length);
+  const rows = Math.ceil(panelImages.length / cols);
   const tileW = OUT_W;
   const tileH = OUT_H;
   const resized = await Promise.all(
-    pngPaths.map((p) =>
-      sharp(p.pngPath).resize(tileW, tileH, { fit: 'contain', background: '#ebe8e3' }).png().toBuffer()
+    panelImages.map((p) =>
+      sharp(p.buffer).resize(tileW, tileH, { fit: 'contain', background: '#fff' }).png().toBuffer()
     )
   );
   await sharp({
     create: {
-      width: tileW * cols,
-      height: tileH * rows,
+      width: tileW * cols + CONTACT_GAP * Math.max(0, cols - 1),
+      height: tileH * rows + CONTACT_GAP * Math.max(0, rows - 1),
       channels: 3,
-      background: '#ebe8e3'
+      background: '#fff'
     }
   })
     .composite(
       resized.map((input, idx) => ({
         input,
-        left: (idx % cols) * tileW,
-        top: Math.floor(idx / cols) * tileH
+        left: (idx % cols) * (tileW + CONTACT_GAP),
+        top: Math.floor(idx / cols) * (tileH + CONTACT_GAP)
       }))
     )
     .png()
@@ -729,7 +730,13 @@ async function renderDate(dateKey) {
     );
   }
 
-  const pngPaths = [];
+  for (const fileName of fs.readdirSync(outDir)) {
+    if (/^(?:actual|baseline|current|biased-.+)\.png$/.test(fileName)) {
+      fs.rmSync(path.join(outDir, fileName), { force: true });
+    }
+  }
+
+  const panelImages = [];
   const panels = [];
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
@@ -745,9 +752,8 @@ async function renderDate(dateKey) {
         ? `${config.description} · replay · ${replay.blocks.length} blocks${skippedText}`
         : `${config.description} · actual + ${continuationColors.length} adds · ${replay.blocks.length} blocks${skippedText}`;
     const svg = blocksToSvg(replay.blocks, Utils, QuiltMirrorLayout, label, subtitle, dateKey);
-    const pngPath = path.join(outDir, isCurrent ? 'current.png' : `biased-${mode}.png`);
-    await sharp(Buffer.from(svg)).png().toFile(pngPath);
-    pngPaths.push({ pngPath, mode });
+    const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+    panelImages.push({ buffer, mode });
     panels.push({
       mode,
       label: config.label,
@@ -756,14 +762,13 @@ async function renderDate(dateKey) {
       submissionCount: replay.submissionCount,
       skippedCount: replay.skippedColors.length,
       skippedColors: replay.skippedColors,
-      macroStructureFrozen: replay.macroStructureFrozen,
-      pngPath: path.relative(ROOT, pngPath)
+      macroStructureFrozen: replay.macroStructureFrozen
     });
-    console.log(`[composition-tester] wrote ${pngPath}`);
+    console.log(`[composition-tester] rendered ${isCurrent ? 'current code' : `biased ${mode}`} panel`);
   }
 
   const contactPath = path.join(outDir, 'contact-sheet.png');
-  await writeContactSheet(pngPaths, contactPath);
+  await writeContactSheet(panelImages, contactPath);
   const summary = {
     dateKey,
     source: quilt.source,
