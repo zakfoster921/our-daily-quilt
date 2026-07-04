@@ -55,6 +55,7 @@ const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 72
 const CONTACT_LABEL_H = Math.max(0, Math.floor(Number(process.env.CONTACT_LABEL_H) || 116));
 const USE_BROWSER_RENDERER = process.env.COMPOSITION_TESTER_BROWSER_RENDERER !== '0';
 const LOCK_REPLAY_PALETTE = process.env.COMPOSITION_TESTER_LOCK_PALETTE !== '0';
+const INCLUDE_STORED_ORIGINAL = process.env.COMPOSITION_TESTER_INCLUDE_STORED === '1';
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
 const BIAS_LOCK_AT = Math.max(1, Math.floor(Number(process.env.BIAS_LOCK_AT) || 10));
 const MODE_KEYS = String(process.env.MODES || '')
@@ -1009,6 +1010,30 @@ async function renderDate(dateKey) {
   const renderPanels = [];
   const panels = [];
   const inputPalette = new Set(quilt.colors.map(normalizeHex).filter(Boolean));
+  if (INCLUDE_STORED_ORIGINAL) {
+    const actualHexes = collectBlockHexes(quilt.liveBlocks);
+    const actualPalette = [...new Set(actualHexes)];
+    renderPanels.push({
+      mode: 'actual',
+      label: `Stored Original — ${dateKey}`,
+      subtitle: `${quilt.liveContributorCount} stored contributors · ${quilt.liveBlockCount} stored blocks`,
+      blocks: quilt.liveBlocks,
+      submissionCount: quilt.liveContributorCount || quilt.liveSubmissionCount || quilt.liveBlockCount
+    });
+    panels.push({
+      mode: 'actual',
+      label: MODE_CONFIG.actual.label,
+      description: MODE_CONFIG.actual.description,
+      blockCount: quilt.liveBlockCount,
+      submissionCount: quilt.liveContributorCount || quilt.liveSubmissionCount || quilt.liveBlockCount,
+      skippedCount: 0,
+      skippedColors: [],
+      outputUniqueColorCount: actualPalette.length,
+      outOfPaletteColors: actualPalette.filter((hex) => !inputPalette.has(hex)),
+      macroStructureFrozen: quilt.macroStructureFrozen,
+      storedOriginal: true
+    });
+  }
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
     const replay = replaySequence(dateKey, quilt.colors, mode, BIAS_LOCK_AT);
@@ -1017,7 +1042,7 @@ async function renderDate(dateKey) {
     const outOfPaletteColors = outputPalette.filter((hex) => !inputPalette.has(hex));
     const isCurrent = mode === 'baseline';
     const label = isCurrent
-      ? `Current Code — ${dateKey}`
+      ? `Current Code Replay — ${dateKey}`
       : `New Bias: ${config.label} after color ${BIAS_LOCK_AT} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
     const subtitle = `${quilt.colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${skippedText}`;
