@@ -53,6 +53,7 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
 const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
 const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 72));
+const CONTACT_LABEL_H = Math.max(0, Math.floor(Number(process.env.CONTACT_LABEL_H) || 116));
 const USE_BROWSER_RENDERER = process.env.COMPOSITION_TESTER_BROWSER_RENDERER !== '0';
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
 const SIM_ADDS = Math.max(1, Math.floor(Number(process.env.SIM_ADDS) || 18));
@@ -737,20 +738,35 @@ async function writeContactSheet(panelImages, contactPath) {
       sharp(p.buffer).resize(tileW, tileH, { fit: 'contain', background: '#fff' }).png().toBuffer()
     )
   );
+  const labelBuffers = panelImages.map((panel) => {
+    const title = esc(panel.label || panel.mode || '');
+    const subtitle = esc(panel.subtitle || '');
+    return Buffer.from(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="${tileW}" height="${CONTACT_LABEL_H}" viewBox="0 0 ${tileW} ${CONTACT_LABEL_H}">
+        <rect width="${tileW}" height="${CONTACT_LABEL_H}" fill="#fff"/>
+        <text x="28" y="44" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="34" font-weight="700" fill="#222">${title}</text>
+        <text x="28" y="82" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="22" fill="#666">${subtitle}</text>
+      </svg>
+    `);
+  });
+  const cellH = CONTACT_LABEL_H + tileH;
   await sharp({
     create: {
       width: tileW * cols + CONTACT_GAP * Math.max(0, cols - 1),
-      height: tileH * rows + CONTACT_GAP * Math.max(0, rows - 1),
+      height: cellH * rows + CONTACT_GAP * Math.max(0, rows - 1),
       channels: 3,
       background: '#fff'
     }
   })
     .composite(
-      resized.map((input, idx) => ({
-        input,
-        left: (idx % cols) * (tileW + CONTACT_GAP),
-        top: Math.floor(idx / cols) * (tileH + CONTACT_GAP)
-      }))
+      resized.flatMap((input, idx) => {
+        const left = (idx % cols) * (tileW + CONTACT_GAP);
+        const top = Math.floor(idx / cols) * (cellH + CONTACT_GAP);
+        return [
+          { input: labelBuffers[idx], left, top },
+          { input, left, top: top + CONTACT_LABEL_H }
+        ];
+      })
     )
     .png()
     .toFile(contactPath);
