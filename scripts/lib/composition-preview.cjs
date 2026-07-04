@@ -465,6 +465,15 @@ function panelAudit(blocks, colors) {
   };
 }
 
+function suppressedStoredBlockAudit(blocks) {
+  return {
+    outputUniqueColorCount: [...new Set(collectBlockHexes(blocks))].length,
+    outOfPaletteColors: [],
+    missingSubmissionIndices: [],
+    auditSuppressedReason: 'Stored block fallback infers color order; palette/index audit is not authoritative.'
+  };
+}
+
 function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) {
   const lockAt = Math.max(1, Math.floor(Number(options.lockAt) || 10));
   const replayEvents = orderedReplayEvents(quiltData);
@@ -513,11 +522,13 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
 
   const panels = [];
   if (options.includeStoredOriginal !== false) {
-    const audit = panelAudit(liveBlocks, colors);
+    const audit = source === 'storedBlocks' ? suppressedStoredBlockAudit(liveBlocks) : panelAudit(liveBlocks, colors);
     panels.push({
       mode: 'actual',
       label: `Stored Original — ${dateKey}`,
-      subtitle: `${liveContributorCount} stored contributors · ${liveBlocks.length} stored blocks · ${audit.missingSubmissionIndices.length} missing indices`,
+      subtitle: source === 'storedBlocks'
+        ? `${liveContributorCount} stored contributors · ${liveBlocks.length} stored blocks`
+        : `${liveContributorCount} stored contributors · ${liveBlocks.length} stored blocks · ${audit.missingSubmissionIndices.length} missing indices`,
       blocks: liveBlocks,
       submissionCount: liveContributorCount || liveSubmissionCount || liveBlocks.length,
       blockCount: liveBlocks.length,
@@ -541,7 +552,7 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
           skippedColors: []
         }
       : replaySequence(dateKey, colors, mode, lockAt, replayOptions);
-    const audit = panelAudit(replay.blocks, colors);
+    const audit = source === 'storedBlocks' ? suppressedStoredBlockAudit(replay.blocks) : panelAudit(replay.blocks, colors);
     const isCurrent = mode === 'baseline';
     const label = isCurrent
       ? `${archiveLockSnapshot ? 'Stored Lock + Current Continuation' : 'Current Code Replay'} — ${dateKey}`
