@@ -5844,6 +5844,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       typeof body.postLayoutBSpeakerImageData === 'string' ? body.postLayoutBSpeakerImageData : '';
     const storyLayoutBImageData =
       typeof body.storyLayoutBImageData === 'string' ? body.storyLayoutBImageData : '';
+    const storyLayoutBOverlayImageData =
+      typeof body.storyLayoutBOverlayImageData === 'string' ? body.storyLayoutBOverlayImageData : '';
     const quiltScreen9x16ImageData =
       typeof body.quiltScreen9x16ImageData === 'string' ? body.quiltScreen9x16ImageData : '';
     const newspaperClippingImageData =
@@ -5868,6 +5870,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       !postLayoutBImageData &&
       !postLayoutBSpeakerImageData &&
       !storyLayoutBImageData &&
+      !storyLayoutBOverlayImageData &&
       !quiltScreen9x16ImageData &&
       !newspaperClippingImageData &&
       !moodClippingGoodImageData &&
@@ -5986,6 +5989,16 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
           ? body.layoutBStoryRenderVersion.trim()
           : LAYOUT_B_STORY_RENDER_VERSION;
     }
+    if (storyLayoutBOverlayImageData) {
+      const { publicUrl } = await saveIgPng(`${basePath}/layout-b-story-overlay.png`, storyLayoutBOverlayImageData);
+      docPayload.storyLayoutBOverlayImageStorageUrl = publicUrl;
+      docPayload.layoutBStoryOverlayUrl = publicUrl;
+      docPayload.storyLayoutBOverlayUrl = publicUrl;
+      docPayload.layoutBStoryOverlayRenderVersion =
+        typeof body.layoutBStoryRenderVersion === 'string' && body.layoutBStoryRenderVersion.trim()
+          ? body.layoutBStoryRenderVersion.trim()
+          : LAYOUT_B_STORY_RENDER_VERSION;
+    }
     if (quiltScreen9x16ImageData) {
       const { publicUrl } = await saveIgPng(`${basePath}/quilt-screen-9x16.png`, quiltScreen9x16ImageData);
       docPayload.quiltScreen9x16ImageStorageUrl = publicUrl;
@@ -6029,6 +6042,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
         docPayload.carouselSlide2Url,
         docPayload.carouselSlide3Url,
         docPayload.storyLayoutBUrl || docPayload.layoutBStoryUrl,
+        docPayload.storyLayoutBOverlayUrl || docPayload.layoutBStoryOverlayUrl,
         docPayload.quiltStoryUrl || docPayload.quiltScreen9x16Url
       ].filter(Boolean);
     }
