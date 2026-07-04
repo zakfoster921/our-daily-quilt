@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Replay real past quilt colors through experimental hidden composition modes.
+ * Test experimental hidden composition modes against real past quilts.
+ *
+ * If a date has enough ordered history, the script can replay from scratch.
+ * Most older quilts do not, so the default useful path starts from the actual
+ * stored quilt and simulates future growth using that day's real palette.
  *
  *   npm run composition:tester
  *   DATE_KEY=2026-06-30 npm run composition:tester
@@ -46,6 +50,8 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT_W = 1070;
 const OUT_H = 1340;
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
+const SIM_ADDS = Math.max(1, Math.floor(Number(process.env.SIM_ADDS) || 36));
+const MIN_REPLAY_COVERAGE = Math.max(0, Math.min(1, Number(process.env.MIN_REPLAY_COVERAGE) || 0.85));
 const MODE_KEYS = String(process.env.MODES || 'actual,baseline,field,mosaic,strata,garden,vein,window,constellation,tide')
   .split(',')
   .map((s) => s.trim())
@@ -58,7 +64,7 @@ const MODE_CONFIG = {
   },
   baseline: {
     label: 'Baseline',
-    description: 'Current engine replay from ordered submissions'
+    description: 'Current engine growth'
   },
   field: {
     label: 'Field',
@@ -289,6 +295,15 @@ async function fetchQuiltData(dateKey) {
   if (!snap.exists) throw new Error(`No quilts/${dateKey} in Firestore`);
   const data = snap.data() || {};
   const liveBlocks = Array.isArray(data.blocks) ? data.blocks : [];
+  const liveContributorCount = Number(data.contributorCount) || 0;
+  const liveSubmissionCount = Math.max(
+    liveContributorCount,
+    liveBlocks.reduce((max, block) => {
+      const n = Number(block?.submissionIndex);
+      return Number.isFinite(n) && n > max ? n : max;
+    }, 0),
+    liveBlocks.length
+  );
   const replayColors = (Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [])
     .slice()
     .sort((a, b) => {
@@ -333,7 +348,9 @@ async function fetchQuiltData(dateKey) {
     liveColors,
     liveBlocks,
     liveBlockCount: liveBlocks.length,
-    liveContributorCount: Number(data.contributorCount) || 0
+    liveContributorCount,
+    liveSubmissionCount,
+    macroStructureFrozen: data.macroStructureFrozen === true
   };
 }
 
@@ -472,6 +489,68 @@ function replayMode(dateKey, colors, modeKey) {
   );
 }
 
+function makeContinuationColors(quilt, count) {
+  const source = (quilt.colors.length >= 2 ? quilt.colors : quilt.liveColors).map(normalizeHex).filter(Boolean);
+  if (!source.length) return [];
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const base = source[(i * 7 + i * i * 3) % source.length];
+    const hsl = hexToHsl(base);
+    const wave = ((i % 5) - 2) * 0.025;
+    const l = Math.max(0.12, Math.min(0.9, hsl.l + wave));
+    const s = Math.max(0.08, Math.min(1, hsl.s + (((i + 2) % 3) - 1) * 0.03));
+    out.push(hslToHex(hsl.h, s, l));
+  }
+  return out;
+}
+
+function hslToHex(h, s, l) {
+  h = ((Number(h) || 0) % 360 + 360) % 360;
+  s = Math.max(0, Math.min(1, Number(s) || 0));
+  l = Math.max(0, Math.min(1, Number(l) || 0));
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function continueMode(dateKey, quilt, continuationColors, modeKey) {
+  return withPatchedRandom(modeKey, () =>
+    safeConsole(() => {
+      const engine = createServerQuiltEngine({
+        userId: `composition-continue-${modeKey}-${dateKey}`,
+        blocks: quilt.liveBlocks,
+        submissionCount: quilt.liveSubmissionCount,
+        colorReplayEvents: [],
+        macroStructureFrozen: quilt.macroStructureFrozen
+      });
+      installModeBiases(engine, modeKey);
+      const skippedColors = [];
+      for (const hex of continuationColors) {
+        const result = engine.addColor(hex);
+        if (!result) skippedColors.push(hex);
+      }
+      return {
+        mode: modeKey,
+        blocks: serializeServerQuiltBlocks(engine),
+        submissionCount: Number(engine.submissionCount) || quilt.liveSubmissionCount,
+        macroStructureFrozen: engine.macroStructureFrozen === true,
+        skippedColors
+      };
+    })
+  );
+}
+
 function paintSortKey(block) {
   return [Number(block?.visualLayerIndex) || 0, Number(block?.y) || 0, Number(block?.x) || 0];
 }
@@ -603,17 +682,20 @@ async function renderDate(dateKey) {
   const quilt = await fetchQuiltData(dateKey);
   const metrics = analyzeColors(quilt.colors.length >= 2 ? quilt.colors : quilt.liveColors);
   const inferredMode = inferMode(metrics);
-  const modeKeys = quilt.colors.length >= 2
-    ? [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))]
-    : ['actual'];
+  const replayCoverage = quilt.liveContributorCount > 0 ? quilt.colors.length / quilt.liveContributorCount : 0;
+  const useReplayFromScratch = process.env.COMPOSITION_TESTER_MODE === 'replay' && replayCoverage >= MIN_REPLAY_COVERAGE;
+  const continuationColors = makeContinuationColors(quilt, SIM_ADDS);
+  const modeKeys = [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))];
   const outDir = path.join(ROOT, 'tmp', 'composition-seed-tester', dateKey);
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(
-    `[composition-tester] ${dateKey}: ${quilt.colors.length} replay colors from ${quilt.source}; inferred mode ${inferredMode}`
+    `[composition-tester] ${dateKey}: ${quilt.colors.length} replay colors from ${quilt.source}; ${Math.round(replayCoverage * 100)}% coverage; inferred mode ${inferredMode}`
   );
-  if (quilt.colors.length < 2) {
-    console.warn(`[composition-tester] ${dateKey}: no ordered submission history found; writing actual quilt only`);
+  if (!useReplayFromScratch) {
+    console.warn(
+      `[composition-tester] ${dateKey}: using actual quilt + ${continuationColors.length} simulated palette-matched adds`
+    );
   }
 
   const pngPaths = [];
@@ -628,10 +710,16 @@ async function renderDate(dateKey) {
           macroStructureFrozen: null,
           skippedColors: []
         }
-      : replayMode(dateKey, quilt.colors, mode);
+      : useReplayFromScratch
+        ? replayMode(dateKey, quilt.colors, mode)
+        : continueMode(dateKey, quilt, continuationColors, mode);
     const label = `${config.label}${mode === inferredMode ? ' (inferred)' : ''} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
-    const subtitle = `${config.description} · ${replay.blocks.length} blocks${skippedText}`;
+    const subtitle = mode === 'actual'
+      ? `${config.description} · ${replay.blocks.length} blocks`
+      : useReplayFromScratch
+        ? `${config.description} · replay · ${replay.blocks.length} blocks${skippedText}`
+        : `${config.description} · actual + ${continuationColors.length} adds · ${replay.blocks.length} blocks${skippedText}`;
     const svg = blocksToSvg(replay.blocks, Utils, label, subtitle);
     const pngPath = path.join(outDir, `${mode}.png`);
     await sharp(Buffer.from(svg)).png().toFile(pngPath);
@@ -656,6 +744,9 @@ async function renderDate(dateKey) {
     dateKey,
     source: quilt.source,
     colorCount: quilt.colors.length,
+    replayCoverage,
+    testerMode: useReplayFromScratch ? 'replay' : 'continue-from-actual',
+    simulatedAdds: useReplayFromScratch ? 0 : continuationColors.length,
     liveBlockCount: quilt.liveBlockCount,
     liveContributorCount: quilt.liveContributorCount,
     inferredMode,
