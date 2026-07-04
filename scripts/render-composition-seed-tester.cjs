@@ -46,15 +46,19 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT_W = 1070;
 const OUT_H = 1340;
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
-const MODE_KEYS = String(process.env.MODES || 'baseline,field,mosaic,strata,garden,vein,window,constellation,tide')
+const MODE_KEYS = String(process.env.MODES || 'actual,baseline,field,mosaic,strata,garden,vein,window,constellation,tide')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
 
 const MODE_CONFIG = {
+  actual: {
+    label: 'Actual',
+    description: 'Stored live quilt'
+  },
   baseline: {
     label: 'Baseline',
-    description: 'Current engine replay'
+    description: 'Current engine replay from ordered submissions'
   },
   field: {
     label: 'Field',
@@ -278,9 +282,13 @@ function inferMode(metrics) {
 
 async function fetchQuiltData(dateKey) {
   const db = initFirestore();
-  const snap = await db.collection('quilts').doc(dateKey).get();
+  const [snap, submissionSnap] = await Promise.all([
+    db.collection('quilts').doc(dateKey).get(),
+    db.collection('colorSubmissions').where('appDateKey', '==', dateKey).get()
+  ]);
   if (!snap.exists) throw new Error(`No quilts/${dateKey} in Firestore`);
   const data = snap.data() || {};
+  const liveBlocks = Array.isArray(data.blocks) ? data.blocks : [];
   const replayColors = (Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [])
     .slice()
     .sort((a, b) => {
@@ -291,17 +299,40 @@ async function fetchQuiltData(dateKey) {
     })
     .map((e) => normalizeHex(e?.newHex))
     .filter(Boolean);
-  const blockColors = (Array.isArray(data.blocks) ? data.blocks : [])
-    .map((b) => normalizeHex(b?.color))
+  const submissionColors = submissionSnap.docs
+    .map((doc) => {
+      const row = doc.data() || {};
+      return {
+        id: doc.id,
+        color: normalizeHex(row.appliedColor || row.color || row.hex || row.selectedColor),
+        status: String(row.status || '').trim(),
+        submissionIndex: Number(row.submissionIndex),
+        createdAtIso: String(row.createdAtIso || row.submittedAtIso || '').trim()
+      };
+    })
+    .filter((row) => row.color && (!row.status || row.status === 'success'))
+    .sort((a, b) => {
+      const ai = Number.isFinite(a.submissionIndex) ? a.submissionIndex : Number.POSITIVE_INFINITY;
+      const bi = Number.isFinite(b.submissionIndex) ? b.submissionIndex : Number.POSITIVE_INFINITY;
+      if (ai !== bi) return ai - bi;
+      const at = a.createdAtIso || '';
+      const bt = b.createdAtIso || '';
+      if (at !== bt) return at.localeCompare(bt);
+      return a.id.localeCompare(b.id);
+    })
+    .map((row) => row.color)
     .filter(Boolean);
-  const source = replayColors.length >= 2 ? 'colorReplayEvents' : 'blocks';
-  const colors = (source === 'colorReplayEvents' ? replayColors : blockColors).slice(0, MAX_REPLAY_COLORS);
-  if (colors.length < 2) throw new Error(`quilts/${dateKey} has only ${colors.length} usable color(s)`);
+  const source = replayColors.length >= 2 ? 'colorReplayEvents' : 'colorSubmissions';
+  const colors = (source === 'colorReplayEvents' ? replayColors : submissionColors).slice(0, MAX_REPLAY_COLORS);
+  if (!liveBlocks.length) throw new Error(`quilts/${dateKey} has no stored live blocks`);
+  const liveColors = liveBlocks.map((b) => normalizeHex(b?.color)).filter(Boolean);
   return {
     dateKey,
     colors,
-    source,
-    liveBlockCount: Array.isArray(data.blocks) ? data.blocks.length : 0,
+    source: colors.length >= 2 ? source : 'actualOnly',
+    liveColors,
+    liveBlocks,
+    liveBlockCount: liveBlocks.length,
     liveContributorCount: Number(data.contributorCount) || 0
   };
 }
@@ -570,21 +601,34 @@ async function writeContactSheet(pngPaths, contactPath) {
 async function renderDate(dateKey) {
   const { Utils } = loadServerQuiltRuntime();
   const quilt = await fetchQuiltData(dateKey);
-  const metrics = analyzeColors(quilt.colors);
+  const metrics = analyzeColors(quilt.colors.length >= 2 ? quilt.colors : quilt.liveColors);
   const inferredMode = inferMode(metrics);
-  const modeKeys = [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))];
+  const modeKeys = quilt.colors.length >= 2
+    ? [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))]
+    : ['actual'];
   const outDir = path.join(ROOT, 'tmp', 'composition-seed-tester', dateKey);
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(
-    `[composition-tester] ${dateKey}: ${quilt.colors.length} colors from ${quilt.source}; inferred mode ${inferredMode}`
+    `[composition-tester] ${dateKey}: ${quilt.colors.length} replay colors from ${quilt.source}; inferred mode ${inferredMode}`
   );
+  if (quilt.colors.length < 2) {
+    console.warn(`[composition-tester] ${dateKey}: no ordered submission history found; writing actual quilt only`);
+  }
 
   const pngPaths = [];
   const panels = [];
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
-    const replay = replayMode(dateKey, quilt.colors, mode);
+    const replay = mode === 'actual'
+      ? {
+          mode,
+          blocks: quilt.liveBlocks,
+          submissionCount: quilt.liveContributorCount || quilt.colors.length,
+          macroStructureFrozen: null,
+          skippedColors: []
+        }
+      : replayMode(dateKey, quilt.colors, mode);
     const label = `${config.label}${mode === inferredMode ? ' (inferred)' : ''} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
     const subtitle = `${config.description} · ${replay.blocks.length} blocks${skippedText}`;
