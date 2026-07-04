@@ -36,6 +36,7 @@ const fsSync = require('fs');
 const os = require('os');
 const dns = require('dns').promises;
 const net = require('net');
+const LAYOUT_B_STORY_RENDER_VERSION = 'story-strip-cluster-v3';
 const {
   normalizeDailyQuotePreferredHour,
   isDailyQuoteDueForToken
@@ -5980,6 +5981,10 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.storyLayoutBImageStorageUrl = publicUrl;
       docPayload.layoutBStoryUrl = publicUrl;
       docPayload.storyLayoutBUrl = publicUrl;
+      docPayload.layoutBStoryRenderVersion =
+        typeof body.layoutBStoryRenderVersion === 'string' && body.layoutBStoryRenderVersion.trim()
+          ? body.layoutBStoryRenderVersion.trim()
+          : LAYOUT_B_STORY_RENDER_VERSION;
     }
     if (quiltScreen9x16ImageData) {
       const { publicUrl } = await saveIgPng(`${basePath}/quilt-screen-9x16.png`, quiltScreen9x16ImageData);
