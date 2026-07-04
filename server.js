@@ -8456,9 +8456,11 @@ app.post('/api/admin/composition-bias-preview', limitAdminQuiltMutation, async (
     });
   } catch (error) {
     console.error('❌ Admin composition bias preview failed:', error);
-    return res.status(500).json({
+    const message = error.message || 'Admin composition bias preview failed';
+    const status = /has only \d+ ordered color\(s\); need more than \d+/i.test(message) ? 400 : 500;
+    return res.status(status).json({
       success: false,
-      error: error.message || 'Admin composition bias preview failed',
+      error: message,
       timestamp: getUtcIsoNow()
     });
   }
