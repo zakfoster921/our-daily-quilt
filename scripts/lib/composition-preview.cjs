@@ -229,6 +229,19 @@ function orderedReplayEvents(quiltData) {
     });
 }
 
+function orderedColorsFromBlocks(blocks) {
+  const bySubmissionIndex = new Map();
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    const submissionIndex = Math.floor(Number(block?.submissionIndex) || 0);
+    if (submissionIndex <= 0 || bySubmissionIndex.has(submissionIndex)) continue;
+    const color = normalizeHex(block?.contributorColor) || normalizeHex(block?.color);
+    if (color) bySubmissionIndex.set(submissionIndex, color);
+  }
+  return [...bySubmissionIndex.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, color]) => color);
+}
+
 function reconstructArchiveSnapshotAt(events, lockAt) {
   const usableEvents = (Array.isArray(events) ? events : [])
     .filter((event) => Number(event?.seq) > 0 && Number(event?.seq) <= lockAt)
@@ -455,8 +468,13 @@ function panelAudit(blocks, colors) {
 function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) {
   const lockAt = Math.max(1, Math.floor(Number(options.lockAt) || 10));
   const replayEvents = orderedReplayEvents(quiltData);
-  const colors = replayEvents.map((event) => normalizeHex(event?.newHex)).filter(Boolean);
   const liveBlocks = Array.isArray(quiltData?.blocks) ? cloneJson(quiltData.blocks, []) : [];
+  const replayColors = replayEvents.map((event) => normalizeHex(event?.newHex)).filter(Boolean);
+  const blockColors = orderedColorsFromBlocks(liveBlocks);
+  const source = replayColors.length > lockAt || replayColors.length >= blockColors.length
+    ? 'colorReplayEvents'
+    : 'storedBlocks';
+  const colors = source === 'colorReplayEvents' ? replayColors : blockColors;
   const liveContributorCount = Number(quiltData?.contributorCount) || 0;
   const liveSubmissionCount = Math.max(
     liveContributorCount,
@@ -477,11 +495,13 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
     : hasSparseColorHistory
       ? 'window'
       : inferMode(metrics);
-  const modeKeys = hasSparseColorHistory && options.includeStoredOriginal !== false
+  const modeKeys = (hasSparseColorHistory || source === 'storedBlocks') && options.includeStoredOriginal !== false
     ? [inferredMode]
     : ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
   const replayCoverage = liveContributorCount > 0 ? colors.length / liveContributorCount : 0;
-  const archiveLockSnapshot = hasSparseColorHistory ? null : reconstructArchiveSnapshotAt(replayEvents, lockAt);
+  const archiveLockSnapshot = hasSparseColorHistory || source !== 'colorReplayEvents'
+    ? null
+    : reconstructArchiveSnapshotAt(replayEvents, lockAt);
   const replayOptions = archiveLockSnapshot
     ? {
         initialBlocks: archiveLockSnapshot.blocks,
@@ -547,7 +567,7 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
 
   return {
     dateKey,
-    source: 'colorReplayEvents',
+    source,
     colorCount: colors.length,
     inputUniqueColorCount: new Set(colors).size,
     replayCoverage,
