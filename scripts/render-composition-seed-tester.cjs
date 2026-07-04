@@ -3,9 +3,8 @@
 /**
  * Test experimental hidden composition modes against real past quilts.
  *
- * If a date has enough ordered history, the script can replay from scratch.
- * Most older quilts do not, so the default useful path starts from the actual
- * stored quilt and simulates future growth using that day's real palette.
+ * Replays the same ordered real color submissions twice:
+ * current engine vs inferred composition bias locked after a milestone.
  *
  *   npm run composition:tester
  *   DATE_KEY=2026-06-30 npm run composition:tester
@@ -56,8 +55,7 @@ const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 72
 const CONTACT_LABEL_H = Math.max(0, Math.floor(Number(process.env.CONTACT_LABEL_H) || 116));
 const USE_BROWSER_RENDERER = process.env.COMPOSITION_TESTER_BROWSER_RENDERER !== '0';
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
-const SIM_ADDS = Math.max(1, Math.floor(Number(process.env.SIM_ADDS) || 18));
-const MIN_REPLAY_COVERAGE = Math.max(0, Math.min(1, Number(process.env.MIN_REPLAY_COVERAGE) || 0.85));
+const BIAS_LOCK_AT = Math.max(1, Math.floor(Number(process.env.BIAS_LOCK_AT) || 10));
 const MODE_KEYS = String(process.env.MODES || '')
   .split(',')
   .map((s) => s.trim())
@@ -389,14 +387,19 @@ async function fetchQuiltData(dateKey) {
     })
     .map((row) => row.color)
     .filter(Boolean);
-  const source = replayColors.length >= 2 ? 'colorReplayEvents' : 'colorSubmissions';
+  const source = replayColors.length >= submissionColors.length ? 'colorReplayEvents' : 'colorSubmissions';
   const colors = (source === 'colorReplayEvents' ? replayColors : submissionColors).slice(0, MAX_REPLAY_COLORS);
   if (!liveBlocks.length) throw new Error(`quilts/${dateKey} has no stored live blocks`);
+  if (colors.length <= BIAS_LOCK_AT) {
+    throw new Error(
+      `quilts/${dateKey} has only ${colors.length} ordered color(s) from ${source}; need more than ${BIAS_LOCK_AT} to compare a locked bias`
+    );
+  }
   const liveColors = liveBlocks.map((b) => normalizeHex(b?.color)).filter(Boolean);
   return {
     dateKey,
     colors,
-    source: colors.length >= 2 ? source : 'actualOnly',
+    source,
     liveColors,
     liveBlocks,
     liveBlockCount: liveBlocks.length,
@@ -511,96 +514,40 @@ function installModeBiases(engine, modeKey) {
   }
 }
 
-function replayMode(dateKey, colors, modeKey) {
-  return withPatchedRandom(modeKey, () =>
-    safeConsole(() => {
-      const engine = createServerQuiltEngine({
-        userId: `composition-${modeKey}-${dateKey}`,
-        blocks: [],
-        submissionCount: 0,
-        colorReplayEvents: [],
-        macroStructureFrozen: false
-      });
-      installModeBiases(engine, modeKey);
-      const skippedColors = [];
-      for (const hex of colors) {
-        const result = engine.addColor(hex);
-        if (!result) {
-          skippedColors.push(hex);
-          console.warn(`[composition-tester] ${dateKey} ${modeKey}: skipped ${hex}`);
-        }
+function replaySequence(dateKey, colors, modeKey, lockAt = BIAS_LOCK_AT) {
+  return safeConsole(() => {
+    const engine = createServerQuiltEngine({
+      userId: `composition-${modeKey}-${dateKey}`,
+      blocks: [],
+      submissionCount: 0,
+      colorReplayEvents: [],
+      macroStructureFrozen: false
+    });
+    const skippedColors = [];
+    let biasInstalled = modeKey === 'baseline';
+    for (let i = 0; i < colors.length; i += 1) {
+      const hex = colors[i];
+      const shouldBias = modeKey !== 'baseline' && i >= lockAt;
+      if (shouldBias && !biasInstalled) {
+        installModeBiases(engine, modeKey);
+        biasInstalled = true;
       }
-      return {
-        mode: modeKey,
-        blocks: serializeServerQuiltBlocks(engine),
-        submissionCount: Number(engine.submissionCount) || colors.length,
-        macroStructureFrozen: engine.macroStructureFrozen === true,
-        skippedColors
-      };
-    })
-  );
-}
-
-function makeContinuationColors(quilt, count) {
-  const source = (quilt.colors.length >= 2 ? quilt.colors : quilt.liveColors).map(normalizeHex).filter(Boolean);
-  if (!source.length) return [];
-  const out = [];
-  for (let i = 0; i < count; i += 1) {
-    const base = source[(i * 7 + i * i * 3) % source.length];
-    const hsl = hexToHsl(base);
-    const wave = ((i % 5) - 2) * 0.025;
-    const l = Math.max(0.12, Math.min(0.9, hsl.l + wave));
-    const s = Math.max(0.08, Math.min(1, hsl.s + (((i + 2) % 3) - 1) * 0.03));
-    out.push(hslToHex(hsl.h, s, l));
-  }
-  return out;
-}
-
-function hslToHex(h, s, l) {
-  h = ((Number(h) || 0) % 360 + 360) % 360;
-  s = Math.max(0, Math.min(1, Number(s) || 0));
-  l = Math.max(0, Math.min(1, Number(l) || 0));
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  if (h < 60) [r, g, b] = [c, x, 0];
-  else if (h < 120) [r, g, b] = [x, c, 0];
-  else if (h < 180) [r, g, b] = [0, c, x];
-  else if (h < 240) [r, g, b] = [0, x, c];
-  else if (h < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
-
-function continueMode(dateKey, quilt, continuationColors, modeKey) {
-  return withPatchedRandom(modeKey, () =>
-    safeConsole(() => {
-      const engine = createServerQuiltEngine({
-        userId: `composition-continue-${modeKey}-${dateKey}`,
-        blocks: quilt.liveBlocks,
-        submissionCount: quilt.liveSubmissionCount,
-        colorReplayEvents: [],
-        macroStructureFrozen: quilt.macroStructureFrozen
-      });
-      installModeBiases(engine, modeKey);
-      const skippedColors = [];
-      for (const hex of continuationColors) {
-        const result = engine.addColor(hex);
-        if (!result) skippedColors.push(hex);
+      const result = shouldBias
+        ? withPatchedRandom(modeKey, () => engine.addColor(hex))
+        : engine.addColor(hex);
+      if (!result) {
+        skippedColors.push({ index: i + 1, color: hex });
+        console.warn(`[composition-tester] ${dateKey} ${modeKey}: skipped ${hex} at ${i + 1}`);
       }
-      return {
-        mode: modeKey,
-        blocks: serializeServerQuiltBlocks(engine),
-        submissionCount: Number(engine.submissionCount) || quilt.liveSubmissionCount,
-        macroStructureFrozen: engine.macroStructureFrozen === true,
-        skippedColors
-      };
-    })
-  );
+    }
+    return {
+      mode: modeKey,
+      blocks: serializeServerQuiltBlocks(engine),
+      submissionCount: Number(engine.submissionCount) || colors.length,
+      macroStructureFrozen: engine.macroStructureFrozen === true,
+      skippedColors
+    };
+  });
 }
 
 function paintSortKey(block) {
@@ -890,11 +837,10 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
 async function renderDate(dateKey) {
   const { Utils, QuiltMirrorLayout } = loadServerQuiltRuntime();
   const quilt = await fetchQuiltData(dateKey);
-  const metrics = analyzeColors(quilt.colors.length >= 2 ? quilt.colors : quilt.liveColors);
+  const lockColors = quilt.colors.slice(0, BIAS_LOCK_AT);
+  const metrics = analyzeColors(lockColors);
   const inferredMode = inferMode(metrics);
   const replayCoverage = quilt.liveContributorCount > 0 ? quilt.colors.length / quilt.liveContributorCount : 0;
-  const useReplayFromScratch = process.env.COMPOSITION_TESTER_MODE === 'replay' && replayCoverage >= MIN_REPLAY_COVERAGE;
-  const continuationColors = makeContinuationColors(quilt, SIM_ADDS);
   const modeKeys = MODE_KEYS.length
     ? [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))]
     : ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
@@ -902,12 +848,10 @@ async function renderDate(dateKey) {
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(
-    `[composition-tester] ${dateKey}: ${quilt.colors.length} replay colors from ${quilt.source}; ${Math.round(replayCoverage * 100)}% coverage; inferred mode ${inferredMode}`
+    `[composition-tester] ${dateKey}: replaying ${quilt.colors.length} ordered colors from ${quilt.source}; ${Math.round(replayCoverage * 100)}% day coverage; bias locks at ${BIAS_LOCK_AT} as ${inferredMode}`
   );
-  if (!useReplayFromScratch) {
-    console.warn(
-      `[composition-tester] ${dateKey}: using actual quilt + ${continuationColors.length} simulated palette-matched adds`
-    );
+  if (replayCoverage < 0.95) {
+    console.warn(`[composition-tester] ${dateKey}: ordered history is partial; this compares the available ordered colors only`);
   }
 
   for (const fileName of fs.readdirSync(outDir)) {
@@ -920,17 +864,13 @@ async function renderDate(dateKey) {
   const panels = [];
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
-    const replay = useReplayFromScratch
-        ? replayMode(dateKey, quilt.colors, mode)
-        : continueMode(dateKey, quilt, continuationColors, mode);
+    const replay = replaySequence(dateKey, quilt.colors, mode, BIAS_LOCK_AT);
     const isCurrent = mode === 'baseline';
     const label = isCurrent
       ? `Current Code — ${dateKey}`
-      : `New Bias: ${config.label} — ${dateKey}`;
+      : `New Bias: ${config.label} after color ${BIAS_LOCK_AT} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
-    const subtitle = useReplayFromScratch
-        ? `${config.description} · replay · ${replay.blocks.length} blocks${skippedText}`
-        : `${config.description} · actual + ${continuationColors.length} adds · ${replay.blocks.length} blocks${skippedText}`;
+    const subtitle = `${quilt.colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${skippedText}`;
     renderPanels.push({
       mode,
       label,
@@ -968,8 +908,8 @@ async function renderDate(dateKey) {
     source: quilt.source,
     colorCount: quilt.colors.length,
     replayCoverage,
-    testerMode: useReplayFromScratch ? 'replay' : 'continue-from-actual',
-    simulatedAdds: useReplayFromScratch ? 0 : continuationColors.length,
+    testerMode: 'ordered-color-replay',
+    biasLockAt: BIAS_LOCK_AT,
     liveBlockCount: quilt.liveBlockCount,
     liveContributorCount: quilt.liveContributorCount,
     inferredMode,
