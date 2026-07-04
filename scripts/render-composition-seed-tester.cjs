@@ -56,6 +56,7 @@ const CONTACT_LABEL_H = Math.max(0, Math.floor(Number(process.env.CONTACT_LABEL_
 const USE_BROWSER_RENDERER = process.env.COMPOSITION_TESTER_BROWSER_RENDERER !== '0';
 const LOCK_REPLAY_PALETTE = process.env.COMPOSITION_TESTER_LOCK_PALETTE !== '0';
 const INCLUDE_STORED_ORIGINAL = process.env.COMPOSITION_TESTER_INCLUDE_STORED === '1';
+const BRANCH_FROM_ARCHIVE_LOCK = process.env.COMPOSITION_TESTER_BRANCH_ARCHIVE !== '0';
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
 const BIAS_LOCK_AT = Math.max(1, Math.floor(Number(process.env.BIAS_LOCK_AT) || 10));
 const MODE_KEYS = String(process.env.MODES || '')
@@ -377,14 +378,15 @@ async function fetchQuiltData(dateKey) {
     }, 0),
     liveBlocks.length
   );
-  const replayColors = (Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [])
+  const replayEvents = (Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [])
     .slice()
     .sort((a, b) => {
       const seqA = Number(a?.seq) || 0;
       const seqB = Number(b?.seq) || 0;
       if (seqA !== seqB) return seqA - seqB;
       return String(a?.iso || '').localeCompare(String(b?.iso || ''));
-    })
+    });
+  const replayColors = replayEvents
     .map((e) => normalizeHex(e?.newHex))
     .filter(Boolean);
   const submissionColors = submissionSnap.docs
@@ -422,6 +424,7 @@ async function fetchQuiltData(dateKey) {
   return {
     dateKey,
     colors,
+    replayEvents,
     source,
     liveColors,
     liveBlocks,
@@ -429,6 +432,46 @@ async function fetchQuiltData(dateKey) {
     liveContributorCount,
     liveSubmissionCount,
     macroStructureFrozen: data.macroStructureFrozen === true
+  };
+}
+
+function cloneJson(value, fallback = null) {
+  try {
+    return JSON.parse(JSON.stringify(value == null ? fallback : value));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function reconstructArchiveSnapshotAt(events, lockAt) {
+  const usableEvents = (Array.isArray(events) ? events : [])
+    .filter((event) => Number(event?.seq) > 0 && Number(event?.seq) <= lockAt)
+    .sort((a, b) => {
+      const seqA = Number(a?.seq) || 0;
+      const seqB = Number(b?.seq) || 0;
+      if (seqA !== seqB) return seqA - seqB;
+      return String(a?.iso || '').localeCompare(String(b?.iso || ''));
+    });
+  if (!usableEvents.length) return null;
+
+  const firstParent = cloneJson(usableEvents[0]?.parent, null);
+  if (!firstParent) return null;
+  let blocks = [firstParent];
+
+  for (const event of usableEvents) {
+    const parentId = String(event?.parent?.id || '').trim();
+    const children = cloneJson(event?.children, [])
+      .filter((block) => block && String(block.id || '').trim());
+    if (!parentId || !children.length) return null;
+
+    const index = blocks.findIndex((block) => String(block?.id || '') === parentId);
+    if (index === -1) return null;
+    blocks.splice(index, 1, ...children);
+  }
+
+  return {
+    blocks,
+    submissionCount: Math.max(0, Math.floor(Number(usableEvents[usableEvents.length - 1]?.seq) || lockAt))
   };
 }
 
@@ -590,22 +633,23 @@ function enforcePaletteOnBlocks(blocks, colors) {
   });
 }
 
-function replaySequence(dateKey, colors, modeKey, lockAt = BIAS_LOCK_AT) {
+function replaySequence(dateKey, colors, modeKey, lockAt = BIAS_LOCK_AT, options = {}) {
   return safeConsole(() => {
     const originalRandom = Math.random;
     Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
     try {
       const engine = createServerQuiltEngine({
         userId: `composition-${modeKey}-${dateKey}`,
-        blocks: [],
-        submissionCount: 0,
+        blocks: Array.isArray(options.initialBlocks) ? options.initialBlocks : [],
+        submissionCount: Math.max(0, Math.floor(Number(options.initialSubmissionCount) || 0)),
         colorReplayEvents: [],
-        macroStructureFrozen: false
+        macroStructureFrozen: options.macroStructureFrozen === true
       });
       installPaletteLock(engine);
       const skippedColors = [];
       let biasInstalled = modeKey === 'baseline';
-      for (let i = 0; i < colors.length; i += 1) {
+      const startIndex = Math.max(0, Math.floor(Number(options.startIndex) || 0));
+      for (let i = startIndex; i < colors.length; i += 1) {
         const hex = colors[i];
         const shouldBias = modeKey !== 'baseline' && i >= lockAt;
         if (shouldBias && !biasInstalled) {
@@ -620,7 +664,10 @@ function replaySequence(dateKey, colors, modeKey, lockAt = BIAS_LOCK_AT) {
           console.warn(`[composition-tester] ${dateKey} ${modeKey}: skipped ${hex} at ${i + 1}`);
         }
       }
-      const blocks = enforcePaletteOnBlocks(serializeServerQuiltBlocks(engine), colors);
+      const serializedBlocks = serializeServerQuiltBlocks(engine);
+      const blocks = options.enforcePalette === false
+        ? serializedBlocks
+        : enforcePaletteOnBlocks(serializedBlocks, colors);
       return {
         mode: modeKey,
         blocks,
@@ -1001,6 +1048,18 @@ async function renderDate(dateKey) {
   const metrics = analyzeColors(lockColors);
   const inferredMode = inferMode(metrics);
   const replayCoverage = quilt.liveContributorCount > 0 ? quilt.colors.length / quilt.liveContributorCount : 0;
+  const archiveLockSnapshot = BRANCH_FROM_ARCHIVE_LOCK && quilt.source === 'colorReplayEvents'
+    ? reconstructArchiveSnapshotAt(quilt.replayEvents, BIAS_LOCK_AT)
+    : null;
+  const replayOptions = archiveLockSnapshot
+    ? {
+        initialBlocks: archiveLockSnapshot.blocks,
+        initialSubmissionCount: archiveLockSnapshot.submissionCount,
+        startIndex: archiveLockSnapshot.submissionCount,
+        macroStructureFrozen: false,
+        enforcePalette: false
+      }
+    : {};
   const modeKeys = MODE_KEYS.length
     ? [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))]
     : ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
@@ -1010,6 +1069,13 @@ async function renderDate(dateKey) {
   console.log(
     `[composition-tester] ${dateKey}: replaying ${quilt.colors.length} ordered colors from ${quilt.source}; ${Math.round(replayCoverage * 100)}% day coverage; bias locks at ${BIAS_LOCK_AT} as ${inferredMode}`
   );
+  if (archiveLockSnapshot) {
+    console.log(
+      `[composition-tester] ${dateKey}: branching from archived snapshot after color ${archiveLockSnapshot.submissionCount} (${archiveLockSnapshot.blocks.length} blocks)`
+    );
+  } else if (BRANCH_FROM_ARCHIVE_LOCK) {
+    console.warn(`[composition-tester] ${dateKey}: no archived lock snapshot available; falling back to fresh replay`);
+  }
   if (replayCoverage < 0.95) {
     console.warn(`[composition-tester] ${dateKey}: ordered history is partial; this compares the available ordered colors only`);
   }
@@ -1051,18 +1117,19 @@ async function renderDate(dateKey) {
   }
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
-    const replay = replaySequence(dateKey, quilt.colors, mode, BIAS_LOCK_AT);
+    const replay = replaySequence(dateKey, quilt.colors, mode, BIAS_LOCK_AT, replayOptions);
     const outputHexes = collectBlockHexes(replay.blocks);
     const outputPalette = [...new Set(outputHexes)];
     const outOfPaletteColors = outputPalette.filter((hex) => !inputPalette.has(hex));
     const missingIndices = missingSubmissionIndices(replay.blocks, quilt.colors.length);
     const isCurrent = mode === 'baseline';
     const label = isCurrent
-      ? `Current Code Replay — ${dateKey}`
+      ? `${archiveLockSnapshot ? 'Stored Lock + Current Continuation' : 'Current Code Replay'} — ${dateKey}`
       : `New Bias: ${config.label} after color ${BIAS_LOCK_AT} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
     const missingText = missingIndices.length ? ` · ${missingIndices.length} missing indices` : '';
-    const subtitle = `${quilt.colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${skippedText}${missingText}`;
+    const branchText = archiveLockSnapshot ? ` · stored through ${BIAS_LOCK_AT}` : '';
+    const subtitle = `${quilt.colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${branchText}${skippedText}${missingText}`;
     renderPanels.push({
       mode,
       label,
@@ -1106,6 +1173,7 @@ async function renderDate(dateKey) {
     paletteLocked: LOCK_REPLAY_PALETTE,
     replayCoverage,
     testerMode: 'ordered-color-replay',
+    branchFromArchiveLock: !!archiveLockSnapshot,
     biasLockAt: BIAS_LOCK_AT,
     liveBlockCount: quilt.liveBlockCount,
     liveContributorCount: quilt.liveContributorCount,
