@@ -884,6 +884,15 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
         }
         body > *:not(#app) { display: none !important; }
         .screen { display: none !important; }
+        #screen-connection-problem,
+        #screen-connection-problem *,
+        .connection-problem-inner,
+        .connection-problem-inner * {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
         #screen-quilt {
           display: flex !important;
           position: fixed !important;
@@ -895,7 +904,7 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
           margin: 0 !important;
           padding: 0 !important;
           background: #f6f4f1 !important;
-          z-index: 1 !important;
+          z-index: 2147483647 !important;
         }
         #screen-quilt > :not(.quilt-container) {
           display: none !important;
@@ -909,6 +918,7 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
           margin: 0 !important;
           overflow: hidden !important;
           background: #f6f4f1 !important;
+          z-index: 2147483647 !important;
         }
       `
     });
@@ -920,13 +930,24 @@ async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
         document.querySelectorAll('.screen').forEach((screen) => {
           screen.classList.remove('active');
           screen.style.display = 'none';
+          screen.style.visibility = 'hidden';
+          screen.style.opacity = '0';
           screen.setAttribute('aria-hidden', 'true');
         });
+        const connectionProblem = document.getElementById('screen-connection-problem');
+        if (connectionProblem) {
+          connectionProblem.hidden = true;
+          connectionProblem.style.display = 'none';
+          connectionProblem.style.visibility = 'hidden';
+          connectionProblem.style.opacity = '0';
+        }
         const screen = document.getElementById('screen-quilt');
         screen?.classList.add('active');
         screen?.removeAttribute('hidden');
         screen?.setAttribute('aria-hidden', 'false');
         if (screen) screen.style.display = 'flex';
+        if (screen) screen.style.visibility = 'visible';
+        if (screen) screen.style.opacity = '1';
 
         const clonedBlocks = JSON.parse(JSON.stringify(blocks));
         app._loadedSharedQuiltDateKey = panelDateKey;
