@@ -242,17 +242,12 @@ async function runNightlyIgAttempt({
               `Newspaper clipping PNG too small (${bytes} bytes < ${minBytes}) — likely flat export without grain/halftone`
             );
           }
-          if (meta.peekCrop !== true) {
+          if (meta.peekCrop !== true && meta.quoteOnlyCrop !== true) {
             const ratio = Number(meta.peekWidthRatio) || 0;
             const centerW = Number(meta.centerOnlyWidth) || 0;
             const peekW = Number(meta.clippedWidth) || 0;
             throw new Error(
-              `Newspaper clipping is not a 3-column peek (peekCrop=false; width ${peekW}px vs center-only ${centerW}px; ratio ${ratio.toFixed(2)}; need ≥1.08)`
-            );
-          }
-          if (!meta.hasYesterdayText && !meta.hasTomorrowText) {
-            throw new Error(
-              'Newspaper clipping has no yesterday/tomorrow quote text — side columns will be empty; run Notion quote sync and re-pin assignments'
+              `Newspaper clipping crop invalid (width ${peekW}px vs center-only ${centerW}px; ratio ${ratio.toFixed(2)})`
             );
           }
           const expectedFlc = Number(meta.firstLineCount);
