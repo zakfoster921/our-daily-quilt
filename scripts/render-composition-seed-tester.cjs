@@ -15,6 +15,7 @@
  * biased-<mode>.png, contact-sheet.png + summary.json
  */
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 
 try {
@@ -43,6 +44,7 @@ function loadDotEnvFallback() {
 loadDotEnvFallback();
 
 const admin = require('firebase-admin');
+const { chromium } = require('playwright');
 const sharp = require('sharp');
 const { getAppDateKey } = require('./lib/app-date-key.cjs');
 const { createServerQuiltEngine, loadServerQuiltRuntime, serializeServerQuiltBlocks } = require('./lib/server-quilt-engine.cjs');
@@ -51,6 +53,7 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
 const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
 const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 72));
+const USE_BROWSER_RENDERER = process.env.COMPOSITION_TESTER_BROWSER_RENDERER !== '0';
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
 const SIM_ADDS = Math.max(1, Math.floor(Number(process.env.SIM_ADDS) || 18));
 const MIN_REPLAY_COVERAGE = Math.max(0, Math.min(1, Number(process.env.MIN_REPLAY_COVERAGE) || 0.85));
@@ -129,6 +132,21 @@ const MODE_CONFIG = {
   }
 };
 
+const STATIC_MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf'
+};
+
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
@@ -167,6 +185,37 @@ function initFirestore() {
     }
   }
   return admin.firestore();
+}
+
+function startStaticServer() {
+  const server = http.createServer((req, res) => {
+    const rawUrl = new URL(req.url || '/', 'http://127.0.0.1');
+    let rel = decodeURIComponent(rawUrl.pathname.replace(/^\/+/, '') || 'index.html');
+    if (rel === 'our-daily-beta') rel = 'our-daily-beta.html';
+    if (!path.extname(rel)) rel = `${rel}.html`;
+    const filePath = path.resolve(ROOT, rel);
+    if (!filePath.startsWith(ROOT + path.sep) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end(`Not found: ${rawUrl.pathname}`);
+      return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': STATIC_MIME[ext] || 'application/octet-stream',
+      'Cache-Control': 'no-store'
+    });
+    fs.createReadStream(filePath).pipe(res);
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      resolve({
+        server,
+        url: `http://127.0.0.1:${address.port}/our-daily-beta?compositionTester=1`
+      });
+    });
+  });
 }
 
 function normalizeHex(hex) {
@@ -707,6 +756,121 @@ async function writeContactSheet(panelImages, contactPath) {
     .toFile(contactPath);
 }
 
+async function renderPanelsWithRealQuiltRenderer(renderPanels, dateKey) {
+  const { server, url } = await startStaticServer();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({
+      viewport: { width: OUT_W, height: OUT_H },
+      deviceScaleFactor: 1,
+      isMobile: true,
+      hasTouch: true
+    });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.waitForFunction(
+      () => !!window.app?.renderer && !!window.app?.quiltEngine && !!document.getElementById('quilt'),
+      undefined,
+      { timeout: 120000 }
+    );
+    await page.addStyleTag({
+      content: `
+        html, body {
+          margin: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          overflow: hidden !important;
+          background: #fff !important;
+        }
+        body > *:not(#app) { display: none !important; }
+        .screen { display: none !important; }
+        #screen-quilt {
+          display: flex !important;
+          position: fixed !important;
+          inset: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          min-height: 100vh !important;
+          overflow: hidden !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #f6f4f1 !important;
+          z-index: 1 !important;
+        }
+        #screen-quilt > :not(.quilt-container) {
+          display: none !important;
+        }
+        #screen-quilt .quilt-container {
+          position: fixed !important;
+          inset: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          max-width: none !important;
+          margin: 0 !important;
+          overflow: hidden !important;
+          background: #f6f4f1 !important;
+        }
+      `
+    });
+
+    const out = [];
+    for (const panel of renderPanels) {
+      await page.evaluate(async ({ blocks, submissionCount, dateKey: panelDateKey }) => {
+        const app = window.app;
+        document.querySelectorAll('.screen').forEach((screen) => {
+          screen.classList.remove('active');
+          screen.style.display = 'none';
+          screen.setAttribute('aria-hidden', 'true');
+        });
+        const screen = document.getElementById('screen-quilt');
+        screen?.classList.add('active');
+        screen?.removeAttribute('hidden');
+        screen?.setAttribute('aria-hidden', 'false');
+        if (screen) screen.style.display = 'flex';
+
+        if (typeof app.applyQuiltDataFromPayload === 'function') {
+          await app.applyQuiltDataFromPayload({
+            blocks,
+            contributors: [],
+            contributorCount: submissionCount,
+            dateKey: panelDateKey,
+            date: panelDateKey
+          });
+        } else {
+          app.quiltEngine.blocks = JSON.parse(JSON.stringify(blocks));
+          app.quiltEngine.submissionCount = submissionCount;
+        }
+
+        app.renderer?.setBacksidePreviewEnabled?.(app._isBacksidePreviewMode === true);
+        if (app.renderer?.renderBlocks) {
+          app.renderer.renderBlocks(blocks, [], submissionCount);
+        } else if (typeof app.renderQuilt === 'function') {
+          await app.renderQuilt();
+        }
+      }, {
+        blocks: panel.blocks,
+        submissionCount: panel.submissionCount,
+        dateKey
+      });
+
+      await page.waitForFunction(
+        () => {
+          const svg = document.getElementById('quilt');
+          return !!svg?.querySelector('#quiltMirroredFieldLayer') && !!svg?.querySelector('#quiltParallaxLayer');
+        },
+        undefined,
+        { timeout: 60000 }
+      );
+      await page.waitForTimeout(500);
+      const buffer = await page.locator('#screen-quilt .quilt-container').screenshot({ type: 'png' });
+      out.push({ ...panel, buffer });
+    }
+    return out;
+  } finally {
+    await browser.close().catch(() => {});
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 async function renderDate(dateKey) {
   const { Utils, QuiltMirrorLayout } = loadServerQuiltRuntime();
   const quilt = await fetchQuiltData(dateKey);
@@ -736,7 +900,7 @@ async function renderDate(dateKey) {
     }
   }
 
-  const panelImages = [];
+  const renderPanels = [];
   const panels = [];
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
@@ -751,9 +915,13 @@ async function renderDate(dateKey) {
     const subtitle = useReplayFromScratch
         ? `${config.description} · replay · ${replay.blocks.length} blocks${skippedText}`
         : `${config.description} · actual + ${continuationColors.length} adds · ${replay.blocks.length} blocks${skippedText}`;
-    const svg = blocksToSvg(replay.blocks, Utils, QuiltMirrorLayout, label, subtitle, dateKey);
-    const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
-    panelImages.push({ buffer, mode });
+    renderPanels.push({
+      mode,
+      label,
+      subtitle,
+      blocks: replay.blocks,
+      submissionCount: replay.submissionCount
+    });
     panels.push({
       mode,
       label: config.label,
@@ -764,8 +932,18 @@ async function renderDate(dateKey) {
       skippedColors: replay.skippedColors,
       macroStructureFrozen: replay.macroStructureFrozen
     });
-    console.log(`[composition-tester] rendered ${isCurrent ? 'current code' : `biased ${mode}`} panel`);
   }
+
+  const panelImages = USE_BROWSER_RENDERER
+    ? await renderPanelsWithRealQuiltRenderer(renderPanels, dateKey)
+    : await Promise.all(renderPanels.map(async (panel) => {
+        const svg = blocksToSvg(panel.blocks, Utils, QuiltMirrorLayout, panel.label, panel.subtitle, dateKey);
+        const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+        return { ...panel, buffer };
+      }));
+  panelImages.forEach((panel) => {
+    console.log(`[composition-tester] rendered ${panel.mode === 'baseline' ? 'current code' : `biased ${panel.mode}`} panel`);
+  });
 
   const contactPath = path.join(outDir, 'contact-sheet.png');
   await writeContactSheet(panelImages, contactPath);
