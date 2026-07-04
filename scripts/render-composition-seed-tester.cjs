@@ -54,6 +54,7 @@ const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
 const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 72));
 const CONTACT_LABEL_H = Math.max(0, Math.floor(Number(process.env.CONTACT_LABEL_H) || 116));
 const USE_BROWSER_RENDERER = process.env.COMPOSITION_TESTER_BROWSER_RENDERER !== '0';
+const LOCK_REPLAY_PALETTE = process.env.COMPOSITION_TESTER_LOCK_PALETTE !== '0';
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
 const BIAS_LOCK_AT = Math.max(1, Math.floor(Number(process.env.BIAS_LOCK_AT) || 10));
 const MODE_KEYS = String(process.env.MODES || '')
@@ -221,6 +222,27 @@ function normalizeHex(hex) {
   const s = String(hex || '').trim();
   const match = s.match(/^#?([0-9a-f]{6})$/i);
   return match ? `#${match[1].toLowerCase()}` : '';
+}
+
+function hashString(value) {
+  let h = 2166136261;
+  const s = String(value || '');
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a += 0x6d2b79f5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function hexToRgb(hex) {
@@ -514,40 +536,146 @@ function installModeBiases(engine, modeKey) {
   }
 }
 
+function installPaletteLock(engine) {
+  if (!engine || !LOCK_REPLAY_PALETTE) return;
+  if (typeof engine._harmonyAdjustedSplitColor === 'function') {
+    engine._harmonyAdjustedSplitColor = (_selectedBlock, userHex) => userHex;
+  }
+  if (typeof engine._tonalSplitColorForMacroRegion === 'function') {
+    engine._tonalSplitColorForMacroRegion = (_block, candidateColor) => candidateColor;
+  }
+  if (typeof engine._ensureDistinctHstPartner === 'function') {
+    engine._ensureDistinctHstPartner = (baseColor, candidateColor) => {
+      const normalized = normalizeHex(candidateColor);
+      return normalized || normalizeHex(baseColor) || candidateColor || baseColor;
+    };
+  }
+  if (typeof engine.runColorSettlingPass === 'function') {
+    engine.runColorSettlingPass = () => false;
+  }
+}
+
+function colorDistanceSq(a, b) {
+  const ar = hexToRgb(a);
+  const br = hexToRgb(b);
+  if (!ar || !br) return Number.POSITIVE_INFINITY;
+  return ((ar.r - br.r) ** 2) + ((ar.g - br.g) ** 2) + ((ar.b - br.b) ** 2);
+}
+
+function nearestPaletteColor(hex, palette) {
+  const normalized = normalizeHex(hex);
+  if (!normalized || !palette.length) return hex;
+  if (palette.includes(normalized)) return normalized;
+  let best = palette[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of palette) {
+    const distance = colorDistanceSq(normalized, candidate);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function enforcePaletteOnBlocks(blocks, colors) {
+  if (!LOCK_REPLAY_PALETTE) return blocks;
+  const palette = [...new Set(colors.map(normalizeHex).filter(Boolean))];
+  return blocks.map((block) => {
+    const copy = JSON.parse(JSON.stringify(block));
+    for (const key of [
+      'color',
+      'contributorColor',
+      'hstColorB',
+      'insetInnerColor',
+      'specialOriginalColor',
+      'specialOriginalInnerColor',
+      'macroFrozenColor'
+    ]) {
+      if (typeof copy[key] === 'string') copy[key] = nearestPaletteColor(copy[key], palette);
+    }
+    if (Array.isArray(copy.hstTriangles)) {
+      copy.hstTriangles = copy.hstTriangles.map((tri) => ({
+        ...tri,
+        color: nearestPaletteColor(tri?.color, palette)
+      }));
+    }
+    if (Array.isArray(copy.polygonPieces)) {
+      copy.polygonPieces = copy.polygonPieces.map((piece) => ({
+        ...piece,
+        color: nearestPaletteColor(piece?.color, palette)
+      }));
+    }
+    return copy;
+  });
+}
+
 function replaySequence(dateKey, colors, modeKey, lockAt = BIAS_LOCK_AT) {
   return safeConsole(() => {
-    const engine = createServerQuiltEngine({
-      userId: `composition-${modeKey}-${dateKey}`,
-      blocks: [],
-      submissionCount: 0,
-      colorReplayEvents: [],
-      macroStructureFrozen: false
-    });
-    const skippedColors = [];
-    let biasInstalled = modeKey === 'baseline';
-    for (let i = 0; i < colors.length; i += 1) {
-      const hex = colors[i];
-      const shouldBias = modeKey !== 'baseline' && i >= lockAt;
-      if (shouldBias && !biasInstalled) {
-        installModeBiases(engine, modeKey);
-        biasInstalled = true;
+    const originalRandom = Math.random;
+    Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
+    try {
+      const engine = createServerQuiltEngine({
+        userId: `composition-${modeKey}-${dateKey}`,
+        blocks: [],
+        submissionCount: 0,
+        colorReplayEvents: [],
+        macroStructureFrozen: false
+      });
+      installPaletteLock(engine);
+      const skippedColors = [];
+      let biasInstalled = modeKey === 'baseline';
+      for (let i = 0; i < colors.length; i += 1) {
+        const hex = colors[i];
+        const shouldBias = modeKey !== 'baseline' && i >= lockAt;
+        if (shouldBias && !biasInstalled) {
+          installModeBiases(engine, modeKey);
+          biasInstalled = true;
+        }
+        const result = shouldBias
+          ? withPatchedRandom(modeKey, () => engine.addColor(hex))
+          : engine.addColor(hex);
+        if (!result) {
+          skippedColors.push({ index: i + 1, color: hex });
+          console.warn(`[composition-tester] ${dateKey} ${modeKey}: skipped ${hex} at ${i + 1}`);
+        }
       }
-      const result = shouldBias
-        ? withPatchedRandom(modeKey, () => engine.addColor(hex))
-        : engine.addColor(hex);
-      if (!result) {
-        skippedColors.push({ index: i + 1, color: hex });
-        console.warn(`[composition-tester] ${dateKey} ${modeKey}: skipped ${hex} at ${i + 1}`);
-      }
+      const blocks = enforcePaletteOnBlocks(serializeServerQuiltBlocks(engine), colors);
+      return {
+        mode: modeKey,
+        blocks,
+        submissionCount: Number(engine.submissionCount) || colors.length,
+        macroStructureFrozen: engine.macroStructureFrozen === true,
+        skippedColors
+      };
+    } finally {
+      Math.random = originalRandom;
     }
-    return {
-      mode: modeKey,
-      blocks: serializeServerQuiltBlocks(engine),
-      submissionCount: Number(engine.submissionCount) || colors.length,
-      macroStructureFrozen: engine.macroStructureFrozen === true,
-      skippedColors
-    };
   });
+}
+
+function collectBlockHexes(blocks) {
+  const hexes = [];
+  const push = (value) => {
+    const normalized = normalizeHex(value);
+    if (normalized) hexes.push(normalized);
+  };
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    push(block?.color);
+    push(block?.contributorColor);
+    push(block?.hstColorB);
+    push(block?.insetInnerColor);
+    push(block?.specialOriginalColor);
+    push(block?.specialOriginalInnerColor);
+    push(block?.macroFrozenColor);
+    for (const tri of Array.isArray(block?.hstTriangles) ? block.hstTriangles : []) {
+      push(tri?.color);
+    }
+    for (const piece of Array.isArray(block?.polygonPieces) ? block.polygonPieces : []) {
+      push(piece?.color);
+    }
+  }
+  return hexes;
 }
 
 function paintSortKey(block) {
@@ -862,9 +990,13 @@ async function renderDate(dateKey) {
 
   const renderPanels = [];
   const panels = [];
+  const inputPalette = new Set(quilt.colors.map(normalizeHex).filter(Boolean));
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
     const replay = replaySequence(dateKey, quilt.colors, mode, BIAS_LOCK_AT);
+    const outputHexes = collectBlockHexes(replay.blocks);
+    const outputPalette = [...new Set(outputHexes)];
+    const outOfPaletteColors = outputPalette.filter((hex) => !inputPalette.has(hex));
     const isCurrent = mode === 'baseline';
     const label = isCurrent
       ? `Current Code — ${dateKey}`
@@ -886,6 +1018,8 @@ async function renderDate(dateKey) {
       submissionCount: replay.submissionCount,
       skippedCount: replay.skippedColors.length,
       skippedColors: replay.skippedColors,
+      outputUniqueColorCount: outputPalette.length,
+      outOfPaletteColors,
       macroStructureFrozen: replay.macroStructureFrozen
     });
   }
@@ -907,6 +1041,8 @@ async function renderDate(dateKey) {
     dateKey,
     source: quilt.source,
     colorCount: quilt.colors.length,
+    inputUniqueColorCount: inputPalette.size,
+    paletteLocked: LOCK_REPLAY_PALETTE,
     replayCoverage,
     testerMode: 'ordered-color-replay',
     biasLockAt: BIAS_LOCK_AT,
