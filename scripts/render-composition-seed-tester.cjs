@@ -555,34 +555,13 @@ function installPaletteLock(engine) {
   }
 }
 
-function colorDistanceSq(a, b) {
-  const ar = hexToRgb(a);
-  const br = hexToRgb(b);
-  if (!ar || !br) return Number.POSITIVE_INFINITY;
-  return ((ar.r - br.r) ** 2) + ((ar.g - br.g) ** 2) + ((ar.b - br.b) ** 2);
-}
-
-function nearestPaletteColor(hex, palette) {
-  const normalized = normalizeHex(hex);
-  if (!normalized || !palette.length) return hex;
-  if (palette.includes(normalized)) return normalized;
-  let best = palette[0];
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const candidate of palette) {
-    const distance = colorDistanceSq(normalized, candidate);
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
 function enforcePaletteOnBlocks(blocks, colors) {
   if (!LOCK_REPLAY_PALETTE) return blocks;
-  const palette = [...new Set(colors.map(normalizeHex).filter(Boolean))];
   return blocks.map((block) => {
     const copy = JSON.parse(JSON.stringify(block));
+    const ownerIndex = Math.max(1, Math.floor(Number(copy.submissionIndex) || 1));
+    const ownerColor = normalizeHex(colors[ownerIndex - 1]) || normalizeHex(copy.contributorColor) || normalizeHex(copy.color);
+    if (!ownerColor) return copy;
     for (const key of [
       'color',
       'contributorColor',
@@ -592,18 +571,18 @@ function enforcePaletteOnBlocks(blocks, colors) {
       'specialOriginalInnerColor',
       'macroFrozenColor'
     ]) {
-      if (typeof copy[key] === 'string') copy[key] = nearestPaletteColor(copy[key], palette);
+      if (typeof copy[key] === 'string') copy[key] = ownerColor;
     }
     if (Array.isArray(copy.hstTriangles)) {
       copy.hstTriangles = copy.hstTriangles.map((tri) => ({
         ...tri,
-        color: nearestPaletteColor(tri?.color, palette)
+        color: ownerColor
       }));
     }
     if (Array.isArray(copy.polygonPieces)) {
       copy.polygonPieces = copy.polygonPieces.map((piece) => ({
         ...piece,
-        color: nearestPaletteColor(piece?.color, palette)
+        color: ownerColor
       }));
     }
     return copy;
