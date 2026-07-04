@@ -658,6 +658,19 @@ function collectBlockHexes(blocks) {
   return hexes;
 }
 
+function missingSubmissionIndices(blocks, expectedCount) {
+  const seen = new Set();
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    const index = Math.floor(Number(block?.submissionIndex) || 0);
+    if (index > 0) seen.add(index);
+  }
+  const missing = [];
+  for (let index = 1; index <= expectedCount; index += 1) {
+    if (!seen.has(index)) missing.push(index);
+  }
+  return missing;
+}
+
 function paintSortKey(block) {
   return [Number(block?.visualLayerIndex) || 0, Number(block?.y) || 0, Number(block?.x) || 0];
 }
@@ -1013,10 +1026,11 @@ async function renderDate(dateKey) {
   if (INCLUDE_STORED_ORIGINAL) {
     const actualHexes = collectBlockHexes(quilt.liveBlocks);
     const actualPalette = [...new Set(actualHexes)];
+    const actualMissing = missingSubmissionIndices(quilt.liveBlocks, quilt.colors.length);
     renderPanels.push({
       mode: 'actual',
       label: `Stored Original — ${dateKey}`,
-      subtitle: `${quilt.liveContributorCount} stored contributors · ${quilt.liveBlockCount} stored blocks`,
+      subtitle: `${quilt.liveContributorCount} stored contributors · ${quilt.liveBlockCount} stored blocks · ${actualMissing.length} missing indices`,
       blocks: quilt.liveBlocks,
       submissionCount: quilt.liveContributorCount || quilt.liveSubmissionCount || quilt.liveBlockCount
     });
@@ -1030,6 +1044,7 @@ async function renderDate(dateKey) {
       skippedColors: [],
       outputUniqueColorCount: actualPalette.length,
       outOfPaletteColors: actualPalette.filter((hex) => !inputPalette.has(hex)),
+      missingSubmissionIndices: actualMissing,
       macroStructureFrozen: quilt.macroStructureFrozen,
       storedOriginal: true
     });
@@ -1040,12 +1055,14 @@ async function renderDate(dateKey) {
     const outputHexes = collectBlockHexes(replay.blocks);
     const outputPalette = [...new Set(outputHexes)];
     const outOfPaletteColors = outputPalette.filter((hex) => !inputPalette.has(hex));
+    const missingIndices = missingSubmissionIndices(replay.blocks, quilt.colors.length);
     const isCurrent = mode === 'baseline';
     const label = isCurrent
       ? `Current Code Replay — ${dateKey}`
       : `New Bias: ${config.label} after color ${BIAS_LOCK_AT} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
-    const subtitle = `${quilt.colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${skippedText}`;
+    const missingText = missingIndices.length ? ` · ${missingIndices.length} missing indices` : '';
+    const subtitle = `${quilt.colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${skippedText}${missingText}`;
     renderPanels.push({
       mode,
       label,
@@ -1063,6 +1080,7 @@ async function renderDate(dateKey) {
       skippedColors: replay.skippedColors,
       outputUniqueColorCount: outputPalette.length,
       outOfPaletteColors,
+      missingSubmissionIndices: missingIndices,
       macroStructureFrozen: replay.macroStructureFrozen
     });
   }
