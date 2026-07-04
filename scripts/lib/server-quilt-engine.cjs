@@ -59,6 +59,7 @@ function loadServerQuiltRuntime() {
     'lib/utils-core.js',
     'lib/utils-color.js',
     'lib/utils-quilt.js',
+    'lib/utils-quilt-render.js',
     'lib/utils-zapier.js',
     'lib/simple-quilt-engine.js'
   ]) {
