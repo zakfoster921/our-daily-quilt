@@ -58,6 +58,7 @@ function loadServerQuiltRuntime() {
   for (const rel of [
     'lib/utils-core.js',
     'lib/utils-color.js',
+    'lib/quilt-mirror-layout.js',
     'lib/utils-quilt.js',
     'lib/utils-quilt-render.js',
     'lib/utils-zapier.js',
@@ -74,7 +75,8 @@ function loadServerQuiltRuntime() {
 
   runtime = {
     SimpleQuiltEngine: sandbox.SimpleQuiltEngine,
-    Utils: sandbox.Utils
+    Utils: sandbox.Utils,
+    QuiltMirrorLayout: sandbox.QuiltMirrorLayout
   };
   return runtime;
 }

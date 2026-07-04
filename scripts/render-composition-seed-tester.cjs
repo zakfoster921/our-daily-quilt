@@ -11,7 +11,8 @@
  *   DATE_KEY=2026-06-30 npm run composition:tester
  *   DATE_KEYS=2026-06-28,2026-06-29 npm run composition:tester
  *
- * Output: tmp/composition-seed-tester/<dateKey>/*.png + summary.json
+ * Output: tmp/composition-seed-tester/<dateKey>/current.png,
+ * biased-<mode>.png, contact-sheet.png + summary.json
  */
 const fs = require('fs');
 const path = require('path');
@@ -47,12 +48,12 @@ const { getAppDateKey } = require('./lib/app-date-key.cjs');
 const { createServerQuiltEngine, loadServerQuiltRuntime, serializeServerQuiltBlocks } = require('./lib/server-quilt-engine.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
-const OUT_W = 1070;
-const OUT_H = 1340;
+const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
+const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
 const MAX_REPLAY_COLORS = Math.max(1, Math.floor(Number(process.env.MAX_COLORS) || 220));
-const SIM_ADDS = Math.max(1, Math.floor(Number(process.env.SIM_ADDS) || 36));
+const SIM_ADDS = Math.max(1, Math.floor(Number(process.env.SIM_ADDS) || 18));
 const MIN_REPLAY_COVERAGE = Math.max(0, Math.min(1, Number(process.env.MIN_REPLAY_COVERAGE) || 0.85));
-const MODE_KEYS = String(process.env.MODES || 'actual,baseline,field,mosaic,strata,garden,vein,window,constellation,tide')
+const MODE_KEYS = String(process.env.MODES || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
@@ -613,7 +614,7 @@ function blockShapes(block, Utils) {
   return [`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${esc(block.color || '#c8c4bf')}"/>`];
 }
 
-function blocksToSvg(blocks, Utils, label, subtitle) {
+function blocksToSvg(blocks, Utils, QuiltMirrorLayout, label, subtitle, dateKey) {
   const valid = blocks.filter(
     (b) =>
       b &&
@@ -628,7 +629,22 @@ function blocksToSvg(blocks, Utils, label, subtitle) {
   const maxY = Math.max(...valid.map((b) => b.y + b.height));
   const vbW = Math.max(1, maxX - minX);
   const vbH = Math.max(1, maxY - minY);
-  const pad = 6;
+  const mirrorLayout = QuiltMirrorLayout?.computeFromBlocks
+    ? QuiltMirrorLayout.computeFromBlocks(valid, {
+        dateKey,
+        viewportW: OUT_W,
+        viewportH: OUT_H
+      })
+    : null;
+  const horizontalStretch = mirrorLayout?.horizontalStretch ?? 1.16;
+  const mirrorSeamOffset = mirrorLayout?.mirrorSeamOffset ?? vbH * 0.82;
+  const mirrorSeamOverlap = mirrorLayout?.mirrorSeamOverlapPx ?? 8;
+  const viewBox = mirrorLayout?.viewBox ?? {
+    x: minX - Math.max(6, vbW * 0.02),
+    y: minY - Math.max(6, vbW * 0.02),
+    width: vbW * horizontalStretch + Math.max(6, vbW * 0.02) * 2,
+    height: vbH + mirrorSeamOffset + Math.max(6, vbW * 0.02) * 2
+  };
   const sorted = [...valid].sort((a, b) => {
     const ka = paintSortKey(a);
     const kb = paintSortKey(b);
@@ -638,21 +654,34 @@ function blocksToSvg(blocks, Utils, label, subtitle) {
     return 0;
   });
   const shapes = sorted.flatMap((b) => blockShapes(b, Utils)).join('\n');
+  const fieldTransform = horizontalStretch !== 1
+    ? `translate(${minX} 0) scale(${horizontalStretch} 1) translate(${-minX} 0)`
+    : '';
+  const mirrorTransform = QuiltMirrorLayout?.mirrorTransform
+    ? QuiltMirrorLayout.mirrorTransform(minX, minY, vbW, vbH, mirrorSeamOffset)
+    : `translate(${minX + vbW} ${minY + vbH + mirrorSeamOffset - mirrorSeamOverlap}) scale(-1 -1)`;
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX - pad} ${minY - pad} ${vbW + pad * 2} ${vbH + pad * 2}" width="${OUT_W}" height="${OUT_H}">
-  <rect x="${minX - pad}" y="${minY - pad}" width="${vbW + pad * 2}" height="${vbH + pad * 2}" fill="#f6f4f1"/>
-  ${shapes}
-  <rect x="${minX - pad}" y="${minY - pad}" width="${vbW + pad * 2}" height="76" fill="rgba(246,244,241,0.94)"/>
-  <text x="${minX}" y="${minY + 28}" font-family="-apple-system,sans-serif" font-size="22" font-weight="700" fill="#333">${esc(label)}</text>
-  <text x="${minX}" y="${minY + 54}" font-family="-apple-system,sans-serif" font-size="14" fill="#666">${esc(subtitle)}</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}" width="${OUT_W}" height="${OUT_H}" preserveAspectRatio="xMidYMin slice">
+  <rect x="${viewBox.x}" y="${viewBox.y}" width="${viewBox.width}" height="${viewBox.height}" fill="#f6f4f1"/>
+  <g id="quiltFieldLayer"${fieldTransform ? ` transform="${fieldTransform}"` : ''}>
+    <g id="quiltMirroredFieldLayer" aria-hidden="true" pointer-events="none" transform="${mirrorTransform}">
+      ${shapes}
+    </g>
+    <g id="quiltParallaxLayer">
+      ${shapes}
+    </g>
+  </g>
+  <rect x="${viewBox.x}" y="${viewBox.y}" width="${viewBox.width}" height="76" fill="rgba(246,244,241,0.94)"/>
+  <text x="${viewBox.x + 8}" y="${viewBox.y + 28}" font-family="-apple-system,sans-serif" font-size="22" font-weight="700" fill="#333">${esc(label)}</text>
+  <text x="${viewBox.x + 8}" y="${viewBox.y + 54}" font-family="-apple-system,sans-serif" font-size="14" fill="#666">${esc(subtitle)}</text>
 </svg>`;
 }
 
 async function writeContactSheet(pngPaths, contactPath) {
-  const cols = Math.min(3, pngPaths.length);
+  const cols = Math.min(2, pngPaths.length);
   const rows = Math.ceil(pngPaths.length / cols);
-  const tileW = Math.floor(OUT_W / cols);
-  const tileH = Math.floor(OUT_H / rows);
+  const tileW = OUT_W;
+  const tileH = OUT_H;
   const resized = await Promise.all(
     pngPaths.map((p) =>
       sharp(p.pngPath).resize(tileW, tileH, { fit: 'contain', background: '#ebe8e3' }).png().toBuffer()
@@ -678,14 +707,16 @@ async function writeContactSheet(pngPaths, contactPath) {
 }
 
 async function renderDate(dateKey) {
-  const { Utils } = loadServerQuiltRuntime();
+  const { Utils, QuiltMirrorLayout } = loadServerQuiltRuntime();
   const quilt = await fetchQuiltData(dateKey);
   const metrics = analyzeColors(quilt.colors.length >= 2 ? quilt.colors : quilt.liveColors);
   const inferredMode = inferMode(metrics);
   const replayCoverage = quilt.liveContributorCount > 0 ? quilt.colors.length / quilt.liveContributorCount : 0;
   const useReplayFromScratch = process.env.COMPOSITION_TESTER_MODE === 'replay' && replayCoverage >= MIN_REPLAY_COVERAGE;
   const continuationColors = makeContinuationColors(quilt, SIM_ADDS);
-  const modeKeys = [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))];
+  const modeKeys = MODE_KEYS.length
+    ? [...new Set(MODE_KEYS.filter((mode) => MODE_CONFIG[mode]))]
+    : ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
   const outDir = path.join(ROOT, 'tmp', 'composition-seed-tester', dateKey);
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -702,26 +733,19 @@ async function renderDate(dateKey) {
   const panels = [];
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode];
-    const replay = mode === 'actual'
-      ? {
-          mode,
-          blocks: quilt.liveBlocks,
-          submissionCount: quilt.liveContributorCount || quilt.colors.length,
-          macroStructureFrozen: null,
-          skippedColors: []
-        }
-      : useReplayFromScratch
+    const replay = useReplayFromScratch
         ? replayMode(dateKey, quilt.colors, mode)
         : continueMode(dateKey, quilt, continuationColors, mode);
-    const label = `${config.label}${mode === inferredMode ? ' (inferred)' : ''} — ${dateKey}`;
+    const isCurrent = mode === 'baseline';
+    const label = isCurrent
+      ? `Current Code — ${dateKey}`
+      : `New Bias: ${config.label} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
-    const subtitle = mode === 'actual'
-      ? `${config.description} · ${replay.blocks.length} blocks`
-      : useReplayFromScratch
+    const subtitle = useReplayFromScratch
         ? `${config.description} · replay · ${replay.blocks.length} blocks${skippedText}`
         : `${config.description} · actual + ${continuationColors.length} adds · ${replay.blocks.length} blocks${skippedText}`;
-    const svg = blocksToSvg(replay.blocks, Utils, label, subtitle);
-    const pngPath = path.join(outDir, `${mode}.png`);
+    const svg = blocksToSvg(replay.blocks, Utils, QuiltMirrorLayout, label, subtitle, dateKey);
+    const pngPath = path.join(outDir, isCurrent ? 'current.png' : `biased-${mode}.png`);
     await sharp(Buffer.from(svg)).png().toFile(pngPath);
     pngPaths.push({ pngPath, mode });
     panels.push({
