@@ -468,16 +468,20 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
   );
 
   if (!liveBlocks.length) throw new Error(`quilts/${dateKey} has no stored live blocks`);
-  if (colors.length <= lockAt) {
-    throw new Error(`quilts/${dateKey} has only ${colors.length} ordered color(s); need more than ${lockAt}`);
-  }
 
-  const lockColors = colors.slice(0, lockAt);
+  const hasSparseColorHistory = colors.length <= lockAt;
+  const lockColors = colors.slice(0, Math.min(lockAt, colors.length));
   const metrics = analyzeColors(lockColors);
-  const inferredMode = MODE_CONFIG[options.modeKey] ? String(options.modeKey) : inferMode(metrics);
-  const modeKeys = ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
+  const inferredMode = MODE_CONFIG[options.modeKey]
+    ? String(options.modeKey)
+    : hasSparseColorHistory
+      ? 'window'
+      : inferMode(metrics);
+  const modeKeys = hasSparseColorHistory && options.includeStoredOriginal !== false
+    ? [inferredMode]
+    : ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
   const replayCoverage = liveContributorCount > 0 ? colors.length / liveContributorCount : 0;
-  const archiveLockSnapshot = reconstructArchiveSnapshotAt(replayEvents, lockAt);
+  const archiveLockSnapshot = hasSparseColorHistory ? null : reconstructArchiveSnapshotAt(replayEvents, lockAt);
   const replayOptions = archiveLockSnapshot
     ? {
         initialBlocks: archiveLockSnapshot.blocks,
@@ -508,19 +512,28 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
 
   for (const mode of modeKeys) {
     const config = MODE_CONFIG[mode] || MODE_CONFIG.baseline;
-    const replay = replaySequence(dateKey, colors, mode, lockAt, replayOptions);
+    const replay = hasSparseColorHistory
+      ? {
+          mode,
+          blocks: cloneJson(liveBlocks, []),
+          submissionCount: liveContributorCount || liveSubmissionCount || liveBlocks.length,
+          macroStructureFrozen: quiltData?.macroStructureFrozen === true,
+          skippedColors: []
+        }
+      : replaySequence(dateKey, colors, mode, lockAt, replayOptions);
     const audit = panelAudit(replay.blocks, colors);
     const isCurrent = mode === 'baseline';
     const label = isCurrent
       ? `${archiveLockSnapshot ? 'Stored Lock + Current Continuation' : 'Current Code Replay'} — ${dateKey}`
-      : `New Bias: ${config.label} after color ${lockAt} — ${dateKey}`;
+      : `New Bias: ${config.label}${hasSparseColorHistory ? ' preview of today' : ` after color ${lockAt}`} — ${dateKey}`;
     const skippedText = replay.skippedColors.length ? ` · ${replay.skippedColors.length} skipped` : '';
     const missingText = audit.missingSubmissionIndices.length ? ` · ${audit.missingSubmissionIndices.length} missing indices` : '';
     const branchText = archiveLockSnapshot ? ` · stored through ${lockAt}` : '';
+    const sparseText = hasSparseColorHistory ? ' · early day: bias may not diverge yet' : '';
     panels.push({
       mode,
       label,
-      subtitle: `${colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${branchText}${skippedText}${missingText}`,
+      subtitle: `${colors.length} same ordered colors · ${Math.round(replayCoverage * 100)}% day coverage · ${replay.blocks.length} blocks${branchText}${sparseText}${skippedText}${missingText}`,
       blocks: replay.blocks,
       submissionCount: replay.submissionCount,
       blockCount: replay.blocks.length,
@@ -541,6 +554,7 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
     branchFromArchiveLock: !!archiveLockSnapshot,
     archiveLockBlockCount: archiveLockSnapshot?.blocks?.length || 0,
     biasLockAt: lockAt,
+    hasSparseColorHistory,
     liveBlockCount: liveBlocks.length,
     liveContributorCount,
     inferredMode,
