@@ -7,7 +7,7 @@ const MODE_CONFIG = {
   },
   baseline: {
     label: 'Baseline',
-    description: 'Current engine growth'
+    description: 'Current engine growth (also the fallback when no bias matches)'
   },
   mosaic: {
     label: 'Mosaic',
@@ -65,14 +65,6 @@ const MODE_CONFIG = {
     colorRoute: 'temperature',
     alternatingAxis: true,
     patternPreference: ['stripes', 'railfence', 'framed', 'hst']
-  },
-  window: {
-    label: 'Window',
-    description: 'Gentle fallback — a few large calm regions',
-    specials: 0.38,
-    largeBlockPenalty: 0.65,
-    neverForceOversized: true,
-    patternPreference: ['framed', 'insetCircle', 'hst']
   },
   // Manual override only — not used by inferMode
   vivid: {
@@ -276,7 +268,7 @@ function inferMode(metrics) {
     metrics.warmth >= 0.2 &&
     metrics.warmth <= 0.8
   ) return 'tide';
-  return 'window';
+  return 'baseline';
 }
 
 function orderedReplayEvents(quiltData) {
@@ -336,7 +328,7 @@ function reconstructArchiveSnapshotAt(events, lockAt) {
 }
 
 function installModeBiases(engine, modeKey) {
-  if (modeKey === 'baseline') return;
+  if (modeKey === 'baseline' || modeKey === 'window') return;
   const config = MODE_CONFIG[modeKey] || {};
   const originalSelectPatternType = engine.selectPatternType?.bind(engine);
   const originalAccentBias = engine._regularSplitAccentBias?.bind(engine);
@@ -481,7 +473,7 @@ function installPaletteLock(engine) {
 }
 
 function withPatchedRandom(modeKey, fn) {
-  if (modeKey === 'baseline') return fn();
+  if (modeKey === 'baseline' || modeKey === 'window') return fn();
   const originalRandom = Math.random;
   const config = MODE_CONFIG[modeKey] || {};
   const specialMultiplier = Number(config.specials) || 1;
@@ -526,11 +518,11 @@ function replaySequence(dateKey, colors, modeKey, lockAt, options = {}) {
       });
       if (options.lockPalette === true) installPaletteLock(engine);
       const skippedColors = [];
-      let biasInstalled = modeKey === 'baseline';
+      let biasInstalled = modeKey === 'baseline' || modeKey === 'window';
       const startIndex = Math.max(0, Math.floor(Number(options.startIndex) || 0));
       for (let i = startIndex; i < colors.length; i += 1) {
         const hex = colors[i];
-        const shouldBias = modeKey !== 'baseline' && i >= lockAt;
+        const shouldBias = modeKey !== 'baseline' && modeKey !== 'window' && i >= lockAt;
         if (shouldBias && !biasInstalled) {
           installModeBiases(engine, modeKey);
           biasInstalled = true;
@@ -710,7 +702,7 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
   const inferredMode = MODE_CONFIG[options.modeKey]
     ? String(options.modeKey)
     : hasSparseColorHistory
-      ? 'window'
+      ? 'baseline'
       : inferMode(metrics);
   const modeKeys = options.includeStoredOriginal !== false
     ? [inferredMode]

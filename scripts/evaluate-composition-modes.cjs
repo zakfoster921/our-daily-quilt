@@ -128,7 +128,7 @@ function sortedCounts(counts) {
 }
 
 function modeTable(counts) {
-  const modes = ['mosaic', 'strata', 'vein', 'constellation', 'field', 'garden', 'tide', 'window', 'baseline', 'no-quilt'];
+  const modes = ['mosaic', 'strata', 'vein', 'constellation', 'field', 'garden', 'tide', 'baseline', 'no-quilt'];
   return modes
     .filter((mode) => counts[mode])
     .map((mode) => `| ${mode} | ${counts[mode]} |`)

@@ -12,7 +12,7 @@
  * given real colors.
  *
  *   DATE_KEYS=2026-06-16,2026-06-10 npm run composition:mode-comparison
- *   MODES=mosaic,strata,vein,constellation,field,garden,tide,window npm run composition:mode-comparison
+ *   MODES=mosaic,strata,vein,constellation,field,garden,tide,baseline npm run composition:mode-comparison
  */
 const fs = require('fs');
 const http = require('http');
@@ -41,7 +41,7 @@ const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
 const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 72));
 const CONTACT_LABEL_H = Math.max(0, Math.floor(Number(process.env.CONTACT_LABEL_H) || 116));
 const BIAS_LOCK_AT = Math.max(1, Math.floor(Number(process.env.BIAS_LOCK_AT) || 10));
-const MODE_KEYS = String(process.env.MODES || 'mosaic,strata,vein,constellation,field,garden,tide,window')
+const MODE_KEYS = String(process.env.MODES || 'mosaic,strata,vein,constellation,field,garden,tide,baseline')
   .split(',')
   .map((s) => s.trim())
   .filter((mode) => mode && MODE_CONFIG[mode]);
