@@ -303,7 +303,8 @@ async function renderDate(db, dateKey) {
   const tweak = replaySequenceWithInferredCheckpoint(dateKey, day.colors, {
     lockPalette: true,
     initialBlocks: snapshot?.blocks,
-    initialSubmissionCount: snapshot?.submissionCount
+    initialSubmissionCount: snapshot?.submissionCount,
+    replayEvents: day.replayEvents
   });
   const tweakInfo = tweak.checkpoint?.tweak || {};
   const needNote = Number.isFinite(tweak.checkpoint?.need)
@@ -312,7 +313,11 @@ async function renderDate(db, dateKey) {
   const tweakLabel = tweakInfo.pattern === 'none'
     ? `skip — ${tweakInfo.reason || 'no tweak'}`
     : `${tweakInfo.pattern} on ${tweakInfo.pick || 'plain'} block · ${tweak.checkpoint?.adjustments || 0} applied`;
-  const branchNote = tweak.branchFromSnapshot ? 'from live snapshot @ 20' : 'simulated replay';
+  const branchNote = tweak.continuedFromArchive
+    ? 'skip — live archive replay after @ 20'
+    : tweak.branchFromSnapshot
+      ? 'from live snapshot @ 20'
+      : 'simulated replay';
 
   const panels = [
     {
@@ -350,6 +355,7 @@ async function renderDate(db, dateKey) {
     tweakBlockCount: tweak.blocks.length,
     decisionAt: tweak.decisionAt,
     branchFromSnapshot: tweak.branchFromSnapshot === true,
+    continuedFromArchive: tweak.continuedFromArchive === true,
     inferredPattern: tweakInfo.pattern || null,
     inferredPick: tweakInfo.pick || null,
     inferredReason: tweakInfo.reason || null,

@@ -1017,6 +1017,35 @@ function replaySequenceWithInferredCheckpoint(dateKey, colors, options = {}) {
       if (hasSnapshot) {
         const snapshot = colors.slice(0, decisionAt);
         checkpoint = applyInferredCheckpointTweak(engine, snapshot);
+        const skippedTweak = checkpoint?.tweak?.pattern === 'none';
+        const replayEvents = Array.isArray(options.replayEvents) ? options.replayEvents : [];
+        const archiveLockAt = replayEvents.length
+          ? Math.max(
+            colors.length,
+            ...replayEvents.map((event) => Number(event?.seq) || 0)
+          )
+          : colors.length;
+        const archivedFinal = skippedTweak && replayEvents.length
+          ? reconstructArchiveSnapshotAt(replayEvents, archiveLockAt)
+          : null;
+
+        if (archivedFinal?.blocks?.length) {
+          return {
+            mode: 'baseline',
+            checkpoint,
+            decisionAt,
+            branchFromSnapshot: true,
+            continuedFromArchive: true,
+            blocks: cloneJson(archivedFinal.blocks, []),
+            submissionCount: Math.max(
+              archivedFinal.submissionCount || 0,
+              colors.length
+            ),
+            macroStructureFrozen: engine.macroStructureFrozen === true,
+            skippedColors: []
+          };
+        }
+
         for (let i = decisionAt; i < colors.length; i += 1) {
           if (!engine.addColor(colors[i])) skippedColors.push({ index: i + 1, color: colors[i] });
         }
