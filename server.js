@@ -6137,7 +6137,6 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     }
     const flipX = body.mirrorFlipX === true || body.mirrorFlipX === 'true' || body.mirrorFlipX === 1;
     const flipY = body.mirrorFlipY === true || body.mirrorFlipY === 'true' || body.mirrorFlipY === 1;
-    const nudgeSeamX = Math.max(-0.35, Math.min(0.35, Number(body.mirrorSeamNudgeX) || 0));
     const nudgeSeamY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorSeamNudgeY) || 0));
     const mirrorTuneUpdatedAt = String(
       body.mirrorTuneUpdatedAt || new Date().toISOString()
@@ -6145,22 +6144,21 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     const patch = {
       mirrorFlipX: flipX,
       mirrorFlipY: flipY,
-      mirrorSeamNudgeX: nudgeSeamX,
       mirrorSeamNudgeY: nudgeSeamY,
+      mirrorSeamNudgeX: admin.firestore.FieldValue.delete(),
       mirrorTuneUpdatedAt
     };
     await db.collection('quilts').doc(dateKey).set(patch, { merge: true });
     const snap = await db.collection('quilts').doc(dateKey).get();
     const data = snap.exists ? snap.data() || {} : {};
     console.log(
-      `✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY}, nudgeX=${nudgeSeamX}, nudgeY=${nudgeSeamY})`
+      `✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY}, nudgeY=${nudgeSeamY})`
     );
     res.json({
       success: true,
       dateKey,
       mirrorFlipX: data.mirrorFlipX === true,
       mirrorFlipY: data.mirrorFlipY === true,
-      mirrorSeamNudgeX: Number(data.mirrorSeamNudgeX) || 0,
       mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
       mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt
     });
