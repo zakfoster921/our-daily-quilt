@@ -8359,19 +8359,21 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
         } else if (command === 'split-largest-popular') {
           const target = pickLargestServerQuiltBlock(engine.blocks);
           if (!target) throw new Error('No eligible block found');
-          const counts = new Map();
-          getServerQuiltColorPool(engine.blocks).forEach((hex) => counts.set(hex, (counts.get(hex) || 0) + 1));
-          const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-          let popularHex = (ranked.find(([hex]) => hex !== serverNormalizeHexColor(target.color)) || ranked[0] || [])[0];
-          if (!popularHex) popularHex = '#ea9b9a';
-          if (popularHex === serverNormalizeHexColor(target.color)) {
-            const hsl = serverHexToHsl(popularHex);
-            popularHex = serverHslToHex(hsl.h, hsl.s, Math.max(0.12, Math.min(0.9, hsl.l + 0.08)));
+          const baseColor = serverNormalizeHexColor(target.color) || '#ea9b9a';
+          let splitColor = createSubtleServerQuiltColorVariant(baseColor);
+          if (!splitColor || splitColor === baseColor) {
+            const hsl = serverHexToHsl(baseColor);
+            const direction = Math.random() < 0.5 ? -1 : 1;
+            splitColor = serverHslToHex(
+              hsl.h,
+              hsl.s,
+              Math.max(0.12, Math.min(0.9, hsl.l + direction * 0.08))
+            );
           }
-          const split = engine.splitSpecificBlock(target, popularHex);
+          const split = engine.splitSpecificBlock(target, splitColor);
           if (!split) throw new Error('Could not split largest block');
           dedicatedBlockId = split.dedicatedBlockId || '';
-          lastColor = split.appliedColor || popularHex;
+          lastColor = split.appliedColor || splitColor;
           addAdminContributor();
         } else if (command === 'add-hst-sample' || command === 'insert-circle') {
           const kind = command === 'insert-circle' ? 'circle' : 'hst';
