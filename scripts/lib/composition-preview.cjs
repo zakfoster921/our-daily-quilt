@@ -397,10 +397,8 @@ function replaceBlockInEngine(engine, blockId, children) {
   return true;
 }
 
-function applySurgicalCheckpointAdjustments(engine, modeKey, checkpointColors) {
-  if (!engine || modeKey === 'baseline' || modeKey === 'window') return 0;
-  const steps = CHECKPOINT_PATTERNS[modeKey] || [];
-  if (!steps.length) return 0;
+function applyCheckpointPatternSteps(engine, steps, checkpointColors) {
+  if (!engine || !Array.isArray(steps) || !steps.length) return 0;
   const candidates = pickCheckpointCandidateBlocks(engine, steps.length);
   const accent =
     normalizeHex(checkpointColors[checkpointColors.length - 1]) ||
@@ -415,6 +413,19 @@ function applySurgicalCheckpointAdjustments(engine, modeKey, checkpointColors) {
     }
   }
   return adjustments;
+}
+
+function applySurgicalCheckpointAdjustments(engine, modeKey, checkpointColors) {
+  if (!engine || modeKey === 'baseline' || modeKey === 'window') return 0;
+  const steps = CHECKPOINT_PATTERNS[modeKey] || [];
+  return applyCheckpointPatternSteps(engine, steps, checkpointColors);
+}
+
+/** One subtle in-place pattern at color 20 — no mode, no forward bias. */
+const GENERIC_CHECKPOINT_PATTERNS = [{ pattern: 'insetCircle' }];
+
+function applyGenericCheckpointTweak(engine, checkpointColors) {
+  return applyCheckpointPatternSteps(engine, GENERIC_CHECKPOINT_PATTERNS, checkpointColors);
 }
 
 function applyModeCheckpoint(engine, modeKey, checkpointColors) {
@@ -705,6 +716,47 @@ function replaySequenceWithCheckpoint(dateKey, colors, options = {}) {
   });
 }
 
+function replaySequenceWithGenericCheckpoint(dateKey, colors, options = {}) {
+  const decisionAt = Math.max(8, Math.floor(Number(options.decisionAt) || MODE_DECISION_AT));
+  return withQuietConsole(() => {
+    const originalRandom = Math.random;
+    Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
+    try {
+      const engine = createServerQuiltEngine({
+        userId: `composition-tweak-${dateKey}`,
+        blocks: [],
+        submissionCount: 0,
+        colorReplayEvents: [],
+        macroStructureFrozen: false
+      });
+      if (options.lockPalette !== false) installPaletteLock(engine);
+
+      let adjustments = 0;
+      const skippedColors = [];
+
+      for (let i = 0; i < colors.length; i += 1) {
+        const hex = colors[i];
+        if (!engine.addColor(hex)) skippedColors.push({ index: i + 1, color: hex });
+        if (i + 1 === decisionAt) {
+          adjustments = applyGenericCheckpointTweak(engine, colors.slice(0, decisionAt));
+        }
+      }
+
+      return {
+        mode: 'baseline',
+        checkpoint: { mode: 'baseline', adjustments },
+        decisionAt,
+        blocks: serializeServerQuiltBlocks(engine),
+        submissionCount: Number(engine.submissionCount) || colors.length,
+        macroStructureFrozen: engine.macroStructureFrozen === true,
+        skippedColors
+      };
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+}
+
 function collectBlockHexes(blocks) {
   const hexes = [];
   const push = (value) => {
@@ -972,5 +1024,6 @@ module.exports = {
   orderedColorsFromBlocks,
   orderedReplayEvents,
   replaySequence,
-  replaySequenceWithCheckpoint
+  replaySequenceWithCheckpoint,
+  replaySequenceWithGenericCheckpoint
 };
