@@ -1826,6 +1826,105 @@ function buildServerQuiltWriteProvenance(reason, req, extra = {}) {
   };
 }
 
+const MIRROR_TUNE_DEFAULT_FLIP_X = true;
+const MIRROR_TUNE_DEFAULT_FLIP_Y = true;
+const MIRROR_TUNE_HISTORY_MAX = 80;
+
+function serverNormalizeMirrorFlipFlag(value, fallback) {
+  if (typeof value === 'boolean') return value;
+  if (value === 1 || value === '1' || value === 'true') return true;
+  if (value === 0 || value === '0' || value === 'false') return false;
+  return fallback;
+}
+
+function serverNormalizeMirrorSeamNudge(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-0.35, Math.min(0.35, n));
+}
+
+function serverMirrorTuneFromQuiltData(data) {
+  const d = data && typeof data === 'object' ? data : {};
+  return {
+    flipX: serverNormalizeMirrorFlipFlag(d.mirrorFlipX, MIRROR_TUNE_DEFAULT_FLIP_X),
+    flipY: serverNormalizeMirrorFlipFlag(d.mirrorFlipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
+    nudgeSeamY: serverNormalizeMirrorSeamNudge(d.mirrorSeamNudgeY)
+  };
+}
+
+function serverMirrorTuneModeLabel(flipX, flipY) {
+  if (!flipX && !flipY) return 'Duplicate';
+  if (!flipX && flipY) return 'Flip Y';
+  if (flipX && !flipY) return 'Flip X';
+  return 'Mirror';
+}
+
+function serverMirrorTuneIsCustomized(tune) {
+  const t = tune || {};
+  return (
+    t.flipX !== MIRROR_TUNE_DEFAULT_FLIP_X ||
+    t.flipY !== MIRROR_TUNE_DEFAULT_FLIP_Y ||
+    serverNormalizeMirrorSeamNudge(t.nudgeSeamY) !== 0
+  );
+}
+
+function serverMirrorTuneSnapshotsEqual(a, b) {
+  return (
+    a.flipX === b.flipX &&
+    a.flipY === b.flipY &&
+    serverNormalizeMirrorSeamNudge(a.nudgeSeamY) === serverNormalizeMirrorSeamNudge(b.nudgeSeamY)
+  );
+}
+
+function serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, extra = {}) {
+  const before = {
+    flipX: serverNormalizeMirrorFlipFlag(beforeTune?.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
+    flipY: serverNormalizeMirrorFlipFlag(beforeTune?.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
+    nudgeSeamY: serverNormalizeMirrorSeamNudge(beforeTune?.nudgeSeamY)
+  };
+  const after = {
+    flipX: serverNormalizeMirrorFlipFlag(afterTune?.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
+    flipY: serverNormalizeMirrorFlipFlag(afterTune?.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
+    nudgeSeamY: serverNormalizeMirrorSeamNudge(afterTune?.nudgeSeamY)
+  };
+  if (serverMirrorTuneSnapshotsEqual(before, after)) return null;
+  const at = String(extra.at || getUtcIsoNow()).trim();
+  const action =
+    String(extra.action || '').trim() ||
+    (serverMirrorTuneIsCustomized(after) ? 'save' : 'reset');
+  const entry = {
+    at,
+    action,
+    source: String(extra.source || 'admin-tune-modal').trim() || 'admin-tune-modal',
+    before: {
+      ...before,
+      mode: serverMirrorTuneModeLabel(before.flipX, before.flipY)
+    },
+    after: {
+      ...after,
+      mode: serverMirrorTuneModeLabel(after.flipX, after.flipY)
+    },
+    customizedAfter: serverMirrorTuneIsCustomized(after),
+    blockCount: Number.isFinite(extra.blockCount) ? Math.floor(extra.blockCount) : null
+  };
+  const provenance = buildServerQuiltWriteProvenance('push-quilt-mirror-tune', req, {
+    updatedBy: String(extra.updatedBy || 'admin-tune-modal').trim() || 'admin-tune-modal'
+  });
+  entry.ipHash = provenance.ipHash;
+  entry.userAgent = provenance.userAgent;
+  return entry;
+}
+
+function serverAppendMirrorTuneHistory(existingHistory, entry) {
+  if (!entry) return Array.isArray(existingHistory) ? existingHistory.slice(-MIRROR_TUNE_HISTORY_MAX) : [];
+  const history = Array.isArray(existingHistory) ? existingHistory.slice() : [];
+  history.push(entry);
+  if (history.length > MIRROR_TUNE_HISTORY_MAX) {
+    return history.slice(history.length - MIRROR_TUNE_HISTORY_MAX);
+  }
+  return history;
+}
+
 function serverNormalizeHexColor(value) {
   const match = String(value || '').trim().match(/^#?([0-9A-Fa-f]{6})$/);
   return match ? `#${match[1].toLowerCase()}` : '';
@@ -6141,18 +6240,48 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     const mirrorTuneUpdatedAt = String(
       body.mirrorTuneUpdatedAt || new Date().toISOString()
     ).trim();
+    const mirrorTuneUpdatedBy =
+      String(body.mirrorTuneUpdatedBy || 'admin-tune-modal').trim() || 'admin-tune-modal';
+    const docRef = db.collection('quilts').doc(dateKey);
+    const existingSnap = await docRef.get();
+    const existingData = existingSnap.exists ? existingSnap.data() || {} : {};
+    const beforeTune =
+      body.previous && typeof body.previous === 'object'
+        ? {
+            flipX: serverNormalizeMirrorFlipFlag(body.previous.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
+            flipY: serverNormalizeMirrorFlipFlag(body.previous.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
+            nudgeSeamY: serverNormalizeMirrorSeamNudge(body.previous.nudgeSeamY)
+          }
+        : serverMirrorTuneFromQuiltData(existingData);
+    const afterTune = { flipX, flipY, nudgeSeamY };
+    const blocks = Array.isArray(existingData.blocks) ? existingData.blocks : [];
+    const historyEntry = serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, {
+      at: mirrorTuneUpdatedAt,
+      action: body.action,
+      source: body.source,
+      updatedBy: mirrorTuneUpdatedBy,
+      blockCount: blocks.length
+    });
+    const mirrorTuneHistory = serverAppendMirrorTuneHistory(
+      existingData.mirrorTuneHistory,
+      historyEntry
+    );
     const patch = {
       mirrorFlipX: flipX,
       mirrorFlipY: flipY,
       mirrorSeamNudgeY: nudgeSeamY,
       mirrorSeamNudgeX: admin.firestore.FieldValue.delete(),
-      mirrorTuneUpdatedAt
+      mirrorTuneUpdatedAt,
+      mirrorTuneUpdatedBy
     };
-    await db.collection('quilts').doc(dateKey).set(patch, { merge: true });
+    if (historyEntry) {
+      patch.mirrorTuneHistory = mirrorTuneHistory;
+    }
+    await docRef.set(patch, { merge: true });
     const snap = await db.collection('quilts').doc(dateKey).get();
     const data = snap.exists ? snap.data() || {} : {};
     console.log(
-      `✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY}, nudgeY=${nudgeSeamY})`
+      `✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY}, nudgeY=${nudgeSeamY}, history=${historyEntry ? 'appended' : 'unchanged'})`
     );
     res.json({
       success: true,
@@ -6160,7 +6289,10 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       mirrorFlipX: data.mirrorFlipX === true,
       mirrorFlipY: data.mirrorFlipY === true,
       mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
-      mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt
+      mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt,
+      mirrorTuneUpdatedBy: data.mirrorTuneUpdatedBy || mirrorTuneUpdatedBy,
+      mirrorTuneHistoryCount: Array.isArray(data.mirrorTuneHistory) ? data.mirrorTuneHistory.length : 0,
+      mirrorTuneHistoryAppended: Boolean(historyEntry)
     });
   } catch (error) {
     console.error('❌ push-quilt-mirror-tune failed:', error);
