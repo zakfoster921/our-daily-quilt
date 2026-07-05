@@ -306,6 +306,12 @@ async function renderDate(db, dateKey) {
     initialSubmissionCount: snapshot?.submissionCount
   });
   const tweakInfo = tweak.checkpoint?.tweak || {};
+  const needNote = Number.isFinite(tweak.checkpoint?.need)
+    ? `need ${(tweak.checkpoint.need * 100).toFixed(0)}%`
+    : '';
+  const tweakLabel = tweakInfo.pattern === 'none'
+    ? `skip — ${tweakInfo.reason || 'no tweak'}`
+    : `${tweakInfo.pattern} on ${tweakInfo.pick || 'plain'} block · ${tweak.checkpoint?.adjustments || 0} applied`;
   const branchNote = tweak.branchFromSnapshot ? 'from live snapshot @ 20' : 'simulated replay';
 
   const panels = [
@@ -319,14 +325,14 @@ async function renderDate(db, dateKey) {
     {
       mode: 'baseline-tweak',
       label: `Inferred tweak @ ${tweak.decisionAt} — ${dateKey}`,
-      subtitle: `${tweakInfo.pattern || 'none'} on ${tweakInfo.pick || 'largest'} block · ${tweak.checkpoint?.adjustments || 0} applied · ${branchNote} · ${tweak.blocks.length} blocks · baseline after`,
+      subtitle: `${tweakLabel} · ${needNote} · ${branchNote} · ${tweak.blocks.length} blocks · baseline after`,
       blocks: tweak.blocks,
       submissionCount: tweak.submissionCount
     }
   ];
 
   console.log(
-    `[tweak-comparison] ${dateKey}: live ${day.liveBlocks.length} vs inferred ${tweakInfo.pattern} (${tweakInfo.reason || 'n/a'}) → ${tweak.blocks.length} blocks`
+    `[tweak-comparison] ${dateKey}: live ${day.liveBlocks.length} vs ${tweakInfo.pattern === 'none' ? 'skip' : tweakInfo.pattern} (${tweakInfo.reason || 'n/a'}${needNote ? `, ${needNote}` : ''}) → ${tweak.blocks.length} blocks`
   );
 
   const outDir = path.join(ROOT, 'tmp', 'tweak-comparison', dateKey);
@@ -347,6 +353,7 @@ async function renderDate(db, dateKey) {
     inferredPattern: tweakInfo.pattern || null,
     inferredPick: tweakInfo.pick || null,
     inferredReason: tweakInfo.reason || null,
+    compositionNeed: tweak.checkpoint?.need ?? null,
     tweakAdjustments: tweak.checkpoint?.adjustments || 0,
     contactSheet: path.relative(ROOT, contactPath)
   };

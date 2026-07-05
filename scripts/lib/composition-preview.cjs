@@ -345,6 +345,18 @@ function reconstructArchiveSnapshotAt(events, lockAt) {
   };
 }
 
+function blockIsPlain(block) {
+  if (!block) return false;
+  if (block.patternType !== 'special') return true;
+  return block.specialPatternType === 'diagonalAxis';
+}
+
+function blockAspect(block) {
+  const w = Number(block?.width) || 0;
+  const h = Number(block?.height) || 0;
+  return w && h ? Math.max(w, h) / Math.max(1, Math.min(w, h)) : 1;
+}
+
 function pickCheckpointCandidateBlocks(engine, limit = 2, pick = 'largest') {
   const minArea = 35000;
   let filtered = (Array.isArray(engine?.blocks) ? engine.blocks : [])
@@ -367,16 +379,22 @@ function pickCheckpointCandidateBlocks(engine, limit = 2, pick = 'largest') {
   const areaOf = (block) => (Number(block.width) || 0) * (Number(block.height) || 0);
 
   if (pick === 'widest') {
+    filtered = filtered.filter(blockIsPlain);
     filtered.sort(
       (a, b) =>
         (Number(b.width) || 0) - (Number(a.width) || 0) ||
         areaOf(b) - areaOf(a)
     );
-  } else if (pick === 'calm') {
-    filtered = filtered.filter((block) => block.patternType !== 'special');
+  } else if (pick === 'calm' || pick === 'plain') {
+    filtered = filtered.filter(blockIsPlain);
     filtered.sort((a, b) => areaOf(b) - areaOf(a));
   } else {
-    filtered.sort((a, b) => areaOf(b) - areaOf(a));
+    filtered.sort((a, b) => {
+      const aPlain = blockIsPlain(a) ? 1 : 0;
+      const bPlain = blockIsPlain(b) ? 1 : 0;
+      if (bPlain !== aPlain) return bPlain - aPlain;
+      return areaOf(b) - areaOf(a);
+    });
   }
 
   return filtered.slice(0, Math.max(1, limit));
@@ -417,6 +435,7 @@ function applyCheckpointPatternSteps(engine, steps, checkpointColors) {
   let adjustments = 0;
   for (let i = 0; i < steps.length; i += 1) {
     const step = steps[i];
+    if (!step || step.pattern === 'none') continue;
     const candidates = pickCheckpointCandidateBlocks(engine, 1, step.pick || 'largest');
     const block = candidates[i] || candidates[0];
     if (!block) continue;
@@ -434,48 +453,147 @@ function analyzeBlockLayout(engine) {
   const areas = blocks.map(areaOf);
   const totalArea = areas.reduce((sum, area) => sum + area, 0) || 1;
   const largestArea = areas.length ? Math.max(...areas) : 0;
-  const specialCount = blocks.filter((block) => block?.patternType === 'special').length;
+  const specialCount = blocks.filter(
+    (block) => block?.patternType === 'special' && block?.specialPatternType !== 'diagonalAxis'
+  ).length;
   const regularBlocks = blocks.filter(
     (block) => block && (block.patternType !== 'special' || block.specialPatternType === 'diagonalAxis')
   );
+  const plainBlocks = regularBlocks.filter(blockIsPlain);
+  const plainArea = plainBlocks.reduce((sum, block) => sum + areaOf(block), 0);
   const largestRegular = regularBlocks.slice().sort((a, b) => areaOf(b) - areaOf(a))[0] || null;
-  const w = Number(largestRegular?.width) || 0;
-  const h = Number(largestRegular?.height) || 0;
+  const widestPlain = plainBlocks.slice().sort((a, b) => (Number(b.width) || 0) - (Number(a.width) || 0))[0] || null;
+  const distinctPatternTypes = new Set(
+    blocks
+      .filter(
+        (block) =>
+          block?.patternType === 'special' &&
+          block?.specialPatternType &&
+          block.specialPatternType !== 'diagonalAxis'
+      )
+      .map((block) => block.specialPatternType)
+  );
   return {
     blockCount: blocks.length,
     largestAreaShare: largestArea / totalArea,
+    plainAreaShare: plainArea / totalArea,
     specialShare: specialCount / Math.max(1, blocks.length),
-    largestAspect: w && h ? Math.max(w, h) / Math.max(1, Math.min(w, h)) : 1
+    largestAspect: blockAspect(largestRegular),
+    widestAspect: blockAspect(widestPlain),
+    largestIsPlain: largestRegular ? blockIsPlain(largestRegular) : false,
+    distinctPatternCount: distinctPatternTypes.size,
+    plainBlockCount: plainBlocks.length
   };
 }
 
-function inferCheckpointTweak(colorMetrics, layoutMetrics) {
+function scoreCompositionNeed(colorMetrics, layoutMetrics) {
+  let need = 0.42;
+
+  if (layoutMetrics.plainAreaShare >= 0.35) need += 0.22;
+  if (layoutMetrics.largestAreaShare >= 0.28 && layoutMetrics.largestIsPlain) need += 0.12;
+  if (colorMetrics.diversity >= 0.75) need += 0.18;
+  if (colorMetrics.momentum <= 0.52 && colorMetrics.familyCount >= 3) need += 0.14;
+  if (colorMetrics.dominance >= 0.46 && colorMetrics.contrast < 0.38) need += 0.1;
+  if (colorMetrics.hueTravel >= 0.5 && colorMetrics.avgSaturation >= 0.58) need += 0.08;
+
+  if (layoutMetrics.specialShare >= 0.2) need -= 0.32;
+  if (layoutMetrics.distinctPatternCount >= 2) need -= 0.24;
+  if (layoutMetrics.blockCount >= 30 && layoutMetrics.specialShare >= 0.12) need -= 0.18;
+
+  return Math.max(0, Math.min(1, need));
+}
+
+function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
+  const need = scoreCompositionNeed(colorMetrics, layoutMetrics);
+  const skip = (reason) => ({ pattern: 'none', pick: null, reason, need });
+
+  if (need < 0.35) {
+    return skip('layout already composed — skip');
+  }
+
+  const plainCandidates = pickCheckpointCandidateBlocks(engine, 1, 'plain');
+  if (!plainCandidates.length) {
+    return skip('no eligible plain block — skip');
+  }
+
+  const busy = layoutMetrics.specialShare >= 0.25 || layoutMetrics.blockCount >= 28;
+  const widestAspect = layoutMetrics.widestAspect || 1;
+
   if (colorMetrics.diversity >= 0.75) {
-    return { pattern: 'checkerboard', pick: 'largest', reason: 'scattered palette — add a grid anchor' };
+    if (busy) {
+      return {
+        pattern: 'insetCircle',
+        pick: 'plain',
+        reason: 'scattered palette but busy layout — light focal on plain block',
+        need
+      };
+    }
+    return {
+      pattern: 'checkerboard',
+      pick: 'plain',
+      reason: 'scattered palette — grid anchor on plain block',
+      need
+    };
   }
+
   if (colorMetrics.momentum <= 0.52 && colorMetrics.familyCount >= 3) {
-    return { pattern: 'stripes', pick: 'widest', reason: 'color runs — reinforce horizontal bands' };
+    if (widestAspect >= 1.4) {
+      return {
+        pattern: 'stripes',
+        pick: 'widest',
+        reason: 'color runs — stripes on wide plain block',
+        need
+      };
+    }
+    return {
+      pattern: 'framed',
+      pick: 'plain',
+      reason: 'color runs but no wide block — frame on plain block',
+      need
+    };
   }
+
   if (colorMetrics.dominance >= 0.46 && colorMetrics.contrast < 0.38) {
-    return { pattern: 'framed', pick: 'calm', reason: 'dominant calm field — gentle frame' };
+    return {
+      pattern: 'framed',
+      pick: 'plain',
+      reason: 'dominant calm field — gentle frame on plain block',
+      need
+    };
   }
+
   if (colorMetrics.hueTravel >= 0.5 && colorMetrics.avgSaturation >= 0.58) {
-    return { pattern: 'insetCircle', pick: 'largest', reason: 'traveling saturated hues — one focal point' };
+    return {
+      pattern: 'insetCircle',
+      pick: 'plain',
+      reason: 'traveling saturated hues — focal on plain block',
+      need
+    };
   }
-  if (layoutMetrics.specialShare >= 0.25 || layoutMetrics.blockCount >= 28) {
-    return { pattern: 'insetCircle', pick: 'calm', reason: 'layout already busy — light focal tweak' };
+
+  if (busy) {
+    return skip('layout already busy — skip');
   }
-  return { pattern: 'insetCircle', pick: 'largest', reason: 'balanced day — subtle focal tweak' };
+
+  return {
+    pattern: 'insetCircle',
+    pick: 'plain',
+    reason: 'balanced day — subtle focal on plain block',
+    need
+  };
 }
 
 function applyInferredCheckpointTweak(engine, checkpointColors) {
   const colorMetrics = analyzeColors(checkpointColors);
   const layoutMetrics = analyzeBlockLayout(engine);
-  const tweak = inferCheckpointTweak(colorMetrics, layoutMetrics);
-  const adjustments = applyCheckpointPatternSteps(engine, [tweak], checkpointColors);
+  const tweak = inferCheckpointTweak(colorMetrics, layoutMetrics, engine);
+  const adjustments = tweak.pattern === 'none'
+    ? 0
+    : applyCheckpointPatternSteps(engine, [tweak], checkpointColors);
   return {
     adjustments,
     tweak,
+    need: tweak.need,
     colorMetrics,
     layoutMetrics
   };
