@@ -110,25 +110,9 @@ function chooseColorSource(data) {
   };
 }
 
-function inferBalancedMode(metrics) {
-  if (metrics.count < 8) return 'baseline';
-  if (metrics.momentum <= 0.52 && metrics.familyCount >= 3) return 'strata';
-  if (metrics.dominance >= 0.46 && metrics.contrast < 0.38) return 'field';
-  if (
-    metrics.dominance >= 0.36 &&
-    metrics.diversity < 0.64 &&
-    metrics.familyCount >= 2 &&
-    metrics.momentum < 0.86
-  ) return 'garden';
-  if (metrics.diversity >= 0.78) return 'mosaic';
-  if (metrics.hueTravel >= 0.5 && metrics.avgSaturation >= 0.58) return 'constellation';
-  if (metrics.momentum >= 0.86 && metrics.familyCount <= 5 && metrics.warmth >= 0.25 && metrics.warmth <= 0.75) return 'tide';
-  return 'window';
-}
-
-function countModes(rows, key) {
+function countModes(rows) {
   return rows.reduce((acc, row) => {
-    const mode = row[key] || 'unknown';
+    const mode = row.mode || 'unknown';
     acc[mode] = (acc[mode] || 0) + 1;
     return acc;
   }, {});
@@ -144,7 +128,7 @@ function sortedCounts(counts) {
 }
 
 function modeTable(counts) {
-  const modes = ['window', 'constellation', 'mosaic', 'field', 'garden', 'strata', 'tide', 'baseline', 'no-quilt'];
+  const modes = ['mosaic', 'strata', 'vein', 'constellation', 'field', 'garden', 'tide', 'window', 'baseline', 'no-quilt'];
   return modes
     .filter((mode) => counts[mode])
     .map((mode) => `| ${mode} | ${counts[mode]} |`)
@@ -152,10 +136,9 @@ function modeTable(counts) {
 }
 
 function markdownReport(summary) {
-  const currentTable = modeTable(summary.currentCounts);
-  const balancedTable = modeTable(summary.balancedCounts);
+  const modeCountsTable = modeTable(summary.modeCounts);
   const rows = summary.rows.map((row) => (
-    `| ${row.dateKey} | ${row.currentMode} | ${row.balancedMode} | ${row.colorCount} | ${row.source} | ${row.dominantFamily} | ${row.diversity} | ${row.momentum} | ${row.hueTravel} | ${row.avgSaturation} |`
+    `| ${row.dateKey} | ${row.mode} | ${row.colorCount} | ${row.source} | ${row.dominantFamily} | ${row.diversity} | ${row.momentum} | ${row.hueTravel} | ${row.avgSaturation} |`
   )).join('\n');
   return `# Composition Mode Evaluation
 
@@ -163,30 +146,21 @@ Range: ${summary.dateRange.start} to ${summary.dateRange.end} (${summary.dateRan
 
 Lock point: first ${summary.lockAt} colors
 
-## Current Rules
+## Mode Distribution
 
 | Mode | Days |
 | --- | ---: |
-${currentTable}
-
-## Balanced Candidate
-
-This is only a tuning comparison. It does not change production/admin preview rules.
-
-| Mode | Days |
-| --- | ---: |
-${balancedTable}
+${modeCountsTable}
 
 ## Notes
 
-- Current rules are skewed if \`window\` dominates and some named modes never appear.
-- The balanced candidate makes \`tide\`, \`strata\`, and \`garden\` easier to trigger, then leaves \`window\` as a true fallback.
+- Modes are inferred from submission *behavior* (momentum, diversity, dominance) after the lock point, not aggregate HSV stats.
 - Days using \`storedBlocks\` are based on stored block submission order because replay events are incomplete.
 
 ## Per-Day Detail
 
-| Date | Current | Balanced | Colors | Source | Dominant | Diversity | Momentum | Hue Travel | Avg Saturation |
-| --- | --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: |
+| Date | Mode | Colors | Source | Dominant | Diversity | Momentum | Hue Travel | Avg Saturation |
+| --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: |
 ${rows}
 `;
 }
@@ -201,8 +175,7 @@ async function main() {
     if (!snap.exists) {
       rows.push({
         dateKey,
-        currentMode: 'no-quilt',
-        balancedMode: 'no-quilt',
+        mode: 'no-quilt',
         colorCount: 0,
         source: 'none',
         dominantFamily: '',
@@ -217,12 +190,10 @@ async function main() {
     const sourceInfo = chooseColorSource(data);
     const lockColors = sourceInfo.colors.slice(0, Math.min(LOCK_AT, sourceInfo.colors.length));
     const metrics = analyzeColors(lockColors);
-    const currentMode = sourceInfo.colors.length < 8 ? 'baseline' : inferMode(metrics);
-    const balancedMode = inferBalancedMode(metrics);
+    const mode = sourceInfo.colors.length < 8 ? 'baseline' : inferMode(metrics);
     rows.push({
       dateKey,
-      currentMode,
-      balancedMode,
+      mode,
       colorCount: sourceInfo.colors.length,
       source: sourceInfo.source,
       replayColorCount: sourceInfo.replayColorCount,
@@ -244,8 +215,7 @@ async function main() {
   const summary = {
     dateRange: { start: dates[0], end: dates[dates.length - 1], days: dates.length },
     lockAt: LOCK_AT,
-    currentCounts: sortedCounts(countModes(rows, 'currentMode')),
-    balancedCounts: sortedCounts(countModes(rows, 'balancedMode')),
+    modeCounts: sortedCounts(countModes(rows)),
     rows
   };
 
@@ -255,8 +225,7 @@ async function main() {
 
   console.log(JSON.stringify({
     dateRange: summary.dateRange,
-    currentCounts: summary.currentCounts,
-    balancedCounts: summary.balancedCounts,
+    modeCounts: summary.modeCounts,
     output: {
       json: path.relative(ROOT, path.join(OUT_DIR, 'summary.json')),
       markdown: path.relative(ROOT, path.join(OUT_DIR, 'summary.md'))

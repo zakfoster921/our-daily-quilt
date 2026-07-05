@@ -9,20 +9,86 @@ const MODE_CONFIG = {
     label: 'Baseline',
     description: 'Current engine growth'
   },
+  mosaic: {
+    label: 'Mosaic',
+    description: 'Many families — patchwork grid and frequent accents',
+    specials: 1.7,
+    accentBias: 1.25,
+    forceOversizedEvery: 2,
+    patternPreference: ['checkerboard', 'cross', 'hst', 'railfence', 'stripes']
+  },
+  strata: {
+    label: 'Strata',
+    description: 'Family runs — horizontal banded layers',
+    specials: 1.15,
+    axis: 'horizontal',
+    patternPreference: ['stripes', 'railfence', 'hst']
+  },
+  vein: {
+    label: 'Vein',
+    description: 'Dominant mood with rare contrasting veins',
+    specials: 0.9,
+    accentBias: 1.9,
+    outlierAccent: true,
+    patternPreference: ['stripes', 'hst', 'railfence']
+  },
+  constellation: {
+    label: 'Constellation',
+    description: 'Traveling hues — small saturated focal points',
+    specials: 1.2,
+    saturatedAccent: true,
+    forceOversizedEvery: 3,
+    largeBlockPenalty: 0.45,
+    patternPreference: ['insetCircle', 'cross', 'hst', 'checkerboard']
+  },
+  field: {
+    label: 'Field',
+    description: 'One family owns the day — wide calm planes',
+    specials: 0.32,
+    accentBias: 0.4,
+    neverForceOversized: true,
+    largeBlockPenalty: 0.25,
+    patternPreference: ['framed', 'insetCircle', 'hst']
+  },
+  garden: {
+    label: 'Garden',
+    description: 'Related families cluster into soft organic beds',
+    specials: 1.05,
+    colorRoute: 'family',
+    dominantCluster: true,
+    patternPreference: ['insetCircle', 'framed', 'stripes', 'hst']
+  },
+  tide: {
+    label: 'Tide',
+    description: 'Warm and cool trade places — directional flow',
+    specials: 1.05,
+    colorRoute: 'temperature',
+    alternatingAxis: true,
+    patternPreference: ['stripes', 'railfence', 'framed', 'hst']
+  },
+  window: {
+    label: 'Window',
+    description: 'Gentle fallback — a few large calm regions',
+    specials: 0.38,
+    largeBlockPenalty: 0.65,
+    neverForceOversized: true,
+    patternPreference: ['framed', 'insetCircle', 'hst']
+  },
+  // Manual override only — not used by inferMode
   vivid: {
     label: 'Vivid',
     description: 'All saturated, punchy colors rendered bold',
     specials: 1.6,
     accentBias: 2.0,
     saturatedAccent: true,
-    patternPreference: ['checkerboard', 'cross', 'hst']
+    patternPreference: ['cross', 'checkerboard', 'hst']
   },
   monochromatic: {
     label: 'Monochromatic',
     description: 'One hue with variations in saturation and value',
     specials: 0.8,
     colorRoute: 'value',
-    patternPreference: ['stripes', 'hst', 'framed']
+    patternPreference: ['hst', 'stripes', 'framed']
   },
   bright: {
     label: 'Bright',
@@ -37,37 +103,7 @@ const MODE_CONFIG = {
     description: 'Colors jump across the hue wheel with high variety',
     specials: 1.4,
     accentBias: 1.2,
-    patternPreference: ['cross', 'railfence', 'hst']
-  },
-  mosaic: {
-    label: 'Mosaic',
-    description: 'More small-block variety and pattern churn',
-    specials: 1.7,
-    accentBias: 1.25,
-    forceOversizedEvery: 2,
-    patternPreference: ['checkerboard', 'hst', 'cross', 'railfence', 'stripes']
-  },
-  strata: {
-    label: 'Strata',
-    description: 'Band-like splits and stripe preference',
-    specials: 1.15,
-    axis: 'horizontal',
-    patternPreference: ['stripes', 'railfence', 'hst']
-  },
-  vein: {
-    label: 'Vein',
-    description: 'Dominant color with rare outliers as thin interruptions',
-    specials: 1.1,
-    accentBias: 2.2,
-    outlierAccent: true,
-    patternPreference: ['stripes', 'railfence', 'hst']
-  },
-  window: {
-    label: 'Window',
-    description: 'Calm, default rendering',
-    specials: 0.5,
-    largeBlockPenalty: 0.55,
-    patternPreference: ['framed', 'insetCircle', 'hst']
+    patternPreference: ['checkerboard', 'hst', 'cross']
   }
 };
 
@@ -222,16 +258,24 @@ function analyzeColors(colors) {
 
 function inferMode(metrics) {
   if (metrics.count < 8) return 'baseline';
-  if (metrics.momentum <= 0.52 && metrics.familyCount >= 3) return 'strata';
   if (metrics.diversity >= 0.78) return 'mosaic';
-  // HSV-based modes
-  if (metrics.avgSaturation > 0.65) return 'vivid';
-  if (metrics.avgSaturation < 0.4) return 'muted';
-  if (metrics.hueRange < 30 && metrics.avgValue > 0.15) return 'monochromatic';
-  if (metrics.avgValue < 0.4) return 'dark';
-  if (metrics.avgValue > 0.7) return 'bright';
-  if (metrics.hueRange > 150) return 'chromatic';
+  if (metrics.momentum <= 0.52 && metrics.familyCount >= 3) return 'strata';
   if (metrics.dominance >= 0.5 && metrics.familyCount >= 2 && metrics.hueTravel >= 0.4) return 'vein';
+  if (metrics.hueTravel >= 0.5 && metrics.avgSaturation >= 0.58 && metrics.diversity >= 0.5) return 'constellation';
+  if (metrics.dominance >= 0.46 && metrics.contrast < 0.38) return 'field';
+  if (
+    metrics.dominance >= 0.36 &&
+    metrics.diversity < 0.64 &&
+    metrics.familyCount >= 2 &&
+    metrics.momentum < 0.86
+  ) return 'garden';
+  if (
+    metrics.momentum >= 0.86 &&
+    metrics.familyCount >= 3 &&
+    metrics.familyCount <= 6 &&
+    metrics.warmth >= 0.2 &&
+    metrics.warmth <= 0.8
+  ) return 'tide';
   return 'window';
 }
 
@@ -299,7 +343,7 @@ function installModeBiases(engine, modeKey) {
   const originalForceOversized = engine._shouldForceOversizedSplit?.bind(engine);
   const originalRouteMacro = engine._routeSplittableBlocksByMacroColor?.bind(engine);
   const originalFilterMacro = engine._filterMacroCandidatesByColorOrValue?.bind(engine);
-  const modeDominantFamily = config.dominantCluster
+  const modeDominantFamily = (config.dominantCluster || config.outlierAccent)
     ? (() => {
         const counts = new Map();
         for (const block of Array.isArray(engine.blocks) ? engine.blocks : []) {
@@ -340,20 +384,22 @@ function installModeBiases(engine, modeKey) {
     };
   }
 
-  if (originalForceOversized && config.forceOversizedEvery) {
+  if (config.neverForceOversized && originalForceOversized) {
+    engine._shouldForceOversizedSplit = () => false;
+  } else if (originalForceOversized && config.forceOversizedEvery) {
     engine._shouldForceOversizedSplit = () => {
       const every = Math.max(1, Math.floor(Number(config.forceOversizedEvery) || 1));
       return (Number(engine.submissionCount) || 0) % every === 0 || originalForceOversized();
     };
   }
 
-  if (config.colorRoute && originalRouteMacro) {
+  if ((config.colorRoute || config.outlierAccent) && originalRouteMacro) {
     engine._routeSplittableBlocksByMacroColor = (newColor, candidateBlocks) => {
-      const routed = originalRouteMacro(newColor, candidateBlocks);
+      let routed = originalRouteMacro(newColor, candidateBlocks);
       if (!Array.isArray(routed) || routed.length <= 1) return routed;
       if (config.colorRoute === 'family') {
         const fam = colorFamily(newColor);
-        return [...routed].sort((a, b) => {
+        routed = [...routed].sort((a, b) => {
           const sameA = colorFamily(a?.color) === fam ? 1 : 0;
           const sameB = colorFamily(b?.color) === fam ? 1 : 0;
           if (sameA !== sameB) return sameB - sameA;
@@ -364,14 +410,28 @@ function installModeBiases(engine, modeKey) {
           }
           return (Number(b?.width) || 0) * (Number(b?.height) || 0) - (Number(a?.width) || 0) * (Number(a?.height) || 0);
         });
-      }
-      if (config.colorRoute === 'temperature') {
+      } else if (config.colorRoute === 'temperature') {
         const warm = isWarmFamily(colorFamily(newColor));
-        return [...routed].sort((a, b) => {
+        routed = [...routed].sort((a, b) => {
           const matchA = isWarmFamily(colorFamily(a?.color)) === warm ? 1 : 0;
           const matchB = isWarmFamily(colorFamily(b?.color)) === warm ? 1 : 0;
           if (matchA !== matchB) return matchB - matchA;
           return hueDistance(a?.color, newColor) - hueDistance(b?.color, newColor);
+        });
+      } else if (config.colorRoute === 'value') {
+        const newLightness = hexToHsl(newColor).l;
+        routed = [...routed].sort((a, b) => {
+          const la = hexToHsl(a?.color || '#808080').l;
+          const lb = hexToHsl(b?.color || '#808080').l;
+          return Math.abs(la - newLightness) - Math.abs(lb - newLightness);
+        });
+      }
+      if (config.outlierAccent && modeDominantFamily) {
+        const isOutlier = colorFamily(newColor) !== modeDominantFamily;
+        routed = [...routed].sort((a, b) => {
+          const areaA = (Number(a?.width) || 0) * (Number(a?.height) || 0);
+          const areaB = (Number(b?.width) || 0) * (Number(b?.height) || 0);
+          return isOutlier ? areaA - areaB : areaB - areaA;
         });
       }
       return routed;
@@ -386,6 +446,17 @@ function installModeBiases(engine, modeKey) {
       const cutoff = areas[Math.max(0, Math.floor(areas.length * Number(config.largeBlockPenalty)) - 1)] || Infinity;
       const smaller = filtered.filter((b) => (Number(b?.width) || 0) * (Number(b?.height) || 0) <= cutoff);
       return smaller.length >= 2 ? smaller : filtered;
+    };
+  }
+
+  if (config.axis || config.alternatingAxis) {
+    engine._compositionSplitDirection = (block) => {
+      if (config.alternatingAxis) {
+        return (Number(engine.submissionCount) || 0) % 2 === 0 ? 'horizontal' : 'vertical';
+      }
+      if (config.axis === 'horizontal' || config.axis === 'vertical') return config.axis;
+      const isWider = (Number(block?.width) || 0) > (Number(block?.height) || 0);
+      return isWider ? 'vertical' : 'horizontal';
     };
   }
 }
@@ -743,5 +814,8 @@ module.exports = {
   inferMode,
   buildCompositionPreviewFromQuiltData,
   reconstructArchiveSnapshotAt,
-  missingSubmissionIndices
+  missingSubmissionIndices,
+  orderedColorsFromBlocks,
+  orderedReplayEvents,
+  replaySequence
 };
