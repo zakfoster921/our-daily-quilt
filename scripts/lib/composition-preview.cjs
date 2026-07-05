@@ -473,6 +473,18 @@ function analyzeBlockLayout(engine) {
       )
       .map((block) => block.specialPatternType)
   );
+  const specialBlocks = blocks.filter(
+    (block) => block?.patternType === 'special' && block?.specialPatternType !== 'diagonalAxis'
+  );
+  const avgSpecialArea = specialBlocks.length
+    ? specialBlocks.reduce((sum, block) => sum + areaOf(block), 0) / specialBlocks.length
+    : 0;
+  const avgPlainArea = plainBlocks.length ? plainArea / plainBlocks.length : 0;
+  const fragmentedPatchwork =
+    specialBlocks.length > 0 &&
+    plainBlocks.length > 0 &&
+    specialCount / Math.max(1, blocks.length) >= 0.45 &&
+    avgSpecialArea < avgPlainArea * 0.4;
   return {
     blockCount: blocks.length,
     largestAreaShare: largestArea / totalArea,
@@ -482,7 +494,10 @@ function analyzeBlockLayout(engine) {
     widestAspect: blockAspect(widestPlain),
     largestIsPlain: largestRegular ? blockIsPlain(largestRegular) : false,
     distinctPatternCount: distinctPatternTypes.size,
-    plainBlockCount: plainBlocks.length
+    plainBlockCount: plainBlocks.length,
+    fragmentedPatchwork,
+    avgSpecialArea,
+    avgPlainArea
   };
 }
 
@@ -507,11 +522,27 @@ function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
   const need = scoreCompositionNeed(colorMetrics, layoutMetrics);
   const skip = (reason) => ({ pattern: 'none', pick: null, reason, need });
 
+  const plainCandidates = pickCheckpointCandidateBlocks(engine, 1, 'plain');
+
+  // Many tiny pattern cells + large plain fields = patchwork needs a grid anchor, not "done".
+  if (
+    colorMetrics.diversity >= 0.75 &&
+    layoutMetrics.fragmentedPatchwork &&
+    plainCandidates.length &&
+    layoutMetrics.plainAreaShare >= 0.35
+  ) {
+    return {
+      pattern: 'checkerboard',
+      pick: 'plain',
+      reason: 'scattered palette on fragmented patchwork — grid anchor on plain block',
+      need: Math.max(need, 0.55)
+    };
+  }
+
   if (need < 0.35) {
     return skip('layout already composed — skip');
   }
 
-  const plainCandidates = pickCheckpointCandidateBlocks(engine, 1, 'plain');
   if (!plainCandidates.length) {
     return skip('no eligible plain block — skip');
   }
