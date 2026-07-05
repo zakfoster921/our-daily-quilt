@@ -7,7 +7,7 @@
  *   DATE_KEYS=2026-04-25,2026-06-10,2026-06-16 npm run mirror:compare
  *
  * Output:
- *   tmp/mirror-seam-compare/<dateKey>/primary.png, quilt-screen.png, contact-sheet.png
+ *   tmp/mirror-seam-compare/<dateKey>/primary.png, duplicate.png, quilt-screen.png, contact-sheet.png
  *   tmp/mirror-seam-compare/contact-sheet.png (all dates)
  */
 const fs = require('fs');
@@ -94,7 +94,7 @@ function mirrorMeta(blocks, dateKey, QuiltMirrorLayout) {
   };
 }
 
-function startStaticServer(primaryOnly) {
+function startStaticServer(mode) {
   const STATIC_MIME = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
@@ -124,14 +124,23 @@ function startStaticServer(primaryOnly) {
     res.writeHead(200, { 'Content-Type': STATIC_MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     fs.createReadStream(filePath).pipe(res);
   });
-  const query = primaryOnly ? '?compositionTester=1&primaryOnly=1' : '?compositionTester=1';
+  const params = new URLSearchParams({ compositionTester: '1' });
+  if (mode === 'primary') params.set('primaryOnly', '1');
+  else if (mode === 'duplicate') params.set('duplicateNoMirror', '1');
+  const query = `?${params.toString()}`;
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
-      resolve({ server, url: `http://127.0.0.1:${address.port}/our-daily-beta${query}` });
+      resolve({ server, url: `http://127.0.0.1:${address.port}/our-daily-beta${query}`, mode });
     });
   });
+}
+
+function panelUrlForMode(servers, panel) {
+  if (panel.expectPrimaryOnly) return servers.primary.url;
+  if (panel.expectDuplicate) return servers.duplicate.url;
+  return servers.screen.url;
 }
 
 function esc(value) {
@@ -196,7 +205,24 @@ async function renderPanel(page, panel, dateKey) {
     await page.waitForFunction(
       () => {
         const svg = document.getElementById('quilt');
-        return !!svg?.querySelector('#quiltMirroredFieldLayer') && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+        const layer = svg?.querySelector('#quiltMirroredFieldLayer');
+        const transform = layer?.getAttribute('transform') || '';
+        return !!layer
+          && transform.includes('scale(-1 -1)')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } else if (panel.expectDuplicate) {
+    await page.waitForFunction(
+      () => {
+        const svg = document.getElementById('quilt');
+        const layer = svg?.querySelector('#quiltMirroredFieldLayer[data-duplicate-no-mirror="1"]');
+        const transform = layer?.getAttribute('transform') || '';
+        return !!layer
+          && !transform.includes('scale(-1')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
       },
       undefined,
       { timeout: 60000 }
@@ -224,8 +250,11 @@ async function renderPanel(page, panel, dateKey) {
 }
 
 async function renderPanelsWithRealQuiltRenderer(panels, dateKey) {
-  const { server: primaryServer, url: primaryUrl } = await startStaticServer(true);
-  const { server: screenServer, url: screenUrl } = await startStaticServer(false);
+  const servers = {
+    primary: await startStaticServer('primary'),
+    duplicate: await startStaticServer('duplicate'),
+    screen: await startStaticServer('screen')
+  };
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({
@@ -281,7 +310,7 @@ async function renderPanelsWithRealQuiltRenderer(panels, dateKey) {
 
     const out = [];
     for (const panel of panels) {
-      const url = panel.expectPrimaryOnly ? primaryUrl : screenUrl;
+      const url = panelUrlForMode(servers, panel);
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
       await page.waitForFunction(
         () => !!window.app?.renderer && !!window.app?.quiltEngine && !!document.getElementById('quilt'),
@@ -303,8 +332,7 @@ async function renderPanelsWithRealQuiltRenderer(panels, dateKey) {
     return out;
   } finally {
     await browser.close().catch(() => {});
-    await new Promise((resolve) => primaryServer.close(resolve));
-    await new Promise((resolve) => screenServer.close(resolve));
+    await Promise.all(Object.values(servers).map(({ server }) => new Promise((resolve) => server.close(resolve))));
   }
 }
 
@@ -348,6 +376,15 @@ async function writeContactSheet(panelImages, contactPath, cols = 2) {
     .toFile(contactPath);
 }
 
+function formatDuplicateSubtitle(meta, blockCount) {
+  if (!meta) return `${blockCount} blocks · stacked copy · same seam band · no flip`;
+  const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
+  const seam = Number.isFinite(meta.seamFraction)
+    ? `seam @ ${(meta.seamFraction * 100).toFixed(0)}% viewport`
+    : '';
+  return [ `${blockCount} blocks`, 'stacked copy', 'no flip', overlap, seam ].filter(Boolean).join(' · ');
+}
+
 function formatMirrorSubtitle(meta, blockCount, contributorCount) {
   if (!meta) return `${blockCount} blocks · ${contributorCount || blockCount} contributors`;
   const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
@@ -355,7 +392,7 @@ function formatMirrorSubtitle(meta, blockCount, contributorCount) {
     ? `seam @ ${(meta.seamFraction * 100).toFixed(0)}% viewport`
     : '';
   const cap = meta.shapeCapped ? 'shape-capped' : '';
-  return [ `${blockCount} blocks`, overlap, seam, cap ].filter(Boolean).join(' · ');
+  return [ `${blockCount} blocks`, 'mirrored', overlap, seam, cap ].filter(Boolean).join(' · ');
 }
 
 async function renderDate(db, dateKey, QuiltMirrorLayout) {
@@ -370,6 +407,17 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     blocks: day.blocks,
     submissionCount: day.submissionCount,
     expectPrimaryOnly: true,
+    expectDuplicate: false,
+    expectMirror: false
+  };
+  const duplicatePanel = {
+    mode: 'duplicate',
+    label: `Duplicate — ${dateKey}`,
+    subtitle: formatDuplicateSubtitle(meta, day.blocks.length),
+    blocks: day.blocks,
+    submissionCount: day.submissionCount,
+    expectPrimaryOnly: false,
+    expectDuplicate: true,
     expectMirror: false
   };
   const screenPanel = {
@@ -379,6 +427,7 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     blocks: day.blocks,
     submissionCount: day.submissionCount,
     expectPrimaryOnly: false,
+    expectDuplicate: false,
     expectMirror: true
   };
 
@@ -387,7 +436,10 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
   const outDir = path.join(ROOT, 'tmp', 'mirror-seam-compare', dateKey);
   fs.mkdirSync(outDir, { recursive: true });
 
-  const panelImages = await renderPanelsWithRealQuiltRenderer([primaryPanel, screenPanel], dateKey);
+  const panelImages = await renderPanelsWithRealQuiltRenderer(
+    [primaryPanel, duplicatePanel, screenPanel],
+    dateKey
+  );
 
   for (const panel of panelImages) {
     const pngPath = path.join(outDir, `${panel.mode}.png`);
@@ -396,7 +448,7 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
   }
 
   const contactPath = path.join(outDir, 'contact-sheet.png');
-  await writeContactSheet(panelImages, contactPath, 2);
+  await writeContactSheet(panelImages, contactPath, 3);
   console.log(`[mirror-compare] wrote ${contactPath}`);
 
   const summary = {
@@ -406,6 +458,7 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     mirror: meta,
     outputs: {
       primary: path.relative(ROOT, path.join(outDir, 'primary.png')),
+      duplicate: path.relative(ROOT, path.join(outDir, 'duplicate.png')),
       quiltScreen: path.relative(ROOT, path.join(outDir, 'quilt-screen.png')),
       contactSheet: path.relative(ROOT, contactPath)
     }
@@ -438,7 +491,7 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
   if (allPanels.length >= 2) {
     const masterPath = path.join(outDir, 'contact-sheet.png');
-    await writeContactSheet(allPanels, masterPath, 2);
+    await writeContactSheet(allPanels, masterPath, 3);
     console.log(`[mirror-compare] wrote ${masterPath}`);
   }
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summaries, null, 2)}\n`);
