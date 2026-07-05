@@ -1,5 +1,23 @@
 const { createServerQuiltEngine, serializeServerQuiltBlocks } = require('./server-quilt-engine.cjs');
 
+function getModeDecisionAt() {
+  const raw = Number(process.env.MODE_DECISION_AT) || Number(process.env.BIAS_LOCK_AT) || 20;
+  return Math.max(8, Math.floor(raw));
+}
+
+const MODE_DECISION_AT = getModeDecisionAt();
+
+/** One or two in-place pattern injections at the color-20 checkpoint (no new submission). */
+const CHECKPOINT_PATTERNS = {
+  mosaic: [{ pattern: 'checkerboard' }, { pattern: 'checkerboard' }],
+  strata: [{ pattern: 'stripes' }],
+  vein: [{ pattern: 'stripes' }],
+  constellation: [{ pattern: 'insetCircle' }],
+  field: [{ pattern: 'framed' }],
+  garden: [{ pattern: 'insetCircle' }],
+  tide: [{ pattern: 'stripes' }]
+};
+
 const MODE_CONFIG = {
   actual: {
     label: 'Actual',
@@ -249,7 +267,7 @@ function analyzeColors(colors) {
 }
 
 function inferMode(metrics) {
-  if (metrics.count < 8) return 'baseline';
+  if (metrics.count < MODE_DECISION_AT) return 'baseline';
   if (metrics.diversity >= 0.78) return 'mosaic';
   if (metrics.momentum <= 0.52 && metrics.familyCount >= 3) return 'strata';
   if (metrics.dominance >= 0.5 && metrics.familyCount >= 2 && metrics.hueTravel >= 0.4) return 'vein';
@@ -325,6 +343,86 @@ function reconstructArchiveSnapshotAt(events, lockAt) {
     blocks,
     submissionCount: Math.max(0, Math.floor(Number(usableEvents[usableEvents.length - 1]?.seq) || lockAt))
   };
+}
+
+function pickCheckpointCandidateBlocks(engine, limit = 2) {
+  const minArea = 35000;
+  return (Array.isArray(engine?.blocks) ? engine.blocks : [])
+    .filter((block) => {
+      if (!block || (Number(block.width) || 0) <= 0 || (Number(block.height) || 0) <= 0) return false;
+      if (block.patternType === 'special' && block.specialPatternType !== 'diagonalAxis') return false;
+      if (typeof engine._isProtectedAnchorBlock === 'function' && engine._isProtectedAnchorBlock(block)) return false;
+      const area = (Number(block.width) || 0) * (Number(block.height) || 0);
+      if (area < minArea) return false;
+      if (
+        typeof engine._isBlockSafelySplittableForFrozenMacro === 'function' &&
+        !engine._isBlockSafelySplittableForFrozenMacro(block)
+      ) return false;
+      if (typeof engine.getAvailablePatterns === 'function') {
+        return engine.getAvailablePatterns(block, '#808080').length > 0;
+      }
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        (Number(b.width) || 0) * (Number(b.height) || 0) -
+        (Number(a.width) || 0) * (Number(a.height) || 0)
+    )
+    .slice(0, Math.max(1, limit));
+}
+
+function createCheckpointPattern(engine, block, patternType, accentColor) {
+  if (!engine || !block) return null;
+  switch (patternType) {
+    case 'checkerboard':
+      return engine.createOrganicCheckerboard(block, accentColor);
+    case 'stripes':
+      return engine.createOrganicStripes(block, accentColor);
+    case 'insetCircle':
+      return engine.createInsetCircle(block, accentColor);
+    case 'framed':
+      return engine.createFramedPattern(block, accentColor);
+    case 'hst':
+      return engine.createHalfSquareTriangle(block, accentColor);
+    default:
+      return null;
+  }
+}
+
+function replaceBlockInEngine(engine, blockId, children) {
+  if (!Array.isArray(children) || !children.length) return false;
+  const index = engine.blocks.findIndex((block) => String(block?.id) === String(blockId));
+  if (index === -1) return false;
+  engine.blocks.splice(index, 1, ...children);
+  return true;
+}
+
+function applySurgicalCheckpointAdjustments(engine, modeKey, checkpointColors) {
+  if (!engine || modeKey === 'baseline' || modeKey === 'window') return 0;
+  const steps = CHECKPOINT_PATTERNS[modeKey] || [];
+  if (!steps.length) return 0;
+  const candidates = pickCheckpointCandidateBlocks(engine, steps.length);
+  const accent =
+    normalizeHex(checkpointColors[checkpointColors.length - 1]) ||
+    normalizeHex(checkpointColors[0]) ||
+    '#808080';
+  let adjustments = 0;
+  for (let i = 0; i < steps.length && i < candidates.length; i += 1) {
+    const block = candidates[i];
+    const children = createCheckpointPattern(engine, block, steps[i].pattern, accent);
+    if (Array.isArray(children) && children.length && replaceBlockInEngine(engine, block.id, children)) {
+      adjustments += 1;
+    }
+  }
+  return adjustments;
+}
+
+function applyModeCheckpoint(engine, modeKey, checkpointColors) {
+  const adjustments = applySurgicalCheckpointAdjustments(engine, modeKey, checkpointColors);
+  if (modeKey !== 'baseline' && modeKey !== 'window') {
+    installModeBiases(engine, modeKey);
+  }
+  return { mode: modeKey, adjustments };
 }
 
 function installModeBiases(engine, modeKey) {
@@ -534,6 +632,68 @@ function replaySequence(dateKey, colors, modeKey, lockAt, options = {}) {
       }
       return {
         mode: modeKey,
+        blocks: serializeServerQuiltBlocks(engine),
+        submissionCount: Number(engine.submissionCount) || colors.length,
+        macroStructureFrozen: engine.macroStructureFrozen === true,
+        skippedColors
+      };
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+}
+
+function replaySequenceWithCheckpoint(dateKey, colors, options = {}) {
+  const decisionAt = Math.max(8, Math.floor(Number(options.decisionAt) || MODE_DECISION_AT));
+  return withQuietConsole(() => {
+    const originalRandom = Math.random;
+    Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
+    try {
+      const engine = createServerQuiltEngine({
+        userId: `composition-checkpoint-${dateKey}`,
+        blocks: [],
+        submissionCount: 0,
+        colorReplayEvents: [],
+        macroStructureFrozen: false
+      });
+      if (options.lockPalette !== false) installPaletteLock(engine);
+
+      let modeKey = options.modeKey || 'baseline';
+      let biasInstalled = false;
+      let checkpoint = { mode: 'baseline', adjustments: 0 };
+      const skippedColors = [];
+
+      for (let i = 0; i < colors.length; i += 1) {
+        const hex = colors[i];
+
+        if (i < decisionAt) {
+          if (!engine.addColor(hex)) skippedColors.push({ index: i + 1, color: hex });
+          if (i + 1 === decisionAt) {
+            const snapshot = colors.slice(0, decisionAt);
+            modeKey = options.modeKey || inferMode(analyzeColors(snapshot));
+            checkpoint = applyModeCheckpoint(engine, modeKey, snapshot);
+            biasInstalled = modeKey !== 'baseline' && modeKey !== 'window';
+          }
+          continue;
+        }
+
+        if (modeKey !== 'baseline' && modeKey !== 'window') {
+          if (!biasInstalled) {
+            installModeBiases(engine, modeKey);
+            biasInstalled = true;
+          }
+          if (!withPatchedRandom(modeKey, () => engine.addColor(hex))) {
+            skippedColors.push({ index: i + 1, color: hex });
+          }
+        } else if (!engine.addColor(hex)) {
+          skippedColors.push({ index: i + 1, color: hex });
+        }
+      }
+
+      return {
+        mode: modeKey,
+        checkpoint,
+        decisionAt,
         blocks: serializeServerQuiltBlocks(engine),
         submissionCount: Number(engine.submissionCount) || colors.length,
         macroStructureFrozen: engine.macroStructureFrozen === true,
@@ -801,13 +961,16 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
 
 module.exports = {
   MODE_CONFIG,
+  MODE_DECISION_AT,
   normalizeHex,
   analyzeColors,
   inferMode,
+  applyModeCheckpoint,
   buildCompositionPreviewFromQuiltData,
   reconstructArchiveSnapshotAt,
   missingSubmissionIndices,
   orderedColorsFromBlocks,
   orderedReplayEvents,
-  replaySequence
+  replaySequence,
+  replaySequenceWithCheckpoint
 };
