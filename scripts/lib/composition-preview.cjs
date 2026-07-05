@@ -357,6 +357,35 @@ function blockAspect(block) {
   return w && h ? Math.max(w, h) / Math.max(1, Math.min(w, h)) : 1;
 }
 
+/** Installed patterns that read as composition (not hst/triangle micro-texture). */
+const MACRO_FOCAL_TYPES = new Set(['cross', 'checkerboard', 'insetCircle', 'framed', 'stripes']);
+
+function patternInstallationRoot(block) {
+  if (block?.originalPatternId) return String(block.originalPatternId);
+  return String(block?.id || '').replace(/_pattern_[^_]+_\d+$/, '');
+}
+
+function collectMacroFocalAssets(blocks) {
+  const areaOf = (block) => (Number(block.width) || 0) * (Number(block.height) || 0);
+  const totalArea = blocks.reduce((sum, block) => sum + areaOf(block), 0) || 1;
+  const minInstallArea = Math.max(28000, totalArea * 0.04);
+  const installs = new Map();
+
+  for (const block of blocks) {
+    if (block?.patternType !== 'special') continue;
+    const type = block.specialPatternType;
+    if (!type || !MACRO_FOCAL_TYPES.has(type)) continue;
+    const key = `${type}::${patternInstallationRoot(block)}`;
+    const entry = installs.get(key) || { type, area: 0 };
+    entry.area += areaOf(block);
+    installs.set(key, entry);
+  }
+
+  return [...installs.values()]
+    .filter((install) => install.area >= minInstallArea)
+    .map((install) => ({ type: install.type, areaShare: install.area / totalArea }));
+}
+
 function pickCheckpointCandidateBlocks(engine, limit = 2, pick = 'largest') {
   const minArea = 35000;
   let filtered = (Array.isArray(engine?.blocks) ? engine.blocks : [])
@@ -480,7 +509,12 @@ function analyzeBlockLayout(engine) {
     ? specialBlocks.reduce((sum, block) => sum + areaOf(block), 0) / specialBlocks.length
     : 0;
   const avgPlainArea = plainBlocks.length ? plainArea / plainBlocks.length : 0;
+  const macroFocalAssets = collectMacroFocalAssets(blocks);
+  const hasMacroFocal = macroFocalAssets.length > 0;
+  const macroFocalTypes = [...new Set(macroFocalAssets.map((asset) => asset.type))];
+  // Tiny cells (e.g. hst shards) without a macro focal ≠ "done" — different from cross/checkerboard at scale.
   const fragmentedPatchwork =
+    !hasMacroFocal &&
     specialBlocks.length > 0 &&
     plainBlocks.length > 0 &&
     specialCount / Math.max(1, blocks.length) >= 0.45 &&
@@ -495,6 +529,9 @@ function analyzeBlockLayout(engine) {
     largestIsPlain: largestRegular ? blockIsPlain(largestRegular) : false,
     distinctPatternCount: distinctPatternTypes.size,
     plainBlockCount: plainBlocks.length,
+    macroFocalAssets,
+    hasMacroFocal,
+    macroFocalTypes,
     fragmentedPatchwork,
     avgSpecialArea,
     avgPlainArea
@@ -511,11 +548,27 @@ function scoreCompositionNeed(colorMetrics, layoutMetrics) {
   if (colorMetrics.dominance >= 0.46 && colorMetrics.contrast < 0.38) need += 0.1;
   if (colorMetrics.hueTravel >= 0.5 && colorMetrics.avgSaturation >= 0.58) need += 0.08;
 
-  if (layoutMetrics.specialShare >= 0.2) need -= 0.32;
-  if (layoutMetrics.distinctPatternCount >= 2) need -= 0.24;
-  if (layoutMetrics.blockCount >= 30 && layoutMetrics.specialShare >= 0.12) need -= 0.18;
+  if (layoutMetrics.hasMacroFocal) need -= 0.48;
+  else if (layoutMetrics.specialShare >= 0.2) need -= 0.32;
+  if (!layoutMetrics.hasMacroFocal && layoutMetrics.distinctPatternCount >= 2) need -= 0.24;
+  if (layoutMetrics.blockCount >= 30 && layoutMetrics.specialShare >= 0.12 && !layoutMetrics.hasMacroFocal) {
+    need -= 0.18;
+  }
 
   return Math.max(0, Math.min(1, need));
+}
+
+function macroFocalSummary(layoutMetrics) {
+  return (layoutMetrics.macroFocalAssets || [])
+    .slice()
+    .sort((a, b) => b.areaShare - a.areaShare)
+    .map((asset) => asset.type)
+    .filter((type, index, list) => list.indexOf(type) === index)
+    .join(', ');
+}
+
+function patternAlreadyPresentAsFocal(layoutMetrics, pattern) {
+  return (layoutMetrics.macroFocalTypes || []).includes(pattern);
 }
 
 function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
@@ -524,17 +577,24 @@ function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
 
   const plainCandidates = pickCheckpointCandidateBlocks(engine, 1, 'plain');
 
-  // Many tiny pattern cells + large plain fields = patchwork needs a grid anchor, not "done".
+  // Principle: macro focal = composition working. Don't compete with or "fix" it.
+  if (layoutMetrics.hasMacroFocal) {
+    const focal = macroFocalSummary(layoutMetrics) || 'pattern';
+    return skip(`macro focal already present (${focal}) — preserve asset`);
+  }
+
+  // Only micro-texture fragmentation + scattered palette → one grid anchor on plain field.
   if (
     colorMetrics.diversity >= 0.75 &&
     layoutMetrics.fragmentedPatchwork &&
     plainCandidates.length &&
-    layoutMetrics.plainAreaShare >= 0.35
+    layoutMetrics.plainAreaShare >= 0.35 &&
+    !patternAlreadyPresentAsFocal(layoutMetrics, 'checkerboard')
   ) {
     return {
       pattern: 'checkerboard',
       pick: 'plain',
-      reason: 'scattered palette on fragmented patchwork — grid anchor on plain block',
+      reason: 'scattered palette, no focal yet — grid anchor on plain block',
       need: Math.max(need, 0.55)
     };
   }
@@ -551,7 +611,10 @@ function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
   const widestAspect = layoutMetrics.widestAspect || 1;
 
   if (colorMetrics.diversity >= 0.75) {
-    if (busy) {
+    if (busy || patternAlreadyPresentAsFocal(layoutMetrics, 'checkerboard')) {
+      if (patternAlreadyPresentAsFocal(layoutMetrics, 'insetCircle')) {
+        return skip('focal patterns already present — preserve asset');
+      }
       return {
         pattern: 'insetCircle',
         pick: 'plain',
