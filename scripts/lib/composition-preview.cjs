@@ -358,7 +358,7 @@ function blockAspect(block) {
 }
 
 /** Installed patterns that read as composition (not hst/triangle micro-texture). */
-const MACRO_FOCAL_TYPES = new Set(['cross', 'checkerboard', 'insetCircle', 'framed', 'stripes']);
+const MACRO_FOCAL_TYPES = new Set(['cross', 'checkerboard', 'insetCircle', 'framed', 'stripes', 'logcabin']);
 
 function patternInstallationRoot(block) {
   if (block?.originalPatternId) return String(block.originalPatternId);
@@ -386,7 +386,7 @@ function collectMacroFocalAssets(blocks) {
     .map((install) => ({ type: install.type, areaShare: install.area / totalArea }));
 }
 
-function pickCheckpointCandidateBlocks(engine, limit = 2, pick = 'largest') {
+function pickCheckpointCandidateBlocks(engine, limit = 2, pick = 'largest', zoneTarget = null) {
   const minArea = 35000;
   let filtered = (Array.isArray(engine?.blocks) ? engine.blocks : [])
     .filter((block) => {
@@ -407,7 +407,43 @@ function pickCheckpointCandidateBlocks(engine, limit = 2, pick = 'largest') {
 
   const areaOf = (block) => (Number(block.width) || 0) * (Number(block.height) || 0);
 
-  if (pick === 'widest') {
+  const quiltBounds = () => {
+    const blocks = Array.isArray(engine?.blocks) ? engine.blocks : [];
+    return blocks.reduce(
+      (acc, block) => {
+        const x2 = (Number(block.x) || 0) + (Number(block.width) || 0);
+        const y2 = (Number(block.y) || 0) + (Number(block.height) || 0);
+        return {
+          minX: Math.min(acc.minX, Number(block.x) || 0),
+          minY: Math.min(acc.minY, Number(block.y) || 0),
+          maxX: Math.max(acc.maxX, x2),
+          maxY: Math.max(acc.maxY, y2)
+        };
+      },
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+    );
+  };
+
+  const normCentroid = (block) => {
+    const bounds = quiltBounds();
+    const bw = Math.max(1, bounds.maxX - bounds.minX);
+    const bh = Math.max(1, bounds.maxY - bounds.minY);
+    const cx = (Number(block.x) || 0) + (Number(block.width) || 0) / 2;
+    const cy = (Number(block.y) || 0) + (Number(block.height) || 0) / 2;
+    return { nx: (cx - bounds.minX) / bw, ny: (cy - bounds.minY) / bh };
+  };
+
+  if (pick === 'zone' && zoneTarget && Number.isFinite(zoneTarget.nx) && Number.isFinite(zoneTarget.ny)) {
+    filtered = filtered.filter(blockIsPlain);
+    filtered.sort((a, b) => {
+      const ca = normCentroid(a);
+      const cb = normCentroid(b);
+      const da = Math.hypot(ca.nx - zoneTarget.nx, ca.ny - zoneTarget.ny);
+      const db = Math.hypot(cb.nx - zoneTarget.nx, cb.ny - zoneTarget.ny);
+      if (Math.abs(da - db) > 0.001) return da - db;
+      return areaOf(b) - areaOf(a);
+    });
+  } else if (pick === 'widest') {
     filtered = filtered.filter(blockIsPlain);
     filtered.sort(
       (a, b) =>
@@ -465,7 +501,12 @@ function applyCheckpointPatternSteps(engine, steps, checkpointColors) {
   for (let i = 0; i < steps.length; i += 1) {
     const step = steps[i];
     if (!step || step.pattern === 'none') continue;
-    const candidates = pickCheckpointCandidateBlocks(engine, 1, step.pick || 'largest');
+    const candidates = pickCheckpointCandidateBlocks(
+      engine,
+      1,
+      step.pick || 'largest',
+      step.zone || null
+    );
     const block = candidates[i] || candidates[0];
     if (!block) continue;
     const children = createCheckpointPattern(engine, block, step.pattern, accent);
@@ -538,6 +579,203 @@ function analyzeBlockLayout(engine) {
   };
 }
 
+function blockCentroid(block) {
+  return {
+    x: (Number(block.x) || 0) + (Number(block.width) || 0) / 2,
+    y: (Number(block.y) || 0) + (Number(block.height) || 0) / 2
+  };
+}
+
+function blockVisualWeight(block) {
+  const hsl = hexToHsl(block?.color || '#808080');
+  const area = (Number(block.width) || 0) * (Number(block.height) || 0);
+  const darkness = 1 - hsl.l;
+  const sat = 0.65 + hsl.s * 0.35;
+  let weight = darkness * sat * Math.sqrt(Math.max(1, area));
+  if (block?.patternType === 'special' && block?.specialPatternType !== 'diagonalAxis') {
+    weight *= 1.12;
+  }
+  return weight;
+}
+
+function quiltBoundsFromBlocks(blocks) {
+  return (Array.isArray(blocks) ? blocks : []).reduce(
+    (acc, block) => {
+      const x2 = (Number(block.x) || 0) + (Number(block.width) || 0);
+      const y2 = (Number(block.y) || 0) + (Number(block.height) || 0);
+      return {
+        minX: Math.min(acc.minX, Number(block.x) || 0),
+        minY: Math.min(acc.minY, Number(block.y) || 0),
+        maxX: Math.max(acc.maxX, x2),
+        maxY: Math.max(acc.maxY, y2)
+      };
+    },
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+  );
+}
+
+function normalizePointInQuilt(point, bounds) {
+  const bw = Math.max(1, bounds.maxX - bounds.minX);
+  const bh = Math.max(1, bounds.maxY - bounds.minY);
+  return {
+    nx: (point.x - bounds.minX) / bw,
+    ny: (point.y - bounds.minY) / bh
+  };
+}
+
+/** Eye-travel principle: three anchors imply a center; two heavy anchors on one edge need a third in the opposing zone. */
+function analyzeEyeTravelBalance(engine, layoutMetrics) {
+  const blocks = Array.isArray(engine?.blocks) ? engine.blocks : [];
+  if (blocks.length < 6) {
+    return { needsThirdAnchor: false, anchorCount: 0 };
+  }
+
+  const bounds = quiltBoundsFromBlocks(blocks);
+  const anchors = [];
+  const byInstall = new Map();
+
+  for (const block of blocks) {
+    if (block?.patternType !== 'special' || !MACRO_FOCAL_TYPES.has(block?.specialPatternType)) continue;
+    const key = `${block.specialPatternType}::${patternInstallationRoot(block)}`;
+    const entry = byInstall.get(key) || { area: 0, wx: 0, wy: 0, wsum: 0, type: block.specialPatternType };
+    const centroid = blockCentroid(block);
+    const wt = blockVisualWeight(block);
+    const area = (Number(block.width) || 0) * (Number(block.height) || 0);
+    entry.area += area;
+    entry.wx += centroid.x * wt;
+    entry.wy += centroid.y * wt;
+    entry.wsum += wt;
+    byInstall.set(key, entry);
+  }
+
+  for (const entry of byInstall.values()) {
+    if (entry.area < 28000 || entry.wsum <= 0) continue;
+    const point = normalizePointInQuilt(
+      { x: entry.wx / entry.wsum, y: entry.wy / entry.wsum },
+      bounds
+    );
+    anchors.push({ ...point, weight: entry.wsum, area: entry.area, type: entry.type, source: 'macro' });
+  }
+
+  if (anchors.length < 1) {
+    return { needsThirdAnchor: false, anchorCount: 0 };
+  }
+
+  anchors.sort((a, b) => b.weight - a.weight);
+  const heavy = anchors.slice(0, Math.min(anchors.length, 3));
+  const avgNx = heavy.reduce((sum, a) => sum + a.nx, 0) / heavy.length;
+  const avgNy = heavy.reduce((sum, a) => sum + a.ny, 0) / heavy.length;
+  const verticalSpread = heavy.length > 1
+    ? Math.max(...heavy.map((a) => a.ny)) - Math.min(...heavy.map((a) => a.ny))
+    : 0;
+  const horizontalSpread = heavy.length > 1
+    ? Math.max(...heavy.map((a) => a.nx)) - Math.min(...heavy.map((a) => a.nx))
+    : 0;
+
+  const sameVerticalBand = heavy.length >= 2 && verticalSpread < 0.22;
+  const sameHorizontalBand = heavy.length >= 2 && horizontalSpread < 0.22;
+  const bottomHeavy = avgNy > 0.55;
+  const topHeavy = avgNy < 0.42;
+
+  let scatteredDarkWeight = 0;
+  const medianAnchorArea = heavy[Math.floor(heavy.length / 2)]?.area || 0;
+  for (const block of blocks) {
+    const area = (Number(block.width) || 0) * (Number(block.height) || 0);
+    if (area >= medianAnchorArea * 0.45) continue;
+    const hsl = hexToHsl(block?.color || '#808080');
+    if (hsl.l > 0.52) continue;
+    const { ny } = normalizePointInQuilt(blockCentroid(block), bounds);
+    const inOpposingBand = bottomHeavy ? ny < 0.38 : topHeavy ? ny > 0.62 : false;
+    if (inOpposingBand) scatteredDarkWeight += blockVisualWeight(block);
+  }
+
+  const clusteredAnchors = heavy.length >= 2 && (sameVerticalBand || sameHorizontalBand);
+  const scatteredOpposingAccent = scatteredDarkWeight > Math.max(40, heavy[0].weight * 0.08);
+  const needsThirdAnchor =
+    heavy.length >= 2 &&
+    (bottomHeavy || topHeavy) &&
+    clusteredAnchors;
+
+  let targetZone = null;
+  if (needsThirdAnchor) {
+    const mirror = {
+      nx: Math.max(0.12, Math.min(0.88, 1 - avgNx)),
+      ny: Math.max(0.12, Math.min(0.88, 1 - avgNy))
+    };
+    const zones = [
+      { name: 'upper-left', nx: 0.2, ny: 0.2, weight: 0 },
+      { name: 'upper-center', nx: 0.5, ny: 0.2, weight: 0 },
+      { name: 'upper-right', nx: 0.8, ny: 0.2, weight: 0 },
+      { name: 'lower-left', nx: 0.2, ny: 0.8, weight: 0 },
+      { name: 'lower-center', nx: 0.5, ny: 0.8, weight: 0 },
+      { name: 'lower-right', nx: 0.8, ny: 0.8, weight: 0 }
+    ];
+    for (const block of blocks) {
+      const area = (Number(block.width) || 0) * (Number(block.height) || 0);
+      if (area >= medianAnchorArea * 0.45) continue;
+      const hsl = hexToHsl(block?.color || '#808080');
+      if (hsl.l > 0.52) continue;
+      const point = normalizePointInQuilt(blockCentroid(block), bounds);
+      const inOpposingBand = bottomHeavy ? point.ny < 0.45 : topHeavy ? point.ny > 0.55 : false;
+      if (!inOpposingBand) continue;
+      const wt = blockVisualWeight(block);
+      for (const zone of zones) {
+        const inBand = bottomHeavy ? zone.ny < 0.45 : zone.ny > 0.55;
+        if (!inBand) continue;
+        const dist = Math.hypot(point.nx - zone.nx, point.ny - zone.ny);
+        if (dist < 0.38) zone.weight += wt;
+      }
+    }
+    const bestZone = zones
+      .filter((zone) => (bottomHeavy ? zone.ny < 0.45 : zone.ny > 0.55))
+      .sort((a, b) => b.weight - a.weight)[0];
+    targetZone = bestZone && bestZone.weight > 0
+      ? { nx: bestZone.nx, ny: bestZone.ny, label: bestZone.name }
+      : mirror;
+  }
+
+  return {
+    needsThirdAnchor,
+    anchorCount: heavy.length,
+    targetZone: targetZone ? { nx: targetZone.nx, ny: targetZone.ny } : null,
+    targetZoneLabel: targetZone?.label || null,
+    scatteredDarkWeight,
+    avgAnchor: { nx: avgNx, ny: avgNy },
+    verticalSpread,
+    horizontalSpread
+  };
+}
+
+function inferTriangularBalanceTweak(layoutMetrics, eyeTravel, need) {
+  if (!eyeTravel?.needsThirdAnchor || !eyeTravel.targetZone) return null;
+  const anchorTypes = layoutMetrics.macroFocalTypes || [];
+  const pattern = anchorTypes.includes('cross') || anchorTypes.includes('checkerboard')
+    ? 'insetCircle'
+    : anchorTypes.includes('logcabin') || anchorTypes.includes('framed')
+      ? 'framed'
+      : 'framed';
+  const zoneLabel = eyeTravel.targetZoneLabel
+    || (eyeTravel.targetZone.ny < 0.4
+      ? eyeTravel.targetZone.nx > 0.6
+        ? 'upper-right'
+        : eyeTravel.targetZone.nx < 0.4
+          ? 'upper-left'
+          : 'upper'
+      : eyeTravel.targetZone.ny > 0.6
+        ? eyeTravel.targetZone.nx > 0.6
+          ? 'lower-right'
+          : 'lower-left'
+        : 'opposing zone');
+  return {
+    pattern,
+    pick: 'zone',
+    zone: eyeTravel.targetZone,
+    reason: `eye travel — heavy anchors cluster on one edge — third anchor in ${zoneLabel}`,
+    need: Math.max(need, 0.58),
+    eyeTravel
+  };
+}
+
 function scoreCompositionNeed(colorMetrics, layoutMetrics) {
   let need = 0.42;
 
@@ -574,11 +812,16 @@ function patternAlreadyPresentAsFocal(layoutMetrics, pattern) {
 function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
   const need = scoreCompositionNeed(colorMetrics, layoutMetrics);
   const skip = (reason) => ({ pattern: 'none', pick: null, reason, need });
-
+  const eyeTravel = analyzeEyeTravelBalance(engine, layoutMetrics);
   const plainCandidates = pickCheckpointCandidateBlocks(engine, 1, 'plain');
 
-  // Principle: macro focal = composition working. Don't compete with or "fix" it.
-  if (layoutMetrics.hasMacroFocal) {
+  const triangularTweak = inferTriangularBalanceTweak(layoutMetrics, eyeTravel, need);
+  if (triangularTweak && pickCheckpointCandidateBlocks(engine, 1, 'zone', triangularTweak.zone).length) {
+    return triangularTweak;
+  }
+
+  // Macro focal is an asset when eye path is already balanced — not when anchors sit on one edge.
+  if (layoutMetrics.hasMacroFocal && !eyeTravel.needsThirdAnchor) {
     const focal = macroFocalSummary(layoutMetrics) || 'pattern';
     return skip(`macro focal already present (${focal}) — preserve asset`);
   }
@@ -680,6 +923,7 @@ function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
 function applyInferredCheckpointTweak(engine, checkpointColors) {
   const colorMetrics = analyzeColors(checkpointColors);
   const layoutMetrics = analyzeBlockLayout(engine);
+  const eyeTravel = analyzeEyeTravelBalance(engine, layoutMetrics);
   const tweak = inferCheckpointTweak(colorMetrics, layoutMetrics, engine);
   const adjustments = tweak.pattern === 'none'
     ? 0
@@ -688,6 +932,7 @@ function applyInferredCheckpointTweak(engine, checkpointColors) {
     adjustments,
     tweak,
     need: tweak.need,
+    eyeTravel,
     colorMetrics,
     layoutMetrics
   };

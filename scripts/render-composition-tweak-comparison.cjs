@@ -315,7 +315,9 @@ async function renderDate(db, dateKey) {
     : '';
   const decisionLabel = tweakInfo.pattern === 'none'
     ? `skip — ${tweakInfo.reason || 'no tweak'}`
-    : `would apply ${tweakInfo.pattern} on ${tweakInfo.pick || 'plain'} block`;
+    : tweakInfo.pick === 'zone'
+      ? `would apply ${tweakInfo.pattern} in ${checkpoint.eyeTravel?.targetZoneLabel || 'opposing zone'}`
+      : `would apply ${tweakInfo.pattern} on ${tweakInfo.pick || 'plain'} block`;
   const sourceNote = at20.source === 'archive' ? 'live archive @ 20' : 'simulated replay @ 20';
   const growthNote = `live continued to ${day.liveBlocks.length} blocks`;
 
