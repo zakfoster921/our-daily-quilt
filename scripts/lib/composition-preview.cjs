@@ -519,7 +519,7 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
     : hasSparseColorHistory
       ? 'window'
       : inferMode(metrics);
-  const modeKeys = (hasSparseColorHistory || source === 'storedBlocks') && options.includeStoredOriginal !== false
+  const modeKeys = options.includeStoredOriginal !== false
     ? [inferredMode]
     : ['baseline', inferredMode].filter((mode, index, list) => mode && list.indexOf(mode) === index);
   const replayCoverage = liveContributorCount > 0 ? colors.length / liveContributorCount : 0;
