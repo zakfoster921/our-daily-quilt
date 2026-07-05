@@ -1848,7 +1848,8 @@ function serverMirrorTuneFromQuiltData(data) {
   return {
     flipX: serverNormalizeMirrorFlipFlag(d.mirrorFlipX, MIRROR_TUNE_DEFAULT_FLIP_X),
     flipY: serverNormalizeMirrorFlipFlag(d.mirrorFlipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-    nudgeSeamY: serverNormalizeMirrorSeamNudge(d.mirrorSeamNudgeY)
+    nudgeSeamY: serverNormalizeMirrorSeamNudge(d.mirrorSeamNudgeY),
+    nudgeMirrorY: serverNormalizeMirrorSeamNudge(d.mirrorFieldNudgeY)
   };
 }
 
@@ -1864,7 +1865,8 @@ function serverMirrorTuneIsCustomized(tune) {
   return (
     t.flipX !== MIRROR_TUNE_DEFAULT_FLIP_X ||
     t.flipY !== MIRROR_TUNE_DEFAULT_FLIP_Y ||
-    serverNormalizeMirrorSeamNudge(t.nudgeSeamY) !== 0
+    serverNormalizeMirrorSeamNudge(t.nudgeSeamY) !== 0 ||
+    serverNormalizeMirrorSeamNudge(t.nudgeMirrorY) !== 0
   );
 }
 
@@ -1872,7 +1874,8 @@ function serverMirrorTuneSnapshotsEqual(a, b) {
   return (
     a.flipX === b.flipX &&
     a.flipY === b.flipY &&
-    serverNormalizeMirrorSeamNudge(a.nudgeSeamY) === serverNormalizeMirrorSeamNudge(b.nudgeSeamY)
+    serverNormalizeMirrorSeamNudge(a.nudgeSeamY) === serverNormalizeMirrorSeamNudge(b.nudgeSeamY) &&
+    serverNormalizeMirrorSeamNudge(a.nudgeMirrorY) === serverNormalizeMirrorSeamNudge(b.nudgeMirrorY)
   );
 }
 
@@ -1880,12 +1883,14 @@ function serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, extra = {}) {
   const before = {
     flipX: serverNormalizeMirrorFlipFlag(beforeTune?.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
     flipY: serverNormalizeMirrorFlipFlag(beforeTune?.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-    nudgeSeamY: serverNormalizeMirrorSeamNudge(beforeTune?.nudgeSeamY)
+    nudgeSeamY: serverNormalizeMirrorSeamNudge(beforeTune?.nudgeSeamY),
+    nudgeMirrorY: serverNormalizeMirrorSeamNudge(beforeTune?.nudgeMirrorY)
   };
   const after = {
     flipX: serverNormalizeMirrorFlipFlag(afterTune?.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
     flipY: serverNormalizeMirrorFlipFlag(afterTune?.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-    nudgeSeamY: serverNormalizeMirrorSeamNudge(afterTune?.nudgeSeamY)
+    nudgeSeamY: serverNormalizeMirrorSeamNudge(afterTune?.nudgeSeamY),
+    nudgeMirrorY: serverNormalizeMirrorSeamNudge(afterTune?.nudgeMirrorY)
   };
   if (serverMirrorTuneSnapshotsEqual(before, after)) return null;
   const at = String(extra.at || getUtcIsoNow()).trim();
@@ -6237,6 +6242,7 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     const flipX = body.mirrorFlipX === true || body.mirrorFlipX === 'true' || body.mirrorFlipX === 1;
     const flipY = body.mirrorFlipY === true || body.mirrorFlipY === 'true' || body.mirrorFlipY === 1;
     const nudgeSeamY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorSeamNudgeY) || 0));
+    const nudgeMirrorY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorFieldNudgeY) || 0));
     const mirrorTuneUpdatedAt = String(
       body.mirrorTuneUpdatedAt || new Date().toISOString()
     ).trim();
@@ -6250,10 +6256,11 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
         ? {
             flipX: serverNormalizeMirrorFlipFlag(body.previous.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
             flipY: serverNormalizeMirrorFlipFlag(body.previous.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-            nudgeSeamY: serverNormalizeMirrorSeamNudge(body.previous.nudgeSeamY)
+            nudgeSeamY: serverNormalizeMirrorSeamNudge(body.previous.nudgeSeamY),
+            nudgeMirrorY: serverNormalizeMirrorSeamNudge(body.previous.nudgeMirrorY)
           }
         : serverMirrorTuneFromQuiltData(existingData);
-    const afterTune = { flipX, flipY, nudgeSeamY };
+    const afterTune = { flipX, flipY, nudgeSeamY, nudgeMirrorY };
     const blocks = Array.isArray(existingData.blocks) ? existingData.blocks : [];
     const historyEntry = serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, {
       at: mirrorTuneUpdatedAt,
@@ -6270,6 +6277,7 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       mirrorFlipX: flipX,
       mirrorFlipY: flipY,
       mirrorSeamNudgeY: nudgeSeamY,
+      mirrorFieldNudgeY: nudgeMirrorY,
       mirrorSeamNudgeX: admin.firestore.FieldValue.delete(),
       mirrorTuneUpdatedAt,
       mirrorTuneUpdatedBy
@@ -6281,7 +6289,7 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     const snap = await db.collection('quilts').doc(dateKey).get();
     const data = snap.exists ? snap.data() || {} : {};
     console.log(
-      `✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY}, nudgeY=${nudgeSeamY}, history=${historyEntry ? 'appended' : 'unchanged'})`
+      `✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY}, seamY=${nudgeSeamY}, mirrorY=${nudgeMirrorY}, history=${historyEntry ? 'appended' : 'unchanged'})`
     );
     res.json({
       success: true,
@@ -6289,6 +6297,7 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       mirrorFlipX: data.mirrorFlipX === true,
       mirrorFlipY: data.mirrorFlipY === true,
       mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
+      mirrorFieldNudgeY: Number(data.mirrorFieldNudgeY) || 0,
       mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt,
       mirrorTuneUpdatedBy: data.mirrorTuneUpdatedBy || mirrorTuneUpdatedBy,
       mirrorTuneHistoryCount: Array.isArray(data.mirrorTuneHistory) ? data.mirrorTuneHistory.length : 0,

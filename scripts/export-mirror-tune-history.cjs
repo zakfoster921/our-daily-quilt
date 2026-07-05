@@ -71,6 +71,7 @@ async function main() {
         mirrorFlipX: data.mirrorFlipX === true,
         mirrorFlipY: data.mirrorFlipY === true,
         mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
+        mirrorFieldNudgeY: Number(data.mirrorFieldNudgeY) || 0,
         mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || null,
         mirrorTuneUpdatedBy: data.mirrorTuneUpdatedBy || null,
         blockCount: Array.isArray(data.blocks) ? data.blocks.length : null,
@@ -86,13 +87,15 @@ async function main() {
         Boolean(data.mirrorTuneUpdatedAt) ||
         data.mirrorFlipX !== true ||
         data.mirrorFlipY !== true ||
-        Math.abs(Number(data.mirrorSeamNudgeY) || 0) > 1e-9;
+        Math.abs(Number(data.mirrorSeamNudgeY) || 0) > 1e-9 ||
+        Math.abs(Number(data.mirrorFieldNudgeY) || 0) > 1e-9;
       if (!history.length && !hasCurrent) return;
       rows.push({
         dateKey: doc.id,
         mirrorFlipX: data.mirrorFlipX === true,
         mirrorFlipY: data.mirrorFlipY === true,
         mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
+        mirrorFieldNudgeY: Number(data.mirrorFieldNudgeY) || 0,
         mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || null,
         mirrorTuneUpdatedBy: data.mirrorTuneUpdatedBy || null,
         blockCount: Array.isArray(data.blocks) ? data.blocks.length : null,
