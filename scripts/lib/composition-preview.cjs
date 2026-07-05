@@ -476,6 +476,8 @@ function createCheckpointPattern(engine, block, patternType, accentColor) {
       return engine.createInsetCircle(block, accentColor);
     case 'framed':
       return engine.createFramedPattern(block, accentColor);
+    case 'logcabin':
+      return engine.createLogCabin(block, accentColor);
     case 'hst':
       return engine.createHalfSquareTriangle(block, accentColor);
     default:
@@ -623,12 +625,54 @@ function normalizePointInQuilt(point, bounds) {
   };
 }
 
-/** Eye-travel principle: three anchors imply a center; two heavy anchors on one edge need a third in the opposing zone. */
-function analyzeEyeTravelBalance(engine, layoutMetrics) {
+const REPLICABLE_FOCAL_PATTERNS = new Set(['logcabin', 'cross', 'checkerboard', 'framed', 'stripes', 'insetCircle']);
+
+function blockArea(block) {
+  return (Number(block.width) || 0) * (Number(block.height) || 0);
+}
+
+function blockContrastScore(block) {
+  const hsl = hexToHsl(block?.color || '#808080');
+  return (1 - hsl.l) * (0.55 + hsl.s * 0.45);
+}
+
+function pickVacantZone(anchors) {
+  const avgNx = anchors.reduce((sum, a) => sum + a.nx, 0) / anchors.length;
+  const avgNy = anchors.reduce((sum, a) => sum + a.ny, 0) / anchors.length;
+  const opposing = avgNy > 0.52 ? 'top' : avgNy < 0.48 ? 'bottom' : null;
+  const zones = [
+    { label: 'upper-left', nx: 0.22, ny: 0.22 },
+    { label: 'upper-center', nx: 0.5, ny: 0.22 },
+    { label: 'upper-right', nx: 0.78, ny: 0.22 },
+    { label: 'lower-left', nx: 0.22, ny: 0.78 },
+    { label: 'lower-center', nx: 0.5, ny: 0.78 },
+    { label: 'lower-right', nx: 0.78, ny: 0.78 }
+  ];
+  const pool = opposing === 'top'
+    ? zones.filter((zone) => zone.ny < 0.45)
+    : opposing === 'bottom'
+      ? zones.filter((zone) => zone.ny > 0.55)
+      : zones;
+  const mirror = {
+    nx: Math.max(0.15, Math.min(0.85, 1 - avgNx)),
+    ny: Math.max(0.15, Math.min(0.85, 1 - avgNy)),
+    label: 'opposing center'
+  };
+  const scored = pool.map((zone) => {
+    const anchorNear = anchors.reduce((min, anchor) => {
+      const d = Math.hypot(anchor.nx - zone.nx, anchor.ny - zone.ny);
+      return Math.min(min, d);
+    }, Infinity);
+    return { ...zone, anchorNear };
+  });
+  scored.sort((a, b) => b.anchorNear - a.anchorNear || Math.hypot(a.nx - mirror.nx, a.ny - mirror.ny) - Math.hypot(b.nx - mirror.nx, b.ny - mirror.ny));
+  return scored[0] || mirror;
+}
+
+/** Two focal points work when spread; if they share an edge, balance by spreading or replicating the pattern. */
+function analyzeFocalBalance(engine, layoutMetrics) {
   const blocks = Array.isArray(engine?.blocks) ? engine.blocks : [];
-  if (blocks.length < 6) {
-    return { needsThirdAnchor: false, anchorCount: 0 };
-  }
+  if (blocks.length < 6) return { needsBalance: false, anchorCount: 0 };
 
   const bounds = quiltBoundsFromBlocks(blocks);
   const anchors = [];
@@ -640,8 +684,7 @@ function analyzeEyeTravelBalance(engine, layoutMetrics) {
     const entry = byInstall.get(key) || { area: 0, wx: 0, wy: 0, wsum: 0, type: block.specialPatternType };
     const centroid = blockCentroid(block);
     const wt = blockVisualWeight(block);
-    const area = (Number(block.width) || 0) * (Number(block.height) || 0);
-    entry.area += area;
+    entry.area += blockArea(block);
     entry.wx += centroid.x * wt;
     entry.wy += centroid.y * wt;
     entry.wsum += wt;
@@ -654,125 +697,109 @@ function analyzeEyeTravelBalance(engine, layoutMetrics) {
       { x: entry.wx / entry.wsum, y: entry.wy / entry.wsum },
       bounds
     );
-    anchors.push({ ...point, weight: entry.wsum, area: entry.area, type: entry.type, source: 'macro' });
+    anchors.push({ ...point, weight: entry.wsum, area: entry.area, type: entry.type, source: 'pattern' });
   }
 
-  if (anchors.length < 1) {
-    return { needsThirdAnchor: false, anchorCount: 0 };
+  for (const block of blocks) {
+    if (!blockIsPlain(block)) continue;
+    const area = blockArea(block);
+    if (area < 32000) continue;
+    if (blockContrastScore(block) < 0.42) continue;
+    const point = normalizePointInQuilt(blockCentroid(block), bounds);
+    anchors.push({
+      ...point,
+      weight: blockVisualWeight(block),
+      area,
+      type: 'dense',
+      source: 'plain'
+    });
+  }
+
+  if (anchors.length < 2) {
+    return { needsBalance: false, anchorCount: anchors.length };
   }
 
   anchors.sort((a, b) => b.weight - a.weight);
-  const heavy = anchors.slice(0, Math.min(anchors.length, 3));
-  const avgNx = heavy.reduce((sum, a) => sum + a.nx, 0) / heavy.length;
-  const avgNy = heavy.reduce((sum, a) => sum + a.ny, 0) / heavy.length;
-  const verticalSpread = heavy.length > 1
-    ? Math.max(...heavy.map((a) => a.ny)) - Math.min(...heavy.map((a) => a.ny))
-    : 0;
-  const horizontalSpread = heavy.length > 1
-    ? Math.max(...heavy.map((a) => a.nx)) - Math.min(...heavy.map((a) => a.nx))
-    : 0;
+  const pair = anchors.slice(0, 2);
+  const verticalSpread = Math.abs(pair[0].ny - pair[1].ny);
+  const horizontalSpread = Math.abs(pair[0].nx - pair[1].nx);
+  const sameVerticalBand = verticalSpread < 0.24;
+  const sameHorizontalBand = horizontalSpread < 0.24;
+  const unbalanced = sameVerticalBand || sameHorizontalBand;
 
-  const sameVerticalBand = heavy.length >= 2 && verticalSpread < 0.22;
-  const sameHorizontalBand = heavy.length >= 2 && horizontalSpread < 0.22;
-  const bottomHeavy = avgNy > 0.55;
-  const topHeavy = avgNy < 0.42;
-
-  let scatteredDarkWeight = 0;
-  const medianAnchorArea = heavy[Math.floor(heavy.length / 2)]?.area || 0;
-  for (const block of blocks) {
-    const area = (Number(block.width) || 0) * (Number(block.height) || 0);
-    if (area >= medianAnchorArea * 0.45) continue;
-    const hsl = hexToHsl(block?.color || '#808080');
-    if (hsl.l > 0.52) continue;
-    const { ny } = normalizePointInQuilt(blockCentroid(block), bounds);
-    const inOpposingBand = bottomHeavy ? ny < 0.38 : topHeavy ? ny > 0.62 : false;
-    if (inOpposingBand) scatteredDarkWeight += blockVisualWeight(block);
+  if (!unbalanced) {
+    return { needsBalance: false, anchorCount: anchors.length, verticalSpread, horizontalSpread };
   }
 
-  const clusteredAnchors = heavy.length >= 2 && (sameVerticalBand || sameHorizontalBand);
-  const scatteredOpposingAccent = scatteredDarkWeight > Math.max(40, heavy[0].weight * 0.08);
-  const needsThirdAnchor =
-    heavy.length >= 2 &&
-    (bottomHeavy || topHeavy) &&
-    clusteredAnchors;
+  const vacantZone = pickVacantZone(pair);
+  const patternAnchors = pair.filter((anchor) => anchor.source === 'pattern');
+  const densePlainPair = pair.every((anchor) => anchor.source === 'plain' || anchor.type === 'dense');
+  const avgNy = pair.reduce((sum, anchor) => sum + anchor.ny, 0) / pair.length;
+  const avgNx = pair.reduce((sum, anchor) => sum + anchor.nx, 0) / pair.length;
+  const edgeCluster =
+    (sameVerticalBand && (avgNy > 0.52 || avgNy < 0.48)) ||
+    (sameHorizontalBand && (avgNx > 0.58 || avgNx < 0.42));
+  const needsBalance = edgeCluster && (patternAnchors.length >= 2 || densePlainPair);
 
-  let targetZone = null;
-  if (needsThirdAnchor) {
-    const mirror = {
-      nx: Math.max(0.12, Math.min(0.88, 1 - avgNx)),
-      ny: Math.max(0.12, Math.min(0.88, 1 - avgNy))
+  if (!needsBalance) {
+    return {
+      needsBalance: false,
+      anchorCount: anchors.length,
+      verticalSpread,
+      horizontalSpread
     };
-    const zones = [
-      { name: 'upper-left', nx: 0.2, ny: 0.2, weight: 0 },
-      { name: 'upper-center', nx: 0.5, ny: 0.2, weight: 0 },
-      { name: 'upper-right', nx: 0.8, ny: 0.2, weight: 0 },
-      { name: 'lower-left', nx: 0.2, ny: 0.8, weight: 0 },
-      { name: 'lower-center', nx: 0.5, ny: 0.8, weight: 0 },
-      { name: 'lower-right', nx: 0.8, ny: 0.8, weight: 0 }
-    ];
-    for (const block of blocks) {
-      const area = (Number(block.width) || 0) * (Number(block.height) || 0);
-      if (area >= medianAnchorArea * 0.45) continue;
-      const hsl = hexToHsl(block?.color || '#808080');
-      if (hsl.l > 0.52) continue;
-      const point = normalizePointInQuilt(blockCentroid(block), bounds);
-      const inOpposingBand = bottomHeavy ? point.ny < 0.45 : topHeavy ? point.ny > 0.55 : false;
-      if (!inOpposingBand) continue;
-      const wt = blockVisualWeight(block);
-      for (const zone of zones) {
-        const inBand = bottomHeavy ? zone.ny < 0.45 : zone.ny > 0.55;
-        if (!inBand) continue;
-        const dist = Math.hypot(point.nx - zone.nx, point.ny - zone.ny);
-        if (dist < 0.38) zone.weight += wt;
-      }
-    }
-    const bestZone = zones
-      .filter((zone) => (bottomHeavy ? zone.ny < 0.45 : zone.ny > 0.55))
-      .sort((a, b) => b.weight - a.weight)[0];
-    targetZone = bestZone && bestZone.weight > 0
-      ? { nx: bestZone.nx, ny: bestZone.ny, label: bestZone.name }
-      : mirror;
   }
+
+  const dominantPattern = patternAnchors.length
+    ? patternAnchors.slice().sort((a, b) => b.weight - a.weight)[0].type
+    : null;
+  const strategy =
+    patternAnchors.length >= 2 &&
+    dominantPattern &&
+    REPLICABLE_FOCAL_PATTERNS.has(dominantPattern)
+      ? 'replicate'
+      : 'spread';
 
   return {
-    needsThirdAnchor,
-    anchorCount: heavy.length,
-    targetZone: targetZone ? { nx: targetZone.nx, ny: targetZone.ny } : null,
-    targetZoneLabel: targetZone?.label || null,
-    scatteredDarkWeight,
-    avgAnchor: { nx: avgNx, ny: avgNy },
+    needsBalance: true,
+    anchorCount: anchors.length,
+    strategy,
+    dominantPattern,
+    vacantZone,
     verticalSpread,
-    horizontalSpread
+    horizontalSpread,
+    sameVerticalBand,
+    sameHorizontalBand,
+    pair
   };
 }
 
-function inferTriangularBalanceTweak(layoutMetrics, eyeTravel, need) {
-  if (!eyeTravel?.needsThirdAnchor || !eyeTravel.targetZone) return null;
-  const anchorTypes = layoutMetrics.macroFocalTypes || [];
-  const pattern = anchorTypes.includes('cross') || anchorTypes.includes('checkerboard')
-    ? 'insetCircle'
-    : anchorTypes.includes('logcabin') || anchorTypes.includes('framed')
-      ? 'framed'
-      : 'framed';
-  const zoneLabel = eyeTravel.targetZoneLabel
-    || (eyeTravel.targetZone.ny < 0.4
-      ? eyeTravel.targetZone.nx > 0.6
-        ? 'upper-right'
-        : eyeTravel.targetZone.nx < 0.4
-          ? 'upper-left'
-          : 'upper'
-      : eyeTravel.targetZone.ny > 0.6
-        ? eyeTravel.targetZone.nx > 0.6
-          ? 'lower-right'
-          : 'lower-left'
-        : 'opposing zone');
+function inferFocalBalanceTweak(focalBalance, need) {
+  if (!focalBalance?.needsBalance || !focalBalance.vacantZone) return null;
+  const zone = { nx: focalBalance.vacantZone.nx, ny: focalBalance.vacantZone.ny };
+  const zoneLabel = focalBalance.vacantZone.label || 'opposing zone';
+
+  if (focalBalance.strategy === 'replicate' && focalBalance.dominantPattern) {
+    return {
+      pattern: focalBalance.dominantPattern,
+      pick: 'zone',
+      zone,
+      strategy: 'replicate',
+      reason: `two ${focalBalance.dominantPattern} focals share one edge — third instance in ${zoneLabel}`,
+      need: Math.max(need, 0.58),
+      focalBalance
+    };
+  }
+
+  const spreadPattern = focalBalance.sameVerticalBand ? 'framed' : 'insetCircle';
   return {
-    pattern,
+    pattern: spreadPattern,
     pick: 'zone',
-    zone: eyeTravel.targetZone,
-    reason: `eye travel — heavy anchors cluster on one edge — third anchor in ${zoneLabel}`,
-    need: Math.max(need, 0.58),
-    eyeTravel
+    zone,
+    strategy: 'spread',
+    reason: `two dense focals share one edge — spread balance with ${spreadPattern} in ${zoneLabel}`,
+    need: Math.max(need, 0.55),
+    focalBalance
   };
 }
 
@@ -812,16 +839,15 @@ function patternAlreadyPresentAsFocal(layoutMetrics, pattern) {
 function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
   const need = scoreCompositionNeed(colorMetrics, layoutMetrics);
   const skip = (reason) => ({ pattern: 'none', pick: null, reason, need });
-  const eyeTravel = analyzeEyeTravelBalance(engine, layoutMetrics);
+  const focalBalance = analyzeFocalBalance(engine, layoutMetrics);
   const plainCandidates = pickCheckpointCandidateBlocks(engine, 1, 'plain');
 
-  const triangularTweak = inferTriangularBalanceTweak(layoutMetrics, eyeTravel, need);
-  if (triangularTweak && pickCheckpointCandidateBlocks(engine, 1, 'zone', triangularTweak.zone).length) {
-    return triangularTweak;
+  const balanceTweak = inferFocalBalanceTweak(focalBalance, need);
+  if (balanceTweak && pickCheckpointCandidateBlocks(engine, 1, 'zone', balanceTweak.zone).length) {
+    return balanceTweak;
   }
 
-  // Macro focal is an asset when eye path is already balanced — not when anchors sit on one edge.
-  if (layoutMetrics.hasMacroFocal && !eyeTravel.needsThirdAnchor) {
+  if (layoutMetrics.hasMacroFocal && !focalBalance.needsBalance) {
     const focal = macroFocalSummary(layoutMetrics) || 'pattern';
     return skip(`macro focal already present (${focal}) — preserve asset`);
   }
@@ -923,7 +949,7 @@ function inferCheckpointTweak(colorMetrics, layoutMetrics, engine) {
 function applyInferredCheckpointTweak(engine, checkpointColors) {
   const colorMetrics = analyzeColors(checkpointColors);
   const layoutMetrics = analyzeBlockLayout(engine);
-  const eyeTravel = analyzeEyeTravelBalance(engine, layoutMetrics);
+  const focalBalance = analyzeFocalBalance(engine, layoutMetrics);
   const tweak = inferCheckpointTweak(colorMetrics, layoutMetrics, engine);
   const adjustments = tweak.pattern === 'none'
     ? 0
@@ -932,7 +958,7 @@ function applyInferredCheckpointTweak(engine, checkpointColors) {
     adjustments,
     tweak,
     need: tweak.need,
-    eyeTravel,
+    focalBalance,
     colorMetrics,
     layoutMetrics
   };
