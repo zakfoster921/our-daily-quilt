@@ -65,11 +65,24 @@ async function main() {
       if (!snap.exists) continue;
       const data = snap.data() || {};
       const history = Array.isArray(data.mirrorTuneHistory) ? data.mirrorTuneHistory : [];
-      if (!history.length && !data.mirrorFlipX && !data.mirrorFlipY && !data.mirrorSeamNudgeY) continue;
+      if (
+        !history.length &&
+        !data.mirrorFlipX &&
+        !data.mirrorFlipY &&
+        !data.mirrorSeamNudgeY &&
+        String(data.mirrorBottomLayout || '') !== 'doubleSideBySide'
+      ) {
+        continue;
+      }
       rows.push({
         dateKey,
+        mirrorBottomLayout: String(data.mirrorBottomLayout || 'single'),
         mirrorFlipX: data.mirrorFlipX === true,
         mirrorFlipY: data.mirrorFlipY === true,
+        mirrorBottomLeftFlipX: data.mirrorBottomLeftFlipX === true,
+        mirrorBottomLeftFlipY: data.mirrorBottomLeftFlipY === true,
+        mirrorBottomRightFlipX: data.mirrorBottomRightFlipX === true,
+        mirrorBottomRightFlipY: data.mirrorBottomRightFlipY === true,
         mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
         mirrorFieldNudgeY: Number(data.mirrorFieldNudgeY) || 0,
         mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || null,
@@ -85,15 +98,25 @@ async function main() {
       const history = Array.isArray(data.mirrorTuneHistory) ? data.mirrorTuneHistory : [];
       const hasCurrent =
         Boolean(data.mirrorTuneUpdatedAt) ||
+        String(data.mirrorBottomLayout || '') === 'doubleSideBySide' ||
         data.mirrorFlipX !== true ||
         data.mirrorFlipY !== true ||
+        data.mirrorBottomLeftFlipX === true ||
+        data.mirrorBottomLeftFlipY === true ||
+        data.mirrorBottomRightFlipX === true ||
+        data.mirrorBottomRightFlipY === true ||
         Math.abs(Number(data.mirrorSeamNudgeY) || 0) > 1e-9 ||
         Math.abs(Number(data.mirrorFieldNudgeY) || 0) > 1e-9;
       if (!history.length && !hasCurrent) return;
       rows.push({
         dateKey: doc.id,
+        mirrorBottomLayout: String(data.mirrorBottomLayout || 'single'),
         mirrorFlipX: data.mirrorFlipX === true,
         mirrorFlipY: data.mirrorFlipY === true,
+        mirrorBottomLeftFlipX: data.mirrorBottomLeftFlipX === true,
+        mirrorBottomLeftFlipY: data.mirrorBottomLeftFlipY === true,
+        mirrorBottomRightFlipX: data.mirrorBottomRightFlipX === true,
+        mirrorBottomRightFlipY: data.mirrorBottomRightFlipY === true,
         mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
         mirrorFieldNudgeY: Number(data.mirrorFieldNudgeY) || 0,
         mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || null,

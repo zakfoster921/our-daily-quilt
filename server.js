@@ -1828,7 +1828,19 @@ function buildServerQuiltWriteProvenance(reason, req, extra = {}) {
 
 const MIRROR_TUNE_DEFAULT_FLIP_X = true;
 const MIRROR_TUNE_DEFAULT_FLIP_Y = true;
+const MIRROR_BOTTOM_LAYOUT_SINGLE = 'single';
+const MIRROR_BOTTOM_LAYOUT_DOUBLE = 'doubleSideBySide';
 const MIRROR_TUNE_HISTORY_MAX = 80;
+
+function serverNormalizeMirrorBottomLayout(value) {
+  return String(value || '').trim() === MIRROR_BOTTOM_LAYOUT_DOUBLE
+    ? MIRROR_BOTTOM_LAYOUT_DOUBLE
+    : MIRROR_BOTTOM_LAYOUT_SINGLE;
+}
+
+function serverMirrorBottomLayoutIsDouble(tune) {
+  return serverNormalizeMirrorBottomLayout(tune?.bottomLayout) === MIRROR_BOTTOM_LAYOUT_DOUBLE;
+}
 
 function serverNormalizeMirrorFlipFlag(value, fallback) {
   if (typeof value === 'boolean') return value;
@@ -1846,11 +1858,34 @@ function serverNormalizeMirrorSeamNudge(value) {
 function serverMirrorTuneFromQuiltData(data) {
   const d = data && typeof data === 'object' ? data : {};
   return {
+    bottomLayout: serverNormalizeMirrorBottomLayout(d.mirrorBottomLayout),
     flipX: serverNormalizeMirrorFlipFlag(d.mirrorFlipX, MIRROR_TUNE_DEFAULT_FLIP_X),
     flipY: serverNormalizeMirrorFlipFlag(d.mirrorFlipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
+    leftFlipX: serverNormalizeMirrorFlipFlag(d.mirrorBottomLeftFlipX, false),
+    leftFlipY: serverNormalizeMirrorFlipFlag(d.mirrorBottomLeftFlipY, false),
+    rightFlipX: serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipX, false),
+    rightFlipY: serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipY, false),
     nudgeSeamY: serverNormalizeMirrorSeamNudge(d.mirrorSeamNudgeY),
     nudgeMirrorY: serverNormalizeMirrorSeamNudge(d.mirrorFieldNudgeY)
   };
+}
+
+function serverMirrorTileFlipLabel(prefix, flipX, flipY) {
+  const fx = serverNormalizeMirrorFlipFlag(flipX, false);
+  const fy = serverNormalizeMirrorFlipFlag(flipY, false);
+  if (!fx && !fy) return `${prefix}:—`;
+  const parts = [];
+  if (fx) parts.push('X');
+  if (fy) parts.push('Y');
+  return `${prefix}:${parts.join('')}`;
+}
+
+function serverMirrorTuneModeLabelFromTune(tune) {
+  const t = tune || {};
+  if (serverMirrorBottomLayoutIsDouble(t)) {
+    return `Dup ×2 (${serverMirrorTileFlipLabel('L', t.leftFlipX, t.leftFlipY)} ${serverMirrorTileFlipLabel('R', t.rightFlipX, t.rightFlipY)})`;
+  }
+  return serverMirrorTuneModeLabel(t.flipX, t.flipY);
 }
 
 function serverMirrorTuneModeLabel(flipX, flipY) {
@@ -1862,6 +1897,7 @@ function serverMirrorTuneModeLabel(flipX, flipY) {
 
 function serverMirrorTuneIsCustomized(tune) {
   const t = tune || {};
+  if (serverMirrorBottomLayoutIsDouble(t)) return true;
   return (
     t.flipX !== MIRROR_TUNE_DEFAULT_FLIP_X ||
     t.flipY !== MIRROR_TUNE_DEFAULT_FLIP_Y ||
@@ -1870,28 +1906,40 @@ function serverMirrorTuneIsCustomized(tune) {
   );
 }
 
+function serverMirrorTuneSnapshotFields(tune) {
+  const t = tune || {};
+  return {
+    bottomLayout: serverNormalizeMirrorBottomLayout(t.bottomLayout),
+    flipX: serverNormalizeMirrorFlipFlag(t.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
+    flipY: serverNormalizeMirrorFlipFlag(t.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
+    leftFlipX: serverNormalizeMirrorFlipFlag(t.leftFlipX, false),
+    leftFlipY: serverNormalizeMirrorFlipFlag(t.leftFlipY, false),
+    rightFlipX: serverNormalizeMirrorFlipFlag(t.rightFlipX, false),
+    rightFlipY: serverNormalizeMirrorFlipFlag(t.rightFlipY, false),
+    nudgeSeamY: serverNormalizeMirrorSeamNudge(t.nudgeSeamY),
+    nudgeMirrorY: serverNormalizeMirrorSeamNudge(t.nudgeMirrorY)
+  };
+}
+
 function serverMirrorTuneSnapshotsEqual(a, b) {
+  const left = serverMirrorTuneSnapshotFields(a);
+  const right = serverMirrorTuneSnapshotFields(b);
   return (
-    a.flipX === b.flipX &&
-    a.flipY === b.flipY &&
-    serverNormalizeMirrorSeamNudge(a.nudgeSeamY) === serverNormalizeMirrorSeamNudge(b.nudgeSeamY) &&
-    serverNormalizeMirrorSeamNudge(a.nudgeMirrorY) === serverNormalizeMirrorSeamNudge(b.nudgeMirrorY)
+    left.bottomLayout === right.bottomLayout &&
+    left.flipX === right.flipX &&
+    left.flipY === right.flipY &&
+    left.leftFlipX === right.leftFlipX &&
+    left.leftFlipY === right.leftFlipY &&
+    left.rightFlipX === right.rightFlipX &&
+    left.rightFlipY === right.rightFlipY &&
+    left.nudgeSeamY === right.nudgeSeamY &&
+    left.nudgeMirrorY === right.nudgeMirrorY
   );
 }
 
 function serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, extra = {}) {
-  const before = {
-    flipX: serverNormalizeMirrorFlipFlag(beforeTune?.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
-    flipY: serverNormalizeMirrorFlipFlag(beforeTune?.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-    nudgeSeamY: serverNormalizeMirrorSeamNudge(beforeTune?.nudgeSeamY),
-    nudgeMirrorY: serverNormalizeMirrorSeamNudge(beforeTune?.nudgeMirrorY)
-  };
-  const after = {
-    flipX: serverNormalizeMirrorFlipFlag(afterTune?.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
-    flipY: serverNormalizeMirrorFlipFlag(afterTune?.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-    nudgeSeamY: serverNormalizeMirrorSeamNudge(afterTune?.nudgeSeamY),
-    nudgeMirrorY: serverNormalizeMirrorSeamNudge(afterTune?.nudgeMirrorY)
-  };
+  const before = serverMirrorTuneSnapshotFields(beforeTune);
+  const after = serverMirrorTuneSnapshotFields(afterTune);
   if (serverMirrorTuneSnapshotsEqual(before, after)) return null;
   const at = String(extra.at || getUtcIsoNow()).trim();
   const action =
@@ -1903,11 +1951,11 @@ function serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, extra = {}) {
     source: String(extra.source || 'admin-tune-modal').trim() || 'admin-tune-modal',
     before: {
       ...before,
-      mode: serverMirrorTuneModeLabel(before.flipX, before.flipY)
+      mode: serverMirrorTuneModeLabelFromTune(before)
     },
     after: {
       ...after,
-      mode: serverMirrorTuneModeLabel(after.flipX, after.flipY)
+      mode: serverMirrorTuneModeLabelFromTune(after)
     },
     customizedAfter: serverMirrorTuneIsCustomized(after),
     blockCount: Number.isFinite(extra.blockCount) ? Math.floor(extra.blockCount) : null
@@ -6241,6 +6289,23 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     }
     const flipX = body.mirrorFlipX === true || body.mirrorFlipX === 'true' || body.mirrorFlipX === 1;
     const flipY = body.mirrorFlipY === true || body.mirrorFlipY === 'true' || body.mirrorFlipY === 1;
+    const bottomLayout = serverNormalizeMirrorBottomLayout(body.mirrorBottomLayout);
+    const leftFlipX =
+      body.mirrorBottomLeftFlipX === true ||
+      body.mirrorBottomLeftFlipX === 'true' ||
+      body.mirrorBottomLeftFlipX === 1;
+    const leftFlipY =
+      body.mirrorBottomLeftFlipY === true ||
+      body.mirrorBottomLeftFlipY === 'true' ||
+      body.mirrorBottomLeftFlipY === 1;
+    const rightFlipX =
+      body.mirrorBottomRightFlipX === true ||
+      body.mirrorBottomRightFlipX === 'true' ||
+      body.mirrorBottomRightFlipX === 1;
+    const rightFlipY =
+      body.mirrorBottomRightFlipY === true ||
+      body.mirrorBottomRightFlipY === 'true' ||
+      body.mirrorBottomRightFlipY === 1;
     const nudgeSeamY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorSeamNudgeY) || 0));
     const nudgeMirrorY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorFieldNudgeY) || 0));
     const mirrorTuneUpdatedAt = String(
@@ -6253,14 +6318,19 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     const existingData = existingSnap.exists ? existingSnap.data() || {} : {};
     const beforeTune =
       body.previous && typeof body.previous === 'object'
-        ? {
-            flipX: serverNormalizeMirrorFlipFlag(body.previous.flipX, MIRROR_TUNE_DEFAULT_FLIP_X),
-            flipY: serverNormalizeMirrorFlipFlag(body.previous.flipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-            nudgeSeamY: serverNormalizeMirrorSeamNudge(body.previous.nudgeSeamY),
-            nudgeMirrorY: serverNormalizeMirrorSeamNudge(body.previous.nudgeMirrorY)
-          }
+        ? serverMirrorTuneSnapshotFields(body.previous)
         : serverMirrorTuneFromQuiltData(existingData);
-    const afterTune = { flipX, flipY, nudgeSeamY, nudgeMirrorY };
+    const afterTune = {
+      bottomLayout,
+      flipX,
+      flipY,
+      leftFlipX,
+      leftFlipY,
+      rightFlipX,
+      rightFlipY,
+      nudgeSeamY,
+      nudgeMirrorY
+    };
     const blocks = Array.isArray(existingData.blocks) ? existingData.blocks : [];
     const historyEntry = serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, {
       at: mirrorTuneUpdatedAt,
@@ -6274,8 +6344,13 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       historyEntry
     );
     const patch = {
+      mirrorBottomLayout: bottomLayout,
       mirrorFlipX: flipX,
       mirrorFlipY: flipY,
+      mirrorBottomLeftFlipX: leftFlipX,
+      mirrorBottomLeftFlipY: leftFlipY,
+      mirrorBottomRightFlipX: rightFlipX,
+      mirrorBottomRightFlipY: rightFlipY,
       mirrorSeamNudgeY: nudgeSeamY,
       mirrorFieldNudgeY: nudgeMirrorY,
       mirrorSeamNudgeX: admin.firestore.FieldValue.delete(),
@@ -6289,13 +6364,18 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     const snap = await db.collection('quilts').doc(dateKey).get();
     const data = snap.exists ? snap.data() || {} : {};
     console.log(
-      `✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY}, seamY=${nudgeSeamY}, mirrorY=${nudgeMirrorY}, history=${historyEntry ? 'appended' : 'unchanged'})`
+      `✅ Quilt mirror tune saved via server for ${dateKey} (layout=${bottomLayout}, flipX=${flipX}, flipY=${flipY}, seamY=${nudgeSeamY}, mirrorY=${nudgeMirrorY}, history=${historyEntry ? 'appended' : 'unchanged'})`
     );
     res.json({
       success: true,
       dateKey,
+      mirrorBottomLayout: serverNormalizeMirrorBottomLayout(data.mirrorBottomLayout),
       mirrorFlipX: data.mirrorFlipX === true,
       mirrorFlipY: data.mirrorFlipY === true,
+      mirrorBottomLeftFlipX: data.mirrorBottomLeftFlipX === true,
+      mirrorBottomLeftFlipY: data.mirrorBottomLeftFlipY === true,
+      mirrorBottomRightFlipX: data.mirrorBottomRightFlipX === true,
+      mirrorBottomRightFlipY: data.mirrorBottomRightFlipY === true,
       mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
       mirrorFieldNudgeY: Number(data.mirrorFieldNudgeY) || 0,
       mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt,
