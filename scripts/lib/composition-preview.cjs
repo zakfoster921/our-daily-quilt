@@ -408,7 +408,7 @@ function replaySequence(dateKey, colors, modeKey, lockAt, options = {}) {
         colorReplayEvents: [],
         macroStructureFrozen: options.macroStructureFrozen === true
       });
-      installPaletteLock(engine);
+      if (options.lockPalette === true) installPaletteLock(engine);
       const skippedColors = [];
       let biasInstalled = modeKey === 'baseline';
       const startIndex = Math.max(0, Math.floor(Number(options.startIndex) || 0));
@@ -480,6 +480,83 @@ function panelAudit(blocks, colors) {
   };
 }
 
+function colorDistanceSq(a, b) {
+  const ar = hexToRgb(a);
+  const br = hexToRgb(b);
+  if (!ar || !br) return Number.POSITIVE_INFINITY;
+  return (ar.r - br.r) ** 2 + (ar.g - br.g) ** 2 + (ar.b - br.b) ** 2;
+}
+
+function nearestPaletteColor(hex, palette) {
+  const normalized = normalizeHex(hex);
+  if (!normalized || !palette.length) return normalized;
+  if (palette.includes(normalized)) return normalized;
+  return palette.reduce((best, candidate) => (
+    colorDistanceSq(normalized, candidate) < colorDistanceSq(normalized, best) ? candidate : best
+  ), palette[0]);
+}
+
+function alignBlocksToReferencePalette(blocks, referenceBlocks) {
+  const palette = [...new Set(collectBlockHexes(referenceBlocks))];
+  if (!palette.length) return blocks;
+  const aligned = cloneJson(blocks, []);
+  const slots = [];
+  const addSlot = (getter, setter) => {
+    const current = normalizeHex(getter());
+    if (!current) return;
+    const next = nearestPaletteColor(current, palette);
+    setter(next);
+    slots.push({ get: getter, set: setter });
+  };
+
+  for (const block of aligned) {
+    for (const key of [
+      'color',
+      'contributorColor',
+      'hstColorB',
+      'insetInnerColor',
+      'specialOriginalColor',
+      'specialOriginalInnerColor',
+      'macroFrozenColor'
+    ]) {
+      if (typeof block?.[key] === 'string') {
+        addSlot(() => block[key], (value) => {
+          block[key] = value;
+        });
+      }
+    }
+    for (const tri of Array.isArray(block?.hstTriangles) ? block.hstTriangles : []) {
+      if (typeof tri?.color === 'string') {
+        addSlot(() => tri.color, (value) => {
+          tri.color = value;
+        });
+      }
+    }
+    for (const piece of Array.isArray(block?.polygonPieces) ? block.polygonPieces : []) {
+      if (typeof piece?.color === 'string') {
+        addSlot(() => piece.color, (value) => {
+          piece.color = value;
+        });
+      }
+    }
+  }
+
+  const counts = () => slots.reduce((map, slot) => {
+    const color = normalizeHex(slot.get());
+    if (color) map.set(color, (map.get(color) || 0) + 1);
+    return map;
+  }, new Map());
+
+  for (const missing of palette.filter((hex) => !counts().has(hex))) {
+    const currentCounts = counts();
+    const reusable = slots.find((slot) => (currentCounts.get(normalizeHex(slot.get())) || 0) > 1);
+    if (!reusable) break;
+    reusable.set(missing);
+  }
+
+  return aligned;
+}
+
 function suppressedStoredBlockAudit(blocks) {
   return {
     outputUniqueColorCount: [...new Set(collectBlockHexes(blocks))].length,
@@ -531,9 +608,10 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
         initialBlocks: archiveLockSnapshot.blocks,
         initialSubmissionCount: archiveLockSnapshot.submissionCount,
         startIndex: archiveLockSnapshot.submissionCount,
-        macroStructureFrozen: false
+        macroStructureFrozen: false,
+        lockPalette: options.lockPalette === true
       }
-    : {};
+    : { lockPalette: options.lockPalette === true };
 
   const panels = [];
   if (options.includeStoredOriginal !== false) {
@@ -567,6 +645,9 @@ function buildCompositionPreviewFromQuiltData(dateKey, quiltData, options = {}) 
           skippedColors: []
         }
       : replaySequence(dateKey, colors, mode, lockAt, replayOptions);
+    if (options.includeStoredOriginal !== false) {
+      replay.blocks = alignBlocksToReferencePalette(replay.blocks, liveBlocks);
+    }
     const audit = source === 'storedBlocks' ? suppressedStoredBlockAudit(replay.blocks) : panelAudit(replay.blocks, colors);
     const isCurrent = mode === 'baseline';
     const label = isCurrent
