@@ -383,43 +383,58 @@ function withPatchedRandom(modeKey, fn) {
   }
 }
 
-function replaySequence(dateKey, colors, modeKey, lockAt, options = {}) {
-  const originalRandom = Math.random;
-  Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
+function withQuietConsole(fn) {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
   try {
-    const engine = createServerQuiltEngine({
-      userId: `composition-${modeKey}-${dateKey}`,
-      blocks: Array.isArray(options.initialBlocks) ? options.initialBlocks : [],
-      submissionCount: Math.max(0, Math.floor(Number(options.initialSubmissionCount) || 0)),
-      colorReplayEvents: [],
-      macroStructureFrozen: options.macroStructureFrozen === true
-    });
-    installPaletteLock(engine);
-    const skippedColors = [];
-    let biasInstalled = modeKey === 'baseline';
-    const startIndex = Math.max(0, Math.floor(Number(options.startIndex) || 0));
-    for (let i = startIndex; i < colors.length; i += 1) {
-      const hex = colors[i];
-      const shouldBias = modeKey !== 'baseline' && i >= lockAt;
-      if (shouldBias && !biasInstalled) {
-        installModeBiases(engine, modeKey);
-        biasInstalled = true;
-      }
-      const result = shouldBias
-        ? withPatchedRandom(modeKey, () => engine.addColor(hex))
-        : engine.addColor(hex);
-      if (!result) skippedColors.push({ index: i + 1, color: hex });
-    }
-    return {
-      mode: modeKey,
-      blocks: serializeServerQuiltBlocks(engine),
-      submissionCount: Number(engine.submissionCount) || colors.length,
-      macroStructureFrozen: engine.macroStructureFrozen === true,
-      skippedColors
-    };
+    console.log = () => {};
+    console.warn = () => {};
+    return fn();
   } finally {
-    Math.random = originalRandom;
+    console.log = originalLog;
+    console.warn = originalWarn;
   }
+}
+
+function replaySequence(dateKey, colors, modeKey, lockAt, options = {}) {
+  return withQuietConsole(() => {
+    const originalRandom = Math.random;
+    Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
+    try {
+      const engine = createServerQuiltEngine({
+        userId: `composition-${modeKey}-${dateKey}`,
+        blocks: Array.isArray(options.initialBlocks) ? options.initialBlocks : [],
+        submissionCount: Math.max(0, Math.floor(Number(options.initialSubmissionCount) || 0)),
+        colorReplayEvents: [],
+        macroStructureFrozen: options.macroStructureFrozen === true
+      });
+      installPaletteLock(engine);
+      const skippedColors = [];
+      let biasInstalled = modeKey === 'baseline';
+      const startIndex = Math.max(0, Math.floor(Number(options.startIndex) || 0));
+      for (let i = startIndex; i < colors.length; i += 1) {
+        const hex = colors[i];
+        const shouldBias = modeKey !== 'baseline' && i >= lockAt;
+        if (shouldBias && !biasInstalled) {
+          installModeBiases(engine, modeKey);
+          biasInstalled = true;
+        }
+        const result = shouldBias
+          ? withPatchedRandom(modeKey, () => engine.addColor(hex))
+          : engine.addColor(hex);
+        if (!result) skippedColors.push({ index: i + 1, color: hex });
+      }
+      return {
+        mode: modeKey,
+        blocks: serializeServerQuiltBlocks(engine),
+        submissionCount: Number(engine.submissionCount) || colors.length,
+        macroStructureFrozen: engine.macroStructureFrozen === true,
+        skippedColors
+      };
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
 }
 
 function collectBlockHexes(blocks) {
