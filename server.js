@@ -209,6 +209,7 @@ function notionSyncQuotesScriptArgs(startDate, syncScope) {
 const JSON_SIZE_LIMITS = new Map([
   ['/api/push-instagram-assets', 30 * ONE_MB],
   ['/api/push-layout-b-tune', 48 * ONE_KB],
+  ['/api/push-quilt-mirror-tune', 8 * ONE_KB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
   ['/api/quilt-name-words', 4 * ONE_KB],
   ['/api/quilt-name-generate', 4 * ONE_KB],
@@ -6107,6 +6108,56 @@ app.post('/api/push-layout-b-tune', limitInstagramAssetPush, optionalInstagramAs
     });
   } catch (error) {
     console.error('❌ push-layout-b-tune failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || String(error),
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.options('/api/push-quilt-mirror-tune', (req, res) => {
+  setInstagramApiCors(res);
+  res.status(204).end();
+});
+
+/**
+ * Admin mirror tune modal: persist bottom-field flip flags on quilts/{dateKey}.
+ */
+app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagramAssetAuth, async (req, res) => {
+  setInstagramApiCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore admin not initialized' });
+    }
+    const body = req.body || {};
+    const dateKey = String(body.dateKey || body.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ success: false, error: 'Invalid dateKey' });
+    }
+    const flipX = body.mirrorFlipX === true || body.mirrorFlipX === 'true' || body.mirrorFlipX === 1;
+    const flipY = body.mirrorFlipY === true || body.mirrorFlipY === 'true' || body.mirrorFlipY === 1;
+    const mirrorTuneUpdatedAt = String(
+      body.mirrorTuneUpdatedAt || new Date().toISOString()
+    ).trim();
+    const patch = {
+      mirrorFlipX: flipX,
+      mirrorFlipY: flipY,
+      mirrorTuneUpdatedAt
+    };
+    await db.collection('quilts').doc(dateKey).set(patch, { merge: true });
+    const snap = await db.collection('quilts').doc(dateKey).get();
+    const data = snap.exists ? snap.data() || {} : {};
+    console.log(`✅ Quilt mirror tune saved via server for ${dateKey} (flipX=${flipX}, flipY=${flipY})`);
+    res.json({
+      success: true,
+      dateKey,
+      mirrorFlipX: data.mirrorFlipX === true,
+      mirrorFlipY: data.mirrorFlipY === true,
+      mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt
+    });
+  } catch (error) {
+    console.error('❌ push-quilt-mirror-tune failed:', error);
     res.status(500).json({
       success: false,
       error: error.message || String(error),
