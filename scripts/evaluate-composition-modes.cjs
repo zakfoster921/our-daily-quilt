@@ -235,6 +235,8 @@ async function main() {
       momentum: Number(metrics.momentum.toFixed(3)),
       hueTravel: Number(metrics.hueTravel.toFixed(3)),
       avgSaturation: Number(metrics.avgSaturation.toFixed(3)),
+      avgValue: Number(metrics.avgValue.toFixed(3)),
+      hueRange: Number(metrics.hueRange.toFixed(1)),
       families: metrics.families
     });
   }

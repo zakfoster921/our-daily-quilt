@@ -9,12 +9,35 @@ const MODE_CONFIG = {
     label: 'Baseline',
     description: 'Current engine growth'
   },
-  field: {
-    label: 'Field',
-    description: 'Larger quiet regions, fewer special interruptions',
-    specials: 0.35,
-    accentBias: 0.35,
-    patternPreference: ['insetCircle', 'framed', 'hst']
+  vivid: {
+    label: 'Vivid',
+    description: 'All saturated, punchy colors rendered bold',
+    specials: 1.6,
+    accentBias: 2.0,
+    saturatedAccent: true,
+    patternPreference: ['checkerboard', 'cross', 'hst']
+  },
+  monochromatic: {
+    label: 'Monochromatic',
+    description: 'One hue with variations in saturation and value',
+    specials: 0.8,
+    colorRoute: 'value',
+    patternPreference: ['stripes', 'hst', 'framed']
+  },
+  bright: {
+    label: 'Bright',
+    description: 'High-light day rendered energetic and active',
+    specials: 1.5,
+    accentBias: 1.3,
+    largeBlockPenalty: 0.3,
+    patternPreference: ['cross', 'checkerboard', 'hst']
+  },
+  chromatic: {
+    label: 'Chromatic',
+    description: 'Colors jump across the hue wheel with high variety',
+    specials: 1.4,
+    accentBias: 1.2,
+    patternPreference: ['cross', 'railfence', 'hst']
   },
   mosaic: {
     label: 'Mosaic',
@@ -31,44 +54,20 @@ const MODE_CONFIG = {
     axis: 'horizontal',
     patternPreference: ['stripes', 'railfence', 'hst']
   },
-  garden: {
-    label: 'Garden',
-    description: 'Dominant color families cluster, accent colors become blossoms',
-    specials: 1.25,
-    colorRoute: 'family',
-    dominantCluster: true,
-    accentBias: 1.45,
-    patternPreference: ['insetCircle', 'framed', 'hst', 'stripes']
-  },
   vein: {
     label: 'Vein',
-    description: 'Outlier colors become thin interruptions',
-    specials: 0.85,
-    accentBias: 1.8,
+    description: 'Dominant color with rare outliers as thin interruptions',
+    specials: 1.1,
+    accentBias: 2.2,
     outlierAccent: true,
-    patternPreference: ['stripes', 'hst', 'railfence']
+    patternPreference: ['stripes', 'railfence', 'hst']
   },
   window: {
     label: 'Window',
-    description: 'Protects a few large calm regions',
+    description: 'Calm, default rendering',
     specials: 0.5,
     largeBlockPenalty: 0.55,
     patternPreference: ['framed', 'insetCircle', 'hst']
-  },
-  constellation: {
-    label: 'Constellation',
-    description: 'Rare saturated colors become small focal points',
-    specials: 0.95,
-    saturatedAccent: true,
-    patternPreference: ['insetCircle', 'hst', 'cross']
-  },
-  tide: {
-    label: 'Tide',
-    description: 'Warm/cool alternation and soft directional drift',
-    specials: 1.0,
-    colorRoute: 'temperature',
-    alternatingAxis: true,
-    patternPreference: ['stripes', 'framed', 'hst']
   }
 };
 
@@ -176,12 +175,14 @@ function analyzeColors(colors) {
   const familyCounts = new Map();
   const lightnesses = [];
   const saturations = [];
+  const hues = [];
   clean.forEach((hex) => {
     const fam = colorFamily(hex);
     familyCounts.set(fam, (familyCounts.get(fam) || 0) + 1);
     const hsl = hexToHsl(hex);
     lightnesses.push(hsl.l);
     saturations.push(hsl.s);
+    hues.push(hsl.h);
   });
   const families = [...familyCounts.entries()].sort((a, b) => b[1] - a[1]);
   const dominant = families[0] || ['unknown', 0];
@@ -194,6 +195,14 @@ function analyzeColors(colors) {
   }
   const lightSpread = lightnesses.length ? Math.max(...lightnesses) - Math.min(...lightnesses) : 0;
   const avgSaturation = saturations.length ? saturations.reduce((a, b) => a + b, 0) / saturations.length : 0;
+  const avgValue = lightnesses.length ? lightnesses.reduce((a, b) => a + b, 0) / lightnesses.length : 0;
+  const hueRange = hues.length <= 1 ? 0 : (() => {
+    const minH = Math.min(...hues);
+    const maxH = Math.max(...hues);
+    const linear = maxH - minH;
+    const circular = 360 - linear;
+    return Math.min(linear, circular);
+  })();
   return {
     count: clean.length,
     diversity: clean.length ? familyCounts.size / Math.max(1, Math.min(8, clean.length)) : 0,
@@ -203,6 +212,8 @@ function analyzeColors(colors) {
     contrast: lightSpread,
     warmth: clean.length ? warmCount / clean.length : 0,
     avgSaturation,
+    avgValue,
+    hueRange,
     momentum: clean.length > 1 ? familySwitches / (clean.length - 1) : 0,
     hueTravel: clean.length > 1 ? hueTravel / (clean.length - 1) : 0,
     families: Object.fromEntries(families)
@@ -212,16 +223,15 @@ function analyzeColors(colors) {
 function inferMode(metrics) {
   if (metrics.count < 8) return 'baseline';
   if (metrics.momentum <= 0.52 && metrics.familyCount >= 3) return 'strata';
-  if (metrics.dominance >= 0.46 && metrics.contrast < 0.38) return 'field';
-  if (
-    metrics.dominance >= 0.36 &&
-    metrics.diversity < 0.64 &&
-    metrics.familyCount >= 2 &&
-    metrics.momentum < 0.86
-  ) return 'garden';
   if (metrics.diversity >= 0.78) return 'mosaic';
-  if (metrics.hueTravel >= 0.5 && metrics.avgSaturation >= 0.58) return 'constellation';
-  if (metrics.momentum >= 0.86 && metrics.familyCount <= 5 && metrics.warmth >= 0.25 && metrics.warmth <= 0.75) return 'tide';
+  // HSV-based modes
+  if (metrics.avgSaturation > 0.65) return 'vivid';
+  if (metrics.avgSaturation < 0.4) return 'muted';
+  if (metrics.hueRange < 30 && metrics.avgValue > 0.15) return 'monochromatic';
+  if (metrics.avgValue < 0.4) return 'dark';
+  if (metrics.avgValue > 0.7) return 'bright';
+  if (metrics.hueRange > 150) return 'chromatic';
+  if (metrics.dominance >= 0.5 && metrics.familyCount >= 2 && metrics.hueTravel >= 0.4) return 'vein';
   return 'window';
 }
 
@@ -315,6 +325,16 @@ function installModeBiases(engine, modeKey) {
       if (config.accentBias) bias *= Number(config.accentBias) || 1;
       if (config.dominantCluster && modeDominantFamily && colorFamily(newColor) !== modeDominantFamily) {
         bias *= 1.25;
+      }
+      if (config.saturatedAccent) {
+        bias *= hexToHsl(newColor).s >= 0.55 ? 1.6 : 0.6;
+      }
+      if (config.outlierAccent && modeDominantFamily) {
+        if (colorFamily(newColor) === modeDominantFamily) {
+          bias *= 0.5;
+        } else {
+          bias *= 1.8;
+        }
       }
       return Math.max(0, Math.min(1, bias));
     };
