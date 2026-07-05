@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Side-by-side: stored live quilt vs baseline + generic tweak at color 20.
+ * Side-by-side: stored live quilt vs baseline + inferred tweak at color 20.
  *
- * No mode selection, no forward bias — one inset-circle tweak at 20, baseline throughout.
+ * Reads the first 20 picks + block layout, chooses one pattern tweak, continues baseline.
+ * When colorReplayEvents allow, branches from the archived live snapshot at 20.
  *
  *   DATE_KEYS=2026-06-16,2026-04-30 npm run composition:tweak-comparison
  */
@@ -25,7 +26,8 @@ const {
   normalizeHex,
   orderedColorsFromBlocks,
   orderedReplayEvents,
-  replaySequenceWithGenericCheckpoint
+  reconstructArchiveSnapshotAt,
+  replaySequenceWithInferredCheckpoint
 } = require('./lib/composition-preview.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -113,7 +115,16 @@ async function fetchDay(db, dateKey) {
     colors.length
   );
 
-  return { dateKey, data, liveBlocks, colors, colorSource, contributorCount, submissionCount };
+  return {
+    dateKey,
+    data,
+    liveBlocks,
+    colors,
+    colorSource,
+    contributorCount,
+    submissionCount,
+    replayEvents: orderedReplayEvents(data)
+  };
 }
 
 function startStaticServer() {
@@ -288,7 +299,14 @@ async function writeContactSheet(panelImages, contactPath) {
 
 async function renderDate(db, dateKey) {
   const day = await fetchDay(db, dateKey);
-  const tweak = replaySequenceWithGenericCheckpoint(dateKey, day.colors, { lockPalette: true });
+  const snapshot = reconstructArchiveSnapshotAt(day.replayEvents, MODE_DECISION_AT);
+  const tweak = replaySequenceWithInferredCheckpoint(dateKey, day.colors, {
+    lockPalette: true,
+    initialBlocks: snapshot?.blocks,
+    initialSubmissionCount: snapshot?.submissionCount
+  });
+  const tweakInfo = tweak.checkpoint?.tweak || {};
+  const branchNote = tweak.branchFromSnapshot ? 'from live snapshot @ 20' : 'simulated replay';
 
   const panels = [
     {
@@ -300,15 +318,15 @@ async function renderDate(db, dateKey) {
     },
     {
       mode: 'baseline-tweak',
-      label: `Baseline + tweak @ ${tweak.decisionAt} — ${dateKey}`,
-      subtitle: `${day.colors.length} colors · no mode · ${tweak.checkpoint.adjustments} inset tweak(s) · ${tweak.blocks.length} blocks · baseline after ${tweak.decisionAt}`,
+      label: `Inferred tweak @ ${tweak.decisionAt} — ${dateKey}`,
+      subtitle: `${tweakInfo.pattern || 'none'} on ${tweakInfo.pick || 'largest'} block · ${tweak.checkpoint?.adjustments || 0} applied · ${branchNote} · ${tweak.blocks.length} blocks · baseline after`,
       blocks: tweak.blocks,
       submissionCount: tweak.submissionCount
     }
   ];
 
   console.log(
-    `[tweak-comparison] ${dateKey}: live ${day.liveBlocks.length} blocks vs baseline+tweak ${tweak.blocks.length} blocks (${tweak.checkpoint.adjustments} tweak(s))`
+    `[tweak-comparison] ${dateKey}: live ${day.liveBlocks.length} vs inferred ${tweakInfo.pattern} (${tweakInfo.reason || 'n/a'}) → ${tweak.blocks.length} blocks`
   );
 
   const outDir = path.join(ROOT, 'tmp', 'tweak-comparison', dateKey);
@@ -325,7 +343,11 @@ async function renderDate(db, dateKey) {
     liveBlockCount: day.liveBlocks.length,
     tweakBlockCount: tweak.blocks.length,
     decisionAt: tweak.decisionAt,
-    tweakAdjustments: tweak.checkpoint.adjustments,
+    branchFromSnapshot: tweak.branchFromSnapshot === true,
+    inferredPattern: tweakInfo.pattern || null,
+    inferredPick: tweakInfo.pick || null,
+    inferredReason: tweakInfo.reason || null,
+    tweakAdjustments: tweak.checkpoint?.adjustments || 0,
     contactSheet: path.relative(ROOT, contactPath)
   };
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);

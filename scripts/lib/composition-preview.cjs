@@ -345,9 +345,9 @@ function reconstructArchiveSnapshotAt(events, lockAt) {
   };
 }
 
-function pickCheckpointCandidateBlocks(engine, limit = 2) {
+function pickCheckpointCandidateBlocks(engine, limit = 2, pick = 'largest') {
   const minArea = 35000;
-  return (Array.isArray(engine?.blocks) ? engine.blocks : [])
+  let filtered = (Array.isArray(engine?.blocks) ? engine.blocks : [])
     .filter((block) => {
       if (!block || (Number(block.width) || 0) <= 0 || (Number(block.height) || 0) <= 0) return false;
       if (block.patternType === 'special' && block.specialPatternType !== 'diagonalAxis') return false;
@@ -362,13 +362,24 @@ function pickCheckpointCandidateBlocks(engine, limit = 2) {
         return engine.getAvailablePatterns(block, '#808080').length > 0;
       }
       return true;
-    })
-    .sort(
+    });
+
+  const areaOf = (block) => (Number(block.width) || 0) * (Number(block.height) || 0);
+
+  if (pick === 'widest') {
+    filtered.sort(
       (a, b) =>
-        (Number(b.width) || 0) * (Number(b.height) || 0) -
-        (Number(a.width) || 0) * (Number(a.height) || 0)
-    )
-    .slice(0, Math.max(1, limit));
+        (Number(b.width) || 0) - (Number(a.width) || 0) ||
+        areaOf(b) - areaOf(a)
+    );
+  } else if (pick === 'calm') {
+    filtered = filtered.filter((block) => block.patternType !== 'special');
+    filtered.sort((a, b) => areaOf(b) - areaOf(a));
+  } else {
+    filtered.sort((a, b) => areaOf(b) - areaOf(a));
+  }
+
+  return filtered.slice(0, Math.max(1, limit));
 }
 
 function createCheckpointPattern(engine, block, patternType, accentColor) {
@@ -399,20 +410,75 @@ function replaceBlockInEngine(engine, blockId, children) {
 
 function applyCheckpointPatternSteps(engine, steps, checkpointColors) {
   if (!engine || !Array.isArray(steps) || !steps.length) return 0;
-  const candidates = pickCheckpointCandidateBlocks(engine, steps.length);
   const accent =
     normalizeHex(checkpointColors[checkpointColors.length - 1]) ||
     normalizeHex(checkpointColors[0]) ||
     '#808080';
   let adjustments = 0;
-  for (let i = 0; i < steps.length && i < candidates.length; i += 1) {
-    const block = candidates[i];
-    const children = createCheckpointPattern(engine, block, steps[i].pattern, accent);
+  for (let i = 0; i < steps.length; i += 1) {
+    const step = steps[i];
+    const candidates = pickCheckpointCandidateBlocks(engine, 1, step.pick || 'largest');
+    const block = candidates[i] || candidates[0];
+    if (!block) continue;
+    const children = createCheckpointPattern(engine, block, step.pattern, accent);
     if (Array.isArray(children) && children.length && replaceBlockInEngine(engine, block.id, children)) {
       adjustments += 1;
     }
   }
   return adjustments;
+}
+
+function analyzeBlockLayout(engine) {
+  const blocks = Array.isArray(engine?.blocks) ? engine.blocks : [];
+  const areaOf = (block) => (Number(block.width) || 0) * (Number(block.height) || 0);
+  const areas = blocks.map(areaOf);
+  const totalArea = areas.reduce((sum, area) => sum + area, 0) || 1;
+  const largestArea = areas.length ? Math.max(...areas) : 0;
+  const specialCount = blocks.filter((block) => block?.patternType === 'special').length;
+  const regularBlocks = blocks.filter(
+    (block) => block && (block.patternType !== 'special' || block.specialPatternType === 'diagonalAxis')
+  );
+  const largestRegular = regularBlocks.slice().sort((a, b) => areaOf(b) - areaOf(a))[0] || null;
+  const w = Number(largestRegular?.width) || 0;
+  const h = Number(largestRegular?.height) || 0;
+  return {
+    blockCount: blocks.length,
+    largestAreaShare: largestArea / totalArea,
+    specialShare: specialCount / Math.max(1, blocks.length),
+    largestAspect: w && h ? Math.max(w, h) / Math.max(1, Math.min(w, h)) : 1
+  };
+}
+
+function inferCheckpointTweak(colorMetrics, layoutMetrics) {
+  if (colorMetrics.diversity >= 0.75) {
+    return { pattern: 'checkerboard', pick: 'largest', reason: 'scattered palette — add a grid anchor' };
+  }
+  if (colorMetrics.momentum <= 0.52 && colorMetrics.familyCount >= 3) {
+    return { pattern: 'stripes', pick: 'widest', reason: 'color runs — reinforce horizontal bands' };
+  }
+  if (colorMetrics.dominance >= 0.46 && colorMetrics.contrast < 0.38) {
+    return { pattern: 'framed', pick: 'calm', reason: 'dominant calm field — gentle frame' };
+  }
+  if (colorMetrics.hueTravel >= 0.5 && colorMetrics.avgSaturation >= 0.58) {
+    return { pattern: 'insetCircle', pick: 'largest', reason: 'traveling saturated hues — one focal point' };
+  }
+  if (layoutMetrics.specialShare >= 0.25 || layoutMetrics.blockCount >= 28) {
+    return { pattern: 'insetCircle', pick: 'calm', reason: 'layout already busy — light focal tweak' };
+  }
+  return { pattern: 'insetCircle', pick: 'largest', reason: 'balanced day — subtle focal tweak' };
+}
+
+function applyInferredCheckpointTweak(engine, checkpointColors) {
+  const colorMetrics = analyzeColors(checkpointColors);
+  const layoutMetrics = analyzeBlockLayout(engine);
+  const tweak = inferCheckpointTweak(colorMetrics, layoutMetrics);
+  const adjustments = applyCheckpointPatternSteps(engine, [tweak], checkpointColors);
+  return {
+    adjustments,
+    tweak,
+    colorMetrics,
+    layoutMetrics
+  };
 }
 
 function applySurgicalCheckpointAdjustments(engine, modeKey, checkpointColors) {
@@ -421,11 +487,9 @@ function applySurgicalCheckpointAdjustments(engine, modeKey, checkpointColors) {
   return applyCheckpointPatternSteps(engine, steps, checkpointColors);
 }
 
-/** One subtle in-place pattern at color 20 — no mode, no forward bias. */
-const GENERIC_CHECKPOINT_PATTERNS = [{ pattern: 'insetCircle' }];
-
+/** @deprecated use applyInferredCheckpointTweak */
 function applyGenericCheckpointTweak(engine, checkpointColors) {
-  return applyCheckpointPatternSteps(engine, GENERIC_CHECKPOINT_PATTERNS, checkpointColors);
+  return applyInferredCheckpointTweak(engine, checkpointColors).adjustments;
 }
 
 function applyModeCheckpoint(engine, modeKey, checkpointColors) {
@@ -716,36 +780,48 @@ function replaySequenceWithCheckpoint(dateKey, colors, options = {}) {
   });
 }
 
-function replaySequenceWithGenericCheckpoint(dateKey, colors, options = {}) {
+function replaySequenceWithInferredCheckpoint(dateKey, colors, options = {}) {
   const decisionAt = Math.max(8, Math.floor(Number(options.decisionAt) || MODE_DECISION_AT));
   return withQuietConsole(() => {
     const originalRandom = Math.random;
     Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
     try {
+      const hasSnapshot = Array.isArray(options.initialBlocks) && options.initialBlocks.length > 0;
       const engine = createServerQuiltEngine({
         userId: `composition-tweak-${dateKey}`,
-        blocks: [],
-        submissionCount: 0,
+        blocks: hasSnapshot ? options.initialBlocks : [],
+        submissionCount: hasSnapshot
+          ? Math.max(0, Math.floor(Number(options.initialSubmissionCount) || decisionAt))
+          : 0,
         colorReplayEvents: [],
         macroStructureFrozen: false
       });
       if (options.lockPalette !== false) installPaletteLock(engine);
 
-      let adjustments = 0;
       const skippedColors = [];
+      let checkpoint = { adjustments: 0, tweak: { pattern: 'none', reason: 'too few colors' } };
+      let branchFromSnapshot = hasSnapshot;
 
-      for (let i = 0; i < colors.length; i += 1) {
-        const hex = colors[i];
-        if (!engine.addColor(hex)) skippedColors.push({ index: i + 1, color: hex });
-        if (i + 1 === decisionAt) {
-          adjustments = applyGenericCheckpointTweak(engine, colors.slice(0, decisionAt));
+      if (hasSnapshot) {
+        const snapshot = colors.slice(0, decisionAt);
+        checkpoint = applyInferredCheckpointTweak(engine, snapshot);
+        for (let i = decisionAt; i < colors.length; i += 1) {
+          if (!engine.addColor(colors[i])) skippedColors.push({ index: i + 1, color: colors[i] });
+        }
+      } else {
+        for (let i = 0; i < colors.length; i += 1) {
+          if (!engine.addColor(colors[i])) skippedColors.push({ index: i + 1, color: colors[i] });
+          if (i + 1 === decisionAt) {
+            checkpoint = applyInferredCheckpointTweak(engine, colors.slice(0, decisionAt));
+          }
         }
       }
 
       return {
         mode: 'baseline',
-        checkpoint: { mode: 'baseline', adjustments },
+        checkpoint,
         decisionAt,
+        branchFromSnapshot,
         blocks: serializeServerQuiltBlocks(engine),
         submissionCount: Number(engine.submissionCount) || colors.length,
         macroStructureFrozen: engine.macroStructureFrozen === true,
@@ -755,6 +831,11 @@ function replaySequenceWithGenericCheckpoint(dateKey, colors, options = {}) {
       Math.random = originalRandom;
     }
   });
+}
+
+/** @deprecated use replaySequenceWithInferredCheckpoint */
+function replaySequenceWithGenericCheckpoint(dateKey, colors, options = {}) {
+  return replaySequenceWithInferredCheckpoint(dateKey, colors, options);
 }
 
 function collectBlockHexes(blocks) {
@@ -1018,6 +1099,8 @@ module.exports = {
   analyzeColors,
   inferMode,
   applyModeCheckpoint,
+  inferCheckpointTweak,
+  applyInferredCheckpointTweak,
   buildCompositionPreviewFromQuiltData,
   reconstructArchiveSnapshotAt,
   missingSubmissionIndices,
@@ -1025,5 +1108,6 @@ module.exports = {
   orderedReplayEvents,
   replaySequence,
   replaySequenceWithCheckpoint,
+  replaySequenceWithInferredCheckpoint,
   replaySequenceWithGenericCheckpoint
 };
