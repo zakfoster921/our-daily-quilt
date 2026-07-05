@@ -992,6 +992,46 @@ function replaySequenceWithCheckpoint(dateKey, colors, options = {}) {
   });
 }
 
+function replayBlocksAtDecision(dateKey, colors, options = {}) {
+  const decisionAt = Math.max(8, Math.floor(Number(options.decisionAt) || MODE_DECISION_AT));
+  const replayEvents = Array.isArray(options.replayEvents) ? options.replayEvents : [];
+  const archived = reconstructArchiveSnapshotAt(replayEvents, decisionAt);
+  if (archived?.blocks?.length) {
+    return {
+      blocks: cloneJson(archived.blocks, []),
+      submissionCount: archived.submissionCount || decisionAt,
+      decisionAt,
+      source: 'archive'
+    };
+  }
+
+  return withQuietConsole(() => {
+    const originalRandom = Math.random;
+    Math.random = mulberry32(hashString(`composition-seed-tester:${dateKey}`));
+    try {
+      const engine = createServerQuiltEngine({
+        userId: `composition-at-${decisionAt}-${dateKey}`,
+        blocks: [],
+        submissionCount: 0,
+        colorReplayEvents: [],
+        macroStructureFrozen: false
+      });
+      if (options.lockPalette !== false) installPaletteLock(engine);
+      for (let i = 0; i < Math.min(decisionAt, colors.length); i += 1) {
+        engine.addColor(colors[i]);
+      }
+      return {
+        blocks: serializeServerQuiltBlocks(engine),
+        submissionCount: Number(engine.submissionCount) || decisionAt,
+        decisionAt,
+        source: 'simulated'
+      };
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+}
+
 function replaySequenceWithInferredCheckpoint(dateKey, colors, options = {}) {
   const decisionAt = Math.max(8, Math.floor(Number(options.decisionAt) || MODE_DECISION_AT));
   return withQuietConsole(() => {
@@ -1350,5 +1390,6 @@ module.exports = {
   replaySequence,
   replaySequenceWithCheckpoint,
   replaySequenceWithInferredCheckpoint,
-  replaySequenceWithGenericCheckpoint
+  replaySequenceWithGenericCheckpoint,
+  replayBlocksAtDecision
 };

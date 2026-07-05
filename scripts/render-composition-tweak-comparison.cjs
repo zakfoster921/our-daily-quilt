@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Side-by-side: stored live quilt vs baseline + inferred tweak at color 20.
+ * Side-by-side: stored live final vs quilt state at color 20 (decision point).
  *
- * Reads the first 20 picks + block layout, chooses one pattern tweak, continues baseline.
- * When colorReplayEvents allow, branches from the archived live snapshot at 20.
- *
- *   DATE_KEYS=2026-06-16,2026-04-30 npm run composition:tweak-comparison
+ *   DATE_KEYS=2026-04-25,2026-07-03 npm run composition:tweak-comparison
  */
 const fs = require('fs');
 const http = require('http');
@@ -26,9 +23,10 @@ const {
   normalizeHex,
   orderedColorsFromBlocks,
   orderedReplayEvents,
-  reconstructArchiveSnapshotAt,
-  replaySequenceWithInferredCheckpoint
+  replayBlocksAtDecision,
+  applyInferredCheckpointTweak
 } = require('./lib/composition-preview.cjs');
+const { createServerQuiltEngine } = require('./lib/server-quilt-engine.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
@@ -299,45 +297,47 @@ async function writeContactSheet(panelImages, contactPath) {
 
 async function renderDate(db, dateKey) {
   const day = await fetchDay(db, dateKey);
-  const snapshot = reconstructArchiveSnapshotAt(day.replayEvents, MODE_DECISION_AT);
-  const tweak = replaySequenceWithInferredCheckpoint(dateKey, day.colors, {
+  const at20 = replayBlocksAtDecision(dateKey, day.colors, {
     lockPalette: true,
-    initialBlocks: snapshot?.blocks,
-    initialSubmissionCount: snapshot?.submissionCount,
     replayEvents: day.replayEvents
   });
-  const tweakInfo = tweak.checkpoint?.tweak || {};
-  const needNote = Number.isFinite(tweak.checkpoint?.need)
-    ? `need ${(tweak.checkpoint.need * 100).toFixed(0)}%`
+  const decisionEngine = createServerQuiltEngine({
+    userId: `composition-decision-${dateKey}`,
+    blocks: JSON.parse(JSON.stringify(at20.blocks)),
+    submissionCount: at20.submissionCount,
+    colorReplayEvents: [],
+    macroStructureFrozen: false
+  });
+  const checkpoint = applyInferredCheckpointTweak(decisionEngine, day.colors.slice(0, MODE_DECISION_AT));
+  const tweakInfo = checkpoint.tweak || {};
+  const needNote = Number.isFinite(checkpoint.need)
+    ? `need ${(checkpoint.need * 100).toFixed(0)}%`
     : '';
-  const tweakLabel = tweakInfo.pattern === 'none'
+  const decisionLabel = tweakInfo.pattern === 'none'
     ? `skip — ${tweakInfo.reason || 'no tweak'}`
-    : `${tweakInfo.pattern} on ${tweakInfo.pick || 'plain'} block · ${tweak.checkpoint?.adjustments || 0} applied`;
-  const branchNote = tweak.continuedFromArchive
-    ? 'skip — live archive replay after @ 20'
-    : tweak.branchFromSnapshot
-      ? 'from live snapshot @ 20'
-      : 'simulated replay';
+    : `would apply ${tweakInfo.pattern} on ${tweakInfo.pick || 'plain'} block`;
+  const sourceNote = at20.source === 'archive' ? 'live archive @ 20' : 'simulated replay @ 20';
+  const growthNote = `live continued to ${day.liveBlocks.length} blocks`;
 
   const panels = [
     {
       mode: 'actual',
       label: `Live final — ${dateKey}`,
-      subtitle: `${day.contributorCount || day.submissionCount} contributors · ${day.liveBlocks.length} stored blocks · grew in app (baseline)`,
+      subtitle: `${day.contributorCount || day.submissionCount} contributors · ${day.liveBlocks.length} stored blocks · baseline through the day`,
       blocks: day.liveBlocks,
       submissionCount: day.submissionCount
     },
     {
-      mode: 'baseline-tweak',
-      label: `Inferred tweak @ ${tweak.decisionAt} — ${dateKey}`,
-      subtitle: `${tweakLabel} · ${needNote} · ${branchNote} · ${tweak.blocks.length} blocks · baseline after`,
-      blocks: tweak.blocks,
-      submissionCount: tweak.submissionCount
+      mode: 'at-20',
+      label: `State at ${at20.decisionAt} — ${dateKey}`,
+      subtitle: `${at20.blocks.length} blocks · ${decisionLabel} · ${needNote} · ${sourceNote} · ${growthNote}`,
+      blocks: at20.blocks,
+      submissionCount: at20.submissionCount
     }
   ];
 
   console.log(
-    `[tweak-comparison] ${dateKey}: live ${day.liveBlocks.length} vs ${tweakInfo.pattern === 'none' ? 'skip' : tweakInfo.pattern} (${tweakInfo.reason || 'n/a'}${needNote ? `, ${needNote}` : ''}) → ${tweak.blocks.length} blocks`
+    `[tweak-comparison] ${dateKey}: live ${day.liveBlocks.length} vs @${at20.decisionAt} ${at20.blocks.length} blocks · ${tweakInfo.pattern === 'none' ? 'skip' : tweakInfo.pattern} (${tweakInfo.reason || 'n/a'}${needNote ? `, ${needNote}` : ''}) · ${sourceNote}`
   );
 
   const outDir = path.join(ROOT, 'tmp', 'tweak-comparison', dateKey);
@@ -352,15 +352,14 @@ async function renderDate(db, dateKey) {
     colorCount: day.colors.length,
     colorSource: day.colorSource,
     liveBlockCount: day.liveBlocks.length,
-    tweakBlockCount: tweak.blocks.length,
-    decisionAt: tweak.decisionAt,
-    branchFromSnapshot: tweak.branchFromSnapshot === true,
-    continuedFromArchive: tweak.continuedFromArchive === true,
+    blocksAt20: at20.blocks.length,
+    stateAt20Source: at20.source,
+    decisionAt: at20.decisionAt,
     inferredPattern: tweakInfo.pattern || null,
     inferredPick: tweakInfo.pick || null,
     inferredReason: tweakInfo.reason || null,
-    compositionNeed: tweak.checkpoint?.need ?? null,
-    tweakAdjustments: tweak.checkpoint?.adjustments || 0,
+    compositionNeed: checkpoint.need ?? null,
+    tweakAdjustments: checkpoint.adjustments || 0,
     contactSheet: path.relative(ROOT, contactPath)
   };
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
