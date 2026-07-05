@@ -209,12 +209,12 @@ function analyzeColors(colors) {
 
 function inferMode(metrics) {
   if (metrics.count < 8) return 'baseline';
-  if (metrics.dominance >= 0.48 && metrics.contrast < 0.34) return 'field';
-  if (metrics.dominance >= 0.42 && metrics.diversity < 0.45) return 'garden';
-  if (metrics.momentum >= 0.78 && metrics.familyCount <= 4) return 'tide';
-  if (metrics.hueTravel >= 0.48 && metrics.avgSaturation >= 0.55) return 'constellation';
-  if (metrics.diversity >= 0.75) return 'mosaic';
-  if (metrics.momentum <= 0.35 && metrics.familyCount >= 3) return 'strata';
+  if (metrics.momentum <= 0.52 && metrics.familyCount >= 3) return 'strata';
+  if (metrics.dominance >= 0.46 && metrics.contrast < 0.38) return 'field';
+  if (metrics.dominance >= 0.36 && metrics.diversity < 0.64 && metrics.momentum < 0.86) return 'garden';
+  if (metrics.diversity >= 0.78) return 'mosaic';
+  if (metrics.hueTravel >= 0.5 && metrics.avgSaturation >= 0.58) return 'constellation';
+  if (metrics.momentum >= 0.86 && metrics.familyCount <= 5 && metrics.warmth >= 0.25 && metrics.warmth <= 0.75) return 'tide';
   return 'window';
 }
 
