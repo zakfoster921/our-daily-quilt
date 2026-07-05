@@ -33,9 +33,11 @@ const MODE_CONFIG = {
   },
   garden: {
     label: 'Garden',
-    description: 'Color-family clustering with organic specials',
-    specials: 1.1,
+    description: 'Dominant color families cluster, accent colors become blossoms',
+    specials: 1.25,
     colorRoute: 'family',
+    dominantCluster: true,
+    accentBias: 1.45,
     patternPreference: ['insetCircle', 'framed', 'hst', 'stripes']
   },
   vein: {
@@ -211,7 +213,12 @@ function inferMode(metrics) {
   if (metrics.count < 8) return 'baseline';
   if (metrics.momentum <= 0.52 && metrics.familyCount >= 3) return 'strata';
   if (metrics.dominance >= 0.46 && metrics.contrast < 0.38) return 'field';
-  if (metrics.dominance >= 0.36 && metrics.diversity < 0.64 && metrics.momentum < 0.86) return 'garden';
+  if (
+    metrics.dominance >= 0.36 &&
+    metrics.diversity < 0.64 &&
+    metrics.familyCount >= 2 &&
+    metrics.momentum < 0.86
+  ) return 'garden';
   if (metrics.diversity >= 0.78) return 'mosaic';
   if (metrics.hueTravel >= 0.5 && metrics.avgSaturation >= 0.58) return 'constellation';
   if (metrics.momentum >= 0.86 && metrics.familyCount <= 5 && metrics.warmth >= 0.25 && metrics.warmth <= 0.75) return 'tide';
@@ -282,6 +289,16 @@ function installModeBiases(engine, modeKey) {
   const originalForceOversized = engine._shouldForceOversizedSplit?.bind(engine);
   const originalRouteMacro = engine._routeSplittableBlocksByMacroColor?.bind(engine);
   const originalFilterMacro = engine._filterMacroCandidatesByColorOrValue?.bind(engine);
+  const modeDominantFamily = config.dominantCluster
+    ? (() => {
+        const counts = new Map();
+        for (const block of Array.isArray(engine.blocks) ? engine.blocks : []) {
+          const family = colorFamily(block?.color);
+          counts.set(family, (counts.get(family) || 0) + 1);
+        }
+        return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+      })()
+    : '';
 
   if (originalSelectPatternType && Array.isArray(config.patternPreference)) {
     engine.selectPatternType = (availablePatterns, block, newColor) => {
@@ -293,9 +310,12 @@ function installModeBiases(engine, modeKey) {
   }
 
   if (originalAccentBias && (config.accentBias || config.outlierAccent || config.saturatedAccent)) {
-    engine._regularSplitAccentBias = () => {
+    engine._regularSplitAccentBias = (block, newColor) => {
       let bias = originalAccentBias();
       if (config.accentBias) bias *= Number(config.accentBias) || 1;
+      if (config.dominantCluster && modeDominantFamily && colorFamily(newColor) !== modeDominantFamily) {
+        bias *= 1.25;
+      }
       return Math.max(0, Math.min(1, bias));
     };
   }
@@ -317,6 +337,11 @@ function installModeBiases(engine, modeKey) {
           const sameA = colorFamily(a?.color) === fam ? 1 : 0;
           const sameB = colorFamily(b?.color) === fam ? 1 : 0;
           if (sameA !== sameB) return sameB - sameA;
+          if (config.dominantCluster && modeDominantFamily && fam !== modeDominantFamily) {
+            const dominantA = colorFamily(a?.color) === modeDominantFamily ? 1 : 0;
+            const dominantB = colorFamily(b?.color) === modeDominantFamily ? 1 : 0;
+            if (dominantA !== dominantB) return dominantA - dominantB;
+          }
           return (Number(b?.width) || 0) * (Number(b?.height) || 0) - (Number(a?.width) || 0) * (Number(a?.height) || 0);
         });
       }
