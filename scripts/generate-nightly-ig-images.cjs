@@ -630,6 +630,16 @@ async function runNightlyIgAttempt({
         if (!storyLayoutBImageData) {
           throw new Error(`Layout B story image was not generated for ${dateKey}`);
         }
+        let storyLayoutBOverlayImageData = null;
+        if (arch.generateInstagramStoryLayoutBOverlayImage) {
+          log('generating layout B story overlay 9:16…');
+          storyLayoutBOverlayImageData = await timed('layout B story overlay', () =>
+            arch.generateInstagramStoryLayoutBOverlayImage(blocks, quote, dateKey)
+          );
+          if (!storyLayoutBOverlayImageData) {
+            throw new Error(`Layout B story overlay was not generated for ${dateKey}`);
+          }
+        }
         // Fetch winning quilt name for slide 3 name strip
         let winningQuiltName = '';
         try {
@@ -753,6 +763,7 @@ async function runNightlyIgAttempt({
           quiltScreen9x16ImageData,
           newspaperClippingImageData,
           storyLayoutBImageData,
+          storyLayoutBOverlayImageData,
           zapierCaption,
           quiltFingerprint,
           blockCount: blocks.length,
