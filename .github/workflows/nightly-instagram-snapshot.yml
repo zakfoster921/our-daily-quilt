@@ -16,8 +16,17 @@ on:
     - cron: "0 11 * * *"
   workflow_dispatch:
     inputs:
+      date_key_mode:
+        description: "Quick date — pick Today for current app day, or Custom to type date_key below."
+        required: true
+        type: choice
+        default: last_completed
+        options:
+          - last_completed
+          - today
+          - custom
       date_key:
-        description: "Quilt date to render (YYYY-MM-DD). Default: last completed quilt day."
+        description: "Custom YYYY-MM-DD (when mode = custom). You can also type today here."
         required: false
 
 concurrency:
@@ -62,25 +71,16 @@ jobs:
       - name: Resolve target date key
         id: resolve_date
         env:
-          INPUT_DATE_KEY: ${{ inputs.date_key || '' }}
+          WORKFLOW_DATE_MODE: ${{ inputs.date_key_mode || 'last_completed' }}
+          WORKFLOW_DATE_KEY: ${{ inputs.date_key || '' }}
         run: |
           set -euo pipefail
-          if [ -n "${INPUT_DATE_KEY:-}" ]; then
-            EFFECTIVE_DATE_KEY="${INPUT_DATE_KEY}"
-            echo "Using manual date_key override: ${EFFECTIVE_DATE_KEY}"
-          else
-            EFFECTIVE_DATE_KEY="$(node -e '
-              const d = new Date();
-              const adj = new Date(d);
-              if (d.getUTCHours() < 7) adj.setUTCDate(adj.getUTCDate() - 1);
-              adj.setUTCDate(adj.getUTCDate() - 1);
-              const y = adj.getUTCFullYear();
-              const m = String(adj.getUTCMonth() + 1).padStart(2, "0");
-              const day = String(adj.getUTCDate()).padStart(2, "0");
-              process.stdout.write(`${y}-${m}-${day}`);
-            ')"
-            echo "Using last completed quilt day: ${EFFECTIVE_DATE_KEY}"
-          fi
+          EFFECTIVE_DATE_KEY="$(node scripts/lib/resolve-workflow-date-key.cjs)"
+          case "${WORKFLOW_DATE_MODE}" in
+            today) echo "Using today's app date: ${EFFECTIVE_DATE_KEY}" ;;
+            custom) echo "Using custom date_key: ${EFFECTIVE_DATE_KEY}" ;;
+            *) echo "Using last completed quilt day: ${EFFECTIVE_DATE_KEY}" ;;
+          esac
           if ! echo "${EFFECTIVE_DATE_KEY}" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
             echo "Invalid resolved date key: ${EFFECTIVE_DATE_KEY}"
             exit 1
