@@ -413,6 +413,16 @@ async function runNightlyIgAttempt({
         }
 
         log(`loaded ${blocks.length} blocks for ${dateKey}; firestore contributor names=${contributors.length}`);
+        if (typeof globalThis.odqPrefetchMirrorTune === 'function') {
+          try {
+            const tuneResult = await globalThis.odqPrefetchMirrorTune(dateKey);
+            log(
+              `mirror tune prefetched: customized=${!!tuneResult?.customized} layout=${String(tuneResult?.bottomLayout || 'single')}`
+            );
+          } catch (mirrorPrefetchErr) {
+            log(`mirror tune prefetch failed: ${mirrorPrefetchErr?.message || mirrorPrefetchErr}`);
+          }
+        }
         if (typeof app.applyQuiltDataFromPayload === 'function') {
           await app.applyQuiltDataFromPayload({
             blocks,
@@ -431,12 +441,18 @@ async function runNightlyIgAttempt({
         }
         log('rendering quilt SVG (blocks only, no preview chrome)…');
         const engine = app.quiltEngine;
+        if (app.renderer) {
+          app.renderer._exportDateKeyOverride = dateKey;
+        }
         if (app.renderer?.renderBlocks && engine?.getState) {
           app.renderer.setBacksidePreviewEnabled?.(app._isBacksidePreviewMode === true);
           const state = engine.getState();
           app.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
         } else if (typeof app.renderQuilt === 'function') {
           await app.renderQuilt();
+        }
+        if (app.renderer) {
+          app.renderer._exportDateKeyOverride = '';
         }
         await new Promise((resolve) => {
           const deadline = Date.now() + 20000;
