@@ -296,6 +296,7 @@ function createRateLimiter({ name, windowMs, max }) {
     if (current.count > max) {
       const retryAfterSec = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
       res.setHeader('Retry-After', String(retryAfterSec));
+      res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(429).json({
         success: false,
         error: 'Too many requests. Please try again later.'
@@ -323,6 +324,7 @@ function optionalTokenAuth(envNames) {
     if (!expected) return next();
     const provided = tokenFromRequest(req);
     if (!provided || provided !== expected) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
     return next();
@@ -8208,6 +8210,7 @@ app.post('/api/quote-keywords', limitQuoteKeywords, async (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
