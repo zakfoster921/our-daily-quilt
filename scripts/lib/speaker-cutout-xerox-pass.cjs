@@ -11,6 +11,8 @@
 const NEWSPAPER_TONE = Object.freeze({
   brightness: 1.32,
   sepia: 0.32,
+  /** Darkest visible tone — avoids true-black fringe on cutout edges after multiply blend. */
+  blackFloor: 62,
 });
 
 /**
@@ -53,7 +55,7 @@ function applySpeakerCutoutXeroxRgba(data, width, height, _seed = 'odq') {
   const d = data;
   const w = Math.max(1, width | 0);
   const h = Math.max(1, height | 0);
-  const { brightness, sepia } = NEWSPAPER_TONE;
+  const { brightness, sepia, blackFloor } = NEWSPAPER_TONE;
 
   // Pass 1: compute adaptive contrast from source luminance
   const contrast = computeAdaptiveContrast(d, w, h);
@@ -70,8 +72,8 @@ function applySpeakerCutoutXeroxRgba(data, width, height, _seed = 'odq') {
       // contrast (CSS spec: slope*(val - 128) + 128)
       lum = contrast * (lum - 128) + 128;
 
-      // brightness
-      lum = Math.max(0, Math.min(255, lum * brightness));
+      // brightness + black floor (charcoal, not ink-black)
+      lum = Math.max(blackFloor, Math.min(255, lum * brightness));
 
       // sepia(amount) — interpolate toward full-sepia matrix
       const r = lum, g = lum, b = lum;
