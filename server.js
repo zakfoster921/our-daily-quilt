@@ -2969,8 +2969,18 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
     art_recs: pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations'),
     good_day: pickPrefillStringLoose(parsed, 'good_day', 'goodDay', 'good day'),
     rough_day: pickPrefillStringLoose(parsed, 'rough_day', 'roughDay', 'rough day'),
+    prompt_theme: pickPrefillStringLoose(parsed, 'prompt_theme', 'promptTheme', 'prompt theme'),
     _model: model
   };
+}
+
+/** Snap the model's prompt_theme guess to the exact-cased Notion select option, or '' if no match. */
+function resolvePromptThemeOption(promptThemeOptions, value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const target = text.toLowerCase();
+  const match = (promptThemeOptions || []).find((opt) => String(opt || '').trim().toLowerCase() === target);
+  return match || '';
 }
 
 function normalizeWatchForPrefillValue(value) {
@@ -3065,8 +3075,8 @@ function findMissingRequiredPrefillFields(out) {
   return REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(out?.[key] || '').trim());
 }
 
-async function generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, provider }) {
-  const prompt = buildSubmittedQuotePrefillPrompt({ quoteText, authorName });
+async function generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, promptThemeOptions, provider }) {
+  const prompt = buildSubmittedQuotePrefillPrompt({ quoteText, authorName, promptThemeOptions });
   const isGemini = provider === 'gemini';
   const apiKey = isGemini
     ? String(process.env.GEMINI_API_KEY || '').trim()
@@ -3124,12 +3134,12 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, auth
   return out;
 }
 
-async function generateSubmittedQuotePrefillFields({ quoteText, authorName }) {
+async function generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions }) {
   if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
-    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, provider: 'anthropic' });
+    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, promptThemeOptions, provider: 'anthropic' });
   }
   if (String(process.env.GEMINI_API_KEY || '').trim()) {
-    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, provider: 'gemini' });
+    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, promptThemeOptions, provider: 'gemini' });
   }
   throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
 }
@@ -3613,6 +3623,7 @@ function buildPrefillNotionProperties(schema, ai, wiki, speakerReuse) {
   if (ai?.art_recs) set('art_recs', ai.art_recs, 'artRecs', 'Art recs', 'explore');
   if (ai?.good_day) set('good_day', ai.good_day, 'goodDay', 'Good day', 'Good Day');
   if (ai?.rough_day) set('rough_day', ai.rough_day, 'roughDay', 'Rough day', 'Rough Day');
+  if (ai?.prompt_theme) set('prompt_theme', ai.prompt_theme, 'promptTheme', 'Prompt theme', 'Prompt Theme');
 
   // Speaker portrait: Notion "Speaker image URL" must stay a single HTTPS URL so sync → Firestore keeps working.
   // When we already have a cutout (or portrait) on another quote for this author, reuse that URL — no new Wikimedia link needed.
@@ -3705,6 +3716,9 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   }
   if (ai?.rough_day) {
     payload.rough_day = ai.rough_day;
+  }
+  if (ai?.prompt_theme) {
+    payload.prompt_theme = ai.prompt_theme;
   }
   payload.creativePrefillVersion = PREFILL_CREATIVE_PROMPT_VERSION;
   payload.creativePrefillUpdatedAt = new Date().toISOString();
@@ -3845,12 +3859,27 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     'Small act',
     'Small Act'
   );
-  const smallActOnlyBackfill = !!existingCommunityPrompt && !existingSmallAct;
+  const promptThemeName = findNotionPropName(schema, 'prompt_theme', 'promptTheme', 'Prompt theme', 'Prompt Theme');
+  const promptThemeOptions =
+    promptThemeName && schema[promptThemeName]?.type === 'select'
+      ? (schema[promptThemeName].select?.options || []).map((o) => String(o?.name || '').trim()).filter(Boolean)
+      : [];
+  const existingPromptTheme = getNotionPropPlainByAliases(
+    currentProps,
+    'prompt_theme',
+    'promptTheme',
+    'Prompt theme',
+    'Prompt Theme'
+  );
+  const needsSmallAct = !existingSmallAct;
+  const needsPromptTheme = !existingPromptTheme && promptThemeOptions.length > 0;
+  const lightBackfillOnly = !!existingCommunityPrompt && (needsSmallAct || needsPromptTheme);
 
   let ai = null;
   let claudeError = null;
   try {
-    ai = await generateSubmittedQuotePrefillFields({ quoteText, authorName });
+    ai = await generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions });
+    ai.prompt_theme = resolvePromptThemeOption(promptThemeOptions, ai.prompt_theme);
   } catch (e) {
     claudeError = e?.message || String(e);
     console.warn(`⚠️ Claude prefill failed for ${notionPageId} (attempt ${nextAttempt}/${MAX_PREFILL_ATTEMPTS}):`, claudeError);
@@ -3873,13 +3902,20 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     return { status: 'failed', attempt: nextAttempt, max: MAX_PREFILL_ATTEMPTS, error: claudeError };
   }
 
-  if (smallActOnlyBackfill) {
-    const smallActText = String(ai?.small_act || '').trim();
+  if (lightBackfillOnly) {
+    const smallActText = needsSmallAct ? String(ai?.small_act || '').trim() : '';
+    const promptThemeText = needsPromptTheme ? String(ai?.prompt_theme || '').trim() : '';
     const properties = {};
-    const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
-    if (smallActName) {
-      const payload = notionTextPropertyValue(schema[smallActName], smallActText);
-      if (payload) properties[smallActName] = payload;
+    if (smallActText) {
+      const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
+      if (smallActName) {
+        const payload = notionTextPropertyValue(schema[smallActName], smallActText);
+        if (payload) properties[smallActName] = payload;
+      }
+    }
+    if (promptThemeText && promptThemeName) {
+      const payload = notionTextPropertyValue(schema[promptThemeName], promptThemeText);
+      if (payload) properties[promptThemeName] = payload;
     }
     if (errState.propName) {
       const errProp = schema[errState.propName];
@@ -3891,16 +3927,19 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         body: JSON.stringify({ properties })
       });
     }
-    if (db && smallActText) {
+    if (db && (smallActText || promptThemeText)) {
       const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
-      await db.collection(collection).doc(notionPageId).set({
-        smallAct: smallActText,
-        small_act: smallActText,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+      const firestorePatch = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+      if (smallActText) {
+        firestorePatch.smallAct = smallActText;
+        firestorePatch.small_act = smallActText;
+      }
+      if (promptThemeText) firestorePatch.prompt_theme = promptThemeText;
+      await db.collection(collection).doc(notionPageId).set(firestorePatch, { merge: true });
     }
-    console.log(`✨ Backfilled small_act for ${notionPageId} (claude=${ai._model || 'ok'})`);
-    return { status: 'ok', attempt: nextAttempt, hasWiki: false, smallActOnly: true };
+    const backfilledFields = [smallActText && 'small_act', promptThemeText && 'prompt_theme'].filter(Boolean).join('+') || 'nothing';
+    console.log(`✨ Backfilled ${backfilledFields} for ${notionPageId} (claude=${ai._model || 'ok'})`);
+    return { status: 'ok', attempt: nextAttempt, hasWiki: false, lightBackfillOnly: true };
   }
 
   const resolvedAuthor = ai?.author || authorName;
@@ -4025,6 +4064,7 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
     'Community prompt'
   );
   const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
+  const promptThemeName = findNotionPropName(schema, 'prompt_theme', 'promptTheme', 'Prompt theme', 'Prompt Theme');
   if (!quoteTextName || !communityPromptName) {
     throw new Error(`Notion DB missing required columns (need title + community_prompt rich_text)`);
   }
@@ -4037,6 +4077,10 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   if (smallActName) {
     const smallActEmpty = notionIsEmptyFilter(smallActName, schema[smallActName]?.type);
     if (smallActEmpty) missingPrefillFilters.push(smallActEmpty);
+  }
+  if (promptThemeName && (schema[promptThemeName]?.select?.options || []).length) {
+    const promptThemeEmpty = notionIsEmptyFilter(promptThemeName, schema[promptThemeName]?.type);
+    if (promptThemeEmpty) missingPrefillFilters.push(promptThemeEmpty);
   }
   const filter = {
     and: [
@@ -10589,6 +10633,7 @@ function notionIsEmptyFilter(propName, propType) {
   if (propType === 'rich_text') return { property: propName, rich_text: { is_empty: true } };
   if (propType === 'title') return { property: propName, title: { is_empty: true } };
   if (propType === 'url') return { property: propName, url: { is_empty: true } };
+  if (propType === 'select') return { property: propName, select: { is_empty: true } };
   return null;
 }
 
@@ -10596,6 +10641,7 @@ function notionIsNotEmptyFilter(propName, propType) {
   if (!propName || !propType) return null;
   if (propType === 'rich_text') return { property: propName, rich_text: { is_not_empty: true } };
   if (propType === 'title') return { property: propName, title: { is_not_empty: true } };
+  if (propType === 'select') return { property: propName, select: { is_not_empty: true } };
   return null;
 }
 
