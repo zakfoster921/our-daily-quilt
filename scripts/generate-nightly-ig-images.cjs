@@ -459,8 +459,11 @@ async function runNightlyIgAttempt({
           const tick = () => {
             const svg = document.getElementById('quilt');
             const archReady = app.archiveService;
+            const bottomFieldReady =
+              svg?.querySelector('#quiltMirroredFieldLayer') ||
+              svg?.querySelector('#quiltDuplicateBottomLayer1');
             if (
-              svg?.querySelector('#quiltMirroredFieldLayer') &&
+              bottomFieldReady &&
               archReady?.hasRenderedQuiltSvgForBlocks?.(svg, blocks)
             ) {
               resolve();
@@ -476,6 +479,7 @@ async function runNightlyIgAttempt({
           tick();
         });
 
+        await app.loadDeferredAdminSlice?.();
         const arch = app.archiveService;
         if (arch?.clearInstagramQuiltSourceCache) {
           arch.clearInstagramQuiltSourceCache();
@@ -748,9 +752,16 @@ async function runNightlyIgAttempt({
           assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
         }
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
-        if (quiltExportMeta && !quiltExportMeta.quiltBlobFromLiveSvg) {
+        if (quiltExportMeta) {
+          log(`quilt export meta: ${JSON.stringify(quiltExportMeta)}`);
+        }
+        if (quiltExportMeta?.quiltBlobFromBlockRaster && !quiltExportMeta?.usedMirroredComposeFallback) {
           console.warn(
-            `[nightly-ig:page] quilt-screen 9:16 used non-SVG path: ${JSON.stringify(quiltExportMeta)}`
+            '[nightly-ig:page] quilt-screen 9:16 used flat block raster without mirror compose — check renderer export'
+          );
+        } else if (quiltExportMeta && !quiltExportMeta.quiltBlobFromLiveSvg && !quiltExportMeta.quiltBlobFromRendererExport) {
+          console.warn(
+            `[nightly-ig:page] quilt-screen 9:16 used non-renderer path: ${JSON.stringify(quiltExportMeta)}`
           );
         }
         const zapierCaption =
