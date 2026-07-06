@@ -73,6 +73,7 @@ const {
 } = require('./scripts/lib/first-response-fields.cjs');
 const { repairFirstResponseFromCatalog } = require('./scripts/lib/repair-first-response-from-catalog-lib.cjs');
 const { repairReflectionPublishedFromRaw } = require('./scripts/lib/repair-reflection-published-from-raw-lib.cjs');
+const { resolvePromptThemesForDateKey } = require('./scripts/lib/reflection-archive-prompt-themes.cjs');
 const {
   createServerQuiltEngine,
   serializeServerQuiltBlocks,
@@ -2748,6 +2749,13 @@ function findNotionPropName(properties, ...candidates) {
   return '';
 }
 
+/** Read the configured option names off a select/multi_select/status schema property, regardless of which type it is. */
+function notionSchemaOptionNames(prop) {
+  const bucket = prop?.type ? prop[prop.type] : null;
+  const options = bucket?.options;
+  return Array.isArray(options) ? options.map((o) => String(o?.name || '').trim()).filter(Boolean) : [];
+}
+
 function getNotionTitlePropName(properties) {
   const preferred = findNotionPropName(properties, 'quote_text', 'Name');
   if (preferred && properties[preferred]?.type === 'title') return preferred;
@@ -2790,6 +2798,10 @@ function notionTextPropertyValue(prop, value) {
     case 'phone_number': return { phone_number: text };
     case 'select': return { select: { name: text } };
     case 'status': return { status: { name: text } };
+    case 'multi_select': {
+      const names = text.split(',').map((s) => s.trim()).filter(Boolean);
+      return names.length ? { multi_select: names.map((name) => ({ name })) } : null;
+    }
     case 'date': return /^\d{4}-\d{2}-\d{2}/.test(text) ? { date: { start: text.slice(0, 10) } } : null;
     case 'number': {
       const n = Number.parseFloat(text);
@@ -2974,13 +2986,27 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
   };
 }
 
-/** Snap the model's prompt_theme guess to the exact-cased Notion select option, or '' if no match. */
-function resolvePromptThemeOption(promptThemeOptions, value) {
+/**
+ * Snap the model's comma-separated prompt_theme guess to the exact-cased Notion
+ * multi_select options (prompt_theme is a multi_select, so 1-3 tags can match).
+ * Returns a comma-joined string of matched tags (deduped, original schema casing), or '' if none match.
+ */
+function resolvePromptThemeOptions(promptThemeOptions, value) {
   const text = String(value || '').trim();
   if (!text) return '';
-  const target = text.toLowerCase();
-  const match = (promptThemeOptions || []).find((opt) => String(opt || '').trim().toLowerCase() === target);
-  return match || '';
+  const validByLower = new Map((promptThemeOptions || []).map((opt) => [String(opt || '').trim().toLowerCase(), String(opt).trim()]));
+  const matched = [];
+  const seen = new Set();
+  for (const part of text.split(',')) {
+    const target = part.trim().toLowerCase();
+    if (!target) continue;
+    const canonical = validByLower.get(target);
+    if (canonical && !seen.has(canonical)) {
+      seen.add(canonical);
+      matched.push(canonical);
+    }
+  }
+  return matched.join(', ');
 }
 
 function normalizeWatchForPrefillValue(value) {
@@ -3762,6 +3788,12 @@ function notionPropToPlain(prop) {
   if (typeof prop?.phone_number === 'string') return prop.phone_number.trim();
   if (prop?.select?.name) return String(prop.select.name).trim();
   if (prop?.status?.name) return String(prop.status.name).trim();
+  if (Array.isArray(prop?.multi_select)) {
+    return prop.multi_select
+      .map((s) => (s && s.name ? String(s.name).trim() : ''))
+      .filter(Boolean)
+      .join(', ');
+  }
   return '';
 }
 
@@ -3860,10 +3892,7 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     'Small Act'
   );
   const promptThemeName = findNotionPropName(schema, 'prompt_theme', 'promptTheme', 'Prompt theme', 'Prompt Theme');
-  const promptThemeOptions =
-    promptThemeName && schema[promptThemeName]?.type === 'select'
-      ? (schema[promptThemeName].select?.options || []).map((o) => String(o?.name || '').trim()).filter(Boolean)
-      : [];
+  const promptThemeOptions = promptThemeName ? notionSchemaOptionNames(schema[promptThemeName]) : [];
   const existingPromptTheme = getNotionPropPlainByAliases(
     currentProps,
     'prompt_theme',
@@ -3879,7 +3908,7 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
   let claudeError = null;
   try {
     ai = await generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions });
-    ai.prompt_theme = resolvePromptThemeOption(promptThemeOptions, ai.prompt_theme);
+    ai.prompt_theme = resolvePromptThemeOptions(promptThemeOptions, ai.prompt_theme);
   } catch (e) {
     claudeError = e?.message || String(e);
     console.warn(`⚠️ Claude prefill failed for ${notionPageId} (attempt ${nextAttempt}/${MAX_PREFILL_ATTEMPTS}):`, claudeError);
@@ -4078,7 +4107,7 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
     const smallActEmpty = notionIsEmptyFilter(smallActName, schema[smallActName]?.type);
     if (smallActEmpty) missingPrefillFilters.push(smallActEmpty);
   }
-  if (promptThemeName && (schema[promptThemeName]?.select?.options || []).length) {
+  if (promptThemeName && notionSchemaOptionNames(schema[promptThemeName]).length) {
     const promptThemeEmpty = notionIsEmptyFilter(promptThemeName, schema[promptThemeName]?.type);
     if (promptThemeEmpty) missingPrefillFilters.push(promptThemeEmpty);
   }
@@ -9541,6 +9570,15 @@ app.options('/api/reflection-themes/archive', (req, res) => {
   return res.status(204).end();
 });
 
+app.options('/api/reflection-themes/archive-by-theme', (req, res) => {
+  setReflectionApiCors(res);
+  return res.status(204).end();
+});
+
+const REFLECTION_PROMPT_THEME_SLUGS = new Set([
+  'process', 'courage', 'doubt', 'attention', 'voice', 'belonging', 'resilience', 'identity', 'trust'
+]);
+
 function isUsableReflectionArchivePromptServer(prompt) {
   const text = String(prompt || '').replace(/\s+/g, ' ').trim();
   return Boolean(text) && text !== '[Reflection prompt coming soon for this quote.]';
@@ -9760,6 +9798,83 @@ app.get('/api/reflection-themes/archive', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'Reflection themes archive read failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.get('/api/reflection-themes/archive-by-theme', async (req, res) => {
+  setReflectionApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const theme = String(req.query.theme || '').trim().toLowerCase();
+    if (!REFLECTION_PROMPT_THEME_SLUGS.has(theme)) {
+      return res.status(400).json({ success: false, error: `Unknown theme: ${theme}` });
+    }
+    const pageLimit = Math.min(14, Math.max(1, Number(req.query.limit) || 7));
+    const cursorDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.cursorDateKey || '').trim())
+      ? String(req.query.cursorDateKey).trim()
+      : '';
+
+    let query = db
+      .collection('reflectionThemes')
+      .where('promptThemes', 'array-contains', theme)
+      .orderBy('generatedAt', 'desc')
+      .limit(pageLimit);
+    if (cursorDateKey) {
+      const cursorDoc = await db.collection('reflectionThemes').doc(cursorDateKey).get();
+      if (cursorDoc.exists) {
+        query = db
+          .collection('reflectionThemes')
+          .where('promptThemes', 'array-contains', theme)
+          .orderBy('generatedAt', 'desc')
+          .startAfter(cursorDoc)
+          .limit(pageLimit);
+      }
+    }
+
+    const themesSnap = await query.get();
+    const entries = [];
+    for (const doc of themesSnap.docs) {
+      const data = doc.data() || {};
+      const dateKey = String(data.appDateKey || doc.id || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      const themes = dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []);
+      if (!themes.length) continue;
+
+      const themeData = { ...data, appDateKey: dateKey };
+      const [context, quilt, newspaperClippingUrl] = await Promise.all([
+        loadReflectionArchiveContextServer(db, dateKey, themeData),
+        resolveReflectionArchiveQuiltForApi(db, dateKey, themeData),
+        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey)
+      ]);
+
+      entries.push({
+        dateKey,
+        themes,
+        prompt: context.prompt,
+        quote: context.quote,
+        first_response: context.first_response,
+        reflectionPrompt: context.prompt,
+        quiltImageUrl: quilt.quiltImageUrl,
+        quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
+        quiltImageIsClassic: quilt.quiltImageIsClassic === true,
+        newspaperClippingUrl: newspaperClippingUrl || ''
+      });
+    }
+
+    return res.json({
+      success: true,
+      theme,
+      entries,
+      cursorDateKey: entries.length ? entries[entries.length - 1].dateKey : cursorDateKey,
+      hasOlder: themesSnap.size === pageLimit
+    });
+  } catch (error) {
+    console.error('❌ Reflection themes archive-by-theme read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Reflection themes archive-by-theme read failed',
       timestamp: getUtcIsoNow()
     });
   }
@@ -10117,6 +10232,15 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
 
     const responseCountTotal = publishedItems.length;
     const curatedAtIso = getUtcIsoNow();
+    let promptThemes = [];
+    try {
+      promptThemes = await resolvePromptThemesForDateKey(db, appDateKey);
+    } catch (promptThemeErr) {
+      console.warn(
+        `Reflection themes promptThemes lookup for ${appDateKey}:`,
+        String(promptThemeErr?.message || promptThemeErr).slice(0, 240)
+      );
+    }
     const themePayload = {
       appDateKey,
       themes,
@@ -10133,7 +10257,8 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       curatedAtIso,
       visibleCount: themes.length,
       curationProvider: provider,
-      curationModel: model
+      curationModel: model,
+      promptThemes
     };
     try {
       const quiltImageUrl = await resolveQuiltImageUrlForDateKey(db, appDateKey);
@@ -10634,6 +10759,7 @@ function notionIsEmptyFilter(propName, propType) {
   if (propType === 'title') return { property: propName, title: { is_empty: true } };
   if (propType === 'url') return { property: propName, url: { is_empty: true } };
   if (propType === 'select') return { property: propName, select: { is_empty: true } };
+  if (propType === 'multi_select') return { property: propName, multi_select: { is_empty: true } };
   return null;
 }
 
@@ -10642,6 +10768,7 @@ function notionIsNotEmptyFilter(propName, propType) {
   if (propType === 'rich_text') return { property: propName, rich_text: { is_not_empty: true } };
   if (propType === 'title') return { property: propName, title: { is_not_empty: true } };
   if (propType === 'select') return { property: propName, select: { is_not_empty: true } };
+  if (propType === 'multi_select') return { property: propName, multi_select: { is_not_empty: true } };
   return null;
 }
 

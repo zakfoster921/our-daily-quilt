@@ -170,6 +170,29 @@ function getSelect(prop) {
   return prop?.select?.name || '';
 }
 
+function getMultiSelect(prop) {
+  if (!prop || prop.type !== 'multi_select' || !Array.isArray(prop.multi_select)) return [];
+  return prop.multi_select.map((option) => String(option?.name || '').trim()).filter(Boolean);
+}
+
+/** The 9 fixed `prompt_theme` categories tagged on every ODQ quote in Notion. */
+const REFLECTION_PROMPT_THEME_SLUGS = [
+  'trust',
+  'identity',
+  'resilience',
+  'belonging',
+  'voice',
+  'attention',
+  'doubt',
+  'process',
+  'courage'
+];
+
+function normalizePromptThemeSlug(name) {
+  const slug = String(name || '').trim().toLowerCase();
+  return REFLECTION_PROMPT_THEME_SLUGS.includes(slug) ? slug : '';
+}
+
 function getBoolean(prop, fallback = false) {
   if (!prop) return fallback;
   if (typeof prop.checkbox === 'boolean') return prop.checkbox;
@@ -770,6 +793,9 @@ function parseNotionRow(page) {
   const notificationText =
     getRichText(props.notification_text) || getTitle(props.notification_text);
   const theme = getSelect(props.theme) || getRichText(props.theme) || getTitle(props.theme);
+  const promptThemes = getMultiSelect(findPropByBaseName(props, 'prompt_theme'))
+    .map(normalizePromptThemeSlug)
+    .filter(Boolean);
   const sortOrder = getNumber(props.sort_order, 0);
   const dateScheduled = getMappedDateStart(
     props,
@@ -879,6 +905,7 @@ function parseNotionRow(page) {
       notionUniqueId,
       githubPullRequestIds,
       theme,
+      promptThemes,
       source: 'notion',
       sourceId: page.id,
       notionLastEditedTime,
