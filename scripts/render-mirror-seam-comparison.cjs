@@ -4,10 +4,10 @@
  * Primary quilt vs quilt-screen mirror seam (real renderer).
  *
  *   npm run mirror:compare
- *   DATE_KEYS=2026-04-25,2026-06-10,2026-06-16 npm run mirror:compare
+ *   DATE_KEYS=2026-04-25,2026-06-10,2026-06-16,2026-06-22,2026-06-30,2026-07-03 npm run mirror:compare
  *
  * Output:
- *   tmp/mirror-seam-compare/<dateKey>/primary.png, duplicate.png, quilt-screen.png, contact-sheet.png
+ *   tmp/mirror-seam-compare/<dateKey>/primary.png, duplicate.png, flip-y.png, flip-x.png, fit-bottom.png, double-bottom.png, double-bottom-flip-left.png, quadrant-four-up.png, quilt-screen.png, contact-sheet.png
  *   tmp/mirror-seam-compare/contact-sheet.png (all dates)
  */
 const fs = require('fs');
@@ -30,7 +30,7 @@ const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 390));
 const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 844));
 const CONTACT_GAP = Math.max(0, Math.floor(Number(process.env.CONTACT_GAP) || 48));
 const CONTACT_LABEL_H = Math.max(0, Math.floor(Number(process.env.CONTACT_LABEL_H) || 96));
-const DEFAULT_DATE_KEYS = '2026-04-25,2026-06-10,2026-06-16';
+const DEFAULT_DATE_KEYS = '2026-04-25,2026-06-10,2026-06-16,2026-06-22,2026-06-30,2026-07-03';
 
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
@@ -82,14 +82,21 @@ function mirrorMeta(blocks, dateKey, QuiltMirrorLayout) {
   if (!result) return null;
   const layout = result.layout || {};
   const vb = result.viewBox || {};
+  const minY = Math.min(...blocks.map((b) => Number(b.y)));
+  const maxY = Math.max(...blocks.map((b) => Number(b.y) + Number(b.height)));
+  const quiltH = maxY - minY;
+  const fitScale = QuiltMirrorLayout?.duplicateFitBottomScale
+    ? QuiltMirrorLayout.duplicateFitBottomScale(0, minY, quiltH, vb.y, vb.height)
+    : null;
   return {
     overlapPercent: layout.overlapPercent,
     targetSeamFraction: layout.targetSeamFraction,
     seamFraction: vb.seamFraction,
     shapeCapped: layout.shapeCapped === true,
     mirrorSeamOffset: result.mirrorSeamOffset,
+    fitScale,
     primaryVisibleFraction: vb.height && blocks.length
-      ? Math.min(1, (Math.max(...blocks.map((b) => Number(b.y) + Number(b.height))) - Math.min(...blocks.map((b) => Number(b.y)))) / vb.height)
+      ? Math.min(1, quiltH / vb.height)
       : null
   };
 }
@@ -127,6 +134,12 @@ function startStaticServer(mode) {
   const params = new URLSearchParams({ compositionTester: '1' });
   if (mode === 'primary') params.set('primaryOnly', '1');
   else if (mode === 'duplicate') params.set('duplicateNoMirror', '1');
+  else if (mode === 'flipY') params.set('duplicateFlipY', '1');
+  else if (mode === 'flipX') params.set('duplicateFlipX', '1');
+  else if (mode === 'fitBottom') params.set('duplicateFitBottom', '1');
+  else if (mode === 'doubleBottom') params.set('duplicateDoubleBottom', '1');
+  else if (mode === 'doubleBottomFlipLeft') params.set('duplicateDoubleBottomFlipLeft', '1');
+  else if (mode === 'quadrantFourUp') params.set('quadrantFourUp', '1');
   const query = `?${params.toString()}`;
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -140,6 +153,12 @@ function startStaticServer(mode) {
 function panelUrlForMode(servers, panel) {
   if (panel.expectPrimaryOnly) return servers.primary.url;
   if (panel.expectDuplicate) return servers.duplicate.url;
+  if (panel.expectFlipY) return servers.flipY.url;
+  if (panel.expectFlipX) return servers.flipX.url;
+  if (panel.expectFitBottom) return servers.fitBottom.url;
+  if (panel.expectDoubleBottom) return servers.doubleBottom.url;
+  if (panel.expectDoubleBottomFlipLeft) return servers.doubleBottomFlipLeft.url;
+  if (panel.expectQuadrantFourUp) return servers.quadrantFourUp.url;
   return servers.screen.url;
 }
 
@@ -222,6 +241,91 @@ async function renderPanel(page, panel, dateKey) {
         const transform = layer?.getAttribute('transform') || '';
         return !!layer
           && !transform.includes('scale(-1')
+          && !transform.includes('scale(1 -1)')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } else if (panel.expectFlipY) {
+    await page.waitForFunction(
+      () => {
+        const svg = document.getElementById('quilt');
+        const layer = svg?.querySelector('#quiltMirroredFieldLayer[data-duplicate-flip-y="1"]');
+        const transform = layer?.getAttribute('transform') || '';
+        return !!layer
+          && transform.includes('scale(1 -1)')
+          && !transform.includes('scale(-1 -1)')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } else if (panel.expectFlipX) {
+    await page.waitForFunction(
+      () => {
+        const svg = document.getElementById('quilt');
+        const layer = svg?.querySelector('#quiltMirroredFieldLayer[data-duplicate-flip-x="1"]');
+        const transform = layer?.getAttribute('transform') || '';
+        return !!layer
+          && transform.includes('scale(-1 1)')
+          && !transform.includes('scale(-1 -1)')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } else if (panel.expectFitBottom) {
+    await page.waitForFunction(
+      () => {
+        const svg = document.getElementById('quilt');
+        const layer = svg?.querySelector('#quiltMirroredFieldLayer[data-duplicate-fit-bottom="1"]');
+        const transform = layer?.getAttribute('transform') || '';
+        return !!layer
+          && transform.includes('scale(1 ')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } else if (panel.expectQuadrantFourUp) {
+    await page.waitForFunction(
+      () => {
+        const svg = document.getElementById('quilt');
+        const tr = svg?.querySelector('[data-quadrant-tr="1"]');
+        const bl = svg?.querySelector('[data-quadrant-bl="1"]');
+        const br = svg?.querySelector('[data-quadrant-br="1"]');
+        const trT = tr?.getAttribute('transform') || '';
+        const blT = bl?.getAttribute('transform') || '';
+        const brT = br?.getAttribute('transform') || '';
+        return !!tr && trT.includes('scale(-1 1)') && !trT.includes('scale(-1 -1)')
+          && !!bl && blT.includes('scale(1 -1)') && !blT.includes('scale(-1 -1)')
+          && !!br && brT.includes('scale(-1 -1)')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } else if (panel.expectDoubleBottomFlipLeft) {
+    await page.waitForFunction(
+      () => {
+        const svg = document.getElementById('quilt');
+        const layer1 = svg?.querySelector('[data-duplicate-double-bottom-flip-left-1="1"]');
+        const transform = layer1?.getAttribute('transform') || '';
+        return !!layer1
+          && transform.includes('scale(-1 1)')
+          && !!svg?.querySelector('[data-duplicate-double-bottom-2="1"]')
+          && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
+      },
+      undefined,
+      { timeout: 60000 }
+    );
+  } else if (panel.expectDoubleBottom) {
+    await page.waitForFunction(
+      () => {
+        const svg = document.getElementById('quilt');
+        return !!svg?.querySelector('[data-duplicate-double-bottom-1="1"]')
+          && !!svg?.querySelector('[data-duplicate-double-bottom-2="1"]')
           && !!svg?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon');
       },
       undefined,
@@ -253,6 +357,12 @@ async function renderPanelsWithRealQuiltRenderer(panels, dateKey) {
   const servers = {
     primary: await startStaticServer('primary'),
     duplicate: await startStaticServer('duplicate'),
+    flipY: await startStaticServer('flipY'),
+    flipX: await startStaticServer('flipX'),
+    fitBottom: await startStaticServer('fitBottom'),
+    doubleBottom: await startStaticServer('doubleBottom'),
+    doubleBottomFlipLeft: await startStaticServer('doubleBottomFlipLeft'),
+    quadrantFourUp: await startStaticServer('quadrantFourUp'),
     screen: await startStaticServer('screen')
   };
   const browser = await chromium.launch({ headless: true });
@@ -385,6 +495,57 @@ function formatDuplicateSubtitle(meta, blockCount) {
   return [ `${blockCount} blocks`, 'stacked copy', 'no flip', overlap, seam ].filter(Boolean).join(' · ');
 }
 
+function formatFlipYSubtitle(meta, blockCount) {
+  if (!meta) return `${blockCount} blocks · bottom copy · flip Y only`;
+  const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
+  const seam = Number.isFinite(meta.seamFraction)
+    ? `seam @ ${(meta.seamFraction * 100).toFixed(0)}% viewport`
+    : '';
+  return [ `${blockCount} blocks`, 'flip Y only', overlap, seam ].filter(Boolean).join(' · ');
+}
+
+function formatFlipXSubtitle(meta, blockCount) {
+  if (!meta) return `${blockCount} blocks · bottom copy · flip X only`;
+  const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
+  const seam = Number.isFinite(meta.seamFraction)
+    ? `seam @ ${(meta.seamFraction * 100).toFixed(0)}% viewport`
+    : '';
+  return [ `${blockCount} blocks`, 'flip X only', overlap, seam ].filter(Boolean).join(' · ');
+}
+
+function formatFitBottomSubtitle(meta, blockCount) {
+  if (!meta) return `${blockCount} blocks · compressed to fit bottom band`;
+  const scale = Number.isFinite(meta.fitScale) ? `Y ${(meta.fitScale * 100).toFixed(0)}%` : '';
+  const seam = Number.isFinite(meta.seamFraction)
+    ? `seam @ ${(meta.seamFraction * 100).toFixed(0)}% viewport`
+    : '';
+  return [ `${blockCount} blocks`, 'fit bottom', 'full width', scale, seam ].filter(Boolean).join(' · ');
+}
+
+function formatDoubleBottomSubtitle(meta, blockCount) {
+  if (!meta) return `${blockCount} blocks · 2× side-by-side · vertical seam`;
+  const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
+  const seam = Number.isFinite(meta.seamFraction)
+    ? `seam @ ${(meta.seamFraction * 100).toFixed(0)}% viewport`
+    : '';
+  return [ `${blockCount} blocks`, '3× quilt', '2 side-by-side below', 'standard crop', overlap, seam ].filter(Boolean).join(' · ');
+}
+
+function formatDoubleBottomFlipLeftSubtitle(meta, blockCount) {
+  if (!meta) return `${blockCount} blocks · dup ×2 · dup1 flip X`;
+  const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
+  const seam = Number.isFinite(meta.seamFraction)
+    ? `seam @ ${(meta.seamFraction * 100).toFixed(0)}% viewport`
+    : '';
+  return [ `${blockCount} blocks`, 'dup ×2', 'dup1 flip X', overlap, seam ].filter(Boolean).join(' · ');
+}
+
+function formatQuadrantFourUpSubtitle(meta, blockCount) {
+  if (!meta) return `${blockCount} blocks · 4 quadrants · TL TR BL BR mirrors`;
+  const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
+  return [ `${blockCount} blocks`, '4-up', 'full primary guaranteed', overlap ].filter(Boolean).join(' · ');
+}
+
 function formatMirrorSubtitle(meta, blockCount, contributorCount) {
   if (!meta) return `${blockCount} blocks · ${contributorCount || blockCount} contributors`;
   const overlap = Number.isFinite(meta.overlapPercent) ? `${(meta.overlapPercent * 100).toFixed(1)}% overlap` : '';
@@ -408,6 +569,11 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     submissionCount: day.submissionCount,
     expectPrimaryOnly: true,
     expectDuplicate: false,
+    expectFlipY: false,
+    expectFlipX: false,
+    expectFitBottom: false,
+    expectDoubleBottom: false,
+    expectDoubleBottomFlipLeft: false,
     expectMirror: false
   };
   const duplicatePanel = {
@@ -418,6 +584,100 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     submissionCount: day.submissionCount,
     expectPrimaryOnly: false,
     expectDuplicate: true,
+    expectFlipY: false,
+    expectFlipX: false,
+    expectFitBottom: false,
+    expectDoubleBottom: false,
+    expectDoubleBottomFlipLeft: false,
+    expectMirror: false
+  };
+  const flipYPanel = {
+    mode: 'flip-y',
+    label: `Flip Y — ${dateKey}`,
+    subtitle: formatFlipYSubtitle(meta, day.blocks.length),
+    blocks: day.blocks,
+    submissionCount: day.submissionCount,
+    expectPrimaryOnly: false,
+    expectDuplicate: false,
+    expectFlipY: true,
+    expectFlipX: false,
+    expectFitBottom: false,
+    expectDoubleBottom: false,
+    expectMirror: false
+  };
+  const flipXPanel = {
+    mode: 'flip-x',
+    label: `Flip X — ${dateKey}`,
+    subtitle: formatFlipXSubtitle(meta, day.blocks.length),
+    blocks: day.blocks,
+    submissionCount: day.submissionCount,
+    expectPrimaryOnly: false,
+    expectDuplicate: false,
+    expectFlipY: false,
+    expectFlipX: true,
+    expectFitBottom: false,
+    expectMirror: false
+  };
+  const fitBottomPanel = {
+    mode: 'fit-bottom',
+    label: `Fit bottom — ${dateKey}`,
+    subtitle: formatFitBottomSubtitle(meta, day.blocks.length),
+    blocks: day.blocks,
+    submissionCount: day.submissionCount,
+    expectPrimaryOnly: false,
+    expectDuplicate: false,
+    expectFlipY: false,
+    expectFlipX: false,
+    expectFitBottom: true,
+    expectDoubleBottom: false,
+    expectDoubleBottomFlipLeft: false,
+    expectMirror: false
+  };
+  const doubleBottomPanel = {
+    mode: 'double-bottom',
+    label: `Dup ×2 — ${dateKey}`,
+    subtitle: formatDoubleBottomSubtitle(meta, day.blocks.length),
+    blocks: day.blocks,
+    submissionCount: day.submissionCount,
+    expectPrimaryOnly: false,
+    expectDuplicate: false,
+    expectFlipY: false,
+    expectFlipX: false,
+    expectFitBottom: false,
+    expectDoubleBottom: true,
+    expectDoubleBottomFlipLeft: false,
+    expectMirror: false
+  };
+  const doubleBottomFlipLeftPanel = {
+    mode: 'double-bottom-flip-left',
+    label: `Dup ×2 flip L — ${dateKey}`,
+    subtitle: formatDoubleBottomFlipLeftSubtitle(meta, day.blocks.length),
+    blocks: day.blocks,
+    submissionCount: day.submissionCount,
+    expectPrimaryOnly: false,
+    expectDuplicate: false,
+    expectFlipY: false,
+    expectFlipX: false,
+    expectFitBottom: false,
+    expectDoubleBottom: false,
+    expectDoubleBottomFlipLeft: true,
+    expectQuadrantFourUp: false,
+    expectMirror: false
+  };
+  const quadrantFourUpPanel = {
+    mode: 'quadrant-four-up',
+    label: `4-up — ${dateKey}`,
+    subtitle: formatQuadrantFourUpSubtitle(meta, day.blocks.length),
+    blocks: day.blocks,
+    submissionCount: day.submissionCount,
+    expectPrimaryOnly: false,
+    expectDuplicate: false,
+    expectFlipY: false,
+    expectFlipX: false,
+    expectFitBottom: false,
+    expectDoubleBottom: false,
+    expectDoubleBottomFlipLeft: false,
+    expectQuadrantFourUp: true,
     expectMirror: false
   };
   const screenPanel = {
@@ -428,6 +688,12 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     submissionCount: day.submissionCount,
     expectPrimaryOnly: false,
     expectDuplicate: false,
+    expectFlipY: false,
+    expectFlipX: false,
+    expectFitBottom: false,
+    expectDoubleBottom: false,
+    expectDoubleBottomFlipLeft: false,
+    expectQuadrantFourUp: false,
     expectMirror: true
   };
 
@@ -437,7 +703,7 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
   fs.mkdirSync(outDir, { recursive: true });
 
   const panelImages = await renderPanelsWithRealQuiltRenderer(
-    [primaryPanel, duplicatePanel, screenPanel],
+    [primaryPanel, duplicatePanel, flipYPanel, flipXPanel, fitBottomPanel, doubleBottomPanel, doubleBottomFlipLeftPanel, quadrantFourUpPanel, screenPanel],
     dateKey
   );
 
@@ -448,7 +714,7 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
   }
 
   const contactPath = path.join(outDir, 'contact-sheet.png');
-  await writeContactSheet(panelImages, contactPath, 3);
+  await writeContactSheet(panelImages, contactPath, 9);
   console.log(`[mirror-compare] wrote ${contactPath}`);
 
   const summary = {
@@ -459,6 +725,12 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     outputs: {
       primary: path.relative(ROOT, path.join(outDir, 'primary.png')),
       duplicate: path.relative(ROOT, path.join(outDir, 'duplicate.png')),
+      flipY: path.relative(ROOT, path.join(outDir, 'flip-y.png')),
+      flipX: path.relative(ROOT, path.join(outDir, 'flip-x.png')),
+      fitBottom: path.relative(ROOT, path.join(outDir, 'fit-bottom.png')),
+      doubleBottom: path.relative(ROOT, path.join(outDir, 'double-bottom.png')),
+      doubleBottomFlipLeft: path.relative(ROOT, path.join(outDir, 'double-bottom-flip-left.png')),
+      quadrantFourUp: path.relative(ROOT, path.join(outDir, 'quadrant-four-up.png')),
       quiltScreen: path.relative(ROOT, path.join(outDir, 'quilt-screen.png')),
       contactSheet: path.relative(ROOT, contactPath)
     }
@@ -491,7 +763,7 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
   if (allPanels.length >= 2) {
     const masterPath = path.join(outDir, 'contact-sheet.png');
-    await writeContactSheet(allPanels, masterPath, 3);
+    await writeContactSheet(allPanels, masterPath, 9);
     console.log(`[mirror-compare] wrote ${masterPath}`);
   }
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summaries, null, 2)}\n`);
