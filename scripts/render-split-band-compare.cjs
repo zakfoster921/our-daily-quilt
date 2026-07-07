@@ -96,7 +96,7 @@ function splitBandMeta(blocks, dateKey, QuiltMirrorLayout) {
   };
 }
 
-function startStaticServer(splitBand) {
+function startStaticServer(splitBand, splitBandSimple = false) {
   const STATIC_MIME = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
@@ -128,6 +128,7 @@ function startStaticServer(splitBand) {
   });
   const params = new URLSearchParams({ compositionTester: '1' });
   params.set('splitBand', splitBand ? '1' : '0');
+  if (splitBand && splitBandSimple) params.set('splitBandSimple', '1');
   const query = `?${params.toString()}`;
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -193,8 +194,11 @@ async function renderPanel(page, panel, dateKey, quiltData = {}) {
     return {
       blockCount: Array.isArray(app.quiltEngine.blocks) ? app.quiltEngine.blocks.length : 0,
       splitBand: svg?.getAttribute('data-quilt-split-band') === '1',
+      splitBandSimple: svg?.getAttribute('data-quilt-split-band-simple') === '1',
       hasPrimaryBand: !!svg?.querySelector('#quiltPrimaryBand'),
-      hasMirrorBand: !!svg?.querySelector('#quiltMirrorBand')
+      hasMirrorBand: !!svg?.querySelector('#quiltMirrorBand'),
+      hasDupLayers: !!svg?.querySelector('#quiltDuplicateBottomLayer1'),
+      hasSingleMirror: !!svg?.querySelector('#quiltMirroredFieldLayer')
     };
   }, { blocks: panel.blocks, submissionCount: panel.submissionCount, panelDateKey: dateKey, tuneSeed: panel.tuneSeed, viewportW: OUT_W, viewportH: OUT_H });
 
@@ -206,6 +210,15 @@ async function renderPanel(page, panel, dateKey, quiltData = {}) {
   }
   if (!panel.expectSplitBand && renderCheck.splitBand) {
     throw new Error(`${panel.mode}: split-band should be off`);
+  }
+  if (panel.expectSplitBandSimple && !renderCheck.splitBandSimple) {
+    throw new Error(`${panel.mode}: expected data-quilt-split-band-simple=1`);
+  }
+  if (panel.expectSplitBandSimple && renderCheck.hasDupLayers) {
+    throw new Error(`${panel.mode}: splitBandSimple should not render dup×2 layers`);
+  }
+  if (panel.expectSplitBandSimple && !renderCheck.hasSingleMirror) {
+    throw new Error(`${panel.mode}: splitBandSimple expected single mirror layer`);
   }
 
   await page.waitForFunction(
@@ -225,9 +238,10 @@ async function renderPanel(page, panel, dateKey, quiltData = {}) {
 }
 
 async function renderPanels(panels, dateKey, quiltData = {}) {
+  const splitBandSimple = process.env.SPLIT_BAND_SIMPLE === '1';
   const servers = {
     meet: await startStaticServer(false),
-    splitBand: await startStaticServer(true)
+    splitBand: await startStaticServer(true, splitBandSimple)
   };
   const browser = await chromium.launch({ headless: true });
   try {
@@ -382,15 +396,17 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     expectSplitBand: false,
     tuneSeed
   };
+  const splitBandSimple = process.env.SPLIT_BAND_SIMPLE === '1';
   const splitPanel = {
     mode: 'split-band',
-    label: `Split-band — ${dateKey}`,
+    label: splitBandSimple ? `Split-band simple — ${dateKey}` : `Split-band — ${dateKey}`,
     subtitle: meta
-      ? `${day.blocks.length} blocks · primary ${Math.round(meta.primaryScreenH)}px · mirror ${Math.round(meta.mirrorBandScreenH)}px`
+      ? `${day.blocks.length} blocks · primary ${Math.round(meta.primaryScreenH)}px · mirror ${Math.round(meta.mirrorBandScreenH)}px${splitBandSimple ? ' · single mirror QA' : ''}`
       : `${day.blocks.length} blocks · width-fit primary + fill mirror`,
     blocks: day.blocks,
     submissionCount: day.submissionCount,
     expectSplitBand: true,
+    expectSplitBandSimple: splitBandSimple,
     tuneSeed
   };
 
