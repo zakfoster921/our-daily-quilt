@@ -6263,7 +6263,17 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
           : LAYOUT_B_STORY_RENDER_VERSION;
     }
     if (quiltScreen9x16ImageData) {
-      const { publicUrl } = await saveIgPng(`${basePath}/quilt-screen-9x16.png`, quiltScreen9x16ImageData);
+      const quiltScreenIsJpeg = /^data:image\/jpe?g;base64,/i.test(quiltScreen9x16ImageData);
+      const quiltScreenDest = `${basePath}/quilt-screen-9x16.${quiltScreenIsJpeg ? 'jpg' : 'png'}`;
+      const quiltScreenBuf = quiltScreenIsJpeg
+        ? parseJpegDataUrlToBuffer(quiltScreen9x16ImageData)
+        : parsePngDataUrlToBuffer(quiltScreen9x16ImageData);
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        quiltScreenDest,
+        quiltScreenBuf,
+        quiltScreenIsJpeg ? 'image/jpeg' : 'image/png',
+        'no-store'
+      );
       docPayload.quiltScreen9x16ImageStorageUrl = publicUrl;
       docPayload.quiltScreen9x16Url = publicUrl;
       docPayload.quiltScreenUrl = publicUrl;
