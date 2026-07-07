@@ -70,16 +70,23 @@ async function fetchDay(db, dateKey) {
 }
 
 function splitBandMeta(blocks, dateKey, QuiltMirrorLayout) {
+  const minY = Math.min(...blocks.map((b) => Number(b.y)));
+  const quiltH =
+    Math.max(...blocks.map((b) => Number(b.y) + Number(b.height))) - minY;
+  const metrics =
+    QuiltMirrorLayout?.computeSplitBandContentMetrics?.(blocks, minY, quiltH) || {};
   const result = QuiltMirrorLayout?.computeSplitBandLayout
     ? QuiltMirrorLayout.computeSplitBandLayout({
         minX: Math.min(...blocks.map((b) => Number(b.x))),
-        minY: Math.min(...blocks.map((b) => Number(b.y))),
+        minY,
         quiltW: Math.max(...blocks.map((b) => Number(b.x) + Number(b.width))) -
           Math.min(...blocks.map((b) => Number(b.x))),
-        quiltH: Math.max(...blocks.map((b) => Number(b.y) + Number(b.height))) -
-          Math.min(...blocks.map((b) => Number(b.y))),
+        quiltH,
         viewportW: OUT_W,
         viewportH: OUT_H,
+        contentSeamRel: metrics.seamRel,
+        blockSpanRel: metrics.blockSpanRel,
+        blockTopRel: metrics.blockTopRel,
         doubleSideBySide:
           QuiltMirrorLayout.odqNormalizeMirrorBottomLayout?.(
             QuiltMirrorLayout.odqReadMirrorTuneFromLocal?.(dateKey)?.bottomLayout
@@ -89,6 +96,7 @@ function splitBandMeta(blocks, dateKey, QuiltMirrorLayout) {
   if (!result) return null;
   return {
     primaryScreenH: result.primaryScreenH,
+    primaryHeightFraction: result.primaryHeightFraction,
     mirrorBandScreenH: result.mirrorBandScreenH,
     primaryScale: result.primaryScale,
     mirrorScaleX: result.mirrorScaleX,
@@ -401,7 +409,7 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     mode: 'split-band',
     label: splitBandSimple ? `Split-band simple — ${dateKey}` : `Split-band — ${dateKey}`,
     subtitle: meta
-      ? `${day.blocks.length} blocks · primary ${Math.round(meta.primaryScreenH)}px · mirror ${Math.round(meta.mirrorBandScreenH)}px${splitBandSimple ? ' · single mirror QA' : ''}`
+      ? `${day.blocks.length} blocks · primary ${Math.round(meta.primaryScreenH)}px (${Math.round((meta.primaryHeightFraction || 0) * 100)}%) · mirror ${Math.round(meta.mirrorBandScreenH)}px${splitBandSimple ? ' · single mirror QA' : ''}`
       : `${day.blocks.length} blocks · width-fit primary + fill mirror`,
     blocks: day.blocks,
     submissionCount: day.submissionCount,
