@@ -39,7 +39,8 @@ const net = require('net');
 const LAYOUT_B_STORY_RENDER_VERSION = 'story-strip-cluster-v3';
 const {
   normalizeDailyQuotePreferredHour,
-  isDailyQuoteDueForToken
+  isDailyQuoteDueForToken,
+  buildDailyQuotePushBody
 } = require('./lib/daily-quote-push-time');
 
 let ffmpegStaticPath = null;
@@ -5298,8 +5299,9 @@ async function getLastDailyQuotePushCompletedAt() {
       .limit(40)
       .get();
     for (const doc of snap.docs) {
-      if (doc.id.startsWith('daily-quote-push-') && doc.data().status === 'success') {
-        return String(doc.data().completedAt || '').trim() || null;
+      const data = doc.data() || {};
+      if (doc.id.startsWith('daily-quote-push-') && data.status === 'success' && (data.sent || 0) > 0) {
+        return String(data.completedAt || '').trim() || null;
       }
     }
   } catch (_) { /* */ }
@@ -5373,9 +5375,7 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
   const quoteText = await getDailyQuotePushText(resolvedDateKey);
   const lastPushAt = await getLastDailyQuotePushCompletedAt();
   const newStudioPost = await getLatestStudioFloorPostSince(lastPushAt);
-  const studioSuffix = ' (+ new post on STUDIO FLOOR ✂️)';
-  const rawBody = newStudioPost ? `${quoteText}${studioSuffix}` : quoteText;
-  const body = truncatePushBody(rawBody);
+  const body = buildDailyQuotePushBody(quoteText, { hasNewPost: !!newStudioPost });
   let sent = 0;
   let failed = 0;
   let pruned = 0;
