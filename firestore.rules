@@ -10,6 +10,31 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function instructorLeaderboardConfigData() {
+      return exists(/databases/$(database)/documents/instructorLeaderboardConfig/settings)
+        ? get(/databases/$(database)/documents/instructorLeaderboardConfig/settings).data
+        : {};
+    }
+
+    function instructorSubmissionsOpen() {
+      // Dot-access on a map errors out (=> deny) if the key is absent, e.g. before the
+      // config doc is ever created — use get() with a default so "open" is the default state.
+      return instructorLeaderboardConfigData().get('submissionsOpen', true) != false;
+    }
+
+    function instructorVotingOpen() {
+      return instructorLeaderboardConfigData().get('votingOpen', false) == true;
+    }
+
+    function isValidInstructorNomination(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 80
+        && data.nameKey is string && data.nameKey.size() > 0 && data.nameKey.size() <= 80
+        && data.link is string && data.link.size() <= 200
+        && data.note is string && data.note.size() <= 300
+        && data.firstSubmittedAtIso is string
+        && data.lastSubmittedAtIso is string;
+    }
+
     function isFeatureFeedbackResponse(data) {
       return data.source == 'hidden_visual_feed'
         && data.submitted == true
@@ -144,6 +169,44 @@ service cloud.firestore {
     match /quoteSubmissions/{submissionId} {
       // Quote submissions are created through the Express API.
       allow read, write: if false;
+    }
+
+    match /instructorNominations/{nominationId} {
+      // NOOK instructor nomination page (standalone, client-writes-directly-to-Firestore;
+      // no Express server involved). Doc id is a client-computed hash of the lowercased name.
+      allow read: if true;
+
+      allow create: if instructorSubmissionsOpen()
+        && isValidInstructorNomination(request.resource.data)
+        && request.resource.data.submissionCount == 1;
+
+      // Re-suggesting an existing name: only submissionCount/lastSubmittedAtIso/link/note may
+      // change. name/nameKey are immutable and votes live only in the votes/ subcollection.
+      allow update: if instructorSubmissionsOpen()
+        && isValidInstructorNomination(request.resource.data)
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.nameKey == resource.data.nameKey
+        && request.resource.data.submissionCount == resource.data.submissionCount + 1;
+
+      allow delete: if false;
+
+      match /votes/{voterId} {
+        // One doc per device (voterId = hashed local client id); presence = "has voted".
+        // Vote tallies are derived by counting this subcollection, not stored as a counter.
+        allow read: if true;
+        allow create: if instructorVotingOpen()
+          && request.resource.data.keys().hasOnly(['createdAtIso'])
+          && request.resource.data.createdAtIso is string;
+        allow update: if false;
+        allow delete: if instructorVotingOpen();
+      }
+    }
+
+    match /instructorLeaderboardConfig/{configId} {
+      // submissionsOpen / votingOpen flags, flipped manually in the Firebase console.
+      // No client writes; this is intentionally not editable from either NOOK page.
+      allow read: if true;
+      allow write: if false;
     }
 
     match /{collection}/{document=**} {

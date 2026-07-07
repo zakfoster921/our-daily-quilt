@@ -100,6 +100,8 @@ const PUBLIC_ROOT_FILES = new Set([
   'odq-editor.html',
   'privacy.html',
   'support.html',
+  'instructor-submit.html',
+  'instructor-leaderboard.html',
   'rumi-colors.js'
 ]);
 const STATIC_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=86400';
@@ -140,6 +142,10 @@ app.get('/odq-editor', (_req, res) => sendPublicRootFile(res, 'odq-editor.html')
 app.get('/odq-editor.html', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
 app.get('/preview-slide3-name-strip', (_req, res) => sendPublicRootFile(res, 'preview-slide3-name-strip.html'));
 app.get('/preview-slide3-name-strip.html', (_req, res) => sendPublicRootFile(res, 'preview-slide3-name-strip.html'));
+app.get('/instructor-submit', (_req, res) => sendPublicRootFile(res, 'instructor-submit.html'));
+app.get('/instructor-submit.html', (_req, res) => sendPublicRootFile(res, 'instructor-submit.html'));
+app.get('/instructor-leaderboard', (_req, res) => sendPublicRootFile(res, 'instructor-leaderboard.html'));
+app.get('/instructor-leaderboard.html', (_req, res) => sendPublicRootFile(res, 'instructor-leaderboard.html'));
 app.get('/:fileName', (req, res, next) => {
   const fileName = String(req.params.fileName || '');
   if (!PUBLIC_ROOT_FILES.has(fileName)) return next();

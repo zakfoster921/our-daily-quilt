@@ -12,7 +12,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy only runtime files that the API or public app needs.
-COPY server.js index.html our-daily-beta.html privacy.html support.html rumi-colors.js ./
+COPY server.js index.html our-daily-beta.html privacy.html support.html instructor-submit.html instructor-leaderboard.html rumi-colors.js ./
 COPY lib ./lib
 COPY styles ./styles
 COPY scripts ./scripts

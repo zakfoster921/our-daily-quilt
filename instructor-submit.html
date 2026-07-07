@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>NOOK Workshops 2027</title>
+  <style>
+    :root {
+      color: #3f3a35;
+      background: #f9b76a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.55;
+    }
+    body {
+      margin: 0;
+      padding: 32px 18px 48px;
+    }
+    main {
+      max-width: 640px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.72);
+      padding: 28px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: clamp(2rem, 8vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      text-align: center;
+    }
+    .subtitle {
+      color: #5c5148;
+      font-size: 1.05rem;
+      font-weight: 700;
+      text-align: center;
+    }
+    a {
+      color: inherit;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.2em;
+    }
+    form {
+      margin-top: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.1rem;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.1rem;
+    }
+    @media (max-width: 480px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+    label {
+      display: block;
+      font-size: 0.95rem;
+      color: #5c5148;
+      margin-bottom: 0.35rem;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: inherit;
+      font-size: 1rem;
+      color: #3f3a35;
+      background: #fffdfb;
+      border: 1px solid #d9d1c6;
+      border-radius: 6px;
+      padding: 0.65rem 0.75rem;
+    }
+    input:focus {
+      outline: 2px solid #ea9b9a;
+      outline-offset: 1px;
+    }
+    button {
+      align-self: flex-start;
+      font-family: inherit;
+      font-size: 1rem;
+      color: #fffdfb;
+      background: #b5615f;
+      border: none;
+      border-radius: 999px;
+      padding: 0.7rem 1.6rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    button:not(:disabled):hover {
+      background: #9f4f4d;
+    }
+    #status-message {
+      margin-top: 1.25rem;
+      padding: 0.85rem 1rem;
+      border-radius: 8px;
+      font-size: 0.98rem;
+      display: none;
+    }
+    #status-message.show {
+      display: block;
+    }
+    #status-message.success {
+      background: #fdead0;
+      color: #8a5a1e;
+    }
+    #status-message.duplicate {
+      background: #fbf3e3;
+      color: #6b5320;
+    }
+    #status-message.error {
+      background: #fbe7e6;
+      color: #7a2b28;
+    }
+    #status-message.closed {
+      background: #efeae3;
+      color: #5c5148;
+    }
+    .leaderboard-section {
+      margin-top: 2rem;
+      padding: 1.5rem;
+      background: #fffdfb;
+      border-radius: 10px;
+    }
+    .leaderboard-section h2 {
+      font-size: 1.15rem;
+      margin: 0 0 0.9rem;
+      text-align: center;
+    }
+    #banner {
+      padding: 0.75rem 0.9rem;
+      color: #5c5148;
+      font-size: 0.92rem;
+      font-weight: 700;
+      text-align: center;
+    }
+    #banner.open {
+      color: #2f5233;
+    }
+    ul#nominee-list {
+      list-style: none;
+      margin: 1rem 0 0;
+      padding: 0;
+    }
+    .nominee-row {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      padding: 0.7rem 0;
+      border-bottom: 1px solid #e3dbcf;
+    }
+    .nominee-rank {
+      width: 1.4rem;
+      flex-shrink: 0;
+      color: #a89a89;
+      font-size: 0.9rem;
+      text-align: right;
+    }
+    .nominee-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
+    .nominee-name {
+      font-size: 1rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .nominee-link {
+      font-size: 0.82rem;
+      color: #8a7c6d;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .nominee-votes {
+      font-size: 0.92rem;
+      color: #5c5148;
+      min-width: 1.4rem;
+      text-align: right;
+    }
+    .heart-button {
+      flex-shrink: 0;
+      font-size: 1.2rem;
+      line-height: 1;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.2rem;
+      color: #b5615f;
+    }
+    .heart-button[disabled] {
+      cursor: not-allowed;
+      opacity: 0.3;
+      color: #8a7c6d;
+    }
+    .heart-button:not(.voted):not([disabled])::before {
+      content: "♡";
+    }
+    .heart-button.voted::before {
+      content: "♥";
+    }
+    .heart-button[disabled]::before {
+      content: "♡";
+    }
+    #empty-state {
+      margin-top: 1rem;
+      color: #5c5148;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>NOOK Workshops 2027</h1>
+    <p class="subtitle">
+      Who do you want to see teach on the NOOK?
+    </p>
+
+    <form id="nomination-form">
+      <div class="form-row">
+        <div>
+          <label for="instructor-name">Instructor's name</label>
+          <input id="instructor-name" name="name" type="text" maxlength="80" required autocomplete="off" />
+        </div>
+        <div>
+          <label for="instructor-link">Instagram or website (optional)</label>
+          <input id="instructor-link" name="link" type="text" maxlength="200" autocomplete="off" />
+        </div>
+      </div>
+      <div>
+        <label for="instructor-note">Why them? (optional)</label>
+        <input id="instructor-note" name="note" type="text" maxlength="300" autocomplete="off" />
+      </div>
+      <button id="submit-button" type="submit">Submit suggestion</button>
+    </form>
+
+    <div id="status-message" role="status" aria-live="polite"></div>
+
+    <div class="leaderboard-section">
+      <h2>INSTRUCTOR LEADERBOARD</h2>
+      <div id="banner"></div>
+      <ul id="nominee-list"></ul>
+      <p id="empty-state">No suggestions yet — be the first to nominate someone!</p>
+    </div>
+  </main>
+
+  <script type="module">
+    const CONFIG = {
+      FIREBASE: {
+        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+        authDomain: "our-daily.firebaseapp.com",
+        projectId: "our-daily",
+        storageBucket: "our-daily.firebasestorage.app",
+        messagingSenderId: "337201931314",
+        appId: "1:337201931314:web:fb5677846d03eb285ac82b"
+      }
+    };
+
+    const form = document.getElementById('nomination-form');
+    const submitButton = document.getElementById('submit-button');
+    const statusEl = document.getElementById('status-message');
+    const nameInput = document.getElementById('instructor-name');
+    const linkInput = document.getElementById('instructor-link');
+    const noteInput = document.getElementById('instructor-note');
+    const bannerEl = document.getElementById('banner');
+    const listEl = document.getElementById('nominee-list');
+    const emptyStateEl = document.getElementById('empty-state');
+
+    function showStatus(kind, text) {
+      statusEl.className = `show ${kind}`;
+      statusEl.textContent = text;
+    }
+
+    function getOrCreateClientId() {
+      const key = 'nookInstructorClientId';
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem(key, id);
+      }
+      return id;
+    }
+
+    async function sha256Hex(text) {
+      const bytes = new TextEncoder().encode(text);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    function normalizeName(value) {
+      return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    }
+
+    // Accepts a full URL, a bare domain, or an Instagram handle (with or without "@")
+    // and resolves it to a clickable href — handles become instagram.com profile links.
+    // Instagram usernames may contain dots (e.g. "zakfoster.quilts"), so a bare dot isn't
+    // enough to call something a domain — require a recognized TLD, "www.", or a path "/".
+    function resolveNomineeLinkHref(rawLink) {
+      const value = String(rawLink || '').trim();
+      if (!value) return '';
+      if (/^https?:\/\//i.test(value)) return value;
+      const KNOWN_TLD_PATTERN = /\.(com|net|org|io|co|us|uk|ca|shop|studio|art|blog|me|info|biz|design|store|online|site|xyz|app|dev|gallery)(\/|$)/i;
+      const looksLikeDomain = value.includes('/') || /^www\./i.test(value) || KNOWN_TLD_PATTERN.test(value);
+      if (looksLikeDomain) return `https://${value}`;
+      const handle = value.replace(/^@/, '');
+      return `https://www.instagram.com/${encodeURIComponent(handle)}/`;
+    }
+
+    Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js')
+    ]).then(async ([{ initializeApp }, firestoreModule]) => {
+      const { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc } = firestoreModule;
+      const app = initializeApp(CONFIG.FIREBASE);
+      const db = getFirestore(app);
+
+      let submissionsOpen = true;
+      let votingOpen = false;
+      try {
+        const configSnap = await getDoc(doc(db, 'instructorLeaderboardConfig', 'settings'));
+        const configData = configSnap.exists() ? configSnap.data() : {};
+        submissionsOpen = configData.submissionsOpen !== false;
+        votingOpen = configData.votingOpen === true;
+      } catch (err) {
+        console.warn('Could not load leaderboard config, defaulting to submissions-open/voting-closed:', err);
+      }
+
+      if (!submissionsOpen) {
+        form.style.display = 'none';
+        showStatus('closed', "Suggestions are closed for now — thanks to everyone who submitted! See who's been suggested below.");
+      }
+
+      function renderNomineeRow(nominee, index, clientDocId) {
+        const li = document.createElement('li');
+        li.className = 'nominee-row';
+
+        const rank = document.createElement('div');
+        rank.className = 'nominee-rank';
+        rank.textContent = votingOpen ? `${index + 1}.` : '';
+        li.appendChild(rank);
+
+        const info = document.createElement('div');
+        info.className = 'nominee-info';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'nominee-name';
+        nameEl.textContent = nominee.name;
+        info.appendChild(nameEl);
+        if (nominee.link) {
+          const linkEl = document.createElement('a');
+          linkEl.className = 'nominee-link';
+          linkEl.href = resolveNomineeLinkHref(nominee.link);
+          linkEl.target = '_blank';
+          linkEl.rel = 'noopener noreferrer';
+          linkEl.textContent = nominee.link;
+          info.appendChild(linkEl);
+        }
+        li.appendChild(info);
+
+        const votesEl = document.createElement('div');
+        votesEl.className = 'nominee-votes';
+        votesEl.textContent = votingOpen ? String(nominee.votes) : '';
+        li.appendChild(votesEl);
+
+        const heartButton = document.createElement('button');
+        heartButton.type = 'button';
+        heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
+        heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
+        // Nothing is clickable/voteable until votingOpen is flipped on server-side config.
+        heartButton.disabled = !votingOpen;
+        li.appendChild(heartButton);
+
+        if (votingOpen) {
+          heartButton.addEventListener('click', async () => {
+            heartButton.disabled = true;
+            try {
+              const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
+              if (nominee.voted) {
+                await deleteDoc(voteRef);
+                nominee.voted = false;
+                nominee.votes = Math.max(0, nominee.votes - 1);
+              } else {
+                await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
+                nominee.voted = true;
+                nominee.votes += 1;
+              }
+              votesEl.textContent = String(nominee.votes);
+              heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
+              heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
+            } catch (err) {
+              console.error('Vote failed:', err);
+            } finally {
+              heartButton.disabled = false;
+            }
+          });
+        }
+
+        return li;
+      }
+
+      async function loadLeaderboard() {
+        listEl.innerHTML = '';
+        const clientId = getOrCreateClientId();
+        const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
+
+        const nominationsSnap = await getDocs(collection(db, 'instructorNominations'));
+        let nominees = [];
+
+        for (const nominationDoc of nominationsSnap.docs) {
+          const data = nominationDoc.data() || {};
+          if (!data.name) continue;
+          const nominee = { id: nominationDoc.id, name: data.name, link: data.link || '', votes: 0, voted: false };
+          if (votingOpen) {
+            const votesSnap = await getDocs(collection(db, 'instructorNominations', nominationDoc.id, 'votes'));
+            nominee.votes = votesSnap.size;
+            nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
+          }
+          nominees.push(nominee);
+        }
+
+        if (votingOpen) {
+          nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
+          bannerEl.className = 'open';
+          bannerEl.textContent = 'Voting is open — tap a heart to support your favorites.';
+        } else {
+          nominees.sort((a, b) => a.name.localeCompare(b.name));
+          bannerEl.className = '';
+          bannerEl.textContent = "Voting isn't open yet. Check back soon!";
+        }
+
+        emptyStateEl.style.display = nominees.length ? 'none' : 'block';
+        nominees.forEach((nominee, index) => {
+          listEl.appendChild(renderNomineeRow(nominee, index, clientDocId));
+        });
+      }
+
+      loadLeaderboard().catch((err) => {
+        console.error('Failed to load leaderboard:', err);
+        bannerEl.textContent = 'Could not load suggestions right now — please try again in a moment.';
+      });
+
+      if (!submissionsOpen) return;
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const name = normalizeName(nameInput.value);
+        const link = String(linkInput.value || '').trim().slice(0, 200);
+        const note = String(noteInput.value || '').trim().slice(0, 300);
+
+        if (!name) {
+          showStatus('error', 'Please enter an instructor name.');
+          return;
+        }
+
+        submitButton.disabled = true;
+        try {
+          const nameKey = name.toLowerCase();
+          const nominationId = (await sha256Hex(nameKey)).slice(0, 32);
+          const nominationRef = doc(db, 'instructorNominations', nominationId);
+          const nowIso = new Date().toISOString();
+          const existingSnap = await getDoc(nominationRef);
+
+          if (existingSnap.exists()) {
+            const existing = existingSnap.data() || {};
+            await updateDoc(nominationRef, {
+              submissionCount: (Number(existing.submissionCount) || 1) + 1,
+              lastSubmittedAtIso: nowIso,
+              link: link || existing.link || '',
+              note: note || existing.note || ''
+            });
+            showStatus('duplicate', `You've already suggested ${name} — thanks for the enthusiasm! We've noted your interest again.`);
+          } else {
+            await setDoc(nominationRef, {
+              name,
+              nameKey,
+              link,
+              note,
+              submissionCount: 1,
+              firstSubmittedAtIso: nowIso,
+              lastSubmittedAtIso: nowIso
+            });
+            showStatus('success', `Thanks! ${name} has been added to the suggestion list.`);
+          }
+
+          form.reset();
+          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+        } catch (err) {
+          console.error('Instructor nomination failed:', err);
+          if (err && err.code === 'permission-denied') {
+            showStatus('closed', 'Suggestions just closed — thanks for your interest!');
+          } else {
+            showStatus('error', 'Something went wrong — please try again in a moment.');
+          }
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+    }).catch((err) => {
+      console.error('Failed to load Firebase:', err);
+      showStatus('error', 'Could not connect right now — please try again in a moment.');
+    });
+  </script>
+</body>
+</html>

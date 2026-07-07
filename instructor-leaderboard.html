@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Instructor Leaderboard — The Quilty Nook</title>
+  <style>
+    :root {
+      color: #3f3a35;
+      background: #f9b76a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.55;
+    }
+    body {
+      margin: 0;
+      padding: 32px 18px 48px;
+    }
+    main {
+      max-width: 640px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.72);
+      padding: 28px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: clamp(2rem, 8vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+    .subtitle {
+      color: #5c5148;
+      font-size: 1.05rem;
+    }
+    a {
+      color: inherit;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.2em;
+    }
+    #banner {
+      margin-top: 1.25rem;
+      padding: 0.85rem 1rem;
+      border-radius: 8px;
+      background: #efeae3;
+      color: #5c5148;
+      font-size: 0.98rem;
+    }
+    #banner.open {
+      background: #eaf3ea;
+      color: #2f5233;
+    }
+    ul#nominee-list {
+      list-style: none;
+      margin: 1.5rem 0 0;
+      padding: 0;
+    }
+    .nominee-row {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid #e3dbcf;
+    }
+    .nominee-rank {
+      width: 1.6rem;
+      flex-shrink: 0;
+      color: #a89a89;
+      font-size: 0.95rem;
+      text-align: right;
+    }
+    .nominee-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .nominee-name {
+      font-size: 1.05rem;
+    }
+    .nominee-link {
+      font-size: 0.85rem;
+      color: #8a7c6d;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .nominee-votes {
+      font-size: 0.95rem;
+      color: #5c5148;
+      min-width: 1.5rem;
+      text-align: right;
+    }
+    .heart-button {
+      flex-shrink: 0;
+      font-size: 1.3rem;
+      line-height: 1;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.2rem;
+      color: #b5615f;
+    }
+    .heart-button[disabled] {
+      cursor: not-allowed;
+      opacity: 0.3;
+      color: #8a7c6d;
+    }
+    .heart-button.voted {
+      color: #b5615f;
+    }
+    .heart-button:not(.voted):not([disabled])::before {
+      content: "♡";
+    }
+    .heart-button.voted::before {
+      content: "♥";
+    }
+    .heart-button[disabled]::before {
+      content: "♡";
+    }
+    #empty-state {
+      margin-top: 1.5rem;
+      color: #5c5148;
+      display: none;
+    }
+    .footer-links {
+      margin-top: 2rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid #e3dbcf;
+      font-size: 0.95rem;
+      color: #5c5148;
+    }
+    .footer-links a {
+      display: inline-block;
+      margin-top: 0.35rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Instructor Leaderboard</h1>
+    <p class="subtitle">
+      Who do you want to see teach at
+      <a href="https://www.zakfoster.com/nook-main" target="_blank" rel="noopener noreferrer">The Quilty Nook</a>?
+    </p>
+
+    <div id="banner"></div>
+
+    <ul id="nominee-list"></ul>
+    <p id="empty-state">No suggestions yet — <a href="/instructor-submit.html">be the first to nominate someone</a>!</p>
+
+    <div class="footer-links">
+      <a href="/instructor-submit.html">Suggest an instructor →</a>
+    </div>
+  </main>
+
+  <script type="module">
+    const CONFIG = {
+      FIREBASE: {
+        apiKey: "AIzaSyBqMJlchU_luM5-XcPo0USDUjsM60Qfoqg",
+        authDomain: "our-daily.firebaseapp.com",
+        projectId: "our-daily",
+        storageBucket: "our-daily.firebasestorage.app",
+        messagingSenderId: "337201931314",
+        appId: "1:337201931314:web:fb5677846d03eb285ac82b"
+      }
+    };
+
+    const bannerEl = document.getElementById('banner');
+    const listEl = document.getElementById('nominee-list');
+    const emptyStateEl = document.getElementById('empty-state');
+
+    function getOrCreateClientId() {
+      const key = 'nookInstructorClientId';
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem(key, id);
+      }
+      return id;
+    }
+
+    async function sha256Hex(text) {
+      const bytes = new TextEncoder().encode(text);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    function renderRow(nominee, index, votingOpen) {
+      const li = document.createElement('li');
+      li.className = 'nominee-row';
+
+      const rank = document.createElement('div');
+      rank.className = 'nominee-rank';
+      rank.textContent = votingOpen ? `${index + 1}.` : '';
+      li.appendChild(rank);
+
+      const info = document.createElement('div');
+      info.className = 'nominee-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'nominee-name';
+      nameEl.textContent = nominee.name;
+      info.appendChild(nameEl);
+      if (nominee.link) {
+        const linkEl = document.createElement('a');
+        linkEl.className = 'nominee-link';
+        linkEl.href = /^https?:\/\//i.test(nominee.link) ? nominee.link : `https://${nominee.link}`;
+        linkEl.target = '_blank';
+        linkEl.rel = 'noopener noreferrer';
+        linkEl.textContent = nominee.link;
+        info.appendChild(linkEl);
+      }
+      li.appendChild(info);
+
+      const votesEl = document.createElement('div');
+      votesEl.className = 'nominee-votes';
+      votesEl.textContent = votingOpen ? String(nominee.votes) : '';
+      li.appendChild(votesEl);
+
+      const heartButton = document.createElement('button');
+      heartButton.type = 'button';
+      heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
+      heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
+      heartButton.disabled = !votingOpen;
+      li.appendChild(heartButton);
+
+      if (votingOpen) {
+        heartButton.addEventListener('click', async () => {
+          heartButton.disabled = true;
+          try {
+            const module = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+            const { getFirestore, doc, setDoc, deleteDoc } = module;
+            const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
+            const app = initializeApp(CONFIG.FIREBASE);
+            const db = getFirestore(app);
+            const clientId = getOrCreateClientId();
+            const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
+            const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
+
+            if (nominee.voted) {
+              await deleteDoc(voteRef);
+              nominee.voted = false;
+              nominee.votes = Math.max(0, nominee.votes - 1);
+            } else {
+              await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
+              nominee.voted = true;
+              nominee.votes += 1;
+            }
+            votesEl.textContent = String(nominee.votes);
+            heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
+            heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
+          } catch (err) {
+            console.error('Vote failed:', err);
+          } finally {
+            heartButton.disabled = false;
+          }
+        });
+      }
+
+      return li;
+    }
+
+    Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js')
+    ]).then(async ([{ initializeApp }, firestoreModule]) => {
+      const { getFirestore, collection, doc, getDoc, getDocs } = firestoreModule;
+      const app = initializeApp(CONFIG.FIREBASE);
+      const db = getFirestore(app);
+
+      let votingOpen = false;
+      try {
+        const configSnap = await getDoc(doc(db, 'instructorLeaderboardConfig', 'settings'));
+        const configData = configSnap.exists() ? configSnap.data() : {};
+        votingOpen = configData.votingOpen === true;
+      } catch (err) {
+        console.warn('Could not load voting config, defaulting to closed:', err);
+      }
+
+      const clientId = getOrCreateClientId();
+      const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
+
+      const nominationsSnap = await getDocs(collection(db, 'instructorNominations'));
+      let nominees = [];
+
+      for (const nominationDoc of nominationsSnap.docs) {
+        const data = nominationDoc.data() || {};
+        if (!data.name) continue;
+        const nominee = {
+          id: nominationDoc.id,
+          name: data.name,
+          link: data.link || '',
+          votes: 0,
+          voted: false
+        };
+        if (votingOpen) {
+          const votesSnap = await getDocs(collection(db, 'instructorNominations', nominationDoc.id, 'votes'));
+          nominee.votes = votesSnap.size;
+          nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
+        }
+        nominees.push(nominee);
+      }
+
+      if (votingOpen) {
+        nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
+        bannerEl.className = 'open';
+        bannerEl.textContent = 'Voting is open — tap a heart to support your favorites.';
+      } else {
+        nominees.sort((a, b) => a.name.localeCompare(b.name));
+        bannerEl.className = '';
+        bannerEl.textContent = `${nominees.length} instructor${nominees.length === 1 ? '' : 's'} suggested so far — voting opens once submissions close. Check back soon!`;
+      }
+
+      if (!nominees.length) {
+        emptyStateEl.style.display = 'block';
+        return;
+      }
+
+      nominees.forEach((nominee, index) => {
+        listEl.appendChild(renderRow(nominee, index, votingOpen));
+      });
+    }).catch((err) => {
+      console.error('Failed to load leaderboard:', err);
+      bannerEl.textContent = 'Could not load the leaderboard right now — please try again in a moment.';
+    });
+  </script>
+</body>
+</html>
