@@ -69,12 +69,13 @@ async function fetchDay(db, dateKey) {
   return { dateKey, blocks, submissionCount, contributorCount, quiltData: data };
 }
 
-function splitBandMeta(blocks, dateKey, QuiltMirrorLayout) {
+function splitBandMeta(blocks, dateKey, QuiltMirrorLayout, tuneSeed = {}) {
   const minY = Math.min(...blocks.map((b) => Number(b.y)));
   const quiltH =
     Math.max(...blocks.map((b) => Number(b.y) + Number(b.height))) - minY;
   const metrics =
     QuiltMirrorLayout?.computeSplitBandContentMetrics?.(blocks, minY, quiltH) || {};
+  const effectiveTune = splitBandTuneForMeta(tuneSeed, QuiltMirrorLayout);
   const result = QuiltMirrorLayout?.computeSplitBandLayout
     ? QuiltMirrorLayout.computeSplitBandLayout({
         minX: Math.min(...blocks.map((b) => Number(b.x))),
@@ -88,9 +89,8 @@ function splitBandMeta(blocks, dateKey, QuiltMirrorLayout) {
         blockSpanRel: metrics.blockSpanRel,
         blockTopRel: metrics.blockTopRel,
         doubleSideBySide:
-          QuiltMirrorLayout.odqNormalizeMirrorBottomLayout?.(
-            QuiltMirrorLayout.odqReadMirrorTuneFromLocal?.(dateKey)?.bottomLayout
-          ) === QuiltMirrorLayout.MIRROR_BOTTOM_LAYOUT_DOUBLE
+          QuiltMirrorLayout.odqNormalizeMirrorBottomLayout?.(effectiveTune?.bottomLayout) ===
+          QuiltMirrorLayout.MIRROR_BOTTOM_LAYOUT_DOUBLE
       })
     : null;
   if (!result) return null;
@@ -227,6 +227,12 @@ async function renderPanel(page, panel, dateKey, quiltData = {}) {
   }
   if (panel.expectSplitBandSimple && !renderCheck.hasSingleMirror) {
     throw new Error(`${panel.mode}: splitBandSimple expected single mirror layer`);
+  }
+  if (panel.expectDupLayers && !renderCheck.hasDupLayers) {
+    throw new Error(`${panel.mode}: expected dup×2 bottom layers`);
+  }
+  if (panel.expectDupLayers && renderCheck.hasSingleMirror) {
+    throw new Error(`${panel.mode}: dup×2 should not render single mirror layer`);
   }
 
   await page.waitForFunction(
@@ -372,9 +378,9 @@ async function writeContactSheet(panelImages, contactPath, cols = 2) {
     .toFile(contactPath);
 }
 
-function mirrorTuneSeedFromQuiltData(data = {}) {
+function mirrorTuneSeedFromQuiltData(data = {}, overrides = {}) {
   const pick = (key) => (data[key] != null ? data[key] : undefined);
-  return {
+  const seed = {
     bottomLayout: pick('mirrorBottomLayout'),
     flipX: pick('mirrorFlipX'),
     flipY: pick('mirrorFlipY'),
@@ -389,12 +395,24 @@ function mirrorTuneSeedFromQuiltData(data = {}) {
     nudgeLeftTileY: pick('mirrorBottomLeftNudgeY'),
     nudgeRightTileY: pick('mirrorBottomRightNudgeY')
   };
+  return { ...seed, ...overrides };
+}
+
+function splitBandTuneForMeta(tuneSeed, QuiltMirrorLayout) {
+  if (process.env.SPLIT_BAND_DUP === '1') {
+    return { ...tuneSeed, bottomLayout: QuiltMirrorLayout?.MIRROR_BOTTOM_LAYOUT_DOUBLE || 'doubleSideBySide' };
+  }
+  if (process.env.SPLIT_BAND_SIMPLE === '1') {
+    return { ...tuneSeed, bottomLayout: QuiltMirrorLayout?.MIRROR_BOTTOM_LAYOUT_SINGLE || 'single' };
+  }
+  return tuneSeed;
 }
 
 async function renderDate(db, dateKey, QuiltMirrorLayout) {
   const day = await fetchDay(db, dateKey);
-  const tuneSeed = mirrorTuneSeedFromQuiltData(day.quiltData);
-  const meta = splitBandMeta(day.blocks, dateKey, QuiltMirrorLayout);
+  const baseTuneSeed = mirrorTuneSeedFromQuiltData(day.quiltData);
+  const tuneSeed = splitBandTuneForMeta(baseTuneSeed, QuiltMirrorLayout);
+  const meta = splitBandMeta(day.blocks, dateKey, QuiltMirrorLayout, tuneSeed);
   const meetPanel = {
     mode: 'meet',
     label: `Meet — ${dateKey}`,
@@ -402,19 +420,25 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     blocks: day.blocks,
     submissionCount: day.submissionCount,
     expectSplitBand: false,
-    tuneSeed
+    tuneSeed: baseTuneSeed
   };
   const splitBandSimple = process.env.SPLIT_BAND_SIMPLE === '1';
+  const splitBandDup = process.env.SPLIT_BAND_DUP === '1';
   const splitPanel = {
     mode: 'split-band',
-    label: splitBandSimple ? `Split-band simple — ${dateKey}` : `Split-band — ${dateKey}`,
+    label: splitBandSimple
+      ? `Split-band simple — ${dateKey}`
+      : splitBandDup
+        ? `Split-band dup×2 — ${dateKey}`
+        : `Split-band — ${dateKey}`,
     subtitle: meta
-      ? `${day.blocks.length} blocks · primary ${Math.round(meta.primaryScreenH)}px (${Math.round((meta.primaryHeightFraction || 0) * 100)}%) · mirror ${Math.round(meta.mirrorBandScreenH)}px${splitBandSimple ? ' · single mirror QA' : ''}`
+      ? `${day.blocks.length} blocks · primary ${Math.round(meta.primaryScreenH)}px (${Math.round((meta.primaryHeightFraction || 0) * 100)}%) · mirror ${Math.round(meta.mirrorBandScreenH)}px${splitBandSimple ? ' · single mirror QA' : splitBandDup ? ' · dup×2 QA' : ''}`
       : `${day.blocks.length} blocks · width-fit primary + fill mirror`,
     blocks: day.blocks,
     submissionCount: day.submissionCount,
     expectSplitBand: true,
     expectSplitBandSimple: splitBandSimple,
+    expectDupLayers: splitBandDup,
     tuneSeed
   };
 
