@@ -688,6 +688,14 @@ function parsePngDataUrlToBuffer(dataUrl) {
   return Buffer.from(m[1], 'base64');
 }
 
+function parseJpegDataUrlToBuffer(dataUrl) {
+  const m = String(dataUrl).match(/^data:image\/jpe?g;base64,(.+)$/i);
+  if (!m) {
+    throw new Error('Expected JPEG data URL from canvas');
+  }
+  return Buffer.from(m[1], 'base64');
+}
+
 async function firebaseSaveDownloadableFile(destination, buffer, contentType, cacheControl = 'public, max-age=31536000') {
   const bucket = admin.storage().bucket();
   const bucketName = bucket.name;
