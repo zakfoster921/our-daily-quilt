@@ -1869,7 +1869,11 @@ function serverMirrorTuneFromQuiltData(data) {
     rightFlipX: serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipX, false),
     rightFlipY: serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipY, false),
     nudgeSeamY: serverNormalizeMirrorSeamNudge(d.mirrorSeamNudgeY),
-    nudgeMirrorY: serverNormalizeMirrorSeamNudge(d.mirrorFieldNudgeY)
+    nudgeMirrorY: serverNormalizeMirrorSeamNudge(d.mirrorFieldNudgeY),
+    nudgeTileSeamX: serverNormalizeMirrorSeamNudge(d.mirrorTileSeamNudgeX),
+    nudgeLeftTileX: serverNormalizeMirrorSeamNudge(d.mirrorBottomLeftNudgeX),
+    nudgeLeftTileY: serverNormalizeMirrorSeamNudge(d.mirrorBottomLeftNudgeY),
+    nudgeRightTileY: serverNormalizeMirrorSeamNudge(d.mirrorBottomRightNudgeY)
   };
 }
 
@@ -1905,7 +1909,11 @@ function serverMirrorTuneIsCustomized(tune) {
     t.flipX !== MIRROR_TUNE_DEFAULT_FLIP_X ||
     t.flipY !== MIRROR_TUNE_DEFAULT_FLIP_Y ||
     serverNormalizeMirrorSeamNudge(t.nudgeSeamY) !== 0 ||
-    serverNormalizeMirrorSeamNudge(t.nudgeMirrorY) !== 0
+    serverNormalizeMirrorSeamNudge(t.nudgeMirrorY) !== 0 ||
+    serverNormalizeMirrorSeamNudge(t.nudgeTileSeamX) !== 0 ||
+    serverNormalizeMirrorSeamNudge(t.nudgeLeftTileX) !== 0 ||
+    serverNormalizeMirrorSeamNudge(t.nudgeLeftTileY) !== 0 ||
+    serverNormalizeMirrorSeamNudge(t.nudgeRightTileY) !== 0
   );
 }
 
@@ -1920,7 +1928,11 @@ function serverMirrorTuneSnapshotFields(tune) {
     rightFlipX: serverNormalizeMirrorFlipFlag(t.rightFlipX, false),
     rightFlipY: serverNormalizeMirrorFlipFlag(t.rightFlipY, false),
     nudgeSeamY: serverNormalizeMirrorSeamNudge(t.nudgeSeamY),
-    nudgeMirrorY: serverNormalizeMirrorSeamNudge(t.nudgeMirrorY)
+    nudgeMirrorY: serverNormalizeMirrorSeamNudge(t.nudgeMirrorY),
+    nudgeTileSeamX: serverNormalizeMirrorSeamNudge(t.nudgeTileSeamX),
+    nudgeLeftTileX: serverNormalizeMirrorSeamNudge(t.nudgeLeftTileX),
+    nudgeLeftTileY: serverNormalizeMirrorSeamNudge(t.nudgeLeftTileY),
+    nudgeRightTileY: serverNormalizeMirrorSeamNudge(t.nudgeRightTileY)
   };
 }
 
@@ -1936,7 +1948,11 @@ function serverMirrorTuneSnapshotsEqual(a, b) {
     left.rightFlipX === right.rightFlipX &&
     left.rightFlipY === right.rightFlipY &&
     left.nudgeSeamY === right.nudgeSeamY &&
-    left.nudgeMirrorY === right.nudgeMirrorY
+    left.nudgeMirrorY === right.nudgeMirrorY &&
+    left.nudgeTileSeamX === right.nudgeTileSeamX &&
+    left.nudgeLeftTileX === right.nudgeLeftTileX &&
+    left.nudgeLeftTileY === right.nudgeLeftTileY &&
+    left.nudgeRightTileY === right.nudgeRightTileY
   );
 }
 
@@ -6383,6 +6399,10 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       body.mirrorBottomRightFlipY === 1;
     const nudgeSeamY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorSeamNudgeY) || 0));
     const nudgeMirrorY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorFieldNudgeY) || 0));
+    const nudgeTileSeamX = Math.max(-0.35, Math.min(0.35, Number(body.mirrorTileSeamNudgeX) || 0));
+    const nudgeLeftTileX = Math.max(-0.35, Math.min(0.35, Number(body.mirrorBottomLeftNudgeX) || 0));
+    const nudgeLeftTileY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorBottomLeftNudgeY) || 0));
+    const nudgeRightTileY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorBottomRightNudgeY) || 0));
     const mirrorTuneUpdatedAt = String(
       body.mirrorTuneUpdatedAt || new Date().toISOString()
     ).trim();
@@ -6404,7 +6424,11 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       rightFlipX,
       rightFlipY,
       nudgeSeamY,
-      nudgeMirrorY
+      nudgeMirrorY,
+      nudgeTileSeamX,
+      nudgeLeftTileX,
+      nudgeLeftTileY,
+      nudgeRightTileY
     };
     const blocks = Array.isArray(existingData.blocks) ? existingData.blocks : [];
     const historyEntry = serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, {
@@ -6428,6 +6452,10 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       mirrorBottomRightFlipY: rightFlipY,
       mirrorSeamNudgeY: nudgeSeamY,
       mirrorFieldNudgeY: nudgeMirrorY,
+      mirrorTileSeamNudgeX: nudgeTileSeamX,
+      mirrorBottomLeftNudgeX: nudgeLeftTileX,
+      mirrorBottomLeftNudgeY: nudgeLeftTileY,
+      mirrorBottomRightNudgeY: nudgeRightTileY,
       mirrorSeamNudgeX: admin.firestore.FieldValue.delete(),
       mirrorTuneUpdatedAt,
       mirrorTuneUpdatedBy
@@ -6439,7 +6467,7 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
     const snap = await db.collection('quilts').doc(dateKey).get();
     const data = snap.exists ? snap.data() || {} : {};
     console.log(
-      `✅ Quilt mirror tune saved via server for ${dateKey} (layout=${bottomLayout}, flipX=${flipX}, flipY=${flipY}, seamY=${nudgeSeamY}, mirrorY=${nudgeMirrorY}, history=${historyEntry ? 'appended' : 'unchanged'})`
+      `✅ Quilt mirror tune saved via server for ${dateKey} (layout=${bottomLayout}, flipX=${flipX}, flipY=${flipY}, seamY=${nudgeSeamY}, mirrorY=${nudgeMirrorY}, tileSeamX=${nudgeTileSeamX}, leftTileX=${nudgeLeftTileX}, leftTileY=${nudgeLeftTileY}, rightTileY=${nudgeRightTileY}, history=${historyEntry ? 'appended' : 'unchanged'})`
     );
     res.json({
       success: true,
@@ -6453,6 +6481,10 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       mirrorBottomRightFlipY: data.mirrorBottomRightFlipY === true,
       mirrorSeamNudgeY: Number(data.mirrorSeamNudgeY) || 0,
       mirrorFieldNudgeY: Number(data.mirrorFieldNudgeY) || 0,
+      mirrorTileSeamNudgeX: Number(data.mirrorTileSeamNudgeX) || 0,
+      mirrorBottomLeftNudgeX: Number(data.mirrorBottomLeftNudgeX) || 0,
+      mirrorBottomLeftNudgeY: Number(data.mirrorBottomLeftNudgeY) || 0,
+      mirrorBottomRightNudgeY: Number(data.mirrorBottomRightNudgeY) || 0,
       mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt,
       mirrorTuneUpdatedBy: data.mirrorTuneUpdatedBy || mirrorTuneUpdatedBy,
       mirrorTuneHistoryCount: Array.isArray(data.mirrorTuneHistory) ? data.mirrorTuneHistory.length : 0,
@@ -8313,7 +8345,21 @@ app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
       contributorCount: data.contributorCount || 1,
       colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
       contributors: Array.isArray(data.contributors) ? data.contributors : [],
-      macroStructureFrozen: data.macroStructureFrozen === true
+      macroStructureFrozen: data.macroStructureFrozen === true,
+      mirrorBottomLayout: data.mirrorBottomLayout,
+      mirrorFlipX: data.mirrorFlipX,
+      mirrorFlipY: data.mirrorFlipY,
+      mirrorBottomLeftFlipX: data.mirrorBottomLeftFlipX,
+      mirrorBottomLeftFlipY: data.mirrorBottomLeftFlipY,
+      mirrorBottomRightFlipX: data.mirrorBottomRightFlipX,
+      mirrorBottomRightFlipY: data.mirrorBottomRightFlipY,
+      mirrorSeamNudgeY: data.mirrorSeamNudgeY,
+      mirrorFieldNudgeY: data.mirrorFieldNudgeY,
+      mirrorTileSeamNudgeX: data.mirrorTileSeamNudgeX,
+      mirrorBottomLeftNudgeX: data.mirrorBottomLeftNudgeX,
+      mirrorBottomLeftNudgeY: data.mirrorBottomLeftNudgeY,
+      mirrorBottomRightNudgeY: data.mirrorBottomRightNudgeY,
+      mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt
     });
   } catch (error) {
     console.warn('GET /api/quilt failed:', error?.message || error);
