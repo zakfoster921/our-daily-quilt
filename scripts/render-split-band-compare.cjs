@@ -147,7 +147,7 @@ function esc(value) {
 }
 
 async function renderPanel(page, panel, dateKey, quiltData = {}) {
-  const renderCheck = await page.evaluate(async ({ blocks, submissionCount, panelDateKey, tuneSeed }) => {
+  const renderCheck = await page.evaluate(async ({ blocks, submissionCount, panelDateKey, tuneSeed, viewportW, viewportH }) => {
     const app = window.app;
     document.querySelectorAll('.screen').forEach((screen) => {
       screen.classList.remove('active');
@@ -183,6 +183,7 @@ async function renderPanel(page, panel, dateKey, quiltData = {}) {
     app.renderer?.setBacksidePreviewEnabled?.(app._isBacksidePreviewMode === true);
     if (app.renderer?.renderBlocks) {
       app.renderer.quiltSVG = document.getElementById('quilt');
+      app.renderer._renderViewportOverride = { w: viewportW, h: viewportH };
       app.renderer.renderBlocks(clonedBlocks, [], submissionCount);
     } else if (typeof app.renderQuilt === 'function') {
       await app.renderQuilt();
@@ -195,7 +196,7 @@ async function renderPanel(page, panel, dateKey, quiltData = {}) {
       hasPrimaryBand: !!svg?.querySelector('#quiltPrimaryBand'),
       hasMirrorBand: !!svg?.querySelector('#quiltMirrorBand')
     };
-  }, { blocks: panel.blocks, submissionCount: panel.submissionCount, panelDateKey: dateKey, tuneSeed: panel.tuneSeed });
+  }, { blocks: panel.blocks, submissionCount: panel.submissionCount, panelDateKey: dateKey, tuneSeed: panel.tuneSeed, viewportW: OUT_W, viewportH: OUT_H });
 
   if (renderCheck.blockCount !== panel.blocks.length) {
     throw new Error(`${panel.mode}: expected ${panel.blocks.length} blocks, got ${renderCheck.blockCount}`);
