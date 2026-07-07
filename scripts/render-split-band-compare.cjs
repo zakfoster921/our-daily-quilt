@@ -66,7 +66,7 @@ async function fetchDay(db, dateKey) {
     }, 0),
     blocks.length
   );
-  return { dateKey, blocks, submissionCount, contributorCount };
+  return { dateKey, blocks, submissionCount, contributorCount, quiltData: data };
 }
 
 function splitBandMeta(blocks, dateKey, QuiltMirrorLayout) {
@@ -146,8 +146,8 @@ function esc(value) {
     .replace(/"/g, '&quot;');
 }
 
-async function renderPanel(page, panel, dateKey) {
-  const renderCheck = await page.evaluate(async ({ blocks, submissionCount, panelDateKey }) => {
+async function renderPanel(page, panel, dateKey, quiltData = {}) {
+  const renderCheck = await page.evaluate(async ({ blocks, submissionCount, panelDateKey, tuneSeed }) => {
     const app = window.app;
     document.querySelectorAll('.screen').forEach((screen) => {
       screen.classList.remove('active');
@@ -173,6 +173,9 @@ async function renderPanel(page, panel, dateKey) {
 
     const clonedBlocks = JSON.parse(JSON.stringify(blocks));
     app._loadedSharedQuiltDateKey = panelDateKey;
+    if (tuneSeed && typeof globalThis.odqWriteMirrorTuneLocal === 'function') {
+      globalThis.odqWriteMirrorTuneLocal(panelDateKey, tuneSeed);
+    }
     app.dailyContributors = [];
     app.quiltEngine.blocks = clonedBlocks;
     app.quiltEngine.submissionCount = submissionCount;
@@ -192,7 +195,7 @@ async function renderPanel(page, panel, dateKey) {
       hasPrimaryBand: !!svg?.querySelector('#quiltPrimaryBand'),
       hasMirrorBand: !!svg?.querySelector('#quiltMirrorBand')
     };
-  }, { blocks: panel.blocks, submissionCount: panel.submissionCount, panelDateKey: dateKey });
+  }, { blocks: panel.blocks, submissionCount: panel.submissionCount, panelDateKey: dateKey, tuneSeed: panel.tuneSeed });
 
   if (renderCheck.blockCount !== panel.blocks.length) {
     throw new Error(`${panel.mode}: expected ${panel.blocks.length} blocks, got ${renderCheck.blockCount}`);
@@ -220,7 +223,7 @@ async function renderPanel(page, panel, dateKey) {
   return { ...panel, buffer: screenshotBuffer };
 }
 
-async function renderPanels(panels, dateKey) {
+async function renderPanels(panels, dateKey, quiltData = {}) {
   const servers = {
     meet: await startStaticServer(false),
     splitBand: await startStaticServer(true)
@@ -297,7 +300,7 @@ async function renderPanels(panels, dateKey) {
           app.dataService.loadQuiltFromServer = async () => ({ ok: false, reason: 'split_band_compare_disabled' });
         }
       });
-      out.push(await renderPanel(page, panel, dateKey));
+      out.push(await renderPanel(page, panel, dateKey, quiltData));
     }
     return out;
   } finally {
@@ -346,8 +349,28 @@ async function writeContactSheet(panelImages, contactPath, cols = 2) {
     .toFile(contactPath);
 }
 
+function mirrorTuneSeedFromQuiltData(data = {}) {
+  const pick = (key) => (data[key] != null ? data[key] : undefined);
+  return {
+    bottomLayout: pick('mirrorBottomLayout'),
+    flipX: pick('mirrorFlipX'),
+    flipY: pick('mirrorFlipY'),
+    leftFlipX: pick('mirrorBottomLeftFlipX'),
+    leftFlipY: pick('mirrorBottomLeftFlipY'),
+    rightFlipX: pick('mirrorBottomRightFlipX'),
+    rightFlipY: pick('mirrorBottomRightFlipY'),
+    nudgeSeamY: pick('mirrorSeamNudgeY'),
+    nudgeMirrorY: pick('mirrorFieldNudgeY'),
+    nudgeTileSeamX: pick('mirrorTileSeamNudgeX'),
+    nudgeLeftTileX: pick('mirrorBottomLeftNudgeX'),
+    nudgeLeftTileY: pick('mirrorBottomLeftNudgeY'),
+    nudgeRightTileY: pick('mirrorBottomRightNudgeY')
+  };
+}
+
 async function renderDate(db, dateKey, QuiltMirrorLayout) {
   const day = await fetchDay(db, dateKey);
+  const tuneSeed = mirrorTuneSeedFromQuiltData(day.quiltData);
   const meta = splitBandMeta(day.blocks, dateKey, QuiltMirrorLayout);
   const meetPanel = {
     mode: 'meet',
@@ -355,7 +378,8 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
     subtitle: `${day.blocks.length} blocks · xMidYMin meet · all blocks visible`,
     blocks: day.blocks,
     submissionCount: day.submissionCount,
-    expectSplitBand: false
+    expectSplitBand: false,
+    tuneSeed
   };
   const splitPanel = {
     mode: 'split-band',
@@ -365,7 +389,8 @@ async function renderDate(db, dateKey, QuiltMirrorLayout) {
       : `${day.blocks.length} blocks · width-fit primary + fill mirror`,
     blocks: day.blocks,
     submissionCount: day.submissionCount,
-    expectSplitBand: true
+    expectSplitBand: true,
+    tuneSeed
   };
 
   console.log(`[split-band-compare] ${dateKey}: ${day.blocks.length} blocks`);
