@@ -151,6 +151,10 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
 function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
   const artRecs = q.artRecs ?? q.art_recs ?? '';
   const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
+  const smallAct = String(q.small_act ?? q.smallAct ?? '').trim();
+  const watchFor = String(q.watch_for ?? q.watchFor ?? '').trim();
+  const goodDay = String(q.good_day ?? q.goodDay ?? '').trim();
+  const roughDay = String(q.rough_day ?? q.roughDay ?? '').trim();
   return {
     ...camelCaseDeletePayload(),
     dateKey,
@@ -159,11 +163,15 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     author: q.author,
     sourceId: q.sourceId || null,
     blessing: q.blessing || '',
-    community_prompt: q.communityPrompt || '',
-    what_if: q.whatIf || '',
+    community_prompt: q.communityPrompt || q.community_prompt || '',
+    what_if: q.whatIf || q.what_if || '',
+    small_act: smallAct,
+    watch_for: watchFor,
+    good_day: goodDay,
+    rough_day: roughDay,
     art_recs: artRecs,
     art_recs_type: artRecsType,
-    ig_caption: q.igCaption || '',
+    ig_caption: q.igCaption || q.ig_caption || '',
     fortune: q.fortune || '',
     speaker_image_url: q.speakerImageUrl || '',
     speaker_cutout_url: speakerCutoutUrlForPortrait(q.speakerCutoutUrl, q.speakerImageUrl) || '',

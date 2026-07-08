@@ -535,6 +535,15 @@ function chooseFieldsToPatch(data) {
   return { fields: [], reason: 'current' };
 }
 
+function buildCatalogMirrorPatch(data) {
+  const patch = {};
+  for (const field of FINAL_FIELDS) {
+    const value = readField(data, field);
+    if (value) patch[field] = value;
+  }
+  return patch;
+}
+
 function buildPatch(fields, generated, nowIso) {
   const patch = {};
   for (const field of fields) {
@@ -603,15 +612,21 @@ async function main() {
     if (!quoteText || !authorName) continue;
     const chosen = chooseFieldsToPatch(data);
     const needsSpeakerDates = !readField(data, 'speaker_dates');
-    if (!chosen.fields.length && !needsSpeakerDates) continue;
+    const hasCatalogCreative = FINAL_FIELDS.some((field) => readField(data, field));
+    if (!chosen.fields.length && !needsSpeakerDates && !hasCatalogCreative) continue;
     candidates.push({
       dateKey,
       sourceId,
       quoteText,
       authorName,
       fields: chosen.fields,
-      reason: chosen.fields.length ? chosen.reason : 'missing_speaker_dates',
+      reason: chosen.fields.length
+        ? chosen.reason
+        : needsSpeakerDates
+          ? 'missing_speaker_dates'
+          : 'mirror_sync',
       needsSpeakerDates,
+      mirrorOnly: !chosen.fields.length && !needsSpeakerDates,
       data
     });
   }
@@ -638,16 +653,18 @@ async function main() {
         const speakerDates = await fetchSpeakerDates(item.authorName);
         if (speakerDates) patch.speaker_dates = speakerDates;
       }
-      if (!Object.keys(patch).length) continue;
-      const assignmentPatch = buildAssignmentPatch(patch);
-      const notionProperties = buildNotionProperties(schema, patch);
+      const catalogMirror = buildCatalogMirrorPatch(item.data);
+      const mergedPatch = { ...catalogMirror, ...patch };
+      if (!Object.keys(mergedPatch).length) continue;
+      const assignmentPatch = buildAssignmentPatch(mergedPatch);
+      const notionProperties = buildNotionProperties(schema, mergedPatch);
       if (opts.dryRun) {
-        console.log(`[finalize-prefill] dry-run ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(patch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
+        console.log(`[finalize-prefill] dry-run ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
         continue;
       }
       await db.collection(quotesCollection).doc(item.sourceId).set({ ...patch, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
       await db.collection(assignmentsCollection).doc(item.dateKey).set(assignmentPatch, { merge: true });
-      await db.collection(dailyCollection).doc(item.dateKey).set({ ...patch, updatedAt: new Date().toISOString() }, { merge: true });
+      await db.collection(dailyCollection).doc(item.dateKey).set({ ...mergedPatch, updatedAt: new Date().toISOString() }, { merge: true });
       if (schema && Object.keys(notionProperties).length) {
         await notionFetchJson(`/pages/${item.sourceId}`, {
           method: 'PATCH',
@@ -655,7 +672,7 @@ async function main() {
         });
       }
       patched += 1;
-      console.log(`[finalize-prefill] patched ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(patch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
+      console.log(`[finalize-prefill] patched ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
     } catch (e) {
       failed += 1;
       console.warn(`[finalize-prefill] failed ${item.dateKey} ${item.sourceId}: ${e.message}`);
