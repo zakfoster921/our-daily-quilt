@@ -2252,6 +2252,35 @@ function reflectionWallThemeEntryKey(entry) {
   ).trim();
 }
 
+function pairSoloThemesWithMatchingText(themes) {
+  const splits = [];
+  const solos = [];
+  (Array.isArray(themes) ? themes : []).forEach((entry) => {
+    const normalized = normalizeReflectionWallThemeEntry(entry);
+    if (!normalized) return;
+    if (normalized.split && Array.isArray(normalized.strips)) splits.push(normalized);
+    else solos.push(normalized);
+  });
+  const byText = new Map();
+  solos.forEach((solo) => {
+    const key = String(solo.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!key) return;
+    const bucket = byText.get(key) || [];
+    bucket.push(solo);
+    byText.set(key, bucket);
+  });
+  const paired = [];
+  const leftover = [];
+  byText.forEach((bucket) => {
+    const queue = bucket.slice();
+    while (queue.length >= 2) {
+      paired.push({ split: true, strips: [queue.shift(), queue.shift()] });
+    }
+    queue.forEach((solo) => leftover.push(solo));
+  });
+  return dedupeReflectionWallThemes([...splits, ...paired, ...leftover]);
+}
+
 function dedupeReflectionWallThemes(themes) {
   const seen = new Set();
   return (Array.isArray(themes) ? themes : [])
@@ -2764,11 +2793,13 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
     groups = validIds.map((id) => [id]);
   }
   const itemById = new Map(list.map((item) => [item.id, item]));
-  const themes = groups
-    .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById))
-    .filter(Boolean);
+  const themes = pairSoloThemesWithMatchingText(
+    groups
+      .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById))
+      .filter(Boolean)
+  );
   const visibleIds = groups.flat();
-  return { visibleIds, themes: dedupeReflectionWallThemes(themes), model, provider };
+  return { visibleIds, themes, model, provider };
 }
 
 async function postReflectionThemesToGemini({ apiKey, model, prompt, maxTokens = 1200 }) {
