@@ -2351,6 +2351,103 @@ function reflectionThemeEntryResponseId(entry) {
   return String(entry.responseId || entry.response_id || '').trim();
 }
 
+function reflectionThemeCollectResponseIds(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+  if (entry.split === true && Array.isArray(entry.strips)) {
+    return entry.strips.map(reflectionThemeEntryResponseId).filter(Boolean);
+  }
+  const rid = reflectionThemeEntryResponseId(entry);
+  return rid ? [rid] : [];
+}
+
+function reflectionThemeEntryIsRenderable(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (entry.split === true && Array.isArray(entry.strips)) {
+    return entry.strips.some((strip) => {
+      const text = String(strip?.text ?? strip?.body ?? strip?.theme ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return !!text;
+    });
+  }
+  const text = String(entry.text ?? entry.body ?? entry.theme ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return !!text;
+}
+
+function applyReflectionThemeHeartCount(entry, heartCount) {
+  const nextEntry = { ...entry };
+  const nextHeartCount = Math.max(0, Number(heartCount) || 0);
+  if (nextHeartCount > 0) {
+    nextEntry.heartCount = nextHeartCount;
+  } else if (Object.prototype.hasOwnProperty.call(nextEntry, 'heartCount')) {
+    delete nextEntry.heartCount;
+  }
+  return nextEntry;
+}
+
+function sweepReflectionThemeEngagementLeaf(entry, { responsesById, state, nowIso, handledResponseIds, queueBatchSet }) {
+  const text = String(entry.text ?? entry.body ?? entry.theme ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return { entry, count: 0, repairs: 0, changed: false };
+
+  const responseId = reflectionThemeEntryResponseId(entry);
+  const currentHeartCount = Math.max(0, Number(entry.heartCount) || 0);
+  const entryAdminHearted = entry.adminHearted === true;
+
+  if (responseId) {
+    handledResponseIds.add(responseId);
+    const responseSnap = responsesById.get(responseId);
+    const responseData = responseSnap?.exists ? responseSnap.data() || {} : {};
+    const responseDeleted = String(responseData.status || '') === 'deleted';
+    const responseAdminHearted = responseData.adminHearted === true;
+    const responseHeartCount = Math.max(0, Number(responseData.heartCount) || 0);
+
+    if (responseSnap?.exists && !responseDeleted && !responseAdminHearted && !entryAdminHearted) {
+      queueBatchSet(state, responseSnap.ref, {
+        heartCount: admin.firestore.FieldValue.increment(1),
+        adminHearted: true,
+        updatedAtIso: nowIso
+      });
+      return {
+        entry: { ...entry, heartCount: currentHeartCount + 1, adminHearted: true },
+        count: 1,
+        repairs: 0,
+        changed: true
+      };
+    }
+
+    if (responseSnap?.exists && !responseDeleted && !responseAdminHearted && entryAdminHearted) {
+      queueBatchSet(state, responseSnap.ref, {
+        heartCount: Math.max(responseHeartCount, currentHeartCount),
+        adminHearted: true,
+        updatedAtIso: nowIso
+      });
+    }
+
+    const repairedHeartCount = Math.max(currentHeartCount, responseHeartCount);
+    if (!entryAdminHearted || repairedHeartCount !== currentHeartCount) {
+      return {
+        entry: { ...entry, heartCount: repairedHeartCount, adminHearted: true },
+        count: 0,
+        repairs: 1,
+        changed: true
+      };
+    }
+    return { entry, count: 0, repairs: 0, changed: false };
+  }
+
+  if (entryAdminHearted) return { entry, count: 0, repairs: 0, changed: false };
+  return {
+    entry: { ...entry, heartCount: currentHeartCount + 1, adminHearted: true },
+    count: 1,
+    repairs: 0,
+    changed: true
+  };
+}
+
 function reflectionThemeMatchesResponse(entry, responseId, fallbackBody, fallbackAuthor) {
   const rid = String(responseId || '').trim();
   if (rid && reflectionThemeEntryResponseId(entry) === rid) return true;
@@ -2431,16 +2528,24 @@ async function syncReflectionThemeHeartCount(db, appDateKey, responseId, respons
   const fallbackText = reflectionResponseWallBody(responseData);
   const fallbackAuthor = reflectionResponseStoredAuthor(responseData);
   const nextThemes = themes.map((entry) => {
-    if (!reflectionThemeMatchesResponse(entry, responseId, fallbackText, fallbackAuthor)) return entry;
-    const nextEntry = { ...entry };
-    const nextHeartCount = Math.max(0, Number(heartCount) || 0);
-    if (nextHeartCount > 0) {
-      if (nextEntry.heartCount !== nextHeartCount) changed = true;
-      nextEntry.heartCount = nextHeartCount;
-    } else if (Object.prototype.hasOwnProperty.call(nextEntry, 'heartCount')) {
+    if (entry?.split === true && Array.isArray(entry.strips)) {
+      let stripChanged = false;
+      const nextStrips = entry.strips.map((strip) => {
+        if (!reflectionThemeMatchesResponse(strip, responseId, fallbackText, fallbackAuthor)) return strip;
+        stripChanged = true;
+        const nextStrip = applyReflectionThemeHeartCount(strip, heartCount);
+        if (nextStrip.heartCount !== strip.heartCount) changed = true;
+        else if (!nextStrip.heartCount && Object.prototype.hasOwnProperty.call(strip, 'heartCount')) changed = true;
+        return nextStrip;
+      });
+      if (!stripChanged) return entry;
       changed = true;
-      delete nextEntry.heartCount;
+      return { split: true, strips: nextStrips };
     }
+    if (!reflectionThemeMatchesResponse(entry, responseId, fallbackText, fallbackAuthor)) return entry;
+    const nextEntry = applyReflectionThemeHeartCount(entry, heartCount);
+    if (nextEntry.heartCount !== entry.heartCount) changed = true;
+    else if (!nextEntry.heartCount && Object.prototype.hasOwnProperty.call(entry, 'heartCount')) changed = true;
     return nextEntry;
   });
   if (!changed) return false;
@@ -4569,62 +4674,40 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
         for (const doc of snap.docs) {
           const data = doc.data() || {};
           const themes = Array.isArray(data.themes) ? data.themes : [];
-          const responseIds = [...new Set(themes.map(reflectionThemeEntryResponseId).filter(Boolean))];
+          const responseIds = [
+            ...new Set(themes.flatMap((entry) => reflectionThemeCollectResponseIds(entry)))
+          ];
           const responseSnaps = responseIds.length
             ? await Promise.all(responseIds.map((id) => db.collection('reflectionResponses').doc(id).get()))
             : [];
           const responsesById = new Map(responseSnaps.map((responseSnap) => [responseSnap.id, responseSnap]));
 
           let themesChanged = false;
+          const sweepCtx = { responsesById, state, nowIso, handledResponseIds, queueBatchSet };
           const nextThemes = themes.map((entry) => {
             if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
-            const text = String(entry.text ?? entry.body ?? entry.theme ?? '').replace(/\s+/g, ' ').trim();
-            if (!text) return entry;
+            if (!reflectionThemeEntryIsRenderable(entry)) return entry;
 
-            const responseId = reflectionThemeEntryResponseId(entry);
-            const currentHeartCount = Math.max(0, Number(entry.heartCount) || 0);
-            const entryAdminHearted = entry.adminHearted === true;
-
-            if (responseId) {
-              handledResponseIds.add(responseId);
-              const responseSnap = responsesById.get(responseId);
-              const responseData = responseSnap?.exists ? responseSnap.data() || {} : {};
-              const responseDeleted = String(responseData.status || '') === 'deleted';
-              const responseAdminHearted = responseData.adminHearted === true;
-              const responseHeartCount = Math.max(0, Number(responseData.heartCount) || 0);
-
-              if (responseSnap?.exists && !responseDeleted && !responseAdminHearted && !entryAdminHearted) {
-                queueBatchSet(state, responseSnap.ref, {
-                  heartCount: admin.firestore.FieldValue.increment(1),
-                  adminHearted: true,
-                  updatedAtIso: nowIso
-                });
-                count += 1;
-                themesChanged = true;
-                return { ...entry, heartCount: currentHeartCount + 1, adminHearted: true };
-              }
-
-              if (responseSnap?.exists && !responseDeleted && !responseAdminHearted && entryAdminHearted) {
-                queueBatchSet(state, responseSnap.ref, {
-                  heartCount: Math.max(responseHeartCount, currentHeartCount),
-                  adminHearted: true,
-                  updatedAtIso: nowIso
-                });
-              }
-
-              const repairedHeartCount = Math.max(currentHeartCount, responseHeartCount);
-              if (!entryAdminHearted || repairedHeartCount !== currentHeartCount) {
-                repairs += 1;
-                themesChanged = true;
-                return { ...entry, heartCount: repairedHeartCount, adminHearted: true };
-              }
-              return entry;
+            if (entry.split === true && Array.isArray(entry.strips)) {
+              let splitChanged = false;
+              const nextStrips = entry.strips.map((strip) => {
+                if (!strip || typeof strip !== 'object' || Array.isArray(strip)) return strip;
+                const result = sweepReflectionThemeEngagementLeaf(strip, sweepCtx);
+                count += result.count;
+                repairs += result.repairs;
+                if (result.changed) splitChanged = true;
+                return result.entry;
+              });
+              if (!splitChanged) return entry;
+              themesChanged = true;
+              return { split: true, strips: nextStrips };
             }
 
-            if (entryAdminHearted) return entry;
-            count += 1;
-            themesChanged = true;
-            return { ...entry, heartCount: currentHeartCount + 1, adminHearted: true };
+            const result = sweepReflectionThemeEngagementLeaf(entry, sweepCtx);
+            count += result.count;
+            repairs += result.repairs;
+            if (result.changed) themesChanged = true;
+            return result.entry;
           });
 
           const firstResponse = String(data.first_response || '').replace(/\s+/g, ' ').trim();
