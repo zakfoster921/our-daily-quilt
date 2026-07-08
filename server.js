@@ -36,7 +36,7 @@ const fsSync = require('fs');
 const os = require('os');
 const dns = require('dns').promises;
 const net = require('net');
-const LAYOUT_B_STORY_RENDER_VERSION = 'story-strip-keyword-order-v4';
+const LAYOUT_B_STORY_RENDER_VERSION = 'story-plain-strips-v5';
 const {
   normalizeDailyQuotePreferredHour,
   isDailyQuoteDueForToken,
