@@ -52,6 +52,7 @@ try {
 
 const {
   buildSubmittedQuotePrefillPrompt,
+  normalizeArtRecsPrefillValue,
   PREFILL_CREATIVE_PROMPT_VERSION
 } = require('./lib/submitted-quote-prefill-prompts');
 const {
@@ -3011,7 +3012,9 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
       pickPrefillStringLoose(parsed, 'watch_for', 'watchFor', 'watch for')
     ),
     speaker_guide_line: pickPrefillStringLoose(parsed, 'speaker_guide_line', 'speakerGuideLine', 'guide_line'),
-    art_recs: pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations'),
+    art_recs: normalizeArtRecsPrefillValue(
+      pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations')
+    ),
     good_day: pickPrefillStringLoose(parsed, 'good_day', 'goodDay', 'good day'),
     rough_day: pickPrefillStringLoose(parsed, 'rough_day', 'roughDay', 'rough day'),
     prompt_theme: pickPrefillStringLoose(parsed, 'prompt_theme', 'promptTheme', 'prompt theme'),
@@ -7636,7 +7639,7 @@ Field specs:
 - watch_for: A standalone sentence fragment naming a specific observable behavior. UI prepends "Watch for the moment today when..." so the value continues from that. No adverbs doing interpretive work.
 - community_prompt: Single question inviting users to share something from their experience useful to others. Transferable. Plain language. Does not mention quote or author. Ends with ?
 - notification_text: Format "[Full Name] on [what the quote is about]". The on... part intriguing and human. No period. One line.
-- art_recs: 5 recommendations across music, film, painting, literature, and one wildcard. Format: Title, Artist — one sentence why it connects. All 5 in one field.
+- art_recs: 5 recommendations across music, film, painting, literature, and one wildcard. Format per entry: "Title by Artist: one sentence why it connects". Use a colon after the artist name, not a dash. All 5 in one field.
 - speaker_guide_line: 1 sentence about who this person was and why their perspective matters. Start with a verb, omit name at start. Grounded in what they actually lived. No reverence.`;
 
 async function postOdqEditorGenerateToClaude({ apiKey, model, system, user }) {
@@ -7686,6 +7689,7 @@ async function generateOdqEditorMissingFields({ quote, author, existing = {} }) 
   for (const key of missing) {
     let value = pickPrefillStringLoose(parsed, key);
     if (key === 'watch_for') value = normalizeWatchForPrefillValue(value);
+    if (key === 'art_recs') value = normalizeArtRecsPrefillValue(value);
     if (String(value || '').trim()) out[key] = String(value).trim();
   }
   return out;
