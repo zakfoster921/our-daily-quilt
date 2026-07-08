@@ -64,6 +64,7 @@ const {
 } = require('./lib/quote-keyword-emphasis');
 const {
   REFLECTION_MODERATION_BODY_MAX,
+  isShortReflectionForSplit,
   buildReflectionModerationPrompt,
   buildReflectionCurationPrompt
 } = require('./lib/reflection-prompts');
@@ -2271,7 +2272,7 @@ function sortThemesBySubmissionOrder(themes, orderedIds) {
     .sort((a, b) => themeSubmissionSortKey(a, orderedIds) - themeSubmissionSortKey(b, orderedIds));
 }
 
-function pairSoloThemesPreservingOrder(themes) {
+function pairThemesPreservingOrder(themes, shouldPair) {
   const normalizedList = (Array.isArray(themes) ? themes : [])
     .map(normalizeReflectionWallThemeEntry)
     .filter(Boolean);
@@ -2285,14 +2286,12 @@ function pairSoloThemesPreservingOrder(themes) {
       used.add(i);
       continue;
     }
-    const key = String(entry.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
     let pairIdx = -1;
     for (let j = i + 1; j < normalizedList.length; j++) {
       if (used.has(j)) continue;
       const other = normalizedList[j];
       if (other.split) continue;
-      const otherKey = String(other.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      if (key && otherKey === key) {
+      if (shouldPair(entry, other)) {
         pairIdx = j;
         break;
       }
@@ -2307,6 +2306,31 @@ function pairSoloThemesPreservingOrder(themes) {
     }
   }
   return dedupeReflectionWallThemes(result);
+}
+
+/** Priority 1: same idea (exact text fallback when AI missed a semantic pair). */
+function pairSimilarSoloThemesPreservingOrder(themes) {
+  const textKey = (entry) => String(entry?.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return pairThemesPreservingOrder(themes, (a, b) => {
+    const left = textKey(a);
+    const right = textKey(b);
+    return !!(left && right && left === right);
+  });
+}
+
+/** Priority 2: stack brief single-line responses to save carousel space (need not be similar). */
+function pairShortSoloThemesPreservingOrder(themes) {
+  return pairThemesPreservingOrder(themes, (a, b) => (
+    isShortReflectionForSplit(a?.text) && isShortReflectionForSplit(b?.text)
+  ));
+}
+
+function buildSplitPairThemesFromCuration(themes, orderedIds) {
+  const ordered = sortThemesBySubmissionOrder(
+    (Array.isArray(themes) ? themes : []).map(normalizeReflectionWallThemeEntry).filter(Boolean),
+    orderedIds
+  );
+  return pairShortSoloThemesPreservingOrder(pairSimilarSoloThemesPreservingOrder(ordered));
 }
 
 function dedupeReflectionWallThemes(themes) {
@@ -2821,12 +2845,10 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
     groups = validIds.map((id) => [id]);
   }
   const itemById = new Map(list.map((item) => [item.id, item]));
-  const themes = sortThemesBySubmissionOrder(
-    pairSoloThemesPreservingOrder(
-      groups
-        .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById))
-        .filter(Boolean)
-    ),
+  const themes = buildSplitPairThemesFromCuration(
+    groups
+      .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById))
+      .filter(Boolean),
     validIds
   );
   const visibleIds = groups.flat();
