@@ -2206,8 +2206,12 @@ function normalizeReflectionWallStripEntry(entry) {
     || reflectionWallAuthorLabel(entry);
   const responseId = reflectionThemeEntryResponseId(entry);
   const heartCount = Math.max(0, Number(entry.heartCount) || 0);
+  const mergedResponseIds = Array.isArray(entry.mergedResponseIds)
+    ? entry.mergedResponseIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
   const base = responseId ? { text, author, responseId } : { text, author };
   if (heartCount > 0) base.heartCount = heartCount;
+  if (mergedResponseIds.length) base.mergedResponseIds = mergedResponseIds;
   return base;
 }
 
@@ -2248,6 +2252,9 @@ function reflectionWallThemeEntryKey(entry) {
       .filter(Boolean)
       .join('||');
   }
+  if (Array.isArray(normalized.mergedResponseIds) && normalized.mergedResponseIds.length) {
+    return normalized.mergedResponseIds.join('||');
+  }
   return String(
     normalized.responseId || `${normalized.text.toLowerCase()}|${normalized.author.toLowerCase()}`
   ).trim();
@@ -2263,6 +2270,9 @@ function themeSubmissionSortKey(theme, orderedIds) {
   if (normalized.split && Array.isArray(normalized.strips)) {
     // Carousel shows newest-first (client reverses orderedIds). Anchor each split at its latest post.
     return Math.max(...normalized.strips.map((strip) => indexOf(strip.responseId)));
+  }
+  if (Array.isArray(normalized.mergedResponseIds) && normalized.mergedResponseIds.length) {
+    return Math.max(...normalized.mergedResponseIds.map((id) => indexOf(id)));
   }
   return indexOf(normalized.responseId);
 }
@@ -2309,14 +2319,89 @@ function pairThemesPreservingOrder(themes, shouldPair) {
   return dedupeReflectionWallThemes(result);
 }
 
-/** Priority 1: same idea (exact text fallback when AI missed a semantic pair). */
-function pairSimilarSoloThemesPreservingOrder(themes) {
-  const textKey = (entry) => String(entry?.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
-  return pairThemesPreservingOrder(themes, (a, b) => {
-    const left = textKey(a);
-    const right = textKey(b);
-    return !!(left && right && left === right);
+/** Priority 1: exact duplicate wording → one card with combined author names. */
+function reflectionExactTextKey(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function reflectionWallAuthorLabelFromEntry(entry) {
+  const name = String(entry?.author || '').replace(/\s+/g, ' ').trim();
+  if (!name || /^friend$/i.test(name)) return '';
+  return name;
+}
+
+function mergeReflectionAuthorNames(entries) {
+  const names = [];
+  const seen = new Set();
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    const name = reflectionWallAuthorLabelFromEntry(entry);
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    names.push(name);
   });
+  return names.join(' & ');
+}
+
+function mergeReflectionWallThemeEntries(entries) {
+  const list = (Array.isArray(entries) ? entries : [])
+    .map(normalizeReflectionWallThemeEntry)
+    .filter(Boolean);
+  if (!list.length) return null;
+  const text = String(list[0]?.text || '').trim();
+  const author = mergeReflectionAuthorNames(list);
+  const responseIds = list.map(reflectionThemeEntryResponseId).filter(Boolean);
+  const heartCount = list.reduce((sum, entry) => sum + Math.max(0, Number(entry?.heartCount) || 0), 0);
+  const merged = {
+    text,
+    author,
+    responseId: responseIds[responseIds.length - 1] || reflectionThemeEntryResponseId(list[0])
+  };
+  if (heartCount > 0) merged.heartCount = heartCount;
+  if (responseIds.length > 1) merged.mergedResponseIds = responseIds;
+  return merged;
+}
+
+function stripsHaveExactSameText(strips) {
+  const list = Array.isArray(strips) ? strips : [];
+  if (list.length < 2) return false;
+  const key = reflectionExactTextKey(list[0]?.text);
+  return !!(key && list.every((strip) => reflectionExactTextKey(strip?.text) === key));
+}
+
+function mergeExactMatchThemesPreservingOrder(themes) {
+  const normalizedList = (Array.isArray(themes) ? themes : [])
+    .map(normalizeReflectionWallThemeEntry)
+    .filter(Boolean);
+  const result = [];
+  const used = new Set();
+  for (let i = 0; i < normalizedList.length; i++) {
+    if (used.has(i)) continue;
+    const entry = normalizedList[i];
+    if (entry.split) {
+      result.push(entry);
+      used.add(i);
+      continue;
+    }
+    const key = reflectionExactTextKey(entry.text);
+    const matches = [i];
+    for (let j = i + 1; j < normalizedList.length; j++) {
+      if (used.has(j)) continue;
+      const other = normalizedList[j];
+      if (other.split) continue;
+      if (key && reflectionExactTextKey(other.text) === key) matches.push(j);
+    }
+    if (matches.length === 1) {
+      result.push(entry);
+      used.add(i);
+      continue;
+    }
+    matches.forEach((idx) => used.add(idx));
+    const merged = mergeReflectionWallThemeEntries(matches.map((idx) => normalizedList[idx]));
+    if (merged) result.push(merged);
+  }
+  return dedupeReflectionWallThemes(result);
 }
 
 /** Priority 2: stack brief single-line responses to save carousel space (need not be similar). */
@@ -2331,7 +2416,7 @@ function buildSplitPairThemesFromCuration(themes, orderedIds) {
     (Array.isArray(themes) ? themes : []).map(normalizeReflectionWallThemeEntry).filter(Boolean),
     orderedIds
   );
-  const paired = pairShortSoloThemesPreservingOrder(pairSimilarSoloThemesPreservingOrder(ordered));
+  const paired = pairShortSoloThemesPreservingOrder(mergeExactMatchThemesPreservingOrder(ordered));
   return sortThemesBySubmissionOrder(paired, orderedIds);
 }
 
@@ -2357,6 +2442,9 @@ function reflectionThemeCollectResponseIds(entry) {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
   if (entry.split === true && Array.isArray(entry.strips)) {
     return entry.strips.map(reflectionThemeEntryResponseId).filter(Boolean);
+  }
+  if (Array.isArray(entry.mergedResponseIds) && entry.mergedResponseIds.length) {
+    return entry.mergedResponseIds.map((id) => String(id || '').trim()).filter(Boolean);
   }
   const rid = reflectionThemeEntryResponseId(entry);
   return rid ? [rid] : [];
@@ -2735,10 +2823,16 @@ function buildReflectionWallThemeFromCurationGroup(group, itemById, orderedIds =
   if (ids.length === 1) {
     return buildStrip(ids[0]);
   }
-  const strips = ids.slice(0, 2).map((id) => buildStrip(id)).filter(Boolean);
+  const strips = ids.map((id) => buildStrip(id)).filter(Boolean);
   if (!strips.length) return null;
   if (strips.length === 1) return strips[0];
-  return { split: true, strips };
+  if (stripsHaveExactSameText(strips)) {
+    return mergeReflectionWallThemeEntries(strips);
+  }
+  if (strips.length === 2) {
+    return { split: true, strips };
+  }
+  return { split: true, strips: strips.slice(0, 2) };
 }
 
 function reflectionAuthorSuffix(displayName) {
