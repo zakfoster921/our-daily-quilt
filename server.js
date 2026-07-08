@@ -2261,7 +2261,8 @@ function themeSubmissionSortKey(theme, orderedIds) {
     return i >= 0 ? i : 99999;
   };
   if (normalized.split && Array.isArray(normalized.strips)) {
-    return Math.min(...normalized.strips.map((strip) => indexOf(strip.responseId)));
+    // Carousel shows newest-first (client reverses orderedIds). Anchor each split at its latest post.
+    return Math.max(...normalized.strips.map((strip) => indexOf(strip.responseId)));
   }
   return indexOf(normalized.responseId);
 }
@@ -2330,7 +2331,8 @@ function buildSplitPairThemesFromCuration(themes, orderedIds) {
     (Array.isArray(themes) ? themes : []).map(normalizeReflectionWallThemeEntry).filter(Boolean),
     orderedIds
   );
-  return pairShortSoloThemesPreservingOrder(pairSimilarSoloThemesPreservingOrder(ordered));
+  const paired = pairShortSoloThemesPreservingOrder(pairSimilarSoloThemesPreservingOrder(ordered));
+  return sortThemesBySubmissionOrder(paired, orderedIds);
 }
 
 function dedupeReflectionWallThemes(themes) {
@@ -2706,10 +2708,15 @@ function parseReflectionCurationGroups(value, validIds) {
   return groups.length ? groups : null;
 }
 
-function buildReflectionWallThemeFromCurationGroup(group, itemById) {
+function buildReflectionWallThemeFromCurationGroup(group, itemById, orderedIds = []) {
+  const indexOf = (id) => {
+    const i = orderedIds.indexOf(String(id || '').trim());
+    return i >= 0 ? i : 99999;
+  };
   const ids = (Array.isArray(group) ? group : [])
     .map((id) => String(id || '').trim())
-    .filter((id) => itemById.has(id));
+    .filter((id) => itemById.has(id))
+    .sort((a, b) => indexOf(a) - indexOf(b));
   if (!ids.length) return null;
   const buildStrip = (id) => {
     const item = itemById.get(id);
@@ -2955,7 +2962,7 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   const itemById = new Map(list.map((item) => [item.id, item]));
   const themes = buildSplitPairThemesFromCuration(
     groups
-      .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById))
+      .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById, validIds))
       .filter(Boolean),
     validIds
   );
