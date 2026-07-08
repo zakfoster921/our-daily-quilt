@@ -8925,6 +8925,12 @@ app.options('/api/admin/composition-bias-preview', (req, res) => {
 
 app.post('/api/admin/composition-bias-preview', limitAdminQuiltMutation, async (req, res) => {
   setResetApiCors(res);
+  // DISABLED: composition bias preview removed from admin menu.
+  return res.status(410).json({
+    success: false,
+    error: 'Composition bias preview is disabled',
+    timestamp: getUtcIsoNow()
+  });
   try {
     const expectedToken = String(process.env.RESET_TOKEN || '').trim();
     const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
