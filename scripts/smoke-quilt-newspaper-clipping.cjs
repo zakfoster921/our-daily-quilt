@@ -276,9 +276,9 @@ async function main() {
   if (!dataUrl?.clipped || !String(dataUrl.clipped).startsWith('data:image/png')) {
     throw new Error('clipping PNG (crop + hand-cut) did not return data URL');
   }
-  if (typeof dataUrl.cornerAlphaMin === 'number' && dataUrl.cornerAlphaMin < 200) {
+  if (typeof dataUrl.cornerAlphaMin === 'number' && dataUrl.cornerAlphaMin > 32) {
     throw new Error(
-      `hand-cut corners should be opaque paper (min corner alpha ${dataUrl.cornerAlphaMin}); corner notch fill may be missing`
+      `hand-cut corners should stay transparent outside silhouette (min corner alpha ${dataUrl.cornerAlphaMin})`
     );
   }
   const { shortSize, shortSharpW, shortDisplayW, longSize, legacyOutW, clippedWidth } = dataUrl;
