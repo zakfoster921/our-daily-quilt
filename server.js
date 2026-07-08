@@ -3933,9 +3933,34 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     'Prompt theme',
     'Prompt Theme'
   );
+  const existingGoodDay = getNotionPropPlainByAliases(
+    currentProps,
+    'good_day',
+    'goodDay',
+    'Good day',
+    'Good Day'
+  );
+  const existingRoughDay = getNotionPropPlainByAliases(
+    currentProps,
+    'rough_day',
+    'roughDay',
+    'Rough day',
+    'Rough Day'
+  );
+  const existingWatchFor = getNotionPropPlainByAliases(
+    currentProps,
+    'watch_for',
+    'watchFor',
+    'Watch for'
+  );
   const needsSmallAct = !existingSmallAct;
   const needsPromptTheme = !existingPromptTheme && promptThemeOptions.length > 0;
-  const lightBackfillOnly = !!existingCommunityPrompt && (needsSmallAct || needsPromptTheme);
+  const needsGoodDay = !existingGoodDay;
+  const needsRoughDay = !existingRoughDay;
+  const needsWatchFor = !existingWatchFor;
+  const lightBackfillOnly =
+    !!existingCommunityPrompt &&
+    (needsSmallAct || needsPromptTheme || needsGoodDay || needsRoughDay || needsWatchFor);
 
   let ai = null;
   let claudeError = null;
@@ -3967,6 +3992,9 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
   if (lightBackfillOnly) {
     const smallActText = needsSmallAct ? String(ai?.small_act || '').trim() : '';
     const promptThemeText = needsPromptTheme ? String(ai?.prompt_theme || '').trim() : '';
+    const goodDayText = needsGoodDay ? String(ai?.good_day || '').trim() : '';
+    const roughDayText = needsRoughDay ? String(ai?.rough_day || '').trim() : '';
+    const watchForText = needsWatchFor ? String(ai?.watch_for || '').trim() : '';
     const properties = {};
     if (smallActText) {
       const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
@@ -3979,6 +4007,27 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
       const payload = notionTextPropertyValue(schema[promptThemeName], promptThemeText);
       if (payload) properties[promptThemeName] = payload;
     }
+    if (goodDayText) {
+      const goodDayName = findNotionPropName(schema, 'good_day', 'goodDay', 'Good day', 'Good Day');
+      if (goodDayName) {
+        const payload = notionTextPropertyValue(schema[goodDayName], goodDayText);
+        if (payload) properties[goodDayName] = payload;
+      }
+    }
+    if (roughDayText) {
+      const roughDayName = findNotionPropName(schema, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
+      if (roughDayName) {
+        const payload = notionTextPropertyValue(schema[roughDayName], roughDayText);
+        if (payload) properties[roughDayName] = payload;
+      }
+    }
+    if (watchForText) {
+      const watchForName = findNotionPropName(schema, 'watch_for', 'watchFor', 'Watch for');
+      if (watchForName) {
+        const payload = notionTextPropertyValue(schema[watchForName], watchForText);
+        if (payload) properties[watchForName] = payload;
+      }
+    }
     if (errState.propName) {
       const errProp = schema[errState.propName];
       if (errProp?.type === 'rich_text') properties[errState.propName] = { rich_text: [] };
@@ -3989,7 +4038,7 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         body: JSON.stringify({ properties })
       });
     }
-    if (db && (smallActText || promptThemeText)) {
+    if (db && (smallActText || promptThemeText || goodDayText || roughDayText || watchForText)) {
       const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
       const firestorePatch = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
       if (smallActText) {
@@ -3997,9 +4046,27 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         firestorePatch.small_act = smallActText;
       }
       if (promptThemeText) firestorePatch.prompt_theme = promptThemeText;
+      if (goodDayText) {
+        firestorePatch.goodDay = goodDayText;
+        firestorePatch.good_day = goodDayText;
+      }
+      if (roughDayText) {
+        firestorePatch.roughDay = roughDayText;
+        firestorePatch.rough_day = roughDayText;
+      }
+      if (watchForText) firestorePatch.watch_for = watchForText;
       await db.collection(collection).doc(notionPageId).set(firestorePatch, { merge: true });
     }
-    const backfilledFields = [smallActText && 'small_act', promptThemeText && 'prompt_theme'].filter(Boolean).join('+') || 'nothing';
+    const backfilledFields =
+      [
+        smallActText && 'small_act',
+        promptThemeText && 'prompt_theme',
+        goodDayText && 'good_day',
+        roughDayText && 'rough_day',
+        watchForText && 'watch_for'
+      ]
+        .filter(Boolean)
+        .join('+') || 'nothing';
     console.log(`✨ Backfilled ${backfilledFields} for ${notionPageId} (claude=${ai._model || 'ok'})`);
     return { status: 'ok', attempt: nextAttempt, hasWiki: false, lightBackfillOnly: true };
   }
@@ -4127,6 +4194,9 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   );
   const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
   const promptThemeName = findNotionPropName(schema, 'prompt_theme', 'promptTheme', 'Prompt theme', 'Prompt Theme');
+  const goodDayName = findNotionPropName(schema, 'good_day', 'goodDay', 'Good day', 'Good Day');
+  const roughDayName = findNotionPropName(schema, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
+  const watchForName = findNotionPropName(schema, 'watch_for', 'watchFor', 'Watch for');
   if (!quoteTextName || !communityPromptName) {
     throw new Error(`Notion DB missing required columns (need title + community_prompt rich_text)`);
   }
@@ -4143,6 +4213,18 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   if (promptThemeName && notionSchemaOptionNames(schema[promptThemeName]).length) {
     const promptThemeEmpty = notionIsEmptyFilter(promptThemeName, schema[promptThemeName]?.type);
     if (promptThemeEmpty) missingPrefillFilters.push(promptThemeEmpty);
+  }
+  if (goodDayName) {
+    const goodDayEmpty = notionIsEmptyFilter(goodDayName, schema[goodDayName]?.type);
+    if (goodDayEmpty) missingPrefillFilters.push(goodDayEmpty);
+  }
+  if (roughDayName) {
+    const roughDayEmpty = notionIsEmptyFilter(roughDayName, schema[roughDayName]?.type);
+    if (roughDayEmpty) missingPrefillFilters.push(roughDayEmpty);
+  }
+  if (watchForName) {
+    const watchForEmpty = notionIsEmptyFilter(watchForName, schema[watchForName]?.type);
+    if (watchForEmpty) missingPrefillFilters.push(watchForEmpty);
   }
   const filter = {
     and: [

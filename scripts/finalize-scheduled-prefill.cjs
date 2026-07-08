@@ -33,6 +33,23 @@ const {
 const NOTION_API_VERSION = '2022-06-28';
 const WIKIPEDIA_USER_AGENT = 'OurDailyQuilt/1.0 (https://ourdailyquilt.com)';
 const FINAL_FIELDS = ['community_prompt', 'watch_for', 'good_day', 'rough_day', 'ig_caption'];
+const REQUIRED_FINAL_PREFILL_FIELDS = [
+  {
+    key: 'watch_for',
+    requirement:
+      'watch_for is required: one capitalized sentence fragment naming a specific observable moment or behavior to notice today — no "Watch for" prefix, no feelings, no homework; do not add a trailing period unless the copy needs one.'
+  },
+  {
+    key: 'good_day',
+    requirement:
+      'good_day is required: a short, quirky declarative push with odd verbs or playful specificity — one or two short sentences, no questions, no generic pep-talk filler.'
+  },
+  {
+    key: 'rough_day',
+    requirement:
+      'rough_day is required: a short reframe that names no emotions, makes no demands, and asks no questions. Three words to two short sentences.'
+  }
+];
 const FIELD_ALIASES = {
   community_prompt: ['community_prompt', 'communityPrompt', 'Community prompt'],
   watch_for: ['watch_for', 'watchFor', 'Watch for'],
@@ -200,6 +217,25 @@ function mapPrefillFields(parsed, model) {
     ig_caption: pickString(parsed, 'ig_caption', 'igCaption', 'IG Caption'),
     _model: model
   };
+}
+
+function mergeNonEmptyPrefillFields(base, next) {
+  const merged = { ...(base || {}) };
+  for (const [key, value] of Object.entries(next || {})) {
+    if (key === '_model') {
+      merged[key] = value || merged[key];
+      continue;
+    }
+    if (String(value || '').trim()) merged[key] = value;
+  }
+  return merged;
+}
+
+function findMissingRequiredFinalPrefillFields(out, requestedFields) {
+  const requested = new Set(requestedFields || []);
+  return REQUIRED_FINAL_PREFILL_FIELDS.filter(
+    ({ key }) => requested.has(key) && !String(out?.[key] || '').trim()
+  );
 }
 
 function parseSpeakerDatesFromExtract(extract) {
@@ -418,7 +454,7 @@ async function postGemini({ apiKey, model, prompt }) {
     .trim();
 }
 
-async function generateFinalPrefill({ quoteText, authorName }) {
+async function generateFinalPrefill({ quoteText, authorName, requestedFields = FINAL_FIELDS }) {
   const prompt = buildSubmittedQuotePrefillPrompt({ quoteText, authorName });
   const anthropicKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
   const geminiKey = String(process.env.GEMINI_API_KEY || '').trim();
@@ -426,19 +462,48 @@ async function generateFinalPrefill({ quoteText, authorName }) {
   const model = isClaude
     ? String(process.env.ANTHROPIC_PREFILL_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim()
     : String(process.env.GEMINI_PREFILL_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-  const text = isClaude
-    ? await postClaude({ apiKey: anthropicKey, model, prompt })
-    : await postGemini({ apiKey: geminiKey, model, prompt });
+  const postText = (repairPrompt) =>
+    isClaude
+      ? postClaude({ apiKey: anthropicKey, model, prompt: repairPrompt })
+      : postGemini({ apiKey: geminiKey, model, prompt: repairPrompt });
+  const providerLabel = isClaude ? 'Claude' : 'Gemini';
+
+  const text = await postText(prompt);
   let parsed = extractBalancedJsonObject(text);
   if (!parsed || typeof parsed !== 'object') {
     const repairPrompt = `${prompt}\n\nYour previous output could not be parsed as JSON. Return ONLY the JSON object described in OUTPUT SCHEMA. No prose, no fences.`;
-    const repairText = isClaude
-      ? await postClaude({ apiKey: anthropicKey, model, prompt: repairPrompt })
-      : await postGemini({ apiKey: geminiKey, model, prompt: repairPrompt });
+    const repairText = await postText(repairPrompt);
     parsed = extractBalancedJsonObject(repairText);
   }
-  if (!parsed || typeof parsed !== 'object') throw new Error('AI returned no parseable JSON');
-  return mapPrefillFields(parsed, model);
+  if (!parsed || typeof parsed !== 'object') throw new Error(`${providerLabel} returned no parseable JSON`);
+  let out = mapPrefillFields(parsed, model);
+  let missing = findMissingRequiredFinalPrefillFields(out, requestedFields);
+  if (missing.length) {
+    const repairLines = [
+      prompt,
+      '',
+      `Your previous JSON left ${missing.length === 1 ? 'this required field' : 'these required fields'} empty or missing: ${missing.map((m) => m.key).join(', ')}.`,
+      'Return ONLY the full JSON object again, preserving good existing fields where possible. Do not regenerate fields that are already strong.',
+      ...missing.map((m) => `- ${m.requirement}`),
+      '',
+      'Previous JSON:',
+      JSON.stringify(parsed, null, 2)
+    ];
+    const repairText = await postText(repairLines.join('\n'));
+    const repairParsed = extractBalancedJsonObject(repairText);
+    if (repairParsed && typeof repairParsed === 'object') {
+      out = mergeNonEmptyPrefillFields(out, mapPrefillFields(repairParsed, model));
+    }
+    missing = findMissingRequiredFinalPrefillFields(out, requestedFields);
+  }
+  if (missing.length) {
+    const stillMissing = missing.map((m) => m.key).join(', ');
+    console.warn(
+      `[finalize-prefill] required fields empty after ${providerLabel} parse (model=${model}). Missing: ${stillMissing}. Top-level JSON keys: ${Object.keys(parsed).join(', ')}`
+    );
+    throw new Error(`${providerLabel} returned prefill JSON without required field(s): ${stillMissing}`);
+  }
+  return out;
 }
 
 function isAppSubmission(data) {
@@ -476,7 +541,8 @@ function buildPatch(fields, generated, nowIso) {
     const value = String(generated[field] || '').trim();
     if (value) patch[field] = value;
   }
-  if (Object.keys(patch).length) {
+  const allRequestedFilled = fields.every((field) => patch[field]);
+  if (allRequestedFilled && Object.keys(patch).length) {
     patch.creativePrefillVersion = PREFILL_CREATIVE_PROMPT_VERSION;
     patch.creativePrefillUpdatedAt = nowIso;
     patch.creativePrefillSource = 'scheduled-finalizer';
@@ -560,7 +626,11 @@ async function main() {
         if (!hasAi) {
           console.log(`[finalize-prefill] skipped creative fields for ${item.dateKey} ${item.sourceId}: no AI key configured`);
         } else {
-          const generated = await generateFinalPrefill({ quoteText: item.quoteText, authorName: item.authorName });
+          const generated = await generateFinalPrefill({
+            quoteText: item.quoteText,
+            authorName: item.authorName,
+            requestedFields: item.fields
+          });
           patch = buildPatch(item.fields, generated, new Date().toISOString());
         }
       }
