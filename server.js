@@ -231,6 +231,8 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/admin/quilt-mutation', 2 * ONE_MB],
   ['/api/admin/submission-audit', 8 * ONE_KB],
   ['/api/admin/composition-bias-preview', 8 * ONE_KB],
+  ['/api/admin/reflection-responses', 8 * ONE_KB],
+  ['/api/admin/reflection-response/delete', 8 * ONE_KB],
   ['/api/social-posts', 24 * ONE_KB],
   ['/api/social-posts/upload-media', 30 * ONE_MB],
   ['/api/social-posts/:postId', 24 * ONE_KB],
@@ -9107,6 +9109,173 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
   }
 });
 
+async function markReflectionResponseDeleted(db, responseId) {
+  const responseRef = db.collection('reflectionResponses').doc(responseId);
+  const responseSnap = await responseRef.get();
+  if (!responseSnap.exists) {
+    return { ok: false, status: 404, error: 'Reflection not found' };
+  }
+  const priorData = responseSnap.data() || {};
+  if (String(priorData.status || '') === 'deleted') {
+    return {
+      ok: true,
+      responseId,
+      appDateKey: priorData.appDateKey || '',
+      status: 'deleted',
+      alreadyDeleted: true
+    };
+  }
+  const appDateKey = String(priorData.appDateKey || '').trim() || getAppDateKey();
+  const priorThemeText = reflectionResponseWallBody(priorData);
+  const priorAuthor = reflectionResponseStoredAuthor(priorData);
+
+  await responseRef.set({
+    status: 'deleted',
+    deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  await syncReflectionThemeForResponse(db, appDateKey, responseId, null, {
+    text: priorThemeText,
+    author: priorAuthor
+  });
+
+  return { ok: true, responseId, appDateKey, status: 'deleted' };
+}
+
+function summarizeAdminReflectionDoc(doc) {
+  const data = doc.data() || {};
+  const createdAt = data.createdAt;
+  let createdAtIso = '';
+  if (createdAt && typeof createdAt.toDate === 'function') {
+    try {
+      createdAtIso = createdAt.toDate().toISOString();
+    } catch (_) {
+      createdAtIso = '';
+    }
+  }
+  return {
+    responseId: doc.id,
+    status: String(data.status || 'published').slice(0, 40),
+    name: String(data.displayName || data.authorDisplayName || data.name || '').slice(0, 80),
+    text: String(data.text || data.publishedText || data.rawText || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 220),
+    clientId: String(data.clientId || '').slice(0, 80),
+    createdAtIso
+  };
+}
+
+function assertAdminResetToken(req, res) {
+  const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+  const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+  if (!expectedToken) {
+    res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    return false;
+  }
+  if (!providedToken || providedToken !== expectedToken) {
+    res.status(401).json({ success: false, error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+app.options('/api/admin/reflection-responses', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/admin/reflection-responses', limitAdminQuiltMutation, async (req, res) => {
+  setResetApiCors(res);
+  try {
+    if (!assertAdminResetToken(req, res)) return;
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+
+    const reflectionSnap = await db.collection('reflectionResponses')
+      .where('appDateKey', '==', appDateKey)
+      .get();
+    const reflections = reflectionSnap.docs
+      .map(summarizeAdminReflectionDoc)
+      .sort((a, b) => {
+        if (a.status === 'deleted' && b.status !== 'deleted') return 1;
+        if (b.status === 'deleted' && a.status !== 'deleted') return -1;
+        return String(b.createdAtIso || '').localeCompare(String(a.createdAtIso || ''));
+      });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      generatedAt: getUtcIsoNow(),
+      reflections,
+      counts: {
+        total: reflections.length,
+        published: reflections.filter((row) => row.status === 'published' || !row.status).length,
+        deleted: reflections.filter((row) => row.status === 'deleted').length
+      }
+    });
+  } catch (error) {
+    console.error('❌ Admin reflection list failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Admin reflection list failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/reflection-response/delete', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/admin/reflection-response/delete', limitAdminQuiltMutation, async (req, res) => {
+  setResetApiCors(res);
+  try {
+    if (!assertAdminResetToken(req, res)) return;
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const responseId = String(body.responseId || body.id || '').trim();
+    if (!responseId) {
+      return res.status(400).json({ success: false, error: 'responseId is required' });
+    }
+
+    const result = await markReflectionResponseDeleted(db, responseId);
+    if (!result.ok) {
+      return res.status(result.status || 500).json({
+        success: false,
+        error: result.error || 'Reflection delete failed',
+        timestamp: getUtcIsoNow()
+      });
+    }
+
+    return res.json({
+      success: true,
+      responseId: result.responseId,
+      appDateKey: result.appDateKey,
+      status: result.status,
+      alreadyDeleted: result.alreadyDeleted === true
+    });
+  } catch (error) {
+    console.error('❌ Admin reflection delete failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Admin reflection delete failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
 app.options('/api/push/register', (req, res) => {
   setPushApiCors(res);
   return res.status(204).end();
@@ -9599,26 +9768,20 @@ app.delete('/api/reflection-response/:responseId', limitReflectionResponse, asyn
       return res.status(403).json({ success: false, error: 'Not allowed to delete this reflection' });
     }
 
-    const appDateKey = String(priorData.appDateKey || '').trim() || getAppDateKey();
-    const priorThemeText = reflectionResponseWallBody(priorData);
-    const priorAuthor = reflectionResponseStoredAuthor(priorData);
-
-    await responseRef.set({
-      status: 'deleted',
-      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    await syncReflectionThemeForResponse(db, appDateKey, responseId, null, {
-      text: priorThemeText,
-      author: priorAuthor
-    });
+    const result = await markReflectionResponseDeleted(db, responseId);
+    if (!result.ok) {
+      return res.status(result.status || 500).json({
+        success: false,
+        error: result.error || 'Reflection response delete failed',
+        timestamp: getUtcIsoNow()
+      });
+    }
 
     return res.json({
       success: true,
-      responseId,
-      appDateKey,
-      status: 'deleted'
+      responseId: result.responseId,
+      appDateKey: result.appDateKey,
+      status: result.status
     });
   } catch (error) {
     console.error('❌ Reflection response delete failed:', error);
