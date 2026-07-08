@@ -2193,21 +2193,32 @@ function reflectionResponseStoredAuthor(data) {
   return storedReflectionAuthorName(name);
 }
 
+function normalizeReflectionWallStripEntry(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+  const text = String(entry.text ?? entry.body ?? entry.theme ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.+$/g, '')
+    .trim();
+  if (!text) return null;
+  const author = String(entry.author ?? entry.authorDisplayName ?? '').replace(/\s+/g, ' ').trim()
+    || reflectionWallAuthorLabel(entry);
+  const responseId = reflectionThemeEntryResponseId(entry);
+  const heartCount = Math.max(0, Number(entry.heartCount) || 0);
+  const base = responseId ? { text, author, responseId } : { text, author };
+  if (heartCount > 0) base.heartCount = heartCount;
+  return base;
+}
+
 function normalizeReflectionWallThemeEntry(entry) {
   if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
-    const text = String(entry.text ?? entry.body ?? entry.theme ?? '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/\.+$/g, '')
-      .trim();
-    if (!text) return null;
-    const author = String(entry.author ?? entry.authorDisplayName ?? '').replace(/\s+/g, ' ').trim()
-      || reflectionWallAuthorLabel(entry);
-    const responseId = reflectionThemeEntryResponseId(entry);
-    const heartCount = Math.max(0, Number(entry.heartCount) || 0);
-    const base = responseId ? { text, author, responseId } : { text, author };
-    if (heartCount > 0) base.heartCount = heartCount;
-    return base;
+    if (entry.split === true && Array.isArray(entry.strips)) {
+      const strips = entry.strips.map(normalizeReflectionWallStripEntry).filter(Boolean);
+      if (strips.length >= 2) return { split: true, strips: strips.slice(0, 2) };
+      if (strips.length === 1) return strips[0];
+      return null;
+    }
+    return normalizeReflectionWallStripEntry(entry);
   }
   const text = String(entry || '')
     .replace(/\s+/g, ' ')
@@ -2227,14 +2238,28 @@ function buildReflectionWallThemeEntry(data) {
   return entry;
 }
 
+function reflectionWallThemeEntryKey(entry) {
+  const normalized = normalizeReflectionWallThemeEntry(entry);
+  if (!normalized) return '';
+  if (normalized.split && Array.isArray(normalized.strips)) {
+    return normalized.strips
+      .map((strip) => String(strip.responseId || `${strip.text.toLowerCase()}|${strip.author.toLowerCase()}`).trim())
+      .filter(Boolean)
+      .join('||');
+  }
+  return String(
+    normalized.responseId || `${normalized.text.toLowerCase()}|${normalized.author.toLowerCase()}`
+  ).trim();
+}
+
 function dedupeReflectionWallThemes(themes) {
   const seen = new Set();
   return (Array.isArray(themes) ? themes : [])
     .map(normalizeReflectionWallThemeEntry)
     .filter(Boolean)
     .filter((entry) => {
-      const key = `${entry.text.toLowerCase()}|${entry.author.toLowerCase()}`;
-      if (seen.has(key)) return false;
+      const key = reflectionWallThemeEntryKey(entry);
+      if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
@@ -2250,6 +2275,9 @@ function reflectionThemeMatchesResponse(entry, responseId, fallbackBody, fallbac
   if (rid && reflectionThemeEntryResponseId(entry) === rid) return true;
   const normalized = normalizeReflectionWallThemeEntry(entry);
   if (!normalized) return false;
+  if (normalized.split && Array.isArray(normalized.strips)) {
+    return normalized.strips.some((strip) => reflectionThemeMatchesResponse(strip, responseId, fallbackBody, fallbackAuthor));
+  }
   const fbText = String(fallbackBody || '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -2456,15 +2484,65 @@ function moderateReflectionResponseLocally(responseText) {
   };
 }
 
-function parseReflectionCurationResult(value, validIds) {
+function parseReflectionCurationGroups(value, validIds) {
   const parsed = parseJsonObjectFromAiText(value);
   if (!parsed) return null;
   const idSet = new Set(Array.isArray(validIds) ? validIds.map((id) => String(id || '').trim()).filter(Boolean) : []);
   if (!idSet.size) return [];
-  const visibleIds = (Array.isArray(parsed.visibleIds) ? parsed.visibleIds : [])
+  const seen = new Set();
+  const groups = [];
+  const pushGroup = (rawGroup) => {
+    const ids = (Array.isArray(rawGroup) ? rawGroup : [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => idSet.has(id) && !seen.has(id));
+    if (!ids.length) return;
+    if (ids.length === 1) {
+      seen.add(ids[0]);
+      groups.push([ids[0]]);
+      return;
+    }
+    const pair = ids.slice(0, 2);
+    pair.forEach((id) => seen.add(id));
+    groups.push(pair);
+    ids.slice(2).forEach((id) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      groups.push([id]);
+    });
+  };
+  if (Array.isArray(parsed.groups) && parsed.groups.length) {
+    parsed.groups.forEach(pushGroup);
+  } else if (Array.isArray(parsed.visibleIds) && parsed.visibleIds.length) {
+    parsed.visibleIds.forEach((id) => pushGroup([id]));
+  }
+  const missing = [...idSet].filter((id) => !seen.has(id));
+  missing.forEach((id) => groups.push([id]));
+  return groups.length ? groups : null;
+}
+
+function buildReflectionWallThemeFromCurationGroup(group, itemById) {
+  const ids = (Array.isArray(group) ? group : [])
     .map((id) => String(id || '').trim())
-    .filter((id) => idSet.has(id));
-  return visibleIds.length ? visibleIds : null;
+    .filter((id) => itemById.has(id));
+  if (!ids.length) return null;
+  const buildStrip = (id) => {
+    const item = itemById.get(id);
+    if (!item) return null;
+    const text = reflectionResponseCurationBody(item.data);
+    if (!text) return null;
+    return {
+      text,
+      author: reflectionResponseStoredAuthor(item.data || {}),
+      responseId: id
+    };
+  };
+  if (ids.length === 1) {
+    return buildStrip(ids[0]);
+  }
+  const strips = ids.slice(0, 2).map((id) => buildStrip(id)).filter(Boolean);
+  if (!strips.length) return null;
+  if (strips.length === 1) return strips[0];
+  return { split: true, strips };
 }
 
 function reflectionAuthorSuffix(displayName) {
@@ -2680,23 +2758,16 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   } else {
     throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
   }
-  let visibleIds = parseReflectionCurationResult(raw, validIds);
-  if (!visibleIds) {
-    console.warn('Curation AI returned unusable JSON; keeping all published responses visible.');
-    visibleIds = validIds;
+  let groups = parseReflectionCurationGroups(raw, validIds);
+  if (!groups) {
+    console.warn('Curation AI returned unusable JSON; keeping each response as its own card.');
+    groups = validIds.map((id) => [id]);
   }
-  const visibleSet = new Set(visibleIds);
-  const themes = list
-    .filter((item) => visibleSet.has(item.id))
-    .map((item) => {
-      const entry = buildReflectionWallThemeEntry(item.data) || normalizeReflectionWallThemeEntry({
-        text: item.text,
-        author: reflectionResponseStoredAuthor(item.data || {})
-      });
-      if (entry) entry.responseId = item.id;
-      return entry;
-    })
+  const itemById = new Map(list.map((item) => [item.id, item]));
+  const themes = groups
+    .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById))
     .filter(Boolean);
+  const visibleIds = groups.flat();
   return { visibleIds, themes: dedupeReflectionWallThemes(themes), model, provider };
 }
 
@@ -10337,11 +10408,20 @@ function reflectionResponseWallBody(data) {
   return stripReflectionAuthorSuffix(full);
 }
 
+/** Body for curation grouping — includes hidden (previously deduped) responses. */
+function reflectionResponseCurationBody(data) {
+  const row = data && typeof data === 'object' ? data : {};
+  const status = String(row.status || '').toLowerCase();
+  if (status === 'deleted' || status === 'rejected') return '';
+  if (status === 'hidden') return reflectionResponseWallBody({ ...row, status: 'published' });
+  return reflectionResponseWallBody(row);
+}
+
 /** Published responses for curation, oldest first. */
 async function loadPublishedReflectionResponsesForCuration(db, appDateKey, responseLimit) {
   const mapDoc = (doc) => {
     const data = doc.data() || {};
-    const text = reflectionResponseWallBody(data);
+    const text = reflectionResponseCurationBody(data);
     if (!text) return null;
     return { id: doc.id, text, data };
   };
@@ -10540,21 +10620,13 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
     const model = curation.model;
     const provider = curation.provider;
     const visibleIds = curation.visibleIds;
-    const visibleSet = new Set(visibleIds);
     const batch = db.batch();
     publishedItems.forEach((item) => {
       const ref = db.collection('reflectionResponses').doc(item.id);
-      if (visibleSet.has(item.id)) {
-        batch.update(ref, {
-          status: 'published',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-      } else {
-        batch.update(ref, {
-          status: 'hidden',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-      }
+      batch.update(ref, {
+        status: 'published',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
     });
     await batch.commit();
 
