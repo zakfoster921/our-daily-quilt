@@ -2716,11 +2716,14 @@ function buildReflectionWallThemeFromCurationGroup(group, itemById) {
     if (!item) return null;
     const text = reflectionResponseCurationBody(item.data);
     if (!text) return null;
-    return {
+    const heartCount = Math.max(0, Number(item.data?.heartCount) || 0);
+    const strip = {
       text,
       author: reflectionResponseStoredAuthor(item.data || {}),
       responseId: id
     };
+    if (heartCount > 0) strip.heartCount = heartCount;
+    return strip;
   };
   if (ids.length === 1) {
     return buildStrip(ids[0]);
@@ -10827,6 +10830,17 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       curationModel: model,
       promptThemes
     };
+    if (priorThemeData) {
+      const firstResponse = String(priorThemeData.first_response || '').replace(/\s+/g, ' ').trim();
+      const userName = String(priorThemeData.user_name || '').trim();
+      if (firstResponse) themePayload.first_response = firstResponse;
+      if (userName) themePayload.user_name = userName;
+      const firstResponseHeartCount = Math.max(0, Number(priorThemeData.firstResponseHeartCount) || 0);
+      if (firstResponseHeartCount > 0) themePayload.firstResponseHeartCount = firstResponseHeartCount;
+      if (priorThemeData.adminFirstResponseHearted === true) {
+        themePayload.adminFirstResponseHearted = true;
+      }
+    }
     try {
       const quiltImageUrl = await resolveQuiltImageUrlForDateKey(db, appDateKey);
       if (quiltImageUrl) {
