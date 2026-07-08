@@ -513,6 +513,37 @@ function isAppSubmission(data) {
   return false;
 }
 
+function notionPropToPlain(prop) {
+  if (!prop) return '';
+  if (Array.isArray(prop.rich_text)) {
+    return prop.rich_text.map((x) => x?.plain_text || '').join('').trim();
+  }
+  if (Array.isArray(prop.title)) {
+    return prop.title.map((x) => x?.plain_text || '').join('').trim();
+  }
+  return '';
+}
+
+/** Editor-owned community prompt on the Notion row (if any). */
+function readNotionCommunityPromptFromPageProperties(properties) {
+  const aliases = FIELD_ALIASES.community_prompt || ['community_prompt'];
+  const wanted = new Set(aliases.map(normKey));
+  const found = Object.entries(properties || {}).find(([name]) => wanted.has(normKey(name)));
+  return found ? notionPropToPlain(found[1]) : '';
+}
+
+async function fetchNotionCommunityPrompt(pageId) {
+  const id = String(pageId || '').trim();
+  if (!id || !String(process.env.NOTION_TOKEN || '').trim()) return '';
+  try {
+    const page = await notionFetchJson(`/pages/${id}`);
+    return readNotionCommunityPromptFromPageProperties(page?.properties);
+  } catch (e) {
+    console.warn(`[finalize-prefill] Notion community_prompt read failed for ${id}: ${e.message}`);
+    return '';
+  }
+}
+
 function readField(data, field) {
   if (field === 'community_prompt') return String(data.community_prompt ?? data.communityPrompt ?? '').trim();
   if (field === 'watch_for') return String(data.watch_for ?? data.watchFor ?? '').trim();
@@ -573,11 +604,12 @@ function buildAssignmentPatch(patch) {
   return out;
 }
 
-function buildNotionProperties(schema, patch) {
+function buildNotionProperties(schema, patch, { skipFields = [] } = {}) {
   const properties = {};
   if (!schema) return properties;
+  const skip = new Set(skipFields);
   for (const field of [...FINAL_FIELDS, 'speaker_dates']) {
-    if (!patch[field]) continue;
+    if (skip.has(field) || !patch[field]) continue;
     const propName = findNotionPropName(schema, ...(FIELD_ALIASES[field] || [field]));
     const payload = notionTextPropertyValue(schema[propName], patch[field]);
     if (propName && payload) properties[propName] = payload;
@@ -636,17 +668,23 @@ async function main() {
   let failed = 0;
   for (const item of limited) {
     try {
+      const notionCommunityPrompt = await fetchNotionCommunityPrompt(item.sourceId);
+      const preserveNotionCommunityPrompt = !!notionCommunityPrompt;
+      const fieldsToGenerate = preserveNotionCommunityPrompt
+        ? item.fields.filter((field) => field !== 'community_prompt')
+        : item.fields;
+
       let patch = {};
-      if (item.fields.length) {
+      if (fieldsToGenerate.length) {
         if (!hasAi) {
           console.log(`[finalize-prefill] skipped creative fields for ${item.dateKey} ${item.sourceId}: no AI key configured`);
         } else {
           const generated = await generateFinalPrefill({
             quoteText: item.quoteText,
             authorName: item.authorName,
-            requestedFields: item.fields
+            requestedFields: fieldsToGenerate
           });
-          patch = buildPatch(item.fields, generated, new Date().toISOString());
+          patch = buildPatch(fieldsToGenerate, generated, new Date().toISOString());
         }
       }
       if (item.needsSpeakerDates) {
@@ -654,15 +692,26 @@ async function main() {
         if (speakerDates) patch.speaker_dates = speakerDates;
       }
       const catalogMirror = buildCatalogMirrorPatch(item.data);
+      if (preserveNotionCommunityPrompt) {
+        catalogMirror.community_prompt = notionCommunityPrompt;
+        delete patch.community_prompt;
+      }
       const mergedPatch = { ...catalogMirror, ...patch };
       if (!Object.keys(mergedPatch).length) continue;
       const assignmentPatch = buildAssignmentPatch(mergedPatch);
-      const notionProperties = buildNotionProperties(schema, mergedPatch);
+      const notionProperties = buildNotionProperties(schema, mergedPatch, {
+        skipFields: preserveNotionCommunityPrompt ? ['community_prompt'] : []
+      });
+      const catalogWrite = { ...patch };
+      if (preserveNotionCommunityPrompt) {
+        catalogWrite.community_prompt = notionCommunityPrompt;
+      }
       if (opts.dryRun) {
-        console.log(`[finalize-prefill] dry-run ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
+        const skipNote = preserveNotionCommunityPrompt ? ' preserve_notion_community_prompt=1' : '';
+        console.log(`[finalize-prefill] dry-run ${item.dateKey} ${item.sourceId} reason=${item.reason}${skipNote} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
         continue;
       }
-      await db.collection(quotesCollection).doc(item.sourceId).set({ ...patch, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      await db.collection(quotesCollection).doc(item.sourceId).set({ ...catalogWrite, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
       await db.collection(assignmentsCollection).doc(item.dateKey).set(assignmentPatch, { merge: true });
       await db.collection(dailyCollection).doc(item.dateKey).set({ ...mergedPatch, updatedAt: new Date().toISOString() }, { merge: true });
       if (schema && Object.keys(notionProperties).length) {
@@ -672,7 +721,8 @@ async function main() {
         });
       }
       patched += 1;
-      console.log(`[finalize-prefill] patched ${item.dateKey} ${item.sourceId} reason=${item.reason} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
+      const skipNote = preserveNotionCommunityPrompt ? ' preserve_notion_community_prompt=1' : '';
+      console.log(`[finalize-prefill] patched ${item.dateKey} ${item.sourceId} reason=${item.reason}${skipNote} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
     } catch (e) {
       failed += 1;
       console.warn(`[finalize-prefill] failed ${item.dateKey} ${item.sourceId}: ${e.message}`);
