@@ -218,7 +218,7 @@ function notionSyncQuotesScriptArgs(startDate, syncScope) {
 
 const JSON_SIZE_LIMITS = new Map([
   ['/api/push-instagram-assets', 30 * ONE_MB],
-  ['/api/push-layout-b-tune', 48 * ONE_KB],
+  ['/api/push-layout-b-tune', 128 * ONE_KB],
   ['/api/push-quilt-mirror-tune', 8 * ONE_KB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
   ['/api/quilt-name-words', 4 * ONE_KB],
@@ -1853,6 +1853,16 @@ const MIRROR_TUNE_DEFAULT_FLIP_Y = true;
 const MIRROR_BOTTOM_LAYOUT_SINGLE = 'single';
 const MIRROR_BOTTOM_LAYOUT_DOUBLE = 'doubleSideBySide';
 const MIRROR_TUNE_HISTORY_MAX = 80;
+
+/** Strip plan for Firestore: positions only (quote text comes from the day’s quote at render). */
+function serverCompactLayoutBPostStripPlan(stripPlan) {
+  if (!Array.isArray(stripPlan) || !stripPlan.length) return null;
+  return stripPlan.map((s) => ({
+    role: String(s?.role || 'quote').trim() || 'quote',
+    x: Number(s?.x) || 0,
+    y: Number(s?.y) || 0
+  }));
+}
 
 function serverNormalizeMirrorBottomLayout(value) {
   return String(value || '').trim() === MIRROR_BOTTOM_LAYOUT_DOUBLE
@@ -6854,6 +6864,10 @@ app.post('/api/push-layout-b-tune', limitInstagramAssetPush, optionalInstagramAs
       ? body.deleteFields.map((f) => String(f || '').trim()).filter(Boolean)
       : [];
     const patch = { ...setFields, date: dateKey };
+    if (Array.isArray(patch.layoutBPostStripPlan) && patch.layoutBPostStripPlan.length) {
+      const compactPlan = serverCompactLayoutBPostStripPlan(patch.layoutBPostStripPlan);
+      if (compactPlan) patch.layoutBPostStripPlan = compactPlan;
+    }
     for (const field of deleteFields) {
       patch[field] = admin.firestore.FieldValue.delete();
     }
