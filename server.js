@@ -235,6 +235,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/admin/composition-bias-preview', 8 * ONE_KB],
   ['/api/admin/reflection-responses', 8 * ONE_KB],
   ['/api/admin/reflection-response/delete', 8 * ONE_KB],
+  ['/api/admin/reflection-response/highlight', 8 * ONE_KB],
   ['/api/social-posts', 24 * ONE_KB],
   ['/api/social-posts/upload-media', 30 * ONE_MB],
   ['/api/social-posts/:postId', 24 * ONE_KB],
@@ -2686,7 +2687,112 @@ function carryReflectionThemeEngagementFields(entry, nextEntry) {
   const heartCount = Math.max(0, Number(entry.heartCount) || 0);
   if (heartCount > 0) merged.heartCount = heartCount;
   if (entry.adminHearted === true) merged.adminHearted = true;
+  if (entry.adminHighlight === true) {
+    merged.adminHighlight = true;
+    if (entry.adminHighlightAtIso) merged.adminHighlightAtIso = entry.adminHighlightAtIso;
+  }
   return merged;
+}
+
+function setReflectionThemeAdminHighlight(entry, responseId, highlighted, nowIso, fallbackText = '', fallbackAuthor = '') {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return { entry, changed: false };
+  }
+  if (entry.split === true && Array.isArray(entry.strips)) {
+    let stripChanged = false;
+    const strips = entry.strips.map((strip) => {
+      if (!reflectionThemeMatchesResponse(strip, responseId, fallbackText, fallbackAuthor)) return strip;
+      stripChanged = true;
+      if (highlighted) {
+        return { ...strip, adminHighlight: true, adminHighlightAtIso: nowIso };
+      }
+      const nextStrip = { ...strip };
+      delete nextStrip.adminHighlight;
+      delete nextStrip.adminHighlightAtIso;
+      return nextStrip;
+    });
+    if (!stripChanged) return { entry, changed: false };
+    return { entry: { ...entry, strips }, changed: true };
+  }
+  if (!reflectionThemeMatchesResponse(entry, responseId, fallbackText, fallbackAuthor)) {
+    return { entry, changed: false };
+  }
+  if (highlighted) {
+    return {
+      entry: { ...entry, adminHighlight: true, adminHighlightAtIso: nowIso },
+      changed: true
+    };
+  }
+  const nextEntry = { ...entry };
+  delete nextEntry.adminHighlight;
+  delete nextEntry.adminHighlightAtIso;
+  return { entry: nextEntry, changed: true };
+}
+
+async function toggleReflectionAdminHighlight(db, dateKey, responseId) {
+  const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || '').trim())
+    ? String(dateKey).trim()
+    : getAppDateKey();
+  const rid = String(responseId || '').trim();
+  if (!rid) return { ok: false, status: 400, error: 'responseId is required' };
+  const nowIso = getUtcIsoNow();
+  const themeRef = db.collection('reflectionThemes').doc(appDateKey);
+  const themeSnap = await themeRef.get();
+  if (!themeSnap.exists) {
+    return { ok: false, status: 404, error: 'Reflection themes not found for date' };
+  }
+  const themeData = themeSnap.data() || {};
+
+  if (rid === 'first') {
+    const nextHighlighted = themeData.adminFirstResponseHighlight !== true;
+    const patch = {
+      updatedAtIso: nowIso,
+      adminFirstResponseHighlight: nextHighlighted
+    };
+    if (nextHighlighted) patch.adminFirstResponseHighlightAtIso = nowIso;
+    else {
+      patch.adminFirstResponseHighlightAtIso = admin.firestore.FieldValue.delete();
+    }
+    await themeRef.set(patch, { merge: true });
+    return {
+      ok: true,
+      appDateKey,
+      responseId: rid,
+      adminHighlight: nextHighlighted,
+      adminHighlightAtIso: nextHighlighted ? nowIso : null
+    };
+  }
+
+  const themes = Array.isArray(themeData.themes) ? themeData.themes : [];
+  let matched = false;
+  let nextHighlighted = false;
+  const nextThemes = themes.map((entry) => {
+    const matches = entry?.split === true && Array.isArray(entry.strips)
+      ? entry.strips.some((strip) => reflectionThemeMatchesResponse(strip, rid))
+      : reflectionThemeMatchesResponse(entry, rid);
+    if (!matches) return entry;
+    matched = true;
+    const currentlyHighlighted = entry?.split === true && Array.isArray(entry.strips)
+      ? entry.strips.some(
+          (strip) => reflectionThemeMatchesResponse(strip, rid) && strip.adminHighlight === true
+        )
+      : entry.adminHighlight === true;
+    nextHighlighted = !currentlyHighlighted;
+    return setReflectionThemeAdminHighlight(entry, rid, nextHighlighted, nowIso).entry;
+  });
+
+  if (!matched) {
+    return { ok: false, status: 404, error: 'Reflection not found on wall for date' };
+  }
+
+  await themeRef.set({ themes: nextThemes, updatedAtIso: nowIso }, { merge: true });
+  return {
+    ok: true,
+    appDateKey,
+    responseId: rid,
+    adminHighlight: nextHighlighted,
+    adminHighlightAtIso: nextHighlighted ? nowIso : null
+  };
 }
 
 async function syncReflectionThemeForResponse(db, appDateKey, responseId, nextEntry, fallback = {}) {
@@ -9738,6 +9844,55 @@ app.post('/api/admin/reflection-response/delete', limitAdminQuiltMutation, async
     return res.status(500).json({
       success: false,
       error: error.message || 'Admin reflection delete failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/admin/reflection-response/highlight', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/admin/reflection-response/highlight', limitAdminQuiltMutation, async (req, res) => {
+  setResetApiCors(res);
+  try {
+    if (!assertAdminResetToken(req, res)) return;
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const responseId = String(body.responseId || body.id || '').trim();
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    if (!responseId) {
+      return res.status(400).json({ success: false, error: 'responseId is required' });
+    }
+
+    const result = await toggleReflectionAdminHighlight(db, appDateKey, responseId);
+    if (!result.ok) {
+      return res.status(result.status || 500).json({
+        success: false,
+        error: result.error || 'Reflection highlight failed',
+        timestamp: getUtcIsoNow()
+      });
+    }
+
+    return res.json({
+      success: true,
+      appDateKey: result.appDateKey,
+      responseId: result.responseId,
+      adminHighlight: result.adminHighlight === true,
+      adminHighlightAtIso: result.adminHighlightAtIso || null,
+      timestamp: getUtcIsoNow()
+    });
+  } catch (error) {
+    console.error('❌ Admin reflection highlight failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Admin reflection highlight failed',
       timestamp: getUtcIsoNow()
     });
   }
