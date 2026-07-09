@@ -2292,7 +2292,7 @@ function pairThemesPreservingOrder(themes, shouldPair) {
   for (let i = 0; i < normalizedList.length; i++) {
     if (used.has(i)) continue;
     const entry = normalizedList[i];
-    if (entry.split) {
+    if (entry.split || (Array.isArray(entry.mergedResponseIds) && entry.mergedResponseIds.length)) {
       result.push(entry);
       used.add(i);
       continue;
@@ -2301,7 +2301,7 @@ function pairThemesPreservingOrder(themes, shouldPair) {
     for (let j = i + 1; j < normalizedList.length; j++) {
       if (used.has(j)) continue;
       const other = normalizedList[j];
-      if (other.split) continue;
+      if (other.split || (Array.isArray(other.mergedResponseIds) && other.mergedResponseIds.length)) continue;
       if (shouldPair(entry, other)) {
         pairIdx = j;
         break;
@@ -2404,11 +2404,65 @@ function mergeExactMatchThemesPreservingOrder(themes) {
   return dedupeReflectionWallThemes(result);
 }
 
+function collectReflectionExactTextCounts(themes) {
+  const counts = new Map();
+  const bump = (text) => {
+    const key = reflectionExactTextKey(text);
+    if (!key) return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  };
+  (Array.isArray(themes) ? themes : []).forEach((entry) => {
+    const normalized = normalizeReflectionWallThemeEntry(entry);
+    if (!normalized) return;
+    if (normalized.split && Array.isArray(normalized.strips)) {
+      normalized.strips.forEach((strip) => bump(strip?.text));
+    } else {
+      bump(normalized.text);
+    }
+  });
+  return counts;
+}
+
+function splitContainsDuplicateExactText(entry, textCounts) {
+  if (!entry?.split || !Array.isArray(entry.strips)) return false;
+  return entry.strips.some((strip) => {
+    const key = reflectionExactTextKey(strip?.text);
+    return !!(key && (textCounts.get(key) || 0) > 1);
+  });
+}
+
+/** Pull duplicate-wording strips out of splits so exact merges can combine them. */
+function prepareThemesForExactMergeAndShortPair(themes) {
+  const normalized = (Array.isArray(themes) ? themes : [])
+    .map(normalizeReflectionWallThemeEntry)
+    .filter(Boolean);
+  const textCounts = collectReflectionExactTextCounts(normalized);
+  const preservedSplits = [];
+  const soloPool = [];
+  normalized.forEach((entry) => {
+    if (entry.split && entry.strips?.length >= 2) {
+      if (splitContainsDuplicateExactText(entry, textCounts)) {
+        entry.strips.forEach((strip) => {
+          const solo = normalizeReflectionWallStripEntry(strip);
+          if (solo) soloPool.push(solo);
+        });
+      } else {
+        preservedSplits.push(entry);
+      }
+    } else {
+      soloPool.push(entry);
+    }
+  });
+  return { preservedSplits, soloPool };
+}
+
 /** Priority 2: stack brief single-line responses to save carousel space (need not be similar). */
 function pairShortSoloThemesPreservingOrder(themes) {
-  return pairThemesPreservingOrder(themes, (a, b) => (
-    isShortReflectionForSplit(a?.text) && isShortReflectionForSplit(b?.text)
-  ));
+  return pairThemesPreservingOrder(themes, (a, b) => {
+    if (Array.isArray(a?.mergedResponseIds) && a.mergedResponseIds.length) return false;
+    if (Array.isArray(b?.mergedResponseIds) && b.mergedResponseIds.length) return false;
+    return isShortReflectionForSplit(a?.text) && isShortReflectionForSplit(b?.text);
+  });
 }
 
 function buildSplitPairThemesFromCuration(themes, orderedIds) {
@@ -2416,8 +2470,16 @@ function buildSplitPairThemesFromCuration(themes, orderedIds) {
     (Array.isArray(themes) ? themes : []).map(normalizeReflectionWallThemeEntry).filter(Boolean),
     orderedIds
   );
-  const paired = pairShortSoloThemesPreservingOrder(mergeExactMatchThemesPreservingOrder(ordered));
-  return sortThemesBySubmissionOrder(paired, orderedIds);
+  const { preservedSplits, soloPool } = prepareThemesForExactMergeAndShortPair(ordered);
+  const mergedSolos = mergeExactMatchThemesPreservingOrder(soloPool);
+  const lockedMerged = mergedSolos.filter(
+    (entry) => Array.isArray(entry.mergedResponseIds) && entry.mergedResponseIds.length
+  );
+  const pairable = mergedSolos.filter(
+    (entry) => !Array.isArray(entry.mergedResponseIds) || !entry.mergedResponseIds.length
+  );
+  const shortPaired = pairShortSoloThemesPreservingOrder(pairable);
+  return sortThemesBySubmissionOrder([...preservedSplits, ...lockedMerged, ...shortPaired], orderedIds);
 }
 
 function dedupeReflectionWallThemes(themes) {
