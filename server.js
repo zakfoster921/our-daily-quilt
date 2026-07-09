@@ -2402,6 +2402,11 @@ function mergeReflectionWallThemeEntries(entries) {
   const author = mergeReflectionAuthorNames(list);
   const responseIds = list.map(reflectionThemeEntryResponseId).filter(Boolean);
   const heartCount = list.reduce((sum, entry) => sum + Math.max(0, Number(entry?.heartCount) || 0), 0);
+  const highlightAtIso = list
+    .map((entry) => String(entry?.adminHighlightAtIso || '').trim())
+    .filter(Boolean)
+    .sort()
+    .pop();
   const merged = {
     text,
     author,
@@ -2409,6 +2414,10 @@ function mergeReflectionWallThemeEntries(entries) {
   };
   if (heartCount > 0) merged.heartCount = heartCount;
   if (responseIds.length > 1) merged.mergedResponseIds = responseIds;
+  if (list.some((entry) => entry?.adminHighlight === true) && highlightAtIso) {
+    merged.adminHighlight = true;
+    merged.adminHighlightAtIso = highlightAtIso;
+  }
   return merged;
 }
 
@@ -2700,6 +2709,87 @@ function carryReflectionThemeEngagementFields(entry, nextEntry) {
   return merged;
 }
 
+function normalizeReflectionAdminHighlightMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const map = {};
+  Object.entries(raw).forEach(([responseId, atIso]) => {
+    const rid = String(responseId || '').trim();
+    const ts = String(atIso || '').trim();
+    if (rid && ts) map[rid] = ts;
+  });
+  return map;
+}
+
+function themeEntryAdminHighlightAtIso(entry, highlightMap = {}) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return '';
+  const ids = reflectionThemeCollectResponseIds(entry);
+  for (const rid of ids) {
+    const atIso = String(highlightMap[rid] || '').trim();
+    if (atIso) return atIso;
+  }
+  return '';
+}
+
+function applyAdminHighlightToThemeEntry(entry, highlightMap = {}) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  if (entry.split === true && Array.isArray(entry.strips)) {
+    const strips = entry.strips.map((strip) => applyAdminHighlightToThemeEntry(strip, highlightMap));
+    return { ...entry, strips };
+  }
+  const atIso = themeEntryAdminHighlightAtIso(entry, highlightMap);
+  if (!atIso) {
+    if (!entry.adminHighlight) return entry;
+    const nextEntry = { ...entry };
+    delete nextEntry.adminHighlight;
+    delete nextEntry.adminHighlightAtIso;
+    return nextEntry;
+  }
+  return { ...entry, adminHighlight: true, adminHighlightAtIso: atIso };
+}
+
+function applyAdminHighlightsToThemes(themes, highlightMap = {}) {
+  const map = normalizeReflectionAdminHighlightMap(highlightMap);
+  return (Array.isArray(themes) ? themes : []).map((entry) => applyAdminHighlightToThemeEntry(entry, map));
+}
+
+function collectReflectionAdminHighlightMapFromThemes(themes, seed = {}) {
+  const map = normalizeReflectionAdminHighlightMap(seed);
+  const visit = (entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
+    const rid = reflectionThemeEntryResponseId(entry);
+    if (entry.adminHighlight === true && rid) {
+      const atIso = String(entry.adminHighlightAtIso || map[rid] || '').trim();
+      if (atIso) map[rid] = atIso;
+    }
+  };
+  (Array.isArray(themes) ? themes : []).forEach((entry) => {
+    if (entry?.split === true && Array.isArray(entry.strips)) entry.strips.forEach(visit);
+    else visit(entry);
+  });
+  return map;
+}
+
+function resolveReflectionAdminHighlightMap(themeData) {
+  const data = themeData && typeof themeData === 'object' ? themeData : {};
+  const map = collectReflectionAdminHighlightMapFromThemes(
+    Array.isArray(data.themes) ? data.themes : [],
+    normalizeReflectionAdminHighlightMap(data.adminHighlightByResponseId)
+  );
+  if (data.adminFirstResponseHighlight === true) {
+    const atIso = String(data.adminFirstResponseHighlightAtIso || map.first || '').trim();
+    if (atIso) map.first = atIso;
+  }
+  return map;
+}
+
+function firstResponseHighlightMetaFromMap(highlightMap = {}) {
+  const atIso = String(highlightMap?.first || '').trim();
+  return {
+    adminFirstResponseHighlight: !!atIso,
+    adminFirstResponseHighlightAtIso: atIso
+  };
+}
+
 function setReflectionThemeAdminHighlight(entry, responseId, highlighted, nowIso, fallbackText = '', fallbackAuthor = '') {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     return { entry, changed: false };
@@ -2748,12 +2838,17 @@ async function toggleReflectionAdminHighlight(db, dateKey, responseId) {
     return { ok: false, status: 404, error: 'Reflection themes not found for date' };
   }
   const themeData = themeSnap.data() || {};
+  const highlightMap = resolveReflectionAdminHighlightMap(themeData);
 
   if (rid === 'first') {
-    const nextHighlighted = themeData.adminFirstResponseHighlight !== true;
+    const currentlyHighlighted = !!(highlightMap.first || themeData.adminFirstResponseHighlight === true);
+    const nextHighlighted = !currentlyHighlighted;
+    if (nextHighlighted) highlightMap.first = nowIso;
+    else delete highlightMap.first;
     const patch = {
       updatedAtIso: nowIso,
-      adminFirstResponseHighlight: nextHighlighted
+      adminFirstResponseHighlight: nextHighlighted,
+      adminHighlightByResponseId: highlightMap
     };
     if (nextHighlighted) patch.adminFirstResponseHighlightAtIso = nowIso;
     else {
@@ -2783,7 +2878,8 @@ async function toggleReflectionAdminHighlight(db, dateKey, responseId) {
           (strip) => reflectionThemeMatchesResponse(strip, rid) && strip.adminHighlight === true
         )
       : entry.adminHighlight === true;
-    nextHighlighted = !currentlyHighlighted;
+    const mapHighlighted = !!String(highlightMap[rid] || '').trim();
+    nextHighlighted = !(currentlyHighlighted || mapHighlighted);
     return setReflectionThemeAdminHighlight(entry, rid, nextHighlighted, nowIso).entry;
   });
 
@@ -2791,7 +2887,15 @@ async function toggleReflectionAdminHighlight(db, dateKey, responseId) {
     return { ok: false, status: 404, error: 'Reflection not found on wall for date' };
   }
 
-  await themeRef.set({ themes: nextThemes, updatedAtIso: nowIso }, { merge: true });
+  if (nextHighlighted) highlightMap[rid] = nowIso;
+  else delete highlightMap[rid];
+
+  const patchedThemes = applyAdminHighlightsToThemes(nextThemes, highlightMap);
+
+  await themeRef.set(
+    { themes: patchedThemes, adminHighlightByResponseId: highlightMap, updatedAtIso: nowIso },
+    { merge: true }
+  );
   return {
     ok: true,
     appDateKey,
@@ -10851,7 +10955,12 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
       return res.json({ success: true, found: false, appDateKey, themes: [] });
     }
     const data = themeDoc.data() || {};
-    const themes = dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []);
+    const highlightMap = resolveReflectionAdminHighlightMap(data);
+    const firstHighlightMeta = firstResponseHighlightMetaFromMap(highlightMap);
+    let themes = applyAdminHighlightsToThemes(
+      dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []),
+      highlightMap
+    );
     const first_response = String(data.first_response || '').replace(/\s+/g, ' ').trim();
     const user_name = String(data.user_name || FIRST_RESPONSE_USER_NAME).trim() || FIRST_RESPONSE_USER_NAME;
     if (!themes.length && !first_response) {
@@ -10890,8 +10999,9 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
       first_response,
       user_name,
       firstResponseHeartCount: Math.max(0, Number(data.firstResponseHeartCount) || 0),
-      adminFirstResponseHighlight: data.adminFirstResponseHighlight === true,
-      adminFirstResponseHighlightAtIso: String(data.adminFirstResponseHighlightAtIso || '').trim() || null,
+      adminFirstResponseHighlight: firstHighlightMeta.adminFirstResponseHighlight,
+      adminFirstResponseHighlightAtIso: firstHighlightMeta.adminFirstResponseHighlightAtIso || null,
+      adminHighlightByResponseId: highlightMap,
       reflectionPrompt: String(data.reflectionPrompt || data.communityPrompt || '').trim(),
       responseCount: Number(data.responseCount) || 0,
       provider: data.provider || null,
@@ -11228,6 +11338,17 @@ app.post('/api/reflection-themes/generate', async (req, res) => {
       if (firstResponseHeartCount > 0) themePayload.firstResponseHeartCount = firstResponseHeartCount;
       if (priorThemeData.adminFirstResponseHearted === true) {
         themePayload.adminFirstResponseHearted = true;
+      }
+      const priorHighlightMap = resolveReflectionAdminHighlightMap(priorThemeData);
+      if (Object.keys(priorHighlightMap).length) {
+        themePayload.adminHighlightByResponseId = priorHighlightMap;
+        const firstHighlightMeta = firstResponseHighlightMetaFromMap(priorHighlightMap);
+        if (firstHighlightMeta.adminFirstResponseHighlight) {
+          themePayload.adminFirstResponseHighlight = true;
+          themePayload.adminFirstResponseHighlightAtIso = firstHighlightMeta.adminFirstResponseHighlightAtIso;
+        }
+        themes = applyAdminHighlightsToThemes(themes, priorHighlightMap);
+        themePayload.themes = themes;
       }
     }
     try {
