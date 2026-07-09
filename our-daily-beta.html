@@ -70,6 +70,22 @@
     };
 
     console.log('[ODQ perf] Launch report', report);
+    var totalMs =
+      report.intervalsMs.wallMsSinceNativeLaunch != null
+        ? report.intervalsMs.wallMsSinceNativeLaunch
+        : report.intervalsMs.totalToNativeSplashHide;
+    console.log(
+      '[ODQ perf] launch summary: parse=' +
+        (report.intervalsMs.scriptsParse != null ? report.intervalsMs.scriptsParse : '?') +
+        'ms firebase=' +
+        (report.intervalsMs.firebaseInit != null ? report.intervalsMs.firebaseInit : '?') +
+        'ms sync=' +
+        (report.intervalsMs.initToLiveSyncDone != null ? report.intervalsMs.initToLiveSyncDone : '?') +
+        'ms total=' +
+        (totalMs != null ? totalMs : '?') +
+        'ms path=' +
+        quotePath
+    );
     console.table(
       Object.keys(report.intervalsMs).map(function (k) {
         return { interval: k, ms: report.intervalsMs[k] };
@@ -2701,9 +2717,8 @@ try {
   <script src="lib/quilt-renderer-v2.js"></script>
   <script src="lib/app-config.js"></script>
   <script src="lib/speaker-cutout-render.js?v=31"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=131"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=132"></script>
   <script src="lib/simplified-quilt-app-quilt.js?v=67"></script>
-  <script src="lib/simplified-quilt-app-share.js?v=44"></script>
   <script src="lib/simplified-quilt-app-feature-feedback.js?v=4"></script>
   <script src="lib/simplified-quilt-app-mood.js"></script>
   <script src="lib/simplified-quilt-app-quote-ui.js"></script>
@@ -3155,12 +3170,11 @@ try {
       }
 
       const SimplifiedQuiltAppV2Share = globalThis.SimplifiedQuiltAppV2Share;
-      if (typeof SimplifiedQuiltAppV2Share !== 'function') {
-        throw new Error('lib/simplified-quilt-app-share.js must load before the app module');
-      }
-      for (const name of Object.getOwnPropertyNames(SimplifiedQuiltAppV2Share.prototype)) {
-        if (name === 'constructor') continue;
-        SimplifiedQuiltAppV2.prototype[name] = SimplifiedQuiltAppV2Share.prototype[name];
+      if (typeof SimplifiedQuiltAppV2Share === 'function') {
+        for (const name of Object.getOwnPropertyNames(SimplifiedQuiltAppV2Share.prototype)) {
+          if (name === 'constructor') continue;
+          SimplifiedQuiltAppV2.prototype[name] = SimplifiedQuiltAppV2Share.prototype[name];
+        }
       }
 
       const SimplifiedQuiltAppV2FeatureFeedback = globalThis.SimplifiedQuiltAppV2FeatureFeedback;
@@ -3410,9 +3424,18 @@ try {
         window.addTestBlock = () => app.handleTestAddBlock();
         window.showMyPiece = () => app.handleShowMyPiece();
         window.switchUser = () => app.handleTestDifferentUser();
-        window.shareQuilt = () => app.handleShare();
-        window.shareQuiltStoryExperimental = () => app.handleShareStoryExperimental();
-        window.shareQuiltPostLayoutExperimental = () => app.handleSharePostLayoutExperimental();
+        window.shareQuilt = async () => {
+          await app.loadDeferredShareSlice?.();
+          return app.handleShare?.();
+        };
+        window.shareQuiltStoryExperimental = async () => {
+          await app.loadDeferredShareSlice?.();
+          return app.handleShareStoryExperimental?.();
+        };
+        window.shareQuiltPostLayoutExperimental = async () => {
+          await app.loadDeferredShareSlice?.();
+          return app.handleSharePostLayoutExperimental?.();
+        };
         window.resetQuilt = () => app.handleResetQuilt();
         window.resetQuiltMoodSelection = () => app.resetQuiltMoodSelection();
         window.createArchive = () => app.handleCreateArchive();
