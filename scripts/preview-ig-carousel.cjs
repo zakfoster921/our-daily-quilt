@@ -31,9 +31,6 @@ async function main() {
     await page.waitForFunction(() => !!window.app && window.app._portalQuiltLoaded === true, undefined, {
       timeout: 180000
     });
-    await page.evaluate(() => {
-      globalThis.ODQ_DEBUG_CAROUSEL_SPEAKER_LAYOUT = true;
-    });
 
     const result = await page.evaluate(async ({ dateKey }) => {
       const app = window.app;
