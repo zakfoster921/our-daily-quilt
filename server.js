@@ -65,6 +65,7 @@ const {
 const {
   REFLECTION_MODERATION_BODY_MAX,
   isShortReflectionForSplit,
+  reflectionStripsEligibleForSplit,
   buildReflectionModerationPrompt,
   buildReflectionCurationPrompt
 } = require('./lib/reflection-prompts');
@@ -2244,6 +2245,28 @@ function normalizeReflectionWallThemeEntry(entry) {
   return { text, author: '' };
 }
 
+/** Long reflections cannot share a split card — expand to separate solo patches. */
+function flattenIneligibleReflectionSplitThemes(themes) {
+  const result = [];
+  (Array.isArray(themes) ? themes : []).forEach((entry) => {
+    const normalized = normalizeReflectionWallThemeEntry(entry);
+    if (!normalized) return;
+    if (normalized.split && Array.isArray(normalized.strips)) {
+      if (reflectionStripsEligibleForSplit(normalized.strips)) {
+        result.push(normalized);
+        return;
+      }
+      normalized.strips.forEach((strip) => {
+        const solo = normalizeReflectionWallStripEntry(strip);
+        if (solo) result.push(solo);
+      });
+      return;
+    }
+    result.push(normalized);
+  });
+  return dedupeReflectionWallThemes(result);
+}
+
 function buildReflectionWallThemeEntry(data) {
   const text = reflectionResponseWallBody(data);
   if (!text) return null;
@@ -2318,7 +2341,14 @@ function pairThemesPreservingOrder(themes, shouldPair) {
       }
     }
     if (pairIdx >= 0) {
-      result.push({ split: true, strips: [entry, normalizedList[pairIdx]] });
+      const other = normalizedList[pairIdx];
+      const strips = [entry, other];
+      if (reflectionStripsEligibleForSplit(strips)) {
+        result.push({ split: true, strips });
+      } else {
+        result.push(entry);
+        result.push(other);
+      }
       used.add(i);
       used.add(pairIdx);
     } else {
@@ -2458,8 +2488,13 @@ function prepareThemesForExactMergeAndShortPair(themes) {
           const solo = normalizeReflectionWallStripEntry(strip);
           if (solo) soloPool.push(solo);
         });
-      } else {
+      } else if (reflectionStripsEligibleForSplit(entry.strips)) {
         preservedSplits.push(entry);
+      } else {
+        entry.strips.forEach((strip) => {
+          const solo = normalizeReflectionWallStripEntry(strip);
+          if (solo) soloPool.push(solo);
+        });
       }
     } else {
       soloPool.push(entry);
@@ -2491,7 +2526,9 @@ function buildSplitPairThemesFromCuration(themes, orderedIds) {
     (entry) => !Array.isArray(entry.mergedResponseIds) || !entry.mergedResponseIds.length
   );
   const shortPaired = pairShortSoloThemesPreservingOrder(pairable);
-  return sortThemesBySubmissionOrder([...preservedSplits, ...lockedMerged, ...shortPaired], orderedIds);
+  return flattenIneligibleReflectionSplitThemes(
+    sortThemesBySubmissionOrder([...preservedSplits, ...lockedMerged, ...shortPaired], orderedIds)
+  );
 }
 
 function dedupeReflectionWallThemes(themes) {
@@ -3129,9 +3166,11 @@ async function curateReflectionResponsesWithAi({ reflectionPrompt, items }) {
   }
   const itemById = new Map(list.map((item) => [item.id, item]));
   const themes = buildSplitPairThemesFromCuration(
-    groups
-      .map((group) => buildReflectionWallThemeFromCurationGroup(group, itemById, validIds))
-      .filter(Boolean),
+    groups.flatMap((group) => {
+      const entry = buildReflectionWallThemeFromCurationGroup(group, itemById, validIds);
+      if (!entry) return [];
+      return flattenIneligibleReflectionSplitThemes([entry]);
+    }),
     validIds
   );
   const visibleIds = groups.flat();
@@ -4862,7 +4901,7 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
 
           let themesChanged = false;
           const sweepCtx = { responsesById, state, nowIso, handledResponseIds, queueBatchSet };
-          const nextThemes = themes.map((entry) => {
+          let nextThemes = themes.map((entry) => {
             if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
             if (!reflectionThemeEntryIsRenderable(entry)) return entry;
 
@@ -4887,6 +4926,14 @@ async function runHeartSweep({ trigger = 'cron' } = {}) {
             if (result.changed) themesChanged = true;
             return result.entry;
           });
+
+          const flattened = flattenIneligibleReflectionSplitThemes(nextThemes);
+          const themesLayoutKey = (entries) =>
+            (Array.isArray(entries) ? entries : []).map(reflectionWallThemeEntryKey).join('\n');
+          if (themesLayoutKey(flattened) !== themesLayoutKey(nextThemes)) {
+            themesChanged = true;
+            nextThemes = flattened;
+          }
 
           const firstResponse = String(data.first_response || '').replace(/\s+/g, ' ').trim();
           const patch = {};
