@@ -2224,6 +2224,12 @@ function normalizeReflectionWallStripEntry(entry) {
   const base = responseId ? { text, author, responseId } : { text, author };
   if (heartCount > 0) base.heartCount = heartCount;
   if (mergedResponseIds.length) base.mergedResponseIds = mergedResponseIds;
+  if (entry.adminHighlight === true) {
+    base.adminHighlight = true;
+    const adminHighlightAtIso = String(entry.adminHighlightAtIso || '').trim();
+    if (adminHighlightAtIso) base.adminHighlightAtIso = adminHighlightAtIso;
+  }
+  if (entry.adminHearted === true) base.adminHearted = true;
   return base;
 }
 
@@ -10884,6 +10890,8 @@ app.get('/api/reflection-themes/:dateKey', async (req, res) => {
       first_response,
       user_name,
       firstResponseHeartCount: Math.max(0, Number(data.firstResponseHeartCount) || 0),
+      adminFirstResponseHighlight: data.adminFirstResponseHighlight === true,
+      adminFirstResponseHighlightAtIso: String(data.adminFirstResponseHighlightAtIso || '').trim() || null,
       reflectionPrompt: String(data.reflectionPrompt || data.communityPrompt || '').trim(),
       responseCount: Number(data.responseCount) || 0,
       provider: data.provider || null,
