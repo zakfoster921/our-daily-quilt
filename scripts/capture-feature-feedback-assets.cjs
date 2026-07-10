@@ -229,7 +229,8 @@ async function installCaptureHelpers(page) {
             card.style.setProperty('--quilt-user-piece-color', color);
             card.style.setProperty('--quilt-color-swatch-tab', '#eef0ff');
             if (label) {
-              label.innerHTML = '<span class="quilt-user-shape-card__color-name">Worn Patina</span> #4040E5';
+              label.innerHTML =
+                '<span class="quilt-user-shape-card__color-name">Worn Patina</span><span class="quilt-user-shape-card__color-hex">#4040E5</span>';
             }
             wrap.hidden = false;
             wrap.removeAttribute('hidden');
