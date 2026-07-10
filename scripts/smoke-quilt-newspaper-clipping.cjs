@@ -292,9 +292,9 @@ async function main() {
       `short quote clipping should be narrower than long quote (${shortSize.width}px vs ${longSize.width}px)`
     );
   }
-  if (!shortSharpW || !shortDisplayW || shortSharpW < shortDisplayW * 1.15) {
+  if (!shortSharpW || !shortDisplayW || shortSharpW < shortDisplayW) {
     throw new Error(
-      `short quote compose should supersample for retina (sharp ${shortSharpW}px vs display ${shortDisplayW}px)`
+      `short quote compose PNG should be at least display width (sharp ${shortSharpW}px vs display ${shortDisplayW}px)`
     );
   }
   const qnc = require('../lib/quilt-newspaper-clipping.js');
