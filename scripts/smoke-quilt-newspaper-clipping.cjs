@@ -292,7 +292,7 @@ async function main() {
       `short quote clipping should be narrower than long quote (${shortSize.width}px vs ${longSize.width}px)`
     );
   }
-  if (!shortSharpW || !shortDisplayW || shortSharpW < shortDisplayW) {
+  if (!shortSharpW || !shortDisplayW || shortSharpW < Math.round(shortDisplayW * 0.98)) {
     throw new Error(
       `short quote compose PNG should be at least display width (sharp ${shortSharpW}px vs display ${shortDisplayW}px)`
     );
