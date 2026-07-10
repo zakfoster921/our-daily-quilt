@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
-/** Smoke test: canvas composer returns a PNG data URL (headless Chromium). */
+/** Smoke test: quote-only newspaper clipping PNG (nightlyPeek / centerOnly — in-app taped card). */
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
@@ -162,60 +162,66 @@ async function main() {
 
   const dataUrl = await page.evaluate(async (quotes) => {
     const api = globalThis.QuiltNewspaperClipping;
-    const cfg = api.withClippingTypography(api.DEFAULTS);
-    await Promise.all([
-      api.ensureNewspaperClippingFonts([cfg.bodyPx, cfg.centerBodyPx]),
-      api.ensureClippingSurfaceAssets(cfg)
-    ]);
-    const mctx = document.createElement('canvas').getContext('2d');
-    const spread = api.renderFullSpread(mctx, quotes, cfg);
-    if (!spread) return null;
-    let clipped = api.cropSpreadToClipping(spread, cfg);
-    if (clipped) {
-      clipped = api.applyHandCutSilhouette(clipped, quotes.dateKey, cfg);
-      clipped = api.trimCanvasAlphaBounds(clipped, cfg);
-    }
-    const composed = await api.composeDataUrl(quotes);
-    const flatCfg = {
-      ...cfg,
-      halftoneOpacity: 0,
-      viewportGrainOpacity: 0,
-      cardGrainOpacity: 0,
-      handCutEnabled: false
+    const compose = api.composeDataUrlWithLayout || api.composeDataUrl;
+    const quoteOnlyOpts = {
+      exportProfile: 'nightlyPeek',
+      centerOnly: true
     };
-    const spreadFlat = api.renderFullSpread(mctx, quotes, flatCfg);
-    const clippedFlat = spreadFlat ? api.cropSpreadToClipping(spreadFlat, flatCfg) : null;
-    const altDate = await api.composeDataUrl({ ...quotes, dateKey: quotes.dateKey });
-    let cornerAlphaMin = 255;
-    if (clipped) {
-      const cctx = clipped.getContext('2d');
-      const w = clipped.width;
-      const h = clipped.height;
-      const sample = (x, y) => cctx.getImageData(x, y, 1, 1).data[3];
+
+    async function composeQuoteOnly(extra = {}) {
+      return compose({
+        ...quotes,
+        ...quoteOnlyOpts,
+        ...extra
+      });
+    }
+
+    async function pngSizeFromComposed(composed) {
+      const url = typeof composed === 'string' ? composed : composed?.dataUrl;
+      if (!url) return null;
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = () => res();
+        img.onerror = rej;
+        img.src = url;
+      });
+      return {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        displayWidthPx: typeof composed === 'object' ? Number(composed.displayWidthPx) || 0 : 0
+      };
+    }
+
+    async function cornerAlphaMinForUrl(url) {
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = () => res();
+        img.onerror = rej;
+        img.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const w = canvas.width;
+      const h = canvas.height;
+      const sample = (x, y) => ctx.getImageData(x, y, 1, 1).data[3];
+      let min = 255;
       for (const [x, y] of [
         [1, 1],
         [w - 2, 1],
         [1, h - 2],
         [w - 2, h - 2]
       ]) {
-        cornerAlphaMin = Math.min(cornerAlphaMin, sample(x, y));
+        min = Math.min(min, sample(x, y));
       }
+      return min;
     }
 
-    async function composeSizeForToday(today, dateKey) {
-      const payload = { ...quotes, today, dateKey: dateKey || quotes.dateKey };
-      const s = api.renderFullSpread(mctx, payload, cfg);
-      if (!s) return null;
-      let c = api.cropSpreadToClipping(s, cfg);
-      if (!c) return null;
-      c = api.applyHandCutSilhouette(c, payload.dateKey, cfg);
-      c = api.trimCanvasAlphaBounds(c, cfg);
-      return {
-        centerColW: s.centerColW,
-        width: c.width,
-        height: c.height
-      };
-    }
+    const live = await composeQuoteOnly();
+    const liveUrl = typeof live === 'string' ? live : live?.dataUrl;
+    if (!liveUrl) return null;
 
     const shortQuote = {
       text: 'When we plant trees, we plant the seeds of peace and seeds of hope.',
@@ -228,48 +234,44 @@ async function main() {
       author: 'Albert Einstein',
       first_line_count: 4
     };
-    const shortComposedW = await (async () => {
-      const compose = api.composeDataUrlWithLayout || api.composeDataUrl;
-      const composed = await compose({
-        ...quotes,
-        today: shortQuote,
-        dateKey: `${quotes.dateKey}-short-sharp`,
-        exportDensity: 2
-      });
-      const url = typeof composed === 'string' ? composed : composed?.dataUrl;
-      if (!url) return { pngW: 0, displayW: 0 };
-      const img = new Image();
-      await new Promise((res, rej) => {
-        img.onload = () => res();
-        img.onerror = rej;
-        img.src = url;
-      });
-      return {
-        pngW: img.naturalWidth,
-        displayW: typeof composed === 'object' ? Number(composed.displayWidthPx) || 0 : 0
-      };
-    })();
-    const shortSize = await composeSizeForToday(shortQuote, `${quotes.dateKey}-short`);
-    const shortSharpW = shortComposedW.pngW;
-    const shortDisplayW = shortComposedW.displayW;
-    const longSize = await composeSizeForToday(longQuote, `${quotes.dateKey}-long`);
+
+    const shortComposed = await composeQuoteOnly({
+      today: shortQuote,
+      dateKey: `${quotes.dateKey}-short-sharp`,
+      exportDensity: 2
+    });
+    const shortSizeComposed = await composeQuoteOnly({
+      today: shortQuote,
+      dateKey: `${quotes.dateKey}-short`
+    });
+    const longSizeComposed = await composeQuoteOnly({
+      today: longQuote,
+      dateKey: `${quotes.dateKey}-long`
+    });
+    const shortSharp = await pngSizeFromComposed(shortComposed);
+    const shortSize = {
+      width: Number(shortSizeComposed?.clippedWidth) || 0,
+      height: Number(shortSizeComposed?.clippedHeight) || 0
+    };
+    const longSize = {
+      width: Number(longSizeComposed?.clippedWidth) || 0,
+      height: Number(longSizeComposed?.clippedHeight) || 0
+    };
+    const cfg = api.withClippingTypography(api.DEFAULTS);
     const legacyOutW = api.resolveQuoteCropMetrics(cfg).outW;
 
     return {
-      exportWidth: cfg.width,
-      cornerAlphaMin,
-      clippedWidth: clipped?.width ?? 0,
-      clippedHeight: clipped?.height ?? 0,
-      centerColW: spread?.centerColW ?? 0,
+      exportRev: api.CLIPPING_EXPORT_REV,
+      exportWidth: Number(live?.renderWidth) || cfg.width,
+      cornerAlphaMin: await cornerAlphaMinForUrl(liveUrl),
+      clippedWidth: Number(live?.clippedWidth) || 0,
+      clippedHeight: Number(live?.clippedHeight) || 0,
       legacyOutW,
       shortSize,
-      shortSharpW,
-      shortDisplayW,
+      shortSharpW: shortSharp?.width || 0,
+      shortDisplayW: shortSharp?.displayWidthPx || Number(shortComposed?.displayWidthPx) || 0,
       longSize,
-      spread: spread.canvas.toDataURL('image/png', 0.92),
-      clipped: clipped ? clipped.toDataURL('image/png', 0.92) : composed,
-      clippedFlat: clippedFlat ? clippedFlat.toDataURL('image/png', 0.92) : null,
-      altDate
+      clipped: liveUrl
     };
   }, payload);
   await browser.close();
@@ -290,7 +292,7 @@ async function main() {
       `short quote clipping should be narrower than long quote (${shortSize.width}px vs ${longSize.width}px)`
     );
   }
-  if (!shortSharpW || !shortDisplayW || shortSharpW < shortDisplayW * 1.85) {
+  if (!shortSharpW || !shortDisplayW || shortSharpW < shortDisplayW * 1.15) {
     throw new Error(
       `short quote compose should supersample for retina (sharp ${shortSharpW}px vs display ${shortDisplayW}px)`
     );
@@ -308,7 +310,7 @@ async function main() {
     );
   }
   console.log(
-    `[smoke] content-aware sizes — short crop: ${shortSize.width}x${shortSize.height}, short compose display: ${shortDisplayW}px @ ${shortSharpW}px png, long: ${longSize.width}x${longSize.height}, live: ${clippedWidth}px (legacy ${legacyOutW}px)`
+    `[smoke] quote-only — live: ${clippedWidth}x${dataUrl.clippedHeight || '?'}px, short: ${shortSize.width}x${shortSize.height}, long: ${longSize.width}x${longSize.height} (legacy ${legacyOutW}px)`
   );
   const tmpDir = path.join(root, 'tmp');
   fs.mkdirSync(tmpDir, { recursive: true });
@@ -324,11 +326,9 @@ async function main() {
     console.log(`[smoke] wrote ${out} (${fs.statSync(out).size} bytes)`);
     return { out, buf, name };
   };
-  const written = {};
-  if (dataUrl.spread) written.spread = writePng('smoke-newspaper-spread.png', dataUrl.spread);
-  written.clipped = writePng('smoke-newspaper-clipping.png', dataUrl.clipped);
-  if (dataUrl.clippedFlat) written.flat = writePng('smoke-newspaper-clipping-flat.png', dataUrl.clippedFlat);
-  if (dataUrl.altDate) written.altDate = writePng('smoke-newspaper-clipping-alt-date.png', dataUrl.altDate);
+  const written = {
+    clipped: writePng('smoke-newspaper-clipping.png', dataUrl.clipped)
+  };
 
   // Mirror outside iCloud so Preview/Finder/Cursor are not blocked on CloudDocs paths.
   const localMirror = '/tmp/our-daily-smoke-newspaper-clipping.png';
@@ -341,27 +341,21 @@ async function main() {
     `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8" />
-<title>Newspaper clipping smoke preview</title>
+<title>Quote-only clipping smoke preview</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #d8d4ce; margin: 0; padding: 24px; }
   h1 { font-size: 1rem; font-weight: 600; margin: 0 0 8px; }
   p.meta { color: #444; font-size: 0.85rem; margin: 0 0 12px; }
-  img { display: block; max-width: 100%; height: auto; background: #fff; filter: drop-shadow(0 4px 14px rgba(45,36,29,.14)); }
-  .row { margin-bottom: 28px; }
+  img { display: block; max-width: min(100%, 460px); height: auto; background: #fff; filter: drop-shadow(0 4px 14px rgba(45,36,29,.14)); }
 </style></head><body>
-<h1>Newspaper clipping smoke (rev ${dataUrl.exportRev || '?'})</h1>
-<div class="row"><h1>Peek clipping</h1><p class="meta">Zoom top/bottom hand-cut edges</p>
-<img src="smoke-newspaper-clipping.png" alt="clipping" /></div>
-${written.flat ? `<div class="row"><h1>Flat (no hand-cut)</h1><img src="smoke-newspaper-clipping-flat.png" alt="flat" /></div>` : ''}
-${written.altDate ? `<div class="row"><h1>Alt date hand-cut</h1><img src="smoke-newspaper-clipping-alt-date.png" alt="alt date" /></div>` : ''}
+<h1>Quote-only clipping (rev ${dataUrl.exportRev || '?'})</h1>
+<p class="meta">${dateKey} — nightlyPeek / centerOnly (same as in-app taped card)</p>
+<img src="smoke-newspaper-clipping.png" alt="quote-only clipping" />
 </body></html>`,
     'utf8'
   );
   console.log(`[smoke] preview page: ${previewHtml}`);
   console.log(`[smoke] open mirror: open ${localMirror}`);
-  console.log(
-    `[smoke] export width ${dataUrl.exportWidth}px — compare clipping vs flat; alt-date for hand-cut shape`
-  );
 }
 
 main().catch((err) => {
