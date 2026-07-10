@@ -4,27 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const {
   artistSlugFromName,
+  enrichEpisodesFromRss,
+  guessArtistNameFromEpisodeTitle,
+  isPlayableAudio,
   normalizeEpisodeRecord,
   parseSeamsideRssItems
 } = require('./lib/seamside-episode-utils.cjs');
 
 const RSS_URL = 'https://www.zakfoster.com/seamside?format=rss';
 const OUT_PATH = path.resolve(__dirname, '..', 'data', 'seamside-episodes-draft.json');
-
-function guessArtistNameFromEpisodeTitle(title) {
-  const t = String(title || '').trim();
-  const withMatch = t.match(/\bwith(?:\s+(?:textile\s+artist|quilt(?:er)?|painter|performance-quilter|quilt\s+curator|quilt\s+advocate))?\s+(.+)$/i);
-  if (withMatch) return withMatch[1].replace(/\s+/g, ' ').trim();
-  return '';
-}
-
-function isPlayableAudio(item) {
-  const url = String(item.audioUrl || '').trim();
-  if (!url) return false;
-  const type = String(item.audioType || '').toLowerCase();
-  if (type.startsWith('audio/')) return true;
-  return /\.(mp3|m4a)(\?|$)/i.test(url);
-}
 
 async function main() {
   const res = await fetch(RSS_URL);

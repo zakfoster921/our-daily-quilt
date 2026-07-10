@@ -7,13 +7,12 @@
  * 1. Notion database NOTION_SEAMSIDE_EPISODES_DATABASE_ID (when set)
  * 2. data/seamside-episodes.json
  *
- * Notion columns (add to SEAMSIDE Episodes DB):
- * - artist_name (title or rich_text)
- * - episode_title (rich_text)
- * - apple_podcasts_url (url)
- * - audio_url (url)
- * - episode_image_url (url)
- * - active (checkbox)
+ * Notion columns (SEAMSIDE > ODQ database):
+ * - Name (title) — artist name, matched to quote author
+ * - ur (url) — Apple Podcasts episode link
+ * Optional later: episode_title, audio_url, episode_image_url, active
+ *
+ * When audio_url is empty, sync fills it from zakfoster.com/seamside RSS by artist name.
  *
  * Editorial: mark podcast quotes with submitted_via = SEAMSIDE in the quotes DB.
  */
@@ -41,10 +40,19 @@ try {
 }
 
 const admin = require('firebase-admin');
-const { artistSlugFromName, normalizeEpisodeRecord } = require('./lib/seamside-episode-utils.cjs');
+const {
+  artistSlugFromName,
+  enrichEpisodesFromRss,
+  normalizeEpisodeRecord,
+  notionDatabaseIdFromUrl,
+  parseSeamsideRssItems
+} = require('./lib/seamside-episode-utils.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
+const RSS_URL = 'https://www.zakfoster.com/seamside?format=rss';
 const JSON_PATH = path.resolve(__dirname, '..', 'data', 'seamside-episodes.json');
+/** SEAMSIDE > ODQ artists database (Name + ur). */
+const DEFAULT_NOTION_SEAMSIDE_DB_ID = '39940e02-c2c6-80e0-8d33-e718f1d2d73b';
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -155,11 +163,15 @@ async function notionQueryAll(databaseId, notionToken) {
 
 function parseNotionEpisodePage(page) {
   const props = page?.properties || {};
-  const artistName = textFromAnyNotionProp(findProp(props, 'artist_name', 'Artist name', 'Artist Name', 'artistName'));
+  const artistName = textFromAnyNotionProp(
+    findProp(props, 'Name', 'name', 'artist_name', 'Artist name', 'Artist Name', 'artistName')
+  );
   const episodeTitle = textFromAnyNotionProp(
     findProp(props, 'episode_title', 'Episode title', 'Episode Title', 'episodeTitle')
   );
-  const applePodcastsUrl = getUrl(findProp(props, 'apple_podcasts_url', 'Apple Podcasts URL', 'applePodcastsUrl'));
+  const applePodcastsUrl =
+    getUrl(findProp(props, 'ur', 'UR', 'url', 'URL', 'apple_podcasts_url', 'Apple Podcasts URL', 'applePodcastsUrl')) ||
+    '';
   const audioUrl = getUrl(findProp(props, 'audio_url', 'Audio URL', 'audioUrl'));
   const episodeImageUrl = getUrl(findProp(props, 'episode_image_url', 'Episode image URL', 'episodeImageUrl'));
   const active = getCheckbox(findProp(props, 'active', 'Active'), true);
@@ -175,6 +187,24 @@ function parseNotionEpisodePage(page) {
   });
 }
 
+async function fetchSeamsideRssItems() {
+  try {
+    const res = await fetch(RSS_URL);
+    if (!res.ok) throw new Error(`RSS ${res.status}`);
+    const xml = await res.text();
+    return parseSeamsideRssItems(xml);
+  } catch (err) {
+    console.warn('[seamside-sync] RSS enrich skipped:', err?.message || err);
+    return [];
+  }
+}
+
+function resolveNotionDatabaseId() {
+  const fromEnv = notionDatabaseIdFromUrl(process.env.NOTION_SEAMSIDE_EPISODES_DATABASE_ID || '');
+  if (fromEnv) return fromEnv;
+  return DEFAULT_NOTION_SEAMSIDE_DB_ID;
+}
+
 function loadJsonEpisodes() {
   if (!fs.existsSync(JSON_PATH)) return [];
   const parsed = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
@@ -183,29 +213,40 @@ function loadJsonEpisodes() {
 }
 
 async function loadEpisodes() {
-  const notionDb = String(process.env.NOTION_SEAMSIDE_EPISODES_DATABASE_ID || '').trim();
+  const notionDb = resolveNotionDatabaseId();
   const notionToken = String(process.env.NOTION_TOKEN || '').trim();
+  let rows = [];
+  let source = 'json';
   if (notionDb && notionToken) {
     const pages = await notionQueryAll(notionDb, notionToken);
-    const rows = pages.map(parseNotionEpisodePage).filter(Boolean);
-    console.log(`[seamside-sync] loaded ${rows.length} rows from Notion`);
-    return rows;
+    rows = pages.map(parseNotionEpisodePage).filter(Boolean);
+    source = 'notion';
+    console.log(`[seamside-sync] loaded ${rows.length} rows from Notion (${notionDb})`);
+  } else {
+    rows = loadJsonEpisodes();
+    console.log(`[seamside-sync] loaded ${rows.length} rows from ${JSON_PATH}`);
   }
-  const rows = loadJsonEpisodes();
-  console.log(`[seamside-sync] loaded ${rows.length} rows from ${JSON_PATH}`);
-  return rows;
+  const rssItems = await fetchSeamsideRssItems();
+  if (rssItems.length) {
+    const before = rows.filter((r) => r.audioUrl).length;
+    rows = enrichEpisodesFromRss(rows, rssItems);
+    const after = rows.filter((r) => r.audioUrl).length;
+    console.log(`[seamside-sync] RSS enrich: ${before} → ${after} rows with audio`);
+  }
+  return { rows, source };
 }
 
 async function main() {
   const db = initFirebase();
-  const episodes = await loadEpisodes();
-  if (!episodes.length) {
+  const { rows: episodes, source } = await loadEpisodes();
+  const rows = episodes.filter((row) => row && row.artistName);
+  if (!rows.length) {
     console.warn('[seamside-sync] no episodes to sync');
     return;
   }
   const batch = db.batch();
   const now = new Date().toISOString();
-  for (const episode of episodes) {
+  for (const episode of rows) {
     const docRef = db.collection('seamsideEpisodes').doc(episode.artistSlug);
     batch.set(
       docRef,
@@ -218,13 +259,13 @@ async function main() {
         episode_image_url: episode.episodeImageUrl,
         active: episode.active !== false,
         updated_at: now,
-        source: String(process.env.NOTION_SEAMSIDE_EPISODES_DATABASE_ID || '').trim() ? 'notion' : 'json'
+        source
       },
       { merge: true }
     );
   }
   await batch.commit();
-  console.log(`[seamside-sync] wrote ${episodes.length} docs to seamsideEpisodes`);
+  console.log(`[seamside-sync] wrote ${rows.length} docs to seamsideEpisodes`);
 }
 
 if (require.main === module) {
