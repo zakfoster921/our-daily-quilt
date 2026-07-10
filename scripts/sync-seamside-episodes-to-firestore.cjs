@@ -9,7 +9,7 @@
  *
  * Notion columns (SEAMSIDE > ODQ database):
  * - Name (title) — artist name, matched to quote author
- * - ur (url) — Apple Podcasts episode link
+ * - url (url) — Apple Podcasts episode link
  * Optional later: episode_title, audio_url, episode_image_url, active
  *
  * When audio_url is empty, sync fills it from zakfoster.com/seamside RSS by artist name.
@@ -51,7 +51,7 @@ const {
 const NOTION_API_VERSION = '2022-06-28';
 const RSS_URL = 'https://www.zakfoster.com/seamside?format=rss';
 const JSON_PATH = path.resolve(__dirname, '..', 'data', 'seamside-episodes.json');
-/** SEAMSIDE > ODQ artists database (Name + ur). */
+/** SEAMSIDE > ODQ artists database (Name + url). */
 const DEFAULT_NOTION_SEAMSIDE_DB_ID = '39940e02-c2c6-80e0-8d33-e718f1d2d73b';
 
 function requireEnv(name) {
@@ -170,7 +170,7 @@ function parseNotionEpisodePage(page) {
     findProp(props, 'episode_title', 'Episode title', 'Episode Title', 'episodeTitle')
   );
   const applePodcastsUrl =
-    getUrl(findProp(props, 'ur', 'UR', 'url', 'URL', 'apple_podcasts_url', 'Apple Podcasts URL', 'applePodcastsUrl')) ||
+    getUrl(findProp(props, 'url', 'URL', 'ur', 'UR', 'apple_podcasts_url', 'Apple Podcasts URL', 'applePodcastsUrl')) ||
     '';
   const audioUrl = getUrl(findProp(props, 'audio_url', 'Audio URL', 'audioUrl'));
   const episodeImageUrl = getUrl(findProp(props, 'episode_image_url', 'Episode image URL', 'episodeImageUrl'));
