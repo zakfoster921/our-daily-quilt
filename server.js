@@ -9385,6 +9385,29 @@ app.post('/api/feature-feedback', limitFeatureFeedback, async (req, res) => {
   }
 });
 
+app.options('/api/feature-feedback-summary', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.get('/api/feature-feedback-summary', limitFeatureFeedback, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+    const snap = await db.collection('featureFeedbackResponses').get();
+    const responses = [];
+    snap.forEach((docSnap) => {
+      responses.push({ id: docSnap.id, ...(docSnap.data() || {}) });
+    });
+    return res.json({ success: true, total: responses.length, responses });
+  } catch (error) {
+    console.warn('GET /api/feature-feedback-summary failed:', error?.message || error);
+    return res.status(500).json({ success: false, error: error?.message || 'feature feedback summary read failed' });
+  }
+});
+
 app.options('/api/admin/quilt-mutation', (req, res) => {
   setResetApiCors(res);
   return res.status(204).end();
