@@ -86,6 +86,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /seamsideEpisodes/{artistSlug} {
+      // SEAMSIDE guest → episode map for in-app podcast widget.
+      allow read: if true;
+      allow write: if false;
+    }
+
     match /archives/{dateKey} {
       // Public archive content, written only by server/Admin SDK reset/backfill jobs.
       allow read: if true;
@@ -188,7 +194,11 @@ service cloud.firestore {
         && request.resource.data.nameKey == resource.data.nameKey
         && request.resource.data.submissionCount == resource.data.submissionCount + 1;
 
-      allow delete: if false;
+      // No sign-in on this page, so "yours" is a client-side notion (same hashed local
+      // client id used for votes) — this cannot verify the deleter actually owns the
+      // submission. The client only shows delete/edit controls for a device's own
+      // submitter doc; this rule just keeps deletes possible while submissions are open.
+      allow delete: if instructorSubmissionsOpen();
 
       match /votes/{voterId} {
         // One doc per device (voterId = hashed local client id); presence = "has voted".
@@ -200,13 +210,32 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if instructorVotingOpen();
       }
+
+      match /submitters/{submitterId} {
+        // One doc per device that has submitted this instructor (submitterId = hashed
+        // local client id). Lets the submit page show "Edit"/"Delete" for a device's own
+        // suggestions and lets a solo submitter's delete also remove the parent doc.
+        allow read: if true;
+        allow create, update: if instructorSubmissionsOpen()
+          && request.resource.data.keys().hasOnly(['link', 'note', 'submittedAtIso'])
+          && request.resource.data.link is string && request.resource.data.link.size() <= 200
+          && request.resource.data.note is string && request.resource.data.note.size() <= 300
+          && request.resource.data.submittedAtIso is string;
+        allow delete: if instructorSubmissionsOpen();
+      }
     }
 
     match /instructorLeaderboardConfig/{configId} {
-      // submissionsOpen / votingOpen flags, flipped manually in the Firebase console.
-      // No client writes; this is intentionally not editable from either NOOK page.
+      // submissionsOpen / votingOpen flags. Also editable via the Firebase console.
+      // No sign-in on this page, so this is passcode-gated in the UI only, same
+      // honor-system model as the rest of this feature (see instructorNominations) —
+      // reviewed and accepted for this use case rather than adding server-side rate
+      // limiting, since the worst case is someone flipping a toggle, not a data leak.
       allow read: if true;
-      allow write: if false;
+      allow write: if request.resource.data.keys().hasOnly(['submissionsOpen', 'votingOpen', 'updatedAtIso'])
+        && request.resource.data.submissionsOpen is bool
+        && request.resource.data.votingOpen is bool
+        && request.resource.data.updatedAtIso is string;
     }
 
     match /{collection}/{document=**} {

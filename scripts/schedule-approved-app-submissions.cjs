@@ -142,6 +142,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     speakerGuideLineSnapshot: q.speakerGuideLine.slice(0, 260),
     speakerKeywordsSnapshot: String(q.speakerKeywords ?? q.speaker_keywords ?? '').slice(0, 200),
     imageAttributionSnapshot: q.imageAttribution.slice(0, 260),
+    submittedViaSnapshot: String(q.submittedVia ?? q.submitted_via ?? '').slice(0, 40),
     assignedAt: new Date().toISOString(),
     assignedBy,
     // Keep first_response mirrored onto scheduled assignment rows.
