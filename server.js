@@ -6879,6 +6879,10 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       typeof body.quiltScreen9x16ImageData === 'string' ? body.quiltScreen9x16ImageData : '';
     const newspaperClippingImageData =
       typeof body.newspaperClippingImageData === 'string' ? body.newspaperClippingImageData : '';
+    const newspaperClippingDisplayMeta =
+      body.newspaperClippingDisplayMeta && typeof body.newspaperClippingDisplayMeta === 'object'
+        ? body.newspaperClippingDisplayMeta
+        : null;
     const moodClippingGoodImageData =
       typeof body.moodClippingGoodImageData === 'string' ? body.moodClippingGoodImageData : '';
     const moodClippingRoughImageData =
@@ -7053,6 +7057,24 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.newspaperClippingImageStorageUrl = publicUrl;
       docPayload.newspaperClippingUrl = publicUrl;
       docPayload.newspaperClippingReady = true;
+      const clippingExportRev = String(body.newspaperClippingExportRev || '').trim();
+      if (clippingExportRev) docPayload.newspaperClippingExportRev = clippingExportRev;
+      docPayload.newspaperClippingGeneratedAt = new Date().toISOString();
+      if (newspaperClippingDisplayMeta) {
+        const renderWidth = Number(newspaperClippingDisplayMeta.renderWidth);
+        const effectiveBodyDomPx = Number(newspaperClippingDisplayMeta.effectiveBodyDomPx);
+        const clippedWidth = Number(newspaperClippingDisplayMeta.clippedWidth);
+        if (Number.isFinite(renderWidth) && renderWidth > 0) {
+          docPayload.newspaperClippingRenderWidth = Math.round(renderWidth);
+        }
+        if (Number.isFinite(effectiveBodyDomPx) && effectiveBodyDomPx > 0) {
+          docPayload.newspaperClippingEffectiveBodyDomPx =
+            Math.round(effectiveBodyDomPx * 10) / 10;
+        }
+        if (Number.isFinite(clippedWidth) && clippedWidth > 0) {
+          docPayload.newspaperClippingClippedWidth = Math.round(clippedWidth);
+        }
+      }
     }
     if (contributorCloudImageData) {
       const { publicUrl } = await saveIgPng(`${basePath}/contributor-cloud.png`, contributorCloudImageData);

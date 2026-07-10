@@ -30,6 +30,20 @@ function getCompletedQuiltDateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+function newspaperClippingDisplayMetaFromCompose(composeMeta) {
+  if (!composeMeta || typeof composeMeta !== 'object') return null;
+  const renderWidth = Number(composeMeta.renderWidth);
+  const effectiveBodyDomPx = Number(composeMeta.effectiveBodyDomPx);
+  const clippedWidth = Number(composeMeta.clippedWidth);
+  const out = {};
+  if (Number.isFinite(renderWidth) && renderWidth > 0) out.renderWidth = Math.round(renderWidth);
+  if (Number.isFinite(effectiveBodyDomPx) && effectiveBodyDomPx > 0) {
+    out.effectiveBodyDomPx = Math.round(effectiveBodyDomPx * 10) / 10;
+  }
+  if (Number.isFinite(clippedWidth) && clippedWidth > 0) out.clippedWidth = Math.round(clippedWidth);
+  return Object.keys(out).length ? out : null;
+}
+
 async function writeFailureArtifacts(page, attempt, outDir) {
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -337,6 +351,7 @@ async function runNightlyIgAttempt({
             doc = await Utils.writeInstagramImagesDocForZapierViaServer({
               dateKey,
               newspaperClippingImageData,
+              newspaperClippingDisplayMeta: newspaperClippingDisplayMetaFromCompose(composeMeta),
               storageCacheControl: 'no-store',
               apiBaseOverride: apiBase
             });
@@ -344,6 +359,7 @@ async function runNightlyIgAttempt({
             doc = await Utils.writeInstagramImagesDocForZapier({
               dateKey,
               newspaperClippingImageData,
+              newspaperClippingDisplayMeta: newspaperClippingDisplayMetaFromCompose(composeMeta),
               storageCacheControl: 'no-store'
             });
           } else {
@@ -733,6 +749,7 @@ async function runNightlyIgAttempt({
           throw new Error(`Quilt screen 9:16 image was not generated for ${dateKey}`);
         }
         let newspaperClippingImageData = null;
+        let newspaperClippingDisplayMeta = null;
         if (arch.generateNewspaperClippingImageData) {
           log('generating newspaper clipping PNG…');
           newspaperClippingImageData = await timed('newspaper clipping', () =>
@@ -746,6 +763,7 @@ async function runNightlyIgAttempt({
             Math.round(((String(newspaperClippingImageData).length - 22) * 3) / 4)
           );
           const composeMeta = arch._lastNewspaperClippingComposeMeta || null;
+          newspaperClippingDisplayMeta = newspaperClippingDisplayMetaFromCompose(composeMeta);
           log(
             `newspaper clipping PNG ~${clippingBytes} bytes; rev=${globalThis.QuiltNewspaperClipping?.CLIPPING_EXPORT_REV || '?'}; meta=${JSON.stringify(composeMeta || {})}`
           );
@@ -789,6 +807,7 @@ async function runNightlyIgAttempt({
           carouselSlide3ImageData,
           quiltScreen9x16ImageData,
           newspaperClippingImageData,
+          newspaperClippingDisplayMeta,
           storyLayoutBImageData,
           storyLayoutBOverlayImageData,
           zapierCaption,
