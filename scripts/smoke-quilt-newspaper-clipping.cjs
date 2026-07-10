@@ -112,6 +112,7 @@ function fallbackPayload(dateKey) {
 async function main() {
   const root = path.resolve(__dirname, '..');
   const dateKey = process.env.SMOKE_CLIPPING_DATE_KEY || getActiveQuiltDateKey();
+  const quoteVariant = String(process.env.SMOKE_QUOTE_VARIANT || 'live').toLowerCase();
   const fallback = fallbackPayload(dateKey);
   let payload = await loadClippingQuotesFromFirestore(dateKey);
   if (payload) {
@@ -160,7 +161,7 @@ async function main() {
     await page.addScriptTag({ content: src });
   }
 
-  const dataUrl = await page.evaluate(async (quotes) => {
+  const dataUrl = await page.evaluate(async ({ quotes, quoteVariant }) => {
     const api = globalThis.QuiltNewspaperClipping;
     const compose = api.composeDataUrlWithLayout || api.composeDataUrl;
     const quoteOnlyOpts = {
@@ -219,10 +220,6 @@ async function main() {
       return min;
     }
 
-    const live = await composeQuoteOnly();
-    const liveUrl = typeof live === 'string' ? live : live?.dataUrl;
-    if (!liveUrl) return null;
-
     const shortQuote = {
       text: 'When we plant trees, we plant the seeds of peace and seeds of hope.',
       author: 'Wangari Maathai',
@@ -230,10 +227,31 @@ async function main() {
     };
     const longQuote = {
       text:
-        'Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world and opens doors we never knew existed.',
+        'Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world and opens doors we never knew existed. It is the preview of life\u2019s coming attractions, and the source of every form of human progress.',
       author: 'Albert Einstein',
-      first_line_count: 4
+      first_line_count: 4,
+      keyword: 'Imagination'
     };
+
+    let previewComposed;
+    let previewLabel = 'live';
+    if (quoteVariant === 'long') {
+      previewComposed = await composeQuoteOnly({
+        today: longQuote,
+        dateKey: `${quotes.dateKey}-long-preview`
+      });
+      previewLabel = 'long';
+    } else if (quoteVariant === 'short') {
+      previewComposed = await composeQuoteOnly({
+        today: shortQuote,
+        dateKey: `${quotes.dateKey}-short-preview`
+      });
+      previewLabel = 'short';
+    } else {
+      previewComposed = await composeQuoteOnly();
+    }
+    const liveUrl = typeof previewComposed === 'string' ? previewComposed : previewComposed?.dataUrl;
+    if (!liveUrl) return null;
 
     const shortComposed = await composeQuoteOnly({
       today: shortQuote,
@@ -262,10 +280,11 @@ async function main() {
 
     return {
       exportRev: api.CLIPPING_EXPORT_REV,
-      exportWidth: Number(live?.renderWidth) || cfg.width,
+      exportWidth: Number(previewComposed?.renderWidth) || cfg.width,
       cornerAlphaMin: await cornerAlphaMinForUrl(liveUrl),
-      clippedWidth: Number(live?.clippedWidth) || 0,
-      clippedHeight: Number(live?.clippedHeight) || 0,
+      clippedWidth: Number(previewComposed?.clippedWidth) || 0,
+      clippedHeight: Number(previewComposed?.clippedHeight) || 0,
+      previewLabel,
       legacyOutW,
       shortSize,
       shortSharpW: shortSharp?.width || 0,
@@ -273,7 +292,7 @@ async function main() {
       longSize,
       clipped: liveUrl
     };
-  }, payload);
+  }, { quotes: payload, quoteVariant });
   await browser.close();
   if (!dataUrl?.clipped || !String(dataUrl.clipped).startsWith('data:image/png')) {
     throw new Error('clipping PNG (crop + hand-cut) did not return data URL');
@@ -310,7 +329,7 @@ async function main() {
     );
   }
   console.log(
-    `[smoke] quote-only — live: ${clippedWidth}x${dataUrl.clippedHeight || '?'}px, short: ${shortSize.width}x${shortSize.height}, long: ${longSize.width}x${longSize.height} (legacy ${legacyOutW}px)`
+    `[smoke] quote-only — preview(${dataUrl.previewLabel || quoteVariant}): ${clippedWidth}x${dataUrl.clippedHeight || '?'}px, short: ${shortSize.width}x${shortSize.height}, long: ${longSize.width}x${longSize.height} (legacy ${legacyOutW}px)`
   );
   const tmpDir = path.join(root, 'tmp');
   fs.mkdirSync(tmpDir, { recursive: true });
@@ -349,7 +368,7 @@ async function main() {
   img { display: block; max-width: min(100%, 460px); height: auto; background: #fff; filter: drop-shadow(0 4px 14px rgba(45,36,29,.14)); }
 </style></head><body>
 <h1>Quote-only clipping (rev ${dataUrl.exportRev || '?'})</h1>
-<p class="meta">${dateKey} — nightlyPeek / centerOnly (same as in-app taped card)</p>
+<p class="meta">${dateKey} — ${dataUrl.previewLabel || quoteVariant} — nightlyPeek / centerOnly (same as in-app taped card)</p>
 <img src="smoke-newspaper-clipping.png" alt="quote-only clipping" />
 </body></html>`,
     'utf8'
