@@ -8814,6 +8814,90 @@ function quiltNameLeaderboardEntryId(word) {
   return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
 }
 
+const QUILT_NAME_MODERATION_REJECT_ACTIONS = new Set([
+  'reject', 'rejected', 'deny', 'denied', 'block', 'blocked', 'refuse', 'refused', 'no'
+]);
+const QUILT_NAME_MODERATION_ALLOW_ACTIONS = new Set([
+  'allow', 'allowed', 'accept', 'accepted', 'approve', 'approved', 'pass', 'passed', 'ok', 'yes'
+]);
+const QUILT_NAME_LOCAL_REJECT_PATTERNS = [
+  /\b(fuck|fuk|shit|bitch|asshole|cunt|nigger|nigga|faggot|fag|retard|whore|slut|rape|nazi|kike|spic|chink|coon|tranny)\b/i,
+  /(fuck|shit|cunt|nigg|fagg|rape|nazi)/i
+];
+
+function parseQuiltNameModerationResult(value) {
+  const parsed = parseJsonObjectFromAiText(value);
+  if (!parsed) return null;
+  const action = String(parsed.action || parsed.decision || parsed.status || '').toLowerCase().trim();
+  if (QUILT_NAME_MODERATION_REJECT_ACTIONS.has(action)) return { action: 'reject' };
+  if (QUILT_NAME_MODERATION_ALLOW_ACTIONS.has(action)) return { action: 'allow' };
+  return null;
+}
+
+function moderateQuiltNameLocally(word) {
+  const normalized = normalizeQuiltNameLeaderboardWord(word);
+  if (!normalized) return { action: 'reject', provider: 'local-fallback', model: null };
+  if (QUILT_NAME_LOCAL_REJECT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return { action: 'reject', provider: 'local-fallback', model: null };
+  }
+  return { action: 'allow', provider: 'local-fallback', model: null };
+}
+
+function buildQuiltNameModerationPrompt(word) {
+  return `Review ONE submitted quilt name (single word only): "${word}"
+
+Reject if it is obscenity, hate speech, a slur, sexually explicit, glorifies violence, demeans a protected group, or is clearly inappropriate for a warm community art ritual.
+
+Allow innocent words even if they sound edgy out of context. Allow poetic or unusual words.
+
+Return ONLY valid JSON, no markdown:
+{"action":"allow"}
+or
+{"action":"reject"}`;
+}
+
+async function moderateQuiltNameWithAi(word) {
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  const model = String(
+    process.env.ANTHROPIC_QUILT_NAME_MODERATION_MODEL || process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001'
+  ).trim();
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
+  const raw = await postReflectionThemesToClaude({
+    apiKey,
+    model,
+    prompt: buildQuiltNameModerationPrompt(word),
+    maxTokens: 48
+  });
+  const parsed = parseQuiltNameModerationResult(raw);
+  if (!parsed) throw new Error('Quilt name moderation returned unusable JSON');
+  return { ...parsed, provider: 'anthropic', model };
+}
+
+async function assertQuiltNameAllowed(word) {
+  try {
+    const moderation = await moderateQuiltNameWithAi(word);
+    if (moderation.action === 'reject') {
+      throw new Error('That name isn\'t allowed — please try another.');
+    }
+    return moderation;
+  } catch (error) {
+    if (/isn't allowed/i.test(String(error?.message || ''))) throw error;
+    console.warn(`⚠️ Quilt name AI moderation failed for "${word}":`, error?.message || error);
+    const fallback = moderateQuiltNameLocally(word);
+    if (fallback.action === 'reject') {
+      throw new Error('That name isn\'t allowed — please try another.');
+    }
+    return fallback;
+  }
+}
+
+function quiltNameSubmitErrorStatus(message) {
+  const text = String(message || '');
+  if (/isn't allowed|not allowed/i.test(text)) return 400;
+  if (/already suggested|full for today|closed|not open/i.test(text)) return 409;
+  return 500;
+}
+
 function normalizeQuiltNameLeaderboardEntries(rawEntries) {
   if (!Array.isArray(rawEntries)) return [];
   const seen = new Set();
@@ -9392,6 +9476,7 @@ app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
     if (resolveLeaderboardPhase(dateKey) !== 'submissions') {
       return res.status(409).json({ success: false, error: 'Submissions are closed for today' });
     }
+    await assertQuiltNameAllowed(word);
     if (!db || typeof db.collection !== 'function') {
       return res.status(503).json({ success: false, error: 'Firestore is not configured' });
     }
@@ -9455,7 +9540,7 @@ app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
     });
   } catch (error) {
     const message = error.message || 'quilt-name-submit failed';
-    const status = /already suggested|already suggested a name|full for today|closed/i.test(message) ? 409 : 500;
+    const status = quiltNameSubmitErrorStatus(message);
     if (status === 500) console.error('❌ quilt-name-submit failed:', error);
     return res.status(status).json({ success: false, error: message });
   }
