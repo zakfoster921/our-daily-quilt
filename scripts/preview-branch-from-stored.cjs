@@ -12,6 +12,7 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+const crypto = require('crypto');
 
 try {
   require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
@@ -23,7 +24,7 @@ const admin = require('firebase-admin');
 const { chromium } = require('playwright');
 const sharp = require('sharp');
 const { getAppDateKey } = require('./lib/app-date-key.cjs');
-const { createServerQuiltEngine, serializeServerQuiltBlocks } = require('./lib/server-quilt-engine.cjs');
+const { createServerQuiltEngine, serializeServerQuiltBlocks, computeQuiltFingerprint } = require('./lib/server-quilt-engine.cjs');
 const { normalizeHex, reconstructArchiveSnapshotAt } = require('./lib/composition-preview.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -244,71 +245,148 @@ function startStaticServer() {
   });
 }
 
-async function renderPanels(panels, dateKey) {
-  const { server, url } = await startStaticServer();
-  const browser = await chromium.launch({ headless: true });
+function panelStyleTag() {
+  return `
+    html, body { margin:0!important; width:100vw!important; height:100vh!important; overflow:hidden!important; background:#f6f4f1!important; }
+    body > *:not(#app) { display:none!important; }
+    .screen { display:none!important; }
+    #screen-connection-problem { display:none!important; }
+    #screen-quilt { display:flex!important; position:fixed!important; inset:0!important; background:#f6f4f1!important; z-index:2147483647!important; }
+    #screen-quilt > :not(.quilt-container) { display:none!important; }
+    #screen-quilt .quilt-container { position:fixed!important; inset:0!important; background:#f6f4f1!important; }
+  `;
+}
+
+async function disableLiveReload(page) {
+  await page.evaluate(() => {
+    const app = window.app;
+    if (!app) return;
+    app.applyQuiltDataFromPayload = async () => {};
+    app.attachQuiltLiveListener = () => {};
+    app.loadQuiltFromServer = async () => ({ ok: false, reason: 'branch_preview_disabled' });
+    if (app.dataService) {
+      app.dataService.loadQuiltFromServer = async () => ({ ok: false, reason: 'branch_preview_disabled' });
+    }
+  });
+}
+
+async function renderOnePanel(browser, url, panel, dateKey) {
+  const page = await browser.newPage({
+    viewport: { width: OUT_W, height: OUT_H },
+    deviceScaleFactor: 1,
+    isMobile: true,
+    hasTouch: true
+  });
   try {
-    const page = await browser.newPage({
-      viewport: { width: OUT_W, height: OUT_H },
-      deviceScaleFactor: 1,
-      isMobile: true,
-      hasTouch: true
-    });
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction(
       () => !!window.app?.renderer && !!window.app?.quiltEngine && !!document.getElementById('quilt'),
       undefined,
       { timeout: 120000 }
     );
-    await page.evaluate(() => {
+    await disableLiveReload(page);
+    await page.addStyleTag({ content: panelStyleTag() });
+
+    const renderCheck = await page.evaluate(({ blocks, submissionCount, panelDateKey, panelId, expectedFingerprint }) => {
       const app = window.app;
-      if (!app) return;
-      app.applyQuiltDataFromPayload = async () => {};
-      app.attachQuiltLiveListener = () => {};
-      app.loadQuiltFromServer = async () => ({ ok: false, reason: 'branch_preview_disabled' });
-      if (app.dataService) {
-        app.dataService.loadQuiltFromServer = async () => ({ ok: false, reason: 'branch_preview_disabled' });
+      document.querySelectorAll('.screen').forEach((screen) => {
+        screen.classList.remove('active');
+        screen.style.display = 'none';
+      });
+      const screen = document.getElementById('screen-quilt');
+      screen?.classList.add('active');
+      if (screen) {
+        screen.style.display = 'flex';
+        screen.style.visibility = 'visible';
+        screen.style.opacity = '1';
       }
-    });
-    await page.addStyleTag({
-      content: `
-        html, body { margin:0!important; width:100vw!important; height:100vh!important; overflow:hidden!important; background:#f6f4f1!important; }
-        body > *:not(#app) { display:none!important; }
-        .screen { display:none!important; }
-        #screen-connection-problem { display:none!important; }
-        #screen-quilt { display:flex!important; position:fixed!important; inset:0!important; background:#f6f4f1!important; z-index:2147483647!important; }
-        #screen-quilt > :not(.quilt-container) { display:none!important; }
-        #screen-quilt .quilt-container { position:fixed!important; inset:0!important; background:#f6f4f1!important; }
-      `
+
+      const clonedBlocks = JSON.parse(JSON.stringify(blocks));
+      app._loadedSharedQuiltDateKey = `${panelDateKey}:${panelId}`;
+      app.dailyContributors = [];
+      app.quiltEngine.blocks = clonedBlocks;
+      app.quiltEngine.submissionCount = submissionCount;
+      if (app.renderer) {
+        app.renderer.lastAddedIndex = null;
+        app.renderer.setBacksidePreviewEnabled?.(false);
+        app.renderer.quiltSVG = document.getElementById('quilt');
+        app.renderer._renderViewportOverride = null;
+        app.renderer.renderBlocks(clonedBlocks, [], submissionCount);
+      }
+
+      const svg = document.getElementById('quilt');
+      const shapeCount = svg?.querySelectorAll('#quiltParallaxLayer rect, #quiltParallaxLayer polygon').length || 0;
+      const fingerprint = window.Utils?.computeQuiltFingerprint?.(clonedBlocks) || '';
+      return {
+        blockCount: clonedBlocks.length,
+        submissionCount: Number(app.quiltEngine.submissionCount) || 0,
+        shapeCount,
+        fingerprint,
+        expectedFingerprint,
+        fingerprintOk: !expectedFingerprint || fingerprint === expectedFingerprint
+      };
+    }, {
+      blocks: panel.blocks,
+      submissionCount: panel.submissionCount,
+      panelDateKey: dateKey,
+      panelId: panel.id,
+      expectedFingerprint: panel.expectedFingerprint || ''
     });
 
+    if (renderCheck.blockCount !== panel.blocks.length) {
+      throw new Error(`${panel.id}: injected ${renderCheck.blockCount} blocks, expected ${panel.blocks.length}`);
+    }
+    if (Number(renderCheck.submissionCount) !== Number(panel.submissionCount)) {
+      throw new Error(`${panel.id}: submissionCount ${renderCheck.submissionCount} != ${panel.submissionCount}`);
+    }
+    if (!renderCheck.fingerprintOk) {
+      throw new Error(
+        `${panel.id}: fingerprint mismatch browser=${renderCheck.fingerprint} expected=${panel.expectedFingerprint}`
+      );
+    }
+
+    await page.waitForFunction(
+      (expectedShapes) => {
+        const svg = document.getElementById('quilt');
+        const n = svg?.querySelectorAll('#quiltParallaxLayer rect, #quiltParallaxLayer polygon').length || 0;
+        return n >= Math.max(1, Math.floor(expectedShapes * 0.5));
+      },
+      panel.blocks.length,
+      { timeout: 60000 }
+    );
+    await page.waitForTimeout(600);
+    const buffer = await page.locator('#quilt').screenshot({ type: 'png' });
+    return { ...panel, buffer, renderCheck };
+  } finally {
+    await page.close();
+  }
+}
+
+async function renderPanels(panels, dateKey, outDir) {
+  const { server, url } = await startStaticServer();
+  const browser = await chromium.launch({ headless: true });
+  try {
     const out = [];
     for (const panel of panels) {
-      await page.evaluate(async ({ blocks, submissionCount, panelDateKey }) => {
-        const app = window.app;
-        document.getElementById('screen-quilt')?.classList.add('active');
-        const clonedBlocks = JSON.parse(JSON.stringify(blocks));
-        app._loadedSharedQuiltDateKey = panelDateKey;
-        app.dailyContributors = [];
-        app.quiltEngine.blocks = clonedBlocks;
-        app.quiltEngine.submissionCount = submissionCount;
-        app.renderer?.setBacksidePreviewEnabled?.(false);
-        if (app.renderer?.renderBlocks) {
-          app.renderer.quiltSVG = document.getElementById('quilt');
-          app.renderer._renderViewportOverride = null;
-          app.renderer.renderBlocks(clonedBlocks, [], submissionCount);
-        } else if (typeof app.renderQuilt === 'function') {
-          await app.renderQuilt();
-        }
-      }, { blocks: panel.blocks, submissionCount: panel.submissionCount, panelDateKey: dateKey });
-      await page.waitForFunction(
-        () => !!document.getElementById('quilt')?.querySelector('#quiltParallaxLayer rect, #quiltParallaxLayer polygon'),
-        undefined,
-        { timeout: 60000 }
+      const rendered = await renderOnePanel(browser, url, panel, dateKey);
+      const pngPath = path.join(outDir, `panel-${panel.id}.png`);
+      fs.writeFileSync(pngPath, rendered.buffer);
+      rendered.pngPath = pngPath;
+      out.push(rendered);
+      console.log(
+        `[branch-preview] rendered ${panel.id}: ${rendered.renderCheck.blockCount} blocks, ` +
+          `fp ${rendered.renderCheck.fingerprint}, shapes ${rendered.renderCheck.shapeCount}`
       );
-      await page.waitForTimeout(400);
-      const buffer = await page.locator('#screen-quilt .quilt-container').screenshot({ type: 'png' });
-      out.push({ ...panel, buffer });
+    }
+
+    const hashes = out.map((panel) => ({
+      id: panel.id,
+      hash: crypto.createHash('sha256').update(panel.buffer).digest('hex').slice(0, 12)
+    }));
+    const uniqueHashes = new Set(hashes.map((row) => row.hash));
+    if (uniqueHashes.size !== hashes.length) {
+      const dupes = hashes.map((h) => `${h.id}:${h.hash}`).join(', ');
+      throw new Error(`Panel screenshots were identical — render did not swap quilts (${dupes})`);
     }
     return out;
   } finally {
@@ -371,20 +449,34 @@ function writePreviewHtml(outDir, dateKey, summary) {
     main { max-width:1200px; margin:0 auto; padding:1.5rem; }
     h1 { font-size:1.2rem; margin:0 0 0.75rem; }
     p { line-height:1.5; margin:0 0 1rem; font-size:0.95rem; }
-    img { width:100%; height:auto; border-radius:8px; box-shadow:0 8px 32px rgba(42,33,24,.12); }
-    code { font-size:0.88rem; }
+    img { width:100%; height:auto; border-radius:8px; box-shadow:0 8px 32px rgba(42,33,24,.12); margin-bottom:1.25rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem; }
+    figure { margin:0; }
+    figcaption { font-size:0.88rem; opacity:0.85; margin-top:0.35rem; }
   </style>
 </head>
 <body>
   <main>
-    <h1>${dateKey} — deploy-style preview</h1>
+    <h1>${dateKey} — deploy-style preview (fixed)</h1>
     <p>
-      Top-left: live Firestore quilt (${summary.liveContributorCount} picks).
-      Top-right: trunk at pick ${summary.branchAt} (${summary.trunkSource}).
-      Bottom: same trunk, then picks ${summary.branchPickRange} with current engine only.
+      Side-by-side: stored live quilt vs same history with picks ${summary.branchPickRange} re-run on new code.
+      Trunk snapshot (${summary.trunkBlockCount} blocks at pick ${summary.branchAt}) saved as <code>panel-trunk.png</code>.
     </p>
-    <p>Branch colors: ${(summary.branchColors || []).join(', ') || '(none)'}</p>
-    <img src="contact-sheet.png" alt="Branch-from-stored preview" />
+    <img src="contact-sheet.png" alt="Stored vs new-code branch preview" />
+    <div class="grid">
+      <figure>
+        <img src="panel-stored.png" alt="Stored live" />
+        <figcaption>Stored live · fp ${summary.liveFingerprint}</figcaption>
+      </figure>
+      <figure>
+        <img src="panel-trunk.png" alt="Trunk at branch point" />
+        <figcaption>Trunk pick ${summary.branchAt} · fp ${summary.trunkFingerprint}</figcaption>
+      </figure>
+      <figure>
+        <img src="panel-branch.png" alt="Branch with new code" />
+        <figcaption>New code picks ${summary.branchPickRange} · fp ${summary.branchFingerprint}</figcaption>
+      </figure>
+    </div>
   </main>
 </body>
 </html>`;
@@ -413,21 +505,24 @@ async function main() {
       label: `Stored live — ${dateKey}`,
       subtitle: `${data.liveContributorCount} picks · ${data.liveBlocks.length} blocks · what users see now`,
       blocks: data.liveBlocks,
-      submissionCount: data.liveContributorCount
+      submissionCount: data.liveContributorCount,
+      expectedFingerprint: computeQuiltFingerprint(data.liveBlocks)
     },
     {
       id: 'trunk',
       label: `Deploy trunk — pick ${branchAt}`,
       subtitle: `${trunk.blocks.length} blocks · ${trunk.source}${trunk.reversedSeqs?.length ? ` · reversed seq ${trunk.reversedSeqs.join(',')}` : ''}`,
       blocks: trunk.blocks,
-      submissionCount: trunk.submissionCount
+      submissionCount: trunk.submissionCount,
+      expectedFingerprint: computeQuiltFingerprint(trunk.blocks)
     },
     {
       id: 'branch',
       label: `Trunk + new code — picks ${branchAt + 1}–${lastBranchPick}`,
       subtitle: `${branched.blocks.length} blocks · ${branchColorRows.length} pick(s) with current engine on stored trunk`,
       blocks: branched.blocks,
-      submissionCount: branched.submissionCount
+      submissionCount: branched.submissionCount,
+      expectedFingerprint: computeQuiltFingerprint(branched.blocks)
     }
   ];
 
@@ -443,9 +538,12 @@ async function main() {
     console.warn('[branch-preview] skipped picks:', branched.skipped);
   }
 
-  const rendered = await renderPanels(panels, dateKey);
+  const rendered = await renderPanels(panels, dateKey, outDir);
+  const contactPanels = process.env.SHOW_TRUNK === '1'
+    ? rendered
+    : rendered.filter((panel) => panel.id === 'stored' || panel.id === 'branch');
   const contactPath = path.join(outDir, 'contact-sheet.png');
-  await writeContactSheet(rendered, contactPath);
+  await writeContactSheet(contactPanels, contactPath);
 
   const summary = {
     dateKey,
@@ -458,6 +556,9 @@ async function main() {
     liveBlockCount: data.liveBlocks.length,
     trunkBlockCount: trunk.blocks.length,
     branchBlockCount: branched.blocks.length,
+    liveFingerprint: computeQuiltFingerprint(data.liveBlocks),
+    trunkFingerprint: computeQuiltFingerprint(trunk.blocks),
+    branchFingerprint: computeQuiltFingerprint(branched.blocks),
     replayEventCount: data.replayEvents.length,
     skippedBranchPicks: branched.skipped
   };
