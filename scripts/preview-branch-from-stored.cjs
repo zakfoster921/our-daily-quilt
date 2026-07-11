@@ -137,13 +137,19 @@ function branchColorsAfter(submissions, branchAt, maxSubmission) {
 }
 
 function reverseReplayEvent(blocks, event) {
+  const parentId = String(event?.parent?.id || '').trim();
+  if (!parentId) return null;
   const childIds = new Set((event.children || []).map((child) => String(child.id || '')).filter(Boolean));
-  if (!childIds.size || !event?.parent?.id) return null;
-  const indices = blocks
-    .map((block, index) => (childIds.has(String(block.id || '')) ? index : -1))
-    .filter((index) => index >= 0);
-  if (indices.length !== childIds.size) return null;
-  [...indices].sort((a, b) => b - a).forEach((index) => blocks.splice(index, 1));
+  const parentPrefix = `${parentId}_`;
+  let removed = 0;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const blockId = String(blocks[i]?.id || '');
+    if (childIds.has(blockId) || blockId.startsWith(parentPrefix)) {
+      blocks.splice(i, 1);
+      removed += 1;
+    }
+  }
+  if (!removed) return null;
   blocks.push(cloneJson(event.parent, null));
   if (!blocks[blocks.length - 1]) return null;
   return blocks;
@@ -395,8 +401,71 @@ async function renderPanels(panels, dateKey, outDir) {
   }
 }
 
+async function labelPanelBuffer(panel) {
+  const title = esc(panel.label || panel.id || 'Panel');
+  const subtitle = esc(panel.subtitle || '');
+  const fp = esc(panel.renderCheck?.fingerprint || panel.expectedFingerprint || '');
+  const labelSvg = Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${OUT_W}" height="${CONTACT_LABEL_H}" viewBox="0 0 ${OUT_W} ${CONTACT_LABEL_H}">
+      <rect width="${OUT_W}" height="${CONTACT_LABEL_H}" fill="#fff"/>
+      <text x="28" y="44" font-family="-apple-system,sans-serif" font-size="30" font-weight="700" fill="#222">${title}</text>
+      <text x="28" y="82" font-family="-apple-system,sans-serif" font-size="20" fill="#666">${subtitle}</text>
+      <text x="28" y="108" font-family="ui-monospace,monospace" font-size="16" fill="#888">${fp}</text>
+    </svg>
+  `);
+  return sharp(panel.buffer)
+    .resize(OUT_W, OUT_H, { fit: 'contain', background: '#f6f4f1' })
+    .extend({
+      top: CONTACT_LABEL_H,
+      background: { r: 255, g: 255, b: 255, alpha: 1 }
+    })
+    .composite([{ input: labelSvg, top: 0, left: 0 }])
+    .png()
+    .toBuffer();
+}
+
+async function writeDiffImage(leftPanel, rightPanel, outPath, title) {
+  const w = OUT_W;
+  const h = OUT_H;
+  const left = await sharp(leftPanel.buffer).resize(w, h, { fit: 'contain', background: '#f6f4f1' }).ensureAlpha().raw().toBuffer();
+  const right = await sharp(rightPanel.buffer).resize(w, h, { fit: 'contain', background: '#f6f4f1' }).ensureAlpha().raw().toBuffer();
+  const diff = Buffer.alloc(w * h * 4);
+  let changed = 0;
+  for (let i = 0; i < left.length; i += 4) {
+    const dr = Math.abs(left[i] - right[i]);
+    const dg = Math.abs(left[i + 1] - right[i + 1]);
+    const db = Math.abs(left[i + 2] - right[i + 2]);
+    if (dr > 10 || dg > 10 || db > 10) {
+      diff[i] = 255;
+      diff[i + 1] = 40;
+      diff[i + 2] = 40;
+      diff[i + 3] = 220;
+      changed += 1;
+    } else {
+      diff[i] = Math.round(left[i] * 0.35);
+      diff[i + 1] = Math.round(left[i + 1] * 0.35);
+      diff[i + 2] = Math.round(left[i + 2] * 0.35);
+      diff[i + 3] = 255;
+    }
+  }
+  const pct = ((changed / (w * h)) * 100).toFixed(1);
+  const labelSvg = Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${CONTACT_LABEL_H}" viewBox="0 0 ${w} ${CONTACT_LABEL_H}">
+      <rect width="${w}" height="${CONTACT_LABEL_H}" fill="#fff"/>
+      <text x="28" y="44" font-family="-apple-system,sans-serif" font-size="28" font-weight="700" fill="#222">${esc(title)}</text>
+      <text x="28" y="82" font-family="-apple-system,sans-serif" font-size="20" fill="#666">${pct}% of pixels differ (red = changed)</text>
+    </svg>
+  `);
+  await sharp(diff, { raw: { width: w, height: h, channels: 4 } })
+    .extend({ top: CONTACT_LABEL_H, background: { r: 255, g: 255, b: 255, alpha: 1 } })
+    .composite([{ input: labelSvg, top: 0, left: 0 }])
+    .png()
+    .toFile(outPath);
+  return { pct: Number(pct) };
+}
+
 async function writeContactSheet(panelImages, contactPath) {
-  const cols = Math.min(2, panelImages.length);
+  const cols = Math.min(3, panelImages.length);
   const rows = Math.ceil(panelImages.length / cols);
   const tileW = OUT_W;
   const tileH = OUT_H;
@@ -437,43 +506,61 @@ async function writeContactSheet(panelImages, contactPath) {
     .toFile(contactPath);
 }
 
-function writePreviewHtml(outDir, dateKey, summary) {
+function writePreviewHtml(outDir, dateKey, summary, cacheBust) {
+  const q = `?v=${cacheBust}`;
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <title>Branch preview — ${dateKey}</title>
   <style>
     body { margin:0; font-family:system-ui,sans-serif; background:#f6f4f1; color:#2a2118; }
-    main { max-width:1200px; margin:0 auto; padding:1.5rem; }
+    main { max-width:1400px; margin:0 auto; padding:1.5rem; }
     h1 { font-size:1.2rem; margin:0 0 0.75rem; }
-    p { line-height:1.5; margin:0 0 1rem; font-size:0.95rem; }
-    img { width:100%; height:auto; border-radius:8px; box-shadow:0 8px 32px rgba(42,33,24,.12); margin-bottom:1.25rem; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem; }
+    p, li { line-height:1.5; margin:0 0 0.75rem; font-size:0.95rem; }
+    img { width:100%; height:auto; border-radius:8px; box-shadow:0 8px 32px rgba(42,33,24,.12); margin-bottom:1.25rem; display:block; }
+    .stack { display:flex; flex-direction:column; gap:1.25rem; }
     figure { margin:0; }
     figcaption { font-size:0.88rem; opacity:0.85; margin-top:0.35rem; }
+    code { font-size:0.9em; }
   </style>
 </head>
 <body>
   <main>
-    <h1>${dateKey} — deploy-style preview (fixed)</h1>
+    <h1>${dateKey} — deploy-style preview</h1>
     <p>
-      Side-by-side: stored live quilt vs same history with picks ${summary.branchPickRange} re-run on new code.
-      Trunk snapshot (${summary.trunkBlockCount} blocks at pick ${summary.branchAt}) saved as <code>panel-trunk.png</code>.
+      <strong>Trunk</strong> (${summary.trunkBlockCount} blocks at pick ${summary.branchAt}) is the quilt <em>before</em> picks ${summary.branchPickRange}.
+      <strong>Stored</strong> and <strong>branch</strong> both have ${summary.liveBlockCount} blocks; branch re-runs those picks on new code.
     </p>
-    <img src="contact-sheet.png" alt="Stored vs new-code branch preview" />
-    <div class="grid">
+    <ul>
+      <li>Stored vs branch diff: ${summary.storedBranchDiffPct}% pixels — ${summary.storedBranchDiffPct < 5 ? 'nearly identical (new code barely changed those picks)' : 'visible changes'}</li>
+      <li>Trunk vs stored diff: ${summary.trunkStoredDiffPct}% pixels — diagonal shards came from picks ${summary.branchPickRange}</li>
+    </ul>
+    <div class="stack">
       <figure>
-        <img src="panel-stored.png" alt="Stored live" />
-        <figcaption>Stored live · fp ${summary.liveFingerprint}</figcaption>
+        <img src="contact-sheet.png${q}" alt="Trunk, stored, branch side by side" />
+        <figcaption>All three labeled panels — trunk should look patchworky; stored/branch share the diagonal layout</figcaption>
       </figure>
       <figure>
-        <img src="panel-trunk.png" alt="Trunk at branch point" />
+        <img src="diff-trunk-vs-stored.png${q}" alt="Diff trunk vs stored" />
+        <figcaption>Red = pixels that changed when picks ${summary.branchPickRange} were applied</figcaption>
+      </figure>
+      <figure>
+        <img src="diff-stored-vs-branch.png${q}" alt="Diff stored vs branch" />
+        <figcaption>Red = what new code would change vs what's live (${summary.branchPickRange})</figcaption>
+      </figure>
+      <figure>
+        <img src="panel-trunk-labeled.png${q}" alt="Trunk at branch point" />
         <figcaption>Trunk pick ${summary.branchAt} · fp ${summary.trunkFingerprint}</figcaption>
       </figure>
       <figure>
-        <img src="panel-branch.png" alt="Branch with new code" />
+        <img src="panel-stored-labeled.png${q}" alt="Stored live" />
+        <figcaption>Stored live · fp ${summary.liveFingerprint}</figcaption>
+      </figure>
+      <figure>
+        <img src="panel-branch-labeled.png${q}" alt="Branch with new code" />
         <figcaption>New code picks ${summary.branchPickRange} · fp ${summary.branchFingerprint}</figcaption>
       </figure>
     </div>
@@ -539,12 +626,41 @@ async function main() {
   }
 
   const rendered = await renderPanels(panels, dateKey, outDir);
-  const contactPanels = process.env.SHOW_TRUNK === '1'
-    ? rendered
-    : rendered.filter((panel) => panel.id === 'stored' || panel.id === 'branch');
+  const byId = Object.fromEntries(rendered.map((panel) => [panel.id, panel]));
+  for (const panel of rendered) {
+    const labeled = await labelPanelBuffer(panel);
+    const labeledPath = path.join(outDir, `panel-${panel.id}-labeled.png`);
+    fs.writeFileSync(labeledPath, labeled);
+    panel.labeledBuffer = labeled;
+    panel.labeledPath = labeledPath;
+  }
+
+  const contactPanels = ['trunk', 'stored', 'branch']
+    .map((id) => rendered.find((panel) => panel.id === id))
+    .filter(Boolean)
+    .map((panel) => ({
+      ...panel,
+      buffer: panel.labeledBuffer,
+      label: panel.label,
+      subtitle: panel.subtitle
+    }));
   const contactPath = path.join(outDir, 'contact-sheet.png');
   await writeContactSheet(contactPanels, contactPath);
 
+  const diffTrunkStored = await writeDiffImage(
+    byId.trunk,
+    byId.stored,
+    path.join(outDir, 'diff-trunk-vs-stored.png'),
+    `Trunk (pick ${branchAt}) vs stored live`
+  );
+  const diffStoredBranch = await writeDiffImage(
+    byId.stored,
+    byId.branch,
+    path.join(outDir, 'diff-stored-vs-branch.png'),
+    `Stored live vs new code (picks ${branchAt + 1}–${lastBranchPick})`
+  );
+
+  const cacheBust = Date.now();
   const summary = {
     dateKey,
     branchAt,
@@ -560,10 +676,13 @@ async function main() {
     trunkFingerprint: computeQuiltFingerprint(trunk.blocks),
     branchFingerprint: computeQuiltFingerprint(branched.blocks),
     replayEventCount: data.replayEvents.length,
-    skippedBranchPicks: branched.skipped
+    skippedBranchPicks: branched.skipped,
+    trunkStoredDiffPct: diffTrunkStored.pct,
+    storedBranchDiffPct: diffStoredBranch.pct,
+    cacheBust
   };
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-  writePreviewHtml(outDir, dateKey, summary);
+  writePreviewHtml(outDir, dateKey, summary, cacheBust);
 
   console.log(`[branch-preview] wrote ${contactPath}`);
   console.log(`[branch-preview] open ${path.join(outDir, 'preview.html')}`);
