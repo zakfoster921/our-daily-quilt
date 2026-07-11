@@ -229,6 +229,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-submit', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-vote', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-finalize', 4 * ONE_KB],
+  ['/api/quilt-name-leaderboard-clear', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
@@ -9003,6 +9004,29 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
   };
 }
 
+async function clearQuiltNameLeaderboardForDate(dateKey) {
+  if (!db || typeof db.collection !== 'function') {
+    throw new Error('Firestore is not configured');
+  }
+  const nameRef = db.collection('quiltNames').doc(dateKey);
+  const freshDoc = {
+    mode: 'leaderboard',
+    phase: 'submissions',
+    submissionsCloseAt: getLeaderboardSubmissionsCloseIso(dateKey),
+    entries: [],
+    submissionsByClientId: {},
+    votesByClientId: {},
+    winningQuiltName: '',
+    clearedAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+  await nameRef.set(freshDoc);
+  return {
+    dateKey,
+    phase: 'submissions',
+    entryCount: 0
+  };
+}
+
 async function maybeFinalizeLeaderboardSubmissionPhase(dateKey) {
   if (resolveLeaderboardPhase(dateKey) !== 'voting') return null;
   if (!db || typeof db.collection !== 'function') return null;
@@ -9257,6 +9281,28 @@ app.post('/api/quilt-name-leaderboard-finalize', limitQuiltNameLeaderboard, asyn
   } catch (error) {
     console.error('❌ quilt-name-leaderboard-finalize failed:', error);
     return res.status(500).json({ success: false, error: error.message || 'quilt-name-leaderboard-finalize failed' });
+  }
+});
+
+app.options('/api/quilt-name-leaderboard-clear', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-name-leaderboard-clear', limitQuiltNameLeaderboard, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!isQuiltNameLeaderboardEnabled()) {
+      return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
+    }
+    if (!assertResetToken(req, res)) return;
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const result = await clearQuiltNameLeaderboardForDate(dateKey);
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('❌ quilt-name-leaderboard-clear failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'quilt-name-leaderboard-clear failed' });
   }
 });
 
