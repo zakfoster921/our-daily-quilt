@@ -25,13 +25,58 @@ const { chromium } = require('playwright');
 const sharp = require('sharp');
 const { getAppDateKey } = require('./lib/app-date-key.cjs');
 const { createServerQuiltEngine, serializeServerQuiltBlocks, computeQuiltFingerprint } = require('./lib/server-quilt-engine.cjs');
-const { normalizeHex, reconstructArchiveSnapshotAt } = require('./lib/composition-preview.cjs');
+const { normalizeHex, reconstructArchiveSnapshotAt, replaySequence } = require('./lib/composition-preview.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
 const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
 const CONTACT_GAP = 48;
 const CONTACT_LABEL_H = 116;
+const DEBUG_LOG = path.join(ROOT, '.cursor', 'debug-4fae08.log');
+
+function debugLog(location, message, data, hypothesisId, runId = 'pre-fix') {
+  // #region agent log
+  try {
+    fs.appendFileSync(
+      DEBUG_LOG,
+      `${JSON.stringify({
+        sessionId: '4fae08',
+        runId,
+        hypothesisId,
+        location,
+        message,
+        data,
+        timestamp: Date.now()
+      })}\n`
+    );
+  } catch (_) {
+    /* ignore */
+  }
+  // #endregion
+}
+
+function blockStats(blocks) {
+  const list = Array.isArray(blocks) ? blocks : [];
+  const specials = {};
+  let axisPolygon = 0;
+  let diagonalAxis = 0;
+  for (const block of list) {
+    const type = block?.specialPatternType || (block?.patternType === 'special' ? 'unknown' : null);
+    if (type) specials[type] = (specials[type] || 0) + 1;
+    if (block?.specialPatternType === 'diagonalAxis') diagonalAxis += 1;
+    if (Array.isArray(block?.polygonPieces) && block.polygonPieces.length) axisPolygon += 1;
+  }
+  return {
+    blockCount: list.length,
+    specialCounts: specials,
+    diagonalAxis,
+    axisPolygonBlocks: axisPolygon
+  };
+}
+
+function blocksJsonHash(blocks) {
+  return crypto.createHash('sha256').update(JSON.stringify(blocks)).digest('hex').slice(0, 16);
+}
 
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
@@ -129,11 +174,12 @@ async function fetchBranchData(dateKey) {
   };
 }
 
-function branchColorsAfter(submissions, branchAt, maxSubmission) {
-  return submissions
-    .filter((row) => Number.isFinite(row.submissionIndex) && row.submissionIndex > branchAt && row.submissionIndex <= maxSubmission)
-    .map((row) => ({ submissionIndex: row.submissionIndex, color: row.color }))
-    .filter((row) => row.color);
+function colorsForReplay(data) {
+  const fromEvents = (Array.isArray(data.replayEvents) ? data.replayEvents : [])
+    .map((event) => normalizeHex(event?.newHex))
+    .filter(Boolean);
+  if (fromEvents.length >= data.liveContributorCount) return fromEvents;
+  return data.submissions.map((row) => row.color).filter(Boolean);
 }
 
 function reverseReplayEvent(blocks, event) {
@@ -203,12 +249,28 @@ function applyBranchPicks(snapshot, colorRows, dateKey, branchAt, macroStructure
     colorRows.forEach(({ submissionIndex, color }) => {
       if (!engine.addColor(color)) skipped.push({ submissionIndex, color });
     });
-    return {
+    const result = {
       blocks: serializeServerQuiltBlocks(engine),
       submissionCount: Number(engine.submissionCount) || snapshot.submissionCount + colorRows.length,
       macroStructureFrozen: engine.macroStructureFrozen === true,
       skipped
     };
+    debugLog(
+      'preview-branch-from-stored.cjs:applyBranchPicks',
+      'branch replay finished',
+      {
+        branchAt,
+        colorCount: colorRows.length,
+        trunkBlocks: snapshot.blocks.length,
+        branchBlocks: result.blocks.length,
+        skipped,
+        macroStructureFrozen: result.macroStructureFrozen,
+        trunkStats: blockStats(snapshot.blocks),
+        branchStats: blockStats(result.blocks)
+      },
+      'C'
+    );
+    return result;
   } finally {
     Math.random = originalRandom;
   }
@@ -362,7 +424,22 @@ async function renderOnePanel(browser, url, panel, dateKey) {
     );
     await page.waitForTimeout(600);
     const buffer = await page.locator('#quilt').screenshot({ type: 'png' });
-    return { ...panel, buffer, renderCheck };
+    const shotHash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 16);
+    debugLog(
+      'preview-branch-from-stored.cjs:renderOnePanel',
+      'panel rendered',
+      {
+        panelId: panel.id,
+        shotHash,
+        blockCount: renderCheck.blockCount,
+        shapeCount: renderCheck.shapeCount,
+        fingerprint: renderCheck.fingerprint,
+        firstBlockIds: panel.blocks.slice(0, 5).map((b) => b.id),
+        lastBlockIds: panel.blocks.slice(-3).map((b) => b.id)
+      },
+      'A'
+    );
+    return { ...panel, buffer, renderCheck, shotHash };
   } finally {
     await page.close();
   }
@@ -390,6 +467,12 @@ async function renderPanels(panels, dateKey, outDir) {
       hash: crypto.createHash('sha256').update(panel.buffer).digest('hex').slice(0, 12)
     }));
     const uniqueHashes = new Set(hashes.map((row) => row.hash));
+    debugLog(
+      'preview-branch-from-stored.cjs:renderPanels',
+      'screenshot hash compare',
+      { hashes, uniqueCount: uniqueHashes.size, identical: uniqueHashes.size !== hashes.length },
+      'A'
+    );
     if (uniqueHashes.size !== hashes.length) {
       const dupes = hashes.map((h) => `${h.id}:${h.hash}`).join(', ');
       throw new Error(`Panel screenshots were identical — render did not swap quilts (${dupes})`);
@@ -526,7 +609,7 @@ function writePreviewHtml(outDir, dateKey, summary, cacheBust) {
 <body>
   <main>
     <h1>${dateKey}</h1>
-    <p>Left: current live quilt. Right: picks ${summary.branchPickRange} re-run on new code (from trunk at pick ${summary.branchAt}).</p>
+    <p>Left: current live quilt. Right: all ${summary.replayColorCount} colors replayed from scratch with current engine (axis-aligned specials apply when patterns are created).</p>
     <img src="contact-sheet.png${q}" alt="Current vs new code" />
   </main>
 </body>
@@ -537,18 +620,30 @@ function writePreviewHtml(outDir, dateKey, summary, cacheBust) {
 async function main() {
   const dateKey = String(process.env.DATE_KEY || getAppDateKey()).trim();
   const data = await fetchBranchData(dateKey);
-  const branchAt = Math.max(
-    1,
-    Math.floor(Number(process.env.BRANCH_AT) || Math.max(1, data.liveContributorCount - 3))
-  );
-  const trunk = resolveTrunk(data, branchAt);
-  const branchColorRows = branchColorsAfter(data.submissions, branchAt, data.liveContributorCount);
-  if (!branchColorRows.length) {
-    throw new Error(`No submission colors found after pick ${branchAt} for ${dateKey}`);
+  const replayColors = colorsForReplay(data);
+  if (!replayColors.length) {
+    throw new Error(`No colors to replay for ${dateKey}`);
   }
-  const branchColorList = branchColorRows.map((row) => row.color);
-  const branched = applyBranchPicks(trunk, branchColorRows, dateKey, branchAt, data.macroStructureFrozen);
-  const lastBranchPick = branchColorRows[branchColorRows.length - 1].submissionIndex;
+
+  const fullReplay = replaySequence(dateKey, replayColors, 'baseline', replayColors.length, {
+    macroStructureFrozen: false
+  });
+
+  debugLog(
+    'preview-branch-from-stored.cjs:main',
+    'full replay vs stored',
+    {
+      replayColorCount: replayColors.length,
+      storedHash: blocksJsonHash(data.liveBlocks),
+      replayHash: blocksJsonHash(fullReplay.blocks),
+      storedStats: blockStats(data.liveBlocks),
+      replayStats: blockStats(fullReplay.blocks),
+      storedFingerprint: computeQuiltFingerprint(data.liveBlocks),
+      replayFingerprint: computeQuiltFingerprint(fullReplay.blocks),
+      skippedReplayColors: fullReplay.skippedColors?.length || 0
+    },
+    'D'
+  );
 
   const displayPanels = [
     {
@@ -562,23 +657,19 @@ async function main() {
     {
       id: 'branch',
       label: 'New code',
-      subtitle: `Picks ${branchAt + 1}–${lastBranchPick} re-run on trunk (pick ${branchAt}) · ${branched.blocks.length} blocks`,
-      blocks: branched.blocks,
-      submissionCount: branched.submissionCount,
-      expectedFingerprint: computeQuiltFingerprint(branched.blocks)
+      subtitle: `All ${replayColors.length} colors replayed from scratch with current engine · ${fullReplay.blocks.length} blocks`,
+      blocks: fullReplay.blocks,
+      submissionCount: fullReplay.submissionCount,
+      expectedFingerprint: computeQuiltFingerprint(fullReplay.blocks)
     }
   ];
 
   const outDir = path.join(ROOT, 'tmp', 'branch-from-stored', dateKey);
   fs.mkdirSync(outDir, { recursive: true });
 
-  console.log(`[branch-preview] ${dateKey}: trunk at pick ${branchAt} (${trunk.blocks.length} blocks via ${trunk.source})`);
-  if (trunk.reversedSeqs?.length) {
-    console.log(`[branch-preview] reversed event seq: ${trunk.reversedSeqs.join(', ')}`);
-  }
-  console.log(`[branch-preview] branch colors (${branchColorList.length}): ${branchColorList.join(', ')}`);
-  if (branched.skipped.length) {
-    console.warn('[branch-preview] skipped picks:', branched.skipped);
+  console.log(`[branch-preview] ${dateKey}: full replay ${replayColors.length} colors → ${fullReplay.blocks.length} blocks`);
+  if (fullReplay.skippedColors?.length) {
+    console.warn('[branch-preview] skipped replay colors:', fullReplay.skippedColors);
   }
 
   const rendered = await renderPanels(displayPanels, dateKey, outDir);
@@ -602,20 +693,14 @@ async function main() {
   const cacheBust = Date.now();
   const summary = {
     dateKey,
-    branchAt,
-    branchPickRange: `${branchAt + 1}–${lastBranchPick}`,
-    branchColors: branchColorList,
-    trunkSource: trunk.source,
-    reversedEventSeqs: trunk.reversedSeqs || [],
+    replayColorCount: replayColors.length,
     liveContributorCount: data.liveContributorCount,
     liveBlockCount: data.liveBlocks.length,
-    trunkBlockCount: trunk.blocks.length,
-    branchBlockCount: branched.blocks.length,
+    replayBlockCount: fullReplay.blocks.length,
     liveFingerprint: computeQuiltFingerprint(data.liveBlocks),
-    trunkFingerprint: computeQuiltFingerprint(trunk.blocks),
-    branchFingerprint: computeQuiltFingerprint(branched.blocks),
+    replayFingerprint: computeQuiltFingerprint(fullReplay.blocks),
     replayEventCount: data.replayEvents.length,
-    skippedBranchPicks: branched.skipped,
+    skippedReplayColors: fullReplay.skippedColors || [],
     cacheBust
   };
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
