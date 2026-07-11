@@ -1,0 +1,51 @@
+---
+description: Go-public checklist for quilt name leaderboard (Phase 2) — Railway cron, quilt screen wiring, retire old ballot
+globs: **/*quilt-name*,**/simplified-quilt-app-nav.js,**/ui-service.js
+alwaysApply: false
+---
+
+# Quilt name leaderboard — go public (Phase 2)
+
+Today the leaderboard is **admin-only** (`openQuiltNameLeaderboard` in admin menu). The quilt screen still uses the old AI word-cloud ballot (`mountPublicQuiltNameBallot`).
+
+Before making the leaderboard public, complete **all** of this:
+
+## 1. Railway cutoff cron (required for public)
+
+Lazy cutoff (on first leaderboard load/vote after 15:00 UTC) is fine for admin preview. **Not** fine once real users vote.
+
+- Add a **second Railway cron service** (same pattern as `daily-reset-cron`)
+- Config-as-code: `railway.quilt-name-leaderboard-finalize.json`
+- Schedule: `0 15 * * *` (15:00 UTC ≈ 10 AM CT)
+- Start command: `node scripts/trigger-quilt-name-leaderboard-finalize.cjs`
+- Env: `RESET_TOKEN` + `RESET_URL` (or `QUILT_NAME_LEADERBOARD_FINALIZE_URL`)
+- See `docs/railway-daily-reset-cron.md` for the same setup pattern
+
+## 2. Wire quilt screen
+
+- Replace `mountPublicQuiltNameBallot` on `screen-quilt` with leaderboard UI (`ui-service.js`)
+- Use `Utils.getTodayKey()` for `dateKey` (not local calendar date)
+- Remove or hide `#quiltNameBallotWrap` old 20-word cloud
+
+## 3. Retire old ballot path
+
+- Stop using `/api/quilt-name-generate` elimination flow for public UI
+- Single vote path: `/api/quilt-name-leaderboard-vote` + `entries[]` on `quiltNames/{dateKey}`
+- `winningQuiltName` still feeds IG carousel / nightly job — contract unchanged
+
+## 4. Defaults (locked unless product asks otherwise)
+
+- **8-hour** submission window (07:00–15:00 UTC)
+- **Single vote** per device, changeable during voting
+- **AI fallback** only if &lt;5 names at cutoff
+- **Accept all** unique community names (no fixed cap; ~50 safety limit)
+
+## Smoke before ship
+
+```bash
+RESET_URL=https://our-daily-quilt-production.up.railway.app/api/daily-reset \
+RESET_TOKEN=your-token \
+node scripts/trigger-quilt-name-leaderboard-finalize.cjs
+```
+
+Expect HTTP 200 and `"phase": "voting"`.
