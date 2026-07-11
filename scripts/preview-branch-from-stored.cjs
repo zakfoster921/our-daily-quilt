@@ -465,7 +465,7 @@ async function writeDiffImage(leftPanel, rightPanel, outPath, title) {
 }
 
 async function writeContactSheet(panelImages, contactPath) {
-  const cols = Math.min(3, panelImages.length);
+  const cols = Math.min(2, panelImages.length);
   const rows = Math.ceil(panelImages.length / cols);
   const tileW = OUT_W;
   const tileH = OUT_H;
@@ -517,53 +517,17 @@ function writePreviewHtml(outDir, dateKey, summary, cacheBust) {
   <title>Branch preview — ${dateKey}</title>
   <style>
     body { margin:0; font-family:system-ui,sans-serif; background:#f6f4f1; color:#2a2118; }
-    main { max-width:1400px; margin:0 auto; padding:1.5rem; }
+    main { max-width:1200px; margin:0 auto; padding:1.5rem; }
     h1 { font-size:1.2rem; margin:0 0 0.75rem; }
-    p, li { line-height:1.5; margin:0 0 0.75rem; font-size:0.95rem; }
-    img { width:100%; height:auto; border-radius:8px; box-shadow:0 8px 32px rgba(42,33,24,.12); margin-bottom:1.25rem; display:block; }
-    .stack { display:flex; flex-direction:column; gap:1.25rem; }
-    figure { margin:0; }
-    figcaption { font-size:0.88rem; opacity:0.85; margin-top:0.35rem; }
-    code { font-size:0.9em; }
+    p { line-height:1.5; margin:0 0 1rem; font-size:0.95rem; }
+    img { width:100%; height:auto; border-radius:8px; box-shadow:0 8px 32px rgba(42,33,24,.12); display:block; }
   </style>
 </head>
 <body>
   <main>
-    <h1>${dateKey} — deploy-style preview</h1>
-    <p>
-      <strong>Trunk</strong> (${summary.trunkBlockCount} blocks at pick ${summary.branchAt}) is the quilt <em>before</em> picks ${summary.branchPickRange}.
-      <strong>Stored</strong> and <strong>branch</strong> both have ${summary.liveBlockCount} blocks; branch re-runs those picks on new code.
-    </p>
-    <ul>
-      <li>Stored vs branch diff: ${summary.storedBranchDiffPct}% pixels — ${summary.storedBranchDiffPct < 5 ? 'nearly identical (new code barely changed those picks)' : 'visible changes'}</li>
-      <li>Trunk vs stored diff: ${summary.trunkStoredDiffPct}% pixels — diagonal shards came from picks ${summary.branchPickRange}</li>
-    </ul>
-    <div class="stack">
-      <figure>
-        <img src="contact-sheet.png${q}" alt="Trunk, stored, branch side by side" />
-        <figcaption>All three labeled panels — trunk should look patchworky; stored/branch share the diagonal layout</figcaption>
-      </figure>
-      <figure>
-        <img src="diff-trunk-vs-stored.png${q}" alt="Diff trunk vs stored" />
-        <figcaption>Red = pixels that changed when picks ${summary.branchPickRange} were applied</figcaption>
-      </figure>
-      <figure>
-        <img src="diff-stored-vs-branch.png${q}" alt="Diff stored vs branch" />
-        <figcaption>Red = what new code would change vs what's live (${summary.branchPickRange})</figcaption>
-      </figure>
-      <figure>
-        <img src="panel-trunk-labeled.png${q}" alt="Trunk at branch point" />
-        <figcaption>Trunk pick ${summary.branchAt} · fp ${summary.trunkFingerprint}</figcaption>
-      </figure>
-      <figure>
-        <img src="panel-stored-labeled.png${q}" alt="Stored live" />
-        <figcaption>Stored live · fp ${summary.liveFingerprint}</figcaption>
-      </figure>
-      <figure>
-        <img src="panel-branch-labeled.png${q}" alt="Branch with new code" />
-        <figcaption>New code picks ${summary.branchPickRange} · fp ${summary.branchFingerprint}</figcaption>
-      </figure>
-    </div>
+    <h1>${dateKey}</h1>
+    <p>Left: current live quilt. Right: picks ${summary.branchPickRange} re-run on new code (from trunk at pick ${summary.branchAt}).</p>
+    <img src="contact-sheet.png${q}" alt="Current vs new code" />
   </main>
 </body>
 </html>`;
@@ -586,27 +550,19 @@ async function main() {
   const branched = applyBranchPicks(trunk, branchColorRows, dateKey, branchAt, data.macroStructureFrozen);
   const lastBranchPick = branchColorRows[branchColorRows.length - 1].submissionIndex;
 
-  const panels = [
+  const displayPanels = [
     {
       id: 'stored',
-      label: `Stored live — ${dateKey}`,
-      subtitle: `${data.liveContributorCount} picks · ${data.liveBlocks.length} blocks · what users see now`,
+      label: 'Current',
+      subtitle: `${data.liveContributorCount} picks · ${data.liveBlocks.length} blocks · live in Firestore`,
       blocks: data.liveBlocks,
       submissionCount: data.liveContributorCount,
       expectedFingerprint: computeQuiltFingerprint(data.liveBlocks)
     },
     {
-      id: 'trunk',
-      label: `Deploy trunk — pick ${branchAt}`,
-      subtitle: `${trunk.blocks.length} blocks · ${trunk.source}${trunk.reversedSeqs?.length ? ` · reversed seq ${trunk.reversedSeqs.join(',')}` : ''}`,
-      blocks: trunk.blocks,
-      submissionCount: trunk.submissionCount,
-      expectedFingerprint: computeQuiltFingerprint(trunk.blocks)
-    },
-    {
       id: 'branch',
-      label: `Trunk + new code — picks ${branchAt + 1}–${lastBranchPick}`,
-      subtitle: `${branched.blocks.length} blocks · ${branchColorRows.length} pick(s) with current engine on stored trunk`,
+      label: 'New code',
+      subtitle: `Picks ${branchAt + 1}–${lastBranchPick} re-run on trunk (pick ${branchAt}) · ${branched.blocks.length} blocks`,
       blocks: branched.blocks,
       submissionCount: branched.submissionCount,
       expectedFingerprint: computeQuiltFingerprint(branched.blocks)
@@ -625,8 +581,7 @@ async function main() {
     console.warn('[branch-preview] skipped picks:', branched.skipped);
   }
 
-  const rendered = await renderPanels(panels, dateKey, outDir);
-  const byId = Object.fromEntries(rendered.map((panel) => [panel.id, panel]));
+  const rendered = await renderPanels(displayPanels, dateKey, outDir);
   for (const panel of rendered) {
     const labeled = await labelPanelBuffer(panel);
     const labeledPath = path.join(outDir, `panel-${panel.id}-labeled.png`);
@@ -635,30 +590,14 @@ async function main() {
     panel.labeledPath = labeledPath;
   }
 
-  const contactPanels = ['trunk', 'stored', 'branch']
-    .map((id) => rendered.find((panel) => panel.id === id))
-    .filter(Boolean)
-    .map((panel) => ({
-      ...panel,
-      buffer: panel.labeledBuffer,
-      label: panel.label,
-      subtitle: panel.subtitle
-    }));
+  const contactPanels = rendered.map((panel) => ({
+    ...panel,
+    buffer: panel.labeledBuffer,
+    label: panel.label,
+    subtitle: panel.subtitle
+  }));
   const contactPath = path.join(outDir, 'contact-sheet.png');
   await writeContactSheet(contactPanels, contactPath);
-
-  const diffTrunkStored = await writeDiffImage(
-    byId.trunk,
-    byId.stored,
-    path.join(outDir, 'diff-trunk-vs-stored.png'),
-    `Trunk (pick ${branchAt}) vs stored live`
-  );
-  const diffStoredBranch = await writeDiffImage(
-    byId.stored,
-    byId.branch,
-    path.join(outDir, 'diff-stored-vs-branch.png'),
-    `Stored live vs new code (picks ${branchAt + 1}–${lastBranchPick})`
-  );
 
   const cacheBust = Date.now();
   const summary = {
@@ -677,8 +616,6 @@ async function main() {
     branchFingerprint: computeQuiltFingerprint(branched.blocks),
     replayEventCount: data.replayEvents.length,
     skippedBranchPicks: branched.skipped,
-    trunkStoredDiffPct: diffTrunkStored.pct,
-    storedBranchDiffPct: diffStoredBranch.pct,
     cacheBust
   };
   fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
