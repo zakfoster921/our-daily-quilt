@@ -50,6 +50,21 @@ async function main() {
   assert.ok(episode);
   assert.match(episode.audioUrl, /\.mp3/i);
 
+  qs._seamsideEpisodes = [
+    qs._normalizeSeamsideEpisodeFromFirestore(
+      {
+        artistName: 'Demetri Broxton',
+        artistSlug: 'demetri-broxton',
+        speaker_link: 'https://example.com/demetri'
+      },
+      'demetri-broxton'
+    )
+  ];
+  assert.strictEqual(
+    qs.lookupSeamsideSpeakerLinkForAuthor('Demetri Broxton'),
+    'https://example.com/demetri'
+  );
+
   const merged = qs._mergeAssignmentSubmittedViaSnapshotFields(
     { text: 'x', author: 'y' },
     { submittedViaSnapshot: 'SEAMSIDE' }

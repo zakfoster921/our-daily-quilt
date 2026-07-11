@@ -74,6 +74,7 @@ function normalizeEpisodeRecord(raw = {}) {
   const episodeTitle = String(raw.episodeTitle ?? raw.episode_title ?? '').trim();
   const audioUrl = String(raw.audioUrl ?? raw.audio_url ?? '').trim();
   const applePodcastsUrl = String(raw.applePodcastsUrl ?? raw.apple_podcasts_url ?? '').trim();
+  const speakerLink = String(raw.speakerLink ?? raw.speaker_link ?? '').trim();
   const episodeImageUrl = String(raw.episodeImageUrl ?? raw.episode_image_url ?? '').trim();
   const active = raw.active !== false;
   if (!artistName) return null;
@@ -84,6 +85,7 @@ function normalizeEpisodeRecord(raw = {}) {
     episodeTitle,
     audioUrl,
     applePodcastsUrl,
+    speakerLink,
     episodeImageUrl,
     active,
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? new Date().toISOString()).trim()

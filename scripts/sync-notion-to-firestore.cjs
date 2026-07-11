@@ -66,7 +66,6 @@ const SNAKE_CASE_FIELD_PAIRS = [
   ['speakerBorn', 'speaker_born'],
   ['speakerDied', 'speaker_died'],
   ['speakerGuideLine', 'speaker_guide_line'],
-  ['speakerLink', 'speaker_link'],
   ['speakerKeywords', 'speaker_keywords'],
   ['imageAttribution', 'image_attribution'],
   ['submittedBy', 'submitted_by'],
@@ -751,13 +750,6 @@ function parseNotionRow(page) {
     'why_good_guide',
     'why_good_for_reflection'
   );
-  const speakerLink = getMappedUrl(
-    props,
-    'speaker_link',
-    'speakerLink',
-    'Speaker link',
-    'Speaker Link'
-  );
   const speakerKeywords = findSpeakerKeywordsFromProps(props);
   if (process.env.SYNC_DEBUG_SPEAKER_KEYWORDS === '1') {
     const debugPageId = String(process.env.SYNC_DEBUG_SPEAKER_KEYWORDS_PAGE_ID || '').trim();
@@ -890,7 +882,6 @@ function parseNotionRow(page) {
       speaker_born: speakerBorn,
       speaker_died: speakerDied,
       speaker_guide_line: speakerGuideLine,
-      speaker_link: speakerLink,
       speaker_keywords: String(speakerKeywords || '').trim(),
       image_attribution: imageAttribution,
       submitted_by: submittedBy,

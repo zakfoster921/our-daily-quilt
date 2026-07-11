@@ -7836,13 +7836,6 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
         'Guide line',
         'Speaker guide line'
       );
-      const speakerLink = getNotionPropPlainByAliases(
-        props,
-        'speaker_link',
-        'speakerLink',
-        'Speaker link',
-        'Speaker Link'
-      );
       const imageAttribution = getNotionPropPlainByAliases(
         props,
         'image_attribution',
@@ -7858,7 +7851,6 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
         ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
         ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
         ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
-        ...(speakerLink ? { speakerLink, speaker_link: speakerLink } : {}),
         ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
       };
       const sourceId = String(page.id || '').trim();
@@ -7940,13 +7932,6 @@ async function resolveNotionQuoteForPreviewSourceId(sourceId) {
       'Guide line',
       'Speaker guide line'
     );
-    const speakerLink = getNotionPropPlainByAliases(
-      props,
-      'speaker_link',
-      'speakerLink',
-      'Speaker link',
-      'Speaker Link'
-    );
     const imageAttribution = getNotionPropPlainByAliases(
       props,
       'image_attribution',
@@ -7964,7 +7949,6 @@ async function resolveNotionQuoteForPreviewSourceId(sourceId) {
         ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
         ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
         ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
-        ...(speakerLink ? { speakerLink, speaker_link: speakerLink } : {}),
         ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
       },
       resolution: 'notion_live_source',

@@ -10,6 +10,7 @@
  * Notion columns (SEAMSIDE > ODQ database):
  * - Name (title) — artist name, matched to quote author
  * - url (url) — Apple Podcasts episode link
+ * - speaker_link (url) — learn-more link appended to speaker guideline in app
  * Optional later: episode_title, audio_url, episode_image_url, active
  *
  * When audio_url is empty, sync fills it from zakfoster.com/seamside RSS by artist name.
@@ -172,6 +173,8 @@ function parseNotionEpisodePage(page) {
   const applePodcastsUrl =
     getUrl(findProp(props, 'url', 'URL', 'ur', 'UR', 'apple_podcasts_url', 'Apple Podcasts URL', 'applePodcastsUrl')) ||
     '';
+  const speakerLink =
+    getUrl(findProp(props, 'speaker_link', 'Speaker link', 'Speaker Link', 'speakerLink')) || '';
   const audioUrl = getUrl(findProp(props, 'audio_url', 'Audio URL', 'audioUrl'));
   const episodeImageUrl = getUrl(findProp(props, 'episode_image_url', 'Episode image URL', 'episodeImageUrl'));
   const active = getCheckbox(findProp(props, 'active', 'Active'), true);
@@ -180,6 +183,7 @@ function parseNotionEpisodePage(page) {
     artistSlug: artistSlugFromName(artistName),
     episodeTitle,
     applePodcastsUrl,
+    speakerLink,
     audioUrl,
     episodeImageUrl,
     active,
@@ -255,6 +259,7 @@ async function main() {
         artist_slug: episode.artistSlug,
         episode_title: episode.episodeTitle,
         apple_podcasts_url: episode.applePodcastsUrl,
+        speaker_link: episode.speakerLink,
         audio_url: episode.audioUrl,
         episode_image_url: episode.episodeImageUrl,
         active: episode.active !== false,
