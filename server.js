@@ -8877,7 +8877,7 @@ async function assertQuiltNameAllowed(word) {
   try {
     const moderation = await moderateQuiltNameWithAi(word);
     if (moderation.action === 'reject') {
-      throw new Error('That name isn\'t allowed — please try another.');
+      throw new Error('There seems to be a problem with this name. Please try another.');
     }
     return moderation;
   } catch (error) {
@@ -8885,7 +8885,7 @@ async function assertQuiltNameAllowed(word) {
     console.warn(`⚠️ Quilt name AI moderation failed for "${word}":`, error?.message || error);
     const fallback = moderateQuiltNameLocally(word);
     if (fallback.action === 'reject') {
-      throw new Error('That name isn\'t allowed — please try another.');
+      throw new Error('There seems to be a problem with this name. Please try another.');
     }
     return fallback;
   }
