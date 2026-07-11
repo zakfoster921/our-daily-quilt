@@ -9132,9 +9132,17 @@ app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
     const clientId = String(body.clientId || '').trim();
-    const word = normalizeQuiltNameLeaderboardWord(body.word);
+    const rawWord = String(body.word || '').trim();
     if (!clientId) return res.status(400).json({ success: false, error: 'clientId is required' });
+    if (!rawWord) return res.status(400).json({ success: false, error: 'word is required' });
+    if (/\s/.test(rawWord) || rawWord.split(/\s+/).filter(Boolean).length > 1) {
+      return res.status(400).json({ success: false, error: 'Please choose just one word' });
+    }
+    const word = normalizeQuiltNameLeaderboardWord(rawWord);
     if (!word) return res.status(400).json({ success: false, error: 'word is required' });
+    if (word.toLowerCase() !== rawWord.toLowerCase()) {
+      return res.status(400).json({ success: false, error: 'Names can only use letters' });
+    }
     if (word.length > QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH) {
       return res.status(400).json({ success: false, error: `word must be ${QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH} characters or fewer` });
     }
