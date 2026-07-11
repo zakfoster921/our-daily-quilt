@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Branch-from-stored deploy preview: keep picks 1..N exactly (colorReplayEvents trunk),
- * then apply only later picks with current engine code.
+ * Current vs new-code preview: stored live quilt vs full color replay on current engine.
  *
  *   npm run preview:branch-from-stored
- *   DATE_KEY=2026-07-11 BRANCH_AT=34 npm run preview:branch-from-stored
+ *   DATE_KEY=2026-07-11 npm run preview:branch-from-stored
  *
  * Output: tmp/branch-from-stored/<dateKey>/contact-sheet.png + preview.html
  */
@@ -32,51 +31,6 @@ const OUT_W = Math.max(320, Math.floor(Number(process.env.OUT_W) || 1080));
 const OUT_H = Math.max(568, Math.floor(Number(process.env.OUT_H) || 1920));
 const CONTACT_GAP = 48;
 const CONTACT_LABEL_H = 116;
-const DEBUG_LOG = path.join(ROOT, '.cursor', 'debug-4fae08.log');
-
-function debugLog(location, message, data, hypothesisId, runId = 'pre-fix') {
-  // #region agent log
-  try {
-    fs.appendFileSync(
-      DEBUG_LOG,
-      `${JSON.stringify({
-        sessionId: '4fae08',
-        runId,
-        hypothesisId,
-        location,
-        message,
-        data,
-        timestamp: Date.now()
-      })}\n`
-    );
-  } catch (_) {
-    /* ignore */
-  }
-  // #endregion
-}
-
-function blockStats(blocks) {
-  const list = Array.isArray(blocks) ? blocks : [];
-  const specials = {};
-  let axisPolygon = 0;
-  let diagonalAxis = 0;
-  for (const block of list) {
-    const type = block?.specialPatternType || (block?.patternType === 'special' ? 'unknown' : null);
-    if (type) specials[type] = (specials[type] || 0) + 1;
-    if (block?.specialPatternType === 'diagonalAxis') diagonalAxis += 1;
-    if (Array.isArray(block?.polygonPieces) && block.polygonPieces.length) axisPolygon += 1;
-  }
-  return {
-    blockCount: list.length,
-    specialCounts: specials,
-    diagonalAxis,
-    axisPolygonBlocks: axisPolygon
-  };
-}
-
-function blocksJsonHash(blocks) {
-  return crypto.createHash('sha256').update(JSON.stringify(blocks)).digest('hex').slice(0, 16);
-}
 
 function initFirestore() {
   if (admin.apps.length) return admin.firestore();
@@ -249,28 +203,12 @@ function applyBranchPicks(snapshot, colorRows, dateKey, branchAt, macroStructure
     colorRows.forEach(({ submissionIndex, color }) => {
       if (!engine.addColor(color)) skipped.push({ submissionIndex, color });
     });
-    const result = {
+    return {
       blocks: serializeServerQuiltBlocks(engine),
       submissionCount: Number(engine.submissionCount) || snapshot.submissionCount + colorRows.length,
       macroStructureFrozen: engine.macroStructureFrozen === true,
       skipped
     };
-    debugLog(
-      'preview-branch-from-stored.cjs:applyBranchPicks',
-      'branch replay finished',
-      {
-        branchAt,
-        colorCount: colorRows.length,
-        trunkBlocks: snapshot.blocks.length,
-        branchBlocks: result.blocks.length,
-        skipped,
-        macroStructureFrozen: result.macroStructureFrozen,
-        trunkStats: blockStats(snapshot.blocks),
-        branchStats: blockStats(result.blocks)
-      },
-      'C'
-    );
-    return result;
   } finally {
     Math.random = originalRandom;
   }
@@ -424,22 +362,7 @@ async function renderOnePanel(browser, url, panel, dateKey) {
     );
     await page.waitForTimeout(600);
     const buffer = await page.locator('#quilt').screenshot({ type: 'png' });
-    const shotHash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 16);
-    debugLog(
-      'preview-branch-from-stored.cjs:renderOnePanel',
-      'panel rendered',
-      {
-        panelId: panel.id,
-        shotHash,
-        blockCount: renderCheck.blockCount,
-        shapeCount: renderCheck.shapeCount,
-        fingerprint: renderCheck.fingerprint,
-        firstBlockIds: panel.blocks.slice(0, 5).map((b) => b.id),
-        lastBlockIds: panel.blocks.slice(-3).map((b) => b.id)
-      },
-      'A'
-    );
-    return { ...panel, buffer, renderCheck, shotHash };
+    return { ...panel, buffer, renderCheck };
   } finally {
     await page.close();
   }
@@ -467,12 +390,6 @@ async function renderPanels(panels, dateKey, outDir) {
       hash: crypto.createHash('sha256').update(panel.buffer).digest('hex').slice(0, 12)
     }));
     const uniqueHashes = new Set(hashes.map((row) => row.hash));
-    debugLog(
-      'preview-branch-from-stored.cjs:renderPanels',
-      'screenshot hash compare',
-      { hashes, uniqueCount: uniqueHashes.size, identical: uniqueHashes.size !== hashes.length },
-      'A'
-    );
     if (uniqueHashes.size !== hashes.length) {
       const dupes = hashes.map((h) => `${h.id}:${h.hash}`).join(', ');
       throw new Error(`Panel screenshots were identical — render did not swap quilts (${dupes})`);
@@ -628,22 +545,6 @@ async function main() {
   const fullReplay = replaySequence(dateKey, replayColors, 'baseline', replayColors.length, {
     macroStructureFrozen: false
   });
-
-  debugLog(
-    'preview-branch-from-stored.cjs:main',
-    'full replay vs stored',
-    {
-      replayColorCount: replayColors.length,
-      storedHash: blocksJsonHash(data.liveBlocks),
-      replayHash: blocksJsonHash(fullReplay.blocks),
-      storedStats: blockStats(data.liveBlocks),
-      replayStats: blockStats(fullReplay.blocks),
-      storedFingerprint: computeQuiltFingerprint(data.liveBlocks),
-      replayFingerprint: computeQuiltFingerprint(fullReplay.blocks),
-      skippedReplayColors: fullReplay.skippedColors?.length || 0
-    },
-    'D'
-  );
 
   const displayPanels = [
     {
