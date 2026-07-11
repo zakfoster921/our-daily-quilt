@@ -8774,6 +8774,7 @@ async function getQuiltContributorCountForDate(dateKey) {
 
 const QUILT_NAME_LEADERBOARD_SUBMISSION_HOURS = parsePositiveInt(process.env.QUILT_NAME_SUBMISSION_HOURS, 8);
 const QUILT_NAME_LEADERBOARD_MIN_ENTRIES = parsePositiveInt(process.env.QUILT_NAME_MIN_ENTRIES, 5);
+const QUILT_NAME_LEADERBOARD_VOTING_CAP = parsePositiveInt(process.env.QUILT_NAME_VOTING_CAP, 12);
 const QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRIES_SAFETY, 50);
 const QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRY_LENGTH, 24);
 
@@ -8916,19 +8917,149 @@ async function loadQuiltColorContextForDate(dateKey) {
   return { blocks, families, blockCount };
 }
 
-async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWords = [] }) {
-  const safeNeeded = Math.max(0, Math.floor(Number(neededCount) || 0));
-  if (!safeNeeded) return [];
-  const { families, blockCount } = await loadQuiltColorContextForDate(dateKey);
+async function loadQuiltNameDayContext(dateKey) {
+  const { blocks, families, blockCount } = await loadQuiltColorContextForDate(dateKey);
+  let quoteText = '';
+  if (db && typeof db.collection === 'function') {
+    try {
+      const quoteSnap = await db.collection('quotes').doc(dateKey).get();
+      const qd = quoteSnap.exists ? (quoteSnap.data() || {}) : {};
+      quoteText = String(qd.text ?? qd.body ?? '').trim();
+    } catch (_) {}
+  }
+  return {
+    blocks,
+    families,
+    blockCount,
+    quoteText,
+    composition: analyzeCompositionServer(blocks),
+    topColors: families.slice(0, 3).map((family) => family.name).join(', ') || 'mixed colors'
+  };
+}
+
+function pickLeaderboardEntriesByWords(entries, words) {
+  const byKey = new Map(
+    normalizeQuiltNameLeaderboardEntries(entries).map((entry) => [entry.word.toLowerCase(), entry])
+  );
+  const picked = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(words) ? words : []) {
+    const word = normalizeQuiltNameLeaderboardWord(raw);
+    const key = word.toLowerCase();
+    const entry = byKey.get(key);
+    if (!entry || seen.has(key)) continue;
+    seen.add(key);
+    picked.push(entry);
+  }
+  return picked;
+}
+
+function fallbackFilterCommunityEntriesForBallot(entries, targetCount, dateKey) {
+  const safeTarget = Math.max(0, Math.floor(Number(targetCount) || 0));
+  const community = normalizeQuiltNameLeaderboardEntries(entries).filter((entry) => entry.source !== 'ai');
+  if (!safeTarget || community.length <= safeTarget) return community;
+  return seededShuffle(community, `qnlb-filter:${dateKey}`).slice(0, safeTarget);
+}
+
+function buildQuiltNameBallotFilterPrompt({ dateKey, context, submittedWords, targetCount }) {
+  const quoteLine = context.quoteText
+    ? `- Daily quote: "${context.quoteText}"`
+    : '';
+  return `Community members submitted these one-word quilt name suggestions:
+${JSON.stringify(submittedWords)}
+
+Today's quilt:
+- Date: ${dateKey}
+- Dominant colors: ${context.topColors}
+- Total blocks contributed: ${context.blockCount}${context.composition ? `\n- Composition: ${context.composition}` : ''}
+${quoteLine}
+
+Select exactly ${targetCount} names from the submitted list only. Every returned word must match one submitted word exactly (same spelling).
+
+Prefer names that:
+- Feel specific to today's quilt colors, composition, and quote mood
+- Are accessible, memorable, and vote-worthy
+- Are diverse from each other (avoid near-duplicates and same-vibe clusters)
+- Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
+- Avoid obscure words most people would not know
+
+Output ONLY a JSON array of exactly ${targetCount} strings from the submitted list: ["Word1","Word2",...]`;
+}
+
+function buildQuiltNameBallotFillPrompt({ dateKey, context, neededCount, existingWords }) {
+  const existingList = existingWords.length ? existingWords.join(', ') : '(none yet)';
+  const quoteRule = context.quoteText
+    ? `- Up to 2 words may echo significant positive nouns or verbs from this quote: "${context.quoteText}"`
+    : '';
+  return `You are naming a collaborative daily quilt. Generate exactly ${neededCount} evocative single-word names to complete today's voting ballot.
+
+Quilt details:
+- Date: ${dateKey}
+- Dominant colors: ${context.topColors}
+- Total blocks contributed: ${context.blockCount}${context.composition ? `\n- Composition: ${context.composition}` : ''}
+
+Already on the ballot (do NOT repeat or near-duplicate): ${existingList}
+
+Rules:
+- Every word must be a single word (no phrases, no hyphens)
+- Words should feel poetic, tactile, or atmospheric — not generic
+- Mix concrete nouns, adjectives, and unexpected plain-language words
+- Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
+- Avoid esoteric or niche words that most people wouldn't know
+- Use present-tense verbs only — no past tense
+- At least half the words should evoke today's dominant colors without literally naming colors
+- Do NOT include color names literally (no "Blue", "Red", etc.)
+${quoteRule}
+- Output ONLY a JSON array of exactly ${neededCount} strings, nothing else: ["Word1","Word2",...]`;
+}
+
+async function filterCommunityEntriesForBallot({ dateKey, entries, targetCount }) {
+  const safeTarget = Math.max(0, Math.floor(Number(targetCount) || 0));
+  const community = normalizeQuiltNameLeaderboardEntries(entries).filter((entry) => entry.source !== 'ai');
+  if (!safeTarget || community.length <= safeTarget) return community;
+
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
+  if (apiKey) {
+    try {
+      const context = await loadQuiltNameDayContext(dateKey);
+      const submittedWords = community.map((entry) => entry.word);
+      const prompt = buildQuiltNameBallotFilterPrompt({
+        dateKey,
+        context,
+        submittedWords,
+        targetCount: safeTarget
+      });
+      const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 320 });
+      const match = raw.match(/\[[\s\S]*?\]/);
+      if (!match) throw new Error('Claude returned no JSON array');
+      const parsed = JSON.parse(match[0]);
+      if (!Array.isArray(parsed)) throw new Error('Claude filter response was not an array');
+      const picked = pickLeaderboardEntriesByWords(community, parsed);
+      if (picked.length >= safeTarget) return picked.slice(0, safeTarget);
+
+      const pickedKeys = new Set(picked.map((entry) => entry.word.toLowerCase()));
+      const remainder = seededShuffle(
+        community.filter((entry) => !pickedKeys.has(entry.word.toLowerCase())),
+        `qnlb-filter-remainder:${dateKey}`
+      );
+      return [...picked, ...remainder].slice(0, safeTarget);
+    } catch (error) {
+      console.warn(`⚠️ AI quilt name ballot filter failed for ${dateKey}:`, error.message);
+    }
+  }
+
+  return fallbackFilterCommunityEntriesForBallot(community, safeTarget, dateKey);
+}
+
+function appendAiLeaderboardWordsToEntries(words, existingWords, nowIso) {
   const existing = new Set(
     (Array.isArray(existingWords) ? existingWords : [])
       .map((word) => normalizeQuiltNameLeaderboardWord(word).toLowerCase())
       .filter(Boolean)
   );
-  const fallback = buildFallbackQuiltNameWords({ colorFamilies: families, blockCount, dateKey });
-  const nowIso = new Date().toISOString();
   const entries = [];
-  for (const raw of fallback) {
+  for (const raw of Array.isArray(words) ? words : []) {
     const word = normalizeQuiltNameLeaderboardWord(raw);
     const key = word.toLowerCase();
     if (!word || existing.has(key)) continue;
@@ -8941,9 +9072,118 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
       submittedByClientId: null,
       submittedAtIso: nowIso
     });
-    if (entries.length >= safeNeeded) break;
   }
   return entries;
+}
+
+async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWords = [] }) {
+  const safeNeeded = Math.max(0, Math.floor(Number(neededCount) || 0));
+  if (!safeNeeded) return [];
+
+  const nowIso = new Date().toISOString();
+  const context = await loadQuiltNameDayContext(dateKey);
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
+  let entries = [];
+
+  if (apiKey) {
+    try {
+      const prompt = buildQuiltNameBallotFillPrompt({
+        dateKey,
+        context,
+        neededCount: safeNeeded,
+        existingWords: (Array.isArray(existingWords) ? existingWords : [])
+          .map((word) => normalizeQuiltNameLeaderboardWord(word))
+          .filter(Boolean)
+      });
+      const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
+      const match = raw.match(/\[[\s\S]*?\]/);
+      if (!match) throw new Error('Claude returned no JSON array');
+      const parsed = JSON.parse(match[0]);
+      if (!Array.isArray(parsed)) throw new Error('Claude fill response was not an array');
+      entries = appendAiLeaderboardWordsToEntries(parsed, existingWords, nowIso);
+    } catch (error) {
+      console.warn(`⚠️ AI quilt name ballot fill failed for ${dateKey}:`, error.message);
+    }
+  }
+
+  if (entries.length < safeNeeded) {
+    const fallback = buildFallbackQuiltNameWords({
+      colorFamilies: context.families,
+      blockCount: context.blockCount,
+      dateKey
+    });
+    const usedWords = [
+      ...(Array.isArray(existingWords) ? existingWords : []),
+      ...entries.map((entry) => entry.word)
+    ];
+    entries = [
+      ...entries,
+      ...appendAiLeaderboardWordsToEntries(fallback, usedWords, nowIso)
+    ];
+  }
+
+  if (entries.length < safeNeeded) {
+    const extraFallback = seededShuffle(
+      buildFallbackQuiltNameWords({
+        colorFamilies: context.families,
+        blockCount: context.blockCount,
+        dateKey: `${dateKey}:extra`
+      }),
+      `qnlb-fill-extra:${dateKey}`
+    );
+    const usedWords = [
+      ...(Array.isArray(existingWords) ? existingWords : []),
+      ...entries.map((entry) => entry.word)
+    ];
+    entries = [
+      ...entries,
+      ...appendAiLeaderboardWordsToEntries(extraFallback, usedWords, nowIso)
+    ];
+  }
+
+  return entries.slice(0, safeNeeded);
+}
+
+async function buildLeaderboardVotingBallotEntries(dateKey, rawEntries) {
+  const targetCount = QUILT_NAME_LEADERBOARD_VOTING_CAP;
+  const allEntries = normalizeQuiltNameLeaderboardEntries(rawEntries);
+  const communityEntries = allEntries.filter((entry) => entry.source !== 'ai');
+  let selected = communityEntries;
+  let aiFiltered = 0;
+
+  if (communityEntries.length > targetCount) {
+    selected = await filterCommunityEntriesForBallot({
+      dateKey,
+      entries: communityEntries,
+      targetCount
+    });
+    aiFiltered = Math.max(0, communityEntries.length - selected.length);
+  }
+
+  let aiAdded = 0;
+  let guard = 0;
+  while (selected.length < targetCount && guard < 4) {
+    guard += 1;
+    const needed = targetCount - selected.length;
+    const aiEntries = await generateAiLeaderboardEntries({
+      dateKey,
+      neededCount: needed,
+      existingWords: selected.map((entry) => entry.word)
+    });
+    if (!aiEntries.length) break;
+    aiAdded += aiEntries.length;
+    selected = normalizeQuiltNameLeaderboardEntries([...selected, ...aiEntries]);
+  }
+
+  return {
+    entries: selected.slice(0, targetCount),
+    submissionEntries: allEntries,
+    aiAdded,
+    aiFiltered,
+    communityCount: communityEntries.length,
+    votingCap: targetCount
+  };
 }
 
 async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
@@ -8966,39 +9206,36 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
     };
   }
 
-  let entries = normalizeQuiltNameLeaderboardEntries(data.entries);
-  const communityCount = entries.filter((entry) => entry.source === 'community').length;
-  const needed = Math.max(0, QUILT_NAME_LEADERBOARD_MIN_ENTRIES - entries.length);
-  let aiAdded = 0;
-  if (needed > 0) {
-    const aiEntries = await generateAiLeaderboardEntries({
-      dateKey,
-      neededCount: needed,
-      existingWords: entries.map((entry) => entry.word)
-    });
-    entries = normalizeQuiltNameLeaderboardEntries([...entries, ...aiEntries]);
-    aiAdded = aiEntries.length;
-  }
+  const submissionEntries = normalizeQuiltNameLeaderboardEntries(data.entries);
+  const ballot = await buildLeaderboardVotingBallotEntries(dateKey, submissionEntries);
+  const entries = ballot.entries;
 
   const nextDoc = {
     mode: 'leaderboard',
     phase: 'voting',
     submissionsCloseAt: getLeaderboardSubmissionsCloseIso(dateKey),
     entries,
+    submissionEntries: ballot.submissionEntries,
+    votingBallotCap: ballot.votingCap,
     submissionsByClientId: data.submissionsByClientId || {},
     votesByClientId: data.votesByClientId || {},
     winningQuiltName: getWinningQuiltNameFromEntries(entries, contributorCount),
     finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
-    ...(communityCount < QUILT_NAME_LEADERBOARD_MIN_ENTRIES && aiAdded
-      ? { aiFallbackAt: admin.firestore.FieldValue.serverTimestamp() }
-      : {})
+    ballotCuratedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(ballot.aiAdded ? { aiBallotFillCount: ballot.aiAdded } : {}),
+    ...(ballot.aiFiltered ? { aiBallotFilterCount: ballot.aiFiltered } : {}),
+    ...(ballot.aiAdded ? { aiFallbackAt: admin.firestore.FieldValue.serverTimestamp() } : {})
   };
   await nameRef.set(nextDoc, { merge: true });
 
   return {
     dateKey,
     phase: 'voting',
-    aiAdded,
+    aiAdded: ballot.aiAdded,
+    aiFiltered: ballot.aiFiltered,
+    submissionEntryCount: ballot.submissionEntries.length,
+    communityCount: ballot.communityCount,
+    votingBallotCap: ballot.votingCap,
     entryCount: entries.length,
     alreadyFinalized: false
   };
