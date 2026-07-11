@@ -7645,6 +7645,8 @@ function buildPreviewQuotePayloadFromFirestore(data, sourceId) {
     speaker_died: String(data?.speakerDied || data?.speaker_died || '').trim() || undefined,
     speakerGuideLine: String(data?.speakerGuideLine || data?.speaker_guide_line || '').trim() || undefined,
     speaker_guide_line: String(data?.speakerGuideLine || data?.speaker_guide_line || '').trim() || undefined,
+    speakerLink: String(data?.speakerLink || data?.speaker_link || '').trim() || undefined,
+    speaker_link: String(data?.speakerLink || data?.speaker_link || '').trim() || undefined,
     imageAttribution: String(data?.imageAttribution || data?.image_attribution || '').trim() || undefined,
     image_attribution: String(data?.imageAttribution || data?.image_attribution || '').trim() || undefined
   };
@@ -7834,6 +7836,13 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
         'Guide line',
         'Speaker guide line'
       );
+      const speakerLink = getNotionPropPlainByAliases(
+        props,
+        'speaker_link',
+        'speakerLink',
+        'Speaker link',
+        'Speaker Link'
+      );
       const imageAttribution = getNotionPropPlainByAliases(
         props,
         'image_attribution',
@@ -7849,6 +7858,7 @@ async function resolveNotionQuoteForPreviewDate(dateKey) {
         ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
         ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
         ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
+        ...(speakerLink ? { speakerLink, speaker_link: speakerLink } : {}),
         ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
       };
       const sourceId = String(page.id || '').trim();
@@ -7930,6 +7940,13 @@ async function resolveNotionQuoteForPreviewSourceId(sourceId) {
       'Guide line',
       'Speaker guide line'
     );
+    const speakerLink = getNotionPropPlainByAliases(
+      props,
+      'speaker_link',
+      'speakerLink',
+      'Speaker link',
+      'Speaker Link'
+    );
     const imageAttribution = getNotionPropPlainByAliases(
       props,
       'image_attribution',
@@ -7947,6 +7964,7 @@ async function resolveNotionQuoteForPreviewSourceId(sourceId) {
         ...(speakerImageUrl ? { speakerImageUrl, speaker_image_url: speakerImageUrl } : {}),
         ...(speakerCutoutUrl ? { speakerCutoutUrl, speaker_cutout_url: speakerCutoutUrl } : {}),
         ...(speakerGuideLine ? { speakerGuideLine, speaker_guide_line: speakerGuideLine } : {}),
+        ...(speakerLink ? { speakerLink, speaker_link: speakerLink } : {}),
         ...(imageAttribution ? { imageAttribution, image_attribution: imageAttribution } : {})
       },
       resolution: 'notion_live_source',
@@ -8881,7 +8899,7 @@ async function assertQuiltNameAllowed(word) {
     }
     return moderation;
   } catch (error) {
-    if (/isn't allowed/i.test(String(error?.message || ''))) throw error;
+    if (/problem with this name/i.test(String(error?.message || ''))) throw error;
     console.warn(`⚠️ Quilt name AI moderation failed for "${word}":`, error?.message || error);
     const fallback = moderateQuiltNameLocally(word);
     if (fallback.action === 'reject') {
@@ -8893,7 +8911,7 @@ async function assertQuiltNameAllowed(word) {
 
 function quiltNameSubmitErrorStatus(message) {
   const text = String(message || '');
-  if (/isn't allowed|not allowed/i.test(text)) return 400;
+  if (/problem with this name/i.test(text)) return 400;
   if (/already suggested|full for today|closed|not open/i.test(text)) return 409;
   return 500;
 }

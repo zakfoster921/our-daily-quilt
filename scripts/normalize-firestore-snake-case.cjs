@@ -89,6 +89,7 @@ const FIELD_PAIRS = [
   ['speakerBorn', 'speaker_born'],
   ['speakerDied', 'speaker_died'],
   ['speakerGuideLine', 'speaker_guide_line'],
+  ['speakerLink', 'speaker_link'],
   ['speakerKeywords', 'speaker_keywords'],
   ['imageAttribution', 'image_attribution'],
   ['submittedBy', 'submitted_by'],
