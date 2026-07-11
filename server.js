@@ -9263,12 +9263,12 @@ app.post('/api/quilt-name-leaderboard-vote', limitQuiltNameLeaderboardVote, asyn
 });
 
 app.options('/api/quilt-name-leaderboard-finalize', (req, res) => {
-  setQuoteSubmissionCors(res);
+  setResetApiCors(res);
   return res.status(204).end();
 });
 
 app.post('/api/quilt-name-leaderboard-finalize', limitQuiltNameLeaderboard, async (req, res) => {
-  setQuoteSubmissionCors(res);
+  setResetApiCors(res);
   try {
     if (!isQuiltNameLeaderboardEnabled()) {
       return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
@@ -9285,12 +9285,12 @@ app.post('/api/quilt-name-leaderboard-finalize', limitQuiltNameLeaderboard, asyn
 });
 
 app.options('/api/quilt-name-leaderboard-clear', (req, res) => {
-  setQuoteSubmissionCors(res);
+  setResetApiCors(res);
   return res.status(204).end();
 });
 
 app.post('/api/quilt-name-leaderboard-clear', limitQuiltNameLeaderboard, async (req, res) => {
-  setQuoteSubmissionCors(res);
+  setResetApiCors(res);
   try {
     if (!isQuiltNameLeaderboardEnabled()) {
       return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
