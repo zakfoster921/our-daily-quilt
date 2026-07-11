@@ -676,7 +676,7 @@ function setResetApiCors(res) {
 function setQuoteSubmissionCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-token, x-reset-token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -9056,6 +9056,12 @@ function assertResetToken(req, res) {
   return true;
 }
 
+function hasValidResetToken(req) {
+  const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+  const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+  return !!(expectedToken && providedToken && providedToken === expectedToken);
+}
+
 app.options('/api/quilt-name-leaderboard', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -9155,7 +9161,9 @@ app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
 
     const nameRef = db.collection('quiltNames').doc(dateKey);
     const nowIso = new Date().toISOString();
+    const adminMultiSubmit = hasValidResetToken(req);
     let responseDoc = null;
+    let submittedEntry = null;
 
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(nameRef);
@@ -9163,7 +9171,7 @@ app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
       const submissionsByClientId = {
         ...(data.submissionsByClientId && typeof data.submissionsByClientId === 'object' ? data.submissionsByClientId : {})
       };
-      if (submissionsByClientId[clientId]) {
+      if (submissionsByClientId[clientId] && !adminMultiSubmit) {
         throw new Error('You already suggested a name today');
       }
 
@@ -9186,7 +9194,10 @@ app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
         submittedAtIso: nowIso
       };
       entries = normalizeQuiltNameLeaderboardEntries([...entries, entry]);
-      submissionsByClientId[clientId] = entry.id;
+      submittedEntry = entry;
+      if (!submissionsByClientId[clientId]) {
+        submissionsByClientId[clientId] = entry.id;
+      }
 
       responseDoc = {
         mode: 'leaderboard',
@@ -9202,7 +9213,7 @@ app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
 
     return res.json({
       success: true,
-      entry: responseDoc.entries.find((item) => item.id === responseDoc.submissionsByClientId[clientId]),
+      entry: submittedEntry,
       doc: responseDoc
     });
   } catch (error) {
