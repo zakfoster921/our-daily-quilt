@@ -225,6 +225,10 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-words', 4 * ONE_KB],
   ['/api/quilt-name-generate', 4 * ONE_KB],
   ['/api/quilt-vote', 4 * ONE_KB],
+  ['/api/quilt-name-leaderboard', 4 * ONE_KB],
+  ['/api/quilt-name-submit', 4 * ONE_KB],
+  ['/api/quilt-name-leaderboard-vote', 4 * ONE_KB],
+  ['/api/quilt-name-leaderboard-finalize', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
@@ -466,6 +470,21 @@ const limitQuiltVote = createRateLimiter({
   name: 'quilt-vote',
   windowMs: 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_VOTE_PER_MIN, 30)
+});
+const limitQuiltNameLeaderboard = createRateLimiter({
+  name: 'quilt-name-leaderboard',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_NAME_LEADERBOARD_PER_MIN, 60)
+});
+const limitQuiltNameSubmit = createRateLimiter({
+  name: 'quilt-name-submit',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_NAME_SUBMIT_PER_MIN, 20)
+});
+const limitQuiltNameLeaderboardVote = createRateLimiter({
+  name: 'quilt-name-leaderboard-vote',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_QUILT_NAME_LEADERBOARD_VOTE_PER_MIN, 30)
 });
 const limitColorSubmission = createRateLimiter({
   name: 'color-submission',
@@ -6585,6 +6604,7 @@ async function getTodayInstagramImage(options = {}) {
       if (nameSnap.exists) {
         const nameData = nameSnap.data() || {};
         winningQuiltName =
+          getWinningQuiltNameFromEntries(nameData.entries, contributorCount) ||
           getWinningQuiltNameFromWords(nameData.words, contributorCount) ||
           formatWinningQuiltName(nameData.winningQuiltName, contributorCount);
       }
@@ -8750,6 +8770,495 @@ async function getQuiltContributorCountForDate(dateKey) {
   }
   return 1;
 }
+
+const QUILT_NAME_LEADERBOARD_SUBMISSION_HOURS = parsePositiveInt(process.env.QUILT_NAME_SUBMISSION_HOURS, 8);
+const QUILT_NAME_LEADERBOARD_MIN_ENTRIES = parsePositiveInt(process.env.QUILT_NAME_MIN_ENTRIES, 5);
+const QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRIES_SAFETY, 50);
+const QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRY_LENGTH, 24);
+
+function isQuiltNameLeaderboardEnabled() {
+  const raw = String(process.env.QUILT_NAME_LEADERBOARD || '1').trim().toLowerCase();
+  return raw !== '0' && raw !== 'false' && raw !== 'off';
+}
+
+function getLeaderboardDayOpenIso(dateKey) {
+  return `${dateKey}T07:00:00.000Z`;
+}
+
+function getLeaderboardSubmissionsCloseIso(dateKey) {
+  const openMs = Date.parse(getLeaderboardDayOpenIso(dateKey));
+  return new Date(openMs + QUILT_NAME_LEADERBOARD_SUBMISSION_HOURS * 60 * 60 * 1000).toISOString();
+}
+
+function getLeaderboardDayEndIso(dateKey) {
+  return `${addDaysToDateKey(dateKey, 1)}T07:00:00.000Z`;
+}
+
+function resolveLeaderboardPhase(dateKey, now = new Date()) {
+  const nowMs = now.getTime();
+  const closeMs = Date.parse(getLeaderboardSubmissionsCloseIso(dateKey));
+  const endMs = Date.parse(getLeaderboardDayEndIso(dateKey));
+  if (nowMs < closeMs) return 'submissions';
+  if (nowMs < endMs) return 'voting';
+  return 'final';
+}
+
+function normalizeQuiltNameLeaderboardWord(raw) {
+  return String(raw || '').replace(/[^A-Za-z]/g, '').trim();
+}
+
+function quiltNameLeaderboardEntryId(word) {
+  const normalized = normalizeQuiltNameLeaderboardWord(word).toLowerCase();
+  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
+}
+
+function normalizeQuiltNameLeaderboardEntries(rawEntries) {
+  if (!Array.isArray(rawEntries)) return [];
+  const seen = new Set();
+  return rawEntries
+    .map((item) => ({
+      id: String(item?.id || quiltNameLeaderboardEntryId(item?.word || '')).trim(),
+      word: normalizeQuiltNameLeaderboardWord(item?.word || ''),
+      votes: Math.max(0, Number(item?.votes) || 0),
+      source: item?.source === 'ai' ? 'ai' : 'community',
+      submittedByClientId: String(item?.submittedByClientId || '').trim() || null,
+      submittedAtIso: String(item?.submittedAtIso || '').trim() || null
+    }))
+    .filter((item) => {
+      const key = item.word.toLowerCase();
+      if (!item.word || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function getWinningQuiltNameWordFromEntries(rawEntries) {
+  const entries = normalizeQuiltNameLeaderboardEntries(rawEntries);
+  if (!entries.length) return '';
+  const hasVotes = entries.some((item) => (Number(item.votes) || 0) > 0);
+  if (!hasVotes) return '';
+  return entries
+    .slice()
+    .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))[0]?.word || '';
+}
+
+function getWinningQuiltNameFromEntries(rawEntries, contributorCount) {
+  return formatWinningQuiltName(getWinningQuiltNameWordFromEntries(rawEntries), contributorCount);
+}
+
+function buildLeaderboardPublicEntries(entries, options = {}) {
+  const normalized = normalizeQuiltNameLeaderboardEntries(entries);
+  const showVotes = !!options.showVotes;
+  const clientId = String(options.clientId || '').trim();
+  const phase = String(options.phase || '').trim();
+  const sorted = normalized.slice().sort((a, b) => {
+    if (phase === 'voting' || phase === 'final') {
+      const voteDiff = (Number(b.votes) || 0) - (Number(a.votes) || 0);
+      if (voteDiff !== 0) return voteDiff;
+    }
+    const aTime = Date.parse(a.submittedAtIso || '') || 0;
+    const bTime = Date.parse(b.submittedAtIso || '') || 0;
+    if (aTime !== bTime) return aTime - bTime;
+    return a.word.localeCompare(b.word);
+  });
+  return sorted.map((entry) => ({
+    id: entry.id,
+    word: entry.word,
+    source: entry.source,
+    votes: showVotes ? entry.votes : null,
+    isMine: !!(clientId && entry.submittedByClientId === clientId)
+  }));
+}
+
+function applyLeaderboardVoteToState(data = {}, { clientId, word, contributorCount }) {
+  const entries = normalizeQuiltNameLeaderboardEntries(data.entries);
+  const votesByClientId = { ...(data.votesByClientId && typeof data.votesByClientId === 'object' ? data.votesByClientId : {}) };
+  const target = entries.find((entry) => entry.word.toLowerCase() === normalizeQuiltNameLeaderboardWord(word).toLowerCase());
+  if (!target) throw new Error('Name not found on today\'s ballot');
+
+  const previousWord = String(votesByClientId[clientId] || '').trim();
+  if (previousWord && previousWord !== target.word) {
+    const previousEntry = entries.find((entry) => entry.word === previousWord);
+    if (previousEntry) previousEntry.votes = Math.max(0, (Number(previousEntry.votes) || 0) - 1);
+  }
+  if (previousWord !== target.word) {
+    target.votes = (Number(target.votes) || 0) + 1;
+    votesByClientId[clientId] = target.word;
+  }
+
+  return {
+    ...data,
+    mode: 'leaderboard',
+    entries,
+    votesByClientId,
+    phase: data.phase || 'voting',
+    winningQuiltName: getWinningQuiltNameFromEntries(entries, contributorCount)
+  };
+}
+
+async function loadQuiltColorContextForDate(dateKey) {
+  let blocks = [];
+  let families = [{ name: 'Gray', count: 1 }];
+  let blockCount = 0;
+  if (db && typeof db.collection === 'function') {
+    try {
+      const quiltSnap = await db.collection('quilts').doc(dateKey).get();
+      blocks = quiltSnap.exists ? (quiltSnap.data()?.blocks || []) : [];
+      if (blocks.length) {
+        families = analyzeColorFamiliesServer(blocks);
+        blockCount = blocks.length;
+      }
+    } catch (error) {
+      console.warn(`⚠️ Could not load quilt colors for ${dateKey}:`, error.message);
+    }
+  }
+  return { blocks, families, blockCount };
+}
+
+async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWords = [] }) {
+  const safeNeeded = Math.max(0, Math.floor(Number(neededCount) || 0));
+  if (!safeNeeded) return [];
+  const { families, blockCount } = await loadQuiltColorContextForDate(dateKey);
+  const existing = new Set(
+    (Array.isArray(existingWords) ? existingWords : [])
+      .map((word) => normalizeQuiltNameLeaderboardWord(word).toLowerCase())
+      .filter(Boolean)
+  );
+  const fallback = buildFallbackQuiltNameWords({ colorFamilies: families, blockCount, dateKey });
+  const nowIso = new Date().toISOString();
+  const entries = [];
+  for (const raw of fallback) {
+    const word = normalizeQuiltNameLeaderboardWord(raw);
+    const key = word.toLowerCase();
+    if (!word || existing.has(key)) continue;
+    existing.add(key);
+    entries.push({
+      id: quiltNameLeaderboardEntryId(word),
+      word,
+      votes: 0,
+      source: 'ai',
+      submittedByClientId: null,
+      submittedAtIso: nowIso
+    });
+    if (entries.length >= safeNeeded) break;
+  }
+  return entries;
+}
+
+async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
+  if (!db || typeof db.collection !== 'function') {
+    throw new Error('Firestore is not configured');
+  }
+  const nameRef = db.collection('quiltNames').doc(dateKey);
+  const contributorCount = await getQuiltContributorCountForDate(dateKey);
+
+  const snap = await nameRef.get();
+  const data = snap.exists ? (snap.data() || {}) : {};
+  const currentPhase = String(data.phase || resolveLeaderboardPhase(dateKey)).trim();
+  if (currentPhase === 'voting' || currentPhase === 'final') {
+    return {
+      dateKey,
+      phase: currentPhase,
+      aiAdded: 0,
+      entryCount: normalizeQuiltNameLeaderboardEntries(data.entries).length,
+      alreadyFinalized: true
+    };
+  }
+
+  let entries = normalizeQuiltNameLeaderboardEntries(data.entries);
+  const communityCount = entries.filter((entry) => entry.source === 'community').length;
+  const needed = Math.max(0, QUILT_NAME_LEADERBOARD_MIN_ENTRIES - entries.length);
+  let aiAdded = 0;
+  if (needed > 0) {
+    const aiEntries = await generateAiLeaderboardEntries({
+      dateKey,
+      neededCount: needed,
+      existingWords: entries.map((entry) => entry.word)
+    });
+    entries = normalizeQuiltNameLeaderboardEntries([...entries, ...aiEntries]);
+    aiAdded = aiEntries.length;
+  }
+
+  const nextDoc = {
+    mode: 'leaderboard',
+    phase: 'voting',
+    submissionsCloseAt: getLeaderboardSubmissionsCloseIso(dateKey),
+    entries,
+    submissionsByClientId: data.submissionsByClientId || {},
+    votesByClientId: data.votesByClientId || {},
+    winningQuiltName: getWinningQuiltNameFromEntries(entries, contributorCount),
+    finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(communityCount < QUILT_NAME_LEADERBOARD_MIN_ENTRIES && aiAdded
+      ? { aiFallbackAt: admin.firestore.FieldValue.serverTimestamp() }
+      : {})
+  };
+  await nameRef.set(nextDoc, { merge: true });
+
+  return {
+    dateKey,
+    phase: 'voting',
+    aiAdded,
+    entryCount: entries.length,
+    alreadyFinalized: false
+  };
+}
+
+async function maybeFinalizeLeaderboardSubmissionPhase(dateKey) {
+  if (resolveLeaderboardPhase(dateKey) !== 'voting') return null;
+  if (!db || typeof db.collection !== 'function') return null;
+  try {
+    const snap = await db.collection('quiltNames').doc(dateKey).get();
+    const data = snap.exists ? (snap.data() || {}) : {};
+    const phase = String(data.phase || 'submissions').trim();
+    if (phase === 'voting' || phase === 'final') return null;
+    return finalizeLeaderboardSubmissionPhase(dateKey);
+  } catch (error) {
+    console.warn(`⚠️ Could not auto-finalize quilt name leaderboard for ${dateKey}:`, error.message);
+    return null;
+  }
+}
+
+function assertResetToken(req, res) {
+  const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+  const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+  if (!expectedToken) {
+    res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    return false;
+  }
+  if (!providedToken || providedToken !== expectedToken) {
+    res.status(401).json({ success: false, error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+app.options('/api/quilt-name-leaderboard', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.get('/api/quilt-name-leaderboard', limitQuiltNameLeaderboard, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!isQuiltNameLeaderboardEnabled()) {
+      return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
+    }
+    const dateKey = String(req.query?.dateKey || '').trim() || getAppDateKey();
+    const clientId = String(req.query?.clientId || '').trim();
+    await maybeFinalizeLeaderboardSubmissionPhase(dateKey);
+
+    const phase = resolveLeaderboardPhase(dateKey);
+    const submissionsCloseAt = getLeaderboardSubmissionsCloseIso(dateKey);
+    const votingEndsAt = getLeaderboardDayEndIso(dateKey);
+    let entries = [];
+    let myVote = null;
+    let mySubmissionId = null;
+    let storedPhase = phase;
+    let winningQuiltName = '';
+
+    if (db && typeof db.collection === 'function') {
+      const snap = await db.collection('quiltNames').doc(dateKey).get();
+      const data = snap.exists ? (snap.data() || {}) : {};
+      entries = normalizeQuiltNameLeaderboardEntries(data.entries);
+      storedPhase = String(data.phase || phase).trim() || phase;
+      if (clientId) {
+        myVote = String(data.votesByClientId?.[clientId] || '').trim() || null;
+        mySubmissionId = String(data.submissionsByClientId?.[clientId] || '').trim() || null;
+      }
+      winningQuiltName = String(data.winningQuiltName || '').trim()
+        || getWinningQuiltNameFromEntries(entries, await getQuiltContributorCountForDate(dateKey));
+    }
+
+    const effectivePhase = storedPhase === 'final' ? 'final' : phase;
+    const showVotes = effectivePhase !== 'submissions' && !!myVote;
+    return res.json({
+      success: true,
+      dateKey,
+      phase: effectivePhase,
+      submissionsCloseAt,
+      votingEndsAt,
+      entries: buildLeaderboardPublicEntries(entries, {
+        showVotes,
+        clientId,
+        phase: effectivePhase
+      }),
+      myVote,
+      mySubmissionId,
+      winningQuiltName,
+      canSubmit: effectivePhase === 'submissions' && !mySubmissionId,
+      canVote: effectivePhase === 'voting'
+    });
+  } catch (error) {
+    console.error('❌ quilt-name-leaderboard GET failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'quilt-name-leaderboard failed' });
+  }
+});
+
+app.options('/api/quilt-name-submit', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-name-submit', limitQuiltNameSubmit, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!isQuiltNameLeaderboardEnabled()) {
+      return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const clientId = String(body.clientId || '').trim();
+    const word = normalizeQuiltNameLeaderboardWord(body.word);
+    if (!clientId) return res.status(400).json({ success: false, error: 'clientId is required' });
+    if (!word) return res.status(400).json({ success: false, error: 'word is required' });
+    if (word.length > QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH) {
+      return res.status(400).json({ success: false, error: `word must be ${QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH} characters or fewer` });
+    }
+    if (resolveLeaderboardPhase(dateKey) !== 'submissions') {
+      return res.status(409).json({ success: false, error: 'Submissions are closed for today' });
+    }
+    if (!db || typeof db.collection !== 'function') {
+      return res.status(503).json({ success: false, error: 'Firestore is not configured' });
+    }
+
+    const nameRef = db.collection('quiltNames').doc(dateKey);
+    const nowIso = new Date().toISOString();
+    let responseDoc = null;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(nameRef);
+      const data = snap.exists ? (snap.data() || {}) : {};
+      const submissionsByClientId = {
+        ...(data.submissionsByClientId && typeof data.submissionsByClientId === 'object' ? data.submissionsByClientId : {})
+      };
+      if (submissionsByClientId[clientId]) {
+        throw new Error('You already suggested a name today');
+      }
+
+      let entries = normalizeQuiltNameLeaderboardEntries(data.entries);
+      if (entries.length >= QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY) {
+        throw new Error('The list is full for today');
+      }
+
+      const duplicate = entries.find((entry) => entry.word.toLowerCase() === word.toLowerCase());
+      if (duplicate) {
+        throw new Error('Someone already suggested that name');
+      }
+
+      const entry = {
+        id: quiltNameLeaderboardEntryId(word),
+        word,
+        votes: 0,
+        source: 'community',
+        submittedByClientId: clientId,
+        submittedAtIso: nowIso
+      };
+      entries = normalizeQuiltNameLeaderboardEntries([...entries, entry]);
+      submissionsByClientId[clientId] = entry.id;
+
+      responseDoc = {
+        mode: 'leaderboard',
+        phase: 'submissions',
+        submissionsCloseAt: getLeaderboardSubmissionsCloseIso(dateKey),
+        entries,
+        submissionsByClientId,
+        votesByClientId: data.votesByClientId || {},
+        winningQuiltName: data.winningQuiltName || ''
+      };
+      tx.set(nameRef, responseDoc, { merge: true });
+    });
+
+    return res.json({
+      success: true,
+      entry: responseDoc.entries.find((item) => item.id === responseDoc.submissionsByClientId[clientId]),
+      doc: responseDoc
+    });
+  } catch (error) {
+    const message = error.message || 'quilt-name-submit failed';
+    const status = /already suggested|already suggested a name|full for today|closed/i.test(message) ? 409 : 500;
+    if (status === 500) console.error('❌ quilt-name-submit failed:', error);
+    return res.status(status).json({ success: false, error: message });
+  }
+});
+
+app.options('/api/quilt-name-leaderboard-vote', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-name-leaderboard-vote', limitQuiltNameLeaderboardVote, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!isQuiltNameLeaderboardEnabled()) {
+      return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const clientId = String(body.clientId || '').trim();
+    const word = normalizeQuiltNameLeaderboardWord(body.word);
+    if (!clientId) return res.status(400).json({ success: false, error: 'clientId is required' });
+    if (!word) return res.status(400).json({ success: false, error: 'word is required' });
+
+    await maybeFinalizeLeaderboardSubmissionPhase(dateKey);
+    if (resolveLeaderboardPhase(dateKey) !== 'voting') {
+      return res.status(409).json({ success: false, error: 'Voting is not open yet' });
+    }
+    if (!db || typeof db.collection !== 'function') {
+      return res.status(503).json({ success: false, error: 'Firestore is not configured' });
+    }
+
+    const contributorCount = await getQuiltContributorCountForDate(dateKey);
+    const nameRef = db.collection('quiltNames').doc(dateKey);
+    let updatedDoc = null;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(nameRef);
+      const data = snap.exists ? (snap.data() || {}) : {};
+      const phase = String(data.phase || resolveLeaderboardPhase(dateKey)).trim();
+      if (phase !== 'voting') throw new Error('Voting is not open yet');
+      updatedDoc = applyLeaderboardVoteToState(data, { clientId, word, contributorCount });
+      updatedDoc.phase = 'voting';
+      updatedDoc.submissionsCloseAt = getLeaderboardSubmissionsCloseIso(dateKey);
+      tx.set(nameRef, {
+        mode: 'leaderboard',
+        phase: updatedDoc.phase,
+        submissionsCloseAt: updatedDoc.submissionsCloseAt,
+        entries: updatedDoc.entries,
+        votesByClientId: updatedDoc.votesByClientId,
+        winningQuiltName: updatedDoc.winningQuiltName || ''
+      }, { merge: true });
+    });
+
+    return res.json({ success: true, doc: updatedDoc, myVote: word });
+  } catch (error) {
+    const message = error.message || 'quilt-name-leaderboard-vote failed';
+    const status = /not open|not found/i.test(message) ? 409 : 500;
+    if (status === 500) console.error('❌ quilt-name-leaderboard-vote failed:', error);
+    return res.status(status).json({ success: false, error: message });
+  }
+});
+
+app.options('/api/quilt-name-leaderboard-finalize', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-name-leaderboard-finalize', limitQuiltNameLeaderboard, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!isQuiltNameLeaderboardEnabled()) {
+      return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
+    }
+    if (!assertResetToken(req, res)) return;
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const result = await finalizeLeaderboardSubmissionPhase(dateKey);
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('❌ quilt-name-leaderboard-finalize failed:', error);
+    return res.status(500).json({ success: false, error: error.message || 'quilt-name-leaderboard-finalize failed' });
+  }
+});
 
 app.options('/api/quilt-name-generate', (req, res) => {
   setQuoteSubmissionCors(res);

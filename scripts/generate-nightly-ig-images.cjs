@@ -686,17 +686,27 @@ async function runNightlyIgAttempt({
             if (nameSnap.exists()) {
               const nameData = nameSnap.data() || {};
               const rawWords = nameData.words;
-              if (Array.isArray(rawWords) && rawWords.length > 0) {
+              const rawEntries = nameData.entries;
+              const contributorCount = Math.max(
+                1,
+                Number(dateQuilt?.contributorCount) || contributors.length || blocks.length || 1
+              );
+              if (Array.isArray(rawEntries) && rawEntries.length > 0) {
+                const winner = rawEntries
+                  .filter((entry) => entry?.word)
+                  .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))[0];
+                if (winner?.word) {
+                  winningQuiltName = `${String(winner.word).trim().toUpperCase()} ${contributorCount}`;
+                }
+              } else if (Array.isArray(rawWords) && rawWords.length > 0) {
                 const winner = rawWords
                   .filter((w) => !w.eliminated && w.word)
                   .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))[0];
                 if (winner?.word) {
-                  const contributorCount = Math.max(
-                    1,
-                    Number(dateQuilt?.contributorCount) || contributors.length || blocks.length || 1
-                  );
                   winningQuiltName = `${String(winner.word).trim().toUpperCase()} ${contributorCount}`;
                 }
+              } else if (nameData.winningQuiltName) {
+                winningQuiltName = String(nameData.winningQuiltName).trim();
               }
             }
             if (winningQuiltName) {
