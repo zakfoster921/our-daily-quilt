@@ -1909,6 +1909,12 @@ function serverNormalizeMirrorSeamNudge(value) {
   return Math.max(-0.35, Math.min(0.35, n));
 }
 
+function serverNormalizeMirrorTileNudge(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-1, Math.min(1, n));
+}
+
 function serverMirrorTuneFromQuiltData(data) {
   const d = data && typeof data === 'object' ? data : {};
   return {
@@ -1921,10 +1927,10 @@ function serverMirrorTuneFromQuiltData(data) {
     rightFlipY: serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipY, false),
     nudgeSeamY: serverNormalizeMirrorSeamNudge(d.mirrorSeamNudgeY),
     nudgeMirrorY: serverNormalizeMirrorSeamNudge(d.mirrorFieldNudgeY),
-    nudgeTileSeamX: serverNormalizeMirrorSeamNudge(d.mirrorTileSeamNudgeX),
-    nudgeLeftTileX: serverNormalizeMirrorSeamNudge(d.mirrorBottomLeftNudgeX),
-    nudgeLeftTileY: serverNormalizeMirrorSeamNudge(d.mirrorBottomLeftNudgeY),
-    nudgeRightTileY: serverNormalizeMirrorSeamNudge(d.mirrorBottomRightNudgeY)
+    nudgeTileSeamX: serverNormalizeMirrorTileNudge(d.mirrorTileSeamNudgeX),
+    nudgeLeftTileX: serverNormalizeMirrorTileNudge(d.mirrorBottomLeftNudgeX),
+    nudgeLeftTileY: serverNormalizeMirrorTileNudge(d.mirrorBottomLeftNudgeY),
+    nudgeRightTileY: serverNormalizeMirrorTileNudge(d.mirrorBottomRightNudgeY)
   };
 }
 
@@ -1961,10 +1967,10 @@ function serverMirrorTuneIsCustomized(tune) {
     t.flipY !== MIRROR_TUNE_DEFAULT_FLIP_Y ||
     serverNormalizeMirrorSeamNudge(t.nudgeSeamY) !== 0 ||
     serverNormalizeMirrorSeamNudge(t.nudgeMirrorY) !== 0 ||
-    serverNormalizeMirrorSeamNudge(t.nudgeTileSeamX) !== 0 ||
-    serverNormalizeMirrorSeamNudge(t.nudgeLeftTileX) !== 0 ||
-    serverNormalizeMirrorSeamNudge(t.nudgeLeftTileY) !== 0 ||
-    serverNormalizeMirrorSeamNudge(t.nudgeRightTileY) !== 0
+    serverNormalizeMirrorTileNudge(t.nudgeTileSeamX) !== 0 ||
+    serverNormalizeMirrorTileNudge(t.nudgeLeftTileX) !== 0 ||
+    serverNormalizeMirrorTileNudge(t.nudgeLeftTileY) !== 0 ||
+    serverNormalizeMirrorTileNudge(t.nudgeRightTileY) !== 0
   );
 }
 
@@ -1980,10 +1986,10 @@ function serverMirrorTuneSnapshotFields(tune) {
     rightFlipY: serverNormalizeMirrorFlipFlag(t.rightFlipY, false),
     nudgeSeamY: serverNormalizeMirrorSeamNudge(t.nudgeSeamY),
     nudgeMirrorY: serverNormalizeMirrorSeamNudge(t.nudgeMirrorY),
-    nudgeTileSeamX: serverNormalizeMirrorSeamNudge(t.nudgeTileSeamX),
-    nudgeLeftTileX: serverNormalizeMirrorSeamNudge(t.nudgeLeftTileX),
-    nudgeLeftTileY: serverNormalizeMirrorSeamNudge(t.nudgeLeftTileY),
-    nudgeRightTileY: serverNormalizeMirrorSeamNudge(t.nudgeRightTileY)
+    nudgeTileSeamX: serverNormalizeMirrorTileNudge(t.nudgeTileSeamX),
+    nudgeLeftTileX: serverNormalizeMirrorTileNudge(t.nudgeLeftTileX),
+    nudgeLeftTileY: serverNormalizeMirrorTileNudge(t.nudgeLeftTileY),
+    nudgeRightTileY: serverNormalizeMirrorTileNudge(t.nudgeRightTileY)
   };
 }
 
@@ -7236,10 +7242,10 @@ app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagr
       body.mirrorBottomRightFlipY === 1;
     const nudgeSeamY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorSeamNudgeY) || 0));
     const nudgeMirrorY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorFieldNudgeY) || 0));
-    const nudgeTileSeamX = Math.max(-0.35, Math.min(0.35, Number(body.mirrorTileSeamNudgeX) || 0));
-    const nudgeLeftTileX = Math.max(-0.35, Math.min(0.35, Number(body.mirrorBottomLeftNudgeX) || 0));
-    const nudgeLeftTileY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorBottomLeftNudgeY) || 0));
-    const nudgeRightTileY = Math.max(-0.35, Math.min(0.35, Number(body.mirrorBottomRightNudgeY) || 0));
+    const nudgeTileSeamX = serverNormalizeMirrorTileNudge(body.mirrorTileSeamNudgeX);
+    const nudgeLeftTileX = serverNormalizeMirrorTileNudge(body.mirrorBottomLeftNudgeX);
+    const nudgeLeftTileY = serverNormalizeMirrorTileNudge(body.mirrorBottomLeftNudgeY);
+    const nudgeRightTileY = serverNormalizeMirrorTileNudge(body.mirrorBottomRightNudgeY);
     const mirrorTuneUpdatedAt = String(
       body.mirrorTuneUpdatedAt || new Date().toISOString()
     ).trim();
