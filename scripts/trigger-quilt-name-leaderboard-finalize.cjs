@@ -49,7 +49,14 @@ async function main() {
     process.exit(1);
   }
 
-  const body = JSON.stringify({ source: 'railway-cron' });
+  const dateKey = String(process.argv[2] || process.env.QUILT_NAME_LEADERBOARD_DATE_KEY || '').trim();
+  const force = process.argv.includes('--force')
+    || String(process.env.QUILT_NAME_LEADERBOARD_FORCE || '').trim().toLowerCase() === 'true';
+  const body = JSON.stringify({
+    source: 'railway-cron',
+    ...(dateKey ? { dateKey } : {}),
+    ...(force ? { force: true } : {})
+  });
   const res = await fetch(url, {
     method: 'POST',
     headers: {

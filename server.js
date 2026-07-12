@@ -9413,13 +9413,14 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
   if (!db || typeof db.collection !== 'function') {
     throw new Error('Firestore is not configured');
   }
+  const force = !!options.force;
   const nameRef = db.collection('quiltNames').doc(dateKey);
   const contributorCount = await getQuiltContributorCountForDate(dateKey);
 
   const snap = await nameRef.get();
   const data = snap.exists ? (snap.data() || {}) : {};
   const currentPhase = String(data.phase || resolveLeaderboardPhase(dateKey)).trim();
-  if (currentPhase === 'voting' || currentPhase === 'final') {
+  if ((currentPhase === 'voting' || currentPhase === 'final') && !force) {
     return {
       dateKey,
       phase: currentPhase,
@@ -9429,7 +9430,11 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
     };
   }
 
-  const submissionEntries = normalizeQuiltNameLeaderboardEntries(data.entries);
+  const submissionEntries = normalizeQuiltNameLeaderboardEntries(
+    force && Array.isArray(data.submissionEntries) && data.submissionEntries.length
+      ? data.submissionEntries
+      : data.entries
+  );
   const ballot = await buildLeaderboardVotingBallotEntries(dateKey, submissionEntries);
   const entries = ballot.entries;
 
@@ -9441,10 +9446,11 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
     submissionEntries: ballot.submissionEntries,
     votingBallotCap: ballot.votingCap,
     submissionsByClientId: data.submissionsByClientId || {},
-    votesByClientId: data.votesByClientId || {},
+    votesByClientId: force ? {} : (data.votesByClientId || {}),
     winningQuiltName: getWinningQuiltNameFromEntries(entries, contributorCount),
     finalizedAt: admin.firestore.FieldValue.serverTimestamp(),
     ballotCuratedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(force ? { ballotRebuiltAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
     ...(ballot.aiAdded ? { aiBallotFillCount: ballot.aiAdded } : {}),
     ...(ballot.aiFiltered ? { aiBallotFilterCount: ballot.aiFiltered } : {}),
     ...(ballot.aiAdded ? { aiFallbackAt: admin.firestore.FieldValue.serverTimestamp() } : {})
@@ -9460,7 +9466,8 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
     communityCount: ballot.communityCount,
     votingBallotCap: ballot.votingCap,
     entryCount: entries.length,
-    alreadyFinalized: false
+    alreadyFinalized: false,
+    rebuilt: force
   };
 }
 
@@ -9756,7 +9763,8 @@ app.post('/api/quilt-name-leaderboard-finalize', limitQuiltNameLeaderboard, asyn
     if (!assertResetToken(req, res)) return;
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
-    const result = await finalizeLeaderboardSubmissionPhase(dateKey);
+    const force = body.force === true || String(body.force || '').trim().toLowerCase() === 'true';
+    const result = await finalizeLeaderboardSubmissionPhase(dateKey, { force });
     return res.json({ success: true, ...result });
   } catch (error) {
     console.error('❌ quilt-name-leaderboard-finalize failed:', error);
