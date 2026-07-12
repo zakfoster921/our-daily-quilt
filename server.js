@@ -6902,6 +6902,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       typeof body.storyLayoutBImageData === 'string' ? body.storyLayoutBImageData : '';
     const storyLayoutBOverlayImageData =
       typeof body.storyLayoutBOverlayImageData === 'string' ? body.storyLayoutBOverlayImageData : '';
+    const storyLayoutBPreviewImageData =
+      typeof body.storyLayoutBPreviewImageData === 'string' ? body.storyLayoutBPreviewImageData : '';
     const quiltScreen9x16ImageData =
       typeof body.quiltScreen9x16ImageData === 'string' ? body.quiltScreen9x16ImageData : '';
     const newspaperClippingImageData =
@@ -6931,6 +6933,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       !postLayoutBSpeakerImageData &&
       !storyLayoutBImageData &&
       !storyLayoutBOverlayImageData &&
+      !storyLayoutBPreviewImageData &&
       !quiltScreen9x16ImageData &&
       !newspaperClippingImageData &&
       !moodClippingGoodImageData &&
@@ -7055,6 +7058,25 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.layoutBStoryOverlayUrl = publicUrl;
       docPayload.storyLayoutBOverlayUrl = publicUrl;
       docPayload.layoutBStoryOverlayRenderVersion =
+        typeof body.layoutBStoryRenderVersion === 'string' && body.layoutBStoryRenderVersion.trim()
+          ? body.layoutBStoryRenderVersion.trim()
+          : LAYOUT_B_STORY_RENDER_VERSION;
+    }
+    if (storyLayoutBPreviewImageData) {
+      const previewIsJpeg = /^data:image\/jpe?g;base64,/i.test(storyLayoutBPreviewImageData);
+      const previewBuf = previewIsJpeg
+        ? parseJpegDataUrlToBuffer(storyLayoutBPreviewImageData)
+        : parsePngDataUrlToBuffer(storyLayoutBPreviewImageData);
+      const { publicUrl } = await firebaseSaveDownloadableFile(
+        `${basePath}/layout-b-story-preview.${previewIsJpeg ? 'jpg' : 'png'}`,
+        previewBuf,
+        previewIsJpeg ? 'image/jpeg' : 'image/png',
+        'no-store'
+      );
+      docPayload.storyLayoutBPreviewImageStorageUrl = publicUrl;
+      docPayload.layoutBStoryPreviewUrl = publicUrl;
+      docPayload.storyLayoutBPreviewUrl = publicUrl;
+      docPayload.layoutBStoryPreviewRenderVersion =
         typeof body.layoutBStoryRenderVersion === 'string' && body.layoutBStoryRenderVersion.trim()
           ? body.layoutBStoryRenderVersion.trim()
           : LAYOUT_B_STORY_RENDER_VERSION;
