@@ -10,16 +10,17 @@ on:
   workflow_dispatch:
     inputs:
       date_key_mode:
-        description: "Quick date — pick Today for current app day, or Custom to type date_key below."
+        description: "Quick date — Tomorrow = next app day (default), Today = current app day, or Custom."
         required: true
         type: choice
-        default: active
+        default: tomorrow
         options:
+          - tomorrow
           - active
           - today
           - custom
       date_key:
-        description: "Custom YYYY-MM-DD (when mode = custom). You can also type today here."
+        description: "Custom YYYY-MM-DD (when mode = custom). You can also type today or tomorrow here."
         required: false
 
 concurrency:
@@ -58,12 +59,13 @@ jobs:
       - name: Resolve target date key
         id: resolve_date
         env:
-          WORKFLOW_DATE_MODE: ${{ inputs.date_key_mode || 'active' }}
+          WORKFLOW_DATE_MODE: ${{ inputs.date_key_mode || 'tomorrow' }}
           WORKFLOW_DATE_KEY: ${{ inputs.date_key || '' }}
         run: |
           set -euo pipefail
           EFFECTIVE_DATE_KEY="$(node scripts/lib/resolve-workflow-date-key.cjs)"
           case "${WORKFLOW_DATE_MODE}" in
+            tomorrow) echo "Using tomorrow's app date: ${EFFECTIVE_DATE_KEY}" ;;
             today) echo "Using today's app date: ${EFFECTIVE_DATE_KEY}" ;;
             custom) echo "Using custom date_key: ${EFFECTIVE_DATE_KEY}" ;;
             *) echo "Using active quilt day: ${EFFECTIVE_DATE_KEY}" ;;
@@ -78,12 +80,12 @@ jobs:
           ")"
           echo "date_key=${EFFECTIVE_DATE_KEY}" >> "$GITHUB_OUTPUT"
           echo "tomorrow_date_key=${TOMORROW_DATE_KEY}" >> "$GITHUB_OUTPUT"
-          if [ "${WORKFLOW_DATE_MODE}" = "custom" ] || [ -n "${WORKFLOW_DATE_KEY:-}" ]; then
+          if [ "${WORKFLOW_DATE_MODE}" = "custom" ] || [ "${WORKFLOW_DATE_MODE}" = "tomorrow" ] || [ -n "${WORKFLOW_DATE_KEY:-}" ]; then
             echo "skip_tomorrow_lookahead=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip_tomorrow_lookahead=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "Tomorrow lookahead date: ${TOMORROW_DATE_KEY} (skip=$([ "${WORKFLOW_DATE_MODE}" = "custom" ] || [ -n "${WORKFLOW_DATE_KEY:-}" ] && echo yes || echo no))"
+          echo "Tomorrow lookahead date: ${TOMORROW_DATE_KEY} (skip=$([ "${WORKFLOW_DATE_MODE}" = "custom" ] || [ "${WORKFLOW_DATE_MODE}" = "tomorrow" ] || [ -n "${WORKFLOW_DATE_KEY:-}" ] && echo yes || echo no))"
 
       - name: Start local app (same commit as workflow)
         run: |

@@ -2,8 +2,8 @@
 const { getAppDateKey, addDays, isDateKey } = require('./app-date-key.cjs');
 
 /**
- * @param {'last_completed'|'today'|'active'|'custom'} mode
- * @param {string} [dateKey] manual YYYY-MM-DD (or the word "today")
+ * @param {'last_completed'|'today'|'active'|'tomorrow'|'custom'} mode
+ * @param {string} [dateKey] manual YYYY-MM-DD (or the word "today" / "tomorrow")
  * @param {Date} [now]
  */
 function resolveWorkflowDateKey({ mode = 'last_completed', dateKey = '', now = new Date() } = {}) {
@@ -12,6 +12,9 @@ function resolveWorkflowDateKey({ mode = 'last_completed', dateKey = '', now = n
 
   if (m === 'today' || raw.toLowerCase() === 'today') {
     return getAppDateKey(now);
+  }
+  if (m === 'tomorrow' || raw.toLowerCase() === 'tomorrow') {
+    return addDays(getAppDateKey(now), 1);
   }
   if (m === 'active') {
     return getAppDateKey(now);
