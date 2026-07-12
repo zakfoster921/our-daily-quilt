@@ -630,6 +630,7 @@ async function applyPreviewCompactSections(page, gap = PREVIEW_SECTION_GAP) {
       #screen-quilt[data-odq-preview-capture="compact"] .quilt-section-gap,
       #screen-quilt[data-odq-preview-capture="compact"] .quilt-reflection-story-gap,
       #screen-quilt[data-odq-preview-capture="compact"] .quilt-layout-b-preview-before-gap,
+      #screen-quilt[data-odq-preview-capture="compact"] .quilt-leaderboard-before-gap,
       #screen-quilt[data-odq-preview-capture="compact"] .quilt-scroll-quilt-gap {
         flex: 0 0 ${gapValue} !important;
         min-height: ${gapValue} !important;
