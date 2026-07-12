@@ -8893,6 +8893,15 @@ const QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY = parsePositiveInt(process.env.Q
 const QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRY_LENGTH, 24);
 const QUILT_NAME_WORD_COOLDOWN_DAYS = parsePositiveInt(process.env.QUILT_NAME_WORD_COOLDOWN_DAYS, 10);
 const QUILT_NAME_LEADERBOARD_AI_FILL_MAX_ATTEMPTS = parsePositiveInt(process.env.QUILT_NAME_LEADERBOARD_AI_FILL_MAX_ATTEMPTS, 3);
+const QUILT_NAME_PERMANENTLY_BANNED_WORDS = ['verdure', 'meridian', 'scarlet', 'loom', 'weave'];
+
+function getQuiltNamePermanentlyBannedWordSet() {
+  const extra = String(process.env.QUILT_NAME_BANNED_WORDS || '')
+    .split(/[,;\s]+/)
+    .map((word) => String(word || '').replace(/[^A-Za-z]/g, '').trim().toLowerCase())
+    .filter(Boolean);
+  return new Set([...QUILT_NAME_PERMANENTLY_BANNED_WORDS, ...extra]);
+}
 
 function isQuiltNameLeaderboardEnabled() {
   const raw = String(process.env.QUILT_NAME_LEADERBOARD || '1').trim().toLowerCase();
@@ -9240,8 +9249,12 @@ function buildQuiltNameBallotFillPrompt({
 }) {
   const existingList = existingWords.length ? existingWords.join(', ') : '(none yet)';
   const recentList = Array.isArray(recentWords) ? recentWords.filter(Boolean) : [];
+  const permanentBanned = [...getQuiltNamePermanentlyBannedWordSet()].sort((a, b) => a.localeCompare(b));
   const recentRule = recentList.length
     ? `- Do NOT reuse any word already used on this quilt in the last ${QUILT_NAME_WORD_COOLDOWN_DAYS} days. Recently used examples: ${recentList.slice(0, 60).join(', ')}${recentList.length > 60 ? ', and others' : ''}`
+    : '';
+  const permanentBanRule = permanentBanned.length
+    ? `- Never use these permanently banned words: ${permanentBanned.join(', ')}`
     : '';
   const rejectedList = Array.isArray(rejectedWords) ? rejectedWords.filter(Boolean) : [];
   const rejectedRule = rejectedList.length
@@ -9270,6 +9283,7 @@ Rules:
 - Let the composition description above shape a few words (diagonal, dense, airy, tonal, etc.)
 - Do NOT include color names literally (no "Blue", "Red", etc.)
 ${recentRule}
+${permanentBanRule}
 ${rejectedRule}
 ${quoteRule}
 - Output ONLY a JSON array of exactly ${neededCount} strings, nothing else: ["Word1","Word2",...]`;
@@ -9348,6 +9362,9 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
   const context = await loadQuiltNameDayContext(dateKey);
   const recentWords = await loadRecentQuiltNameWordsForCooldown(dateKey);
   const excludeSet = new Set(recentWords);
+  for (const word of getQuiltNamePermanentlyBannedWordSet()) {
+    excludeSet.add(word);
+  }
   for (const raw of Array.isArray(existingWords) ? existingWords : []) {
     const key = normalizeQuiltNameLeaderboardWord(raw).toLowerCase();
     if (key) excludeSet.add(key);
