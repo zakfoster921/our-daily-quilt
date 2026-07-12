@@ -9279,6 +9279,7 @@ Rules:
 - Avoid clichés like "beautiful", "lovely", "pretty", "gorgeous"
 - Avoid esoteric or niche words that most people wouldn't know
 - Use present-tense verbs only — no past tense
+- Include several words drawn from flowers, trees, animals, dyes, or cooking ingredients whose real-world colors echo today's dominant colors (${context.topColors}) — e.g. a blue flower, a red spice, a green leaf, an ochre dye — without literally naming the color
 - At least half the words should evoke today's dominant colors without literally naming colors
 - Let the composition description above shape a few words (diagonal, dense, airy, tonal, etc.)
 - Do NOT include color names literally (no "Blue", "Red", etc.)
