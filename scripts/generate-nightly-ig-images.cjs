@@ -30,20 +30,6 @@ function getCompletedQuiltDateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
-function newspaperClippingDisplayMetaFromCompose(composeMeta) {
-  if (!composeMeta || typeof composeMeta !== 'object') return null;
-  const renderWidth = Number(composeMeta.renderWidth);
-  const effectiveBodyDomPx = Number(composeMeta.effectiveBodyDomPx);
-  const clippedWidth = Number(composeMeta.clippedWidth);
-  const out = {};
-  if (Number.isFinite(renderWidth) && renderWidth > 0) out.renderWidth = Math.round(renderWidth);
-  if (Number.isFinite(effectiveBodyDomPx) && effectiveBodyDomPx > 0) {
-    out.effectiveBodyDomPx = Math.round(effectiveBodyDomPx * 10) / 10;
-  }
-  if (Number.isFinite(clippedWidth) && clippedWidth > 0) out.clippedWidth = Math.round(clippedWidth);
-  return Object.keys(out).length ? out : null;
-}
-
 async function writeFailureArtifacts(page, attempt, outDir) {
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -285,6 +271,19 @@ async function runNightlyIgAttempt({
               );
             }
           }
+        };
+        const newspaperClippingDisplayMetaFromCompose = (composeMeta) => {
+          if (!composeMeta || typeof composeMeta !== 'object') return null;
+          const renderWidth = Number(composeMeta.renderWidth);
+          const effectiveBodyDomPx = Number(composeMeta.effectiveBodyDomPx);
+          const clippedWidth = Number(composeMeta.clippedWidth);
+          const out = {};
+          if (Number.isFinite(renderWidth) && renderWidth > 0) out.renderWidth = Math.round(renderWidth);
+          if (Number.isFinite(effectiveBodyDomPx) && effectiveBodyDomPx > 0) {
+            out.effectiveBodyDomPx = Math.round(effectiveBodyDomPx * 10) / 10;
+          }
+          if (Number.isFinite(clippedWidth) && clippedWidth > 0) out.clippedWidth = Math.round(clippedWidth);
+          return Object.keys(out).length ? out : null;
         };
         if (!window.app) throw new Error('window.app not ready');
         if (typeof Utils === 'undefined' || typeof Utils.writeInstagramImagesDocForZapier !== 'function') {
