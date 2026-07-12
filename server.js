@@ -8697,7 +8697,75 @@ function seededShuffle(values, seedText) {
   return out;
 }
 
-function buildFallbackQuiltNameWords({ colorFamilies = [], blockCount = 0, dateKey = '' } = {}) {
+function quiltNameWordExcludeSet(excludeWords) {
+  const exclude = new Set();
+  if (excludeWords instanceof Set) {
+    excludeWords.forEach((word) => {
+      const key = String(word || '').toLowerCase().trim();
+      if (key) exclude.add(key);
+    });
+    return exclude;
+  }
+  if (Array.isArray(excludeWords)) {
+    excludeWords.forEach((word) => {
+      const key = String(word || '').toLowerCase().trim();
+      if (key) exclude.add(key);
+    });
+  }
+  return exclude;
+}
+
+function extractQuiltNameWordsFromDoc(data = {}) {
+  const out = [];
+  const pushWord = (raw) => {
+    const word = normalizeQuiltNameLeaderboardWord(
+      typeof raw === 'string' ? raw : (raw?.word ?? '')
+    );
+    if (word) out.push(word.toLowerCase());
+  };
+
+  for (const list of [data.entries, data.submissionEntries, data.words]) {
+    if (!Array.isArray(list)) continue;
+    list.forEach(pushWord);
+  }
+
+  const winning = String(data.winningQuiltName || '')
+    .trim()
+    .replace(/\s+\d+$/, '')
+    .trim();
+  if (winning) {
+    const normalized = normalizeQuiltNameLeaderboardWord(winning);
+    if (normalized) out.push(normalized.toLowerCase());
+  }
+  return out;
+}
+
+async function loadRecentQuiltNameWordsForCooldown(dateKey) {
+  const recent = new Set();
+  if (!db || typeof db.collection !== 'function') return recent;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ''))) return recent;
+
+  const dayKeys = [];
+  for (let i = 0; i < QUILT_NAME_WORD_COOLDOWN_DAYS; i += 1) {
+    dayKeys.push(addDaysToDateKey(dateKey, -i));
+  }
+
+  try {
+    const refs = dayKeys.map((key) => db.collection('quiltNames').doc(key));
+    const snaps = await db.getAll(...refs);
+    for (const snap of snaps) {
+      if (!snap.exists) continue;
+      for (const word of extractQuiltNameWordsFromDoc(snap.data() || {})) {
+        recent.add(word);
+      }
+    }
+  } catch (error) {
+    console.warn(`⚠️ Could not load recent quilt name words for ${dateKey}:`, error.message);
+  }
+  return recent;
+}
+
+function buildFallbackQuiltNameWords({ colorFamilies = [], blockCount = 0, dateKey = '', excludeWords = null } = {}) {
   const colorWords = {
     Red: ['Ember', 'Cinder', 'Cardinal', 'Cinnabar', 'Hearth', 'Rouge', 'Brick'],
     Orange: ['Copper', 'Ochre', 'Persimmon', 'Harvest', 'Marigold', 'Kindling', 'Clay'],
@@ -8723,6 +8791,21 @@ function buildFallbackQuiltNameWords({ colorFamilies = [], blockCount = 0, dateK
     'Halfway', 'Taken', 'Careful', 'Missing', 'Shared',
     'Pocket', 'Threshold', 'Patchwork', 'Weather', 'Elsewhere'
   ];
+  const extendedWords = [
+    'Aperture', 'Arbor', 'Atrium', 'Briar', 'Brook', 'Canopy', 'Canyon', 'Cinderblock',
+    'Cirrus', 'Cleft', 'Cove', 'Crisp', 'Current', 'Dapple', 'Dawn', 'Delta',
+    'Dew', 'Driftwood', 'Dune', 'Echo', 'Edgeways', 'Fallow', 'Fathom', 'Fernway',
+    'Fjord', 'Flare', 'Flicker', 'Fold', 'Fringe', 'Gale', 'Glint', 'Grove',
+    'Haven', 'Haze', 'Hearthstone', 'Hollow', 'Horizon', 'Hush', 'Inlet', 'Juniperwood',
+    'Keel', 'Knoll', 'Lace', 'Laguna', 'Lilt', 'Loom', 'Lumen', 'Marrow',
+    'Meadowlark', 'Mesa', 'Mistral', 'Moor', 'Nacre', 'Nimbus', 'Oasis', 'Orbit',
+    'Palisade', 'Pebble', 'Pier', 'Pine', 'Prairie', 'Quarry', 'Rafter', 'Ridge',
+    'Ripple', 'Rivulet', 'Roost', 'Sable', 'Salt', 'Scaffold', 'Seam', 'Shoal',
+    'Shore', 'Silt', 'Skylight', 'Slant', 'Spar', 'Spindle', 'Spruce', 'Starling',
+    'Stitch', 'Strata', 'Summit', 'Swale', 'Tangle', 'Tide', 'Trellis', 'Umber',
+    'Understory', 'Vale', 'Veil', 'Verge', 'Vessel', 'Wander', 'Whorl', 'Willow',
+    'Wisp', 'Yonder'
+  ];
 
   const families = Array.isArray(colorFamilies) && colorFamilies.length
     ? colorFamilies
@@ -8731,14 +8814,15 @@ function buildFallbackQuiltNameWords({ colorFamilies = [], blockCount = 0, dateK
   families.slice(0, 3).forEach((family) => {
     candidates.push(...(colorWords[family?.name] || []));
   });
-  candidates.push(...scaleWords, ...plainWords);
+  candidates.push(...scaleWords, ...plainWords, ...extendedWords);
 
+  const exclude = quiltNameWordExcludeSet(excludeWords);
   const seen = new Set();
   return seededShuffle(candidates, `${dateKey}:${families.map((f) => f?.name || '').join(',')}:${blockCount}`)
     .map((word) => String(word || '').replace(/[^A-Za-z]/g, '').trim())
     .filter((word) => {
       const key = word.toLowerCase();
-      if (!word || seen.has(key)) return false;
+      if (!word || seen.has(key) || exclude.has(key)) return false;
       seen.add(key);
       return true;
     })
@@ -8807,6 +8891,7 @@ const QUILT_NAME_LEADERBOARD_MIN_ENTRIES = parsePositiveInt(process.env.QUILT_NA
 const QUILT_NAME_LEADERBOARD_VOTING_CAP = parsePositiveInt(process.env.QUILT_NAME_VOTING_CAP, 12);
 const QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRIES_SAFETY, 50);
 const QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRY_LENGTH, 24);
+const QUILT_NAME_WORD_COOLDOWN_DAYS = parsePositiveInt(process.env.QUILT_NAME_WORD_COOLDOWN_DAYS, 10);
 
 function isQuiltNameLeaderboardEnabled() {
   const raw = String(process.env.QUILT_NAME_LEADERBOARD || '1').trim().toLowerCase();
@@ -9100,8 +9185,12 @@ Prefer names that:
 Output ONLY a JSON array of exactly ${targetCount} strings from the submitted list: ["Word1","Word2",...]`;
 }
 
-function buildQuiltNameBallotFillPrompt({ dateKey, context, neededCount, existingWords }) {
+function buildQuiltNameBallotFillPrompt({ dateKey, context, neededCount, existingWords, recentWords = [] }) {
   const existingList = existingWords.length ? existingWords.join(', ') : '(none yet)';
+  const recentList = Array.isArray(recentWords) ? recentWords.filter(Boolean) : [];
+  const recentRule = recentList.length
+    ? `- Do NOT use any word used on this quilt in the last ${QUILT_NAME_WORD_COOLDOWN_DAYS} days, including: ${recentList.slice(0, 80).join(', ')}${recentList.length > 80 ? ', and others' : ''}`
+    : '';
   const quoteRule = context.quoteText
     ? `- Up to 2 words may echo significant positive nouns or verbs from this quote: "${context.quoteText}"`
     : '';
@@ -9123,6 +9212,7 @@ Rules:
 - Use present-tense verbs only — no past tense
 - At least half the words should evoke today's dominant colors without literally naming colors
 - Do NOT include color names literally (no "Blue", "Red", etc.)
+${recentRule}
 ${quoteRule}
 - Output ONLY a JSON array of exactly ${neededCount} strings, nothing else: ["Word1","Word2",...]`;
 }
@@ -9166,7 +9256,8 @@ async function filterCommunityEntriesForBallot({ dateKey, entries, targetCount }
   return fallbackFilterCommunityEntriesForBallot(community, safeTarget, dateKey);
 }
 
-function appendAiLeaderboardWordsToEntries(words, existingWords, nowIso) {
+function appendAiLeaderboardWordsToEntries(words, existingWords, nowIso, excludeWords = null) {
+  const excluded = quiltNameWordExcludeSet(excludeWords);
   const existing = new Set(
     (Array.isArray(existingWords) ? existingWords : [])
       .map((word) => normalizeQuiltNameLeaderboardWord(word).toLowerCase())
@@ -9176,8 +9267,9 @@ function appendAiLeaderboardWordsToEntries(words, existingWords, nowIso) {
   for (const raw of Array.isArray(words) ? words : []) {
     const word = normalizeQuiltNameLeaderboardWord(raw);
     const key = word.toLowerCase();
-    if (!word || existing.has(key)) continue;
+    if (!word || existing.has(key) || excluded.has(key)) continue;
     existing.add(key);
+    excluded.add(key);
     entries.push({
       id: quiltNameLeaderboardEntryId(word),
       word,
@@ -9196,6 +9288,14 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
 
   const nowIso = new Date().toISOString();
   const context = await loadQuiltNameDayContext(dateKey);
+  const recentWords = await loadRecentQuiltNameWordsForCooldown(dateKey);
+  const excludeSet = new Set(recentWords);
+  for (const raw of Array.isArray(existingWords) ? existingWords : []) {
+    const key = normalizeQuiltNameLeaderboardWord(raw).toLowerCase();
+    if (key) excludeSet.add(key);
+  }
+  const recentForPrompt = [...recentWords].sort((a, b) => a.localeCompare(b));
+
   const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
   const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
   let entries = [];
@@ -9208,14 +9308,15 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
         neededCount: safeNeeded,
         existingWords: (Array.isArray(existingWords) ? existingWords : [])
           .map((word) => normalizeQuiltNameLeaderboardWord(word))
-          .filter(Boolean)
+          .filter(Boolean),
+        recentWords: recentForPrompt
       });
       const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
       const match = raw.match(/\[[\s\S]*?\]/);
       if (!match) throw new Error('Claude returned no JSON array');
       const parsed = JSON.parse(match[0]);
       if (!Array.isArray(parsed)) throw new Error('Claude fill response was not an array');
-      entries = appendAiLeaderboardWordsToEntries(parsed, existingWords, nowIso);
+      entries = appendAiLeaderboardWordsToEntries(parsed, existingWords, nowIso, excludeSet);
     } catch (error) {
       console.warn(`⚠️ AI quilt name ballot fill failed for ${dateKey}:`, error.message);
     }
@@ -9225,7 +9326,8 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
     const fallback = buildFallbackQuiltNameWords({
       colorFamilies: context.families,
       blockCount: context.blockCount,
-      dateKey
+      dateKey,
+      excludeWords: excludeSet
     });
     const usedWords = [
       ...(Array.isArray(existingWords) ? existingWords : []),
@@ -9233,7 +9335,7 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
     ];
     entries = [
       ...entries,
-      ...appendAiLeaderboardWordsToEntries(fallback, usedWords, nowIso)
+      ...appendAiLeaderboardWordsToEntries(fallback, usedWords, nowIso, excludeSet)
     ];
   }
 
@@ -9242,7 +9344,8 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
       buildFallbackQuiltNameWords({
         colorFamilies: context.families,
         blockCount: context.blockCount,
-        dateKey: `${dateKey}:extra`
+        dateKey: `${dateKey}:extra`,
+        excludeWords: excludeSet
       }),
       `qnlb-fill-extra:${dateKey}`
     );
@@ -9252,8 +9355,14 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
     ];
     entries = [
       ...entries,
-      ...appendAiLeaderboardWordsToEntries(extraFallback, usedWords, nowIso)
+      ...appendAiLeaderboardWordsToEntries(extraFallback, usedWords, nowIso, excludeSet)
     ];
+  }
+
+  if (entries.length < safeNeeded) {
+    console.warn(
+      `⚠️ Quilt name ballot fill for ${dateKey} only found ${entries.length}/${safeNeeded} words after ${QUILT_NAME_WORD_COOLDOWN_DAYS}-day cooldown filter`
+    );
   }
 
   return entries.slice(0, safeNeeded);
