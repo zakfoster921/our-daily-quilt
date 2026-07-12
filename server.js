@@ -8893,7 +8893,7 @@ const QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY = parsePositiveInt(process.env.Q
 const QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRY_LENGTH, 24);
 const QUILT_NAME_WORD_COOLDOWN_DAYS = parsePositiveInt(process.env.QUILT_NAME_WORD_COOLDOWN_DAYS, 10);
 const QUILT_NAME_LEADERBOARD_AI_FILL_MAX_ATTEMPTS = parsePositiveInt(process.env.QUILT_NAME_LEADERBOARD_AI_FILL_MAX_ATTEMPTS, 3);
-const QUILT_NAME_PERMANENTLY_BANNED_WORDS = ['verdure', 'meridian', 'scarlet', 'loom', 'weave'];
+const QUILT_NAME_PERMANENTLY_BANNED_WORDS = ['verdure', 'meridian', 'scarlet', 'loom', 'weave', 'palisade'];
 
 function getQuiltNamePermanentlyBannedWordSet() {
   const extra = String(process.env.QUILT_NAME_BANNED_WORDS || '')
