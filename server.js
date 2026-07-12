@@ -8892,6 +8892,7 @@ const QUILT_NAME_LEADERBOARD_VOTING_CAP = parsePositiveInt(process.env.QUILT_NAM
 const QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRIES_SAFETY, 50);
 const QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRY_LENGTH, 24);
 const QUILT_NAME_WORD_COOLDOWN_DAYS = parsePositiveInt(process.env.QUILT_NAME_WORD_COOLDOWN_DAYS, 10);
+const QUILT_NAME_LEADERBOARD_AI_FILL_MAX_ATTEMPTS = parsePositiveInt(process.env.QUILT_NAME_LEADERBOARD_AI_FILL_MAX_ATTEMPTS, 3);
 
 function isQuiltNameLeaderboardEnabled() {
   const raw = String(process.env.QUILT_NAME_LEADERBOARD || '1').trim().toLowerCase();
@@ -9185,11 +9186,66 @@ Prefer names that:
 Output ONLY a JSON array of exactly ${targetCount} strings from the submitted list: ["Word1","Word2",...]`;
 }
 
-function buildQuiltNameBallotFillPrompt({ dateKey, context, neededCount, existingWords, recentWords = [] }) {
+function parseJsonStringArrayFromAiText(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const text = fenced ? String(fenced[1] || '').trim() : raw;
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[0]);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+function getRejectedAiLeaderboardWords(parsed, acceptedEntries, existingWords, excludeWords) {
+  const excluded = quiltNameWordExcludeSet(excludeWords);
+  const existing = new Set(
+    (Array.isArray(existingWords) ? existingWords : [])
+      .map((word) => normalizeQuiltNameLeaderboardWord(word).toLowerCase())
+      .filter(Boolean)
+  );
+  const accepted = new Set(
+    (Array.isArray(acceptedEntries) ? acceptedEntries : [])
+      .map((entry) => normalizeQuiltNameLeaderboardWord(entry?.word || '').toLowerCase())
+      .filter(Boolean)
+  );
+  const rejected = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(parsed) ? parsed : []) {
+    const word = normalizeQuiltNameLeaderboardWord(raw);
+    const key = word.toLowerCase();
+    if (!word || seen.has(key) || accepted.has(key) || existing.has(key)) continue;
+    seen.add(key);
+    if (excluded.has(key)) rejected.push(word);
+  }
+  return rejected;
+}
+
+function buildQuiltNameBallotFillPrompt({
+  dateKey,
+  context,
+  neededCount,
+  existingWords,
+  recentWords = [],
+  rejectedWords = []
+}) {
   const existingList = existingWords.length ? existingWords.join(', ') : '(none yet)';
   const recentList = Array.isArray(recentWords) ? recentWords.filter(Boolean) : [];
   const recentRule = recentList.length
-    ? `- Do NOT use any word used on this quilt in the last ${QUILT_NAME_WORD_COOLDOWN_DAYS} days, including: ${recentList.slice(0, 80).join(', ')}${recentList.length > 80 ? ', and others' : ''}`
+    ? `- Do NOT reuse any word already used on this quilt in the last ${QUILT_NAME_WORD_COOLDOWN_DAYS} days. Recently used examples: ${recentList.slice(0, 60).join(', ')}${recentList.length > 60 ? ', and others' : ''}`
+    : '';
+  const rejectedList = Array.isArray(rejectedWords) ? rejectedWords.filter(Boolean) : [];
+  const rejectedRule = rejectedList.length
+    ? `- These exact suggestions were rejected as too recent: ${rejectedList.join(', ')}. Replace every one with a fresh, different word.`
     : '';
   const quoteRule = context.quoteText
     ? `- Up to 2 words may echo significant positive nouns or verbs from this quote: "${context.quoteText}"`
@@ -9211,8 +9267,10 @@ Rules:
 - Avoid esoteric or niche words that most people wouldn't know
 - Use present-tense verbs only — no past tense
 - At least half the words should evoke today's dominant colors without literally naming colors
+- Let the composition description above shape a few words (diagonal, dense, airy, tonal, etc.)
 - Do NOT include color names literally (no "Blue", "Red", etc.)
 ${recentRule}
+${rejectedRule}
 ${quoteRule}
 - Output ONLY a JSON array of exactly ${neededCount} strings, nothing else: ["Word1","Word2",...]`;
 }
@@ -9299,30 +9357,57 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
   const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
   const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
   let entries = [];
+  let aiAttempts = 0;
+  let aiRejectedWords = [];
 
   if (apiKey) {
-    try {
-      const prompt = buildQuiltNameBallotFillPrompt({
-        dateKey,
-        context,
-        neededCount: safeNeeded,
-        existingWords: (Array.isArray(existingWords) ? existingWords : [])
-          .map((word) => normalizeQuiltNameLeaderboardWord(word))
-          .filter(Boolean),
-        recentWords: recentForPrompt
-      });
-      const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 256 });
-      const match = raw.match(/\[[\s\S]*?\]/);
-      if (!match) throw new Error('Claude returned no JSON array');
-      const parsed = JSON.parse(match[0]);
-      if (!Array.isArray(parsed)) throw new Error('Claude fill response was not an array');
-      entries = appendAiLeaderboardWordsToEntries(parsed, existingWords, nowIso, excludeSet);
-    } catch (error) {
-      console.warn(`⚠️ AI quilt name ballot fill failed for ${dateKey}:`, error.message);
+    while (entries.length < safeNeeded && aiAttempts < QUILT_NAME_LEADERBOARD_AI_FILL_MAX_ATTEMPTS) {
+      aiAttempts += 1;
+      const remaining = safeNeeded - entries.length;
+      const requestCount = Math.min(30, Math.max(remaining + 6, Math.ceil(remaining * 2.5)));
+      const usedWords = [
+        ...(Array.isArray(existingWords) ? existingWords : []),
+        ...entries.map((entry) => entry.word)
+      ];
+      try {
+        const prompt = buildQuiltNameBallotFillPrompt({
+          dateKey,
+          context,
+          neededCount: requestCount,
+          existingWords: usedWords
+            .map((word) => normalizeQuiltNameLeaderboardWord(word))
+            .filter(Boolean),
+          recentWords: recentForPrompt,
+          rejectedWords: aiRejectedWords
+        });
+        const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 512 });
+        const parsed = parseJsonStringArrayFromAiText(raw);
+        if (!parsed) throw new Error('Claude returned no JSON array');
+        const newEntries = appendAiLeaderboardWordsToEntries(parsed, usedWords, nowIso, excludeSet);
+        const rejectedThisRound = getRejectedAiLeaderboardWords(parsed, newEntries, usedWords, excludeSet);
+        if (rejectedThisRound.length) {
+          aiRejectedWords = [...new Set([...aiRejectedWords, ...rejectedThisRound])];
+        }
+        if (!newEntries.length) {
+          console.warn(
+            `⚠️ AI quilt name ballot fill attempt ${aiAttempts} for ${dateKey} returned only recently-used words`
+          );
+          continue;
+        }
+        entries = [...entries, ...newEntries];
+      } catch (error) {
+        console.warn(
+          `⚠️ AI quilt name ballot fill attempt ${aiAttempts} failed for ${dateKey}:`,
+          error.message
+        );
+      }
     }
   }
 
   if (entries.length < safeNeeded) {
+    console.warn(
+      `⚠️ AI quilt name ballot fill for ${dateKey} using fallback after ${aiAttempts} attempt(s); got ${entries.length}/${safeNeeded} fresh words`
+    );
     const fallback = buildFallbackQuiltNameWords({
       colorFamilies: context.families,
       blockCount: context.blockCount,
