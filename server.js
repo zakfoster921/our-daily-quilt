@@ -11943,6 +11943,25 @@ async function loadReflectionArchiveContextServer(db, dateKey, themeData) {
   };
 }
 
+async function resolveReflectionArchiveQuiltNameForApi(db, dateKey) {
+  const key = String(dateKey || '').trim();
+  if (!key || !db) return '';
+  try {
+    const nameSnap = await db.collection('quiltNames').doc(key).get();
+    if (!nameSnap.exists) return '';
+    const nameData = nameSnap.data() || {};
+    const contributorCount = await getQuiltContributorCountForDate(key);
+    return (
+      getWinningQuiltNameFromEntries(nameData.entries, contributorCount) ||
+      getWinningQuiltNameFromWords(nameData.words, contributorCount) ||
+      formatWinningQuiltName(nameData.winningQuiltName, contributorCount)
+    );
+  } catch (error) {
+    console.warn(`⚠️ resolveReflectionArchiveQuiltNameForApi(${key}):`, error.message);
+    return '';
+  }
+}
+
 async function resolveReflectionArchiveQuiltForApi(db, dateKey, themeData) {
   const key = String(dateKey || '').trim();
   const fromTheme = pickReflectionArchiveQuiltImageFromThemeServer(themeData);
@@ -12018,10 +12037,11 @@ app.get('/api/reflection-themes/archive', async (req, res) => {
       if (!themes.length) continue;
 
       const themeData = { ...data, appDateKey: dateKey };
-      const [context, quilt, newspaperClippingUrl] = await Promise.all([
+      const [context, quilt, newspaperClippingUrl, quiltName] = await Promise.all([
         loadReflectionArchiveContextServer(db, dateKey, themeData),
         resolveReflectionArchiveQuiltForApi(db, dateKey, themeData),
-        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey)
+        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey),
+        resolveReflectionArchiveQuiltNameForApi(db, dateKey)
       ]);
 
       entries.push({
@@ -12034,6 +12054,7 @@ app.get('/api/reflection-themes/archive', async (req, res) => {
         quiltImageUrl: quilt.quiltImageUrl,
         quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
         quiltImageIsClassic: quilt.quiltImageIsClassic === true,
+        quiltName: quiltName || '',
         newspaperClippingUrl: newspaperClippingUrl || ''
       });
     }
@@ -12094,10 +12115,11 @@ app.get('/api/reflection-themes/archive-by-theme', async (req, res) => {
       if (!themes.length) continue;
 
       const themeData = { ...data, appDateKey: dateKey };
-      const [context, quilt, newspaperClippingUrl] = await Promise.all([
+      const [context, quilt, newspaperClippingUrl, quiltName] = await Promise.all([
         loadReflectionArchiveContextServer(db, dateKey, themeData),
         resolveReflectionArchiveQuiltForApi(db, dateKey, themeData),
-        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey)
+        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey),
+        resolveReflectionArchiveQuiltNameForApi(db, dateKey)
       ]);
 
       entries.push({
@@ -12110,6 +12132,7 @@ app.get('/api/reflection-themes/archive-by-theme', async (req, res) => {
         quiltImageUrl: quilt.quiltImageUrl,
         quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
         quiltImageIsClassic: quilt.quiltImageIsClassic === true,
+        quiltName: quiltName || '',
         newspaperClippingUrl: newspaperClippingUrl || ''
       });
     }
