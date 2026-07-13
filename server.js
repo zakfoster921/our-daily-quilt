@@ -3786,7 +3786,12 @@ function mergeNonEmptyPrefillFields(base, next) {
   return merged;
 }
 
-async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt }) {
+/** Web search grounds speaker_guide_line for artists (e.g. SEAMSIDE guests) Claude wouldn't otherwise know. */
+const SEAMSIDE_PREFILL_WEB_SEARCH_TOOLS = [
+  { type: 'web_search_20260209', name: 'web_search', max_uses: 3 }
+];
+
+async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt, tools }) {
   const result = await postJsonWithHttps({
     hostname: 'api.anthropic.com',
     path: '/v1/messages',
@@ -3798,7 +3803,8 @@ async function postSubmittedQuotePrefillToClaude({ apiKey, model, prompt }) {
       model,
       max_tokens: 4096,
       temperature: 0.4,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
+      ...(tools && tools.length ? { tools } : {})
     }
   });
   return (result?.content || [])
@@ -3858,9 +3864,20 @@ function findMissingRequiredPrefillFields(out) {
   return REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(out?.[key] || '').trim());
 }
 
-async function generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, promptThemeOptions, provider }) {
-  const prompt = buildSubmittedQuotePrefillPrompt({ quoteText, authorName, promptThemeOptions });
+async function generateSubmittedQuotePrefillFieldsWithProvider({
+  quoteText,
+  authorName,
+  promptThemeOptions,
+  provider,
+  isSeamside = false
+}) {
   const isGemini = provider === 'gemini';
+  const prompt = buildSubmittedQuotePrefillPrompt({
+    quoteText,
+    authorName,
+    promptThemeOptions,
+    isSeamside: isSeamside && !isGemini
+  });
   const apiKey = isGemini
     ? String(process.env.GEMINI_API_KEY || '').trim()
     : String(process.env.ANTHROPIC_API_KEY || '').trim();
@@ -3870,10 +3887,12 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, auth
   const model = isGemini
     ? String(process.env.GEMINI_PREFILL_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim()
     : String(process.env.ANTHROPIC_PREFILL_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+  // Gemini doesn't support Anthropic's web_search tool syntax; Seamside grounding is Claude-only for now.
+  const tools = !isGemini && isSeamside ? SEAMSIDE_PREFILL_WEB_SEARCH_TOOLS : undefined;
   const postText = (p) =>
     isGemini
       ? postSubmittedQuotePrefillToGemini({ apiKey, model, prompt: p })
-      : postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: p });
+      : postSubmittedQuotePrefillToClaude({ apiKey, model, prompt: p, tools });
   const providerLabel = isGemini ? 'Gemini' : 'Claude';
 
   const firstText = await postText(prompt);
@@ -3917,12 +3936,24 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, auth
   return out;
 }
 
-async function generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions }) {
+async function generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions, isSeamside = false }) {
   if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
-    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, promptThemeOptions, provider: 'anthropic' });
+    return generateSubmittedQuotePrefillFieldsWithProvider({
+      quoteText,
+      authorName,
+      promptThemeOptions,
+      provider: 'anthropic',
+      isSeamside
+    });
   }
   if (String(process.env.GEMINI_API_KEY || '').trim()) {
-    return generateSubmittedQuotePrefillFieldsWithProvider({ quoteText, authorName, promptThemeOptions, provider: 'gemini' });
+    return generateSubmittedQuotePrefillFieldsWithProvider({
+      quoteText,
+      authorName,
+      promptThemeOptions,
+      provider: 'gemini',
+      isSeamside
+    });
   }
   throw new Error('ANTHROPIC_API_KEY or GEMINI_API_KEY must be configured on server');
 }
@@ -4312,6 +4343,72 @@ async function fetchWikipediaSpeakerInfo(authorName) {
   };
 }
 
+/** HEAD-check a candidate image URL actually resolves to a live image — guards against a hallucinated or dead link. */
+async function verifyImageUrlIsLive(url) {
+  try {
+    const res = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+    if (!res.ok) return false;
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+    return contentType.startsWith('image/');
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * SEAMSIDE guests are working artists without a Wikipedia page, so fetchWikipediaSpeakerInfo comes up
+ * empty for them. This asks Claude to find the artist's own site (web_search) and confirm a real headshot
+ * photo on it (web_fetch reads the actual page), then verifies the URL resolves to a live image before trusting it.
+ */
+async function fetchSeamsideArtistHeadshotViaWebSearch(authorName) {
+  const name = String(authorName || '').trim();
+  if (!name) return null;
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) return null;
+  const model = String(process.env.ANTHROPIC_PREFILL_MODEL || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6').trim();
+  const prompt = [
+    `The artist "${name}" was a guest on SEAMSIDE, a podcast about textile and fiber artists.`,
+    'Find their personal website or artist portfolio site (you are not given the URL), then find a headshot or portrait photo of them — a photo of their face, not their artwork — on it.',
+    'Use web_search to locate their site, then web_fetch to confirm the direct image file URL on the actual page. Do not guess a URL you have not fetched.',
+    'Return ONLY this JSON, nothing else: {"image_url": "<direct url ending in an image file extension, or empty string if none found with real confidence>", "source_page": "<page you found it on, or empty string>"}'
+  ].join('\n');
+  let text;
+  try {
+    text = await postSubmittedQuotePrefillToClaude({
+      apiKey,
+      model,
+      prompt,
+      tools: [
+        { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
+        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 5 }
+      ]
+    });
+  } catch (e) {
+    console.warn(`⚠️ SEAMSIDE headshot search failed for "${name}":`, e.message);
+    return null;
+  }
+  const parsed = extractPrefillJsonFromText(text);
+  const imageUrl = pickPrefillStringLoose(parsed, 'image_url', 'imageUrl');
+  const sourcePage = pickPrefillStringLoose(parsed, 'source_page', 'sourcePage');
+  if (!imageUrl || !/^https:\/\//i.test(imageUrl)) return null;
+  const isLive = await verifyImageUrlIsLive(imageUrl);
+  if (!isLive) {
+    console.warn(`⚠️ SEAMSIDE headshot candidate for "${name}" failed live-image check: ${imageUrl}`);
+    return null;
+  }
+  let attributionHost = '';
+  try {
+    attributionHost = new URL(sourcePage || imageUrl).hostname.replace(/^www\./, '');
+  } catch (_) {
+    attributionHost = '';
+  }
+  console.log(`ℹ️ SEAMSIDE headshot found for "${name}" via ${attributionHost || 'artist site'}: ${imageUrl}`);
+  return {
+    speaker_image_url: imageUrl,
+    image_attribution: attributionHost ? `Photo via ${attributionHost}` : 'Photo via artist website'
+  };
+}
+
 /**
  * Deep link to a single Firestore document in the Firebase console (quotes collection by default).
  * Used in Notion prefill notes when an existing portrait/cutout is reused so editors can open the source row.
@@ -4686,10 +4783,15 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     !!existingCommunityPrompt &&
     (needsSmallAct || needsPromptTheme || needsGoodDay || needsRoughDay || needsWatchFor);
 
+  const isSeamside =
+    getNotionPropPlainByAliases(currentProps, 'submitted_via', 'submittedVia', 'Submitted via', 'Submitted Via')
+      .trim()
+      .toLowerCase() === 'seamside';
+
   let ai = null;
   let claudeError = null;
   try {
-    ai = await generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions });
+    ai = await generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions, isSeamside });
     ai.prompt_theme = resolvePromptThemeOptions(promptThemeOptions, ai.prompt_theme);
   } catch (e) {
     claudeError = e?.message || String(e);
@@ -4820,6 +4922,19 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     );
   }
 
+  // Wikipedia has nothing on most SEAMSIDE guests; fall back to Claude finding a real headshot on their own site.
+  const hasExistingPortrait = !!(wiki?.speaker_image_url || speakerReuse?.speakerImageUrl || speakerReuse?.speakerCutoutUrl);
+  if (isSeamside && !hasExistingPortrait) {
+    try {
+      const headshot = await fetchSeamsideArtistHeadshotViaWebSearch(resolvedAuthor);
+      if (headshot?.speaker_image_url) {
+        wiki = { ...(wiki || {}), ...headshot };
+      }
+    } catch (e) {
+      console.warn(`\u26a0\ufe0f SEAMSIDE headshot search failed for "${resolvedAuthor}":`, e.message);
+    }
+  }
+
   const properties = buildPrefillNotionProperties(schema, ai, wiki, speakerReuse);
   // Clear any prior error message on success.
   if (errState.propName) {
@@ -4921,6 +5036,14 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   const goodDayName = findNotionPropName(schema, 'good_day', 'goodDay', 'Good day', 'Good Day');
   const roughDayName = findNotionPropName(schema, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
   const watchForName = findNotionPropName(schema, 'watch_for', 'watchFor', 'Watch for');
+  const submittedViaName = findNotionPropName(schema, 'submitted_via', 'submittedVia', 'Submitted via', 'Submitted Via');
+  const speakerGuideLineName = findNotionPropName(
+    schema,
+    'speaker_guide_line',
+    'speakerGuideLine',
+    'Guide line',
+    'Speaker guide line'
+  );
   if (!quoteTextName || !communityPromptName) {
     throw new Error(`Notion DB missing required columns (need title + community_prompt rich_text)`);
   }
@@ -4960,7 +5083,39 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
     method: 'POST',
     body: JSON.stringify({ filter, page_size: Math.min(100, limit * 4) })
   });
-  return Array.isArray(json?.results) ? json.results : [];
+  const results = Array.isArray(json?.results) ? json.results : [];
+
+  // SEAMSIDE guests often have no speaker_guide_line because Claude doesn't recognize them without
+  // a web search (see prefillSubmittedQuoteWithAi). Scoped to SEAMSIDE only — re-sweeping this field
+  // for every other quote would repeatedly reprocess authors Claude legitimately doesn't know, since an
+  // honest empty speaker_guide_line isn't tracked as a prefill "failure" and would never stop retrying.
+  // Queried separately (rather than OR'd into the filter above) because Notion's compound filter API
+  // caps nesting at 2 levels, and the general filter already uses one level (and -> or).
+  if (submittedViaName && schema[submittedViaName]?.type === 'select' && speakerGuideLineName) {
+    const speakerGuideLineEmpty = notionIsEmptyFilter(speakerGuideLineName, schema[speakerGuideLineName]?.type);
+    if (speakerGuideLineEmpty) {
+      const seamsideFilter = {
+        and: [
+          { property: quoteTextName, [quoteProp.type]: { is_not_empty: true } },
+          { property: submittedViaName, select: { equals: 'SEAMSIDE' } },
+          speakerGuideLineEmpty
+        ]
+      };
+      const seamsideJson = await notionFetchJson(`/databases/${databaseId}/query`, {
+        method: 'POST',
+        body: JSON.stringify({ filter: seamsideFilter, page_size: Math.min(100, limit * 4) })
+      });
+      const seamsideResults = Array.isArray(seamsideJson?.results) ? seamsideJson.results : [];
+      const seenIds = new Set(results.map((r) => r.id));
+      for (const row of seamsideResults) {
+        if (!seenIds.has(row.id)) {
+          seenIds.add(row.id);
+          results.push(row);
+        }
+      }
+    }
+  }
+  return results;
 }
 
 async function runQuotePrefillSweep({ limit = PREFILL_SWEEP_BATCH_LIMIT, trigger = 'manual' } = {}) {
@@ -8888,7 +9043,7 @@ async function getQuiltContributorCountForDate(dateKey) {
 
 const QUILT_NAME_LEADERBOARD_SUBMISSION_HOURS = parsePositiveInt(process.env.QUILT_NAME_SUBMISSION_HOURS, 8);
 const QUILT_NAME_LEADERBOARD_MIN_ENTRIES = parsePositiveInt(process.env.QUILT_NAME_MIN_ENTRIES, 5);
-const QUILT_NAME_LEADERBOARD_VOTING_CAP = parsePositiveInt(process.env.QUILT_NAME_VOTING_CAP, 12);
+const QUILT_NAME_LEADERBOARD_VOTING_CAP = parsePositiveInt(process.env.QUILT_NAME_VOTING_CAP, 10);
 const QUILT_NAME_LEADERBOARD_MAX_ENTRIES_SAFETY = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRIES_SAFETY, 50);
 const QUILT_NAME_LEADERBOARD_MAX_ENTRY_LENGTH = parsePositiveInt(process.env.QUILT_NAME_MAX_ENTRY_LENGTH, 24);
 const QUILT_NAME_WORD_COOLDOWN_DAYS = parsePositiveInt(process.env.QUILT_NAME_WORD_COOLDOWN_DAYS, 10);
@@ -9671,6 +9826,9 @@ app.get('/api/quilt-name-leaderboard', limitQuiltNameLeaderboard, async (req, re
 
     const effectivePhase = storedPhase === 'final' ? 'final' : phase;
     const showVotes = effectivePhase !== 'submissions' && !!myVote;
+    if (effectivePhase === 'voting' || effectivePhase === 'final') {
+      entries = entries.slice(0, QUILT_NAME_LEADERBOARD_VOTING_CAP);
+    }
     return res.json({
       success: true,
       dateKey,
@@ -9686,7 +9844,8 @@ app.get('/api/quilt-name-leaderboard', limitQuiltNameLeaderboard, async (req, re
       mySubmissionId,
       winningQuiltName,
       canSubmit: effectivePhase === 'submissions' && !mySubmissionId,
-      canVote: effectivePhase === 'voting'
+      canVote: effectivePhase === 'voting',
+      votingCap: QUILT_NAME_LEADERBOARD_VOTING_CAP
     });
   } catch (error) {
     console.error('❌ quilt-name-leaderboard GET failed:', error);
