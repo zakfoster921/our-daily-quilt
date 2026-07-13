@@ -11906,13 +11906,15 @@ async function loadReflectionArchiveContextServer(db, dateKey, themeData) {
     };
   };
 
-  const dailyQuote = await readDoc(quotesCollection, dateKey);
+  const [dailyQuote, assignment] = await Promise.all([
+    readDoc(quotesCollection, dateKey),
+    readDoc(assignmentsCollection, dateKey)
+  ]);
   if (!quote) quote = dailyQuote.quote;
   if (!isUsableReflectionArchivePromptServer(prompt) && isUsableReflectionArchivePromptServer(dailyQuote.prompt)) {
     prompt = dailyQuote.prompt;
   }
 
-  const assignment = await readDoc(assignmentsCollection, dateKey);
   if (!quote) quote = assignment.quote;
   if (!isUsableReflectionArchivePromptServer(prompt) && isUsableReflectionArchivePromptServer(assignment.prompt)) {
     prompt = assignment.prompt;
@@ -11943,23 +11945,32 @@ async function loadReflectionArchiveContextServer(db, dateKey, themeData) {
   };
 }
 
-async function resolveReflectionArchiveQuiltNameForApi(db, dateKey) {
-  const key = String(dateKey || '').trim();
-  if (!key || !db) return '';
-  try {
-    const nameSnap = await db.collection('quiltNames').doc(key).get();
-    if (!nameSnap.exists) return '';
-    const nameData = nameSnap.data() || {};
-    const contributorCount = await getQuiltContributorCountForDate(key);
-    return (
-      getWinningQuiltNameFromEntries(nameData.entries, contributorCount) ||
-      getWinningQuiltNameFromWords(nameData.words, contributorCount) ||
-      formatWinningQuiltName(nameData.winningQuiltName, contributorCount)
-    );
-  } catch (error) {
-    console.warn(`⚠️ resolveReflectionArchiveQuiltNameForApi(${key}):`, error.message);
-    return '';
-  }
+async function buildReflectionArchiveApiEntry(db, doc) {
+  const data = doc.data() || {};
+  const dateKey = String(data.appDateKey || doc.id || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
+  const themes = dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []);
+  if (!themes.length) return null;
+
+  const themeData = { ...data, appDateKey: dateKey };
+  const [context, quilt, newspaperClippingUrl] = await Promise.all([
+    loadReflectionArchiveContextServer(db, dateKey, themeData),
+    resolveReflectionArchiveQuiltForApi(db, dateKey, themeData),
+    resolveReflectionArchiveNewspaperClippingForApi(db, dateKey)
+  ]);
+
+  return {
+    dateKey,
+    themes,
+    prompt: context.prompt,
+    quote: context.quote,
+    first_response: context.first_response,
+    reflectionPrompt: context.prompt,
+    quiltImageUrl: quilt.quiltImageUrl,
+    quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
+    quiltImageIsClassic: quilt.quiltImageIsClassic === true,
+    newspaperClippingUrl: newspaperClippingUrl || ''
+  };
 }
 
 async function resolveReflectionArchiveQuiltForApi(db, dateKey, themeData) {
@@ -11974,7 +11985,10 @@ async function resolveReflectionArchiveQuiltForApi(db, dateKey, themeData) {
     };
   }
 
-  const igSnap = await db.collection('instagram-images').doc(key).get();
+  const [igSnap, archiveSnap] = await Promise.all([
+    db.collection('instagram-images').doc(key).get(),
+    db.collection('archives').doc(key).get()
+  ]);
   const igData = igSnap.exists ? igSnap.data() || {} : {};
   const quiltStoryUrl = pickQuiltStoryImageUrlFromInstagramDoc(igData);
   if (quiltStoryUrl) {
@@ -11985,7 +11999,6 @@ async function resolveReflectionArchiveQuiltForApi(db, dateKey, themeData) {
     };
   }
 
-  const archiveSnap = await db.collection('archives').doc(key).get();
   const archiveData = archiveSnap.exists ? archiveSnap.data() || {} : {};
   const archiveUrl = pickFinalArchiveQuiltImageUrl(archiveData);
   if (archiveUrl) {
@@ -12028,36 +12041,9 @@ app.get('/api/reflection-themes/archive', async (req, res) => {
     }
 
     const themesSnap = await query.get();
-    const entries = [];
-    for (const doc of themesSnap.docs) {
-      const data = doc.data() || {};
-      const dateKey = String(data.appDateKey || doc.id || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
-      const themes = dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []);
-      if (!themes.length) continue;
-
-      const themeData = { ...data, appDateKey: dateKey };
-      const [context, quilt, newspaperClippingUrl, quiltName] = await Promise.all([
-        loadReflectionArchiveContextServer(db, dateKey, themeData),
-        resolveReflectionArchiveQuiltForApi(db, dateKey, themeData),
-        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey),
-        resolveReflectionArchiveQuiltNameForApi(db, dateKey)
-      ]);
-
-      entries.push({
-        dateKey,
-        themes,
-        prompt: context.prompt,
-        quote: context.quote,
-        first_response: context.first_response,
-        reflectionPrompt: context.prompt,
-        quiltImageUrl: quilt.quiltImageUrl,
-        quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
-        quiltImageIsClassic: quilt.quiltImageIsClassic === true,
-        quiltName: quiltName || '',
-        newspaperClippingUrl: newspaperClippingUrl || ''
-      });
-    }
+    const entries = (
+      await Promise.all(themesSnap.docs.map((doc) => buildReflectionArchiveApiEntry(db, doc)))
+    ).filter(Boolean);
 
     return res.json({
       success: true,
@@ -12106,36 +12092,9 @@ app.get('/api/reflection-themes/archive-by-theme', async (req, res) => {
     }
 
     const themesSnap = await query.get();
-    const entries = [];
-    for (const doc of themesSnap.docs) {
-      const data = doc.data() || {};
-      const dateKey = String(data.appDateKey || doc.id || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
-      const themes = dedupeReflectionWallThemes(Array.isArray(data.themes) ? data.themes : []);
-      if (!themes.length) continue;
-
-      const themeData = { ...data, appDateKey: dateKey };
-      const [context, quilt, newspaperClippingUrl, quiltName] = await Promise.all([
-        loadReflectionArchiveContextServer(db, dateKey, themeData),
-        resolveReflectionArchiveQuiltForApi(db, dateKey, themeData),
-        resolveReflectionArchiveNewspaperClippingForApi(db, dateKey),
-        resolveReflectionArchiveQuiltNameForApi(db, dateKey)
-      ]);
-
-      entries.push({
-        dateKey,
-        themes,
-        prompt: context.prompt,
-        quote: context.quote,
-        first_response: context.first_response,
-        reflectionPrompt: context.prompt,
-        quiltImageUrl: quilt.quiltImageUrl,
-        quiltImageFallbackBlocks: quilt.quiltImageFallbackBlocks,
-        quiltImageIsClassic: quilt.quiltImageIsClassic === true,
-        quiltName: quiltName || '',
-        newspaperClippingUrl: newspaperClippingUrl || ''
-      });
-    }
+    const entries = (
+      await Promise.all(themesSnap.docs.map((doc) => buildReflectionArchiveApiEntry(db, doc)))
+    ).filter(Boolean);
 
     return res.json({
       success: true,
