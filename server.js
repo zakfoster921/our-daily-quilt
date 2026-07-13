@@ -14432,6 +14432,9 @@ app.post('/api/social-posts/:postId/comments', limitSocialComment, async (req, r
     const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
     const displayName = String(body.displayName || body.authorDisplayName || '').trim().slice(0, 80);
     const parentCommentId = String(body.parentCommentId || '').trim();
+    const expectedAdminToken = socialPostAdminExpectedToken();
+    const isAdminPost =
+      !!expectedAdminToken && socialPostAdminTokenFromRequest(req) === expectedAdminToken;
 
     if (!rawText) {
       return res.status(400).json({ success: false, error: 'Comment text is required' });
@@ -14483,7 +14486,7 @@ app.post('/api/social-posts/:postId/comments', limitSocialComment, async (req, r
       postId,
       text,
       rawText,
-      displayName: storedReflectionAuthorName(displayName),
+      displayName: storedReflectionAuthorName(isAdminPost ? 'Zak' : displayName),
       clientId: clientId || null,
       parentCommentId: parentCommentId || null,
       depth,
