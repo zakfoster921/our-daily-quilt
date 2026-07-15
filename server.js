@@ -9318,6 +9318,59 @@ function pickLeaderboardEntriesByWords(entries, words) {
   return picked;
 }
 
+// No AI available to judge "reads as multiple words" — length is a rough stand-in
+// (two-word blends like "riverflow" run ~8-11 letters; three-plus-word run-ons like
+// "livinglikeariver" run noticeably longer).
+const QUILT_NAME_LONG_COMPOUND_LENGTH = 14;
+
+function isLikelyGluedCompoundQuiltName(word) {
+  return String(word || '').trim().length > QUILT_NAME_LONG_COMPOUND_LENGTH;
+}
+
+function buildQuiltNameGluedCompoundCheckPrompt(words) {
+  return `These are community-submitted quilt name suggestions (single run-on strings, no spaces allowed at submission time):
+${JSON.stringify(words)}
+
+Flag any word that actually reads as three or more real English words squished together with no spaces (e.g. "livinglikeariver" = living + like + a + river — flag that one).
+
+Do NOT flag single words. Do NOT flag clean two-word blends (e.g. "riverflow", "moonlight", "daydream" are all fine — leave those alone).
+
+Output ONLY a JSON array of the exact submitted words to flag, using the same spelling. Use an empty array if none qualify: ["word1","word2"]`;
+}
+
+async function excludeGluedCompoundQuiltNames({ dateKey, entries }) {
+  const community = normalizeQuiltNameLeaderboardEntries(entries).filter((entry) => entry.source !== 'ai');
+  if (!community.length) return { clean: community, excluded: [] };
+
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  const model = String(process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001').trim();
+  if (apiKey) {
+    try {
+      const words = community.map((entry) => entry.word);
+      const prompt = buildQuiltNameGluedCompoundCheckPrompt(words);
+      const raw = await postReflectionThemesToClaude({ apiKey, model, prompt, maxTokens: 200 });
+      const match = raw.match(/\[[\s\S]*?\]/);
+      if (!match) throw new Error('Claude returned no JSON array');
+      const parsed = JSON.parse(match[0]);
+      if (!Array.isArray(parsed)) throw new Error('Claude compound-check response was not an array');
+      const flagged = new Set(
+        parsed.map((word) => normalizeQuiltNameLeaderboardWord(word).toLowerCase()).filter(Boolean)
+      );
+      return {
+        clean: community.filter((entry) => !flagged.has(entry.word.toLowerCase())),
+        excluded: community.filter((entry) => flagged.has(entry.word.toLowerCase()))
+      };
+    } catch (error) {
+      console.warn(`⚠️ AI quilt name glued-compound check failed for ${dateKey}:`, error.message);
+    }
+  }
+
+  return {
+    clean: community.filter((entry) => !isLikelyGluedCompoundQuiltName(entry.word)),
+    excluded: community.filter((entry) => isLikelyGluedCompoundQuiltName(entry.word))
+  };
+}
+
 function fallbackFilterCommunityEntriesForBallot(entries, targetCount, dateKey) {
   const safeTarget = Math.max(0, Math.floor(Number(targetCount) || 0));
   const community = normalizeQuiltNameLeaderboardEntries(entries).filter((entry) => entry.source !== 'ai');
@@ -9629,7 +9682,11 @@ async function generateAiLeaderboardEntries({ dateKey, neededCount, existingWord
 async function buildLeaderboardVotingBallotEntries(dateKey, rawEntries) {
   const targetCount = QUILT_NAME_LEADERBOARD_VOTING_CAP;
   const allEntries = normalizeQuiltNameLeaderboardEntries(rawEntries);
-  const communityEntries = allEntries.filter((entry) => entry.source !== 'ai');
+  const rawCommunityEntries = allEntries.filter((entry) => entry.source !== 'ai');
+  const { clean: communityEntries, excluded: gluedCompoundEntries } = await excludeGluedCompoundQuiltNames({
+    dateKey,
+    entries: rawCommunityEntries
+  });
   let selected = communityEntries;
   let aiFiltered = 0;
 
@@ -9662,6 +9719,7 @@ async function buildLeaderboardVotingBallotEntries(dateKey, rawEntries) {
     submissionEntries: allEntries,
     aiAdded,
     aiFiltered,
+    gluedCompoundExcluded: gluedCompoundEntries.length,
     communityCount: communityEntries.length,
     votingCap: targetCount
   };
@@ -9711,6 +9769,7 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
     ...(force ? { ballotRebuiltAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
     ...(ballot.aiAdded ? { aiBallotFillCount: ballot.aiAdded } : {}),
     ...(ballot.aiFiltered ? { aiBallotFilterCount: ballot.aiFiltered } : {}),
+    ...(ballot.gluedCompoundExcluded ? { ballotGluedCompoundExcludedCount: ballot.gluedCompoundExcluded } : {}),
     ...(ballot.aiAdded ? { aiFallbackAt: admin.firestore.FieldValue.serverTimestamp() } : {})
   };
   await nameRef.set(nextDoc, { merge: true });
@@ -9720,6 +9779,7 @@ async function finalizeLeaderboardSubmissionPhase(dateKey, options = {}) {
     phase: 'voting',
     aiAdded: ballot.aiAdded,
     aiFiltered: ballot.aiFiltered,
+    gluedCompoundExcluded: ballot.gluedCompoundExcluded,
     submissionEntryCount: ballot.submissionEntries.length,
     communityCount: ballot.communityCount,
     votingBallotCap: ballot.votingCap,
