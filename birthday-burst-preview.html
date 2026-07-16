@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Birthday burst — in-app preview</title>
+  <link rel="stylesheet" href="styles/our-daily-beta.css">
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #8a8a8a;
+    }
+    #preview-root {
+      width: 390px;
+      min-height: 844px;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+    }
+    #quilt-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+    }
+    #screen-quilt {
+      display: flex !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      min-height: 844px;
+      padding-top: 0 !important;
+      background: transparent !important;
+      position: relative;
+      z-index: 1;
+    }
+    #screen-quilt.screen,
+    #screen-quilt.screen.active {
+      background-color: transparent !important;
+    }
+    #preview-root .quote-speaker-stage {
+      margin-top: 3.25rem;
+    }
+    #preview-root .quote-speaker-portrait-wrap,
+    #preview-root .quote-speaker-cutout {
+      background: transparent !important;
+    }
+    #quoteSpeakerBirthdayConfetti,
+    #quoteSpeakerGlitter,
+    #quoteSpeakerBirthdayCaption {
+      display: block !important;
+      visibility: visible !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="preview-root">
+    <canvas id="quilt-bg" width="390" height="844" aria-hidden="true"></canvas>
+    <section class="screen active" id="screen-quilt" aria-label="Birthday burst preview">
+      <div class="quote-speaker-stage quote-speaker-stage--visible" id="quoteSpeakerStage">
+        <aside class="quote-speaker-widget" id="quoteSpeakerWidget" aria-labelledby="quoteSpeakerName">
+          <div class="quote-speaker-stack">
+            <div class="quote-speaker-portrait-wrap">
+              <div class="quote-speaker-portrait-tilt">
+                <figure class="quote-speaker-cutout quote-speaker-cutout--loaded quote-speaker-cutout--plain-cutout quote-speaker-cutout--paper-backed quote-speaker-cutout--plain-fallback" id="quoteSpeakerImageWrap" aria-hidden="true">
+                  <img
+                    class="quote-speaker-birthday-confetti"
+                    id="quoteSpeakerBirthdayConfetti"
+                    src="assets/birthday-burst-alpha.png?v=1"
+                    alt=""
+                    decoding="async"
+                  />
+                  <img
+                    class="quote-speaker-image is-loaded"
+                    id="quoteSpeakerImage"
+                    alt=""
+                    width="168"
+                    height="168"
+                    decoding="async"
+                    data-plain-cutout-direct="1"
+                  />
+                  <span class="quote-speaker-glitter" id="quoteSpeakerGlitter" aria-hidden="true"></span>
+                </figure>
+              </div>
+            </div>
+            <p class="quote-speaker-birthday-caption" id="quoteSpeakerBirthdayCaption">Happy birthday</p>
+            <div class="quote-speaker-slab quote-speaker-slab--identity" id="quoteSpeakerIdentitySlab">
+              <div class="quote-speaker-slab-body">
+                <p class="quote-speaker-name" id="quoteSpeakerName">John Steinbeck</p>
+                <p class="quote-speaker-dates" id="quoteSpeakerDates">1902 – 1968</p>
+              </div>
+            </div>
+            <div class="quote-speaker-slab quote-speaker-slab--seamside" id="quoteSpeakerBioSlab">
+              <div class="quote-speaker-slab-body">
+                <p class="quote-speaker-guide" id="quoteSpeakerGuide">Spent a career writing about ordinary Americans — laborers, drifters, families — and what they could endure together.</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+  <script>
+    (function () {
+      const palette = [
+        '#e85d4a', '#f0b429', '#7cb342', '#7e57c2', '#42a5f5', '#26a69a',
+        '#ef5350', '#ab47bc', '#5c6bc0', '#66bb6a', '#ffa726', '#8d6e63',
+        '#ec407a', '#29b6f6', '#d4e157', '#ff7043', '#78909c', '#ba68c8',
+      ];
+      const canvas = document.getElementById('quilt-bg');
+      const ctx = canvas.getContext('2d');
+      let seed = 42;
+      const rand = () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+      };
+      ctx.fillStyle = palette[3];
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < canvas.height; y += 8 + Math.floor(rand() * 6)) {
+        let x = -8 + Math.floor(rand() * 20);
+        while (x < canvas.width + 20) {
+          const w = 18 + Math.floor(rand() * 42);
+          const h = 12 + Math.floor(rand() * 28);
+          ctx.fillStyle = palette[Math.floor(rand() * palette.length)];
+          ctx.globalAlpha = 0.82 + rand() * 0.18;
+          ctx.fillRect(x, y, w, h);
+          if (rand() > 0.55) {
+            ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+          }
+          x += w - 4 - Math.floor(rand() * 6);
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      const img = document.getElementById('quoteSpeakerImage');
+      img.src = 'https://firebasestorage.googleapis.com/v0/b/our-daily.firebasestorage.app/o/speaker-cutouts%2Fjohn-steinbeck-7c0a6f0f8d0b.png?alt=media';
+      img.addEventListener('error', () => {
+        img.src = 'https://firebasestorage.googleapis.com/v0/b/our-daily.firebasestorage.app/o/speaker-cutouts%2Fhafiz-b82ee2912c0b.png?alt=media&token=706dafc6-68e2-42a4-b69a-50f87951024d';
+        document.getElementById('quoteSpeakerName').textContent = 'Hafiz';
+        document.getElementById('quoteSpeakerDates').textContent = 'c. 1315 – 1390';
+      });
+
+      const glitter = document.getElementById('quoteSpeakerGlitter');
+      const colors = ['#ffffff', '#fff8e7', '#f5f0dc'];
+      for (let i = 0; i < 18; i += 1) {
+        const dot = document.createElement('span');
+        dot.className = 'quote-speaker-sparkle';
+        dot.style.setProperty('--sx', `${12 + (i * 17) % 76}%`);
+        dot.style.setProperty('--sy', `${8 + (i * 23) % 84}%`);
+        dot.style.setProperty('--scolor', colors[i % colors.length]);
+        dot.style.setProperty('--sd', `${(i * 0.13).toFixed(2)}s`);
+        dot.style.setProperty('--sdur', `${(0.7 + (i % 5) * 0.12).toFixed(2)}s`);
+        glitter.appendChild(dot);
+      }
+    })();
+  </script>
+</body>
+</html>
