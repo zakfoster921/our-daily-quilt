@@ -804,6 +804,14 @@ function parseNotionRow(page) {
     'Date scheduled',
     'Date Scheduled'
   );
+  /** Marks a speaker's annual occasion (month/day only, year discarded) — see reconcile-assignment-dates-from-notion.cjs. */
+  const recurringDate = getMappedDateStart(
+    props,
+    'recurring_date',
+    'recurring_date',
+    'Recurring date',
+    'Recurring Date'
+  );
   const submittedAt = getMappedDateStart(
     props,
     'submitted_at',
@@ -894,6 +902,7 @@ function parseNotionRow(page) {
       active: approved,
       sortOrder,
       date_scheduled: dateScheduled,
+      recurring_date: recurringDate,
       item_no: itemNo,
       last_used_date: lastUsedDate,
       reviewed,

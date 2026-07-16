@@ -98,7 +98,7 @@ function artRecsSnapshotValue(value) {
   }
 }
 
-function assignmentPayloadForQuote(q, dateKey, assignedBy) {
+function assignmentPayloadForQuote(q, dateKey, assignedBy, isBirthdayPlacement = false) {
   const artRecs = q.artRecs ?? q.art_recs ?? '';
   const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
   const smallAct = String(q.small_act ?? q.smallAct ?? '').trim();
@@ -109,6 +109,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
     dateKey,
     sourceId: q.sourceId || null,
     embeddedStableKey: null,
+    isBirthdayPlacement: !!isBirthdayPlacement,
     textSnapshot: q.text.slice(0, 160),
     authorSnapshot: q.author.slice(0, 120),
     blessingSnapshot: q.blessing.slice(0, 240),
@@ -137,7 +138,7 @@ function assignmentPayloadForQuote(q, dateKey, assignedBy) {
   };
 }
 
-function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
+function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt, isBirthdayPlacement = false) {
   const artRecs = q.artRecs ?? q.art_recs ?? '';
   const artRecsType = String(q.artRecsType ?? q.art_recs_type ?? '').trim().toLowerCase();
   return {
@@ -146,6 +147,7 @@ function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     quote: q.text,
     author: q.author,
     sourceId: q.sourceId || null,
+    isBirthdayPlacement: !!isBirthdayPlacement,
     blessing: q.blessing || '',
     community_prompt: q.communityPrompt || q.community_prompt || '',
     what_if: q.whatIf || q.what_if || '',
@@ -226,9 +228,41 @@ function initFirestore() {
   return admin.firestore();
 }
 
-function normalizeDesiredDate(row) {
+function normalizeExplicitDate(row) {
   const raw = String(row?.dateScheduled ?? row?.date_scheduled ?? '').trim();
   return isDateKey(raw) ? raw : '';
+}
+
+function isLeapYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+/**
+ * A speaker's `recurring_date` only carries month/day meaning — the year in the stored
+ * ISO string is whatever placeholder was picked in Notion's date UI and is discarded here.
+ * Resolves to the next `YYYY-MM-DD` occurrence on or after `start`. Feb 29 clamps to Feb 28
+ * in non-leap years.
+ */
+function resolveRecurringDate(recurringIso, start) {
+  const iso = String(recurringIso || '').trim();
+  if (!isDateKey(iso.slice(0, 10))) return '';
+  const mmdd = iso.slice(5, 10);
+  const startYear = Number(start.slice(0, 4));
+  const forYear = (year) => {
+    if (mmdd === '02-29' && !isLeapYear(year)) return `${year}-02-28`;
+    return `${year}-${mmdd}`;
+  };
+  const candidate = forYear(startYear);
+  return candidate >= start ? candidate : forYear(startYear + 1);
+}
+
+/** Approved quotes by the same speaker (exact, case/whitespace-normalized `author` match), stable-sorted for rotation. */
+function approvedQuotesForAuthor(quoteBySourceId, author) {
+  const target = String(author || '').trim().toLowerCase();
+  if (!target) return [];
+  return [...quoteBySourceId.values()]
+    .filter((q) => String(q.author || '').trim().toLowerCase() === target)
+    .sort((a, b) => a.sourceId.localeCompare(b.sourceId));
 }
 
 function clearQuoteScheduleInMemory(quoteBySourceId, sid) {
@@ -255,26 +289,73 @@ function pickScheduleWinner(a, b) {
 
 /**
  * One quote per scheduled date. Losers keep stale `date_scheduled` in Firestore until cleared.
- * @returns {{ placements: Array<{ sid: string, dateKey: string, q: object }>, losers: Array<{ sid: string, dateKey: string, q: object }> }}
+ *
+ * Two sources feed the same date claim, in order:
+ *  1. Explicit one-time `date_scheduled` pins (unchanged behavior).
+ *  2. Speaker recurring placements: any quote carrying `recurringDate` marks its author's
+ *     annual occasion. The *displayed* quote is chosen by rotating through that author's
+ *     other approved, not-otherwise-pinned quotes (`pool[year % pool.length]`) so the same
+ *     date shows a different quote from that speaker year over year.
+ *
+ * @returns {{ placements: Array<{ sid: string, dateKey: string, q: object, isBirthdayPlacement: boolean }>, losers: Array<{ sid: string, dateKey: string, q: object }> }}
  */
 function resolveSchedulePlacements(quoteBySourceId, start) {
   const byDate = new Map();
+  const birthdayByDate = new Map();
   const losers = [];
-  for (const q of quoteBySourceId.values()) {
-    const want = normalizeDesiredDate(q);
-    if (!want || want < start) continue;
-    const prev = byDate.get(want);
+
+  const claim = (dateKey, q, isBirthday) => {
+    const prev = byDate.get(dateKey);
     if (!prev) {
-      byDate.set(want, q);
-      continue;
+      byDate.set(dateKey, q);
+      birthdayByDate.set(dateKey, isBirthday);
+      return;
+    }
+    if (prev.sourceId === q.sourceId) {
+      birthdayByDate.set(dateKey, birthdayByDate.get(dateKey) || isBirthday);
+      return;
     }
     const winner = pickScheduleWinner(prev, q);
     const loser = winner.sourceId === prev.sourceId ? q : prev;
-    byDate.set(want, winner);
-    losers.push({ sid: loser.sourceId, dateKey: want, q: loser });
+    byDate.set(dateKey, winner);
+    birthdayByDate.set(dateKey, winner.sourceId === prev.sourceId ? birthdayByDate.get(dateKey) : isBirthday);
+    losers.push({ sid: loser.sourceId, dateKey, q: loser });
+  };
+
+  for (const q of quoteBySourceId.values()) {
+    const want = normalizeExplicitDate(q);
+    if (want && want >= start) claim(want, q, false);
   }
+
+  const seenTriggers = new Set();
+  for (const q of quoteBySourceId.values()) {
+    if (!q.recurringDate) continue;
+    const dateKey = resolveRecurringDate(q.recurringDate, start);
+    if (!dateKey) continue;
+    const triggerKey = `${String(q.author || '').trim().toLowerCase()}|${dateKey}`;
+    if (seenTriggers.has(triggerKey)) continue;
+    seenTriggers.add(triggerKey);
+    const pool = approvedQuotesForAuthor(quoteBySourceId, q.author).filter((sq) => {
+      const own = normalizeExplicitDate(sq);
+      // A quote pinned to *this* occasion's own resolved date is this run's (or a prior
+      // run's, same year) rotation pick — keep it in the pool so the choice stays stable
+      // across daily reruns instead of self-excluding and flip-flopping every day. Only
+      // exclude quotes genuinely pinned to some other date.
+      return !own || own < start || own === dateKey;
+    });
+    if (!pool.length) continue;
+    const year = Number(dateKey.slice(0, 4));
+    const chosen = pool[year % pool.length];
+    claim(dateKey, chosen, true);
+  }
+
   const placements = [...byDate.entries()]
-    .map(([dateKey, q]) => ({ sid: q.sourceId, dateKey, q }))
+    .map(([dateKey, q]) => ({
+      sid: q.sourceId,
+      dateKey,
+      q,
+      isBirthdayPlacement: !!birthdayByDate.get(dateKey)
+    }))
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.sid.localeCompare(b.sid));
   return { placements, losers };
 }
@@ -287,10 +368,12 @@ function quoteRowFromFirestore(docSnap) {
   const author = String(d.author || '').trim();
   if (!text || !author) return null;
   const dateScheduled = String(d.dateScheduled || d.date_scheduled || '').trim();
+  const recurringDate = String(d.recurringDate ?? d.recurring_date ?? '').trim();
   return {
     sourceId: String(d.sourceId || docSnap.id).trim(),
     dateScheduled,
     date_scheduled: dateScheduled,
+    recurringDate,
     text,
     author,
     blessing: String(d.blessing ?? d.dailyBlessing ?? d.daily_blessing ?? '').trim(),
@@ -351,7 +434,14 @@ async function main() {
     if (sid) assignmentByDate.set(docSnap.id, sid);
   });
 
-  /** dateKey -> sid where assignment no longer matches quote's desired date */
+  const { placements, losers: scheduleLosers } = resolveSchedulePlacements(quoteBySourceId, start);
+  /** dateKey -> sid / sid -> dateKey for the freshly computed desired placements. Covers both
+   * explicit one-time pins and this run's speaker-recurring rotation pick, so "is this slot's
+   * occupant still correct" is a single lookup regardless of which path placed it. */
+  const desiredSidByDate = new Map(placements.map((p) => [p.dateKey, p.sid]));
+  const desiredDateBySid = new Map(placements.map((p) => [p.sid, p.dateKey]));
+
+  /** dateKey -> sid where assignment no longer matches the freshly computed desired placement */
   const staleDates = [];
   for (const [dateKey, sid] of assignmentByDate) {
     const q = quoteBySourceId.get(sid);
@@ -359,13 +449,11 @@ async function main() {
       staleDates.push({ dateKey, sid, reason: 'orphan_or_unapproved' });
       continue;
     }
-    const want = normalizeDesiredDate(q);
-    if (!want || want !== dateKey) {
+    if (desiredSidByDate.get(dateKey) !== sid) {
+      const want = desiredDateBySid.get(sid);
       staleDates.push({ dateKey, sid, reason: want ? 'moved_in_notion' : 'cleared_in_notion' });
     }
   }
-
-  const { placements, losers: scheduleLosers } = resolveSchedulePlacements(quoteBySourceId, start);
 
   const instagramCollection = process.env.FIRESTORE_INSTAGRAM_IMAGES_COLLECTION || 'instagram-images';
   const igByDate = new Map();
@@ -407,7 +495,7 @@ async function main() {
     if (dateKey < start) continue;
     const q = quoteBySourceId.get(sid);
     if (!q) continue;
-    if (normalizeDesiredDate(q) !== dateKey) continue;
+    if (desiredSidByDate.get(dateKey) !== sid) continue;
     batchState.batch.set(
       db.collection(assignmentsCollection).doc(dateKey),
       catalogFieldsForAssignmentMirror(q),
@@ -439,7 +527,7 @@ async function main() {
     batchState.ops += 1;
 
     const q = quoteBySourceId.get(sid);
-    const want = q ? normalizeDesiredDate(q) : '';
+    const want = q ? desiredDateBySid.get(sid) : '';
     if (q && (!want || want !== dateKey)) {
       batchState.batch.set(
         db.collection(quotesCollection).doc(sid),
@@ -497,7 +585,7 @@ async function main() {
     await commitBatchIfNeeded(db, batchState);
   }
 
-  for (const { sid, dateKey, q } of placements) {
+  for (const { sid, dateKey, q, isBirthdayPlacement } of placements) {
     const occupant = assignmentByDate.get(dateKey);
     if (occupant && occupant !== sid) {
       batchState.batch.set(
@@ -537,14 +625,14 @@ async function main() {
       }
     }
 
-    const payload = assignmentPayloadForQuote(q, dateKey, 'notion-date-reconcile');
+    const payload = assignmentPayloadForQuote(q, dateKey, 'notion-date-reconcile', isBirthdayPlacement);
     // Full replace so a displaced occupant's snapshots cannot leak via merge.
     batchState.batch.set(db.collection(assignmentsCollection).doc(dateKey), payload);
     batchState.ops += 1;
 
     batchState.batch.set(
       db.collection(quotesCollection).doc(dateKey),
-      dailyQuoteSnakePayloadForQuote(q, dateKey, payload.assignedBy, updatedAt)
+      dailyQuoteSnakePayloadForQuote(q, dateKey, payload.assignedBy, updatedAt, isBirthdayPlacement)
     );
     batchState.ops += 1;
 
