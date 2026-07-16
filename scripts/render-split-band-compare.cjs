@@ -88,6 +88,7 @@ function splitBandMeta(blocks, dateKey, QuiltMirrorLayout, tuneSeed = {}) {
         contentSeamRel: metrics.seamRel,
         blockSpanRel: metrics.blockSpanRel,
         blockTopRel: metrics.blockTopRel,
+        blocks,
         doubleSideBySide:
           QuiltMirrorLayout.odqNormalizeMirrorBottomLayout?.(effectiveTune?.bottomLayout) ===
           QuiltMirrorLayout.MIRROR_BOTTOM_LAYOUT_DOUBLE
@@ -100,7 +101,9 @@ function splitBandMeta(blocks, dateKey, QuiltMirrorLayout, tuneSeed = {}) {
     mirrorBandScreenH: result.mirrorBandScreenH,
     primaryScale: result.primaryScale,
     mirrorScaleX: result.mirrorScaleX,
-    mirrorScaleY: result.mirrorScaleY
+    mirrorScaleY: result.mirrorScaleY,
+    seamOverlapPx: result.seamOverlapPx,
+    foldNotchDepth: result.foldNotchDepth
   };
 }
 
