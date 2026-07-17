@@ -230,6 +230,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-leaderboard-vote', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-finalize', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-clear', 4 * ONE_KB],
+  ['/api/quilt-name-leaderboard-delete', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
@@ -9812,6 +9813,77 @@ async function clearQuiltNameLeaderboardForDate(dateKey) {
   };
 }
 
+async function deleteQuiltNameLeaderboardEntryForDate(dateKey, rawWord) {
+  if (!db || typeof db.collection !== 'function') {
+    throw new Error('Firestore is not configured');
+  }
+  const word = normalizeQuiltNameLeaderboardWord(rawWord);
+  if (!word) throw new Error('word is required');
+
+  const nameRef = db.collection('quiltNames').doc(dateKey);
+  const contributorCount = await getQuiltContributorCountForDate(dateKey);
+  let result = null;
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(nameRef);
+    if (!snap.exists) throw new Error('Name not found');
+    const data = snap.data() || {};
+    const entries = normalizeQuiltNameLeaderboardEntries(data.entries);
+    const target = entries.find((entry) => entry.word.toLowerCase() === word.toLowerCase());
+    if (!target) throw new Error('Name not found');
+
+    const nextEntries = entries.filter((entry) => entry.word.toLowerCase() !== word.toLowerCase());
+    const hasSubmissionEntries = Array.isArray(data.submissionEntries);
+    const nextSubmissionEntries = hasSubmissionEntries
+      ? normalizeQuiltNameLeaderboardEntries(data.submissionEntries).filter(
+        (entry) => entry.word.toLowerCase() !== word.toLowerCase()
+      )
+      : null;
+
+    const submissionsByClientId = {
+      ...(data.submissionsByClientId && typeof data.submissionsByClientId === 'object'
+        ? data.submissionsByClientId
+        : {})
+    };
+    for (const [clientId, entryId] of Object.entries(submissionsByClientId)) {
+      const id = String(entryId || '').trim();
+      if (id === String(target.id) || id.toLowerCase() === target.word.toLowerCase()) {
+        delete submissionsByClientId[clientId];
+      }
+    }
+
+    const votesByClientId = {
+      ...(data.votesByClientId && typeof data.votesByClientId === 'object' ? data.votesByClientId : {})
+    };
+    for (const [clientId, votedWord] of Object.entries(votesByClientId)) {
+      if (String(votedWord || '').trim().toLowerCase() === word.toLowerCase()) {
+        delete votesByClientId[clientId];
+      }
+    }
+
+    const patch = {
+      mode: 'leaderboard',
+      entries: nextEntries,
+      submissionsByClientId,
+      votesByClientId,
+      winningQuiltName: getWinningQuiltNameFromEntries(nextEntries, contributorCount),
+      entryDeletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastDeletedEntryWord: target.word
+    };
+    if (nextSubmissionEntries) patch.submissionEntries = nextSubmissionEntries;
+    tx.set(nameRef, patch, { merge: true });
+
+    result = {
+      dateKey,
+      deletedWord: target.word,
+      entryCount: nextEntries.length,
+      phase: String(data.phase || resolveLeaderboardPhase(dateKey)).trim() || 'submissions'
+    };
+  });
+
+  return result;
+}
+
 async function maybeFinalizeLeaderboardSubmissionPhase(dateKey) {
   if (resolveLeaderboardPhase(dateKey) !== 'voting') return null;
   if (!db || typeof db.collection !== 'function') return null;
@@ -10113,6 +10185,32 @@ app.post('/api/quilt-name-leaderboard-clear', limitQuiltNameLeaderboard, async (
   } catch (error) {
     console.error('❌ quilt-name-leaderboard-clear failed:', error);
     return res.status(500).json({ success: false, error: error.message || 'quilt-name-leaderboard-clear failed' });
+  }
+});
+
+app.options('/api/quilt-name-leaderboard-delete', (req, res) => {
+  setResetApiCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/quilt-name-leaderboard-delete', limitQuiltNameLeaderboard, async (req, res) => {
+  setResetApiCors(res);
+  try {
+    if (!isQuiltNameLeaderboardEnabled()) {
+      return res.status(503).json({ success: false, error: 'Quilt name leaderboard is disabled' });
+    }
+    if (!assertResetToken(req, res)) return;
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const dateKey = String(body.dateKey || '').trim() || getAppDateKey();
+    const word = String(body.word || '').trim();
+    if (!word) return res.status(400).json({ success: false, error: 'word is required' });
+    const result = await deleteQuiltNameLeaderboardEntryForDate(dateKey, word);
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    const message = error.message || 'quilt-name-leaderboard-delete failed';
+    const status = /not found|word is required/i.test(message) ? 404 : 500;
+    if (status === 500) console.error('❌ quilt-name-leaderboard-delete failed:', error);
+    return res.status(status).json({ success: false, error: message });
   }
 });
 
