@@ -7165,10 +7165,13 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.carouselSlide1Url = publicUrl;
       docPayload.imageStorageUrl = publicUrl;
       docPayload.classicUrl = publicUrl;
-      docPayload.postLayoutBImageStorageUrl = publicUrl;
-      docPayload.layoutBUrl = publicUrl;
-      docPayload.postLayoutBPlainImageStorageUrl = publicUrl;
-      docPayload.layoutBPlainUrl = publicUrl;
+      // When strips Layout B is uploaded separately (postLayoutBImageData), keep layoutBUrl on that file.
+      if (!postLayoutBImageData) {
+        docPayload.postLayoutBImageStorageUrl = publicUrl;
+        docPayload.layoutBUrl = publicUrl;
+        docPayload.postLayoutBPlainImageStorageUrl = publicUrl;
+        docPayload.layoutBPlainUrl = publicUrl;
+      }
     }
     if (carouselSlide2ImageData) {
       const { publicUrl } = await saveIgPng(`${basePath}/carousel-slide-2.png`, carouselSlide2ImageData);
