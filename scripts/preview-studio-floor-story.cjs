@@ -280,6 +280,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       ctx.fillStyle = inkColor;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
+      try { ctx.letterSpacing = Math.round(textSize * 0.03) + 'px'; } catch (_) {}
       let ty = top;
       layout.bodyLines.forEach((line, index) => {
         if (index === 0 && layout.datePrefix) {
@@ -296,6 +297,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
         }
         ty += layout.lineH;
       });
+      try { ctx.letterSpacing = '0px'; } catch (_) {}
     }
     function measureHeader(ctx, padX, textMaxW, padTop, storyW) {
       const slabW = Math.round(storyW * 0.92);
