@@ -451,7 +451,9 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       ctx.font = '400 ' + ctaSize + 'px ' + FONT;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
+      try { ctx.letterSpacing = Math.round(ctaSize * 0.08) + 'px'; } catch (_) {}
       ctx.fillText(ctaText, Math.round(STORY_W / 2), ctaTop);
+      try { ctx.letterSpacing = '0px'; } catch (_) {}
 
       window.__previewDataUrl = canvas.toDataURL('image/png');
     }
