@@ -274,7 +274,9 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       });
     }
     function measureHeader(ctx, padX, textMaxW, padTop, storyW) {
-      const fitMaxW = Math.max(200, textMaxW || storyW - padX * 2);
+      const slabW = Math.round(storyW * 0.92);
+      const textSafeW = Math.max(200, Math.round(slabW * 0.88));
+      const fitMaxW = Math.min(textMaxW || textSafeW, textSafeW);
       let headerSize = headerFontSize(storyW);
       const minHeaderSize = 26;
       const measureHeaderWidth = () => {
@@ -285,10 +287,36 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
         if (measureHeaderWidth() <= fitMaxW || headerSize <= minHeaderSize) break;
         headerSize -= 2;
       }
+      const headerLineH = headerSize * 1.05;
+      const padY = Math.round(headerSize * 0.42);
+      const slabH = Math.round(headerLineH + padY * 2);
+      const slabX = Math.round((storyW - slabW) / 2);
+      const slabY = Math.round(padTop - padY);
       return {
-        padTop, padX, storyW, headerSize,
-        headerBottom: padTop + headerSize * 1.05
+        padTop, padX, storyW, headerSize, headerLineH, padY,
+        slabX, slabY, slabW, slabH,
+        headerBottom: slabY + slabH + 10
       };
+    }
+    function drawHeaderPaper(ctx, layout) {
+      if (!layout) return;
+      ctx.save();
+      ctx.translate(layout.slabX + layout.slabW / 2, layout.slabY + layout.slabH / 2);
+      ctx.rotate((-1.15 * Math.PI) / 180);
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 3;
+      ctx.fillStyle = '#f2eee6';
+      ctx.fillRect(-layout.slabW / 2, -layout.slabH / 2, layout.slabW, layout.slabH);
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      const wash = ctx.createLinearGradient(-layout.slabW / 2, 0, layout.slabW / 2, 0);
+      wash.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+      wash.addColorStop(0.46, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = wash;
+      ctx.fillRect(-layout.slabW / 2, -layout.slabH / 2, layout.slabW, layout.slabH);
+      ctx.restore();
     }
     function drawHeaderText(ctx, layout) {
       ctx.fillStyle = '#241f19';
@@ -300,6 +328,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
     }
     function drawHeader(ctx, padX, textMaxW, padTop, storyW) {
       const layout = measureHeader(ctx, padX, textMaxW, padTop, storyW);
+      drawHeaderPaper(ctx, layout);
       drawHeaderText(ctx, layout);
       return layout.headerBottom;
     }
