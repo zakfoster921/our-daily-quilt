@@ -337,10 +337,10 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const STORY_H = 1920;
       const padX = 72;
       const headerPadTop = 192;
-      const gapHeaderCta = 20;
-      const gapCtaImage = 32;
-      const padBottom = 88;
+      const gapHeaderImage = 36;
+      const padBottom = 72;
       const gapImageText = 44;
+      const gapTextCta = 36;
       const matPad = 18;
       const backingColor = '#f6f4f1';
       const matColor = '#f2eee6';
@@ -352,6 +352,9 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const textMaxW = imageSlotW;
       const caption = ${safeCaption};
       const dateLabel = ${safeDate};
+      const ctaSize = 46;
+      const ctaLineH = ctaSize * 1.35;
+      const ctaTop = STORY_H - padBottom - ctaLineH;
 
       if (document.fonts) {
         await Promise.all([
@@ -379,20 +382,11 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
 
       const headerBottom = drawHeader(ctx, padX, textMaxW, headerPadTop, STORY_W);
 
-      const ctaSize = 46;
-      const ctaLineH = ctaSize * 1.35;
-      const ctaTop = headerBottom + gapHeaderCta;
-      ctx.fillStyle = ctaColor;
-      ctx.font = '400 ' + ctaSize + 'px ' + FONT;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(ctaText, Math.round(STORY_W / 2), ctaTop);
-
-      const contentTop = ctaTop + ctaLineH + gapCtaImage;
+      const contentTop = headerBottom + gapHeaderImage;
       const minCaptionReserve = 120;
       const maxImageOuterH = Math.max(
         360,
-        STORY_H - padBottom - minCaptionReserve - gapImageText - contentTop
+        ctaTop - gapTextCta - minCaptionReserve - gapImageText - contentTop
       );
       const maxImageH = Math.max(280, maxImageOuterH - matPad * 2);
       const imageInnerSlotW = Math.max(200, imageSlotW - matPad * 2);
@@ -422,7 +416,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const imageBottom = matY + matH;
 
       const textTop = imageBottom + gapImageText;
-      const textAreaH = Math.max(120, STORY_H - padBottom - textTop);
+      const textAreaH = Math.max(120, ctaTop - gapTextCta - textTop);
 
       let textSize = 38;
       let captionLayout = layoutDateCaption(ctx, dateLabel, caption, textMaxW, textSize, FONT);
@@ -433,6 +427,12 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
         textSize -= 2;
       }
       drawDateCaption(ctx, captionLayout, padX, textTop, textSize, FONT, inkColor);
+
+      ctx.fillStyle = ctaColor;
+      ctx.font = '400 ' + ctaSize + 'px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(ctaText, Math.round(STORY_W / 2), ctaTop);
 
       window.__previewDataUrl = canvas.toDataURL('image/png');
     }
