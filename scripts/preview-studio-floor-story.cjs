@@ -405,7 +405,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const STORY_W = 1080;
       const STORY_H = 1920;
       const padX = 72;
-      const captionPadX = 48;
+      const captionPadX = 32;
       const headerPadTop = 192;
       const gapHeaderImage = 36;
       const padBottom = 72;
