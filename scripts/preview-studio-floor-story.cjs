@@ -9,12 +9,13 @@ const ROOT = path.resolve(__dirname, '..');
 const SAMPLE = path.join(ROOT, 'assets', 'mood-collage', 'triangle.webp');
 
 function parseArgs(argv) {
-  const args = { postId: '', date: '', out: '' };
+  const args = { postId: '', date: '', out: '', latest: false };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--post-id' || arg === '--postId') args.postId = String(argv[++i] || '').trim();
     else if (arg === '--date') args.date = String(argv[++i] || '').trim().toLowerCase();
     else if (arg === '--out') args.out = String(argv[++i] || '').trim();
+    else if (arg === '--latest') args.latest = true;
   }
   return args;
 }
@@ -66,7 +67,7 @@ function matchesDisplayDate(iso, dateArg) {
   return label.toLowerCase().includes(normalized);
 }
 
-async function loadPostFromFirestore({ postId, date }) {
+async function loadPostFromFirestore({ postId, date, latest = false }) {
   const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
     path.join(ROOT, 'firebase-adminsdk-local.json');
   process.env.GOOGLE_APPLICATION_CREDENTIALS = credPath;
@@ -102,13 +103,19 @@ async function loadPostFromFirestore({ postId, date }) {
         imageUrl: pickImageUrl(data.media)
       };
     })
-    .filter((post) => post.status === 'published' && post.imageUrl && matchesDisplayDate(post.publishedAtIso, date));
+    .filter((post) => post.status === 'published' && post.imageUrl);
 
-  if (!candidates.length) {
+  if (latest) {
+    if (!candidates.length) throw new Error('No published image post found');
+    return candidates[0];
+  }
+
+  const dated = candidates.filter((post) => matchesDisplayDate(post.publishedAtIso, date));
+  if (!dated.length) {
     throw new Error(`No published image post found for date "${date}"`);
   }
-  candidates.sort((a, b) => String(a.publishedAtIso).localeCompare(String(b.publishedAtIso)));
-  return candidates[0];
+  dated.sort((a, b) => String(a.publishedAtIso).localeCompare(String(b.publishedAtIso)));
+  return dated[0];
 }
 
 function pickImageUrl(media) {
@@ -134,7 +141,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
   const safeCaption = JSON.stringify(caption || '');
   const safeDate = JSON.stringify(dateLabel || '');
   return `<!doctype html><html><head>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
   </head><body><script>
     const sampleSrc = 'data:${mime};base64,${imageB64}';
     const tapeSrc = ${tapeB64 ? `'data:image/png;base64,${tapeB64}'` : "''"};
@@ -316,18 +323,25 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
       const gapCtaImage = 32;
       const padBottom = 88;
       const gapImageText = 44;
+      const matPad = 18;
       const backingColor = '#f6f4f1';
-      const inkColor = 'rgba(36, 27, 20, 0.92)';
-      const ctaColor = 'rgba(47, 36, 27, 0.72)';
+      const matColor = '#f2eee6';
+      const inkColor = '#404040';
+      const ctaColor = 'rgba(47, 39, 31, 0.68)';
       const ctaText = 'See more on @ourdailyquilt';
-      const FONT = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      const FONT = '"DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
       const imageSlotW = STORY_W - padX * 2;
       const textMaxW = imageSlotW;
       const caption = ${safeCaption};
       const dateLabel = ${safeDate};
 
       if (document.fonts) {
-        await document.fonts.load('italic 500 ' + headerFontSize(STORY_W) + 'px "Barlow Condensed"');
+        await Promise.all([
+          document.fonts.load('italic 500 ' + headerFontSize(STORY_W) + 'px "Barlow Condensed"'),
+          document.fonts.load('400 48px "DM Sans"'),
+          document.fonts.load('600 48px "DM Sans"'),
+          document.fonts.load('700 48px "DM Sans"')
+        ]);
         await document.fonts.ready;
       }
 
@@ -366,20 +380,36 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
 
       const contentTop = ctaTop + ctaLineH + gapCtaImage;
       const minCaptionReserve = 120;
-      const maxImageH = Math.max(
+      const maxImageOuterH = Math.max(
         360,
         STORY_H - padBottom - minCaptionReserve - gapImageText - contentTop
       );
+      const maxImageH = Math.max(280, maxImageOuterH - matPad * 2);
+      const imageInnerSlotW = Math.max(200, imageSlotW - matPad * 2);
 
       const iw = Math.max(1, postImage.naturalWidth || postImage.width);
       const ih = Math.max(1, postImage.naturalHeight || postImage.height);
-      const fitScale = Math.min(imageSlotW / iw, maxImageH / ih);
+      const fitScale = Math.min(imageInnerSlotW / iw, maxImageH / ih);
       const drawW = Math.round(iw * fitScale);
       const drawH = Math.round(ih * fitScale);
       const drawX = Math.round(padX + (imageSlotW - drawW) / 2);
-      const drawY = contentTop;
+      const drawY = contentTop + matPad;
+      const matX = drawX - matPad;
+      const matY = drawY - matPad;
+      const matW = drawW + matPad * 2;
+      const matH = drawH + matPad * 2;
+      ctx.save();
+      ctx.shadowColor = 'rgba(45, 36, 29, 0.18)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = matColor;
+      ctx.fillRect(matX, matY, matW, matH);
+      ctx.restore();
+      ctx.fillStyle = matColor;
+      ctx.fillRect(matX, matY, matW, matH);
       ctx.drawImage(postImage, drawX, drawY, drawW, drawH);
-      const imageBottom = drawY + drawH;
+      const imageBottom = matY + matH;
 
       const textTop = imageBottom + gapImageText;
       const textAreaH = Math.max(120, STORY_H - padBottom - textTop);
@@ -429,8 +459,12 @@ async function main() {
   let mime = 'image/webp';
   let slug = 'sample';
 
-  if (args.postId || args.date) {
-    const post = await loadPostFromFirestore({ postId: args.postId, date: args.date || 'jun-18' });
+  if (args.postId || args.date || args.latest) {
+    const post = await loadPostFromFirestore({
+      postId: args.postId,
+      date: args.date,
+      latest: args.latest || (!args.postId && !args.date)
+    });
     dateLabel = formatSocialPostCaptionDate(post.publishedAtIso);
     caption = post.caption;
     slug = post.postId;
@@ -446,7 +480,9 @@ async function main() {
 
   const out = args.out
     ? path.resolve(ROOT, args.out)
-    : args.date
+    : args.latest
+      ? path.join(ROOT, 'tmp', `studio-floor-story-latest-${slug}-preview.png`)
+      : args.date
       ? path.join(ROOT, 'tmp', `studio-floor-story-${args.date.replace(/[^\w-]+/g, '-')}-preview.png`)
       : args.postId
         ? path.join(ROOT, 'tmp', `studio-floor-story-${slug}-preview.png`)
