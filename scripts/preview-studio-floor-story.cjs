@@ -391,10 +391,11 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
         const srcH = Math.max(1, tapeImage.naturalHeight || tapeImage.height);
         const tapeW = Math.round(Math.min(Math.max(layout.slabW * 0.26, 160), 280));
         const tapeH = Math.round(tapeW * (srcH / srcW));
+        const tapeOverlap = Math.round(Math.min(18, tapeH * 0.18));
         ctx.shadowColor = 'rgba(45, 36, 29, 0.14)';
         ctx.shadowBlur = 6;
         ctx.shadowOffsetY = 2;
-        ctx.drawImage(tapeImage, -tapeW / 2, -layout.slabH / 2 - tapeH / 2, tapeW, tapeH);
+        ctx.drawImage(tapeImage, -tapeW / 2, -layout.slabH / 2 - tapeH + tapeOverlap, tapeW, tapeH);
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
