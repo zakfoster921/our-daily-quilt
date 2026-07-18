@@ -330,7 +330,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
       ctx.shadowBlur = 12;
       ctx.shadowOffsetY = 3;
-      ctx.fillStyle = '#f2eee6';
+      ctx.fillStyle = '#e8e4dc';
       ctx.fillRect(-layout.slabW / 2, -layout.slabH / 2, layout.slabW, layout.slabH);
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
