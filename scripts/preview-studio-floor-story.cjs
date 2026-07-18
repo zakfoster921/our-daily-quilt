@@ -274,43 +274,69 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
         ty += layout.lineH;
       });
     }
-    function measureHeader(ctx, padX, textMaxW, padTop) {
-      let headerSize = headerFontSize(1080);
+    function measureHeader(ctx, padX, textMaxW, padTop, storyW) {
+      const slabW = Math.round(storyW * 0.92);
+      const textSafeW = Math.max(200, Math.round(slabW * 0.76));
+      const fitMaxW = Math.min(textMaxW || textSafeW, textSafeW);
+      let headerSize = headerFontSize(storyW);
       const minHeaderSize = 26;
       const measureHeaderWidth = () => {
         ctx.font = 'italic 500 ' + headerSize + 'px ' + HEADER_FONT;
-        try { ctx.letterSpacing = (headerSize * 0.04) + 'px'; } catch (_) {}
         return ctx.measureText(HEADER_TEXT).width;
       };
       for (let attempt = 0; attempt < 40; attempt++) {
-        if (measureHeaderWidth() <= textMaxW || headerSize <= minHeaderSize) break;
+        if (measureHeaderWidth() <= fitMaxW || headerSize <= minHeaderSize) break;
         headerSize -= 2;
       }
-      try { ctx.letterSpacing = '0px'; } catch (_) {}
-      return { padTop, padX, headerSize, headerBottom: padTop + headerSize * 1.05 };
+      const headerLineH = headerSize * 1.05;
+      const padY = Math.round(headerSize * 0.42);
+      const slabH = Math.round(headerLineH + padY * 2);
+      const slabX = Math.round((storyW - slabW) / 2);
+      const slabY = Math.round(padTop - padY);
+      return {
+        padTop, padX, storyW, headerSize, headerLineH, padY,
+        slabX, slabY, slabW, slabH,
+        headerBottom: slabY + slabH + 10
+      };
     }
-    function drawHeaderTape(ctx, tapeImage, layout, storyW) {
-      if (!tapeImage || !layout) return;
-      const srcW = Math.max(1, tapeImage.naturalWidth || tapeImage.width);
-      const srcH = Math.max(1, tapeImage.naturalHeight || tapeImage.height);
-      const destW = storyW;
-      const destH = Math.round(srcH * (destW / srcW));
-      const textMidY = layout.padTop + layout.headerSize * 0.55;
-      const destY = Math.round(textMidY - destH * 0.38);
-      ctx.drawImage(tapeImage, 0, destY, destW, destH);
+    function drawHeaderTape(ctx, tapeImage, layout) {
+      if (!layout) return;
+      const rotateDeg = -1.15;
+      const fill = '#f2eee6';
+      const capW = Math.max(24, Math.round(layout.slabW * 0.13));
+      ctx.save();
+      ctx.translate(layout.slabX + layout.slabW / 2, layout.slabY + layout.slabH / 2);
+      ctx.rotate((rotateDeg * Math.PI) / 180);
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 3;
+      ctx.fillStyle = fill;
+      ctx.fillRect(-layout.slabW / 2, -layout.slabH / 2, layout.slabW, layout.slabH);
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      const wash = ctx.createLinearGradient(-layout.slabW / 2, 0, layout.slabW / 2, 0);
+      wash.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+      wash.addColorStop(0.46, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = wash;
+      ctx.fillRect(-layout.slabW / 2, -layout.slabH / 2, layout.slabW, layout.slabH);
+      if (tapeImage) {
+        ctx.drawImage(tapeImage, -layout.slabW / 2, -layout.slabH / 2, capW, layout.slabH);
+        ctx.drawImage(tapeImage, layout.slabW / 2 - capW, -layout.slabH / 2, capW, layout.slabH);
+      }
+      ctx.restore();
     }
     function drawHeaderText(ctx, layout) {
-      ctx.fillStyle = '#2c2622';
-      ctx.textAlign = 'left';
+      ctx.fillStyle = '#241f19';
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.font = 'italic 500 ' + layout.headerSize + 'px ' + HEADER_FONT;
-      try { ctx.letterSpacing = (layout.headerSize * 0.04) + 'px'; } catch (_) {}
-      ctx.fillText(HEADER_TEXT, layout.padX, layout.padTop);
       try { ctx.letterSpacing = '0px'; } catch (_) {}
+      ctx.fillText(HEADER_TEXT, Math.round(layout.storyW / 2), layout.padTop);
     }
     function drawHeader(ctx, padX, textMaxW, padTop, tapeImage, storyW) {
-      const layout = measureHeader(ctx, padX, textMaxW, padTop);
-      drawHeaderTape(ctx, tapeImage, layout, storyW);
+      const layout = measureHeader(ctx, padX, textMaxW, padTop, storyW);
+      drawHeaderTape(ctx, tapeImage, layout);
       drawHeaderText(ctx, layout);
       return layout.headerBottom;
     }
@@ -431,7 +457,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
 }
 
 async function renderStoryPng({ imageBuf, mime, caption, dateLabel }) {
-  const tapePath = path.join(ROOT, 'assets', 'studio-floor-story-header-tape.png');
+  const tapePath = path.join(ROOT, 'assets', 'before-you-go-tape-alpha.png');
   const tapeB64 = fs.existsSync(tapePath) ? fs.readFileSync(tapePath).toString('base64') : '';
   const html = buildRenderHtml({
     imageB64: imageBuf.toString('base64'),
