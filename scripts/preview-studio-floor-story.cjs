@@ -322,7 +322,50 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
         headerBottom: slabY + slabH + 10
       };
     }
-    function drawHeaderPaper(ctx, layout) {
+    function sampleAccentFromImage(image) {
+      const size = 56;
+      const c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      if (!x) return null;
+      x.drawImage(image, 0, 0, size, size);
+      let data;
+      try { data = x.getImageData(0, 0, size, size).data; } catch (_) { return null; }
+      let sumR = 0, sumG = 0, sumB = 0, weight = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        if (a < 200) continue;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const sat = max === 0 ? 0 : (max - min) / max;
+        const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+        if (sat < 0.16 || lum < 0.16 || lum > 0.9) continue;
+        const score = sat * (1 - Math.abs(lum - 0.52) * 1.15);
+        if (score < 0.1) continue;
+        const w = score * score;
+        sumR += r * w; sumG += g * w; sumB += b * w; weight += w;
+      }
+      if (weight < 1e-6) return null;
+      return { r: Math.round(sumR / weight), g: Math.round(sumG / weight), b: Math.round(sumB / weight) };
+    }
+    function accentToPaperFill(rgb) {
+      const base = { r: 232, g: 228, b: 220 };
+      if (!rgb) return '#e8e4dc';
+      const t = 0.48;
+      let r = Math.round(base.r * (1 - t) + rgb.r * t);
+      let g = Math.round(base.g * (1 - t) + rgb.g * t);
+      let b = Math.round(base.b * (1 - t) + rgb.b * t);
+      const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      if (lum < 0.74) {
+        const lift = Math.min(0.55, (0.8 - lum) / Math.max(lum, 0.08));
+        r = Math.min(255, Math.round(r + (255 - r) * lift));
+        g = Math.min(255, Math.round(g + (255 - g) * lift));
+        b = Math.min(255, Math.round(b + (255 - b) * lift));
+      }
+      const hex = (n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+      return '#' + hex(r) + hex(g) + hex(b);
+    }
+    function drawHeaderPaper(ctx, layout, fill) {
       if (!layout) return;
       ctx.save();
       ctx.translate(layout.slabX + layout.slabW / 2, layout.slabY + layout.slabH / 2);
@@ -330,7 +373,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
       ctx.shadowBlur = 12;
       ctx.shadowOffsetY = 3;
-      ctx.fillStyle = '#e8e4dc';
+      ctx.fillStyle = fill || '#e8e4dc';
       ctx.fillRect(-layout.slabW / 2, -layout.slabH / 2, layout.slabW, layout.slabH);
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
@@ -350,9 +393,9 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       try { ctx.letterSpacing = '0px'; } catch (_) {}
       ctx.fillText(HEADER_TEXT, Math.round(layout.storyW / 2), layout.padTop);
     }
-    function drawHeader(ctx, padX, textMaxW, padTop, storyW) {
+    function drawHeader(ctx, padX, textMaxW, padTop, storyW, paperFill) {
       const layout = measureHeader(ctx, padX, textMaxW, padTop, storyW);
-      drawHeaderPaper(ctx, layout);
+      drawHeaderPaper(ctx, layout, paperFill);
       drawHeaderText(ctx, layout);
       return layout.headerBottom;
     }
@@ -404,7 +447,8 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       ctx.fillStyle = backingColor;
       ctx.fillRect(0, 0, STORY_W, STORY_H);
 
-      const headerBottom = drawHeader(ctx, padX, textMaxW, headerPadTop, STORY_W);
+      const paperFill = accentToPaperFill(sampleAccentFromImage(postImage));
+      const headerBottom = drawHeader(ctx, padX, textMaxW, headerPadTop, STORY_W, paperFill);
 
       const contentTop = headerBottom + gapHeaderImage;
       const textSize = 38;
