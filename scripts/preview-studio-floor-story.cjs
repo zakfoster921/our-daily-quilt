@@ -405,7 +405,6 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const STORY_W = 1080;
       const STORY_H = 1920;
       const padX = 72;
-      const captionPadX = 32;
       const headerPadTop = 192;
       const gapHeaderImage = 36;
       const padBottom = 72;
@@ -420,7 +419,6 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const FONT = '"DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
       const imageSlotW = STORY_W - padX * 2;
       const textMaxW = imageSlotW;
-      const captionTextMaxW = STORY_W - captionPadX * 2;
       const caption = ${safeCaption};
       const dateLabel = ${safeDate};
       const ctaSize = 46;
@@ -491,6 +489,8 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const imageBottom = matY + matH;
 
       const textTop = imageBottom + gapImageText;
+      const captionPadX = matX;
+      const captionTextMaxW = matW;
       let captionLayout = layoutDateCaption(ctx, dateLabel, caption, captionTextMaxW, textSize, FONT);
       captionLayout = truncateCaptionLayout(ctx, captionLayout, captionTextMaxW, textSize, FONT, captionMaxLines);
       drawDateCaption(ctx, captionLayout, captionPadX, textTop, textSize, FONT, inkColor);
