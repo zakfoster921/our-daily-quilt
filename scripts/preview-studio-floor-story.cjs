@@ -228,7 +228,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
     }
     function layoutDateCaption(ctx, dateLabel, caption, textMaxW, textSize, font) {
       const safeDate = String(dateLabel || '').trim();
-      const safeCaption = normalizeSocialPostCaptionText(caption);
+      const safeCaption = normalizeSocialPostCaptionText(caption).replace(/\\s+/g, ' ').trim();
       const datePrefix = safeDate ? safeDate + ': ' : '';
       ctx.font = '700 ' + textSize + 'px ' + font;
       const prefixW = datePrefix ? ctx.measureText(datePrefix).width : 0;
@@ -251,6 +251,30 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
         bodyLines.push(...wrapped);
       });
       return { datePrefix, bodyLines, lineH: textSize * 1.45 };
+    }
+    function fitLineWithEllipsis(ctx, text, maxWidth, textSize, font) {
+      const ellipsis = '…';
+      const raw = String(text || '').replace(/\\s+/g, ' ').trim();
+      ctx.font = '400 ' + textSize + 'px ' + font;
+      if (!raw) return ellipsis;
+      if (ctx.measureText(raw + ellipsis).width <= maxWidth) return raw + ellipsis;
+      const words = raw.split(' ').filter(Boolean);
+      while (words.length) {
+        words.pop();
+        const candidate = (words.join(' ') + ellipsis).trim();
+        if (ctx.measureText(candidate).width <= maxWidth) return candidate;
+      }
+      let chars = raw;
+      while (chars.length && ctx.measureText(chars + ellipsis).width > maxWidth) {
+        chars = chars.slice(0, -1);
+      }
+      return chars.trimEnd() + ellipsis;
+    }
+    function truncateCaptionLayout(ctx, layout, textMaxW, textSize, font, maxLines) {
+      if (!layout || layout.bodyLines.length <= maxLines) return layout;
+      const kept = layout.bodyLines.slice(0, maxLines);
+      kept[maxLines - 1] = fitLineWithEllipsis(ctx, kept[maxLines - 1], textMaxW, textSize, font);
+      return Object.assign({}, layout, { bodyLines: kept });
     }
     function drawDateCaption(ctx, layout, padX, top, textSize, font, inkColor) {
       ctx.fillStyle = inkColor;
@@ -383,10 +407,13 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const headerBottom = drawHeader(ctx, padX, textMaxW, headerPadTop, STORY_W);
 
       const contentTop = headerBottom + gapHeaderImage;
-      const minCaptionReserve = 120;
+      const textSize = 38;
+      const captionLineH = textSize * 1.45;
+      const captionMaxLines = 2;
+      const captionReserve = Math.ceil(captionLineH * captionMaxLines);
       const maxImageOuterH = Math.max(
         360,
-        ctaTop - gapTextCta - minCaptionReserve - gapImageText - contentTop
+        ctaTop - gapTextCta - captionReserve - gapImageText - contentTop
       );
       const maxImageH = Math.max(280, maxImageOuterH - matPad * 2);
       const imageInnerSlotW = Math.max(200, imageSlotW - matPad * 2);
@@ -416,16 +443,8 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const imageBottom = matY + matH;
 
       const textTop = imageBottom + gapImageText;
-      const textAreaH = Math.max(120, ctaTop - gapTextCta - textTop);
-
-      let textSize = 38;
       let captionLayout = layoutDateCaption(ctx, dateLabel, caption, textMaxW, textSize, FONT);
-      for (let attempt = 0; attempt < 24; attempt++) {
-        captionLayout = layoutDateCaption(ctx, dateLabel, caption, textMaxW, textSize, FONT);
-        const totalTextH = captionLayout.bodyLines.length * captionLayout.lineH;
-        if (totalTextH <= textAreaH || textSize <= 24) break;
-        textSize -= 2;
-      }
+      captionLayout = truncateCaptionLayout(ctx, captionLayout, textMaxW, textSize, FONT, captionMaxLines);
       drawDateCaption(ctx, captionLayout, padX, textTop, textSize, FONT, inkColor);
 
       ctx.fillStyle = ctaColor;
