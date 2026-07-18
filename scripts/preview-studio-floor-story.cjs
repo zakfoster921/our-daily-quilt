@@ -137,13 +137,14 @@ async function fetchImageBuffer(url) {
   return { buf, mime: type.split(';')[0] || 'image/jpeg' };
 }
 
-function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
+function buildRenderHtml({ imageB64, mime, caption, dateLabel, tapeB64 = '' }) {
   const safeCaption = JSON.stringify(caption || '');
   const safeDate = JSON.stringify(dateLabel || '');
   return `<!doctype html><html><head>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
   </head><body><script>
     const sampleSrc = 'data:${mime};base64,${imageB64}';
+    const tapeSrc = ${tapeB64 ? `'data:image/png;base64,${tapeB64}'` : "''"};
     const HEADER_TEXT = 'from the STUDIO FLOOR of Zak Foster';
     const HEADER_FONT = "'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif";
     function headerFontSize(storyW) {
@@ -367,7 +368,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       const hex = (n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
       return '#' + hex(r) + hex(g) + hex(b);
     }
-    function drawHeaderPaper(ctx, layout, fill) {
+    function drawHeaderPaper(ctx, layout, fill, tapeImage) {
       if (!layout) return;
       ctx.save();
       ctx.translate(layout.slabX + layout.slabW / 2, layout.slabY + layout.slabH / 2);
@@ -385,6 +386,19 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       wash.addColorStop(0.46, 'rgba(255, 255, 255, 0)');
       ctx.fillStyle = wash;
       ctx.fillRect(-layout.slabW / 2, -layout.slabH / 2, layout.slabW, layout.slabH);
+      if (tapeImage) {
+        const srcW = Math.max(1, tapeImage.naturalWidth || tapeImage.width);
+        const srcH = Math.max(1, tapeImage.naturalHeight || tapeImage.height);
+        const tapeW = Math.round(Math.min(Math.max(layout.slabW * 0.26, 160), 280));
+        const tapeH = Math.round(tapeW * (srcH / srcW));
+        ctx.shadowColor = 'rgba(45, 36, 29, 0.14)';
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 2;
+        ctx.drawImage(tapeImage, -tapeW / 2, -layout.slabH / 2 - tapeH / 2, tapeW, tapeH);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+      }
       ctx.restore();
     }
     function drawHeaderText(ctx, layout) {
@@ -395,9 +409,9 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       try { ctx.letterSpacing = '0px'; } catch (_) {}
       ctx.fillText(HEADER_TEXT, Math.round(layout.storyW / 2), layout.padTop);
     }
-    function drawHeader(ctx, padX, textMaxW, padTop, storyW, paperFill) {
+    function drawHeader(ctx, padX, textMaxW, padTop, storyW, paperFill, tapeImage) {
       const layout = measureHeader(ctx, padX, textMaxW, padTop, storyW);
-      drawHeaderPaper(ctx, layout, paperFill);
+      drawHeaderPaper(ctx, layout, paperFill, tapeImage);
       drawHeaderText(ctx, layout);
       return layout.headerBottom;
     }
@@ -441,6 +455,14 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
         im.onerror = () => reject(new Error('sample load failed'));
         im.src = sampleSrc;
       });
+      const headerTape = tapeSrc
+        ? await new Promise((resolve) => {
+            const im = new Image();
+            im.onload = () => resolve(im);
+            im.onerror = () => resolve(null);
+            im.src = tapeSrc;
+          })
+        : null;
 
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
@@ -450,7 +472,7 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
       ctx.fillRect(0, 0, STORY_W, STORY_H);
 
       const paperFill = accentToPaperFill(sampleAccentFromImage(postImage));
-      const headerBottom = drawHeader(ctx, padX, textMaxW, headerPadTop, STORY_W, paperFill);
+      const headerBottom = drawHeader(ctx, padX, textMaxW, headerPadTop, STORY_W, paperFill, headerTape);
 
       const contentTop = headerBottom + gapHeaderImage;
       const textSize = 38;
@@ -510,11 +532,14 @@ function buildRenderHtml({ imageB64, mime, caption, dateLabel }) {
 }
 
 async function renderStoryPng({ imageBuf, mime, caption, dateLabel }) {
+  const tapePath = path.join(ROOT, 'assets', 'before-you-go-tape-alpha.png');
+  const tapeB64 = fs.existsSync(tapePath) ? fs.readFileSync(tapePath).toString('base64') : '';
   const html = buildRenderHtml({
     imageB64: imageBuf.toString('base64'),
     mime,
     caption,
-    dateLabel
+    dateLabel,
+    tapeB64
   });
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
