@@ -232,6 +232,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-leaderboard-clear', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-delete', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
+  ['/api/mood-scratch', 4 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
@@ -492,6 +493,11 @@ const limitColorSubmission = createRateLimiter({
   name: 'color-submission',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_COLOR_SUBMISSION_PER_10_MIN, 10)
+});
+const limitMoodScratch = createRateLimiter({
+  name: 'mood-scratch',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_MOOD_SCRATCH_PER_10_MIN, 30)
 });
 const limitFeatureFeedback = createRateLimiter({
   name: 'feature-feedback',
@@ -10650,6 +10656,75 @@ app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
   }
 });
 
+app.options('/api/mood-scratch', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+/** Anonymous once-per-device scratch-off ping for daily engagement counts. */
+app.post('/api/mood-scratch', limitMoodScratch, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    const mood = String(body.mood || '').trim().toLowerCase();
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+    if (mood !== 'good' && mood !== 'rough') {
+      return res.status(400).json({ success: false, error: 'mood must be good or rough' });
+    }
+
+    const scratchRef = db.collection('moodScratches').doc(appDateKey);
+    const nowIso = getUtcIsoNow();
+    let alreadyCounted = false;
+    let scratchCount = 0;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(scratchRef);
+      const data = snap.exists ? snap.data() || {} : {};
+      const scratchesByClientId =
+        data.scratchesByClientId && typeof data.scratchesByClientId === 'object' && !Array.isArray(data.scratchesByClientId)
+          ? { ...data.scratchesByClientId }
+          : {};
+      alreadyCounted = !!scratchesByClientId[clientId];
+      if (!alreadyCounted) {
+        scratchesByClientId[clientId] = { mood, at: nowIso };
+      }
+      scratchCount = Object.keys(scratchesByClientId).filter((key) => String(key || '').trim()).length;
+      tx.set(
+        scratchRef,
+        {
+          appDateKey,
+          scratchesByClientId,
+          scratchCount,
+          updatedAt: nowIso
+        },
+        { merge: true }
+      );
+    });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      duplicate: alreadyCounted,
+      scratchCount
+    });
+  } catch (error) {
+    console.error('❌ mood-scratch failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'mood-scratch failed'
+    });
+  }
+});
+
 app.options('/api/color-submission', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -11205,10 +11280,12 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       ? String(body.appDateKey || body.dateKey).trim()
       : getAppDateKey();
 
-    const [quiltSnap, reflectionSnap, colorSnap] = await Promise.all([
+    const [quiltSnap, reflectionSnap, colorSnap, nameSnap, scratchSnap] = await Promise.all([
       db.collection('quilts').doc(appDateKey).get(),
       db.collection('reflectionResponses').where('appDateKey', '==', appDateKey).get(),
-      db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get()
+      db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get(),
+      db.collection('quiltNames').doc(appDateKey).get(),
+      db.collection('moodScratches').doc(appDateKey).get()
     ]);
 
     const quilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
@@ -11217,6 +11294,18 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
     const fingerprint = typeof quilt.quiltFingerprint === 'string' && quilt.quiltFingerprint
       ? quilt.quiltFingerprint
       : computeQuiltFingerprint(blocks);
+    const countClientIdMap = (raw) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 0;
+      return Object.keys(raw).filter((key) => String(key || '').trim()).length;
+    };
+    const nameData = nameSnap.exists ? nameSnap.data() || {} : {};
+    const scratchData = scratchSnap.exists ? scratchSnap.data() || {} : {};
+    const titleSubmissions = countClientIdMap(nameData.submissionsByClientId);
+    const titleVotes = countClientIdMap(nameData.votesByClientId);
+    const scratchOffs = Math.max(
+      Number(scratchData.scratchCount) || 0,
+      countClientIdMap(scratchData.scratchesByClientId)
+    );
     const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
     const summarize = (doc) => {
       const data = doc.data() || {};
@@ -11266,7 +11355,10 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
         successfulColors: colors.filter((row) => !row.status || row.status === 'success').length,
         quiltBlocks: blocks.length,
         quiltContributorCount: Number(quilt.contributorCount) || contributors.length || 0,
-        contributors: contributors.length
+        contributors: contributors.length,
+        scratchOffs,
+        titleSubmissions,
+        titleVotes
       },
       quilt: {
         exists: quiltSnap.exists,
