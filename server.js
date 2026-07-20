@@ -11934,6 +11934,7 @@ function enrichAuditRankedDateRows(rows, quoteBySourceId) {
     ).trim();
     return {
       dateKey: row.dateKey,
+      weekday: weekdayLabelFromDateKey(row.dateKey),
       contributors: row.contributors,
       quote: text,
       author,
