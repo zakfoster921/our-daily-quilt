@@ -236,6 +236,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/story-preview-share', 4 * ONE_KB],
   ['/api/day-visit', 4 * ONE_KB],
   ['/api/studio-floor-open', 4 * ONE_KB],
+  ['/api/reflection-read', 4 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
@@ -516,6 +517,11 @@ const limitStudioFloorOpen = createRateLimiter({
   name: 'studio-floor-open',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_STUDIO_FLOOR_OPEN_PER_10_MIN, 60)
+});
+const limitReflectionRead = createRateLimiter({
+  name: 'reflection-read',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_REFLECTION_READ_PER_10_MIN, 60)
 });
 const limitFeatureFeedback = createRateLimiter({
   name: 'feature-feedback',
@@ -10878,6 +10884,51 @@ app.post('/api/studio-floor-open', limitStudioFloorOpen, async (req, res) => {
   }
 });
 
+app.options('/api/reflection-read', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+/** Anonymous once-per-device reflection-wall view ping for engagement %. */
+app.post('/api/reflection-read', limitReflectionRead, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const result = await recordAnonymousDayClientMap({
+      collectionName: 'reflectionReads',
+      mapField: 'readsByClientId',
+      countField: 'readCount',
+      appDateKey,
+      clientId,
+      entry: { source: 'reflection_wall' }
+    });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      duplicate: result.alreadyCounted,
+      readCount: result.count
+    });
+  } catch (error) {
+    console.error('❌ reflection-read failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'reflection-read failed'
+    });
+  }
+});
+
 app.options('/api/mood-scratch', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -11592,7 +11643,9 @@ function emptySubmissionAuditCounts() {
     returningUsers: 0,
     returnRate: 0,
     reflectionHearts: 0,
-    studioFloorOpens: 0
+    studioFloorOpens: 0,
+    reflectionReads: 0,
+    reflectionHeartUsers: 0
   };
 }
 
@@ -11606,6 +11659,8 @@ function submissionAuditCountsFromDocs({
   firstTimeSnap = null,
   dayVisitSnap = null,
   studioFloorSnap = null,
+  reflectionReadSnap = null,
+  reflectionHeartUserSnap = null,
   reflectionCount = 0,
   colorCount = 0,
   reflectionHearts = 0
@@ -11619,6 +11674,10 @@ function submissionAuditCountsFromDocs({
   const firstTimeData = firstTimeSnap?.exists ? firstTimeSnap.data() || {} : {};
   const dayVisitData = dayVisitSnap?.exists ? dayVisitSnap.data() || {} : {};
   const studioFloorData = studioFloorSnap?.exists ? studioFloorSnap.data() || {} : {};
+  const reflectionReadData = reflectionReadSnap?.exists ? reflectionReadSnap.data() || {} : {};
+  const reflectionHeartUserData = reflectionHeartUserSnap?.exists
+    ? reflectionHeartUserSnap.data() || {}
+    : {};
   const opens = Math.max(
     Number(dayVisitData.visitCount) || 0,
     countClientIdMapEntries(dayVisitData.visitsByClientId)
@@ -11657,29 +11716,71 @@ function submissionAuditCountsFromDocs({
     studioFloorOpens: Math.max(
       Number(studioFloorData.openCount) || 0,
       countClientIdMapEntries(studioFloorData.opensByClientId)
+    ),
+    reflectionReads: Math.max(
+      Number(reflectionReadData.readCount) || 0,
+      countClientIdMapEntries(reflectionReadData.readsByClientId)
+    ),
+    reflectionHeartUsers: Math.max(
+      Number(reflectionHeartUserData.count) || 0,
+      countClientIdMapEntries(reflectionHeartUserData.byClientId)
     )
   };
 }
 
-function buildSubmissionAuditFunnel(counts = {}) {
+function buildSubmissionAuditFunnel(counts = {}, { titlePhase = 'submissions' } = {}) {
+  const opens = Math.max(0, Number(counts.opens) || 0);
+  const votingPhase = titlePhase === 'voting' || titlePhase === 'final';
+  const titleCount = votingPhase
+    ? Math.max(0, Number(counts.titleVotes) || 0)
+    : Math.max(0, Number(counts.titleSubmissions) || 0);
   const steps = [
-    { key: 'opens', label: 'Opened', count: Math.max(0, Number(counts.opens) || 0) },
-    { key: 'scratchOffs', label: 'Scratched', count: Math.max(0, Number(counts.scratchOffs) || 0) },
+    { key: 'opens', label: 'Opened app', count: opens },
     { key: 'contributors', label: 'Added color', count: Math.max(0, Number(counts.contributors) || 0) },
     {
-      key: 'titleSubmissions',
-      label: 'Named',
-      count: Math.max(0, Number(counts.titleSubmissions) || 0)
+      key: 'titleAction',
+      label: votingPhase ? 'Voted on title' : 'Submitted a title',
+      count: titleCount
     },
-    { key: 'titleVotes', label: 'Voted', count: Math.max(0, Number(counts.titleVotes) || 0) }
+    { key: 'scratchOffs', label: 'Scratched', count: Math.max(0, Number(counts.scratchOffs) || 0) },
+    {
+      key: 'reflectionReads',
+      label: 'Read reflections',
+      count: Math.max(0, Number(counts.reflectionReads) || 0)
+    },
+    {
+      key: 'reflectionHeartUsers',
+      label: 'Hearted a reflection',
+      count: Math.max(0, Number(counts.reflectionHeartUsers) || 0)
+    },
+    {
+      key: 'reflections',
+      label: 'Added a reflection',
+      count: Math.max(0, Number(counts.reflections) || 0)
+    },
+    {
+      key: 'studioFloorOpens',
+      label: 'Visited Studio Floor',
+      count: Math.max(0, Number(counts.studioFloorOpens) || 0)
+    },
+    {
+      key: 'storyPreviewShares',
+      label: 'Shared IG story image',
+      count: Math.max(0, Number(counts.storyPreviewShares) || 0)
+    }
   ];
   return {
-    steps: steps.map((step, index) => {
-      const prev = index > 0 ? steps[index - 1].count : null;
-      const conversionFromPrev =
-        prev == null ? 100 : prev > 0 ? Math.round((step.count / prev) * 1000) / 10 : 0;
-      return { ...step, conversionFromPrev };
-    })
+    denominator: opens,
+    titlePhase: votingPhase ? 'voting' : 'submissions',
+    steps: steps.map((step) => ({
+      ...step,
+      pctOfOpeners:
+        step.key === 'opens'
+          ? 100
+          : opens > 0
+            ? Math.round((step.count / opens) * 1000) / 10
+            : 0
+    }))
   };
 }
 
@@ -11823,6 +11924,8 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const firstTimeRefs = dayKeys.map((key) => db.collection('firstTimeUsers').doc(key));
   const dayVisitRefs = dayKeys.map((key) => db.collection('dayVisits').doc(key));
   const studioFloorRefs = dayKeys.map((key) => db.collection('studioFloorOpens').doc(key));
+  const reflectionReadRefs = dayKeys.map((key) => db.collection('reflectionReads').doc(key));
+  const reflectionHeartUserRefs = dayKeys.map((key) => db.collection('reflectionHeartUsers').doc(key));
 
   const [
     quiltSnaps,
@@ -11832,6 +11935,8 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     firstTimeSnaps,
     dayVisitSnaps,
     studioFloorSnaps,
+    reflectionReadSnaps,
+    reflectionHeartUserSnaps,
     reflectionHist,
     colorHist
   ] = await Promise.all([
@@ -11842,6 +11947,8 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     db.getAll(...firstTimeRefs),
     db.getAll(...dayVisitRefs),
     db.getAll(...studioFloorRefs),
+    db.getAll(...reflectionReadRefs),
+    db.getAll(...reflectionHeartUserRefs),
     db
       .collection('reflectionResponses')
       .where('appDateKey', '>=', startKey)
@@ -11894,6 +12001,8 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
       firstTimeSnap: firstTimeSnaps[index],
       dayVisitSnap: dayVisitSnaps[index],
       studioFloorSnap: studioFloorSnaps[index],
+      reflectionReadSnap: reflectionReadSnaps[index],
+      reflectionHeartUserSnap: reflectionHeartUserSnaps[index],
       reflectionCount: reflectionsByDay.get(key) || 0,
       colorCount: colorsByDay.get(key) || 0,
       reflectionHearts: reflectionHeartsByDay.get(key) || 0
@@ -11969,6 +12078,8 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       firstTimeSnap,
       dayVisitSnap,
       studioFloorSnap,
+      reflectionReadSnap,
+      reflectionHeartUserSnap,
       comparisons
     ] = await Promise.all([
       db.collection('quilts').doc(appDateKey).get(),
@@ -11980,6 +12091,8 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       db.collection('firstTimeUsers').doc(appDateKey).get(),
       db.collection('dayVisits').doc(appDateKey).get(),
       db.collection('studioFloorOpens').doc(appDateKey).get(),
+      db.collection('reflectionReads').doc(appDateKey).get(),
+      db.collection('reflectionHeartUsers').doc(appDateKey).get(),
       loadSubmissionAuditComparisons(db, appDateKey, 30)
     ]);
 
@@ -11989,6 +12102,10 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
     const fingerprint = typeof quilt.quiltFingerprint === 'string' && quilt.quiltFingerprint
       ? quilt.quiltFingerprint
       : computeQuiltFingerprint(blocks);
+    const nameData = nameSnap.exists ? nameSnap.data() || {} : {};
+    const titlePhase =
+      String(nameData.phase || resolveLeaderboardPhase(appDateKey) || 'submissions').trim() ||
+      'submissions';
     const reflectionHearts = reflectionSnap.docs.reduce(
       (sum, doc) => sum + Math.max(0, Number(doc.data()?.heartCount) || 0),
       0
@@ -12002,6 +12119,8 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
         firstTimeSnap,
         dayVisitSnap,
         studioFloorSnap,
+        reflectionReadSnap,
+        reflectionHeartUserSnap,
         reflectionCount: reflectionSnap.size,
         colorCount: colorSnap.size,
         reflectionHearts
@@ -12012,7 +12131,8 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       }).length,
       quiltContributorCount: Number(quilt.contributorCount) || contributors.length || 0
     };
-    const funnel = buildSubmissionAuditFunnel(counts);    const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
+    const funnel = buildSubmissionAuditFunnel(counts, { titlePhase });
+    const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
     const summarize = (doc) => {
       const data = doc.data() || {};
       return {
@@ -12843,6 +12963,7 @@ app.post('/api/reflection-response/:responseId/heart', limitReflectionHeart, asy
     const nowIso = getUtcIsoNow();
     let hearted = false;
     let heartCount = 0;
+    let heartDayKey = dateKey || '';
 
     if (responseId === 'first') {
       if (!dateKey) {
@@ -12868,6 +12989,7 @@ app.post('/api/reflection-response/:responseId/heart', limitReflectionHeart, asy
       }
       const updatedSnap = await themeRef.get();
       heartCount = Math.max(0, Number(updatedSnap.data()?.firstResponseHeartCount) || 0);
+      heartDayKey = dateKey;
     } else {
       const responseRef = db.collection('reflectionResponses').doc(responseId);
       const responseSnap = await responseRef.get();
@@ -12875,6 +12997,10 @@ app.post('/api/reflection-response/:responseId/heart', limitReflectionHeart, asy
       if (!responseSnap.exists || responseData.status === 'deleted') {
         return res.status(404).json({ success: false, error: 'Response not found' });
       }
+      heartDayKey =
+        (/^\d{4}-\d{2}-\d{2}$/.test(dateKey) && dateKey) ||
+        String(responseData.appDateKey || '').trim() ||
+        getAppDateKey();
       const heartRef = responseRef.collection('hearts').doc(clientDocId);
       const heartSnap = await heartRef.get();
       if (heartSnap.exists) {
@@ -12895,6 +13021,19 @@ app.post('/api/reflection-response/:responseId/heart', limitReflectionHeart, asy
       const updatedSnap = await responseRef.get();
       heartCount = Math.max(0, Number(updatedSnap.data()?.heartCount) || 0);
       await syncReflectionThemeHeartCount(db, dateKey, responseId, responseData, heartCount, nowIso);
+    }
+
+    if (hearted && /^\d{4}-\d{2}-\d{2}$/.test(heartDayKey)) {
+      void recordAnonymousDayClientMap({
+        collectionName: 'reflectionHeartUsers',
+        mapField: 'byClientId',
+        countField: 'count',
+        appDateKey: heartDayKey,
+        clientId,
+        entry: { source: 'reflection_heart', responseId }
+      }).catch((err) => {
+        console.warn('⚠️ reflectionHeartUsers record failed:', err?.message || err);
+      });
     }
 
     return res.json({ success: true, hearted, heartCount });
