@@ -234,6 +234,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/color-submission', 8 * ONE_KB],
   ['/api/mood-scratch', 4 * ONE_KB],
   ['/api/story-preview-share', 4 * ONE_KB],
+  ['/api/day-visit', 4 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
@@ -504,6 +505,11 @@ const limitStoryPreviewShare = createRateLimiter({
   name: 'story-preview-share',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_STORY_PREVIEW_SHARE_PER_10_MIN, 30)
+});
+const limitDayVisit = createRateLimiter({
+  name: 'day-visit',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_DAY_VISIT_PER_10_MIN, 60)
 });
 const limitFeatureFeedback = createRateLimiter({
   name: 'feature-feedback',
@@ -10708,6 +10714,119 @@ async function recordAnonymousDayClientMap({
   return { alreadyCounted, count, nowIso };
 }
 
+app.options('/api/day-visit', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+/** Anonymous once-per-device daily open ping — powers funnel opens + return rate. */
+app.post('/api/day-visit', limitDayVisit, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const profileId = safeClientProfileId(clientId);
+    const profileRef = profileId ? db.collection('clientProfiles').doc(profileId) : null;
+    const visitRef = db.collection('dayVisits').doc(appDateKey);
+    const nowIso = getUtcIsoNow();
+    let alreadyCounted = false;
+    let isReturning = false;
+    let visitCount = 0;
+    let returningCount = 0;
+
+    await db.runTransaction(async (tx) => {
+      const visitSnap = await tx.get(visitRef);
+      const profileSnap = profileRef ? await tx.get(profileRef) : null;
+      const visitData = visitSnap.exists ? visitSnap.data() || {} : {};
+      const profileData = profileSnap?.exists ? profileSnap.data() || {} : {};
+      const visitsByClientId =
+        visitData.visitsByClientId &&
+        typeof visitData.visitsByClientId === 'object' &&
+        !Array.isArray(visitData.visitsByClientId)
+          ? { ...visitData.visitsByClientId }
+          : {};
+      const returningByClientId =
+        visitData.returningByClientId &&
+        typeof visitData.returningByClientId === 'object' &&
+        !Array.isArray(visitData.returningByClientId)
+          ? { ...visitData.returningByClientId }
+          : {};
+
+      alreadyCounted = !!visitsByClientId[clientId];
+      const priorVisitDay = String(profileData.lastVisitAppDateKey || profileData.firstVisitAppDateKey || '').trim();
+      const priorColorDay = String(profileData.firstAppDateKey || '').trim();
+      isReturning = !!(
+        (priorVisitDay && priorVisitDay < appDateKey) ||
+        (priorColorDay && priorColorDay < appDateKey)
+      );
+
+      if (!alreadyCounted) {
+        visitsByClientId[clientId] = { at: nowIso, returning: isReturning };
+      }
+      if (isReturning && !returningByClientId[clientId]) {
+        returningByClientId[clientId] = { at: nowIso };
+      }
+
+      visitCount = Object.keys(visitsByClientId).filter((key) => String(key || '').trim()).length;
+      returningCount = Object.keys(returningByClientId).filter((key) => String(key || '').trim()).length;
+      const returnRate = visitCount > 0 ? Math.round((returningCount / visitCount) * 1000) / 10 : 0;
+
+      tx.set(
+        visitRef,
+        {
+          appDateKey,
+          visitsByClientId,
+          returningByClientId,
+          visitCount,
+          returningCount,
+          returnRate,
+          updatedAt: nowIso
+        },
+        { merge: true }
+      );
+
+      if (profileRef) {
+        const nextProfile = {
+          clientId,
+          lastVisitAppDateKey: appDateKey,
+          lastVisitAt: nowIso,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        if (!profileSnap?.exists || !String(profileData.firstVisitAppDateKey || '').trim()) {
+          nextProfile.firstVisitAppDateKey = appDateKey;
+          nextProfile.firstVisitAt = nowIso;
+        }
+        tx.set(profileRef, nextProfile, { merge: true });
+      }
+    });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      duplicate: alreadyCounted,
+      returning: isReturning,
+      visitCount,
+      returningCount
+    });
+  } catch (error) {
+    console.error('❌ day-visit failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'day-visit failed'
+    });
+  }
+});
+
 app.options('/api/mood-scratch', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -11417,7 +11536,11 @@ function emptySubmissionAuditCounts() {
     titleSubmissions: 0,
     titleVotes: 0,
     storyPreviewShares: 0,
-    firstTimeUsers: 0
+    firstTimeUsers: 0,
+    opens: 0,
+    returningUsers: 0,
+    returnRate: 0,
+    reflectionHearts: 0
   };
 }
 
@@ -11429,8 +11552,10 @@ function submissionAuditCountsFromDocs({
   scratchSnap = null,
   storyShareSnap = null,
   firstTimeSnap = null,
+  dayVisitSnap = null,
   reflectionCount = 0,
-  colorCount = 0
+  colorCount = 0,
+  reflectionHearts = 0
 } = {}) {
   const quilt = quiltSnap?.exists ? quiltSnap.data() || {} : {};
   const blocks = Array.isArray(quilt.blocks) ? quilt.blocks : [];
@@ -11439,6 +11564,19 @@ function submissionAuditCountsFromDocs({
   const scratchData = scratchSnap?.exists ? scratchSnap.data() || {} : {};
   const storyShareData = storyShareSnap?.exists ? storyShareSnap.data() || {} : {};
   const firstTimeData = firstTimeSnap?.exists ? firstTimeSnap.data() || {} : {};
+  const dayVisitData = dayVisitSnap?.exists ? dayVisitSnap.data() || {} : {};
+  const opens = Math.max(
+    Number(dayVisitData.visitCount) || 0,
+    countClientIdMapEntries(dayVisitData.visitsByClientId)
+  );
+  const returningUsers = Math.max(
+    Number(dayVisitData.returningCount) || 0,
+    countClientIdMapEntries(dayVisitData.returningByClientId)
+  );
+  const returnRate =
+    opens > 0
+      ? Math.round((returningUsers / opens) * 1000) / 10
+      : Math.max(0, Number(dayVisitData.returnRate) || 0);
   return {
     reflections: Math.max(0, Number(reflectionCount) || 0),
     colors: Math.max(0, Number(colorCount) || 0),
@@ -11457,7 +11595,33 @@ function submissionAuditCountsFromDocs({
     firstTimeUsers: Math.max(
       Number(firstTimeData.count) || 0,
       countClientIdMapEntries(firstTimeData.byClientId)
-    )
+    ),
+    opens,
+    returningUsers,
+    returnRate,
+    reflectionHearts: Math.max(0, Number(reflectionHearts) || 0)
+  };
+}
+
+function buildSubmissionAuditFunnel(counts = {}) {
+  const steps = [
+    { key: 'opens', label: 'Opened', count: Math.max(0, Number(counts.opens) || 0) },
+    { key: 'scratchOffs', label: 'Scratched', count: Math.max(0, Number(counts.scratchOffs) || 0) },
+    { key: 'contributors', label: 'Added color', count: Math.max(0, Number(counts.contributors) || 0) },
+    {
+      key: 'titleSubmissions',
+      label: 'Named',
+      count: Math.max(0, Number(counts.titleSubmissions) || 0)
+    },
+    { key: 'titleVotes', label: 'Voted', count: Math.max(0, Number(counts.titleVotes) || 0) }
+  ];
+  return {
+    steps: steps.map((step, index) => {
+      const prev = index > 0 ? steps[index - 1].count : null;
+      const conversionFromPrev =
+        prev == null ? 100 : prev > 0 ? Math.round((step.count / prev) * 1000) / 10 : 0;
+      return { ...step, conversionFromPrev };
+    })
   };
 }
 
@@ -11599,29 +11763,40 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const scratchRefs = dayKeys.map((key) => db.collection('moodScratches').doc(key));
   const storyRefs = dayKeys.map((key) => db.collection('storyPreviewShares').doc(key));
   const firstTimeRefs = dayKeys.map((key) => db.collection('firstTimeUsers').doc(key));
+  const dayVisitRefs = dayKeys.map((key) => db.collection('dayVisits').doc(key));
 
-  const [quiltSnaps, nameSnaps, scratchSnaps, storySnaps, firstTimeSnaps, reflectionHist, colorHist] =
-    await Promise.all([
-      db.getAll(...quiltRefs),
-      db.getAll(...nameRefs),
-      db.getAll(...scratchRefs),
-      db.getAll(...storyRefs),
-      db.getAll(...firstTimeRefs),
-      db
-        .collection('reflectionResponses')
-        .where('appDateKey', '>=', startKey)
-        .where('appDateKey', '<=', appDateKey)
-        .select('appDateKey', 'createdAtIso', 'createdAt')
-        .get(),
-      db
-        .collection('colorSubmissions')
-        .where('appDateKey', '>=', startKey)
-        .where('appDateKey', '<=', appDateKey)
-        .select('appDateKey', 'createdAtIso', 'createdAt')
-        .get()
-    ]);
+  const [
+    quiltSnaps,
+    nameSnaps,
+    scratchSnaps,
+    storySnaps,
+    firstTimeSnaps,
+    dayVisitSnaps,
+    reflectionHist,
+    colorHist
+  ] = await Promise.all([
+    db.getAll(...quiltRefs),
+    db.getAll(...nameRefs),
+    db.getAll(...scratchRefs),
+    db.getAll(...storyRefs),
+    db.getAll(...firstTimeRefs),
+    db.getAll(...dayVisitRefs),
+    db
+      .collection('reflectionResponses')
+      .where('appDateKey', '>=', startKey)
+      .where('appDateKey', '<=', appDateKey)
+      .select('appDateKey', 'createdAtIso', 'createdAt', 'heartCount')
+      .get(),
+    db
+      .collection('colorSubmissions')
+      .where('appDateKey', '>=', startKey)
+      .where('appDateKey', '<=', appDateKey)
+      .select('appDateKey', 'createdAtIso', 'createdAt')
+      .get()
+  ]);
 
   const reflectionsByDay = new Map();
+  const reflectionHeartsByDay = new Map();
   const colorsByDay = new Map();
   const timedEventMs = [];
   const bumpTimed = (data) => {
@@ -11632,7 +11807,13 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   reflectionHist.docs.forEach((doc) => {
     const data = doc.data() || {};
     const key = String(data.appDateKey || '').trim();
-    if (key) reflectionsByDay.set(key, (reflectionsByDay.get(key) || 0) + 1);
+    if (key) {
+      reflectionsByDay.set(key, (reflectionsByDay.get(key) || 0) + 1);
+      reflectionHeartsByDay.set(
+        key,
+        (reflectionHeartsByDay.get(key) || 0) + Math.max(0, Number(data.heartCount) || 0)
+      );
+    }
     bumpTimed(data);
   });
   colorHist.docs.forEach((doc) => {
@@ -11650,8 +11831,10 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
       scratchSnap: scratchSnaps[index],
       storyShareSnap: storySnaps[index],
       firstTimeSnap: firstTimeSnaps[index],
+      dayVisitSnap: dayVisitSnaps[index],
       reflectionCount: reflectionsByDay.get(key) || 0,
-      colorCount: colorsByDay.get(key) || 0
+      colorCount: colorsByDay.get(key) || 0,
+      reflectionHearts: reflectionHeartsByDay.get(key) || 0
     });
 
     const nameData = nameSnaps[index]?.exists ? nameSnaps[index].data() || {} : {};
@@ -11722,6 +11905,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       scratchSnap,
       storyShareSnap,
       firstTimeSnap,
+      dayVisitSnap,
       comparisons
     ] = await Promise.all([
       db.collection('quilts').doc(appDateKey).get(),
@@ -11731,6 +11915,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       db.collection('moodScratches').doc(appDateKey).get(),
       db.collection('storyPreviewShares').doc(appDateKey).get(),
       db.collection('firstTimeUsers').doc(appDateKey).get(),
+      db.collection('dayVisits').doc(appDateKey).get(),
       loadSubmissionAuditComparisons(db, appDateKey, 30)
     ]);
 
@@ -11740,6 +11925,10 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
     const fingerprint = typeof quilt.quiltFingerprint === 'string' && quilt.quiltFingerprint
       ? quilt.quiltFingerprint
       : computeQuiltFingerprint(blocks);
+    const reflectionHearts = reflectionSnap.docs.reduce(
+      (sum, doc) => sum + Math.max(0, Number(doc.data()?.heartCount) || 0),
+      0
+    );
     const counts = {
       ...submissionAuditCountsFromDocs({
         quiltSnap,
@@ -11747,8 +11936,10 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
         scratchSnap,
         storyShareSnap,
         firstTimeSnap,
+        dayVisitSnap,
         reflectionCount: reflectionSnap.size,
-        colorCount: colorSnap.size
+        colorCount: colorSnap.size,
+        reflectionHearts
       }),
       successfulColors: colorSnap.docs.filter((doc) => {
         const status = String(doc.data()?.status || '').trim();
@@ -11756,7 +11947,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       }).length,
       quiltContributorCount: Number(quilt.contributorCount) || contributors.length || 0
     };
-    const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
+    const funnel = buildSubmissionAuditFunnel(counts);    const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
     const summarize = (doc) => {
       const data = doc.data() || {};
       return {
@@ -11800,6 +11991,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       appDateKey,
       generatedAt: getUtcIsoNow(),
       counts,
+      funnel,
       comparisons,
       quilt: {
         exists: quiltSnap.exists,
