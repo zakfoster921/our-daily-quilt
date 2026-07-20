@@ -11948,7 +11948,7 @@ async function loadSubmissionAuditRankedDates(
   appDateKey,
   { limit = 10, startDate = AUDIT_BOTTOM_DATES_START } = {}
 ) {
-  const safeLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 5)));
+  const safeLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 10)));
   const endKey = /^\d{4}-\d{2}-\d{2}$/.test(appDateKey) ? appDateKey : getAppDateKey();
   const floor =
     /^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '')) ? String(startDate) : AUDIT_BOTTOM_DATES_START;
@@ -12203,7 +12203,7 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const weekDays = ordered.slice(0, Math.min(7, ordered.length));
   const monthDays = ordered.slice(0, Math.min(30, ordered.length));
   const rankedDatesPayload = await loadSubmissionAuditRankedDates(db, appDateKey, {
-    limit: 5,
+    limit: 10,
     startDate: AUDIT_BOTTOM_DATES_START
   });
 
