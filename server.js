@@ -11733,16 +11733,15 @@ function buildSubmissionAuditFunnel(counts = {}, { titlePhase = 'submissions' } 
   const contributors = Math.max(0, Number(counts.contributors) || 0);
   // Day-visit pings are newer than color history — anyone who added color must have opened.
   const opens = Math.max(reportedOpens, contributors);
-  const votingPhase = titlePhase === 'voting' || titlePhase === 'final';
-  const titleCount = votingPhase
-    ? Math.max(0, Number(counts.titleVotes) || 0)
-    : Math.max(0, Number(counts.titleSubmissions) || 0);
+  const titleCount =
+    Math.max(0, Number(counts.titleSubmissions) || 0) +
+    Math.max(0, Number(counts.titleVotes) || 0);
   const steps = [
     { key: 'opens', label: 'Opened app', count: opens },
     { key: 'contributors', label: 'Added color', count: contributors },
     {
       key: 'titleAction',
-      label: votingPhase ? 'Voted on title' : 'Submitted a title',
+      label: 'Voted/submitted title',
       count: titleCount
     },
     { key: 'scratchOffs', label: 'Scratched', count: Math.max(0, Number(counts.scratchOffs) || 0) },
@@ -11775,7 +11774,8 @@ function buildSubmissionAuditFunnel(counts = {}, { titlePhase = 'submissions' } 
   return {
     denominator: opens,
     reportedOpens,
-    titlePhase: votingPhase ? 'voting' : 'submissions',
+    titlePhase:
+      titlePhase === 'voting' || titlePhase === 'final' ? 'voting' : 'submissions',
     steps: steps.map((step) => ({
       ...step,
       pctOfOpeners:
