@@ -11909,13 +11909,55 @@ async function firestoreGetAllChunked(db, refs, chunkSize = 30) {
   return out;
 }
 
-async function loadSubmissionAuditTopDates(db, appDateKey, { lookbackDays = 90, limit = 10 } = {}) {
+const AUDIT_BOTTOM_DATES_START = '2026-07-01';
+
+function daysBetweenDateKeysInclusive(startKey, endKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startKey) || !/^\d{4}-\d{2}-\d{2}$/.test(endKey)) return [];
+  if (startKey > endKey) return [];
+  const keys = [];
+  let cursor = startKey;
+  // Cap runaway loops (about 2 years).
+  for (let i = 0; i < 800 && cursor <= endKey; i += 1) {
+    keys.push(cursor);
+    cursor = addDaysToDateKey(cursor, 1);
+  }
+  return keys;
+}
+
+function enrichAuditRankedDateRows(rows, quoteBySourceId) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const fromCatalog = row.quote?.sourceId ? quoteBySourceId.get(row.quote.sourceId) : null;
+    const text = String(fromCatalog?.text || row.quote?.text || '').trim();
+    const author = String(fromCatalog?.author || row.quote?.author || '').trim();
+    const notification = String(
+      fromCatalog?.notification || row.quote?.notification || ''
+    ).trim();
+    return {
+      dateKey: row.dateKey,
+      contributors: row.contributors,
+      quote: text,
+      author,
+      notification
+    };
+  });
+}
+
+async function loadSubmissionAuditRankedDates(
+  db,
+  appDateKey,
+  { lookbackDays = 90, limit = 10, bottomStartDate = AUDIT_BOTTOM_DATES_START } = {}
+) {
   const safeLookback = Math.max(1, Math.min(180, Math.floor(Number(lookbackDays) || 90)));
   const safeLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 10)));
-  const dayKeys = [];
-  for (let i = 0; i < safeLookback; i += 1) {
-    dayKeys.push(addDaysToDateKey(appDateKey, -i));
-  }
+  const endKey = /^\d{4}-\d{2}-\d{2}$/.test(appDateKey) ? appDateKey : getAppDateKey();
+  const topStartKey = addDaysToDateKey(endKey, -(safeLookback - 1));
+  const bottomFloor =
+    /^\d{4}-\d{2}-\d{2}$/.test(String(bottomStartDate || '')) && String(bottomStartDate) <= endKey
+      ? String(bottomStartDate)
+      : '';
+  const rangeStart =
+    bottomFloor && bottomFloor < topStartKey ? bottomFloor : topStartKey;
+  const dayKeys = daysBetweenDateKeysInclusive(rangeStart, endKey);
 
   const quiltRefs = dayKeys.map((key) => db.collection('quilts').doc(key));
   const assignRefs = dayKeys.map((key) => db.collection('dailyQuoteAssignments').doc(key));
@@ -11924,19 +11966,33 @@ async function loadSubmissionAuditTopDates(db, appDateKey, { lookbackDays = 90, 
     firestoreGetAllChunked(db, assignRefs)
   ]);
 
-  const ranked = dayKeys
+  const scored = dayKeys
     .map((dateKey, index) => {
       const contributors = contributorCountFromQuiltSnap(quiltSnaps[index]);
       const assignData = assignSnaps[index]?.exists ? assignSnaps[index].data() || {} : {};
       const quote = quoteFieldsFromAssignmentData(assignData);
       return { dateKey, contributors, quote };
     })
-    .filter((row) => row.contributors > 0)
+    .filter((row) => row.contributors > 0);
+
+  const topCandidates = scored
+    .filter((row) => row.dateKey >= topStartKey)
     .sort((a, b) => b.contributors - a.contributors || b.dateKey.localeCompare(a.dateKey))
     .slice(0, safeLimit);
 
+  const bottomCandidates = bottomFloor
+    ? scored
+        .filter((row) => row.dateKey >= bottomFloor)
+        .sort((a, b) => a.contributors - b.contributors || a.dateKey.localeCompare(b.dateKey))
+        .slice(0, safeLimit)
+    : [];
+
   const sourceIds = [
-    ...new Set(ranked.map((row) => row.quote.sourceId).filter(Boolean))
+    ...new Set(
+      [...topCandidates, ...bottomCandidates]
+        .map((row) => row.quote.sourceId)
+        .filter(Boolean)
+    )
   ];
   const quoteBySourceId = new Map();
   if (sourceIds.length) {
@@ -11971,25 +12027,11 @@ async function loadSubmissionAuditTopDates(db, appDateKey, { lookbackDays = 90, 
     });
   }
 
-  const topDates = ranked.map((row) => {
-    const fromCatalog = row.quote.sourceId ? quoteBySourceId.get(row.quote.sourceId) : null;
-    const text = String(fromCatalog?.text || row.quote.text || '').trim();
-    const author = String(fromCatalog?.author || row.quote.author || '').trim();
-    const notification = String(
-      fromCatalog?.notification || row.quote.notification || ''
-    ).trim();
-    return {
-      dateKey: row.dateKey,
-      contributors: row.contributors,
-      quote: text,
-      author,
-      notification
-    };
-  });
-
   return {
     lookbackDays: safeLookback,
-    topDates
+    bottomStartDate: bottomFloor || AUDIT_BOTTOM_DATES_START,
+    topDates: enrichAuditRankedDateRows(topCandidates, quoteBySourceId),
+    bottomDates: enrichAuditRankedDateRows(bottomCandidates, quoteBySourceId)
   };
 }
 
@@ -12161,9 +12203,10 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const ordered = dayKeys.map((key) => byDate[key]);
   const weekDays = ordered.slice(0, Math.min(7, ordered.length));
   const monthDays = ordered.slice(0, Math.min(30, ordered.length));
-  const topDatesPayload = await loadSubmissionAuditTopDates(db, appDateKey, {
+  const rankedDatesPayload = await loadSubmissionAuditRankedDates(db, appDateKey, {
     lookbackDays: 90,
-    limit: 10
+    limit: 10,
+    bottomStartDate: AUDIT_BOTTOM_DATES_START
   });
 
   return {
@@ -12180,8 +12223,10 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
         timedEventMs,
         lookbackDays: safeLookback
       }),
-      topDates: topDatesPayload.topDates,
-      topDatesLookbackDays: topDatesPayload.lookbackDays
+      topDates: rankedDatesPayload.topDates,
+      topDatesLookbackDays: rankedDatesPayload.lookbackDays,
+      bottomDates: rankedDatesPayload.bottomDates,
+      bottomDatesStartDate: rankedDatesPayload.bottomStartDate
     }
   };
 }
