@@ -11326,6 +11326,145 @@ app.post('/api/admin/composition-bias-preview', limitAdminQuiltMutation, async (
   }
 });
 
+function countClientIdMapEntries(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 0;
+  return Object.keys(raw).filter((key) => String(key || '').trim()).length;
+}
+
+function emptySubmissionAuditCounts() {
+  return {
+    reflections: 0,
+    colors: 0,
+    quiltBlocks: 0,
+    contributors: 0,
+    scratchOffs: 0,
+    titleSubmissions: 0,
+    titleVotes: 0,
+    storyPreviewShares: 0
+  };
+}
+
+const SUBMISSION_AUDIT_COMPARE_KEYS = Object.keys(emptySubmissionAuditCounts());
+
+function submissionAuditCountsFromDocs({
+  quiltSnap = null,
+  nameSnap = null,
+  scratchSnap = null,
+  storyShareSnap = null,
+  reflectionCount = 0,
+  colorCount = 0
+} = {}) {
+  const quilt = quiltSnap?.exists ? quiltSnap.data() || {} : {};
+  const blocks = Array.isArray(quilt.blocks) ? quilt.blocks : [];
+  const contributors = normalizeQuiltContributorEntries(quilt.contributors || []);
+  const nameData = nameSnap?.exists ? nameSnap.data() || {} : {};
+  const scratchData = scratchSnap?.exists ? scratchSnap.data() || {} : {};
+  const storyShareData = storyShareSnap?.exists ? storyShareSnap.data() || {} : {};
+  return {
+    reflections: Math.max(0, Number(reflectionCount) || 0),
+    colors: Math.max(0, Number(colorCount) || 0),
+    quiltBlocks: blocks.length,
+    contributors: contributors.length,
+    scratchOffs: Math.max(
+      Number(scratchData.scratchCount) || 0,
+      countClientIdMapEntries(scratchData.scratchesByClientId)
+    ),
+    titleSubmissions: countClientIdMapEntries(nameData.submissionsByClientId),
+    titleVotes: countClientIdMapEntries(nameData.votesByClientId),
+    storyPreviewShares: Math.max(
+      Number(storyShareData.shareCount) || 0,
+      countClientIdMapEntries(storyShareData.sharesByClientId)
+    )
+  };
+}
+
+function averageSubmissionAuditCounts(dayCountsList = []) {
+  const out = emptySubmissionAuditCounts();
+  const n = Array.isArray(dayCountsList) ? dayCountsList.length : 0;
+  if (!n) return out;
+  dayCountsList.forEach((day) => {
+    SUBMISSION_AUDIT_COMPARE_KEYS.forEach((key) => {
+      out[key] += Number(day?.[key]) || 0;
+    });
+  });
+  SUBMISSION_AUDIT_COMPARE_KEYS.forEach((key) => {
+    out[key] = Math.round((out[key] / n) * 10) / 10;
+  });
+  return out;
+}
+
+async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30) {
+  const safeLookback = Math.max(1, Math.min(60, Math.floor(Number(lookbackDays) || 30)));
+  const dayKeys = [];
+  for (let i = 1; i <= safeLookback; i += 1) {
+    dayKeys.push(addDaysToDateKey(appDateKey, -i));
+  }
+  const startKey = dayKeys[dayKeys.length - 1];
+  const yesterdayKey = dayKeys[0];
+
+  const quiltRefs = dayKeys.map((key) => db.collection('quilts').doc(key));
+  const nameRefs = dayKeys.map((key) => db.collection('quiltNames').doc(key));
+  const scratchRefs = dayKeys.map((key) => db.collection('moodScratches').doc(key));
+  const storyRefs = dayKeys.map((key) => db.collection('storyPreviewShares').doc(key));
+
+  const [quiltSnaps, nameSnaps, scratchSnaps, storySnaps, reflectionHist, colorHist] = await Promise.all([
+    db.getAll(...quiltRefs),
+    db.getAll(...nameRefs),
+    db.getAll(...scratchRefs),
+    db.getAll(...storyRefs),
+    db
+      .collection('reflectionResponses')
+      .where('appDateKey', '>=', startKey)
+      .where('appDateKey', '<=', yesterdayKey)
+      .select('appDateKey')
+      .get(),
+    db
+      .collection('colorSubmissions')
+      .where('appDateKey', '>=', startKey)
+      .where('appDateKey', '<=', yesterdayKey)
+      .select('appDateKey')
+      .get()
+  ]);
+
+  const reflectionsByDay = new Map();
+  const colorsByDay = new Map();
+  reflectionHist.docs.forEach((doc) => {
+    const key = String(doc.data()?.appDateKey || '').trim();
+    if (!key) return;
+    reflectionsByDay.set(key, (reflectionsByDay.get(key) || 0) + 1);
+  });
+  colorHist.docs.forEach((doc) => {
+    const key = String(doc.data()?.appDateKey || '').trim();
+    if (!key) return;
+    colorsByDay.set(key, (colorsByDay.get(key) || 0) + 1);
+  });
+
+  const byDate = {};
+  dayKeys.forEach((key, index) => {
+    byDate[key] = submissionAuditCountsFromDocs({
+      quiltSnap: quiltSnaps[index],
+      nameSnap: nameSnaps[index],
+      scratchSnap: scratchSnaps[index],
+      storyShareSnap: storySnaps[index],
+      reflectionCount: reflectionsByDay.get(key) || 0,
+      colorCount: colorsByDay.get(key) || 0
+    });
+  });
+
+  const ordered = dayKeys.map((key) => byDate[key]);
+  const weekDays = ordered.slice(0, Math.min(7, ordered.length));
+  const monthDays = ordered.slice(0, Math.min(30, ordered.length));
+
+  return {
+    yesterdayKey,
+    weekDays: weekDays.length,
+    monthDays: monthDays.length,
+    yesterday: byDate[yesterdayKey] || emptySubmissionAuditCounts(),
+    weekAvg: averageSubmissionAuditCounts(weekDays),
+    monthAvg: averageSubmissionAuditCounts(monthDays)
+  };
+}
+
 app.options('/api/admin/submission-audit', (req, res) => {
   setResetApiCors(res);
   return res.status(204).end();
@@ -11351,14 +11490,16 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       ? String(body.appDateKey || body.dateKey).trim()
       : getAppDateKey();
 
-    const [quiltSnap, reflectionSnap, colorSnap, nameSnap, scratchSnap, storyShareSnap] = await Promise.all([
-      db.collection('quilts').doc(appDateKey).get(),
-      db.collection('reflectionResponses').where('appDateKey', '==', appDateKey).get(),
-      db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get(),
-      db.collection('quiltNames').doc(appDateKey).get(),
-      db.collection('moodScratches').doc(appDateKey).get(),
-      db.collection('storyPreviewShares').doc(appDateKey).get()
-    ]);
+    const [quiltSnap, reflectionSnap, colorSnap, nameSnap, scratchSnap, storyShareSnap, comparisons] =
+      await Promise.all([
+        db.collection('quilts').doc(appDateKey).get(),
+        db.collection('reflectionResponses').where('appDateKey', '==', appDateKey).get(),
+        db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get(),
+        db.collection('quiltNames').doc(appDateKey).get(),
+        db.collection('moodScratches').doc(appDateKey).get(),
+        db.collection('storyPreviewShares').doc(appDateKey).get(),
+        loadSubmissionAuditComparisons(db, appDateKey, 30)
+      ]);
 
     const quilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
     const blocks = Array.isArray(quilt.blocks) ? quilt.blocks : [];
@@ -11366,23 +11507,21 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
     const fingerprint = typeof quilt.quiltFingerprint === 'string' && quilt.quiltFingerprint
       ? quilt.quiltFingerprint
       : computeQuiltFingerprint(blocks);
-    const countClientIdMap = (raw) => {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 0;
-      return Object.keys(raw).filter((key) => String(key || '').trim()).length;
+    const counts = {
+      ...submissionAuditCountsFromDocs({
+        quiltSnap,
+        nameSnap,
+        scratchSnap,
+        storyShareSnap,
+        reflectionCount: reflectionSnap.size,
+        colorCount: colorSnap.size
+      }),
+      successfulColors: colorSnap.docs.filter((doc) => {
+        const status = String(doc.data()?.status || '').trim();
+        return !status || status === 'success';
+      }).length,
+      quiltContributorCount: Number(quilt.contributorCount) || contributors.length || 0
     };
-    const nameData = nameSnap.exists ? nameSnap.data() || {} : {};
-    const scratchData = scratchSnap.exists ? scratchSnap.data() || {} : {};
-    const storyShareData = storyShareSnap.exists ? storyShareSnap.data() || {} : {};
-    const titleSubmissions = countClientIdMap(nameData.submissionsByClientId);
-    const titleVotes = countClientIdMap(nameData.votesByClientId);
-    const scratchOffs = Math.max(
-      Number(scratchData.scratchCount) || 0,
-      countClientIdMap(scratchData.scratchesByClientId)
-    );
-    const storyPreviewShares = Math.max(
-      Number(storyShareData.shareCount) || 0,
-      countClientIdMap(storyShareData.sharesByClientId)
-    );
     const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
     const summarize = (doc) => {
       const data = doc.data() || {};
@@ -11426,18 +11565,8 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       success: true,
       appDateKey,
       generatedAt: getUtcIsoNow(),
-      counts: {
-        reflections: reflections.length,
-        colors: colors.length,
-        successfulColors: colors.filter((row) => !row.status || row.status === 'success').length,
-        quiltBlocks: blocks.length,
-        quiltContributorCount: Number(quilt.contributorCount) || contributors.length || 0,
-        contributors: contributors.length,
-        scratchOffs,
-        titleSubmissions,
-        titleVotes,
-        storyPreviewShares
-      },
+      counts,
+      comparisons,
       quilt: {
         exists: quiltSnap.exists,
         lastUpdated: quilt.lastUpdated || '',
