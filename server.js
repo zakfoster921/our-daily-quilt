@@ -11246,17 +11246,13 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       if (!colorByKey.has(key)) colorByKey.set(key, []);
       colorByKey.get(key).push(row);
     });
-    const reflectionOnly = [];
-    const colorOnly = [];
     const duplicateReflections = [];
     const duplicateColors = [];
     const failedColors = colors.filter((row) => row.status && row.status !== 'success');
     reflectionByKey.forEach((rows, key) => {
-      if (!colorByKey.has(key)) reflectionOnly.push(...rows);
       if (rows.length > 1) duplicateReflections.push({ key, count: rows.length, items: rows.slice(0, 5) });
     });
     colorByKey.forEach((rows, key) => {
-      if (!reflectionByKey.has(key)) colorOnly.push(...rows);
       if (rows.length > 1) duplicateColors.push({ key, count: rows.length, items: rows.slice(0, 5) });
     });
 
@@ -11279,15 +11275,11 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
         macroStructureFrozen: quilt.macroStructureFrozen === true
       },
       mismatches: {
-        reflectionOnly: reflectionOnly.slice(0, 25),
-        colorOnly: colorOnly.slice(0, 25),
         duplicateReflections: duplicateReflections.slice(0, 25),
         duplicateColors: duplicateColors.slice(0, 25),
         failedColors: failedColors.slice(0, 25)
       },
       warnings: [
-        reflectionOnly.length ? `${reflectionOnly.length} reflection response(s) without matching color submission` : '',
-        colorOnly.length ? `${colorOnly.length} color submission(s) without matching reflection response` : '',
         duplicateReflections.length ? `${duplicateReflections.length} user/device key(s) with duplicate reflections` : '',
         duplicateColors.length ? `${duplicateColors.length} user/device key(s) with duplicate color submissions` : '',
         failedColors.length ? `${failedColors.length} non-success color submission(s)` : ''
