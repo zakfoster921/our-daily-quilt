@@ -11393,6 +11393,115 @@ function averageSubmissionAuditCounts(dayCountsList = []) {
   return out;
 }
 
+const AUDIT_WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function weekdayLabelFromDateKey(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ''))) return '';
+  const [yy, mm, dd] = String(dateKey).split('-').map(Number);
+  const dt = new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
+  return AUDIT_WEEKDAY_LABELS[dt.getUTCDay()] || '';
+}
+
+function eventMsFromAuditDocData(data = {}) {
+  const iso = String(data.createdAtIso || data.submittedAtIso || data.at || '').trim();
+  if (iso) {
+    const ms = Date.parse(iso);
+    if (Number.isFinite(ms)) return ms;
+  }
+  const createdAt = data.createdAt;
+  if (createdAt && typeof createdAt.toMillis === 'function') {
+    const ms = createdAt.toMillis();
+    if (Number.isFinite(ms)) return ms;
+  }
+  if (createdAt && typeof createdAt.toDate === 'function') {
+    try {
+      const ms = createdAt.toDate().getTime();
+      if (Number.isFinite(ms)) return ms;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+function chicagoHourFromMs(ms) {
+  if (!Number.isFinite(ms)) return null;
+  try {
+    const hourPart = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      hour: '2-digit',
+      hourCycle: 'h23'
+    })
+      .formatToParts(new Date(ms))
+      .find((part) => part.type === 'hour');
+    const hour = Number(hourPart?.value);
+    return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function formatAuditHourLabel(hour) {
+  const h = ((Number(hour) % 24) + 24) % 24;
+  const next = (h + 1) % 24;
+  const fmt = (n) => {
+    const period = n >= 12 ? 'PM' : 'AM';
+    const twelve = n % 12 === 0 ? 12 : n % 12;
+    return `${twelve} ${period}`;
+  };
+  return `${fmt(h)}–${fmt(next)} CT`;
+}
+
+function buildSubmissionAuditPopularity({
+  dayKeys = [],
+  byDate = {},
+  timedEventMs = [],
+  lookbackDays = 30
+} = {}) {
+  const weekdayTotals = Object.fromEntries(AUDIT_WEEKDAY_LABELS.map((day) => [day, 0]));
+  dayKeys.forEach((key) => {
+    const dayLabel = weekdayLabelFromDateKey(key);
+    if (!dayLabel) return;
+    const people =
+      Number(byDate[key]?.contributors) ||
+      Number(byDate[key]?.colors) ||
+      0;
+    weekdayTotals[dayLabel] += people;
+  });
+
+  const hourTotals = Array.from({ length: 24 }, () => 0);
+  let timedEvents = 0;
+  timedEventMs.forEach((ms) => {
+    const hour = chicagoHourFromMs(ms);
+    if (hour == null) return;
+    hourTotals[hour] += 1;
+    timedEvents += 1;
+  });
+
+  const topWeekdays = AUDIT_WEEKDAY_LABELS
+    .map((day) => ({ day, count: weekdayTotals[day] || 0 }))
+    .sort((a, b) => b.count - a.count || AUDIT_WEEKDAY_LABELS.indexOf(a.day) - AUDIT_WEEKDAY_LABELS.indexOf(b.day));
+
+  const topHours = hourTotals
+    .map((count, hour) => ({
+      hour,
+      label: formatAuditHourLabel(hour),
+      count
+    }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count || a.hour - b.hour)
+    .slice(0, 5);
+
+  return {
+    timezone: 'America/Chicago',
+    lookbackDays,
+    sampleDays: dayKeys.length,
+    timedEvents,
+    topWeekdays,
+    topHours
+  };
+}
+
 async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30) {
   const safeLookback = Math.max(1, Math.min(60, Math.floor(Number(lookbackDays) || 30)));
   const dayKeys = [];
@@ -11415,28 +11524,36 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     db
       .collection('reflectionResponses')
       .where('appDateKey', '>=', startKey)
-      .where('appDateKey', '<=', yesterdayKey)
-      .select('appDateKey')
+      .where('appDateKey', '<=', appDateKey)
+      .select('appDateKey', 'createdAtIso', 'createdAt')
       .get(),
     db
       .collection('colorSubmissions')
       .where('appDateKey', '>=', startKey)
-      .where('appDateKey', '<=', yesterdayKey)
-      .select('appDateKey')
+      .where('appDateKey', '<=', appDateKey)
+      .select('appDateKey', 'createdAtIso', 'createdAt')
       .get()
   ]);
 
   const reflectionsByDay = new Map();
   const colorsByDay = new Map();
+  const timedEventMs = [];
+  const bumpTimed = (data) => {
+    const ms = eventMsFromAuditDocData(data);
+    if (ms != null) timedEventMs.push(ms);
+  };
+
   reflectionHist.docs.forEach((doc) => {
-    const key = String(doc.data()?.appDateKey || '').trim();
-    if (!key) return;
-    reflectionsByDay.set(key, (reflectionsByDay.get(key) || 0) + 1);
+    const data = doc.data() || {};
+    const key = String(data.appDateKey || '').trim();
+    if (key) reflectionsByDay.set(key, (reflectionsByDay.get(key) || 0) + 1);
+    bumpTimed(data);
   });
   colorHist.docs.forEach((doc) => {
-    const key = String(doc.data()?.appDateKey || '').trim();
-    if (!key) return;
-    colorsByDay.set(key, (colorsByDay.get(key) || 0) + 1);
+    const data = doc.data() || {};
+    const key = String(data.appDateKey || '').trim();
+    if (key) colorsByDay.set(key, (colorsByDay.get(key) || 0) + 1);
+    bumpTimed(data);
   });
 
   const byDate = {};
@@ -11448,6 +11565,20 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
       storyShareSnap: storySnaps[index],
       reflectionCount: reflectionsByDay.get(key) || 0,
       colorCount: colorsByDay.get(key) || 0
+    });
+
+    const nameData = nameSnaps[index]?.exists ? nameSnaps[index].data() || {} : {};
+    const entryLists = [nameData.entries, nameData.submissionEntries];
+    entryLists.forEach((list) => {
+      (Array.isArray(list) ? list : []).forEach((entry) => {
+        bumpTimed(entry || {});
+      });
+    });
+    const scratchData = scratchSnaps[index]?.exists ? scratchSnaps[index].data() || {} : {};
+    const storyData = storySnaps[index]?.exists ? storySnaps[index].data() || {} : {};
+    [scratchData.scratchesByClientId, storyData.sharesByClientId].forEach((map) => {
+      if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+      Object.values(map).forEach((entry) => bumpTimed(entry || {}));
     });
   });
 
@@ -11461,7 +11592,13 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     monthDays: monthDays.length,
     yesterday: byDate[yesterdayKey] || emptySubmissionAuditCounts(),
     weekAvg: averageSubmissionAuditCounts(weekDays),
-    monthAvg: averageSubmissionAuditCounts(monthDays)
+    monthAvg: averageSubmissionAuditCounts(monthDays),
+    popularity: buildSubmissionAuditPopularity({
+      dayKeys,
+      byDate,
+      timedEventMs,
+      lookbackDays: safeLookback
+    })
   };
 }
 
