@@ -11865,6 +11865,108 @@ function formatAuditHourLabel(hour) {
   return `${twelve(h)} ${startPeriod}–${twelve(next)} ${endPeriod} CT`;
 }
 
+function quoteFieldsFromAssignmentData(data = {}) {
+  const text = String(data.textSnapshot || data.text || data.quote || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const author = String(data.authorSnapshot || data.author || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return {
+    text: text.slice(0, 220),
+    author: author.slice(0, 80),
+    sourceId: String(data.sourceId || '').trim()
+  };
+}
+
+function contributorCountFromQuiltSnap(quiltSnap) {
+  if (!quiltSnap?.exists) return 0;
+  const data = quiltSnap.data() || {};
+  const fromList = normalizeQuiltContributorEntries(data.contributors || []).length;
+  const stored = Math.max(0, Number(data.contributorCount) || 0);
+  return Math.max(fromList, stored);
+}
+
+async function firestoreGetAllChunked(db, refs, chunkSize = 30) {
+  const list = Array.isArray(refs) ? refs : [];
+  const out = [];
+  for (let i = 0; i < list.length; i += chunkSize) {
+    const chunk = list.slice(i, i + chunkSize);
+    if (!chunk.length) continue;
+    const snaps = await db.getAll(...chunk);
+    out.push(...snaps);
+  }
+  return out;
+}
+
+async function loadSubmissionAuditTopDates(db, appDateKey, { lookbackDays = 90, limit = 10 } = {}) {
+  const safeLookback = Math.max(1, Math.min(180, Math.floor(Number(lookbackDays) || 90)));
+  const safeLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 10)));
+  const dayKeys = [];
+  for (let i = 0; i < safeLookback; i += 1) {
+    dayKeys.push(addDaysToDateKey(appDateKey, -i));
+  }
+
+  const quiltRefs = dayKeys.map((key) => db.collection('quilts').doc(key));
+  const assignRefs = dayKeys.map((key) => db.collection('dailyQuoteAssignments').doc(key));
+  const [quiltSnaps, assignSnaps] = await Promise.all([
+    firestoreGetAllChunked(db, quiltRefs),
+    firestoreGetAllChunked(db, assignRefs)
+  ]);
+
+  const ranked = dayKeys
+    .map((dateKey, index) => {
+      const contributors = contributorCountFromQuiltSnap(quiltSnaps[index]);
+      const assignData = assignSnaps[index]?.exists ? assignSnaps[index].data() || {} : {};
+      const quote = quoteFieldsFromAssignmentData(assignData);
+      return { dateKey, contributors, quote };
+    })
+    .filter((row) => row.contributors > 0)
+    .sort((a, b) => b.contributors - a.contributors || b.dateKey.localeCompare(a.dateKey))
+    .slice(0, safeLimit);
+
+  const sourceIds = [
+    ...new Set(ranked.map((row) => row.quote.sourceId).filter(Boolean))
+  ];
+  const quoteBySourceId = new Map();
+  if (sourceIds.length) {
+    const quoteSnaps = await firestoreGetAllChunked(
+      db,
+      sourceIds.map((id) => db.collection('quotes').doc(id))
+    );
+    quoteSnaps.forEach((snap, index) => {
+      if (!snap?.exists) return;
+      const data = snap.data() || {};
+      const text = String(data.text || data.quote || data.body || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 220);
+      const author = String(data.author || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80);
+      if (text) quoteBySourceId.set(sourceIds[index], { text, author });
+    });
+  }
+
+  const topDates = ranked.map((row) => {
+    const fromCatalog = row.quote.sourceId ? quoteBySourceId.get(row.quote.sourceId) : null;
+    const text = String(fromCatalog?.text || row.quote.text || '').trim();
+    const author = String(fromCatalog?.author || row.quote.author || '').trim();
+    return {
+      dateKey: row.dateKey,
+      contributors: row.contributors,
+      quote: text,
+      author
+    };
+  });
+
+  return {
+    lookbackDays: safeLookback,
+    topDates
+  };
+}
+
 function buildSubmissionAuditPopularity({
   dayKeys = [],
   byDate = {},
@@ -12033,6 +12135,10 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const ordered = dayKeys.map((key) => byDate[key]);
   const weekDays = ordered.slice(0, Math.min(7, ordered.length));
   const monthDays = ordered.slice(0, Math.min(30, ordered.length));
+  const topDatesPayload = await loadSubmissionAuditTopDates(db, appDateKey, {
+    lookbackDays: 90,
+    limit: 10
+  });
 
   return {
     yesterdayKey,
@@ -12041,12 +12147,16 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     yesterday: byDate[yesterdayKey] || emptySubmissionAuditCounts(),
     weekAvg: averageSubmissionAuditCounts(weekDays),
     monthAvg: averageSubmissionAuditCounts(monthDays),
-    popularity: buildSubmissionAuditPopularity({
-      dayKeys,
-      byDate,
-      timedEventMs,
-      lookbackDays: safeLookback
-    })
+    popularity: {
+      ...buildSubmissionAuditPopularity({
+        dayKeys,
+        byDate,
+        timedEventMs,
+        lookbackDays: safeLookback
+      }),
+      topDates: topDatesPayload.topDates,
+      topDatesLookbackDays: topDatesPayload.lookbackDays
+    }
   };
 }
 
