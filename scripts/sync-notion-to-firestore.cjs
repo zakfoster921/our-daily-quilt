@@ -34,6 +34,9 @@ const {
   shouldSyncNotionKeywordEmphasis
 } = require('./lib/layout-b-keyword-sync.cjs');
 const {
+  normalizeQuotePoetryLineBreaks
+} = require('../lib/quote-poetry-line-breaks.js');
+const {
   parseSyncWindowCli,
   assignmentSourceIdsInWindow,
   buildNotionDateScheduledFilter,
@@ -628,9 +631,10 @@ function parseNotionRow(page) {
   const props = page?.properties || {};
   // ODQ QUOTES DATABASE uses snake_case Text/URL names (Quote is Title). Try those exact keys
   // first, then legacy Title Case / aliases for older or forked DBs. First non-empty wins.
-  const text =
+  const text = normalizeQuotePoetryLineBreaks(
     getMappedText(props, 'quote_text', 'Quote', 'Quote Text', 'Quote text', 'Name', 'quote', 'quote_text')
-    || getTitleTextFromAnyTitleProp(props);
+    || getTitleTextFromAnyTitleProp(props)
+  );
   const author = getMappedText(props, 'author', 'Author');
   const reflectionPrompt = getMappedText(
     props,
