@@ -1837,6 +1837,12 @@ function safeColorSubmissionId(dateKey, clientId) {
     .slice(0, 32)}`;
 }
 
+function safeClientProfileId(clientId) {
+  const id = String(clientId || '').trim();
+  if (!id) return '';
+  return crypto.createHash('sha256').update(id).digest('hex').slice(0, 40);
+}
+
 function normalizeQuiltContributorEntries(items) {
   const out = [];
   const seen = new Map();
@@ -10828,12 +10834,49 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
     const quiltRef = db.collection('quilts').doc(appDateKey);
     const submissionId = safeColorSubmissionId(appDateKey, clientId);
     const submissionRef = db.collection('colorSubmissions').doc(submissionId);
+    const profileId = safeClientProfileId(clientId);
+    const profileRef = profileId ? db.collection('clientProfiles').doc(profileId) : null;
+    const firstTimeRef = db.collection('firstTimeUsers').doc(appDateKey);
     const nowIso = getUtcIsoNow();
     let responsePayload = null;
+
+    // Seed a profile for returning devices so they aren't counted as first-time after this ships.
+    if (profileRef) {
+      try {
+        const existingProfile = await profileRef.get();
+        if (!existingProfile.exists) {
+          const prior = await db
+            .collection('colorSubmissions')
+            .where('clientId', '==', clientId)
+            .limit(1)
+            .get();
+          if (!prior.empty) {
+            const priorData = prior.docs[0].data() || {};
+            await profileRef.set(
+              {
+                clientId,
+                firstColorAt: String(priorData.createdAtIso || nowIso).trim() || nowIso,
+                firstAppDateKey: String(priorData.appDateKey || appDateKey).trim() || appDateKey,
+                seededFromHistory: true,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+              },
+              { merge: true }
+            );
+          }
+        }
+      } catch (seedError) {
+        console.warn(
+          '⚠️ clientProfiles seed from color history failed:',
+          seedError?.message || seedError
+        );
+      }
+    }
 
     await db.runTransaction(async (tx) => {
       const submissionSnap = await tx.get(submissionRef);
       const quiltSnap = await tx.get(quiltRef);
+      const profileSnap = profileRef ? await tx.get(profileRef) : null;
+      const firstTimeSnap = await tx.get(firstTimeRef);
       const currentQuilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
       const currentBlocks = Array.isArray(currentQuilt.blocks) ? currentQuilt.blocks : [];
 
@@ -10852,6 +10895,7 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
           colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
           contributors: Array.isArray(currentQuilt.contributors) ? currentQuilt.contributors : [],
           macroStructureFrozen: currentQuilt.macroStructureFrozen === true,
+          firstTimeUser: existingSubmission.firstTimeUser === true,
           quiltFingerprint:
             typeof currentQuilt.quiltFingerprint === 'string' && currentQuilt.quiltFingerprint
               ? currentQuilt.quiltFingerprint
@@ -10860,6 +10904,7 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         return;
       }
 
+      const isFirstTimeUser = !!(profileRef && profileSnap && !profileSnap.exists);
       const engine = createServerQuiltEngine({
         userId: clientId,
         blocks: currentBlocks,
@@ -10924,10 +10969,40 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         dedicatedBlockId: addResult.dedicatedBlockId || '',
         submissionIndex: Number(addResult.submissionIndex) || Number(engine.submissionCount) || 0,
         source: 'server-color-submission',
+        firstTimeUser: isFirstTimeUser,
         createdAtIso: nowIso,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
+
+      if (isFirstTimeUser && profileRef) {
+        tx.set(profileRef, {
+          clientId,
+          firstColorAt: nowIso,
+          firstAppDateKey: appDateKey,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        const firstTimeData = firstTimeSnap.exists ? firstTimeSnap.data() || {} : {};
+        const byClientId =
+          firstTimeData.byClientId &&
+          typeof firstTimeData.byClientId === 'object' &&
+          !Array.isArray(firstTimeData.byClientId)
+            ? { ...firstTimeData.byClientId }
+            : {};
+        if (!byClientId[clientId]) {
+          byClientId[clientId] = { at: nowIso, profileId };
+        }
+        tx.set(
+          firstTimeRef,
+          {
+            appDateKey,
+            byClientId,
+            count: Object.keys(byClientId).filter((key) => String(key || '').trim()).length,
+            updatedAt: nowIso
+          },
+          { merge: true }
+        );
+      }
 
       responsePayload = {
         success: true,
@@ -10944,7 +11019,8 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         colorReplayEvents,
         contributors,
         macroStructureFrozen,
-        quiltFingerprint
+        quiltFingerprint,
+        firstTimeUser: isFirstTimeUser
       };
     });
 
@@ -11340,7 +11416,8 @@ function emptySubmissionAuditCounts() {
     scratchOffs: 0,
     titleSubmissions: 0,
     titleVotes: 0,
-    storyPreviewShares: 0
+    storyPreviewShares: 0,
+    firstTimeUsers: 0
   };
 }
 
@@ -11351,6 +11428,7 @@ function submissionAuditCountsFromDocs({
   nameSnap = null,
   scratchSnap = null,
   storyShareSnap = null,
+  firstTimeSnap = null,
   reflectionCount = 0,
   colorCount = 0
 } = {}) {
@@ -11360,6 +11438,7 @@ function submissionAuditCountsFromDocs({
   const nameData = nameSnap?.exists ? nameSnap.data() || {} : {};
   const scratchData = scratchSnap?.exists ? scratchSnap.data() || {} : {};
   const storyShareData = storyShareSnap?.exists ? storyShareSnap.data() || {} : {};
+  const firstTimeData = firstTimeSnap?.exists ? firstTimeSnap.data() || {} : {};
   return {
     reflections: Math.max(0, Number(reflectionCount) || 0),
     colors: Math.max(0, Number(colorCount) || 0),
@@ -11374,6 +11453,10 @@ function submissionAuditCountsFromDocs({
     storyPreviewShares: Math.max(
       Number(storyShareData.shareCount) || 0,
       countClientIdMapEntries(storyShareData.sharesByClientId)
+    ),
+    firstTimeUsers: Math.max(
+      Number(firstTimeData.count) || 0,
+      countClientIdMapEntries(firstTimeData.byClientId)
     )
   };
 }
@@ -11515,25 +11598,28 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const nameRefs = dayKeys.map((key) => db.collection('quiltNames').doc(key));
   const scratchRefs = dayKeys.map((key) => db.collection('moodScratches').doc(key));
   const storyRefs = dayKeys.map((key) => db.collection('storyPreviewShares').doc(key));
+  const firstTimeRefs = dayKeys.map((key) => db.collection('firstTimeUsers').doc(key));
 
-  const [quiltSnaps, nameSnaps, scratchSnaps, storySnaps, reflectionHist, colorHist] = await Promise.all([
-    db.getAll(...quiltRefs),
-    db.getAll(...nameRefs),
-    db.getAll(...scratchRefs),
-    db.getAll(...storyRefs),
-    db
-      .collection('reflectionResponses')
-      .where('appDateKey', '>=', startKey)
-      .where('appDateKey', '<=', appDateKey)
-      .select('appDateKey', 'createdAtIso', 'createdAt')
-      .get(),
-    db
-      .collection('colorSubmissions')
-      .where('appDateKey', '>=', startKey)
-      .where('appDateKey', '<=', appDateKey)
-      .select('appDateKey', 'createdAtIso', 'createdAt')
-      .get()
-  ]);
+  const [quiltSnaps, nameSnaps, scratchSnaps, storySnaps, firstTimeSnaps, reflectionHist, colorHist] =
+    await Promise.all([
+      db.getAll(...quiltRefs),
+      db.getAll(...nameRefs),
+      db.getAll(...scratchRefs),
+      db.getAll(...storyRefs),
+      db.getAll(...firstTimeRefs),
+      db
+        .collection('reflectionResponses')
+        .where('appDateKey', '>=', startKey)
+        .where('appDateKey', '<=', appDateKey)
+        .select('appDateKey', 'createdAtIso', 'createdAt')
+        .get(),
+      db
+        .collection('colorSubmissions')
+        .where('appDateKey', '>=', startKey)
+        .where('appDateKey', '<=', appDateKey)
+        .select('appDateKey', 'createdAtIso', 'createdAt')
+        .get()
+    ]);
 
   const reflectionsByDay = new Map();
   const colorsByDay = new Map();
@@ -11563,6 +11649,7 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
       nameSnap: nameSnaps[index],
       scratchSnap: scratchSnaps[index],
       storyShareSnap: storySnaps[index],
+      firstTimeSnap: firstTimeSnaps[index],
       reflectionCount: reflectionsByDay.get(key) || 0,
       colorCount: colorsByDay.get(key) || 0
     });
@@ -11627,16 +11714,25 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       ? String(body.appDateKey || body.dateKey).trim()
       : getAppDateKey();
 
-    const [quiltSnap, reflectionSnap, colorSnap, nameSnap, scratchSnap, storyShareSnap, comparisons] =
-      await Promise.all([
-        db.collection('quilts').doc(appDateKey).get(),
-        db.collection('reflectionResponses').where('appDateKey', '==', appDateKey).get(),
-        db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get(),
-        db.collection('quiltNames').doc(appDateKey).get(),
-        db.collection('moodScratches').doc(appDateKey).get(),
-        db.collection('storyPreviewShares').doc(appDateKey).get(),
-        loadSubmissionAuditComparisons(db, appDateKey, 30)
-      ]);
+    const [
+      quiltSnap,
+      reflectionSnap,
+      colorSnap,
+      nameSnap,
+      scratchSnap,
+      storyShareSnap,
+      firstTimeSnap,
+      comparisons
+    ] = await Promise.all([
+      db.collection('quilts').doc(appDateKey).get(),
+      db.collection('reflectionResponses').where('appDateKey', '==', appDateKey).get(),
+      db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get(),
+      db.collection('quiltNames').doc(appDateKey).get(),
+      db.collection('moodScratches').doc(appDateKey).get(),
+      db.collection('storyPreviewShares').doc(appDateKey).get(),
+      db.collection('firstTimeUsers').doc(appDateKey).get(),
+      loadSubmissionAuditComparisons(db, appDateKey, 30)
+    ]);
 
     const quilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
     const blocks = Array.isArray(quilt.blocks) ? quilt.blocks : [];
@@ -11650,6 +11746,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
         nameSnap,
         scratchSnap,
         storyShareSnap,
+        firstTimeSnap,
         reflectionCount: reflectionSnap.size,
         colorCount: colorSnap.size
       }),
