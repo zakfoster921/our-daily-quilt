@@ -11872,9 +11872,19 @@ function quoteFieldsFromAssignmentData(data = {}) {
   const author = String(data.authorSnapshot || data.author || '')
     .replace(/\s+/g, ' ')
     .trim();
+  const notification = String(
+    data.notificationText ??
+      data.notification_text ??
+      data.pushNotificationText ??
+      data.push_notification_text ??
+      ''
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
   return {
     text: text.slice(0, 220),
     author: author.slice(0, 80),
+    notification: notification.slice(0, 180),
     sourceId: String(data.sourceId || '').trim()
   };
 }
@@ -11945,7 +11955,19 @@ async function loadSubmissionAuditTopDates(db, appDateKey, { lookbackDays = 90, 
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 80);
-      if (text) quoteBySourceId.set(sourceIds[index], { text, author });
+      const notification = String(
+        data.notificationText ??
+          data.notification_text ??
+          data.pushNotificationText ??
+          data.push_notification_text ??
+          ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 180);
+      if (text || notification) {
+        quoteBySourceId.set(sourceIds[index], { text, author, notification });
+      }
     });
   }
 
@@ -11953,11 +11975,15 @@ async function loadSubmissionAuditTopDates(db, appDateKey, { lookbackDays = 90, 
     const fromCatalog = row.quote.sourceId ? quoteBySourceId.get(row.quote.sourceId) : null;
     const text = String(fromCatalog?.text || row.quote.text || '').trim();
     const author = String(fromCatalog?.author || row.quote.author || '').trim();
+    const notification = String(
+      fromCatalog?.notification || row.quote.notification || ''
+    ).trim();
     return {
       dateKey: row.dateKey,
       contributors: row.contributors,
       quote: text,
-      author
+      author,
+      notification
     };
   });
 
