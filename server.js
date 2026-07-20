@@ -11729,14 +11729,17 @@ function submissionAuditCountsFromDocs({
 }
 
 function buildSubmissionAuditFunnel(counts = {}, { titlePhase = 'submissions' } = {}) {
-  const opens = Math.max(0, Number(counts.opens) || 0);
+  const reportedOpens = Math.max(0, Number(counts.opens) || 0);
+  const contributors = Math.max(0, Number(counts.contributors) || 0);
+  // Day-visit pings are newer than color history — anyone who added color must have opened.
+  const opens = Math.max(reportedOpens, contributors);
   const votingPhase = titlePhase === 'voting' || titlePhase === 'final';
   const titleCount = votingPhase
     ? Math.max(0, Number(counts.titleVotes) || 0)
     : Math.max(0, Number(counts.titleSubmissions) || 0);
   const steps = [
     { key: 'opens', label: 'Opened app', count: opens },
-    { key: 'contributors', label: 'Added color', count: Math.max(0, Number(counts.contributors) || 0) },
+    { key: 'contributors', label: 'Added color', count: contributors },
     {
       key: 'titleAction',
       label: votingPhase ? 'Voted on title' : 'Submitted a title',
@@ -11771,6 +11774,7 @@ function buildSubmissionAuditFunnel(counts = {}, { titlePhase = 'submissions' } 
   ];
   return {
     denominator: opens,
+    reportedOpens,
     titlePhase: votingPhase ? 'voting' : 'submissions',
     steps: steps.map((step) => ({
       ...step,
@@ -11778,7 +11782,7 @@ function buildSubmissionAuditFunnel(counts = {}, { titlePhase = 'submissions' } 
         step.key === 'opens'
           ? 100
           : opens > 0
-            ? Math.round((step.count / opens) * 1000) / 10
+            ? Math.min(100, Math.round((step.count / opens) * 1000) / 10)
             : 0
     }))
   };
