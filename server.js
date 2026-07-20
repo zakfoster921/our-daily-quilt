@@ -11945,19 +11945,20 @@ function enrichAuditRankedDateRows(rows, quoteBySourceId) {
 async function loadSubmissionAuditRankedDates(
   db,
   appDateKey,
-  { lookbackDays = 90, limit = 10, bottomStartDate = AUDIT_BOTTOM_DATES_START } = {}
+  { limit = 10, startDate = AUDIT_BOTTOM_DATES_START } = {}
 ) {
-  const safeLookback = Math.max(1, Math.min(180, Math.floor(Number(lookbackDays) || 90)));
   const safeLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 10)));
   const endKey = /^\d{4}-\d{2}-\d{2}$/.test(appDateKey) ? appDateKey : getAppDateKey();
-  const topStartKey = addDaysToDateKey(endKey, -(safeLookback - 1));
-  const bottomFloor =
-    /^\d{4}-\d{2}-\d{2}$/.test(String(bottomStartDate || '')) && String(bottomStartDate) <= endKey
-      ? String(bottomStartDate)
-      : '';
-  const rangeStart =
-    bottomFloor && bottomFloor < topStartKey ? bottomFloor : topStartKey;
-  const dayKeys = daysBetweenDateKeysInclusive(rangeStart, endKey);
+  const floor =
+    /^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '')) ? String(startDate) : AUDIT_BOTTOM_DATES_START;
+  if (floor > endKey) {
+    return {
+      startDate: floor,
+      topDates: [],
+      bottomDates: []
+    };
+  }
+  const dayKeys = daysBetweenDateKeysInclusive(floor, endKey);
 
   const quiltRefs = dayKeys.map((key) => db.collection('quilts').doc(key));
   const assignRefs = dayKeys.map((key) => db.collection('dailyQuoteAssignments').doc(key));
@@ -11976,16 +11977,14 @@ async function loadSubmissionAuditRankedDates(
     .filter((row) => row.contributors > 0);
 
   const topCandidates = scored
-    .filter((row) => row.dateKey >= topStartKey)
+    .slice()
     .sort((a, b) => b.contributors - a.contributors || b.dateKey.localeCompare(a.dateKey))
     .slice(0, safeLimit);
 
-  const bottomCandidates = bottomFloor
-    ? scored
-        .filter((row) => row.dateKey >= bottomFloor)
-        .sort((a, b) => a.contributors - b.contributors || a.dateKey.localeCompare(b.dateKey))
-        .slice(0, safeLimit)
-    : [];
+  const bottomCandidates = scored
+    .slice()
+    .sort((a, b) => a.contributors - b.contributors || a.dateKey.localeCompare(b.dateKey))
+    .slice(0, safeLimit);
 
   const sourceIds = [
     ...new Set(
@@ -12028,8 +12027,7 @@ async function loadSubmissionAuditRankedDates(
   }
 
   return {
-    lookbackDays: safeLookback,
-    bottomStartDate: bottomFloor || AUDIT_BOTTOM_DATES_START,
+    startDate: floor,
     topDates: enrichAuditRankedDateRows(topCandidates, quoteBySourceId),
     bottomDates: enrichAuditRankedDateRows(bottomCandidates, quoteBySourceId)
   };
@@ -12204,9 +12202,8 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const weekDays = ordered.slice(0, Math.min(7, ordered.length));
   const monthDays = ordered.slice(0, Math.min(30, ordered.length));
   const rankedDatesPayload = await loadSubmissionAuditRankedDates(db, appDateKey, {
-    lookbackDays: 90,
     limit: 10,
-    bottomStartDate: AUDIT_BOTTOM_DATES_START
+    startDate: AUDIT_BOTTOM_DATES_START
   });
 
   return {
@@ -12224,9 +12221,8 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
         lookbackDays: safeLookback
       }),
       topDates: rankedDatesPayload.topDates,
-      topDatesLookbackDays: rankedDatesPayload.lookbackDays,
       bottomDates: rankedDatesPayload.bottomDates,
-      bottomDatesStartDate: rankedDatesPayload.bottomStartDate
+      rankedDatesStartDate: rankedDatesPayload.startDate
     }
   };
 }
