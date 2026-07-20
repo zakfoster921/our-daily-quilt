@@ -11850,12 +11850,15 @@ function chicagoHourFromMs(ms) {
 function formatAuditHourLabel(hour) {
   const h = ((Number(hour) % 24) + 24) % 24;
   const next = (h + 1) % 24;
-  const fmt = (n) => {
-    const period = n >= 12 ? 'PM' : 'AM';
-    const twelve = n % 12 === 0 ? 12 : n % 12;
-    return `${twelve} ${period}`;
-  };
-  return `${fmt(h)}–${fmt(next)} CT`;
+  const period = (n) => (n >= 12 ? 'PM' : 'AM');
+  const twelve = (n) => (n % 12 === 0 ? 12 : n % 12);
+  const startPeriod = period(h);
+  const endPeriod = period(next);
+  // Same half-day → "7–8 AM"; cross noon/midnight → "11 AM–12 PM"
+  if (startPeriod === endPeriod) {
+    return `${twelve(h)}–${twelve(next)} ${endPeriod} CT`;
+  }
+  return `${twelve(h)} ${startPeriod}–${twelve(next)} ${endPeriod} CT`;
 }
 
 function buildSubmissionAuditPopularity({
