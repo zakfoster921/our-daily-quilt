@@ -235,6 +235,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/mood-scratch', 4 * ONE_KB],
   ['/api/story-preview-share', 4 * ONE_KB],
   ['/api/day-visit', 4 * ONE_KB],
+  ['/api/studio-floor-open', 4 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
@@ -510,6 +511,11 @@ const limitDayVisit = createRateLimiter({
   name: 'day-visit',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_DAY_VISIT_PER_10_MIN, 60)
+});
+const limitStudioFloorOpen = createRateLimiter({
+  name: 'studio-floor-open',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_STUDIO_FLOOR_OPEN_PER_10_MIN, 60)
 });
 const limitFeatureFeedback = createRateLimiter({
   name: 'feature-feedback',
@@ -10827,6 +10833,51 @@ app.post('/api/day-visit', limitDayVisit, async (req, res) => {
   }
 });
 
+app.options('/api/studio-floor-open', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+/** Anonymous once-per-device Studio Floor open ping for daily engagement counts. */
+app.post('/api/studio-floor-open', limitStudioFloorOpen, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const result = await recordAnonymousDayClientMap({
+      collectionName: 'studioFloorOpens',
+      mapField: 'opensByClientId',
+      countField: 'openCount',
+      appDateKey,
+      clientId,
+      entry: { source: String(body.source || 'studio_floor').slice(0, 40) }
+    });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      duplicate: result.alreadyCounted,
+      openCount: result.count
+    });
+  } catch (error) {
+    console.error('❌ studio-floor-open failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'studio-floor-open failed'
+    });
+  }
+});
+
 app.options('/api/mood-scratch', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -11540,7 +11591,8 @@ function emptySubmissionAuditCounts() {
     opens: 0,
     returningUsers: 0,
     returnRate: 0,
-    reflectionHearts: 0
+    reflectionHearts: 0,
+    studioFloorOpens: 0
   };
 }
 
@@ -11553,6 +11605,7 @@ function submissionAuditCountsFromDocs({
   storyShareSnap = null,
   firstTimeSnap = null,
   dayVisitSnap = null,
+  studioFloorSnap = null,
   reflectionCount = 0,
   colorCount = 0,
   reflectionHearts = 0
@@ -11565,6 +11618,7 @@ function submissionAuditCountsFromDocs({
   const storyShareData = storyShareSnap?.exists ? storyShareSnap.data() || {} : {};
   const firstTimeData = firstTimeSnap?.exists ? firstTimeSnap.data() || {} : {};
   const dayVisitData = dayVisitSnap?.exists ? dayVisitSnap.data() || {} : {};
+  const studioFloorData = studioFloorSnap?.exists ? studioFloorSnap.data() || {} : {};
   const opens = Math.max(
     Number(dayVisitData.visitCount) || 0,
     countClientIdMapEntries(dayVisitData.visitsByClientId)
@@ -11599,7 +11653,11 @@ function submissionAuditCountsFromDocs({
     opens,
     returningUsers,
     returnRate,
-    reflectionHearts: Math.max(0, Number(reflectionHearts) || 0)
+    reflectionHearts: Math.max(0, Number(reflectionHearts) || 0),
+    studioFloorOpens: Math.max(
+      Number(studioFloorData.openCount) || 0,
+      countClientIdMapEntries(studioFloorData.opensByClientId)
+    )
   };
 }
 
@@ -11764,6 +11822,7 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const storyRefs = dayKeys.map((key) => db.collection('storyPreviewShares').doc(key));
   const firstTimeRefs = dayKeys.map((key) => db.collection('firstTimeUsers').doc(key));
   const dayVisitRefs = dayKeys.map((key) => db.collection('dayVisits').doc(key));
+  const studioFloorRefs = dayKeys.map((key) => db.collection('studioFloorOpens').doc(key));
 
   const [
     quiltSnaps,
@@ -11772,6 +11831,7 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     storySnaps,
     firstTimeSnaps,
     dayVisitSnaps,
+    studioFloorSnaps,
     reflectionHist,
     colorHist
   ] = await Promise.all([
@@ -11781,6 +11841,7 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     db.getAll(...storyRefs),
     db.getAll(...firstTimeRefs),
     db.getAll(...dayVisitRefs),
+    db.getAll(...studioFloorRefs),
     db
       .collection('reflectionResponses')
       .where('appDateKey', '>=', startKey)
@@ -11832,6 +11893,7 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
       storyShareSnap: storySnaps[index],
       firstTimeSnap: firstTimeSnaps[index],
       dayVisitSnap: dayVisitSnaps[index],
+      studioFloorSnap: studioFloorSnaps[index],
       reflectionCount: reflectionsByDay.get(key) || 0,
       colorCount: colorsByDay.get(key) || 0,
       reflectionHearts: reflectionHeartsByDay.get(key) || 0
@@ -11906,6 +11968,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       storyShareSnap,
       firstTimeSnap,
       dayVisitSnap,
+      studioFloorSnap,
       comparisons
     ] = await Promise.all([
       db.collection('quilts').doc(appDateKey).get(),
@@ -11916,6 +11979,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       db.collection('storyPreviewShares').doc(appDateKey).get(),
       db.collection('firstTimeUsers').doc(appDateKey).get(),
       db.collection('dayVisits').doc(appDateKey).get(),
+      db.collection('studioFloorOpens').doc(appDateKey).get(),
       loadSubmissionAuditComparisons(db, appDateKey, 30)
     ]);
 
@@ -11937,6 +12001,7 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
         storyShareSnap,
         firstTimeSnap,
         dayVisitSnap,
+        studioFloorSnap,
         reflectionCount: reflectionSnap.size,
         colorCount: colorSnap.size,
         reflectionHearts
