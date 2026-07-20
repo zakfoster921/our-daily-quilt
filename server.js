@@ -233,6 +233,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-leaderboard-delete', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
   ['/api/mood-scratch', 4 * ONE_KB],
+  ['/api/story-preview-share', 4 * ONE_KB],
   ['/api/feature-feedback', 12 * ONE_KB],
   ['/api/quote-keywords', 12 * ONE_KB],
   ['/api/quote-submission', 24 * ONE_KB],
@@ -498,6 +499,11 @@ const limitMoodScratch = createRateLimiter({
   name: 'mood-scratch',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_MOOD_SCRATCH_PER_10_MIN, 30)
+});
+const limitStoryPreviewShare = createRateLimiter({
+  name: 'story-preview-share',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_STORY_PREVIEW_SHARE_PER_10_MIN, 30)
 });
 const limitFeatureFeedback = createRateLimiter({
   name: 'feature-feedback',
@@ -10656,6 +10662,46 @@ app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
   }
 });
 
+async function recordAnonymousDayClientMap({
+  collectionName,
+  mapField,
+  countField,
+  appDateKey,
+  clientId,
+  entry
+}) {
+  const docRef = db.collection(collectionName).doc(appDateKey);
+  const nowIso = getUtcIsoNow();
+  let alreadyCounted = false;
+  let count = 0;
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+    const data = snap.exists ? snap.data() || {} : {};
+    const byClientId =
+      data[mapField] && typeof data[mapField] === 'object' && !Array.isArray(data[mapField])
+        ? { ...data[mapField] }
+        : {};
+    alreadyCounted = !!byClientId[clientId];
+    if (!alreadyCounted) {
+      byClientId[clientId] = { ...(entry || {}), at: nowIso };
+    }
+    count = Object.keys(byClientId).filter((key) => String(key || '').trim()).length;
+    tx.set(
+      docRef,
+      {
+        appDateKey,
+        [mapField]: byClientId,
+        [countField]: count,
+        updatedAt: nowIso
+      },
+      { merge: true }
+    );
+  });
+
+  return { alreadyCounted, count, nowIso };
+}
+
 app.options('/api/mood-scratch', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -10681,46 +10727,71 @@ app.post('/api/mood-scratch', limitMoodScratch, async (req, res) => {
       return res.status(400).json({ success: false, error: 'mood must be good or rough' });
     }
 
-    const scratchRef = db.collection('moodScratches').doc(appDateKey);
-    const nowIso = getUtcIsoNow();
-    let alreadyCounted = false;
-    let scratchCount = 0;
-
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(scratchRef);
-      const data = snap.exists ? snap.data() || {} : {};
-      const scratchesByClientId =
-        data.scratchesByClientId && typeof data.scratchesByClientId === 'object' && !Array.isArray(data.scratchesByClientId)
-          ? { ...data.scratchesByClientId }
-          : {};
-      alreadyCounted = !!scratchesByClientId[clientId];
-      if (!alreadyCounted) {
-        scratchesByClientId[clientId] = { mood, at: nowIso };
-      }
-      scratchCount = Object.keys(scratchesByClientId).filter((key) => String(key || '').trim()).length;
-      tx.set(
-        scratchRef,
-        {
-          appDateKey,
-          scratchesByClientId,
-          scratchCount,
-          updatedAt: nowIso
-        },
-        { merge: true }
-      );
+    const result = await recordAnonymousDayClientMap({
+      collectionName: 'moodScratches',
+      mapField: 'scratchesByClientId',
+      countField: 'scratchCount',
+      appDateKey,
+      clientId,
+      entry: { mood }
     });
 
     return res.json({
       success: true,
       appDateKey,
-      duplicate: alreadyCounted,
-      scratchCount
+      duplicate: result.alreadyCounted,
+      scratchCount: result.count
     });
   } catch (error) {
     console.error('❌ mood-scratch failed:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'mood-scratch failed'
+    });
+  }
+});
+
+app.options('/api/story-preview-share', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+/** Anonymous once-per-device story-preview share ping for daily engagement counts. */
+app.post('/api/story-preview-share', limitStoryPreviewShare, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+
+    const result = await recordAnonymousDayClientMap({
+      collectionName: 'storyPreviewShares',
+      mapField: 'sharesByClientId',
+      countField: 'shareCount',
+      appDateKey,
+      clientId,
+      entry: { source: 'layout_b_story_preview' }
+    });
+
+    return res.json({
+      success: true,
+      appDateKey,
+      duplicate: result.alreadyCounted,
+      shareCount: result.count
+    });
+  } catch (error) {
+    console.error('❌ story-preview-share failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'story-preview-share failed'
     });
   }
 });
@@ -11280,12 +11351,13 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       ? String(body.appDateKey || body.dateKey).trim()
       : getAppDateKey();
 
-    const [quiltSnap, reflectionSnap, colorSnap, nameSnap, scratchSnap] = await Promise.all([
+    const [quiltSnap, reflectionSnap, colorSnap, nameSnap, scratchSnap, storyShareSnap] = await Promise.all([
       db.collection('quilts').doc(appDateKey).get(),
       db.collection('reflectionResponses').where('appDateKey', '==', appDateKey).get(),
       db.collection('colorSubmissions').where('appDateKey', '==', appDateKey).get(),
       db.collection('quiltNames').doc(appDateKey).get(),
-      db.collection('moodScratches').doc(appDateKey).get()
+      db.collection('moodScratches').doc(appDateKey).get(),
+      db.collection('storyPreviewShares').doc(appDateKey).get()
     ]);
 
     const quilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
@@ -11300,11 +11372,16 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
     };
     const nameData = nameSnap.exists ? nameSnap.data() || {} : {};
     const scratchData = scratchSnap.exists ? scratchSnap.data() || {} : {};
+    const storyShareData = storyShareSnap.exists ? storyShareSnap.data() || {} : {};
     const titleSubmissions = countClientIdMap(nameData.submissionsByClientId);
     const titleVotes = countClientIdMap(nameData.votesByClientId);
     const scratchOffs = Math.max(
       Number(scratchData.scratchCount) || 0,
       countClientIdMap(scratchData.scratchesByClientId)
+    );
+    const storyPreviewShares = Math.max(
+      Number(storyShareData.shareCount) || 0,
+      countClientIdMap(storyShareData.sharesByClientId)
     );
     const keyFor = (row = {}) => String(row.clientId || row.deviceKey || row.deviceId || '').trim();
     const summarize = (doc) => {
@@ -11358,7 +11435,8 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
         contributors: contributors.length,
         scratchOffs,
         titleSubmissions,
-        titleVotes
+        titleVotes,
+        storyPreviewShares
       },
       quilt: {
         exists: quiltSnap.exists,
