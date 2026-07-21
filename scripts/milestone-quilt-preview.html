@@ -380,26 +380,86 @@
       if (typeof renderer.setBacksidePreviewEnabled === 'function') {
         renderer.setBacksidePreviewEnabled(false);
       }
-      // Keep mirror for symmetry. Prefer cover-fit (slice) over letterbox (meet).
-      const prevFit = typeof QuiltMirrorLayout !== 'undefined' ? QuiltMirrorLayout.LIVE_SCREEN_FIT : null;
-      if (typeof QuiltMirrorLayout !== 'undefined') {
-        QuiltMirrorLayout.LIVE_SCREEN_FIT = 'slice';
-      }
-      try {
-        renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
-      } finally {
-        if (typeof QuiltMirrorLayout !== 'undefined' && prevFit != null) {
-          QuiltMirrorLayout.LIVE_SCREEN_FIT = prevFit;
-        }
-      }
+      // Keep mirror for symmetry — then retarget the viewBox to the full mirrored field.
+      renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
+      coverFitMirroredQuilt(svg);
+    }
 
-      // Cover the 4:5 frame — crop edges if needed, never pad with empty bars.
+    /**
+     * Tight viewBox around primary + mirror, then cover-fit into the 4:5 frame
+     * (slice). Keeps symmetry; avoids meet letterboxing and empty side gutters.
+     */
+    function coverFitMirroredQuilt(svg) {
+      if (!svg) return;
+      let bbox = null;
+      try {
+        bbox = svg.getBBox();
+      } catch (_) {
+        bbox = null;
+      }
+      if (!bbox || !(bbox.width > 1) || !(bbox.height > 1)) {
+        // Fallback: union field + mirrored layer local boxes via CTM → SVG space
+        bbox = unionLayerBBoxInSvgSpace(svg, [
+          '#quiltFieldLayer',
+          '#quiltMirroredFieldLayer'
+        ]);
+      }
+      if (bbox && bbox.width > 1 && bbox.height > 1) {
+        const pad = 1;
+        svg.setAttribute(
+          'viewBox',
+          `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`
+        );
+      }
       svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
       svg.style.width = '100%';
       svg.style.height = '100%';
       svg.style.maxWidth = 'none';
       svg.style.maxHeight = 'none';
       svg.style.display = 'block';
+    }
+
+    function unionLayerBBoxInSvgSpace(svg, selectors) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      let any = false;
+      const svgCtm = svg.getScreenCTM && svg.getScreenCTM();
+      if (!svgCtm) return null;
+      const inv = svgCtm.inverse();
+      selectors.forEach((sel) => {
+        const el = svg.querySelector(sel);
+        if (!el || typeof el.getBBox !== 'function' || typeof el.getCTM !== 'function') return;
+        let b;
+        try {
+          b = el.getBBox();
+        } catch (_) {
+          return;
+        }
+        const m = el.getCTM();
+        if (!m || !(b.width > 0) || !(b.height > 0)) return;
+        const corners = [
+          [b.x, b.y],
+          [b.x + b.width, b.y],
+          [b.x, b.y + b.height],
+          [b.x + b.width, b.y + b.height]
+        ];
+        corners.forEach(([x, y]) => {
+          const p = svg.createSVGPoint();
+          p.x = x;
+          p.y = y;
+          const screen = p.matrixTransform(m);
+          const local = screen.matrixTransform(inv);
+          minX = Math.min(minX, local.x);
+          minY = Math.min(minY, local.y);
+          maxX = Math.max(maxX, local.x);
+          maxY = Math.max(maxY, local.y);
+          any = true;
+        });
+      });
+      if (!any) return null;
+      return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     }
 
     function yieldFrame() {
