@@ -115,10 +115,9 @@
   <header>
     <h1>Milestone quilt preview</h1>
     <p class="lede">
-      Uses the real ODQ quilt engine + renderer (HST, insets, organic splits) —
-      not a treemap of plain rectangles. Same mock color history grown to each
-      chapter. Serve from the <strong>repo root</strong> so
-      <code>../lib</code> loads.
+      Real ODQ engine + renderer. Each chapter gets <strong>one featured special</strong>
+      (5: HST · 25: inset circle · 100: stripes · 365: cross). Same mock color
+      history grown denser at each count. Serve from the <strong>repo root</strong>.
     </p>
     <div class="controls">
       <button type="button" id="reshuffle">New color history</button>
@@ -160,6 +159,13 @@
     window.Utils = window.UtilsCore;
 
     const CHAPTERS = [5, 25, 100, 365];
+    /** One featured special per chapter — rotates so each milestone feels distinct. */
+    const CHAPTER_SPECIAL = {
+      5: 'hst',
+      25: 'insetCircle',
+      100: 'stripes',
+      365: 'cross'
+    };
     const PALETTES = {
       warm: ['#c45c3e', '#e8c7a0', '#5c4033', '#d9a05b', '#8f6a4a', '#f0e6d8', '#3d2c29', '#a67c52', '#b85c38', '#6e4e3a'],
       sea: ['#2f5d62', '#7aa6a3', '#d4e1e0', '#1f3a3d', '#c4a484', '#5b7c6e', '#e8efe9', '#3d5a5b', '#9bb7b5', '#6b4f3a'],
@@ -208,7 +214,108 @@
       return out;
     }
 
-    function buildEngineQuilt(colors, deviceKey) {
+    function isPlainRegularBlock(block) {
+      if (!block) return false;
+      if (block.patternType === 'special') return false;
+      if (block.specialPatternType && block.specialPatternType !== 'diagonalAxis') return false;
+      return true;
+    }
+
+    function pickHostBlock(engine) {
+      const dims = Utils.getQuiltDimensions();
+      const quiltArea = Math.max(
+        1,
+        (Number(dims.width) || 1070) * (Number(dims.height) || 1340)
+      );
+      const maxArea = quiltArea * 0.22;
+      const minArea = quiltArea * 0.035;
+      const ranked = engine.blocks
+        .filter(isPlainRegularBlock)
+        .map((b) => ({ b, area: Number(b.width) * Number(b.height) }))
+        .filter(({ area }) => area >= minArea && area <= maxArea)
+        .sort((a, c) => c.area - a.area);
+      if (ranked.length) return ranked[0].b;
+      // Fallback: largest plain block under the max area gate
+      const loose = engine.blocks
+        .filter(isPlainRegularBlock)
+        .map((b) => ({ b, area: Number(b.width) * Number(b.height) }))
+        .filter(({ area }) => area <= maxArea && area > 0)
+        .sort((a, c) => c.area - a.area);
+      return loose[0]?.b || null;
+    }
+
+    function partnerColor(colors, hostColor) {
+      const list = Array.isArray(colors) ? colors : [];
+      for (let i = list.length - 1; i >= 0; i--) {
+        const c = list[i];
+        if (c && c.toLowerCase() !== String(hostColor || '').toLowerCase()) return c;
+      }
+      return list[0] || hostColor || '#5c4033';
+    }
+
+    /**
+     * Guarantee one featured special on a mid-sized host block.
+     * Returns the pattern label applied (or null if nothing fit).
+     */
+    function ensureFeaturedSpecial(engine, colors, preferredType) {
+      const host = pickHostBlock(engine);
+      if (!host) return null;
+      const partner = partnerColor(colors, host.color);
+      let created = null;
+      let used = preferredType;
+
+      const tryType = (type) => {
+        try {
+          switch (type) {
+            case 'hst':
+              return engine.createHalfSquareTriangle(host, partner);
+            case 'insetCircle':
+              if (
+                typeof engine._blockMeetsInsetCircleGeometry === 'function' &&
+                !engine._blockMeetsInsetCircleGeometry(host)
+              ) {
+                return null;
+              }
+              return engine.createInsetCircle(host, partner);
+            case 'stripes':
+              return engine.createOrganicStripes
+                ? engine.createOrganicStripes(host, partner)
+                : null;
+            case 'checkerboard':
+              return engine.createOrganicCheckerboard
+                ? engine.createOrganicCheckerboard(host, partner)
+                : null;
+            case 'framed':
+              return engine.createFramedPattern
+                ? engine.createFramedPattern(host, partner)
+                : null;
+            case 'cross':
+              return engine.createCrossPattern
+                ? engine.createCrossPattern(host, partner)
+                : null;
+            default:
+              return null;
+          }
+        } catch (err) {
+          console.warn('Featured special failed:', type, err);
+          return null;
+        }
+      };
+
+      created = tryType(preferredType);
+      if (!created || !created.length) {
+        used = 'hst';
+        created = tryType('hst');
+      }
+      if (!created || !created.length) return null;
+
+      const idx = engine.blocks.findIndex((b) => b === host || b.id === host.id);
+      if (idx < 0) return null;
+      engine.blocks.splice(idx, 1, ...created.map((b) => ({ ...b })));
+      return used;
+    }
+
+    function buildEngineQuilt(colors, deviceKey, chapterN) {
       const engine = new SimpleQuiltEngine(deviceKey, { recordColorReplayEvents: false });
       engine.recordUserContribution = () => {};
       engine._suppressSplitWarnings = true;
@@ -226,10 +333,15 @@
           block.color = block.contributorColor;
         }
       });
+
+      const preferred = CHAPTER_SPECIAL[chapterN] || 'hst';
+      const featured = ensureFeaturedSpecial(engine, colors, preferred);
+
       return {
         blocks: engine.blocks.map((b) => ({ ...b })),
         submissionCount: engine.submissionCount,
-        colorsAdded: added
+        colorsAdded: added,
+        featuredSpecial: featured
       };
     }
 
@@ -295,12 +407,17 @@
         await yieldFrame();
         const colors = allColors.slice(0, item.n);
         const t0 = performance.now();
-        const state = buildEngineQuilt(colors, `milestone-preview-${colorSeed}-${item.n}`);
+        const state = buildEngineQuilt(
+          colors,
+          `milestone-preview-${colorSeed}-${item.n}`,
+          item.n
+        );
         renderIntoSvg(item.svg, state);
         item.busy.remove();
         const ms = Math.round(performance.now() - t0);
+        const feat = state.featuredSpecial ? ` · ${state.featuredSpecial}` : '';
         item.cap.textContent =
-          `${item.n} colors · ${state.blocks.length} blocks · ${ms}ms`;
+          `${item.n} colors · ${state.blocks.length} blocks${feat} · ${ms}ms`;
       }
 
       if (token !== renderToken) return;
