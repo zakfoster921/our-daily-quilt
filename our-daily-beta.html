@@ -2829,7 +2829,7 @@ try {
   <script src="lib/simplified-quilt-app-quilt-name-leaderboard.js?v=78"></script>
   <script src="lib/simplified-quilt-app-mood.js"></script>
   <script src="lib/simplified-quilt-app-quote-ui.js?v=2"></script>
-  <script src="lib/simplified-quilt-app-nav.js?v=59"></script>
+  <script src="lib/simplified-quilt-app-nav.js?v=60"></script>
   <script src="lib/simplified-quilt-app-shell.js"></script>
   <script>
   </script>
@@ -3056,20 +3056,22 @@ try {
         this.isDragging = false;
         this._hsvWheelCanvasKey = '';
 
-        // Per-block scroll inflate↔deflate + tick-tock rotate; settle to original layout at idle.
-        // Native WKWebView: mutating every SVG block each frame makes the whole quilt scroll feel sluggish.
+        // Motion while scrolling only (no idle breath).
+        // Native: whole-quilt CSS parallax (cheap). Web: per-block ripple (heavier, fine in desktop Safari).
         const allowQuiltMotion = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
         const nativeClient =
           typeof window.odqIsCapacitorNative === 'function' && window.odqIsCapacitorNative();
-        this.parallaxEnabled = false;
+        this.parallaxEnabled = allowQuiltMotion && nativeClient;
         this.blockJitterEnabled = allowQuiltMotion && !nativeClient;
         this.quiltWobbleEnabled = false;
         this._wobbleEnergy = 0;
         this._wobbleEnergyTarget = 0;
-        this.parallaxBaseRate = 0.06;
-        this.parallaxOverlayMultiplier = 1.5;
-        this.parallaxMaxShift = 12;
-        this.parallaxSmoothing = 0.1;
+        // Native: small shift, ease home when the gesture ends.
+        this.parallaxBaseRate = nativeClient ? 0.035 : 0.06;
+        this.parallaxOverlayMultiplier = nativeClient ? 1.25 : 1.5;
+        this.parallaxMaxShift = nativeClient ? 5 : 12;
+        this.parallaxSmoothing = nativeClient ? 0.14 : 0.1;
+        this.parallaxScrollOnly = nativeClient;
         this.parallaxCurrentShift = 0;
         this.parallaxTargetShift = 0;
         this.parallaxTicking = false;
