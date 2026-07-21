@@ -82,7 +82,7 @@
     .frame {
       width: 100%;
       aspect-ratio: 4 / 5;
-      background: #eae7e1;
+      background: #111;
       box-shadow: 0 18px 40px rgba(28, 25, 22, 0.12);
       overflow: hidden;
       position: relative;
@@ -157,6 +157,21 @@
 
   <script>
     window.Utils = window.UtilsCore;
+
+    /** True 4:5 canvas — no story/split-band letterboxing. */
+    const MILESTONE_W = 1080;
+    const MILESTONE_H = 1350;
+    if (window.CONFIG?.APP) {
+      window.CONFIG.APP.quiltSplitBandFit = false;
+    }
+    Utils.getQuiltDimensions = function getMilestoneQuiltDimensions() {
+      return {
+        width: MILESTONE_W,
+        height: MILESTONE_H,
+        viewBoxWidth: MILESTONE_W,
+        viewBoxHeight: MILESTONE_H
+      };
+    };
 
     const CHAPTERS = [5, 25, 100, 365];
     /** One featured special per chapter — rotates so each milestone feels distinct. */
@@ -346,20 +361,23 @@
     }
 
     function renderIntoSvg(svg, state) {
-      const dims = Utils.getQuiltDimensions();
-      const width = Math.max(1, Number(dims.width) || 1070);
-      const height = Math.max(1, Number(dims.height) || 1340);
-      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-      svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+      svg.setAttribute('viewBox', `0 0 ${MILESTONE_W} ${MILESTONE_H}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
       svg.innerHTML = '';
 
       const renderer = new QuiltRendererV2(console);
       renderer.quiltSVG = svg;
       renderer.lastAddedIndex = null;
+      renderer._exportDisableSplitBandFit = true;
       if (typeof renderer.setBacksidePreviewEnabled === 'function') {
         renderer.setBacksidePreviewEnabled(false);
       }
       renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
+      // Renderer may rewrite viewBox for screen fit — lock back to full-bleed 4:5.
+      svg.setAttribute('viewBox', `0 0 ${MILESTONE_W} ${MILESTONE_H}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
     }
 
     function yieldFrame() {
