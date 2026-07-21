@@ -71,6 +71,37 @@ async function main() {
   );
   assert.strictEqual(merged.submitted_via, 'SEAMSIDE');
 
+  // Offline cache must keep SEAMSIDE so bootstrap can show the podcast widget.
+  const cachePayload = qs._localAssignmentCachePayload(
+    '2026-07-19',
+    { text: 'x', author: 'Heidi Parkes', submitted_via: 'SEAMSIDE' },
+    { submittedViaSnapshot: 'SEAMSIDE', authorSnapshot: 'Heidi Parkes', textSnapshot: 'x' }
+  );
+  assert.strictEqual(cachePayload.submittedViaSnapshot, 'SEAMSIDE');
+  const fromCache = qs._quoteFromAssignmentSnapshots(cachePayload);
+  assert.strictEqual(qs.isSeamsideQuote(fromCache), true);
+
+  // Normalized rows only have artistName — empty artist_name must not match every guest.
+  assert.strictEqual(qs.lookupSeamsideEpisodeForAuthor('Heidi Parkes'), null);
+  assert.ok(qs.lookupSeamsideEpisodeForAuthor('Demetri Broxton'));
+
+  const withHeidi = [
+    qs._normalizeSeamsideEpisodeFromFirestore(
+      {
+        artistName: 'Heidi Parkes',
+        artistSlug: 'heidi-parkes',
+        audioUrl: 'https://example.com/heidi.m4a',
+        applePodcastsUrl: 'https://podcasts.apple.com/example'
+      },
+      'heidi-parkes'
+    ),
+    ...qs._seamsideEpisodes
+  ];
+  qs._seamsideEpisodes = withHeidi;
+  const heidiEp = qs.lookupSeamsideEpisodeForAuthor('Heidi Parkes');
+  assert.ok(heidiEp);
+  assert.strictEqual(heidiEp.artistSlug, 'heidi-parkes');
+
   const res = await fetch('https://www.zakfoster.com/seamside?format=rss');
   assert.ok(res.ok);
   const xml = await res.text();
