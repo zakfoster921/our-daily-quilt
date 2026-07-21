@@ -369,15 +369,26 @@
       renderer.quiltSVG = svg;
       renderer.lastAddedIndex = null;
       renderer._exportDisableSplitBandFit = true;
+      // No mirrored story field / split-band — just the primary quilt on 4:5.
+      renderer.isPrimaryOnlyPreviewEnabled = () => true;
       if (typeof renderer.setBacksidePreviewEnabled === 'function') {
         renderer.setBacksidePreviewEnabled(false);
       }
       renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
-      // Renderer may rewrite viewBox for screen fit — lock back to full-bleed 4:5.
+
+      // Drop live-screen stretch (1.16×) and story viewBox so the frame is edge-to-edge quilt.
+      const field = svg.querySelector('#quiltFieldLayer');
+      if (field) field.setAttribute('transform', '');
+      svg.querySelectorAll('[data-live-gap-underpaint], #quiltMirrorLayer, #quiltMirrorField').forEach((node) => {
+        try { node.remove(); } catch (_) { /* ignore */ }
+      });
       svg.setAttribute('viewBox', `0 0 ${MILESTONE_W} ${MILESTONE_H}`);
       svg.setAttribute('preserveAspectRatio', 'none');
-      svg.removeAttribute('width');
-      svg.removeAttribute('height');
+      svg.style.width = '100%';
+      svg.style.height = '100%';
+      svg.style.maxWidth = '100%';
+      svg.style.maxHeight = '100%';
+      svg.style.display = 'block';
     }
 
     function yieldFrame() {
