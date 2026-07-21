@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Milestone quilt preview (not integrated)</title>
+  <title>Milestone quilt preview (ODQ engine)</title>
   <style>
     :root {
       --bg: #e8e4dc;
@@ -37,7 +37,7 @@
       margin: 0;
       color: var(--muted);
       font-size: 1rem;
-      max-width: 38rem;
+      max-width: 40rem;
       line-height: 1.45;
     }
     .controls {
@@ -57,6 +57,7 @@
       cursor: pointer;
     }
     button:hover { background: #fff; }
+    button:disabled { opacity: 0.5; cursor: wait; }
     .seed-label {
       font-size: 0.9rem;
       color: var(--muted);
@@ -69,27 +70,36 @@
       max-width: 1100px;
       margin: 0 auto;
     }
-    figure {
-      margin: 0;
-    }
+    figure { margin: 0; }
     figcaption {
       margin-top: 0.65rem;
       font-size: 0.85rem;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--muted);
+      line-height: 1.35;
     }
     .frame {
       width: 100%;
       aspect-ratio: 4 / 5;
-      background: #ddd8ce;
+      background: #eae7e1;
       box-shadow: 0 18px 40px rgba(28, 25, 22, 0.12);
       overflow: hidden;
+      position: relative;
     }
     .frame svg {
       display: block;
       width: 100%;
       height: 100%;
+    }
+    .frame .busy {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(234, 231, 225, 0.72);
+      color: var(--muted);
+      font-size: 0.9rem;
     }
     .note {
       max-width: 1100px;
@@ -105,13 +115,13 @@
   <header>
     <h1>Milestone quilt preview</h1>
     <p class="lede">
-      Throwaway prototype — not wired into the app. Each chapter is a generative
-      4:5 quilt with <strong>exactly N blocks</strong> for N colors. Same color
-      history, denser as the count grows.
+      Uses the real ODQ quilt engine + renderer (HST, insets, organic splits) —
+      not a treemap of plain rectangles. Same mock color history grown to each
+      chapter. Serve from the <strong>repo root</strong> so
+      <code>../lib</code> loads.
     </p>
     <div class="controls">
       <button type="button" id="reshuffle">New color history</button>
-      <button type="button" id="reseed">New layout seed</button>
       <label class="seed-label">Palette
         <select id="palette">
           <option value="warm" selected>Warm clay</option>
@@ -120,23 +130,36 @@
           <option value="garden">Garden</option>
         </select>
       </label>
-      <span class="seed-label" id="meta"></span>
+      <span class="seed-label" id="meta">Loading engine…</span>
     </div>
   </header>
 
   <div class="grid" id="grid"></div>
   <p class="note">
-    Open this file in a browser anytime:
-    <code>scripts/milestone-quilt-preview.html</code>.
-    Layout algorithm is a stand-in for the real chapter builder — same idea
-    (recursive splits → N leaves → your colors), not the production module yet.
+    Block count will not always equal color count — that’s how the daily engine
+    works (splits, HST pairs, merges). If we still want strict N-blocks = N-colors
+    later, we’d constrain the engine; this preview is for <em>look</em>.
+    Open via
+    <code>http://127.0.0.1:8766/scripts/milestone-quilt-preview.html</code>
+    with the server rooted at the project.
   </p>
 
-  <script>
-    const CHAPTERS = [5, 25, 100, 365];
-    const W = 1080;
-    const H = 1350;
+  <script>window.odqEnableAdminTools = function () { return false; };</script>
+  <script src="../lib/app-config.js"></script>
+  <script src="../lib/color-utils-v2.js"></script>
+  <script src="../lib/utils-core.js"></script>
+  <script src="../lib/utils-color.js"></script>
+  <script src="../lib/utils-client.js"></script>
+  <script src="../lib/utils-quilt.js"></script>
+  <script src="../lib/utils-quilt-render.js"></script>
+  <script src="../lib/quilt-shape-v2.js"></script>
+  <script src="../lib/simple-quilt-engine.js"></script>
+  <script src="../lib/quilt-renderer-v2.js"></script>
 
+  <script>
+    window.Utils = window.UtilsCore;
+
+    const CHAPTERS = [5, 25, 100, 365];
     const PALETTES = {
       warm: ['#c45c3e', '#e8c7a0', '#5c4033', '#d9a05b', '#8f6a4a', '#f0e6d8', '#3d2c29', '#a67c52', '#b85c38', '#6e4e3a'],
       sea: ['#2f5d62', '#7aa6a3', '#d4e1e0', '#1f3a3d', '#c4a484', '#5b7c6e', '#e8efe9', '#3d5a5b', '#9bb7b5', '#6b4f3a'],
@@ -144,8 +167,8 @@
       garden: ['#3d5c3a', '#c9d4a3', '#8b3a3a', '#f0e8d0', '#5a7048', '#d4a574', '#2f3d2e', '#a8b87a', '#6b4f3a', '#e6dcc4']
     };
 
-    let layoutSeed = 42;
     let colorSeed = 7;
+    let renderToken = 0;
 
     function mulberry32(a) {
       return function () {
@@ -165,19 +188,6 @@
       return h >>> 0;
     }
 
-    function pickColors(n, paletteName, seed) {
-      const base = PALETTES[paletteName] || PALETTES.warm;
-      const rnd = mulberry32(seed ^ hashStr(paletteName));
-      const out = [];
-      for (let i = 0; i < n; i++) {
-        const c = base[Math.floor(rnd() * base.length)];
-        // slight deterministic drift so neighbors aren’t always identical
-        const drift = (rnd() - 0.5) * 18;
-        out.push(nudgeHex(c, drift));
-      }
-      return out;
-    }
-
     function nudgeHex(hex, amount) {
       const n = parseInt(hex.slice(1), 16);
       let r = (n >> 16) & 255;
@@ -188,124 +198,118 @@
       return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
     }
 
-    /**
-     * Recursive bipartition until exactly N leaf rects.
-     * Prefer splitting the largest area; mix H/V for quilt rhythm.
-     */
-    function buildBlocks(n, seed) {
-      const rnd = mulberry32(seed ^ (n * 9973));
-      let regions = [{ x: 0, y: 0, width: W, height: H }];
-
-      while (regions.length < n) {
-        let idx = 0;
-        let best = -1;
-        for (let i = 0; i < regions.length; i++) {
-          const a = regions[i].width * regions[i].height;
-          if (a > best) { best = a; idx = i; }
-        }
-        const r = regions[idx];
-        const minEdge = 36;
-        const canV = r.width >= minEdge * 2;
-        const canH = r.height >= minEdge * 2;
-        if (!canV && !canH) {
-          // Can't split further usefully — nudge by splitting anyway on longer axis
-          break;
-        }
-        let vertical;
-        if (canV && canH) {
-          // Bias toward squarer children
-          const aspect = r.width / r.height;
-          vertical = rnd() < (aspect > 1 ? 0.62 : 0.38);
-        } else {
-          vertical = canV;
-        }
-
-        const t = 0.28 + rnd() * 0.44; // cut ratio
-        if (vertical) {
-          const cut = Math.round(r.width * t);
-          const left = { x: r.x, y: r.y, width: cut, height: r.height };
-          const right = { x: r.x + cut, y: r.y, width: r.width - cut, height: r.height };
-          regions.splice(idx, 1, left, right);
-        } else {
-          const cut = Math.round(r.height * t);
-          const top = { x: r.x, y: r.y, width: r.width, height: cut };
-          const bot = { x: r.x, y: r.y + cut, width: r.width, height: r.height - cut };
-          regions.splice(idx, 1, top, bot);
-        }
+    function pickColors(n, paletteName, seed) {
+      const base = PALETTES[paletteName] || PALETTES.warm;
+      const rnd = mulberry32(seed ^ hashStr(paletteName));
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        out.push(nudgeHex(base[Math.floor(rnd() * base.length)], (rnd() - 0.5) * 22));
       }
-
-      // If we couldn't reach N (pathological), pad by micro-splitting last region
-      while (regions.length < n) {
-        const idx = regions.length - 1;
-        const r = regions[idx];
-        if (r.width >= r.height && r.width >= 4) {
-          const cut = Math.max(2, Math.floor(r.width / 2));
-          regions.splice(idx, 1,
-            { x: r.x, y: r.y, width: cut, height: r.height },
-            { x: r.x + cut, y: r.y, width: r.width - cut, height: r.height }
-          );
-        } else if (r.height >= 4) {
-          const cut = Math.max(2, Math.floor(r.height / 2));
-          regions.splice(idx, 1,
-            { x: r.x, y: r.y, width: r.width, height: cut },
-            { x: r.x, y: r.y + cut, width: r.width, height: r.height - cut }
-          );
-        } else {
-          break;
-        }
-      }
-
-      return regions.slice(0, n);
+      return out;
     }
 
-    function blocksToSvg(blocks, colors) {
-      const parts = [
-        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">`
-      ];
-      for (let i = 0; i < blocks.length; i++) {
-        const b = blocks[i];
-        const fill = colors[i] || '#ccc';
-        // Occasional HST using this color + next color — still one contribution
-        // slot visually split; for preview we keep one color per leaf (strict N=N).
-        parts.push(
-          `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="${fill}" />`
-        );
+    function buildEngineQuilt(colors, deviceKey) {
+      const engine = new SimpleQuiltEngine(deviceKey, { recordColorReplayEvents: false });
+      engine.recordUserContribution = () => {};
+      engine._suppressSplitWarnings = true;
+      engine.initialize();
+      let added = 0;
+      for (const hex of colors) {
+        if (!engine.addColor(hex)) break;
+        added += 1;
       }
-      parts.push('</svg>');
-      return parts.join('');
+      engine.blocks.forEach((block) => {
+        if (
+          typeof block.contributorColor === 'string' &&
+          /^#[0-9A-Fa-f]{6}$/.test(block.contributorColor)
+        ) {
+          block.color = block.contributorColor;
+        }
+      });
+      return {
+        blocks: engine.blocks.map((b) => ({ ...b })),
+        submissionCount: engine.submissionCount,
+        colorsAdded: added
+      };
     }
 
-    function render() {
+    function renderIntoSvg(svg, state) {
+      const dims = Utils.getQuiltDimensions();
+      const width = Math.max(1, Number(dims.width) || 1070);
+      const height = Math.max(1, Number(dims.height) || 1340);
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+      svg.innerHTML = '';
+
+      const renderer = new QuiltRendererV2(console);
+      renderer.quiltSVG = svg;
+      renderer.lastAddedIndex = null;
+      if (typeof renderer.setBacksidePreviewEnabled === 'function') {
+        renderer.setBacksidePreviewEnabled(false);
+      }
+      renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
+    }
+
+    function yieldFrame() {
+      return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    }
+
+    async function render() {
+      if (typeof SimpleQuiltEngine !== 'function' || typeof QuiltRendererV2 !== 'function') {
+        document.getElementById('meta').textContent =
+          'Engine failed to load — serve from repo root.';
+        return;
+      }
+
+      const token = ++renderToken;
       const palette = document.getElementById('palette').value;
+      const reshuffleBtn = document.getElementById('reshuffle');
+      reshuffleBtn.disabled = true;
+      document.getElementById('meta').textContent = 'Building quilts…';
+
       const maxN = Math.max(...CHAPTERS);
       const allColors = pickColors(maxN, palette, colorSeed);
       const grid = document.getElementById('grid');
       grid.innerHTML = '';
 
-      CHAPTERS.forEach((n) => {
-        const colors = allColors.slice(0, n);
-        const blocks = buildBlocks(n, layoutSeed);
+      const figures = CHAPTERS.map((n) => {
         const fig = document.createElement('figure');
         const frame = document.createElement('div');
         frame.className = 'frame';
-        frame.innerHTML = blocksToSvg(blocks, colors);
+        const busy = document.createElement('div');
+        busy.className = 'busy';
+        busy.textContent = `Growing ${n}…`;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        frame.appendChild(svg);
+        frame.appendChild(busy);
         const cap = document.createElement('figcaption');
-        cap.textContent = `${n} colors · ${blocks.length} blocks`;
+        cap.textContent = `${n} colors`;
         fig.appendChild(frame);
         fig.appendChild(cap);
         grid.appendChild(fig);
+        return { n, svg, busy, cap };
       });
 
-      document.getElementById('meta').textContent =
-        `layout seed ${layoutSeed} · color seed ${colorSeed}`;
+      for (const item of figures) {
+        if (token !== renderToken) return;
+        await yieldFrame();
+        const colors = allColors.slice(0, item.n);
+        const t0 = performance.now();
+        const state = buildEngineQuilt(colors, `milestone-preview-${colorSeed}-${item.n}`);
+        renderIntoSvg(item.svg, state);
+        item.busy.remove();
+        const ms = Math.round(performance.now() - t0);
+        item.cap.textContent =
+          `${item.n} colors · ${state.blocks.length} blocks · ${ms}ms`;
+      }
+
+      if (token !== renderToken) return;
+      document.getElementById('meta').textContent = `color seed ${colorSeed}`;
+      reshuffleBtn.disabled = false;
     }
 
     document.getElementById('reshuffle').addEventListener('click', () => {
       colorSeed = (colorSeed + 17) >>> 0;
-      render();
-    });
-    document.getElementById('reseed').addEventListener('click', () => {
-      layoutSeed = (layoutSeed + 101) >>> 0;
       render();
     });
     document.getElementById('palette').addEventListener('change', render);
