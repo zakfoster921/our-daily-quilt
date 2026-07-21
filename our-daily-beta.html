@@ -284,7 +284,7 @@ try {
   <meta charset="UTF-8" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
-  <link rel="stylesheet" href="styles/our-daily-beta.css?v=209" />
+  <link rel="stylesheet" href="styles/our-daily-beta.css?v=210" />
   <!-- file:// Safari resolves ../ in the stylesheet against the HTML path, not styles/ — use document-relative assets/ here -->
   <style id="odq-document-asset-vars">
     @font-face {
@@ -974,8 +974,6 @@ try {
       <div class="quilt-container">
         <svg id="quilt" xmlns="http://www.w3.org/2000/svg" role="img" tabindex="0" aria-label="OUR DAILY QUILT — community quilt with colorful blocks. Press and hold to find your color."></svg>
         <canvas id="quiltFilmGrainOverlay" width="1" height="1" aria-hidden="true"></canvas>
-        <!-- Scroll-only soft light above grain — quilt SVG stays still. -->
-        <div id="quiltScrollDriftVeil" aria-hidden="true"></div>
       </div>
       <div
         id="quiltBlockSpotlightCoach"
@@ -2831,7 +2829,7 @@ try {
   <script src="lib/simplified-quilt-app-quilt-name-leaderboard.js?v=78"></script>
   <script src="lib/simplified-quilt-app-mood.js"></script>
   <script src="lib/simplified-quilt-app-quote-ui.js?v=2"></script>
-  <script src="lib/simplified-quilt-app-nav.js?v=64"></script>
+  <script src="lib/simplified-quilt-app-nav.js?v=65"></script>
   <script src="lib/simplified-quilt-app-shell.js"></script>
   <script>
   </script>
@@ -3058,7 +3056,7 @@ try {
         this.isDragging = false;
         this._hsvWheelCanvasKey = '';
 
-        // Native: quilt SVG stays still; optional grain/glow overlay drifts while scrolling only.
+        // Native: no scroll-tied quilt motion (keeps lower cards loading smooth).
         // Web: per-block ripple stays on.
         const allowQuiltMotion = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
         const nativeClient =
@@ -3066,8 +3064,7 @@ try {
         this.parallaxEnabled = false;
         this.blockJitterEnabled = allowQuiltMotion && !nativeClient;
         this.quiltWobbleEnabled = false;
-        // Soft light veil above the quilt — grain tip alone was invisible on device.
-        this.overlayDriftEnabled = allowQuiltMotion;
+        this.overlayDriftEnabled = false;
         this._wobbleEnergy = 0;
         this._wobbleEnergyTarget = 0;
         this.parallaxBaseRate = 0.06;
@@ -3075,8 +3072,6 @@ try {
         this.parallaxMaxShift = 12;
         this.parallaxSmoothing = 0.1;
         this.parallaxScrollOnly = false;
-        this._overlayDriftCurrent = 0;
-        this._overlayDriftTarget = 0;
         this.parallaxCurrentShift = 0;
         this.parallaxTargetShift = 0;
         this.parallaxTicking = false;
