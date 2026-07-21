@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Milestone quilt preview (not integrated)</title>
+  <style>
+    :root {
+      --bg: #e8e4dc;
+      --ink: #1c1916;
+      --muted: #6b635a;
+      --card: #f4f1ea;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #f3efe6 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #d9d2c4 0%, transparent 50%),
+        var(--bg);
+    }
+    header {
+      padding: 2rem 1.5rem 1rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .lede {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 38rem;
+      line-height: 1.45;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-top: 1.25rem;
+    }
+    button, select {
+      font: inherit;
+      border: 1px solid #b8b0a3;
+      background: var(--card);
+      color: var(--ink);
+      padding: 0.45rem 0.85rem;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    button:hover { background: #fff; }
+    .seed-label {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      padding: 1rem 1.5rem 3rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    figure {
+      margin: 0;
+    }
+    figcaption {
+      margin-top: 0.65rem;
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .frame {
+      width: 100%;
+      aspect-ratio: 4 / 5;
+      background: #ddd8ce;
+      box-shadow: 0 18px 40px rgba(28, 25, 22, 0.12);
+      overflow: hidden;
+    }
+    .frame svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .note {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 1.5rem 2.5rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Milestone quilt preview</h1>
+    <p class="lede">
+      Throwaway prototype — not wired into the app. Each chapter is a generative
+      4:5 quilt with <strong>exactly N blocks</strong> for N colors. Same color
+      history, denser as the count grows.
+    </p>
+    <div class="controls">
+      <button type="button" id="reshuffle">New color history</button>
+      <button type="button" id="reseed">New layout seed</button>
+      <label class="seed-label">Palette
+        <select id="palette">
+          <option value="warm" selected>Warm clay</option>
+          <option value="sea">Sea glass</option>
+          <option value="ink">Ink + paper</option>
+          <option value="garden">Garden</option>
+        </select>
+      </label>
+      <span class="seed-label" id="meta"></span>
+    </div>
+  </header>
+
+  <div class="grid" id="grid"></div>
+  <p class="note">
+    Open this file in a browser anytime:
+    <code>scripts/milestone-quilt-preview.html</code>.
+    Layout algorithm is a stand-in for the real chapter builder — same idea
+    (recursive splits → N leaves → your colors), not the production module yet.
+  </p>
+
+  <script>
+    const CHAPTERS = [5, 25, 100, 365];
+    const W = 1080;
+    const H = 1350;
+
+    const PALETTES = {
+      warm: ['#c45c3e', '#e8c7a0', '#5c4033', '#d9a05b', '#8f6a4a', '#f0e6d8', '#3d2c29', '#a67c52', '#b85c38', '#6e4e3a'],
+      sea: ['#2f5d62', '#7aa6a3', '#d4e1e0', '#1f3a3d', '#c4a484', '#5b7c6e', '#e8efe9', '#3d5a5b', '#9bb7b5', '#6b4f3a'],
+      ink: ['#1a1a1a', '#e8e4dc', '#5c5c5c', '#cfc8bc', '#2c2c2c', '#f5f2eb', '#8a847a', '#3f3f3f', '#d6d0c4', '#6f6a62'],
+      garden: ['#3d5c3a', '#c9d4a3', '#8b3a3a', '#f0e8d0', '#5a7048', '#d4a574', '#2f3d2e', '#a8b87a', '#6b4f3a', '#e6dcc4']
+    };
+
+    let layoutSeed = 42;
+    let colorSeed = 7;
+
+    function mulberry32(a) {
+      return function () {
+        let t = (a += 0x6d2b79f5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function hashStr(s) {
+      let h = 2166136261;
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return h >>> 0;
+    }
+
+    function pickColors(n, paletteName, seed) {
+      const base = PALETTES[paletteName] || PALETTES.warm;
+      const rnd = mulberry32(seed ^ hashStr(paletteName));
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const c = base[Math.floor(rnd() * base.length)];
+        // slight deterministic drift so neighbors aren’t always identical
+        const drift = (rnd() - 0.5) * 18;
+        out.push(nudgeHex(c, drift));
+      }
+      return out;
+    }
+
+    function nudgeHex(hex, amount) {
+      const n = parseInt(hex.slice(1), 16);
+      let r = (n >> 16) & 255;
+      let g = (n >> 8) & 255;
+      let b = n & 255;
+      const adj = (v) => Math.max(0, Math.min(255, Math.round(v + amount)));
+      r = adj(r); g = adj(g); b = adj(b);
+      return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+    }
+
+    /**
+     * Recursive bipartition until exactly N leaf rects.
+     * Prefer splitting the largest area; mix H/V for quilt rhythm.
+     */
+    function buildBlocks(n, seed) {
+      const rnd = mulberry32(seed ^ (n * 9973));
+      let regions = [{ x: 0, y: 0, width: W, height: H }];
+
+      while (regions.length < n) {
+        let idx = 0;
+        let best = -1;
+        for (let i = 0; i < regions.length; i++) {
+          const a = regions[i].width * regions[i].height;
+          if (a > best) { best = a; idx = i; }
+        }
+        const r = regions[idx];
+        const minEdge = 36;
+        const canV = r.width >= minEdge * 2;
+        const canH = r.height >= minEdge * 2;
+        if (!canV && !canH) {
+          // Can't split further usefully — nudge by splitting anyway on longer axis
+          break;
+        }
+        let vertical;
+        if (canV && canH) {
+          // Bias toward squarer children
+          const aspect = r.width / r.height;
+          vertical = rnd() < (aspect > 1 ? 0.62 : 0.38);
+        } else {
+          vertical = canV;
+        }
+
+        const t = 0.28 + rnd() * 0.44; // cut ratio
+        if (vertical) {
+          const cut = Math.round(r.width * t);
+          const left = { x: r.x, y: r.y, width: cut, height: r.height };
+          const right = { x: r.x + cut, y: r.y, width: r.width - cut, height: r.height };
+          regions.splice(idx, 1, left, right);
+        } else {
+          const cut = Math.round(r.height * t);
+          const top = { x: r.x, y: r.y, width: r.width, height: cut };
+          const bot = { x: r.x, y: r.y + cut, width: r.width, height: r.height - cut };
+          regions.splice(idx, 1, top, bot);
+        }
+      }
+
+      // If we couldn't reach N (pathological), pad by micro-splitting last region
+      while (regions.length < n) {
+        const idx = regions.length - 1;
+        const r = regions[idx];
+        if (r.width >= r.height && r.width >= 4) {
+          const cut = Math.max(2, Math.floor(r.width / 2));
+          regions.splice(idx, 1,
+            { x: r.x, y: r.y, width: cut, height: r.height },
+            { x: r.x + cut, y: r.y, width: r.width - cut, height: r.height }
+          );
+        } else if (r.height >= 4) {
+          const cut = Math.max(2, Math.floor(r.height / 2));
+          regions.splice(idx, 1,
+            { x: r.x, y: r.y, width: r.width, height: cut },
+            { x: r.x, y: r.y + cut, width: r.width, height: r.height - cut }
+          );
+        } else {
+          break;
+        }
+      }
+
+      return regions.slice(0, n);
+    }
+
+    function blocksToSvg(blocks, colors) {
+      const parts = [
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">`
+      ];
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const fill = colors[i] || '#ccc';
+        // Occasional HST using this color + next color — still one contribution
+        // slot visually split; for preview we keep one color per leaf (strict N=N).
+        parts.push(
+          `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="${fill}" />`
+        );
+      }
+      parts.push('</svg>');
+      return parts.join('');
+    }
+
+    function render() {
+      const palette = document.getElementById('palette').value;
+      const maxN = Math.max(...CHAPTERS);
+      const allColors = pickColors(maxN, palette, colorSeed);
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+
+      CHAPTERS.forEach((n) => {
+        const colors = allColors.slice(0, n);
+        const blocks = buildBlocks(n, layoutSeed);
+        const fig = document.createElement('figure');
+        const frame = document.createElement('div');
+        frame.className = 'frame';
+        frame.innerHTML = blocksToSvg(blocks, colors);
+        const cap = document.createElement('figcaption');
+        cap.textContent = `${n} colors · ${blocks.length} blocks`;
+        fig.appendChild(frame);
+        fig.appendChild(cap);
+        grid.appendChild(fig);
+      });
+
+      document.getElementById('meta').textContent =
+        `layout seed ${layoutSeed} · color seed ${colorSeed}`;
+    }
+
+    document.getElementById('reshuffle').addEventListener('click', () => {
+      colorSeed = (colorSeed + 17) >>> 0;
+      render();
+    });
+    document.getElementById('reseed').addEventListener('click', () => {
+      layoutSeed = (layoutSeed + 101) >>> 0;
+      render();
+    });
+    document.getElementById('palette').addEventListener('change', render);
+
+    render();
+  </script>
+</body>
+</html>
