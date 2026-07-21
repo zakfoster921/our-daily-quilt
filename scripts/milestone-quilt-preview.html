@@ -405,17 +405,35 @@
         ]);
       }
       if (bbox && bbox.width > 1 && bbox.height > 1) {
-        // Inset left/right so cover-fit doesn't leave hairline remnants of
-        // nearly-cropped edge blocks in the 4:5 frame.
-        const sideInset = Math.max(8, bbox.width * 0.035);
-        const yPad = 1;
-        const x = bbox.x + sideInset;
-        const y = bbox.y - yPad;
-        const w = Math.max(1, bbox.width - sideInset * 2);
-        const h = bbox.height + yPad * 2;
-        svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+        // Pull in from the sides first (kills hairline edge blocks), then pick
+        // an exact 4:5 window so the card fills with no letterbox.
+        const sideInset = Math.max(12, bbox.width * 0.07);
+        const innerX = bbox.x + sideInset;
+        const innerW = Math.max(1, bbox.width - sideInset * 2);
+        const innerY = bbox.y;
+        const innerH = bbox.height;
+        const targetAspect = 4 / 5;
+        const contentAspect = innerW / innerH;
+        let vx;
+        let vy;
+        let vw;
+        let vh;
+        if (contentAspect > targetAspect) {
+          vh = innerH;
+          vw = innerH * targetAspect;
+          vx = innerX + (innerW - vw) / 2;
+          vy = innerY;
+        } else {
+          vw = innerW;
+          vh = innerW / targetAspect;
+          vx = innerX;
+          vy = innerY + (innerH - vh) / 2;
+        }
+        svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+        svg.setAttribute('preserveAspectRatio', 'none');
+      } else {
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
       }
-      svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
       svg.style.width = '100%';
       svg.style.height = '100%';
       svg.style.maxWidth = 'none';
