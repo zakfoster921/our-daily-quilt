@@ -284,7 +284,7 @@ try {
   <meta charset="UTF-8" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- Match app shell / launch so WKWebView first paint is not system black (Dark Mode) or white flash. -->
-  <link rel="stylesheet" href="styles/our-daily-beta.css?v=205" />
+  <link rel="stylesheet" href="styles/our-daily-beta.css?v=206" />
   <!-- file:// Safari resolves ../ in the stylesheet against the HTML path, not styles/ — use document-relative assets/ here -->
   <style id="odq-document-asset-vars">
     @font-face {
@@ -2790,7 +2790,7 @@ try {
   <script src="lib/quilt-newspaper-clipping.js?v=116"></script>
   <script src="lib/odq-scanner-bed.js?v=3"></script>
   <script src="lib/quilt-mood-clipping.js?v=6"></script>
-  <script src="lib/quilt-mood-collage-widget.js?v=141"></script>
+  <script src="lib/quilt-mood-collage-widget.js?v=142"></script>
   <script src="lib/seamside-podcast-widget.js?v=13"></script>
   <script src="lib/quilt-mood-triptych-widget.js?v=1102"></script>
   <script src="lib/quilt-mood-terminal.js?v=24"></script>
@@ -2822,14 +2822,14 @@ try {
   <script src="lib/quilt-renderer-v2.js?v=13"></script>
   <script src="lib/app-config.js"></script>
   <script src="lib/speaker-cutout-render.js?v=31"></script>
-  <script src="lib/simplified-quilt-app-boot.js?v=171"></script>
+  <script src="lib/simplified-quilt-app-boot.js?v=172"></script>
   <script src="lib/simplified-quilt-app-quilt.js?v=74"></script>
   <script src="lib/simplified-quilt-app-share.js?v=51"></script>
   <script src="lib/simplified-quilt-app-feature-feedback.js?v=6"></script>
   <script src="lib/simplified-quilt-app-quilt-name-leaderboard.js?v=78"></script>
   <script src="lib/simplified-quilt-app-mood.js"></script>
   <script src="lib/simplified-quilt-app-quote-ui.js?v=2"></script>
-  <script src="lib/simplified-quilt-app-nav.js?v=58"></script>
+  <script src="lib/simplified-quilt-app-nav.js?v=59"></script>
   <script src="lib/simplified-quilt-app-shell.js"></script>
   <script>
   </script>
@@ -3057,9 +3057,12 @@ try {
         this._hsvWheelCanvasKey = '';
 
         // Per-block scroll inflate↔deflate + tick-tock rotate; settle to original layout at idle.
+        // Native WKWebView: mutating every SVG block each frame makes the whole quilt scroll feel sluggish.
         const allowQuiltMotion = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        const nativeClient =
+          typeof window.odqIsCapacitorNative === 'function' && window.odqIsCapacitorNative();
         this.parallaxEnabled = false;
-        this.blockJitterEnabled = allowQuiltMotion;
+        this.blockJitterEnabled = allowQuiltMotion && !nativeClient;
         this.quiltWobbleEnabled = false;
         this._wobbleEnergy = 0;
         this._wobbleEnergyTarget = 0;
