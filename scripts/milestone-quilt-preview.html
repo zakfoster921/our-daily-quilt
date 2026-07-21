@@ -82,7 +82,7 @@
     .frame {
       width: 100%;
       aspect-ratio: 4 / 5;
-      background: #111;
+      background: #1c1916;
       box-shadow: 0 18px 40px rgba(28, 25, 22, 0.12);
       overflow: hidden;
       position: relative;
@@ -152,16 +152,18 @@
   <script src="../lib/utils-quilt.js"></script>
   <script src="../lib/utils-quilt-render.js"></script>
   <script src="../lib/quilt-shape-v2.js"></script>
+  <script src="../lib/quilt-mirror-layout.js"></script>
   <script src="../lib/simple-quilt-engine.js"></script>
   <script src="../lib/quilt-renderer-v2.js"></script>
 
   <script>
     window.Utils = window.UtilsCore;
 
-    /** True 4:5 canvas — no story/split-band letterboxing. */
+    /** Frame size for the share card. Primary quilt builds at this size; mirror stays on, then we cover-fit. */
     const MILESTONE_W = 1080;
     const MILESTONE_H = 1350;
     if (window.CONFIG?.APP) {
+      // Split-band is the tall story chrome; classic mirror symmetry is what we want.
       window.CONFIG.APP.quiltSplitBandFit = false;
     }
     Utils.getQuiltDimensions = function getMilestoneQuiltDimensions() {
@@ -361,33 +363,42 @@
     }
 
     function renderIntoSvg(svg, state) {
-      svg.setAttribute('viewBox', `0 0 ${MILESTONE_W} ${MILESTONE_H}`);
-      svg.setAttribute('preserveAspectRatio', 'none');
       svg.innerHTML = '';
 
       const renderer = new QuiltRendererV2(console);
       renderer.quiltSVG = svg;
       renderer.lastAddedIndex = null;
       renderer._exportDisableSplitBandFit = true;
-      // No mirrored story field / split-band — just the primary quilt on 4:5.
-      renderer.isPrimaryOnlyPreviewEnabled = () => true;
+      renderer._exportFullQuiltField = true;
+      // Target the 4:5 card while laying out the mirrored field.
+      renderer._renderViewportOverride = {
+        w: MILESTONE_W,
+        h: MILESTONE_H,
+        width: MILESTONE_W,
+        height: MILESTONE_H
+      };
       if (typeof renderer.setBacksidePreviewEnabled === 'function') {
         renderer.setBacksidePreviewEnabled(false);
       }
-      renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
+      // Keep mirror for symmetry. Prefer cover-fit (slice) over letterbox (meet).
+      const prevFit = typeof QuiltMirrorLayout !== 'undefined' ? QuiltMirrorLayout.LIVE_SCREEN_FIT : null;
+      if (typeof QuiltMirrorLayout !== 'undefined') {
+        QuiltMirrorLayout.LIVE_SCREEN_FIT = 'slice';
+      }
+      try {
+        renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
+      } finally {
+        if (typeof QuiltMirrorLayout !== 'undefined' && prevFit != null) {
+          QuiltMirrorLayout.LIVE_SCREEN_FIT = prevFit;
+        }
+      }
 
-      // Drop live-screen stretch (1.16×) and story viewBox so the frame is edge-to-edge quilt.
-      const field = svg.querySelector('#quiltFieldLayer');
-      if (field) field.setAttribute('transform', '');
-      svg.querySelectorAll('[data-live-gap-underpaint], #quiltMirrorLayer, #quiltMirrorField').forEach((node) => {
-        try { node.remove(); } catch (_) { /* ignore */ }
-      });
-      svg.setAttribute('viewBox', `0 0 ${MILESTONE_W} ${MILESTONE_H}`);
-      svg.setAttribute('preserveAspectRatio', 'none');
+      // Cover the 4:5 frame — crop edges if needed, never pad with empty bars.
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
       svg.style.width = '100%';
       svg.style.height = '100%';
-      svg.style.maxWidth = '100%';
-      svg.style.maxHeight = '100%';
+      svg.style.maxWidth = 'none';
+      svg.style.maxHeight = 'none';
       svg.style.display = 'block';
     }
 
