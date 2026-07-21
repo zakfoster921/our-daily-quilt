@@ -405,11 +405,15 @@
         ]);
       }
       if (bbox && bbox.width > 1 && bbox.height > 1) {
-        const pad = 1;
-        svg.setAttribute(
-          'viewBox',
-          `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`
-        );
+        // Inset left/right so cover-fit doesn't leave hairline remnants of
+        // nearly-cropped edge blocks in the 4:5 frame.
+        const sideInset = Math.max(8, bbox.width * 0.035);
+        const yPad = 1;
+        const x = bbox.x + sideInset;
+        const y = bbox.y - yPad;
+        const w = Math.max(1, bbox.width - sideInset * 2);
+        const h = bbox.height + yPad * 2;
+        svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
       }
       svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
       svg.style.width = '100%';
