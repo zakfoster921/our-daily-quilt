@@ -1242,9 +1242,9 @@
       });
 
       const seam = toRoot(tx / 2, ty / 2);
-      // Mirrored stack lives in field-local y ≈ 0..ty — do NOT pad by a full
-      // canvas height above/below (that empty space showed up as letterbox bars).
-      const pad = 12;
+      // Mirrored stack lives in field-local y ≈ 0..ty — keep pad tiny so crop
+      // bounds don’t invite skinny rim bars from empty edge space.
+      const pad = 2;
       const contentLeft = toRoot(-pad, 0).x;
       const contentRight = toRoot(MILESTONE_W + pad, 0).x;
       const contentTop = toRoot(0, -pad).y;
@@ -1315,15 +1315,12 @@
 
       const width = Math.max(1, maxX - minX);
       const height = Math.max(1, maxY - minY);
-      const n = Number(chapterN) || 0;
-      // Zoom out a little for mid chapters. Never for 5 — that letterboxed paper around a
-      // tiny 2×2 checkerboard and hid the other chapter colors.
-      const zoomOut = n > 5 && n <= 25;
-      // Inset enough that hand-cut edge AA never leaves a paper-colored rim.
-      const sideInsetFrac = zoomOut ? 0.08 : 0.1;
-      const yInsetFrac = zoomOut ? 0.05 : 0.06;
-      const sideInset = Math.max(10, width * sideInsetFrac);
-      const yInset = Math.max(10, height * yInsetFrac);
+      // Cover-crop into the mirrored stack. Stronger Y inset so far-edge blocks
+      // never read as skinny top/bottom bars (zoom-out was causing that + letterbox).
+      const sideInsetFrac = 0.1;
+      const yInsetFrac = 0.12;
+      const sideInset = Math.max(14, width * sideInsetFrac);
+      const yInset = Math.max(48, height * yInsetFrac);
       const innerX = minX + sideInset;
       const innerW = Math.max(1, width - sideInset * 2);
       const innerY = minY + yInset;
@@ -1336,20 +1333,6 @@
         vh = innerH;
         vw = vh * targetAspect;
       }
-      // Early chapters: if the stack is taller than a width-fit window, grow the
-      // window to use more of the stack height (zoom out) while staying 4:5.
-      if (zoomOut && innerH > vh) {
-        const stackFrac = n <= 5 ? 0.98 : 0.9;
-        const tall = Math.min(innerH, height * stackFrac);
-        if (tall > vh) {
-          vh = tall;
-          vw = vh * targetAspect;
-          if (vw > innerW) {
-            vw = innerW;
-            vh = vw / targetAspect;
-          }
-        }
-      }
 
       let vx = innerX + (innerW - vw) / 2;
       let vy = innerY + (innerH - vh) / 2;
@@ -1360,7 +1343,7 @@
         vy = Math.min(innerY + innerH - vh, Math.max(innerY, vy));
       }
 
-      if (focusQuilt && Number.isFinite(focusQuilt.x) && layout && !zoomOut) {
+      if (focusQuilt && Number.isFinite(focusQuilt.x) && layout) {
         const spanX = Math.max(1, layout.maxX - layout.minX);
         const focusX = layout.minX + (focusQuilt.x / MILESTONE_W) * spanX;
         if (Number.isFinite(focusX)) {
