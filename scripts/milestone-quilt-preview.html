@@ -174,6 +174,11 @@
 
     const CHAPTERS = [5, 25, 100, 365];
     /**
+     * Each chapter color must own at least this fraction of the primary quilt area
+     * so the 4:5 crop can’t reduce it to a hairline at the rim.
+     */
+    const MIN_VISIBLE_COLOR_FRAC = 0.14;
+    /**
      * One featured special per chapter — random, not tied to count.
      * HST / inset weighted higher: they stay one readable cell after growth.
      */
@@ -530,9 +535,63 @@
       }
     }
 
+    function colorAreaMap(blocks) {
+      const dims =
+        typeof Utils !== 'undefined' && typeof Utils.getQuiltDimensions === 'function'
+          ? Utils.getQuiltDimensions()
+          : { width: MILESTONE_W, height: MILESTONE_H };
+      const quiltArea = Math.max(
+        1,
+        (Number(dims.width) || MILESTONE_W) * (Number(dims.height) || MILESTONE_H)
+      );
+      const areas = new Map();
+      const add = (hex, area) => {
+        const c = normalizeHex(hex);
+        if (!c || !(area > 0)) return;
+        areas.set(c, (areas.get(c) || 0) + area);
+      };
+      (blocks || []).forEach((block) => {
+        const w = Math.max(0, Number(block?.width) || 0);
+        const h = Math.max(0, Number(block?.height) || 0);
+        const area = w * h;
+        if (!(area > 0)) return;
+        if (
+          block?.patternType === 'special' &&
+          block?.specialPatternType === 'hst' &&
+          normalizeHex(block.hstColorB)
+        ) {
+          add(block.color, area * 0.5);
+          add(block.hstColorB, area * 0.5);
+          return;
+        }
+        if (
+          block?.patternType === 'special' &&
+          block?.specialPatternType === 'insetCircle' &&
+          normalizeHex(block.insetInnerColor)
+        ) {
+          const r = Math.max(0, Number(block.insetR) || Math.min(w, h) * 0.28);
+          const innerArea = Math.min(area * 0.85, Math.PI * r * r);
+          add(block.color, Math.max(area - innerArea, area * 0.2));
+          add(block.insetInnerColor, innerArea);
+          return;
+        }
+        add(block.color, area);
+      });
+      return { areas, quiltArea };
+    }
+
+    function colorsMeetingMinVisible(blocks, minFrac = MIN_VISIBLE_COLOR_FRAC) {
+      const { areas, quiltArea } = colorAreaMap(blocks);
+      const minArea = quiltArea * minFrac;
+      return new Set(
+        [...areas.entries()].filter(([, area]) => area >= minArea).map(([hex]) => hex)
+      );
+    }
+
     /**
-     * Deterministic 5-field layout: five chunky regions, five spaced colors, one featured special.
-     * Avoids engine paths that leave colors as off-crop chips while the caption still says “5”.
+     * Five equal full-height columns — every color crosses the mirror seam, so the
+     * 4:5 cover crop can’t turn a chapter color into a 2px rim. Optional inset uses
+     * an already-owned color for the disk so mins stay intact.
      */
     function buildFiveColorMilestoneQuilt(colors, deviceKey, chapterN) {
       const dims =
@@ -541,7 +600,7 @@
           : { width: MILESTONE_W, height: MILESTONE_H };
       const quiltW = Math.max(1, Number(dims.width) || MILESTONE_W);
       const quiltH = Math.max(1, Number(dims.height) || MILESTONE_H);
-      const rnd = mulberry32((colorSeed ^ 0x5f5f5f5f ^ (Number(chapterN) * 9973)) >>> 0);
+      const minFrac = MIN_VISIBLE_COLOR_FRAC;
 
       const palette = [];
       const seen = new Set();
@@ -563,38 +622,14 @@
         }
       }
 
-      let regions = [{ x: 0, y: 0, width: quiltW, height: quiltH }];
-      while (regions.length < 5) {
-        regions.sort(
-          (a, c) => c.width * c.height - a.width * a.height || c.width - a.width
-        );
-        const host = regions.shift();
-        if (!host) break;
-        const vertical = host.width >= host.height;
-        const t = 0.4 + rnd() * 0.2;
-        if (vertical) {
-          const leftW = Math.max(80, Math.min(host.width - 80, host.width * t));
-          regions.push(
-            { x: host.x, y: host.y, width: leftW, height: host.height },
-            {
-              x: host.x + leftW,
-              y: host.y,
-              width: host.width - leftW,
-              height: host.height
-            }
-          );
-        } else {
-          const topH = Math.max(80, Math.min(host.height - 80, host.height * t));
-          regions.push(
-            { x: host.x, y: host.y, width: host.width, height: topH },
-            {
-              x: host.x,
-              y: host.y + topH,
-              width: host.width,
-              height: host.height - topH
-            }
-          );
-        }
+      // Equal vertical columns (each ~20% area, full height) — above minVisible and crop-safe.
+      const colCount = Math.min(5, palette.length);
+      const colW = quiltW / colCount;
+      const regions = [];
+      for (let i = 0; i < colCount; i++) {
+        const x = colW * i;
+        const width = i === colCount - 1 ? quiltW - x : colW;
+        regions.push({ x, y: 0, width, height: quiltH });
       }
 
       const engine = new SimpleQuiltEngine(deviceKey, { recordColorReplayEvents: false });
@@ -605,14 +640,14 @@
       installMilestoneKeepEveryColor(engine);
       installFeaturedSplitGuard(engine);
 
-      engine.blocks = regions.slice(0, 5).map((region, i) => ({
+      engine.blocks = regions.map((region, i) => ({
         id: `five_${deviceKey}_${i}`,
         x: region.x,
         y: region.y,
         width: region.width,
         height: region.height,
-        color: palette[i % palette.length],
-        contributorColor: palette[i % palette.length],
+        color: palette[i],
+        contributorColor: palette[i],
         patternType: 'regular',
         contributorId: deviceKey,
         submissionIndex: i + 1,
@@ -620,49 +655,78 @@
       }));
       engine.submissionCount = engine.blocks.length;
 
-      // Only one readable special — HST / inset keep both colors large. Never stack extras.
-      const preferred = rnd() < 0.5 ? 'hst' : 'insetCircle';
-      const featured =
-        ensureFeaturedSpecial(engine, palette, preferred) ||
-        ensureFeaturedSpecial(engine, palette, preferred === 'hst' ? 'insetCircle' : 'hst');
+      // Inset only: disk reuses another column’s color so every chapter color keeps ≥ min %.
+      // HST would split one column’s unique color to ~10% and fail the floor.
+      let featured = null;
+      const host =
+        engine.blocks.slice().sort((a, c) => {
+          const ac = Math.abs(a.x + a.width / 2 - quiltW / 2);
+          const cc = Math.abs(c.x + c.width / 2 - quiltW / 2);
+          return ac - cc;
+        })[0] || null;
+      if (host) {
+        const inner = partnerColor(palette, host.color);
+        const snapshot = engine.blocks.map((b) => ({ ...b }));
+        const created = (() => {
+          try {
+            return engine.createInsetCircle(host, inner);
+          } catch (_) {
+            return null;
+          }
+        })();
+        if (created && created.length) {
+          const idx = engine.blocks.indexOf(host);
+          const locked = created.map((b) => {
+            const out = { ...b };
+            out.milestoneFeatured = true;
+            out.originalPatternId = out.originalPatternId || out.id;
+            out.protectedAnchorId = `milestone-feat-${out.originalPatternId}`;
+            out.protectedAnchorRootId = out.originalPatternId;
+            return out;
+          });
+          if (idx >= 0) engine.blocks.splice(idx, 1, ...locked);
+          const ok = palette.every((c) => colorsMeetingMinVisible(engine.blocks, minFrac).has(c));
+          if (ok) {
+            featured = {
+              type: 'insetCircle',
+              focus: {
+                x: Number(host.x) + Number(host.width) / 2,
+                y: Number(host.y) + Number(host.height) / 2,
+                width: Number(host.width),
+                height: Number(host.height)
+              }
+            };
+          } else {
+            engine.blocks = snapshot;
+          }
+        }
+      }
 
-      // Re-assert any chapter color that lost substantial area after the special.
-      const missing = palette.filter((c) => !collectSubstantialColors(engine.blocks, 0.06).has(c));
-      missing.forEach((color) => {
-        const donor = engine.blocks
-          .filter((b) => isPlainRegularBlock(b) && b.milestoneFeatured !== true)
-          .sort(
-            (a, c) =>
-              Number(c.width) * Number(c.height) - Number(a.width) * Number(a.height)
-          )[0];
-        if (!donor) return;
-        const w = Number(donor.width) || 0;
-        const h = Number(donor.height) || 0;
-        const vertical = w >= h;
-        const keep = {
-          ...donor,
-          id: `${donor.id}_keep`,
-          ...(vertical ? { width: w / 2 } : { height: h / 2 })
-        };
-        const chip = {
-          ...donor,
-          id: `${donor.id}_chip`,
-          color,
-          contributorColor: color,
-          ...(vertical
-            ? { x: Number(donor.x) + w / 2, width: w / 2 }
-            : { y: Number(donor.y) + h / 2, height: h / 2 })
-        };
-        const idx = engine.blocks.indexOf(donor);
-        if (idx >= 0) engine.blocks.splice(idx, 1, keep, chip);
-      });
+      // Final guard: if anything is under the floor, fall back to plain equal columns.
+      if (!palette.every((c) => colorsMeetingMinVisible(engine.blocks, minFrac).has(c))) {
+        engine.blocks = regions.map((region, i) => ({
+          id: `five_${deviceKey}_plain_${i}`,
+          x: region.x,
+          y: region.y,
+          width: region.width,
+          height: region.height,
+          color: palette[i],
+          contributorColor: palette[i],
+          patternType: 'regular',
+          contributorId: deviceKey,
+          submissionIndex: i + 1,
+          visualLayerIndex: i
+        }));
+        featured = null;
+      }
 
-      const substantial = collectSubstantialColors(engine.blocks, 0.06);
+      const substantial = colorsMeetingMinVisible(engine.blocks, minFrac);
       return {
         blocks: engine.blocks.map((b) => ({ ...b })),
         submissionCount: engine.submissionCount,
         colorsAdded: palette.length,
         visibleColors: substantial.size,
+        minVisiblePct: Math.round(minFrac * 100),
         featuredSpecial: featured?.type || null,
         featuredFocus: featured?.focus || null,
         featuredCount: countFeaturedSpecials(engine),
@@ -1369,7 +1433,11 @@
           ? ` · ${state.featuredSpecial}${state.featuredCount ? `×${state.featuredCount}` : ''}`
           : ' · no-special';
         const visible =
-          state.visibleColors != null ? ` · ${state.visibleColors} visible` : '';
+          state.visibleColors != null
+            ? ` · ${state.visibleColors} visible${
+                state.minVisiblePct ? ` (≥${state.minVisiblePct}%)` : ''
+              }`
+            : '';
         item.cap.textContent =
           `${item.n} colors${visible} · ${state.blocks.length} blocks${feat} · ${ms}ms`;
       }
