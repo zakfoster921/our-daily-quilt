@@ -1045,13 +1045,13 @@
     /**
      * Milestone cards aren't the live quilt screen:
      * - no 1.16× stretch / live-gap underpaint (those leak neighbor "splinters")
-     * - keep exact cell underpaint so inset/HST/hand-cut voids aren't paper
+     * - modest same-color cell underpaint so hand-cut seams don’t flash the card bg
      */
     function configureCleanMilestoneRenderer(renderer) {
       renderer._exportDisableSplitBandFit = true;
       renderer._exportFullQuiltField = true;
-      // Exact cell fill (no overflow) — still created because bleed > 0 in renderer.
-      renderer._gridSeamUnderpaintBleed = () => 0.001;
+      // Same-color bleed under hand-cuts — closes #111 hairlines without live-gap splinters.
+      renderer._gridSeamUnderpaintBleed = () => 2.25;
       // Live-gap underpaint causes neighbor splinters; keep it off.
       renderer._buildLiveGapUnderpaintGroup = () => null;
       // Fold-notch underpaint stays on — closes the mirror-seam hairline.
@@ -1129,9 +1129,13 @@
      */
     function injectCellUnderpaint(svg, blocks) {
       if (!svg || !Array.isArray(blocks) || !blocks.length) return;
+      const bleed = 2.5;
       const layers = [
         svg.querySelector('#quiltFieldLayer'),
-        svg.querySelector('#quiltMirroredFieldLayer')
+        svg.querySelector('#quiltMirroredFieldLayer'),
+        // Static under-clones sit behind the live field; fill them too so paired
+        // hand-cut gaps don’t stack through to the card background.
+        ...svg.querySelectorAll('[data-quilt-static-underlayer="1"]')
       ].filter(Boolean);
       layers.forEach((layer) => {
         const prev = layer.querySelector('#milestoneCellUnderpaint');
@@ -1152,10 +1156,11 @@
               ? block.color
               : '#5c4033';
           const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-          rect.setAttribute('x', String(x));
-          rect.setAttribute('y', String(y));
-          rect.setAttribute('width', String(w));
-          rect.setAttribute('height', String(h));
+          // Slight overflow so hand-cut edges can’t reveal the card background.
+          rect.setAttribute('x', String(x - bleed));
+          rect.setAttribute('y', String(y - bleed));
+          rect.setAttribute('width', String(w + bleed * 2));
+          rect.setAttribute('height', String(h + bleed * 2));
           rect.setAttribute('fill', fill);
           rect.setAttribute('stroke', 'none');
           group.appendChild(rect);
