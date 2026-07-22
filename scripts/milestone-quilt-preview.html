@@ -177,7 +177,7 @@
      * Each chapter color must own at least this fraction of the primary quilt area
      * so the 4:5 crop can’t reduce it to a hairline at the rim.
      */
-    const MIN_VISIBLE_COLOR_FRAC = 0.14;
+    const MIN_VISIBLE_COLOR_FRAC = 0.05;
     /**
      * One featured special per chapter — random, not tied to count.
      * HST / inset weighted higher: they stay one readable cell after growth.
@@ -589,10 +589,68 @@
     }
 
     /**
-     * Five equal full-height columns — every color crosses the mirror seam, so the
-     * 4:5 cover crop can’t turn a chapter color into a 2px rim. Optional inset uses
-     * an already-owned color for the disk so mins stay intact.
+     * Organic 5-region BSP (not barcode columns). Each region stays ≥ min visible %
+     * so the crop can’t hide a chapter color as a hairline.
      */
+    function buildFiveColorRegions(quiltW, quiltH, count, seed, minFrac) {
+      const rnd = mulberry32(seed >>> 0);
+      const quiltArea = Math.max(1, quiltW * quiltH);
+      const minArea = quiltArea * minFrac;
+      let regions = [{ x: 0, y: 0, width: quiltW, height: quiltH }];
+      let guard = 0;
+      while (regions.length < count && guard++ < 40) {
+        regions.sort(
+          (a, c) => c.width * c.height - a.width * a.height || c.width - a.width
+        );
+        const host = regions.find((r) => r.width * r.height >= minArea * 2.15);
+        if (!host) break;
+        regions = regions.filter((r) => r !== host);
+        // Mix axes so we don’t always grow vertical bars.
+        const preferVertical = host.width > host.height * 1.15;
+        const preferHorizontal = host.height > host.width * 1.15;
+        const vertical = preferVertical
+          ? true
+          : preferHorizontal
+            ? false
+            : rnd() < 0.5;
+        const t = 0.35 + rnd() * 0.3;
+        if (vertical) {
+          let leftW = Math.max(70, Math.min(host.width - 70, host.width * t));
+          if (leftW * host.height < minArea) leftW = Math.ceil(minArea / host.height);
+          if ((host.width - leftW) * host.height < minArea) {
+            leftW = host.width - Math.ceil(minArea / host.height);
+          }
+          leftW = Math.max(70, Math.min(host.width - 70, leftW));
+          regions.push(
+            { x: host.x, y: host.y, width: leftW, height: host.height },
+            {
+              x: host.x + leftW,
+              y: host.y,
+              width: host.width - leftW,
+              height: host.height
+            }
+          );
+        } else {
+          let topH = Math.max(70, Math.min(host.height - 70, host.height * t));
+          if (host.width * topH < minArea) topH = Math.ceil(minArea / host.width);
+          if (host.width * (host.height - topH) < minArea) {
+            topH = host.height - Math.ceil(minArea / host.width);
+          }
+          topH = Math.max(70, Math.min(host.height - 70, topH));
+          regions.push(
+            { x: host.x, y: host.y, width: host.width, height: topH },
+            {
+              x: host.x,
+              y: host.y + topH,
+              width: host.width,
+              height: host.height - topH
+            }
+          );
+        }
+      }
+      return regions.slice(0, count);
+    }
+
     function buildFiveColorMilestoneQuilt(colors, deviceKey, chapterN) {
       const dims =
         typeof Utils !== 'undefined' && typeof Utils.getQuiltDimensions === 'function'
@@ -601,6 +659,7 @@
       const quiltW = Math.max(1, Number(dims.width) || MILESTONE_W);
       const quiltH = Math.max(1, Number(dims.height) || MILESTONE_H);
       const minFrac = MIN_VISIBLE_COLOR_FRAC;
+      const rnd = mulberry32((colorSeed ^ 0x51ed5e5d ^ (Number(chapterN) * 7919)) >>> 0);
 
       const palette = [];
       const seen = new Set();
@@ -621,16 +680,21 @@
           break;
         }
       }
-
-      // Equal vertical columns (each ~20% area, full height) — above minVisible and crop-safe.
-      const colCount = Math.min(5, palette.length);
-      const colW = quiltW / colCount;
-      const regions = [];
-      for (let i = 0; i < colCount; i++) {
-        const x = colW * i;
-        const width = i === colCount - 1 ? quiltW - x : colW;
-        regions.push({ x, y: 0, width, height: quiltH });
+      // Shuffle paint order so the same seed history doesn’t always map left→right.
+      for (let i = palette.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        const tmp = palette[i];
+        palette[i] = palette[j];
+        palette[j] = tmp;
       }
+
+      const regions = buildFiveColorRegions(
+        quiltW,
+        quiltH,
+        Math.min(5, palette.length),
+        (colorSeed ^ 0x9e3779b9) >>> 0,
+        minFrac
+      );
 
       const engine = new SimpleQuiltEngine(deviceKey, { recordColorReplayEvents: false });
       engine.recordUserContribution = () => {};
@@ -655,70 +719,50 @@
       }));
       engine.submissionCount = engine.blocks.length;
 
-      // Inset only: disk reuses another column’s color so every chapter color keeps ≥ min %.
-      // HST would split one column’s unique color to ~10% and fail the floor.
-      let featured = null;
-      const host =
-        engine.blocks.slice().sort((a, c) => {
-          const ac = Math.abs(a.x + a.width / 2 - quiltW / 2);
-          const cc = Math.abs(c.x + c.width / 2 - quiltW / 2);
-          return ac - cc;
-        })[0] || null;
-      if (host) {
-        const inner = partnerColor(palette, host.color);
+      const tryFeatured = (type) => {
+        const host = pickHostBlock(engine);
+        if (!host) return null;
+        const partner = partnerColor(palette, host.color);
         const snapshot = engine.blocks.map((b) => ({ ...b }));
-        const created = (() => {
-          try {
-            return engine.createInsetCircle(host, inner);
-          } catch (_) {
-            return null;
-          }
-        })();
-        if (created && created.length) {
-          const idx = engine.blocks.indexOf(host);
-          const locked = created.map((b) => {
-            const out = { ...b };
-            out.milestoneFeatured = true;
-            out.originalPatternId = out.originalPatternId || out.id;
-            out.protectedAnchorId = `milestone-feat-${out.originalPatternId}`;
-            out.protectedAnchorRootId = out.originalPatternId;
-            return out;
-          });
-          if (idx >= 0) engine.blocks.splice(idx, 1, ...locked);
-          const ok = palette.every((c) => colorsMeetingMinVisible(engine.blocks, minFrac).has(c));
-          if (ok) {
-            featured = {
-              type: 'insetCircle',
-              focus: {
-                x: Number(host.x) + Number(host.width) / 2,
-                y: Number(host.y) + Number(host.height) / 2,
-                width: Number(host.width),
-                height: Number(host.height)
-              }
-            };
-          } else {
-            engine.blocks = snapshot;
-          }
+        let created = null;
+        try {
+          created =
+            type === 'hst'
+              ? engine.createHalfSquareTriangle(host, partner)
+              : engine.createInsetCircle(host, partner);
+        } catch (_) {
+          created = null;
         }
-      }
+        if (!created || !created.length) return null;
+        const idx = engine.blocks.indexOf(host);
+        const locked = created.map((b) => {
+          const out = { ...b };
+          out.milestoneFeatured = true;
+          out.originalPatternId = out.originalPatternId || out.id;
+          out.protectedAnchorId = `milestone-feat-${out.originalPatternId}`;
+          out.protectedAnchorRootId = out.originalPatternId;
+          return out;
+        });
+        if (idx >= 0) engine.blocks.splice(idx, 1, ...locked);
+        if (!palette.every((c) => colorsMeetingMinVisible(engine.blocks, minFrac).has(c))) {
+          engine.blocks = snapshot;
+          return null;
+        }
+        return {
+          type,
+          focus: {
+            x: Number(host.x) + Number(host.width) / 2,
+            y: Number(host.y) + Number(host.height) / 2,
+            width: Number(host.width),
+            height: Number(host.height)
+          }
+        };
+      };
 
-      // Final guard: if anything is under the floor, fall back to plain equal columns.
-      if (!palette.every((c) => colorsMeetingMinVisible(engine.blocks, minFrac).has(c))) {
-        engine.blocks = regions.map((region, i) => ({
-          id: `five_${deviceKey}_plain_${i}`,
-          x: region.x,
-          y: region.y,
-          width: region.width,
-          height: region.height,
-          color: palette[i],
-          contributorColor: palette[i],
-          patternType: 'regular',
-          contributorId: deviceKey,
-          submissionIndex: i + 1,
-          visualLayerIndex: i
-        }));
-        featured = null;
-      }
+      const preferred = rnd() < 0.55 ? 'hst' : 'insetCircle';
+      const featured =
+        tryFeatured(preferred) ||
+        tryFeatured(preferred === 'hst' ? 'insetCircle' : 'hst');
 
       const substantial = colorsMeetingMinVisible(engine.blocks, minFrac);
       return {
