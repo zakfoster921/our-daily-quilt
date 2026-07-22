@@ -389,6 +389,91 @@
       };
     }
 
+    /** Share cards: no thin accent slices from regular splits. */
+    function installMilestoneNoAccentGrowth(engine) {
+      engine._regularSplitAccentBias = () => 0;
+      if (typeof engine._chooseRegularSplitDirection === 'function') {
+        const original = engine._chooseRegularSplitDirection.bind(engine);
+        engine._chooseRegularSplitDirection = function chooseNoAccent(block, minBlockSize, newColor) {
+          const choice = original(block, minBlockSize, newColor) || {};
+          return { ...choice, avoidAccent: true };
+        };
+      }
+    }
+
+    /**
+     * Absorb leftover skinny regular strips into the largest edge neighbor.
+     * Keeps featured specials untouched.
+     */
+    function absorbThinMilestoneStrips(engine) {
+      if (!engine || !Array.isArray(engine.blocks)) return 0;
+      const dims =
+        typeof Utils !== 'undefined' && typeof Utils.getQuiltDimensions === 'function'
+          ? Utils.getQuiltDimensions()
+          : { width: MILESTONE_W, height: MILESTONE_H };
+      const quiltMin = Math.min(Number(dims.width) || MILESTONE_W, Number(dims.height) || MILESTONE_H);
+      const minSideLimit = Math.max(90, quiltMin * 0.06);
+      const aspectLimit = 3.1;
+      let absorbed = 0;
+
+      for (let guard = 0; guard < 80; guard++) {
+        const thin = engine.blocks
+          .filter((b) => isPlainRegularBlock(b) && b.milestoneFeatured !== true)
+          .map((b) => {
+            const w = Math.max(0, Number(b.width) || 0);
+            const h = Math.max(0, Number(b.height) || 0);
+            const minSide = Math.min(w, h);
+            const aspect = Math.max(w, h) / Math.max(1, minSide);
+            return { b, area: w * h, minSide, aspect };
+          })
+          .filter(({ minSide, aspect }) => aspect >= aspectLimit || minSide < minSideLimit)
+          .sort((a, c) => a.area - c.area);
+
+        if (!thin.length) break;
+
+        let did = false;
+        for (const { b: strip } of thin) {
+          let best = null;
+          let bestArea = 0;
+          for (const other of engine.blocks) {
+            if (
+              !other ||
+              other === strip ||
+              other.milestoneFeatured === true ||
+              !isPlainRegularBlock(other)
+            ) {
+              continue;
+            }
+            if (typeof engine._mergeTwoRegularBlocks !== 'function') continue;
+            const merged = engine._mergeTwoRegularBlocks(strip, other);
+            if (!merged) continue;
+            const area = Math.max(0, Number(other.width) || 0) * Math.max(0, Number(other.height) || 0);
+            if (area >= bestArea) {
+              bestArea = area;
+              best = { other, merged };
+            }
+          }
+          if (!best) continue;
+
+          const ia = engine.blocks.indexOf(strip);
+          const ib = engine.blocks.indexOf(best.other);
+          if (ia < 0 || ib < 0) continue;
+          // Keep the larger neighbor's color so the strip disappears into it.
+          best.merged.color = best.other.color;
+          best.merged.contributorColor = best.other.color;
+          const hi = Math.max(ia, ib);
+          const lo = Math.min(ia, ib);
+          engine.blocks.splice(hi, 1);
+          engine.blocks.splice(lo, 1, best.merged);
+          absorbed += 1;
+          did = true;
+          break;
+        }
+        if (!did) break;
+      }
+      return absorbed;
+    }
+
     function countFeaturedSpecials(engine) {
       return (engine.blocks || []).filter(
         (b) =>
@@ -405,6 +490,7 @@
       engine.recordUserContribution = () => {};
       engine._suppressSplitWarnings = true;
       engine.initialize();
+      installMilestoneNoAccentGrowth(engine);
       installFeaturedSplitGuard(engine);
 
       const preferred = pickRandomSpecial(chapterN);
@@ -447,6 +533,9 @@
       if (!stillHasFeatured) {
         featured = ensureFeaturedSpecial(engine, colors, preferred);
       }
+
+      // Drop skinny regular leftovers so share cards don't show accent "fragments".
+      absorbThinMilestoneStrips(engine);
 
       return {
         blocks: engine.blocks.map((b) => ({ ...b })),
