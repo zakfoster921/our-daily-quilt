@@ -176,8 +176,15 @@
     };
 
     const CHAPTERS = [5, 25, 100, 365];
-    /** One featured special per chapter — picked at random from this pool (not tied to count). */
-    const SPECIAL_POOL = ['hst', 'insetCircle', 'stripes', 'checkerboard', 'framed', 'cross'];
+    /**
+     * One featured special per chapter — random, not tied to count.
+     * HST / inset weighted higher: they stay one readable cell after growth.
+     */
+    const SPECIAL_POOL = [
+      'hst', 'hst', 'hst',
+      'insetCircle', 'insetCircle', 'insetCircle',
+      'stripes', 'checkerboard', 'framed', 'cross'
+    ];
     const PALETTES = {
       warm: ['#c45c3e', '#e8c7a0', '#5c4033', '#d9a05b', '#8f6a4a', '#f0e6d8', '#3d2c29', '#a67c52', '#b85c38', '#6e4e3a'],
       sea: ['#2f5d62', '#7aa6a3', '#d4e1e0', '#1f3a3d', '#c4a484', '#5b7c6e', '#e8efe9', '#3d5a5b', '#9bb7b5', '#6b4f3a'],
@@ -235,25 +242,30 @@
 
     function pickHostBlock(engine) {
       const dims = Utils.getQuiltDimensions();
-      const quiltArea = Math.max(
-        1,
-        (Number(dims.width) || 1070) * (Number(dims.height) || 1340)
-      );
-      const maxArea = quiltArea * 0.22;
-      const minArea = quiltArea * 0.035;
-      const ranked = engine.blocks
+      const quiltW = Math.max(1, Number(dims.width) || MILESTONE_W);
+      const quiltH = Math.max(1, Number(dims.height) || MILESTONE_H);
+      const quiltArea = quiltW * quiltH;
+      const cx = quiltW / 2;
+      const cy = quiltH / 2;
+      // Allow larger hosts on small chapters (5-block quilts often exceed 22% area).
+      const maxArea = quiltArea * 0.48;
+      const minArea = quiltArea * 0.02;
+      const scored = engine.blocks
         .filter(isPlainRegularBlock)
-        .map((b) => ({ b, area: Number(b.width) * Number(b.height) }))
-        .filter(({ area }) => area >= minArea && area <= maxArea)
-        .sort((a, c) => c.area - a.area);
-      if (ranked.length) return ranked[0].b;
-      // Fallback: largest plain block under the max area gate
-      const loose = engine.blocks
-        .filter(isPlainRegularBlock)
-        .map((b) => ({ b, area: Number(b.width) * Number(b.height) }))
-        .filter(({ area }) => area <= maxArea && area > 0)
-        .sort((a, c) => c.area - a.area);
-      return loose[0]?.b || null;
+        .map((b) => {
+          const area = Number(b.width) * Number(b.height);
+          const bx = Number(b.x) + Number(b.width) / 2;
+          const by = Number(b.y) + Number(b.height) / 2;
+          const dist = Math.hypot(bx - cx, by - cy);
+          const maxDist = Math.hypot(cx, cy) || 1;
+          const centerScore = 1 - Math.min(1, dist / maxDist);
+          // Prefer mid-large, centered blocks (visible after 4:5 crop).
+          const areaScore = area >= minArea && area <= maxArea ? area / maxArea : area > maxArea ? 0.35 : 0.1;
+          return { b, area, score: centerScore * 0.65 + areaScore * 0.35, bx, by };
+        })
+        .filter(({ area }) => area > 0)
+        .sort((a, c) => c.score - a.score);
+      return scored[0]?.b || null;
     }
 
     function partnerColor(colors, hostColor) {
@@ -271,8 +283,9 @@
     }
 
     /**
-     * Guarantee one featured special on a mid-sized host block.
-     * Returns the pattern label applied (or null if nothing fit).
+     * Plant one featured special on a centered host, then lock those blocks so
+     * later color adds cannot split them away.
+     * Returns { type, focus } or null.
      */
     function ensureFeaturedSpecial(engine, colors, preferredType) {
       const host = pickHostBlock(engine);
@@ -324,12 +337,77 @@
         used = 'hst';
         created = tryType('hst');
       }
+      if (!created || !created.length) {
+        used = 'insetCircle';
+        created = tryType('insetCircle');
+      }
       if (!created || !created.length) return null;
 
       const idx = engine.blocks.findIndex((b) => b === host || b.id === host.id);
       if (idx < 0) return null;
-      engine.blocks.splice(idx, 1, ...created.map((b) => ({ ...b })));
-      return used;
+      const locked = created.map((b) => {
+        const out = { ...b };
+        out.milestoneFeatured = true;
+        out.originalPatternId = out.originalPatternId || out.id;
+        out.protectedAnchorId = `milestone-feat-${out.originalPatternId}`;
+        out.protectedAnchorRootId = out.originalPatternId;
+        return out;
+      });
+      engine.blocks.splice(idx, 1, ...locked);
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      locked.forEach((b) => {
+        minX = Math.min(minX, Number(b.x) || 0);
+        minY = Math.min(minY, Number(b.y) || 0);
+        maxX = Math.max(maxX, (Number(b.x) || 0) + (Number(b.width) || 0));
+        maxY = Math.max(maxY, (Number(b.y) || 0) + (Number(b.height) || 0));
+      });
+
+      return {
+        type: used,
+        focus: {
+          x: (minX + maxX) / 2,
+          y: (minY + maxY) / 2,
+          width: Math.max(1, maxX - minX),
+          height: Math.max(1, maxY - minY)
+        }
+      };
+    }
+
+    /** Keep milestone featured blocks out of further splits while more colors arrive. */
+    function installFeaturedSplitGuard(engine) {
+      if (typeof engine.splitBlock !== 'function') return;
+      const original = engine.splitBlock.bind(engine);
+      engine.splitBlock = function guardedSplitBlock(block, newColor) {
+        if (block && block.milestoneFeatured === true) {
+          const alt = engine.blocks.find(
+            (b) =>
+              b &&
+              b !== block &&
+              b.milestoneFeatured !== true &&
+              isPlainRegularBlock(b) &&
+              Number(b.width) * Number(b.height) > 800
+          );
+          if (alt) return original(alt, newColor);
+          // No safe alternate — skip this add's split on the keepsake.
+          return [block];
+        }
+        return original(block, newColor);
+      };
+    }
+
+    function countFeaturedSpecials(engine) {
+      return (engine.blocks || []).filter(
+        (b) =>
+          b &&
+          (b.milestoneFeatured === true ||
+            (b.patternType === 'special' &&
+              b.specialPatternType &&
+              b.specialPatternType !== 'diagonalAxis'))
+      ).length;
     }
 
     function buildEngineQuilt(colors, deviceKey, chapterN) {
@@ -337,11 +415,25 @@
       engine.recordUserContribution = () => {};
       engine._suppressSplitWarnings = true;
       engine.initialize();
+      installFeaturedSplitGuard(engine);
+
+      const preferred = pickRandomSpecial(chapterN);
+      // Plant special mid-growth so it feels woven in, then guard it while the rest arrive.
+      const insertAt = Math.max(
+        3,
+        Math.min(colors.length - 1, Math.floor(colors.length * 0.55))
+      );
       let added = 0;
-      for (const hex of colors) {
-        if (!engine.addColor(hex)) break;
+      let featured = null;
+
+      for (let i = 0; i < colors.length; i++) {
+        if (i === insertAt && !featured) {
+          featured = ensureFeaturedSpecial(engine, colors.slice(0, Math.max(1, i)), preferred);
+        }
+        if (!engine.addColor(colors[i])) break;
         added += 1;
       }
+
       engine.blocks.forEach((block) => {
         if (
           typeof block.contributorColor === 'string' &&
@@ -351,14 +443,28 @@
         }
       });
 
-      const preferred = pickRandomSpecial(chapterN);
-      const featured = ensureFeaturedSpecial(engine, colors, preferred);
+      // If growth ate the special somehow, re-plant at the end (fully protected).
+      const stillHasFeatured =
+        featured &&
+        engine.blocks.some(
+          (b) =>
+            b &&
+            b.milestoneFeatured === true &&
+            b.patternType === 'special' &&
+            b.specialPatternType &&
+            b.specialPatternType !== 'diagonalAxis'
+        );
+      if (!stillHasFeatured) {
+        featured = ensureFeaturedSpecial(engine, colors, preferred);
+      }
 
       return {
         blocks: engine.blocks.map((b) => ({ ...b })),
         submissionCount: engine.submissionCount,
         colorsAdded: added,
-        featuredSpecial: featured
+        featuredSpecial: featured?.type || null,
+        featuredFocus: featured?.focus || null,
+        featuredCount: countFeaturedSpecials(engine)
       };
     }
 
@@ -382,14 +488,31 @@
       }
       // Keep mirror for symmetry — then retarget the viewBox to the full mirrored field.
       renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
-      coverFitMirroredQuilt(svg);
+      coverFitMirroredQuilt(svg, state.featuredFocus || null);
+    }
+
+    function quiltPointToSvgUser(svg, x, y) {
+      const field = svg.querySelector('#quiltFieldLayer');
+      const svgCtm = svg.getScreenCTM && svg.getScreenCTM();
+      if (!field || !svgCtm || typeof field.getCTM !== 'function') {
+        return { x, y };
+      }
+      const m = field.getCTM();
+      if (!m) return { x, y };
+      const p = svg.createSVGPoint();
+      p.x = x;
+      p.y = y;
+      const screen = p.matrixTransform(m);
+      const local = screen.matrixTransform(svgCtm.inverse());
+      return { x: local.x, y: local.y };
     }
 
     /**
-     * Tight viewBox around primary + mirror, then cover-fit into the 4:5 frame
-     * (slice). Keeps symmetry; avoids meet letterboxing and empty side gutters.
+     * Tight viewBox around primary + mirror, then cover-fit into the 4:5 frame.
+     * When focus (featured special center in quilt space) is provided, bias the
+     * crop so that special stays on-screen.
      */
-    function coverFitMirroredQuilt(svg) {
+    function coverFitMirroredQuilt(svg, focusQuilt) {
       if (!svg) return;
       let bbox = null;
       try {
@@ -429,6 +552,15 @@
           vx = innerX;
           vy = innerY + (innerH - vh) / 2;
         }
+
+        if (focusQuilt && Number.isFinite(focusQuilt.x) && Number.isFinite(focusQuilt.y)) {
+          const focus = quiltPointToSvgUser(svg, focusQuilt.x, focusQuilt.y);
+          if (Number.isFinite(focus.x) && Number.isFinite(focus.y)) {
+            vx = Math.min(innerX + innerW - vw, Math.max(innerX, focus.x - vw / 2));
+            vy = Math.min(innerY + innerH - vh, Math.max(innerY, focus.y - vh / 2));
+          }
+        }
+
         svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
         svg.setAttribute('preserveAspectRatio', 'none');
       } else {
@@ -537,7 +669,9 @@
         renderIntoSvg(item.svg, state);
         item.busy.remove();
         const ms = Math.round(performance.now() - t0);
-        const feat = state.featuredSpecial ? ` · ${state.featuredSpecial}` : '';
+        const feat = state.featuredSpecial
+          ? ` · ${state.featuredSpecial}${state.featuredCount ? `×${state.featuredCount}` : ''}`
+          : ' · no-special';
         item.cap.textContent =
           `${item.n} colors · ${state.blocks.length} blocks${feat} · ${ms}ms`;
       }
