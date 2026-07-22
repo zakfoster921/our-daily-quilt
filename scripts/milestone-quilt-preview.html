@@ -218,15 +218,52 @@
       return /^#[0-9a-f]{6}$/.test(c) ? c : null;
     }
 
-    /** Sample a lifetime color history from the Rumi survey set (unique when palette allows). */
+    function hexToRgb(hex) {
+      const c = normalizeHex(hex);
+      if (!c) return null;
+      return {
+        r: parseInt(c.slice(1, 3), 16),
+        g: parseInt(c.slice(3, 5), 16),
+        b: parseInt(c.slice(5, 7), 16)
+      };
+    }
+
+    function colorDistance(a, b) {
+      const pa = hexToRgb(a);
+      const pb = hexToRgb(b);
+      if (!pa || !pb) return 0;
+      return Math.hypot(pa.r - pb.r, pa.g - pb.g, pa.b - pb.b);
+    }
+
+    /**
+     * Sample a lifetime color history from the Rumi survey set.
+     * Prefers unique, visually spaced colors so “5 colors” doesn’t look like two purples.
+     */
     function pickColors(n, seed) {
       const base = getRumiPalette();
       const rnd = mulberry32(seed >>> 0);
       const pool = base.slice();
       const out = [];
-      for (let i = 0; i < n && pool.length; i++) {
+      const minDist = n <= 5 ? 70 : n <= 25 ? 48 : 28;
+
+      const takeSpaced = () => {
+        for (let attempt = 0; attempt < pool.length; attempt++) {
+          const j = Math.floor(rnd() * pool.length);
+          const candidate = pool[j];
+          if (out.every((c) => colorDistance(c, candidate) >= minDist)) {
+            pool.splice(j, 1);
+            return candidate;
+          }
+        }
+        if (!pool.length) return null;
         const j = Math.floor(rnd() * pool.length);
-        out.push(pool.splice(j, 1)[0]);
+        return pool.splice(j, 1)[0];
+      };
+
+      for (let i = 0; i < n; i++) {
+        const next = takeSpaced();
+        if (!next) break;
+        out.push(next);
       }
       while (out.length < n && base.length) {
         out.push(base[Math.floor(rnd() * base.length)]);
@@ -234,6 +271,7 @@
       return out;
     }
 
+    /** Colors present anywhere on a block (including tiny inset/HST partners). */
     function collectVisibleColors(blocks) {
       const set = new Set();
       (blocks || []).forEach((block) => {
@@ -243,6 +281,62 @@
         });
       });
       return set;
+    }
+
+    /**
+     * Colors that actually read on a share card — each needs real area, not a 2px chip
+     * sitting outside the 4:5 crop.
+     */
+    function collectSubstantialColors(blocks, minAreaFrac = 0.07) {
+      const dims =
+        typeof Utils !== 'undefined' && typeof Utils.getQuiltDimensions === 'function'
+          ? Utils.getQuiltDimensions()
+          : { width: MILESTONE_W, height: MILESTONE_H };
+      const quiltArea = Math.max(
+        1,
+        (Number(dims.width) || MILESTONE_W) * (Number(dims.height) || MILESTONE_H)
+      );
+      const minArea = quiltArea * minAreaFrac;
+      const areas = new Map();
+      const add = (hex, area) => {
+        const c = normalizeHex(hex);
+        if (!c || !(area > 0)) return;
+        areas.set(c, (areas.get(c) || 0) + area);
+      };
+
+      (blocks || []).forEach((block) => {
+        const w = Math.max(0, Number(block?.width) || 0);
+        const h = Math.max(0, Number(block?.height) || 0);
+        const area = w * h;
+        if (!(area > 0)) return;
+        const primary = block?.color;
+        const secondary = block?.hstColorB || block?.insetInnerColor;
+        if (
+          block?.patternType === 'special' &&
+          block?.specialPatternType === 'hst' &&
+          normalizeHex(secondary)
+        ) {
+          add(primary, area * 0.5);
+          add(secondary, area * 0.5);
+          return;
+        }
+        if (
+          block?.patternType === 'special' &&
+          block?.specialPatternType === 'insetCircle' &&
+          normalizeHex(secondary)
+        ) {
+          const r = Math.max(0, Number(block.insetR) || Math.min(w, h) * 0.28);
+          const innerArea = Math.min(area * 0.85, Math.PI * r * r);
+          add(primary, Math.max(area - innerArea, area * 0.35));
+          add(secondary, innerArea);
+          return;
+        }
+        add(primary, area);
+      });
+
+      return new Set(
+        [...areas.entries()].filter(([, area]) => area >= minArea).map(([hex]) => hex)
+      );
     }
 
     function isPlainRegularBlock(block) {
@@ -425,14 +519,155 @@
 
     /**
      * Small chapters should keep every chapter color on-screen — disable absorb/merge
-     * paths that quietly fold a new pick into an existing field.
+     * and starter diagonal-axis (mirrors into a 2-color checkerboard).
      */
     function installMilestoneKeepEveryColor(engine) {
       engine._tryAbsorbNearMatchColor = () => null;
+      engine._tryApplySubmissionAxis = () => null;
       engine.runAdjacentSimilarMergePass = () => false;
       if (typeof engine.runPendingCohesionPasses === 'function') {
         engine.runPendingCohesionPasses = () => {};
       }
+    }
+
+    /**
+     * Deterministic 5-field layout: five chunky regions, five spaced colors, one featured special.
+     * Avoids engine paths that leave colors as off-crop chips while the caption still says “5”.
+     */
+    function buildFiveColorMilestoneQuilt(colors, deviceKey, chapterN) {
+      const dims =
+        typeof Utils !== 'undefined' && typeof Utils.getQuiltDimensions === 'function'
+          ? Utils.getQuiltDimensions()
+          : { width: MILESTONE_W, height: MILESTONE_H };
+      const quiltW = Math.max(1, Number(dims.width) || MILESTONE_W);
+      const quiltH = Math.max(1, Number(dims.height) || MILESTONE_H);
+      const rnd = mulberry32((colorSeed ^ 0x5f5f5f5f ^ (Number(chapterN) * 9973)) >>> 0);
+
+      const palette = [];
+      const seen = new Set();
+      (colors || []).forEach((c) => {
+        const hex = normalizeHex(c);
+        if (hex && !seen.has(hex)) {
+          seen.add(hex);
+          palette.push(hex);
+        }
+      });
+      while (palette.length < 5) {
+        const extra = pickColors(1, (colorSeed + palette.length * 13) >>> 0)[0];
+        const hex = normalizeHex(extra);
+        if (hex && !seen.has(hex)) {
+          seen.add(hex);
+          palette.push(hex);
+        } else {
+          break;
+        }
+      }
+
+      let regions = [{ x: 0, y: 0, width: quiltW, height: quiltH }];
+      while (regions.length < 5) {
+        regions.sort(
+          (a, c) => c.width * c.height - a.width * a.height || c.width - a.width
+        );
+        const host = regions.shift();
+        if (!host) break;
+        const vertical = host.width >= host.height;
+        const t = 0.4 + rnd() * 0.2;
+        if (vertical) {
+          const leftW = Math.max(80, Math.min(host.width - 80, host.width * t));
+          regions.push(
+            { x: host.x, y: host.y, width: leftW, height: host.height },
+            {
+              x: host.x + leftW,
+              y: host.y,
+              width: host.width - leftW,
+              height: host.height
+            }
+          );
+        } else {
+          const topH = Math.max(80, Math.min(host.height - 80, host.height * t));
+          regions.push(
+            { x: host.x, y: host.y, width: host.width, height: topH },
+            {
+              x: host.x,
+              y: host.y + topH,
+              width: host.width,
+              height: host.height - topH
+            }
+          );
+        }
+      }
+
+      const engine = new SimpleQuiltEngine(deviceKey, { recordColorReplayEvents: false });
+      engine.recordUserContribution = () => {};
+      engine._suppressSplitWarnings = true;
+      engine.initialize();
+      installMilestoneNoAccentGrowth(engine);
+      installMilestoneKeepEveryColor(engine);
+      installFeaturedSplitGuard(engine);
+
+      engine.blocks = regions.slice(0, 5).map((region, i) => ({
+        id: `five_${deviceKey}_${i}`,
+        x: region.x,
+        y: region.y,
+        width: region.width,
+        height: region.height,
+        color: palette[i % palette.length],
+        contributorColor: palette[i % palette.length],
+        patternType: 'regular',
+        contributorId: deviceKey,
+        submissionIndex: i + 1,
+        visualLayerIndex: i
+      }));
+      engine.submissionCount = engine.blocks.length;
+
+      // Only one readable special — HST / inset keep both colors large. Never stack extras.
+      const preferred = rnd() < 0.5 ? 'hst' : 'insetCircle';
+      const featured =
+        ensureFeaturedSpecial(engine, palette, preferred) ||
+        ensureFeaturedSpecial(engine, palette, preferred === 'hst' ? 'insetCircle' : 'hst');
+
+      // Re-assert any chapter color that lost substantial area after the special.
+      const missing = palette.filter((c) => !collectSubstantialColors(engine.blocks, 0.06).has(c));
+      missing.forEach((color) => {
+        const donor = engine.blocks
+          .filter((b) => isPlainRegularBlock(b) && b.milestoneFeatured !== true)
+          .sort(
+            (a, c) =>
+              Number(c.width) * Number(c.height) - Number(a.width) * Number(a.height)
+          )[0];
+        if (!donor) return;
+        const w = Number(donor.width) || 0;
+        const h = Number(donor.height) || 0;
+        const vertical = w >= h;
+        const keep = {
+          ...donor,
+          id: `${donor.id}_keep`,
+          ...(vertical ? { width: w / 2 } : { height: h / 2 })
+        };
+        const chip = {
+          ...donor,
+          id: `${donor.id}_chip`,
+          color,
+          contributorColor: color,
+          ...(vertical
+            ? { x: Number(donor.x) + w / 2, width: w / 2 }
+            : { y: Number(donor.y) + h / 2, height: h / 2 })
+        };
+        const idx = engine.blocks.indexOf(donor);
+        if (idx >= 0) engine.blocks.splice(idx, 1, keep, chip);
+      });
+
+      const substantial = collectSubstantialColors(engine.blocks, 0.06);
+      return {
+        blocks: engine.blocks.map((b) => ({ ...b })),
+        submissionCount: engine.submissionCount,
+        colorsAdded: palette.length,
+        visibleColors: substantial.size,
+        featuredSpecial: featured?.type || null,
+        featuredFocus: featured?.focus || null,
+        featuredCount: countFeaturedSpecials(engine),
+        chapterN
+      };
     }
 
     /**
@@ -625,12 +860,16 @@
     }
 
     function buildEngineQuilt(colors, deviceKey, chapterN) {
+      if (Number(chapterN) <= 5) {
+        return buildFiveColorMilestoneQuilt(colors, deviceKey, chapterN);
+      }
+
       const engine = new SimpleQuiltEngine(deviceKey, { recordColorReplayEvents: false });
       engine.recordUserContribution = () => {};
       engine._suppressSplitWarnings = true;
       engine.initialize();
       installMilestoneNoAccentGrowth(engine);
-      const keepEveryColor = Number(chapterN) <= 5;
+      const keepEveryColor = false;
       if (keepEveryColor) installMilestoneKeepEveryColor(engine);
       installFeaturedSplitGuard(engine);
 
@@ -681,11 +920,7 @@
         absorbThinMilestoneStrips(engine);
       }
 
-      if (keepEveryColor) {
-        ensureAllChapterColorsVisible(engine, colors);
-      }
-
-      const visibleColors = collectVisibleColors(engine.blocks).size;
+      const visibleColors = collectSubstantialColors(engine.blocks, 0.02).size;
 
       return {
         blocks: engine.blocks.map((b) => ({ ...b })),
@@ -968,11 +1203,12 @@
       const width = Math.max(1, maxX - minX);
       const height = Math.max(1, maxY - minY);
       const n = Number(chapterN) || 0;
-      // 5-color quilts: show more of the stack. 25: slightly pulled back.
-      const zoomOut = n > 0 && n <= 25;
+      // Zoom out a little for mid chapters. Never for 5 — that letterboxed paper around a
+      // tiny 2×2 checkerboard and hid the other chapter colors.
+      const zoomOut = n > 5 && n <= 25;
       // Inset enough that hand-cut edge AA never leaves a paper-colored rim.
-      const sideInsetFrac = zoomOut ? (n <= 5 ? 0.06 : 0.08) : 0.1;
-      const yInsetFrac = zoomOut ? (n <= 5 ? 0.04 : 0.05) : 0.06;
+      const sideInsetFrac = zoomOut ? 0.08 : 0.1;
+      const yInsetFrac = zoomOut ? 0.05 : 0.06;
       const sideInset = Math.max(10, width * sideInsetFrac);
       const yInset = Math.max(10, height * yInsetFrac);
       const innerX = minX + sideInset;
