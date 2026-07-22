@@ -82,7 +82,8 @@
     .frame {
       width: 100%;
       aspect-ratio: 4 / 5;
-      background: #1c1916;
+      /* Quilt paper — never show as black letterbox bars if the crop is loose. */
+      background: #eae7e1;
       box-shadow: 0 18px 40px rgba(28, 25, 22, 0.12);
       overflow: hidden;
       position: relative;
@@ -546,26 +547,21 @@
       });
 
       const seam = toRoot(tx / 2, ty / 2);
-      // Mirrored stack spans roughly y=0..ty in field-local space.
-      const top = toRoot(-24, -24);
-      const bottom = toRoot(MILESTONE_W + 24, ty + 24);
-      const left = Math.min(top.x, bottom.x, toRoot(0, 0).x);
-      const right = Math.max(
-        toRoot(MILESTONE_W, 0).x,
-        toRoot(tx, 0).x,
-        toRoot(MILESTONE_W * scaleX > 0 ? MILESTONE_W : 0, ty).x
-      );
-      // Width from stretched primary field.
-      const contentLeft = toRoot(-24, 0).x;
-      const contentRight = toRoot(MILESTONE_W + 24, 0).x;
+      // Mirrored stack lives in field-local y ≈ 0..ty — do NOT pad by a full
+      // canvas height above/below (that empty space showed up as letterbox bars).
+      const pad = 12;
+      const contentLeft = toRoot(-pad, 0).x;
+      const contentRight = toRoot(MILESTONE_W + pad, 0).x;
+      const contentTop = toRoot(0, -pad).y;
+      const contentBottom = toRoot(0, ty + pad).y;
 
       return {
         seamX: seam.x,
         seamY: seam.y,
-        minX: Math.min(contentLeft, left) ,
-        maxX: Math.max(contentRight, right),
-        minY: Math.min(top.y, seam.y - MILESTONE_H),
-        maxY: Math.max(bottom.y, seam.y + MILESTONE_H)
+        minX: Math.min(contentLeft, toRoot(0, 0).x),
+        maxX: Math.max(contentRight, toRoot(MILESTONE_W, 0).x),
+        minY: Math.min(contentTop, seam.y - (ty / 2 + pad)),
+        maxY: Math.max(contentBottom, seam.y + (ty / 2 + pad))
       };
     }
 
@@ -576,99 +572,117 @@
     function coverFitMirroredQuilt(svg, focusQuilt, chapterN) {
       if (!svg) return;
       const layout = readMirrorLayout(svg);
+
+      // Prefer the real painted bounds so we never include empty SVG space
+      // (empty viewBox regions were showing as black letterbox bars).
+      let painted = null;
+      try {
+        painted = svg.getBBox();
+      } catch (_) {
+        painted = null;
+      }
+      if (!painted || !(painted.width > 1) || !(painted.height > 1)) {
+        painted = unionLayerBBoxInSvgSpace(svg, [
+          '#quiltFieldLayer',
+          '#quiltMirroredFieldLayer'
+        ]);
+      }
+
       let minX;
       let minY;
       let maxX;
       let maxY;
-      if (layout) {
+      if (layout && painted && painted.width > 1) {
+        minX = Math.max(layout.minX, painted.x);
+        maxX = Math.min(layout.maxX, painted.x + painted.width);
+        minY = Math.max(layout.minY, painted.y);
+        maxY = Math.min(layout.maxY, painted.y + painted.height);
+        if (!(maxX > minX && maxY > minY)) {
+          minX = painted.x;
+          minY = painted.y;
+          maxX = painted.x + painted.width;
+          maxY = painted.y + painted.height;
+        }
+      } else if (painted && painted.width > 1) {
+        minX = painted.x;
+        minY = painted.y;
+        maxX = painted.x + painted.width;
+        maxY = painted.y + painted.height;
+      } else if (layout) {
         minX = layout.minX;
         minY = layout.minY;
         maxX = layout.maxX;
         maxY = layout.maxY;
       } else {
-        let bbox = null;
-        try {
-          bbox = svg.getBBox();
-        } catch (_) {
-          bbox = null;
-        }
-        if (!bbox || !(bbox.width > 1) || !(bbox.height > 1)) {
-          bbox = unionLayerBBoxInSvgSpace(svg, [
-            '#quiltFieldLayer',
-            '#quiltMirroredFieldLayer'
-          ]);
-        }
-        if (!bbox || !(bbox.width > 1)) {
-          svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
-          return;
-        }
-        minX = bbox.x;
-        minY = bbox.y;
-        maxX = bbox.x + bbox.width;
-        maxY = bbox.y + bbox.height;
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        return;
       }
 
       const width = Math.max(1, maxX - minX);
       const height = Math.max(1, maxY - minY);
       const n = Number(chapterN) || 0;
-      // 5-color quilts: show almost the whole mirrored stack. 25: still pulled back.
+      // 5-color quilts: show more of the stack. 25: slightly pulled back.
       const zoomOut = n > 0 && n <= 25;
-      const sideInsetFrac = zoomOut ? (n <= 5 ? 0.04 : 0.06) : 0.08;
-      const yInsetFrac = zoomOut ? (n <= 5 ? 0.02 : 0.025) : 0.03;
-      const sideInset = Math.max(8, width * sideInsetFrac);
-      const yInset = Math.max(8, height * yInsetFrac);
+      const sideInsetFrac = zoomOut ? (n <= 5 ? 0.03 : 0.05) : 0.08;
+      const yInsetFrac = zoomOut ? (n <= 5 ? 0.015 : 0.02) : 0.03;
+      const sideInset = Math.max(6, width * sideInsetFrac);
+      const yInset = Math.max(6, height * yInsetFrac);
       const innerX = minX + sideInset;
       const innerW = Math.max(1, width - sideInset * 2);
       const innerY = minY + yInset;
       const innerH = Math.max(1, height - yInset * 2);
 
       const targetAspect = 4 / 5;
-      let vw;
-      let vh;
-      let vx;
-      let vy;
-
-      if (zoomOut && layout && Number.isFinite(layout.seamY)) {
-        // Fit most of the mirrored stack height into the card (zoom out),
-        // still keeping the fold near mid-frame.
-        const stackFrac = n <= 5 ? 0.96 : 0.88;
-        vh = Math.min(innerH, height * stackFrac);
+      let vw = innerW;
+      let vh = vw / targetAspect;
+      if (vh > innerH) {
+        vh = innerH;
         vw = vh * targetAspect;
-        if (vw > innerW) {
-          vw = innerW;
-          vh = vw / targetAspect;
-        }
-        vx = innerX + (innerW - vw) / 2;
-        vy = layout.seamY - vh / 2;
-        const stackTop = Math.min(innerY, layout.seamY - MILESTONE_H * 1.05);
-        const stackBot = Math.max(innerY + innerH, layout.seamY + MILESTONE_H * 1.05);
-        vy = Math.min(stackBot - vh, Math.max(stackTop, vy));
-      } else {
-        vw = innerW;
-        vh = vw / targetAspect;
-        if (vh > innerH) {
-          vh = innerH;
+      }
+      // Early chapters: if the stack is taller than a width-fit window, grow the
+      // window to use more of the stack height (zoom out) while staying 4:5.
+      if (zoomOut && innerH > vh) {
+        const stackFrac = n <= 5 ? 0.98 : 0.9;
+        const tall = Math.min(innerH, height * stackFrac);
+        if (tall > vh) {
+          vh = tall;
           vw = vh * targetAspect;
-        }
-        vx = innerX + (innerW - vw) / 2;
-        vy = innerY + (innerH - vh) / 2;
-
-        // Put the mirror seam in the middle of the card.
-        if (layout && Number.isFinite(layout.seamY)) {
-          vy = layout.seamY - vh / 2;
-          const stackTop = Math.min(innerY, layout.seamY - MILESTONE_H * 0.95);
-          const stackBot = Math.max(innerY + innerH, layout.seamY + MILESTONE_H * 0.95);
-          vy = Math.min(stackBot - vh, Math.max(stackTop, vy));
+          if (vw > innerW) {
+            vw = innerW;
+            vh = vw / targetAspect;
+          }
         }
       }
 
+      let vx = innerX + (innerW - vw) / 2;
+      let vy = innerY + (innerH - vh) / 2;
+
+      // Keep the fold near mid-frame, clamped to painted content only.
+      if (layout && Number.isFinite(layout.seamY)) {
+        vy = layout.seamY - vh / 2;
+        vy = Math.min(innerY + innerH - vh, Math.max(innerY, vy));
+      }
+
       if (focusQuilt && Number.isFinite(focusQuilt.x) && layout && !zoomOut) {
-        // Horizontal nudge only on denser chapters — early ones stay stack-framed.
-        const focusX = layout.minX + (focusQuilt.x / MILESTONE_W) * (layout.maxX - layout.minX);
+        const spanX = Math.max(1, layout.maxX - layout.minX);
+        const focusX = layout.minX + (focusQuilt.x / MILESTONE_W) * spanX;
         if (Number.isFinite(focusX)) {
           vx = Math.min(innerX + innerW - vw, Math.max(innerX, focusX - vw / 2));
         }
       }
+
+      // Paper fill behind quilt so any residual gap isn't a dark bar.
+      let bg = svg.querySelector('#milestonePreviewPaper');
+      if (!bg) {
+        bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        bg.setAttribute('id', 'milestonePreviewPaper');
+        bg.setAttribute('fill', '#eae7e1');
+        svg.insertBefore(bg, svg.firstChild);
+      }
+      bg.setAttribute('x', String(vx));
+      bg.setAttribute('y', String(vy));
+      bg.setAttribute('width', String(vw));
+      bg.setAttribute('height', String(vh));
 
       svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
       svg.setAttribute('preserveAspectRatio', 'none');
@@ -677,6 +691,7 @@
       svg.style.maxWidth = 'none';
       svg.style.maxHeight = 'none';
       svg.style.display = 'block';
+      svg.style.background = '#eae7e1';
     }
 
     function unionLayerBBoxInSvgSpace(svg, selectors) {
