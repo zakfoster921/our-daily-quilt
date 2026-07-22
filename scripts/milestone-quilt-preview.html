@@ -459,15 +459,17 @@
       };
     }
 
-    function renderIntoSvg(svg, state) {
-      svg.innerHTML = '';
-
-      const renderer = new QuiltRendererV2(console);
-      renderer.quiltSVG = svg;
-      renderer.lastAddedIndex = null;
+    /**
+     * Milestone cards aren't the live quilt screen — skip 1.16× stretch and
+     * seam underpaint so neighbor colors don't leak as hairline "splinters".
+     */
+    function configureCleanMilestoneRenderer(renderer) {
       renderer._exportDisableSplitBandFit = true;
       renderer._exportFullQuiltField = true;
-      // Target the 4:5 card while laying out the mirrored field.
+      renderer._gridSeamUnderpaintBleed = () => 0;
+      renderer._buildLiveGapUnderpaintGroup = () => null;
+      renderer._buildFoldNotchUnderpaintGroup = () => null;
+      renderer._createGridSeamUnderpaintRect = () => null;
       renderer._renderViewportOverride = {
         w: MILESTONE_W,
         h: MILESTONE_H,
@@ -477,8 +479,66 @@
       if (typeof renderer.setBacksidePreviewEnabled === 'function') {
         renderer.setBacksidePreviewEnabled(false);
       }
-      // Keep mirror for symmetry — then retarget the viewBox to the full mirrored field.
-      renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
+    }
+
+    function withUnitHorizontalStretch(fn) {
+      if (typeof QuiltMirrorLayout === 'undefined' || typeof QuiltMirrorLayout.computeFromBlocks !== 'function') {
+        return fn();
+      }
+      const original = QuiltMirrorLayout.computeFromBlocks;
+      QuiltMirrorLayout.computeFromBlocks = function computeNoStretch(blocks, options) {
+        const result = original.call(this, blocks, { ...(options || {}), horizontalStretch: 1 });
+        if (result) result.horizontalStretch = 1;
+        return result;
+      };
+      try {
+        return fn();
+      } finally {
+        QuiltMirrorLayout.computeFromBlocks = original;
+      }
+    }
+
+    function stripMilestoneRenderArtifacts(svg) {
+      const field = svg.querySelector('#quiltFieldLayer');
+      if (field) field.setAttribute('transform', '');
+      svg.querySelectorAll('[data-live-gap-underpaint], [data-fold-notch-underpaint]').forEach((node) => {
+        try {
+          node.remove();
+        } catch (_) {
+          /* ignore */
+        }
+      });
+      // HST / regular blocks still mount a fill-only underpaint rect as first child.
+      svg.querySelectorAll('.quilt-parallax-block').forEach((group) => {
+        [...group.children].forEach((child) => {
+          if (
+            child.tagName === 'rect' &&
+            child.getAttribute('pointer-events') === 'none' &&
+            (!child.getAttribute('stroke') || child.getAttribute('stroke') === 'none')
+          ) {
+            try {
+              child.remove();
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        });
+      });
+    }
+
+    function renderIntoSvg(svg, state) {
+      svg.innerHTML = '';
+
+      const renderer = new QuiltRendererV2(console);
+      renderer.quiltSVG = svg;
+      renderer.lastAddedIndex = null;
+      configureCleanMilestoneRenderer(renderer);
+
+      // Keep mirror for symmetry — no live-screen stretch — then cover-fit to 4:5.
+      withUnitHorizontalStretch(() => {
+        renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
+      });
+      stripMilestoneRenderArtifacts(svg);
       coverFitMirroredQuilt(svg, state.featuredFocus || null, state.chapterN || null);
     }
 
