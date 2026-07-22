@@ -116,20 +116,12 @@
   <header>
     <h1>Milestone quilt preview</h1>
     <p class="lede">
-      Real ODQ engine + renderer. Each chapter gets <strong>one random featured special</strong>
-      (HST, inset, stripes, cross, etc.). Same mock color history grown denser
-      at each count. Serve from the <strong>repo root</strong>.
+      Real ODQ engine + renderer. Colors sampled from the <strong>Rumi survey palette</strong>
+      (same set as the app). Each chapter gets one random featured special.
+      Serve from the <strong>repo root</strong>.
     </p>
     <div class="controls">
-      <button type="button" id="reshuffle">New color history</button>
-      <label class="seed-label">Palette
-        <select id="palette">
-          <option value="warm" selected>Warm clay</option>
-          <option value="sea">Sea glass</option>
-          <option value="ink">Ink + paper</option>
-          <option value="garden">Garden</option>
-        </select>
-      </label>
+      <button type="button" id="reshuffle">New Rumi history</button>
       <span class="seed-label" id="meta">Loading engine…</span>
     </div>
   </header>
@@ -145,6 +137,7 @@
   </p>
 
   <script>window.odqEnableAdminTools = function () { return false; };</script>
+  <script src="../rumi-colors.js"></script>
   <script src="../lib/app-config.js"></script>
   <script src="../lib/color-utils-v2.js"></script>
   <script src="../lib/utils-core.js"></script>
@@ -159,6 +152,9 @@
 
   <script>
     window.Utils = window.UtilsCore;
+    if (typeof rumiColors !== 'undefined' && Array.isArray(rumiColors)) {
+      window.__ODQ_RUMI_COLORS__ = rumiColors;
+    }
 
     /** Frame size for the share card. Primary quilt builds at this size; mirror stays on, then we cover-fit. */
     const MILESTONE_W = 1080;
@@ -186,12 +182,11 @@
       'insetCircle', 'insetCircle', 'insetCircle',
       'stripes', 'checkerboard', 'framed', 'cross'
     ];
-    const PALETTES = {
-      warm: ['#c45c3e', '#e8c7a0', '#5c4033', '#d9a05b', '#8f6a4a', '#f0e6d8', '#3d2c29', '#a67c52', '#b85c38', '#6e4e3a'],
-      sea: ['#2f5d62', '#7aa6a3', '#d4e1e0', '#1f3a3d', '#c4a484', '#5b7c6e', '#e8efe9', '#3d5a5b', '#9bb7b5', '#6b4f3a'],
-      ink: ['#1a1a1a', '#e8e4dc', '#5c5c5c', '#cfc8bc', '#2c2c2c', '#f5f2eb', '#8a847a', '#3f3f3f', '#d6d0c4', '#6f6a62'],
-      garden: ['#3d5c3a', '#c9d4a3', '#8b3a3a', '#f0e8d0', '#5a7048', '#d4a574', '#2f3d2e', '#a8b87a', '#6b4f3a', '#e6dcc4']
-    };
+    const RUMI_FALLBACK = [
+      '#ea9b9a', '#de6c61', '#61c9de', '#61de61', '#6182de', '#8061de',
+      '#caa22b', '#2bcaca', '#1f931f', '#bd283c', '#4024a8', '#ce2cb0',
+      '#3177d3', '#9ab125', '#df9368', '#7e7de3'
+    ];
 
     let colorSeed = 7;
     let renderToken = 0;
@@ -205,31 +200,25 @@
       };
     }
 
-    function hashStr(s) {
-      let h = 2166136261;
-      for (let i = 0; i < s.length; i++) {
-        h ^= s.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-      }
-      return h >>> 0;
+    function getRumiPalette() {
+      const raw = Array.isArray(window.__ODQ_RUMI_COLORS__)
+        ? window.__ODQ_RUMI_COLORS__
+        : Array.isArray(window.rumiColors)
+          ? window.rumiColors
+          : [];
+      const cleaned = raw
+        .filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/i.test(c.trim()))
+        .map((c) => c.trim().toLowerCase());
+      return cleaned.length ? cleaned : RUMI_FALLBACK;
     }
 
-    function nudgeHex(hex, amount) {
-      const n = parseInt(hex.slice(1), 16);
-      let r = (n >> 16) & 255;
-      let g = (n >> 8) & 255;
-      let b = n & 255;
-      const adj = (v) => Math.max(0, Math.min(255, Math.round(v + amount)));
-      r = adj(r); g = adj(g); b = adj(b);
-      return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
-    }
-
-    function pickColors(n, paletteName, seed) {
-      const base = PALETTES[paletteName] || PALETTES.warm;
-      const rnd = mulberry32(seed ^ hashStr(paletteName));
+    /** Sample a lifetime color history from the Rumi survey set (no artificial drift). */
+    function pickColors(n, seed) {
+      const base = getRumiPalette();
+      const rnd = mulberry32(seed >>> 0);
       const out = [];
       for (let i = 0; i < n; i++) {
-        out.push(nudgeHex(base[Math.floor(rnd() * base.length)], (rnd() - 0.5) * 22));
+        out.push(base[Math.floor(rnd() * base.length)]);
       }
       return out;
     }
@@ -749,13 +738,13 @@
       }
 
       const token = ++renderToken;
-      const palette = document.getElementById('palette').value;
       const reshuffleBtn = document.getElementById('reshuffle');
       reshuffleBtn.disabled = true;
+      const rumiCount = getRumiPalette().length;
       document.getElementById('meta').textContent = 'Building quilts…';
 
       const maxN = Math.max(...CHAPTERS);
-      const allColors = pickColors(maxN, palette, colorSeed);
+      const allColors = pickColors(maxN, colorSeed);
       const grid = document.getElementById('grid');
       grid.innerHTML = '';
 
@@ -798,7 +787,8 @@
       }
 
       if (token !== renderToken) return;
-      document.getElementById('meta').textContent = `color seed ${colorSeed}`;
+      document.getElementById('meta').textContent =
+        `Rumi palette · ${rumiCount} colors · seed ${colorSeed}`;
       reshuffleBtn.disabled = false;
     }
 
@@ -806,7 +796,6 @@
       colorSeed = (colorSeed + 17) >>> 0;
       render();
     });
-    document.getElementById('palette').addEventListener('change', render);
 
     render();
   </script>
