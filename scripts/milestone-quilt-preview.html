@@ -464,7 +464,8 @@
         colorsAdded: added,
         featuredSpecial: featured?.type || null,
         featuredFocus: featured?.focus || null,
-        featuredCount: countFeaturedSpecials(engine)
+        featuredCount: countFeaturedSpecials(engine),
+        chapterN: chapterN
       };
     }
 
@@ -488,7 +489,7 @@
       }
       // Keep mirror for symmetry — then retarget the viewBox to the full mirrored field.
       renderer.renderBlocks(state.blocks, [], state.submissionCount || 0);
-      coverFitMirroredQuilt(svg, state.featuredFocus || null);
+      coverFitMirroredQuilt(svg, state.featuredFocus || null, state.chapterN || null);
     }
 
     function quiltPointToSvgUser(svg, x, y) {
@@ -570,8 +571,9 @@
 
     /**
      * Cover-fit mirrored quilt into 4:5 with the fold near the vertical center.
+     * Early chapters (≤25) zoom out so a few large blocks don't become a flat fill.
      */
-    function coverFitMirroredQuilt(svg, focusQuilt) {
+    function coverFitMirroredQuilt(svg, focusQuilt, chapterN) {
       if (!svg) return;
       const layout = readMirrorLayout(svg);
       let minX;
@@ -608,35 +610,60 @@
 
       const width = Math.max(1, maxX - minX);
       const height = Math.max(1, maxY - minY);
-      const sideInset = Math.max(16, width * 0.08);
-      const yInset = Math.max(12, height * 0.03);
+      const n = Number(chapterN) || 0;
+      // 5-color quilts: show almost the whole mirrored stack. 25: still pulled back.
+      const zoomOut = n > 0 && n <= 25;
+      const sideInsetFrac = zoomOut ? (n <= 5 ? 0.04 : 0.06) : 0.08;
+      const yInsetFrac = zoomOut ? (n <= 5 ? 0.02 : 0.025) : 0.03;
+      const sideInset = Math.max(8, width * sideInsetFrac);
+      const yInset = Math.max(8, height * yInsetFrac);
       const innerX = minX + sideInset;
       const innerW = Math.max(1, width - sideInset * 2);
       const innerY = minY + yInset;
       const innerH = Math.max(1, height - yInset * 2);
 
       const targetAspect = 4 / 5;
-      let vw = innerW;
-      let vh = vw / targetAspect;
-      if (vh > innerH) {
-        vh = innerH;
+      let vw;
+      let vh;
+      let vx;
+      let vy;
+
+      if (zoomOut && layout && Number.isFinite(layout.seamY)) {
+        // Fit most of the mirrored stack height into the card (zoom out),
+        // still keeping the fold near mid-frame.
+        const stackFrac = n <= 5 ? 0.96 : 0.88;
+        vh = Math.min(innerH, height * stackFrac);
         vw = vh * targetAspect;
-      }
-      let vx = innerX + (innerW - vw) / 2;
-      let vy = innerY + (innerH - vh) / 2;
-
-      // Put the mirror seam in the middle of the card.
-      if (layout && Number.isFinite(layout.seamY)) {
+        if (vw > innerW) {
+          vw = innerW;
+          vh = vw / targetAspect;
+        }
+        vx = innerX + (innerW - vw) / 2;
         vy = layout.seamY - vh / 2;
-        // Keep window inside the mirrored stack, but prefer seam centering —
-        // allow the window to sit wherever the fold needs it.
-        const stackTop = Math.min(innerY, layout.seamY - MILESTONE_H * 0.95);
-        const stackBot = Math.max(innerY + innerH, layout.seamY + MILESTONE_H * 0.95);
+        const stackTop = Math.min(innerY, layout.seamY - MILESTONE_H * 1.05);
+        const stackBot = Math.max(innerY + innerH, layout.seamY + MILESTONE_H * 1.05);
         vy = Math.min(stackBot - vh, Math.max(stackTop, vy));
+      } else {
+        vw = innerW;
+        vh = vw / targetAspect;
+        if (vh > innerH) {
+          vh = innerH;
+          vw = vh * targetAspect;
+        }
+        vx = innerX + (innerW - vw) / 2;
+        vy = innerY + (innerH - vh) / 2;
+
+        // Put the mirror seam in the middle of the card.
+        if (layout && Number.isFinite(layout.seamY)) {
+          vy = layout.seamY - vh / 2;
+          const stackTop = Math.min(innerY, layout.seamY - MILESTONE_H * 0.95);
+          const stackBot = Math.max(innerY + innerH, layout.seamY + MILESTONE_H * 0.95);
+          vy = Math.min(stackBot - vh, Math.max(stackTop, vy));
+        }
       }
 
-      if (focusQuilt && Number.isFinite(focusQuilt.x) && layout) {
-        // Horizontal nudge only — don't pull the fold off-center vertically.
+      if (focusQuilt && Number.isFinite(focusQuilt.x) && layout && !zoomOut) {
+        // Horizontal nudge only on denser chapters — early ones stay stack-framed.
         const focusX = layout.minX + (focusQuilt.x / MILESTONE_W) * (layout.maxX - layout.minX);
         if (Number.isFinite(focusX)) {
           vx = Math.min(innerX + innerW - vw, Math.max(innerX, focusX - vw / 2));
