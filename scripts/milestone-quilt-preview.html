@@ -212,15 +212,37 @@
       return cleaned.length ? cleaned : RUMI_FALLBACK;
     }
 
-    /** Sample a lifetime color history from the Rumi survey set (no artificial drift). */
+    function normalizeHex(color) {
+      if (typeof color !== 'string') return null;
+      const c = color.trim().toLowerCase();
+      return /^#[0-9a-f]{6}$/.test(c) ? c : null;
+    }
+
+    /** Sample a lifetime color history from the Rumi survey set (unique when palette allows). */
     function pickColors(n, seed) {
       const base = getRumiPalette();
       const rnd = mulberry32(seed >>> 0);
+      const pool = base.slice();
       const out = [];
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; i < n && pool.length; i++) {
+        const j = Math.floor(rnd() * pool.length);
+        out.push(pool.splice(j, 1)[0]);
+      }
+      while (out.length < n && base.length) {
         out.push(base[Math.floor(rnd() * base.length)]);
       }
       return out;
+    }
+
+    function collectVisibleColors(blocks) {
+      const set = new Set();
+      (blocks || []).forEach((block) => {
+        ['color', 'contributorColor', 'hstColorB', 'insetInnerColor'].forEach((key) => {
+          const hex = normalizeHex(block?.[key]);
+          if (hex) set.add(hex);
+        });
+      });
+      return set;
     }
 
     function isPlainRegularBlock(block) {
@@ -402,6 +424,123 @@
     }
 
     /**
+     * Small chapters should keep every chapter color on-screen — disable absorb/merge
+     * paths that quietly fold a new pick into an existing field.
+     */
+    function installMilestoneKeepEveryColor(engine) {
+      engine._tryAbsorbNearMatchColor = () => null;
+      engine.runAdjacentSimilarMergePass = () => false;
+      if (typeof engine.runPendingCohesionPasses === 'function') {
+        engine.runPendingCohesionPasses = () => {};
+      }
+    }
+
+    /**
+     * Guarantee each chapter color appears on at least one block (plain split if missing).
+     * Used for the 5-color card so “5 colors” means five visible fields.
+     */
+    function ensureAllChapterColorsVisible(engine, colors) {
+      if (!engine || !Array.isArray(engine.blocks) || !Array.isArray(colors)) return 0;
+      const wanted = [];
+      const seenWanted = new Set();
+      colors.forEach((c) => {
+        const hex = normalizeHex(c);
+        if (hex && !seenWanted.has(hex)) {
+          seenWanted.add(hex);
+          wanted.push(hex);
+        }
+      });
+      let placed = 0;
+
+      const clearSpecialFlags = (block) => {
+        delete block.patternType;
+        block.patternType = 'regular';
+        delete block.specialPatternType;
+        delete block.hstColorB;
+        delete block.hstDiagonal;
+        delete block.insetInnerColor;
+        delete block.insetCx;
+        delete block.insetCy;
+        delete block.insetR;
+        delete block.milestoneFeatured;
+        return block;
+      };
+
+      for (const color of wanted) {
+        if (collectVisibleColors(engine.blocks).has(color)) continue;
+
+        const colorCounts = new Map();
+        engine.blocks.forEach((b) => {
+          if (!isPlainRegularBlock(b) || b.milestoneFeatured === true) return;
+          const hex = normalizeHex(b.color);
+          if (!hex) return;
+          colorCounts.set(hex, (colorCounts.get(hex) || 0) + 1);
+        });
+
+        let donor = null;
+        let donorScore = -1;
+        engine.blocks.forEach((b) => {
+          if (!isPlainRegularBlock(b) || b.milestoneFeatured === true) return;
+          const w = Math.max(0, Number(b.width) || 0);
+          const h = Math.max(0, Number(b.height) || 0);
+          const area = w * h;
+          if (area < 8000 || Math.min(w, h) < 60) return;
+          const hex = normalizeHex(b.color);
+          const dupBonus = (colorCounts.get(hex) || 0) > 1 ? 1e12 : 0;
+          const score = dupBonus + area;
+          if (score > donorScore) {
+            donorScore = score;
+            donor = b;
+          }
+        });
+
+        if (!donor) {
+          // Last resort: retint the largest unprotected block.
+          donor = engine.blocks
+            .filter((b) => b && b.milestoneFeatured !== true)
+            .sort(
+              (a, c) =>
+                Number(c.width) * Number(c.height) - Number(a.width) * Number(a.height)
+            )[0];
+          if (!donor) continue;
+          donor.color = color;
+          donor.contributorColor = color;
+          clearSpecialFlags(donor);
+          placed += 1;
+          continue;
+        }
+
+        const x = Number(donor.x) || 0;
+        const y = Number(donor.y) || 0;
+        const w = Number(donor.width) || 0;
+        const h = Number(donor.height) || 0;
+        const vertical = w >= h;
+        const keep = clearSpecialFlags({
+          ...donor,
+          id: `${donor.id}_keep_${placed}`,
+          ...(vertical
+            ? { width: w / 2 }
+            : { height: h / 2 })
+        });
+        const chip = clearSpecialFlags({
+          ...donor,
+          id: `${donor.id}_chip_${placed}`,
+          color,
+          contributorColor: color,
+          submissionIndex: (Number(donor.submissionIndex) || 0) + 1,
+          ...(vertical
+            ? { x: x + w / 2, width: w / 2 }
+            : { y: y + h / 2, height: h / 2 })
+        });
+        const idx = engine.blocks.indexOf(donor);
+        if (idx < 0) continue;
+        engine.blocks.splice(idx, 1, keep, chip);
+        placed += 1;
+      }
+      return placed;
+    }
+
+    /**
      * Absorb leftover skinny regular strips into the largest edge neighbor.
      * Keeps featured specials untouched.
      */
@@ -491,14 +630,16 @@
       engine._suppressSplitWarnings = true;
       engine.initialize();
       installMilestoneNoAccentGrowth(engine);
+      const keepEveryColor = Number(chapterN) <= 5;
+      if (keepEveryColor) installMilestoneKeepEveryColor(engine);
       installFeaturedSplitGuard(engine);
 
       const preferred = pickRandomSpecial(chapterN);
       // Plant special mid-growth so it feels woven in, then guard it while the rest arrive.
-      const insertAt = Math.max(
-        3,
-        Math.min(colors.length - 1, Math.floor(colors.length * 0.55))
-      );
+      // For the 5-color card, plant after all colors exist so we don't hide a pick.
+      const insertAt = keepEveryColor
+        ? colors.length
+        : Math.max(3, Math.min(colors.length - 1, Math.floor(colors.length * 0.55)));
       let added = 0;
       let featured = null;
 
@@ -535,12 +676,22 @@
       }
 
       // Drop skinny regular leftovers so share cards don't show accent "fragments".
-      absorbThinMilestoneStrips(engine);
+      // Skip on the 5-color card — absorbing strips can erase a whole chapter color.
+      if (!keepEveryColor) {
+        absorbThinMilestoneStrips(engine);
+      }
+
+      if (keepEveryColor) {
+        ensureAllChapterColorsVisible(engine, colors);
+      }
+
+      const visibleColors = collectVisibleColors(engine.blocks).size;
 
       return {
         blocks: engine.blocks.map((b) => ({ ...b })),
         submissionCount: engine.submissionCount,
         colorsAdded: added,
+        visibleColors,
         featuredSpecial: featured?.type || null,
         featuredFocus: featured?.focus || null,
         featuredCount: countFeaturedSpecials(engine),
@@ -981,8 +1132,10 @@
         const feat = state.featuredSpecial
           ? ` · ${state.featuredSpecial}${state.featuredCount ? `×${state.featuredCount}` : ''}`
           : ' · no-special';
+        const visible =
+          state.visibleColors != null ? ` · ${state.visibleColors} visible` : '';
         item.cap.textContent =
-          `${item.n} colors · ${state.blocks.length} blocks${feat} · ${ms}ms`;
+          `${item.n} colors${visible} · ${state.blocks.length} blocks${feat} · ${ms}ms`;
       }
 
       if (token !== renderToken) return;
