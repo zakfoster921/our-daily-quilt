@@ -508,65 +508,143 @@
     }
 
     /**
-     * Tight viewBox around primary + mirror, then cover-fit into the 4:5 frame.
-     * When focus (featured special center in quilt space) is provided, bias the
-     * crop so that special stays on-screen.
+     * Read mirror fold from translate(tx,ty) scale(-1,-1).
+     * Point-reflection center is (tx/2, ty/2) in field-local quilt space.
+     */
+    function readMirrorLayout(svg) {
+      const mir = svg.querySelector('#quiltMirroredFieldLayer');
+      const field = svg.querySelector('#quiltFieldLayer');
+      if (!mir) return null;
+      const transform = mir.getAttribute('transform') || '';
+      const match = /translate\(\s*([-\d.eE]+)\s+([-\d.eE]+)\s*\)/.exec(transform);
+      if (!match) return null;
+      const tx = Number(match[1]);
+      const ty = Number(match[2]);
+      if (!Number.isFinite(tx) || !Number.isFinite(ty)) return null;
+
+      let scaleX = 1;
+      let scaleY = 1;
+      let shiftX = 0;
+      let shiftY = 0;
+      const ft = field?.getAttribute('transform') || '';
+      const scaleMatch = /scale\(\s*([-\d.eE]+)(?:\s+([-\d.eE]+))?\s*\)/.exec(ft);
+      if (scaleMatch) {
+        scaleX = Number(scaleMatch[1]) || 1;
+        scaleY = Number(scaleMatch[2] || scaleMatch[1]) || 1;
+      }
+      const shiftMatch = /translate\(\s*([-\d.eE]+)\s+([-\d.eE]+)\s*\)/.exec(ft);
+      if (shiftMatch) {
+        shiftX = Number(shiftMatch[1]) || 0;
+        shiftY = Number(shiftMatch[2]) || 0;
+      }
+
+      // Field-local → SVG root (field scale/translate only; ignore live viewBox CTM).
+      const toRoot = (x, y) => ({
+        x: shiftX + x * scaleX,
+        y: shiftY + y * scaleY
+      });
+
+      const seam = toRoot(tx / 2, ty / 2);
+      // Mirrored stack spans roughly y=0..ty in field-local space.
+      const top = toRoot(-24, -24);
+      const bottom = toRoot(MILESTONE_W + 24, ty + 24);
+      const left = Math.min(top.x, bottom.x, toRoot(0, 0).x);
+      const right = Math.max(
+        toRoot(MILESTONE_W, 0).x,
+        toRoot(tx, 0).x,
+        toRoot(MILESTONE_W * scaleX > 0 ? MILESTONE_W : 0, ty).x
+      );
+      // Width from stretched primary field.
+      const contentLeft = toRoot(-24, 0).x;
+      const contentRight = toRoot(MILESTONE_W + 24, 0).x;
+
+      return {
+        seamX: seam.x,
+        seamY: seam.y,
+        minX: Math.min(contentLeft, left) ,
+        maxX: Math.max(contentRight, right),
+        minY: Math.min(top.y, seam.y - MILESTONE_H),
+        maxY: Math.max(bottom.y, seam.y + MILESTONE_H)
+      };
+    }
+
+    /**
+     * Cover-fit mirrored quilt into 4:5 with the fold near the vertical center.
      */
     function coverFitMirroredQuilt(svg, focusQuilt) {
       if (!svg) return;
-      let bbox = null;
-      try {
-        bbox = svg.getBBox();
-      } catch (_) {
-        bbox = null;
-      }
-      if (!bbox || !(bbox.width > 1) || !(bbox.height > 1)) {
-        // Fallback: union field + mirrored layer local boxes via CTM → SVG space
-        bbox = unionLayerBBoxInSvgSpace(svg, [
-          '#quiltFieldLayer',
-          '#quiltMirroredFieldLayer'
-        ]);
-      }
-      if (bbox && bbox.width > 1 && bbox.height > 1) {
-        // Inset all sides so the 4:5 window doesn't clip through blocks and
-        // leave hairline strips (sides or top/bottom).
-        const sideInset = Math.max(16, bbox.width * 0.1);
-        const yInset = Math.max(16, bbox.height * 0.045);
-        const innerX = bbox.x + sideInset;
-        const innerW = Math.max(1, bbox.width - sideInset * 2);
-        const innerY = bbox.y + yInset;
-        const innerH = Math.max(1, bbox.height - yInset * 2);
-        const targetAspect = 4 / 5;
-        const contentAspect = innerW / innerH;
-        let vx;
-        let vy;
-        let vw;
-        let vh;
-        if (contentAspect > targetAspect) {
-          vh = innerH;
-          vw = innerH * targetAspect;
-          vx = innerX + (innerW - vw) / 2;
-          vy = innerY;
-        } else {
-          vw = innerW;
-          vh = innerW / targetAspect;
-          vx = innerX;
-          vy = innerY + (innerH - vh) / 2;
-        }
-
-        if (focusQuilt && Number.isFinite(focusQuilt.x) && Number.isFinite(focusQuilt.y)) {
-          const focus = quiltPointToSvgUser(svg, focusQuilt.x, focusQuilt.y);
-          if (Number.isFinite(focus.x) && Number.isFinite(focus.y)) {
-            vx = Math.min(innerX + innerW - vw, Math.max(innerX, focus.x - vw / 2));
-            vy = Math.min(innerY + innerH - vh, Math.max(innerY, focus.y - vh / 2));
-          }
-        }
-
-        svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
-        svg.setAttribute('preserveAspectRatio', 'none');
+      const layout = readMirrorLayout(svg);
+      let minX;
+      let minY;
+      let maxX;
+      let maxY;
+      if (layout) {
+        minX = layout.minX;
+        minY = layout.minY;
+        maxX = layout.maxX;
+        maxY = layout.maxY;
       } else {
-        svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+        let bbox = null;
+        try {
+          bbox = svg.getBBox();
+        } catch (_) {
+          bbox = null;
+        }
+        if (!bbox || !(bbox.width > 1) || !(bbox.height > 1)) {
+          bbox = unionLayerBBoxInSvgSpace(svg, [
+            '#quiltFieldLayer',
+            '#quiltMirroredFieldLayer'
+          ]);
+        }
+        if (!bbox || !(bbox.width > 1)) {
+          svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+          return;
+        }
+        minX = bbox.x;
+        minY = bbox.y;
+        maxX = bbox.x + bbox.width;
+        maxY = bbox.y + bbox.height;
       }
+
+      const width = Math.max(1, maxX - minX);
+      const height = Math.max(1, maxY - minY);
+      const sideInset = Math.max(16, width * 0.08);
+      const yInset = Math.max(12, height * 0.03);
+      const innerX = minX + sideInset;
+      const innerW = Math.max(1, width - sideInset * 2);
+      const innerY = minY + yInset;
+      const innerH = Math.max(1, height - yInset * 2);
+
+      const targetAspect = 4 / 5;
+      let vw = innerW;
+      let vh = vw / targetAspect;
+      if (vh > innerH) {
+        vh = innerH;
+        vw = vh * targetAspect;
+      }
+      let vx = innerX + (innerW - vw) / 2;
+      let vy = innerY + (innerH - vh) / 2;
+
+      // Put the mirror seam in the middle of the card.
+      if (layout && Number.isFinite(layout.seamY)) {
+        vy = layout.seamY - vh / 2;
+        // Keep window inside the mirrored stack, but prefer seam centering —
+        // allow the window to sit wherever the fold needs it.
+        const stackTop = Math.min(innerY, layout.seamY - MILESTONE_H * 0.95);
+        const stackBot = Math.max(innerY + innerH, layout.seamY + MILESTONE_H * 0.95);
+        vy = Math.min(stackBot - vh, Math.max(stackTop, vy));
+      }
+
+      if (focusQuilt && Number.isFinite(focusQuilt.x) && layout) {
+        // Horizontal nudge only — don't pull the fold off-center vertically.
+        const focusX = layout.minX + (focusQuilt.x / MILESTONE_W) * (layout.maxX - layout.minX);
+        if (Number.isFinite(focusX)) {
+          vx = Math.min(innerX + innerW - vw, Math.max(innerX, focusX - vw / 2));
+        }
+      }
+
+      svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
       svg.style.width = '100%';
       svg.style.height = '100%';
       svg.style.maxWidth = 'none';
