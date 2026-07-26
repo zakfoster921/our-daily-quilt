@@ -524,24 +524,59 @@ function notionPropToPlain(prop) {
   return '';
 }
 
-/** Editor-owned community prompt on the Notion row (if any). */
-function readNotionCommunityPromptFromPageProperties(properties) {
-  const aliases = FIELD_ALIASES.community_prompt || ['community_prompt'];
+/** Read one ODQ text field from a Notion page's properties. */
+function readNotionFieldFromPageProperties(properties, field) {
+  const aliases = FIELD_ALIASES[field] || [field];
   const wanted = new Set(aliases.map(normKey));
   const found = Object.entries(properties || {}).find(([name]) => wanted.has(normKey(name)));
   return found ? notionPropToPlain(found[1]) : '';
 }
 
-async function fetchNotionCommunityPrompt(pageId) {
+async function fetchNotionPageContext(pageId) {
   const id = String(pageId || '').trim();
-  if (!id || !String(process.env.NOTION_TOKEN || '').trim()) return '';
+  if (!id || !String(process.env.NOTION_TOKEN || '').trim()) {
+    return { lastEditedTime: '', fields: {} };
+  }
   try {
     const page = await notionFetchJson(`/pages/${id}`);
-    return readNotionCommunityPromptFromPageProperties(page?.properties);
+    const fields = {};
+    for (const field of ['community_prompt', 'watch_for', 'good_day', 'rough_day']) {
+      fields[field] = readNotionFieldFromPageProperties(page?.properties, field);
+    }
+    return {
+      lastEditedTime: String(page?.last_edited_time || '').trim(),
+      fields
+    };
   } catch (e) {
-    console.warn(`[finalize-prefill] Notion community_prompt read failed for ${id}: ${e.message}`);
-    return '';
+    console.warn(`[finalize-prefill] Notion page read failed for ${id}: ${e.message}`);
+    return { lastEditedTime: '', fields: {} };
   }
+}
+
+/**
+ * Keep Notion-owned copy when the editor saved after the last scheduled prefill.
+ * community_prompt: any non-empty Notion value wins (same as before).
+ * watch_for / good_day / rough_day: preserve only when Notion last_edited is after prefill.
+ */
+function buildPreserveFromNotionMap(notionPage, catalogData) {
+  const out = {};
+  const community = String(notionPage?.fields?.community_prompt || '').trim();
+  if (community) out.community_prompt = community;
+
+  const prefillAt = String(catalogData?.creativePrefillUpdatedAt || '').trim();
+  const prefillMs = prefillAt && Number.isFinite(Date.parse(prefillAt)) ? Date.parse(prefillAt) : null;
+  const notionEdited = String(notionPage?.lastEditedTime || '').trim();
+  const notionEditedMs =
+    notionEdited && Number.isFinite(Date.parse(notionEdited)) ? Date.parse(notionEdited) : null;
+
+  for (const field of ['watch_for', 'good_day', 'rough_day']) {
+    const notionText = String(notionPage?.fields?.[field] || '').trim();
+    if (!notionText) continue;
+    if (prefillMs == null || notionEditedMs == null || notionEditedMs > prefillMs) {
+      out[field] = notionText;
+    }
+  }
+  return out;
 }
 
 function readField(data, field) {
@@ -668,11 +703,10 @@ async function main() {
   let failed = 0;
   for (const item of limited) {
     try {
-      const notionCommunityPrompt = await fetchNotionCommunityPrompt(item.sourceId);
-      const preserveNotionCommunityPrompt = !!notionCommunityPrompt;
-      const fieldsToGenerate = preserveNotionCommunityPrompt
-        ? item.fields.filter((field) => field !== 'community_prompt')
-        : item.fields;
+      const notionPage = await fetchNotionPageContext(item.sourceId);
+      const preserveFromNotion = buildPreserveFromNotionMap(notionPage, item.data);
+      const preserveFieldNames = Object.keys(preserveFromNotion);
+      const fieldsToGenerate = item.fields.filter((field) => !preserveFromNotion[field]);
 
       let patch = {};
       if (fieldsToGenerate.length) {
@@ -692,22 +726,24 @@ async function main() {
         if (speakerDates) patch.speaker_dates = speakerDates;
       }
       const catalogMirror = buildCatalogMirrorPatch(item.data);
-      if (preserveNotionCommunityPrompt) {
-        catalogMirror.community_prompt = notionCommunityPrompt;
-        delete patch.community_prompt;
+      for (const [field, value] of Object.entries(preserveFromNotion)) {
+        catalogMirror[field] = value;
+        delete patch[field];
       }
       const mergedPatch = { ...catalogMirror, ...patch };
       if (!Object.keys(mergedPatch).length) continue;
       const assignmentPatch = buildAssignmentPatch(mergedPatch);
       const notionProperties = buildNotionProperties(schema, mergedPatch, {
-        skipFields: preserveNotionCommunityPrompt ? ['community_prompt'] : []
+        skipFields: preserveFieldNames
       });
       const catalogWrite = { ...patch };
-      if (preserveNotionCommunityPrompt) {
-        catalogWrite.community_prompt = notionCommunityPrompt;
+      for (const [field, value] of Object.entries(preserveFromNotion)) {
+        catalogWrite[field] = value;
       }
       if (opts.dryRun) {
-        const skipNote = preserveNotionCommunityPrompt ? ' preserve_notion_community_prompt=1' : '';
+        const skipNote = preserveFieldNames.length
+          ? ` preserve_notion=${preserveFieldNames.join('+')}`
+          : '';
         console.log(`[finalize-prefill] dry-run ${item.dateKey} ${item.sourceId} reason=${item.reason}${skipNote} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
         continue;
       }
@@ -721,7 +757,9 @@ async function main() {
         });
       }
       patched += 1;
-      const skipNote = preserveNotionCommunityPrompt ? ' preserve_notion_community_prompt=1' : '';
+      const skipNote = preserveFieldNames.length
+        ? ` preserve_notion=${preserveFieldNames.join('+')}`
+        : '';
       console.log(`[finalize-prefill] patched ${item.dateKey} ${item.sourceId} reason=${item.reason}${skipNote} fields=${Object.keys(mergedPatch).filter((k) => FINAL_FIELDS.includes(k) || k === 'speaker_dates').join(',')}`);
     } catch (e) {
       failed += 1;
