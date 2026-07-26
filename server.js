@@ -3770,6 +3770,14 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
       pickPrefillStringLoose(parsed, 'watch_for', 'watchFor', 'watch for')
     ),
     speaker_guide_line: pickPrefillStringLoose(parsed, 'speaker_guide_line', 'speakerGuideLine', 'guide_line'),
+    keyword: pickPrefillStringLoose(parsed, 'keyword', 'keywords', 'Keyword'),
+    speaker_keywords: pickPrefillStringLoose(
+      parsed,
+      'speaker_keywords',
+      'speakerKeywords',
+      'speaker_keyword',
+      'speaker keyword'
+    ),
     art_recs: normalizeArtRecsPrefillValue(
       pickPrefillStringLoose(parsed, 'art_recs', 'artRecs', 'art_recommendations')
     ),
@@ -3778,6 +3786,32 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
     prompt_theme: pickPrefillStringLoose(parsed, 'prompt_theme', 'promptTheme', 'prompt theme'),
     _model: model
   };
+}
+
+/** Snap AI keyword picks to exact quote/guide substrings; heuristic fallback for quote keyword. */
+function finalizePrefillEmphasisFields(out, quoteText) {
+  const merged = { ...(out || {}) };
+  const quote = String(quoteText || '').replace(/\s+/g, ' ').trim();
+  const guide = String(merged.speaker_guide_line || '').trim();
+
+  if (quote) {
+    let keywords = normalizeEmphasisWords(merged.keyword || [], quote, 3);
+    if (!keywords.length) {
+      keywords = suggestKeywordsHeuristic(quote, 'prefill');
+    }
+    merged.keyword = keywords.length ? keywords.join(', ') : '';
+  } else {
+    merged.keyword = '';
+  }
+
+  if (guide) {
+    const speakerKeywords = normalizeEmphasisWords(merged.speaker_keywords || [], guide, 4);
+    merged.speaker_keywords = speakerKeywords.length ? speakerKeywords.join(', ') : '';
+  } else {
+    merged.speaker_keywords = '';
+  }
+
+  return merged;
 }
 
 /**
@@ -3970,7 +4004,7 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({
     );
     throw new Error(`${providerLabel} returned prefill JSON without required field(s): ${stillMissing}`);
   }
-  return out;
+  return finalizePrefillEmphasisFields(out, quoteText);
 }
 
 async function generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions, isSeamside = false }) {
@@ -4537,6 +4571,10 @@ function buildPrefillNotionProperties(schema, ai, wiki, speakerReuse) {
   if (ai?.what_if) set('what_if', ai.what_if, 'whatIf', 'What if');
   if (ai?.watch_for) set('watch_for', ai.watch_for, 'watchFor', 'Watch for');
   if (ai?.speaker_guide_line) set('speaker_guide_line', ai.speaker_guide_line, 'speakerGuideLine', 'Guide line');
+  if (ai?.keyword) set('keyword', ai.keyword, 'Keyword');
+  if (ai?.speaker_keywords) {
+    set('speaker_keywords', ai.speaker_keywords, 'speaker_keyword', 'speakerKeywords', 'Speaker keywords', 'Speaker keyword');
+  }
   if (ai?.art_recs) set('art_recs', ai.art_recs, 'artRecs', 'Art recs', 'explore');
   if (ai?.good_day) set('good_day', ai.good_day, 'goodDay', 'Good day', 'Good Day');
   if (ai?.rough_day) set('rough_day', ai.rough_day, 'roughDay', 'Rough day', 'Rough Day');
@@ -4624,6 +4662,14 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   }
   if (ai?.speaker_guide_line) {
     payload.speaker_guide_line = ai.speaker_guide_line;
+  }
+  if (ai?.keyword) {
+    payload.keyword = ai.keyword;
+    payload.keywordSnapshot = ai.keyword;
+  }
+  if (ai?.speaker_keywords) {
+    payload.speaker_keywords = ai.speaker_keywords;
+    payload.speakerKeywords = ai.speaker_keywords;
   }
   if (ai?.art_recs) {
     payload.art_recs = ai.art_recs;
