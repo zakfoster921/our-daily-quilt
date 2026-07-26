@@ -8611,7 +8611,7 @@ Field specs:
 - good_day: Short quirky declarative push, specific enough to act on. Prefer odd verbs, tiny images, and concrete little imperatives over abstract advice. Sometimes a command. No questions, no generic pep-talk filler. "Today" only when it earns it.
 - rough_day: Reframes without naming emotions or assuming how someone feels. No demands. Strips to essential permission or redirect. Can be as short as three words. Never diagnoses.
 - watch_for: A standalone sentence fragment naming a specific observable behavior. UI prepends "Watch for the moment today when..." so the value continues from that. No adverbs doing interpretive work.
-- community_prompt: Single question inviting users to share something from their experience useful to others. Transferable. Plain language. Does not mention quote or author. Ends with ?
+- community_prompt: Single short question (under 20 words) inviting users to share something from their experience useful to others. One clause, one ask — no compound "and what..." questions. Transferable. Plain language. Does not mention quote or author. Ends with ?
 - notification_text: Format "[Full Name] on [what the quote is about]". The on... part intriguing and human. No period. One line.
 - art_recs: 5 recommendations across music, film, painting, literature, and one wildcard. Format per entry: "Title by Artist: one sentence why it connects". Use a colon after the artist name, not a dash. All 5 in one field.
 - speaker_guide_line: 1 sentence about who this person was and why their perspective matters. Start with a verb, omit name at start. Grounded in what they actually lived. No reverence.`;
