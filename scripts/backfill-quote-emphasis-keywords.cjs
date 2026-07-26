@@ -7,6 +7,8 @@
  * keys are configured, heuristic fallback), patches Firestore, and mirrors to Notion.
  *
  *   node scripts/backfill-quote-emphasis-keywords.cjs --dry-run
+ *   node scripts/backfill-quote-emphasis-keywords.cjs --start=today --window=7
+ *   node scripts/backfill-quote-emphasis-keywords.cjs --full-catalog
  *   node scripts/backfill-quote-emphasis-keywords.cjs --limit=20
  *   node scripts/backfill-quote-emphasis-keywords.cjs --heuristic-only
  *   node scripts/backfill-quote-emphasis-keywords.cjs --keyword-only
@@ -50,13 +52,31 @@ const {
   suggestQuoteKeywordsWithAi,
   suggestSpeakerGuideKeywordsWithAi
 } = require('./lib/quote-keywords-ai.cjs');
+const {
+  parseSyncWindowCli,
+  isDateInSyncWindow,
+  assignmentSourceIdsInWindow,
+  resolveStartDateKey,
+  addDays,
+  isDateKey,
+  DEFAULT_SYNC_WINDOW_DAYS
+} = require('./lib/sync-window.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
 const AI_DELAY_MS = 250;
 
+function defaultUpcomingWindow() {
+  const startKey = resolveStartDateKey('today');
+  const windowDays = DEFAULT_SYNC_WINDOW_DAYS;
+  return { startKey, endKey: addDays(startKey, windowDays - 1), windowDays };
+}
+
 function parseArgs(argv) {
+  const syncCli = parseSyncWindowCli(argv);
   const args = {
-    dryRun: false,
+    dryRun: syncCli.dryRun,
+    fullCatalog: syncCli.fullCatalog,
+    window: syncCli.fullCatalog ? null : syncCli.window || defaultUpcomingWindow(),
     limit: 0,
     heuristicOnly: false,
     keywordOnly: false,
@@ -65,8 +85,13 @@ function parseArgs(argv) {
   };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
-    if (a === '--dry-run') args.dryRun = true;
-    else if (a === '--heuristic-only') args.heuristicOnly = true;
+    if (a === '--dry-run' || a === '--full-catalog') continue;
+    if (a.startsWith('--start=') || a.startsWith('--window=')) continue;
+    if (a === '--start' || a === '--window') {
+      i += 1;
+      continue;
+    }
+    if (a === '--heuristic-only') args.heuristicOnly = true;
     else if (a === '--keyword-only') args.keywordOnly = true;
     else if (a === '--speaker-only') args.speakerOnly = true;
     else if (a === '--force') args.force = true;
@@ -76,6 +101,9 @@ function parseArgs(argv) {
     throw new Error('Use at most one of --keyword-only or --speaker-only');
   }
   if (!Number.isInteger(args.limit) || args.limit < 0) args.limit = 0;
+  if (args.window && !isDateKey(args.window.startKey)) {
+    throw new Error('--start must resolve to YYYY-MM-DD');
+  }
   return args;
 }
 
@@ -170,6 +198,41 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function dateScheduledFromDoc(data) {
+  return String(data?.date_scheduled ?? data?.dateScheduled ?? '').trim();
+}
+
+/** Upcoming window: dailyQuoteAssignments source ids + catalog rows with date_scheduled in range. */
+async function loadTargetDocs(db, col, window) {
+  if (!window) {
+    const snap = await db.collection(col).get();
+    return snap.docs;
+  }
+
+  const assignmentsCol = process.env.FIRESTORE_DAILY_QUOTES_COLLECTION || 'dailyQuoteAssignments';
+  const sourceIds = await assignmentSourceIdsInWindow(db, window, assignmentsCol);
+  const docsById = new Map();
+
+  for (const id of sourceIds) {
+    const doc = await db.collection(col).doc(id).get();
+    if (doc.exists) docsById.set(doc.id, doc);
+    else console.warn(`[backfill-kw] assignment source missing catalog doc ${id}`);
+  }
+
+  const snap = await db.collection(col).get();
+  for (const doc of snap.docs) {
+    if (docsById.has(doc.id)) continue;
+    const ds = dateScheduledFromDoc(doc.data());
+    if (isDateInSyncWindow(ds, window)) docsById.set(doc.id, doc);
+  }
+
+  return [...docsById.values()].sort((a, b) => {
+    const da = dateScheduledFromDoc(a.data()) || a.id;
+    const dbd = dateScheduledFromDoc(b.data()) || b.id;
+    return da.localeCompare(dbd);
+  });
+}
+
 async function generateQuoteKeyword(quoteText, docId, useAi) {
   let aiInput = '';
   if (useAi) {
@@ -231,7 +294,11 @@ async function main() {
   const useAi = !args.heuristicOnly && !!resolveAiProvider();
   const db = initFirestore();
   const col = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
-  const snap = await db.collection(col).get();
+  const targetDocs = await loadTargetDocs(db, col, args.window);
+  const scopeLabel = args.window
+    ? `${args.window.startKey}..${args.window.endKey} (${targetDocs.length} quotes)`
+    : `full catalog (${targetDocs.length} quotes)`;
+  console.log(`[backfill-kw] scope=${scopeLabel} dryRun=${args.dryRun} ai=${useAi}`);
 
   let notionSchema = null;
   const databaseId = String(process.env.NOTION_DATABASE_ID || '').trim();
@@ -249,7 +316,7 @@ async function main() {
   let skipped = 0;
   let failed = 0;
 
-  for (const doc of snap.docs) {
+  for (const doc of targetDocs) {
     if (args.limit > 0 && patched >= args.limit) break;
 
     const data = doc.data() || {};
@@ -313,7 +380,9 @@ async function main() {
         continue;
       }
 
+      const dateKey = dateScheduledFromDoc(data);
       const parts = [
+        dateKey ? `date=${dateKey}` : null,
         wroteKeyword ? `keyword="${patch.keyword}"` : null,
         wroteSpeaker ? `speaker_keywords="${patch.speaker_keywords}"` : null
       ]
@@ -335,7 +404,7 @@ async function main() {
   }
 
   console.log(
-    `[backfill-kw] done dryRun=${args.dryRun} ai=${useAi} considered=${considered} patched=${patched} skipped=${skipped} failed=${failed} collection=${col}`
+    `[backfill-kw] done scope=${scopeLabel} dryRun=${args.dryRun} ai=${useAi} considered=${considered} patched=${patched} skipped=${skipped} failed=${failed} collection=${col}`
   );
 }
 
