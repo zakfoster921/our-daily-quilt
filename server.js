@@ -62,6 +62,7 @@ const {
   suggestKeywordsHeuristic,
   keywordsNotInQuote
 } = require('./lib/quote-keyword-emphasis');
+const { finalizePrefillEmphasisFields } = require('./lib/prefill-emphasis-fields');
 const {
   REFLECTION_MODERATION_BODY_MAX,
   isShortReflectionForSplit,
@@ -3786,32 +3787,6 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
     prompt_theme: pickPrefillStringLoose(parsed, 'prompt_theme', 'promptTheme', 'prompt theme'),
     _model: model
   };
-}
-
-/** Snap AI keyword picks to exact quote/guide substrings; heuristic fallback for quote keyword. */
-function finalizePrefillEmphasisFields(out, quoteText) {
-  const merged = { ...(out || {}) };
-  const quote = String(quoteText || '').replace(/\s+/g, ' ').trim();
-  const guide = String(merged.speaker_guide_line || '').trim();
-
-  if (quote) {
-    let keywords = normalizeEmphasisWords(merged.keyword || [], quote, 3);
-    if (!keywords.length) {
-      keywords = suggestKeywordsHeuristic(quote, 'prefill');
-    }
-    merged.keyword = keywords.length ? keywords.join(', ') : '';
-  } else {
-    merged.keyword = '';
-  }
-
-  if (guide) {
-    const speakerKeywords = normalizeEmphasisWords(merged.speaker_keywords || [], guide, 4);
-    merged.speaker_keywords = speakerKeywords.length ? speakerKeywords.join(', ') : '';
-  } else {
-    merged.speaker_keywords = '';
-  }
-
-  return merged;
 }
 
 /**
