@@ -137,7 +137,7 @@ async function main() {
     const kwStyle = qnc.clippingKeywordStylesForDateKey(dateKey).join('+');
     const spStyle = qnc.clippingSpeakerNameStyleForDateKey(dateKey, qnc.clippingKeywordStylesForDateKey(dateKey));
     console.log(
-      `[smoke] loaded quotes from Firestore for ${dateKey} (keyword: ${payload.today.keyword || '(none)'}, first_line_count: ${payload.today.first_line_count ?? 4}, keyword_style: ${kwStyle}, speaker_style: ${spStyle})`
+      `[smoke] loaded quotes from Firestore for ${dateKey} (keyword: ${payload.today.keyword || '(none)'}, first_line_count: ${payload.today.first_line_count ?? 5}, keyword_style: ${kwStyle}, speaker_style: ${spStyle})`
     );
   } else {
     payload = fallback;
