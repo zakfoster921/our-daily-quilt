@@ -1245,6 +1245,53 @@ function isLikelySelfPatchEdit(freshLastEditedIso, selfPatchedIso) {
   return Math.abs(fresh - self) <= SELF_PATCH_SUPPRESS_WINDOW_MS;
 }
 
+/** Finalizer-owned fields: empty Notion values are already omitted in parseNotionRow. */
+const PREFILL_PROTECTED_SYNC_FIELDS = [
+  ['watch_for', 'watchFor'],
+  ['good_day', 'goodDay'],
+  ['rough_day', 'roughDay'],
+  ['small_act', 'smallAct']
+];
+
+function readExistingPrefillField(existing, snakeKey, camelKey) {
+  return String(existing?.[snakeKey] ?? existing?.[camelKey] ?? '').trim();
+}
+
+/**
+ * When scheduled prefill wrote Firestore after the last real Notion edit, do not
+ * let a stale Notion column clobber the catalog (finalizer may then skip regen).
+ */
+function shouldPreserveFirestorePrefillField(existing, notionData, snakeKey, camelKey) {
+  const firestoreVal = readExistingPrefillField(existing, snakeKey, camelKey);
+  const notionVal = String(notionData?.[snakeKey] ?? '').trim();
+  if (!firestoreVal || !notionVal || firestoreVal === notionVal) return false;
+
+  const prefillAt = String(existing?.creativePrefillUpdatedAt || '').trim();
+  if (!prefillAt || !Number.isFinite(Date.parse(prefillAt))) return false;
+
+  const notionEdited = String(
+    notionData?.notionLastEditedTime || existing?.notionLastEditedTime || ''
+  ).trim();
+  if (
+    notionEdited &&
+    Number.isFinite(Date.parse(notionEdited)) &&
+    Date.parse(notionEdited) > Date.parse(prefillAt)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function applyPrefillProtectedFieldPreservation(existing, notionData, pageId) {
+  for (const [snake, camel] of PREFILL_PROTECTED_SYNC_FIELDS) {
+    if (!shouldPreserveFirestorePrefillField(existing, notionData, snake, camel)) continue;
+    delete notionData[snake];
+    if (process.env.NOTION_SYNC_DEBUG) {
+      console.log(`[sync] preserved Firestore ${snake} over stale Notion page=${pageId || '(unknown)'}`);
+    }
+  }
+}
+
 async function syncNotionPagesToFirestore(db, options) {
   const {
     rows,
@@ -1297,6 +1344,7 @@ async function syncNotionPagesToFirestore(db, options) {
     } else if (entersApprovedUnscheduledPool) {
       parsed.data.schedulePriorityAt = new Date().toISOString();
     }
+    applyPrefillProtectedFieldPreservation(existing, parsed.data, parsed.id);
     if (!dryRun) {
       await db.collection(collectionName).doc(parsed.id).set(withCamelCaseDeletes(parsed.data), { merge: true });
     }
