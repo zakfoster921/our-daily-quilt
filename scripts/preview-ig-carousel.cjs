@@ -93,7 +93,8 @@ async function main() {
         blocks,
         contributors,
         quote,
-        dateKey
+        dateKey,
+        { includeSlide2Reflection: true }
       );
       if (!integrated?.carouselSlide1 || !integrated?.carouselSlide2 || !integrated?.carouselSlide3) {
         throw new Error('Integrated carousel generation returned empty slides');
@@ -101,6 +102,7 @@ async function main() {
       return {
         slide1: integrated.carouselSlide1,
         slide2: integrated.carouselSlide2,
+        slide2Reflection: integrated.carouselSlide2Reflection || null,
         slide3: integrated.carouselSlide3,
         meta: integrated.meta || null,
         tuneMeta
@@ -114,6 +116,12 @@ async function main() {
     writeDataUrl(result.slide1, `carousel-slide-1-layout-b-${dateKey}.png`);
     writeDataUrl(result.slide2, `carousel-slide-2-${dateKey}.png`);
     writeDataUrl(result.slide3, `carousel-slide-3-${dateKey}.png`);
+    if (result.slide2Reflection) {
+      writeDataUrl(result.slide2Reflection, `carousel-slide-2-reflection-${dateKey}.png`);
+      console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-reflection-${dateKey}.png`);
+    } else {
+      console.log('[preview-ig-carousel] no reflection slide 2 (need admin-highlighted responses + prompt)');
+    }
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-3-${dateKey}.png`);
