@@ -120,7 +120,7 @@ async function main() {
       writeDataUrl(result.slide2Reflection, `carousel-slide-2-reflection-${dateKey}.png`);
       console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-reflection-${dateKey}.png`);
     } else {
-      console.log('[preview-ig-carousel] no reflection slide 2 (need admin-highlighted responses + prompt)');
+      console.log('[preview-ig-carousel] no reflection slide 2 (need reflection prompt + at least one response)');
     }
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-${dateKey}.png`);
