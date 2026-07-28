@@ -99,6 +99,7 @@ async function suggestSpeakerGuideKeywordsWithAi(guideText) {
 
 module.exports = {
   resolveAiProvider,
+  postKeywordAiText,
   suggestQuoteKeywordsWithAi,
   suggestSpeakerGuideKeywordsWithAi
 };
