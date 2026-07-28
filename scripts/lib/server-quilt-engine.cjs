@@ -4,10 +4,11 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
-let runtime = null;
+const runtimeCache = new Map();
 
-function loadServerQuiltRuntime() {
-  if (runtime) return runtime;
+function loadServerQuiltRuntime(options = {}) {
+  const engineRel = String(options.engineRelPath || 'lib/simple-quilt-engine.js');
+  if (runtimeCache.has(engineRel)) return runtimeCache.get(engineRel);
 
   const storage = new Map();
   const sandbox = {
@@ -62,7 +63,7 @@ function loadServerQuiltRuntime() {
     'lib/utils-quilt.js',
     'lib/utils-quilt-render.js',
     'lib/utils-zapier.js',
-    'lib/simple-quilt-engine.js'
+    engineRel
   ]) {
     const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     vm.runInContext(src, ctx, { filename: rel });
@@ -73,11 +74,12 @@ function loadServerQuiltRuntime() {
     throw new Error('Could not initialize server quilt engine runtime');
   }
 
-  runtime = {
+  const runtime = {
     SimpleQuiltEngine: sandbox.SimpleQuiltEngine,
     Utils: sandbox.Utils,
     QuiltMirrorLayout: sandbox.QuiltMirrorLayout
   };
+  runtimeCache.set(engineRel, runtime);
   return runtime;
 }
 
@@ -94,9 +96,10 @@ function createServerQuiltEngine({
   blocks,
   submissionCount,
   colorReplayEvents,
-  macroStructureFrozen
+  macroStructureFrozen,
+  engineRelPath
 } = {}) {
-  const { SimpleQuiltEngine } = loadServerQuiltRuntime();
+  const { SimpleQuiltEngine } = loadServerQuiltRuntime({ engineRelPath });
   const engine = new SimpleQuiltEngine(String(userId || 'server-color-submission'), {
     recordColorReplayEvents: true
   });
@@ -131,8 +134,8 @@ function serializeServerQuiltBlocks(engine) {
     .filter(Boolean);
 }
 
-function computeQuiltFingerprint(blocks) {
-  const { Utils } = loadServerQuiltRuntime();
+function computeQuiltFingerprint(blocks, options = {}) {
+  const { Utils } = loadServerQuiltRuntime(options);
   return typeof Utils.computeQuiltFingerprint === 'function'
     ? Utils.computeQuiltFingerprint(blocks)
     : '';
