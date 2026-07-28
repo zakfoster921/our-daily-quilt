@@ -412,7 +412,7 @@ async function main() {
     }
   ];
 
-  const outDir = path.join(ROOT, 'tmp', 'engine-tuning-comparison', dateKey);
+  const outDir = path.join(ROOT, 'tmp', 'engine-tuning-comparison', dateKey, OLD_COMMIT);
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(`[engine-tuning] ${dateKey}: ${data.colors.length} colors, seed composition-seed-tester:${dateKey}`);
