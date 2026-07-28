@@ -3728,6 +3728,12 @@ function pickPrefillStringLoose(parsed, ...aliases) {
   for (const [k, v] of Object.entries(parsed)) {
     if (!targets.has(normPrefillJsonKey(k))) continue;
     if (typeof v === 'string') return v.replace(/^\s+|\s+$/g, '');
+    if (Array.isArray(v)) {
+      return v
+        .map((item) => String(item ?? '').trim())
+        .filter(Boolean)
+        .join(', ');
+    }
     if (v == null) continue;
     if (typeof v === 'number' && Number.isFinite(v)) return String(v);
   }
@@ -4902,15 +4908,40 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     'Watch for'
   );
   const existingMood = getNotionPropPlainByAliases(currentProps, 'mood', 'Mood');
+  const existingSpeakerGuideLine = getNotionPropPlainByAliases(
+    currentProps,
+    'speaker_guide_line',
+    'speakerGuideLine',
+    'Guide line',
+    'Speaker guide line'
+  );
+  const existingKeyword = getNotionPropPlainByAliases(currentProps, 'keyword', 'Keyword');
+  const existingSpeakerKeywords = getNotionPropPlainByAliases(
+    currentProps,
+    'speaker_keywords',
+    'speaker_keyword',
+    'speakerKeywords',
+    'Speaker keywords',
+    'Speaker keyword'
+  );
   const needsSmallAct = !existingSmallAct;
   const needsPromptTheme = !existingPromptTheme && promptThemeOptions.length > 0;
   const needsMood = !existingMood && moodOptions.length > 0;
   const needsGoodDay = !existingGoodDay;
   const needsRoughDay = !existingRoughDay;
   const needsWatchFor = !existingWatchFor;
+  const needsKeyword = !existingKeyword && !!String(quoteText || '').trim();
+  const needsSpeakerKeywords = !existingSpeakerKeywords && !!existingSpeakerGuideLine;
   const lightBackfillOnly =
     !!existingCommunityPrompt &&
-    (needsSmallAct || needsPromptTheme || needsMood || needsGoodDay || needsRoughDay || needsWatchFor);
+    (needsSmallAct ||
+      needsPromptTheme ||
+      needsMood ||
+      needsGoodDay ||
+      needsRoughDay ||
+      needsWatchFor ||
+      needsKeyword ||
+      needsSpeakerKeywords);
 
   const isSeamside =
     getNotionPropPlainByAliases(currentProps, 'submitted_via', 'submittedVia', 'Submitted via', 'Submitted Via')
@@ -4958,6 +4989,16 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     const goodDayText = needsGoodDay ? String(ai?.good_day || '').trim() : '';
     const roughDayText = needsRoughDay ? String(ai?.rough_day || '').trim() : '';
     const watchForText = needsWatchFor ? String(ai?.watch_for || '').trim() : '';
+    const emphasisResolved = finalizePrefillEmphasisFields(
+      {
+        keyword: ai?.keyword,
+        speaker_keywords: ai?.speaker_keywords,
+        speaker_guide_line: existingSpeakerGuideLine || ai?.speaker_guide_line
+      },
+      quoteText
+    );
+    const keywordText = needsKeyword ? String(emphasisResolved.keyword || '').trim() : '';
+    const speakerKeywordsText = needsSpeakerKeywords ? String(emphasisResolved.speaker_keywords || '').trim() : '';
     const properties = {};
     if (smallActText) {
       const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
@@ -4995,6 +5036,27 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         if (payload) properties[watchForName] = payload;
       }
     }
+    if (keywordText) {
+      const keywordName = findNotionPropName(schema, 'keyword', 'Keyword');
+      if (keywordName) {
+        const payload = notionTextPropertyValue(schema[keywordName], keywordText);
+        if (payload) properties[keywordName] = payload;
+      }
+    }
+    if (speakerKeywordsText) {
+      const speakerKeywordsName = findNotionPropName(
+        schema,
+        'speaker_keywords',
+        'speaker_keyword',
+        'speakerKeywords',
+        'Speaker keywords',
+        'Speaker keyword'
+      );
+      if (speakerKeywordsName) {
+        const payload = notionTextPropertyValue(schema[speakerKeywordsName], speakerKeywordsText);
+        if (payload) properties[speakerKeywordsName] = payload;
+      }
+    }
     if (errState.propName) {
       const errProp = schema[errState.propName];
       if (errProp?.type === 'rich_text') properties[errState.propName] = { rich_text: [] };
@@ -5005,7 +5067,17 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         body: JSON.stringify({ properties })
       });
     }
-    if (db && (smallActText || promptThemeText || moodText || goodDayText || roughDayText || watchForText)) {
+    if (
+      db &&
+      (smallActText ||
+        promptThemeText ||
+        moodText ||
+        goodDayText ||
+        roughDayText ||
+        watchForText ||
+        keywordText ||
+        speakerKeywordsText)
+    ) {
       const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
       const firestorePatch = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
       if (smallActText) {
@@ -5023,6 +5095,14 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         firestorePatch.rough_day = roughDayText;
       }
       if (watchForText) firestorePatch.watch_for = watchForText;
+      if (keywordText) {
+        firestorePatch.keyword = keywordText;
+        firestorePatch.keywordSnapshot = keywordText;
+      }
+      if (speakerKeywordsText) {
+        firestorePatch.speaker_keywords = speakerKeywordsText;
+        firestorePatch.speakerKeywords = speakerKeywordsText;
+      }
       await db.collection(collection).doc(notionPageId).set(firestorePatch, { merge: true });
     }
     const backfilledFields =
@@ -5032,7 +5112,9 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         moodText && 'mood',
         goodDayText && 'good_day',
         roughDayText && 'rough_day',
-        watchForText && 'watch_for'
+        watchForText && 'watch_for',
+        keywordText && 'keyword',
+        speakerKeywordsText && 'speaker_keywords'
       ]
         .filter(Boolean)
         .join('+') || 'nothing';
@@ -5180,6 +5262,15 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   const goodDayName = findNotionPropName(schema, 'good_day', 'goodDay', 'Good day', 'Good Day');
   const roughDayName = findNotionPropName(schema, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
   const watchForName = findNotionPropName(schema, 'watch_for', 'watchFor', 'Watch for');
+  const keywordName = findNotionPropName(schema, 'keyword', 'Keyword');
+  const speakerKeywordsName = findNotionPropName(
+    schema,
+    'speaker_keywords',
+    'speaker_keyword',
+    'speakerKeywords',
+    'Speaker keywords',
+    'Speaker keyword'
+  );
   const submittedViaName = findNotionPropName(schema, 'submitted_via', 'submittedVia', 'Submitted via', 'Submitted Via');
   const speakerGuideLineName = findNotionPropName(
     schema,
@@ -5220,6 +5311,14 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   if (watchForName) {
     const watchForEmpty = notionIsEmptyFilter(watchForName, schema[watchForName]?.type);
     if (watchForEmpty) missingPrefillFilters.push(watchForEmpty);
+  }
+  if (keywordName) {
+    const keywordEmpty = notionIsEmptyFilter(keywordName, schema[keywordName]?.type);
+    if (keywordEmpty) missingPrefillFilters.push(keywordEmpty);
+  }
+  if (speakerKeywordsName) {
+    const speakerKeywordsEmpty = notionIsEmptyFilter(speakerKeywordsName, schema[speakerKeywordsName]?.type);
+    if (speakerKeywordsEmpty) missingPrefillFilters.push(speakerKeywordsEmpty);
   }
   const filter = {
     and: [
