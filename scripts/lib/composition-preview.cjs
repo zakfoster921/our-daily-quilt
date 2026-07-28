@@ -1193,7 +1193,9 @@ function replaySequence(dateKey, colors, modeKey, lockAt, options = {}) {
         blocks: serializeServerQuiltBlocks(engine),
         submissionCount: Number(engine.submissionCount) || colors.length,
         macroStructureFrozen: engine.macroStructureFrozen === true,
-        skippedColors
+        skippedColors,
+        colorReplayEvents:
+          typeof engine.getColorReplayEvents === 'function' ? engine.getColorReplayEvents() : []
       };
     } finally {
       Math.random = originalRandom;
