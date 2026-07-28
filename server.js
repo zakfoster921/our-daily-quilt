@@ -86,6 +86,7 @@ const {
   serializeServerQuiltBlocks,
   computeQuiltFingerprint
 } = require('./scripts/lib/server-quilt-engine.cjs');
+const { resolveQuoteMoodColor } = require('./lib/quote-mood-colors.js');
 const {
   buildCompositionPreviewFromQuiltData,
   MODE_CONFIG: COMPOSITION_PREVIEW_MODE_CONFIG
@@ -1897,6 +1898,44 @@ function deriveServerQuiltSubmissionCount(data = {}) {
   if (maxBlockSubmission > 0) return Math.floor(maxBlockSubmission);
   const stored = Number(data.contributorCount);
   return Number.isFinite(stored) && stored > 0 && blocks.length > 1 ? Math.floor(stored) : 0;
+}
+
+async function resolveDailyMoodColorHexForDateKey(dateKey) {
+  const dk = String(dateKey || '').trim();
+  const readMoodLabel = (data) => String(data?.mood ?? data?.Mood ?? '').trim();
+  if (db && dk) {
+    for (const ref of [
+      db.collection('dailyQuoteAssignments').doc(dk),
+      db.collection('quotes').doc(dk)
+    ]) {
+      try {
+        const snap = await ref.get();
+        if (!snap.exists) continue;
+        const label = readMoodLabel(snap.data() || {});
+        if (label) {
+          const hex = resolveQuoteMoodColor(label);
+          if (hex) return hex;
+        }
+      } catch (_) {
+        /* */
+      }
+    }
+    try {
+      const assignSnap = await db.collection('dailyQuoteAssignments').doc(dk).get();
+      const sourceId = String(assignSnap.data()?.sourceId || '').trim();
+      if (sourceId) {
+        const catalogSnap = await db.collection('quotes').doc(sourceId).get();
+        const label = readMoodLabel(catalogSnap.data() || {});
+        if (label) {
+          const hex = resolveQuoteMoodColor(label);
+          if (hex) return hex;
+        }
+      }
+    } catch (_) {
+      /* */
+    }
+  }
+  return resolveQuoteMoodColor('Tender');
 }
 
 function buildServerQuiltWriteProvenance(reason, req, extra = {}) {
@@ -11165,6 +11204,8 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
       }
     }
 
+    const dailyMoodColorHex = await resolveDailyMoodColorHexForDateKey(appDateKey);
+
     await db.runTransaction(async (tx) => {
       const submissionSnap = await tx.get(submissionRef);
       const quiltSnap = await tx.get(quiltRef);
@@ -11205,6 +11246,7 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
         macroStructureFrozen: currentQuilt.macroStructureFrozen === true
       });
+      engine.dailyMoodColorHex = dailyMoodColorHex;
       const addResult = engine.addColor(color);
       if (!addResult) {
         throw new Error('Could not place color on quilt');
@@ -11222,7 +11264,7 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
       ]);
       const contributorCount = Math.max(
         1,
-        Number(engine.submissionCount) || 0,
+        typeof engine.getContributorPickCount === 'function' ? engine.getContributorPickCount() : 0,
         contributors.length
       );
       const colorReplayEvents =

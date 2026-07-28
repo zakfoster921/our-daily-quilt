@@ -59,6 +59,7 @@ function loadServerQuiltRuntime(options = {}) {
   for (const rel of [
     'lib/utils-core.js',
     'lib/utils-color.js',
+    'lib/quote-mood-colors.js',
     'lib/quilt-mirror-layout.js',
     'lib/utils-quilt.js',
     'lib/utils-quilt-render.js',
