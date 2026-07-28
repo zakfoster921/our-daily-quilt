@@ -54,6 +54,21 @@ function main() {
   assert(state.fingerprint !== firstFingerprint, 'second color should change quilt fingerprint');
 
   console.log('✅ server color submission engine smoke passed');
+
+  // Regression: inset-circle similar-color fallback must not recurse splitInsetCircle ↔ performRegularSplit.
+  const insetEngine = createServerQuiltEngine({ userId: 'inset-regression' });
+  insetEngine.addColor('#ea9b9a');
+  insetEngine.addColor('#7b9e87');
+  insetEngine.addColor('#4a6fa5');
+  insetEngine.addColor('#c9a227');
+  let insetOk = false;
+  try {
+    insetOk = !!insetEngine.addColor('#c9a228');
+  } catch (error) {
+    throw new Error(`inset-circle similar-color fallback threw: ${error?.message || error}`);
+  }
+  assert(insetOk, 'inset-circle similar-color fallback should place color without stack overflow');
+  console.log('✅ inset-circle similar-color fallback regression passed');
 }
 
 main();
