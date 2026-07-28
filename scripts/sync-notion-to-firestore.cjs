@@ -687,7 +687,9 @@ function parseNotionRow(page) {
   const goodDay = getMappedText(props, 'good_day', 'goodDay', 'Good day', 'Good Day');
   const roughDay = getMappedText(props, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
   const igCaption = getMappedText(props, 'ig_caption', 'IG Caption', 'Ig Caption');
-  const mood = getMappedText(props, 'mood', 'Mood');
+  const mood =
+    getSelect(findPropByBaseName(props, 'mood')) ||
+    getMappedText(props, 'mood', 'Mood');
   const fortune = getMappedText(props, 'fortune', 'Fortune');
   const keyword = getMappedText(props, 'keyword', 'Keyword', 'keywords', 'Keywords');
   const firstLineCount = getMappedNumber(

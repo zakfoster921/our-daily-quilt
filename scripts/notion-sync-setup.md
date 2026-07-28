@@ -65,7 +65,7 @@ Sync removes the row from the **`quotes`** catalog (full-catalog run deletes orp
 - `community_prompt` -> `communityPrompt` and `community_prompt`
 - `small_act` -> `smallAct` and `small_act`
 - `what_if` -> `whatIf` and `what_if`
-- `mood` -> `mood`
+- `mood` (Select) -> `mood`
 - `blessing` -> `blessing`
 - `notification_title` -> `notificationTitle`
 - `notification_text` -> `notificationText`

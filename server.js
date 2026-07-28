@@ -53,6 +53,8 @@ try {
 const {
   buildSubmittedQuotePrefillPrompt,
   normalizeArtRecsPrefillValue,
+  resolveMoodOption,
+  QUOTE_MOOD_OPTIONS,
   PREFILL_CREATIVE_PROMPT_VERSION
 } = require('./lib/submitted-quote-prefill-prompts');
 const {
@@ -3785,6 +3787,7 @@ function mapSubmittedQuotePrefillFields(parsed, model) {
     good_day: pickPrefillStringLoose(parsed, 'good_day', 'goodDay', 'good day'),
     rough_day: pickPrefillStringLoose(parsed, 'rough_day', 'roughDay', 'rough day'),
     prompt_theme: pickPrefillStringLoose(parsed, 'prompt_theme', 'promptTheme', 'prompt theme'),
+    mood: pickPrefillStringLoose(parsed, 'mood', 'Mood'),
     _model: model
   };
 }
@@ -3906,14 +3909,23 @@ const REQUIRED_PREFILL_FIELDS = [
   }
 ];
 
-function findMissingRequiredPrefillFields(out) {
-  return REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(out?.[key] || '').trim());
+function findMissingRequiredPrefillFields(out, moodOptions) {
+  const missing = REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(out?.[key] || '').trim());
+  if ((moodOptions || []).length && !String(out?.mood || '').trim()) {
+    missing.push({
+      key: 'mood',
+      requirement:
+        'mood is required: pick exactly one label verbatim from the provided Notion mood select list — the emotional tone that best fits the quote.'
+    });
+  }
+  return missing;
 }
 
 async function generateSubmittedQuotePrefillFieldsWithProvider({
   quoteText,
   authorName,
   promptThemeOptions,
+  moodOptions,
   provider,
   isSeamside = false
 }) {
@@ -3922,6 +3934,7 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({
     quoteText,
     authorName,
     promptThemeOptions,
+    moodOptions,
     isSeamside: isSeamside && !isGemini
   });
   const apiKey = isGemini
@@ -3953,7 +3966,8 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({
     throw new Error(`${providerLabel} returned no parseable prefill JSON. Preview: ${preview || '[empty]'}`);
   }
   let out = mapSubmittedQuotePrefillFields(parsed, model);
-  let missing = findMissingRequiredPrefillFields(out);
+  out.mood = resolveMoodOption(moodOptions, out.mood);
+  let missing = findMissingRequiredPrefillFields(out, moodOptions);
   if (missing.length) {
     const repairLines = [
       prompt,
@@ -3969,8 +3983,9 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({
     const repairParsed = extractPrefillJsonFromText(repairText);
     if (repairParsed && typeof repairParsed === 'object') {
       out = mergeNonEmptyPrefillFields(out, mapSubmittedQuotePrefillFields(repairParsed, model));
+      out.mood = resolveMoodOption(moodOptions, out.mood);
     }
-    missing = findMissingRequiredPrefillFields(out);
+    missing = findMissingRequiredPrefillFields(out, moodOptions);
   }
   if (missing.length) {
     const stillMissing = missing.map((m) => m.key).join(', ');
@@ -3982,12 +3997,19 @@ async function generateSubmittedQuotePrefillFieldsWithProvider({
   return finalizePrefillEmphasisFields(out, quoteText);
 }
 
-async function generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions, isSeamside = false }) {
+async function generateSubmittedQuotePrefillFields({
+  quoteText,
+  authorName,
+  promptThemeOptions,
+  moodOptions,
+  isSeamside = false
+}) {
   if (String(process.env.ANTHROPIC_API_KEY || '').trim()) {
     return generateSubmittedQuotePrefillFieldsWithProvider({
       quoteText,
       authorName,
       promptThemeOptions,
+      moodOptions,
       provider: 'anthropic',
       isSeamside
     });
@@ -3997,6 +4019,7 @@ async function generateSubmittedQuotePrefillFields({ quoteText, authorName, prom
       quoteText,
       authorName,
       promptThemeOptions,
+      moodOptions,
       provider: 'gemini',
       isSeamside
     });
@@ -4554,6 +4577,7 @@ function buildPrefillNotionProperties(schema, ai, wiki, speakerReuse) {
   if (ai?.good_day) set('good_day', ai.good_day, 'goodDay', 'Good day', 'Good Day');
   if (ai?.rough_day) set('rough_day', ai.rough_day, 'roughDay', 'Rough day', 'Rough Day');
   if (ai?.prompt_theme) set('prompt_theme', ai.prompt_theme, 'promptTheme', 'Prompt theme', 'Prompt Theme');
+  if (ai?.mood) set('mood', ai.mood, 'Mood');
 
   // Speaker portrait: Notion "Speaker image URL" must stay a single HTTPS URL so sync → Firestore keeps working.
   // When we already have a cutout (or portrait) on another quote for this author, reuse that URL — no new Wikimedia link needed.
@@ -4657,6 +4681,9 @@ function buildPrefillFirestorePayload(ai, wiki, speakerReuse) {
   }
   if (ai?.prompt_theme) {
     payload.prompt_theme = ai.prompt_theme;
+  }
+  if (ai?.mood) {
+    payload.mood = ai.mood;
   }
   payload.creativePrefillVersion = PREFILL_CREATIVE_PROMPT_VERSION;
   payload.creativePrefillUpdatedAt = new Date().toISOString();
@@ -4805,6 +4832,9 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
   );
   const promptThemeName = findNotionPropName(schema, 'prompt_theme', 'promptTheme', 'Prompt theme', 'Prompt Theme');
   const promptThemeOptions = promptThemeName ? notionSchemaOptionNames(schema[promptThemeName]) : [];
+  const moodName = findNotionPropName(schema, 'mood', 'Mood');
+  const moodOptionsFromSchema = moodName ? notionSchemaOptionNames(schema[moodName]) : [];
+  const moodOptions = moodOptionsFromSchema.length ? moodOptionsFromSchema : QUOTE_MOOD_OPTIONS;
   const existingPromptTheme = getNotionPropPlainByAliases(
     currentProps,
     'prompt_theme',
@@ -4832,14 +4862,16 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     'watchFor',
     'Watch for'
   );
+  const existingMood = getNotionPropPlainByAliases(currentProps, 'mood', 'Mood');
   const needsSmallAct = !existingSmallAct;
   const needsPromptTheme = !existingPromptTheme && promptThemeOptions.length > 0;
+  const needsMood = !existingMood && moodOptions.length > 0;
   const needsGoodDay = !existingGoodDay;
   const needsRoughDay = !existingRoughDay;
   const needsWatchFor = !existingWatchFor;
   const lightBackfillOnly =
     !!existingCommunityPrompt &&
-    (needsSmallAct || needsPromptTheme || needsGoodDay || needsRoughDay || needsWatchFor);
+    (needsSmallAct || needsPromptTheme || needsMood || needsGoodDay || needsRoughDay || needsWatchFor);
 
   const isSeamside =
     getNotionPropPlainByAliases(currentProps, 'submitted_via', 'submittedVia', 'Submitted via', 'Submitted Via')
@@ -4849,8 +4881,15 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
   let ai = null;
   let claudeError = null;
   try {
-    ai = await generateSubmittedQuotePrefillFields({ quoteText, authorName, promptThemeOptions, isSeamside });
+    ai = await generateSubmittedQuotePrefillFields({
+      quoteText,
+      authorName,
+      promptThemeOptions,
+      moodOptions,
+      isSeamside
+    });
     ai.prompt_theme = resolvePromptThemeOptions(promptThemeOptions, ai.prompt_theme);
+    ai.mood = resolveMoodOption(moodOptions, ai.mood);
   } catch (e) {
     claudeError = e?.message || String(e);
     console.warn(`⚠️ Claude prefill failed for ${notionPageId} (attempt ${nextAttempt}/${MAX_PREFILL_ATTEMPTS}):`, claudeError);
@@ -4876,6 +4915,7 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
   if (lightBackfillOnly) {
     const smallActText = needsSmallAct ? String(ai?.small_act || '').trim() : '';
     const promptThemeText = needsPromptTheme ? String(ai?.prompt_theme || '').trim() : '';
+    const moodText = needsMood ? String(ai?.mood || '').trim() : '';
     const goodDayText = needsGoodDay ? String(ai?.good_day || '').trim() : '';
     const roughDayText = needsRoughDay ? String(ai?.rough_day || '').trim() : '';
     const watchForText = needsWatchFor ? String(ai?.watch_for || '').trim() : '';
@@ -4890,6 +4930,10 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
     if (promptThemeText && promptThemeName) {
       const payload = notionTextPropertyValue(schema[promptThemeName], promptThemeText);
       if (payload) properties[promptThemeName] = payload;
+    }
+    if (moodText && moodName) {
+      const payload = notionTextPropertyValue(schema[moodName], moodText);
+      if (payload) properties[moodName] = payload;
     }
     if (goodDayText) {
       const goodDayName = findNotionPropName(schema, 'good_day', 'goodDay', 'Good day', 'Good Day');
@@ -4922,7 +4966,7 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         body: JSON.stringify({ properties })
       });
     }
-    if (db && (smallActText || promptThemeText || goodDayText || roughDayText || watchForText)) {
+    if (db && (smallActText || promptThemeText || moodText || goodDayText || roughDayText || watchForText)) {
       const collection = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
       const firestorePatch = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
       if (smallActText) {
@@ -4930,6 +4974,7 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
         firestorePatch.small_act = smallActText;
       }
       if (promptThemeText) firestorePatch.prompt_theme = promptThemeText;
+      if (moodText) firestorePatch.mood = moodText;
       if (goodDayText) {
         firestorePatch.goodDay = goodDayText;
         firestorePatch.good_day = goodDayText;
@@ -4945,6 +4990,7 @@ async function prefillSubmittedQuoteWithAi({ notionPageId, quoteText, authorName
       [
         smallActText && 'small_act',
         promptThemeText && 'prompt_theme',
+        moodText && 'mood',
         goodDayText && 'good_day',
         roughDayText && 'rough_day',
         watchForText && 'watch_for'
@@ -5091,6 +5137,7 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   );
   const smallActName = findNotionPropName(schema, 'small_act', 'smallAct', 'Small act', 'Small Act');
   const promptThemeName = findNotionPropName(schema, 'prompt_theme', 'promptTheme', 'Prompt theme', 'Prompt Theme');
+  const moodName = findNotionPropName(schema, 'mood', 'Mood');
   const goodDayName = findNotionPropName(schema, 'good_day', 'goodDay', 'Good day', 'Good Day');
   const roughDayName = findNotionPropName(schema, 'rough_day', 'roughDay', 'Rough day', 'Rough Day');
   const watchForName = findNotionPropName(schema, 'watch_for', 'watchFor', 'Watch for');
@@ -5118,6 +5165,10 @@ async function queryNotionForPrefillCandidates(databaseId, schema, limit) {
   if (promptThemeName && notionSchemaOptionNames(schema[promptThemeName]).length) {
     const promptThemeEmpty = notionIsEmptyFilter(promptThemeName, schema[promptThemeName]?.type);
     if (promptThemeEmpty) missingPrefillFilters.push(promptThemeEmpty);
+  }
+  if (moodName && notionSchemaOptionNames(schema[moodName]).length) {
+    const moodEmpty = notionIsEmptyFilter(moodName, schema[moodName]?.type);
+    if (moodEmpty) missingPrefillFilters.push(moodEmpty);
   }
   if (goodDayName) {
     const goodDayEmpty = notionIsEmptyFilter(goodDayName, schema[goodDayName]?.type);
