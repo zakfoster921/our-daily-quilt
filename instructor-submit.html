@@ -213,14 +213,179 @@
     .heart-button[disabled]::before {
       content: "♡";
     }
+    .nominee-actions {
+      flex-shrink: 0;
+      display: flex;
+      gap: 0.6rem;
+    }
+    .nominee-action-btn {
+      font-family: inherit;
+      font-size: 0.78rem;
+      color: #8a7c6d;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
+    .nominee-action-btn:hover {
+      color: #5c5148;
+    }
+    .nominee-edit-row {
+      padding: 0.7rem 0;
+      border-bottom: 1px solid #e3dbcf;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .nominee-edit-row input {
+      font-size: 0.92rem;
+      padding: 0.5rem 0.6rem;
+    }
+    .nominee-edit-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .nominee-edit-actions button {
+      padding: 0.4rem 1rem;
+      font-size: 0.88rem;
+    }
+    .nominee-edit-actions .cancel-btn {
+      background: none;
+      color: #8a7c6d;
+      border: 1px solid #d9d1c6;
+    }
     #empty-state {
       margin-top: 1rem;
       color: #5c5148;
       display: none;
     }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(63, 58, 53, 0.5);
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 10;
+    }
+    .modal-overlay.show {
+      display: flex;
+    }
+    .modal-box {
+      background: #fffdfb;
+      border-radius: 10px;
+      padding: 1.75rem;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    }
+    .modal-box p {
+      margin: 0 0 1.25rem;
+      font-size: 1rem;
+      color: #3f3a35;
+    }
+    .modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .modal-actions button {
+      align-self: stretch;
+      text-align: center;
+    }
+    .modal-actions .modal-no-btn {
+      background: none;
+      color: #5c5148;
+      border: 1px solid #d9d1c6;
+    }
+    #admin-passcode-input {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.6rem 0.7rem;
+      border: 1px solid #d9d1c6;
+      border-radius: 6px;
+      margin-bottom: 1.25rem;
+    }
+    #admin-corner {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 120px;
+      height: 120px;
+      z-index: 1000;
+      background: transparent;
+      opacity: 0;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: none;
+    }
+    .admin-panel {
+      margin-top: 1.5rem;
+      padding: 1.25rem;
+      border: 1px solid #b5615f;
+      border-radius: 10px;
+      background: #fdf3ee;
+    }
+    .admin-panel h2 {
+      margin: 0 0 1rem;
+      font-size: 1rem;
+      text-align: center;
+      color: #8a4b12;
+    }
+    .admin-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+    }
+    .admin-toggle-btn {
+      font-size: 0.85rem;
+      padding: 0.4rem 1rem;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      color: #fffdfb;
+    }
+    .admin-toggle-btn.state-open {
+      background: #4c8a55;
+    }
+    .admin-toggle-btn.state-closed {
+      background: #8a7c6d;
+    }
+    .admin-lock-row {
+      margin-top: 0.75rem;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
+  <div id="confirm-modal-overlay" class="modal-overlay">
+    <div class="modal-box">
+      <p id="confirm-modal-message"></p>
+      <div class="modal-actions">
+        <button id="confirm-modal-yes" type="button">Yes, it's the same instructor</button>
+        <button id="confirm-modal-no" type="button" class="modal-no-btn">No, please add this new instructor</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="admin-passcode-overlay" class="modal-overlay">
+    <div class="modal-box">
+      <p>Enter admin passcode</p>
+      <input id="admin-passcode-input" type="password" autocomplete="off" />
+      <div class="modal-actions">
+        <button id="admin-passcode-submit" type="button">Unlock</button>
+        <button id="admin-passcode-cancel" type="button" class="modal-no-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <main>
     <h1>NOOK Workshops 2027</h1>
     <p class="subtitle">
@@ -253,7 +418,25 @@
       <ul id="nominee-list"></ul>
       <p id="empty-state">No suggestions yet — be the first to nominate someone!</p>
     </div>
+
+    <div id="admin-panel" class="admin-panel" style="display: none;">
+      <h2>ADMIN</h2>
+      <div class="admin-toggle-row">
+        <span>Submissions</span>
+        <button id="admin-toggle-submissions" type="button" class="admin-toggle-btn"></button>
+      </div>
+      <div class="admin-toggle-row">
+        <span>Voting</span>
+        <button id="admin-toggle-voting" type="button" class="admin-toggle-btn"></button>
+      </div>
+      <div class="admin-lock-row">
+        <button id="admin-lock-btn" type="button" class="nominee-action-btn">Lock admin mode</button>
+      </div>
+    </div>
+
   </main>
+
+  <div id="admin-corner" aria-hidden="true"></div>
 
   <script type="module">
     const CONFIG = {
@@ -276,10 +459,52 @@
     const bannerEl = document.getElementById('banner');
     const listEl = document.getElementById('nominee-list');
     const emptyStateEl = document.getElementById('empty-state');
+    const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
+    const confirmModalMessage = document.getElementById('confirm-modal-message');
+    const confirmModalYes = document.getElementById('confirm-modal-yes');
+    const confirmModalNo = document.getElementById('confirm-modal-no');
+    const adminPasscodeOverlay = document.getElementById('admin-passcode-overlay');
+    const adminPasscodeInput = document.getElementById('admin-passcode-input');
+    const adminPasscodeSubmit = document.getElementById('admin-passcode-submit');
+    const adminPasscodeCancel = document.getElementById('admin-passcode-cancel');
+    const adminPanel = document.getElementById('admin-panel');
+    const adminLockBtn = document.getElementById('admin-lock-btn');
+    const adminToggleSubmissions = document.getElementById('admin-toggle-submissions');
+    const adminToggleVoting = document.getElementById('admin-toggle-voting');
+
+    // Client-side passcode only — visible to anyone who reads the page source, and the
+    // Firestore write rule doesn't check it either (see firestore.rules). This is a
+    // reviewed, accepted tradeoff: same honor-system model as the rest of this feature,
+    // not real auth. Good enough to keep casual visitors out; not brute-force-proof.
+    const ADMIN_PASSCODE = 'odqodqodq';
+    let isAdminUnlocked = localStorage.getItem('nookAdminUnlocked') === 'true';
 
     function showStatus(kind, text) {
       statusEl.className = `show ${kind}`;
       statusEl.textContent = text;
+    }
+
+    function showConfirmModal(message) {
+      return new Promise((resolve) => {
+        confirmModalMessage.textContent = message;
+        confirmModalOverlay.classList.add('show');
+
+        function onYes() {
+          cleanup();
+          resolve(true);
+        }
+        function onNo() {
+          cleanup();
+          resolve(false);
+        }
+        function cleanup() {
+          confirmModalOverlay.classList.remove('show');
+          confirmModalYes.removeEventListener('click', onYes);
+          confirmModalNo.removeEventListener('click', onNo);
+        }
+        confirmModalYes.addEventListener('click', onYes);
+        confirmModalNo.addEventListener('click', onNo);
+      });
     }
 
     function getOrCreateClientId() {
@@ -302,6 +527,33 @@
 
     function normalizeName(value) {
       return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    }
+
+    function levenshteinDistance(a, b) {
+      const m = a.length;
+      const n = b.length;
+      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+        }
+      }
+      return dp[m][n];
+    }
+
+    // 1 = identical, 0 = nothing alike. Substrings (e.g. "Jane" within "Jane Doe") score
+    // high without going through edit-distance math, since one isn't really a typo of the other.
+    function nameSimilarity(a, b) {
+      const normA = String(a || '').toLowerCase().trim();
+      const normB = String(b || '').toLowerCase().trim();
+      if (!normA || !normB) return 0;
+      if (normA === normB) return 1;
+      if (normA.includes(normB) || normB.includes(normA)) return 0.9;
+      const maxLen = Math.max(normA.length, normB.length);
+      return 1 - levenshteinDistance(normA, normB) / maxLen;
     }
 
     // Accepts a full URL, a bare domain, or an Instagram handle (with or without "@")
@@ -327,6 +579,27 @@
       const app = initializeApp(CONFIG.FIREBASE);
       const db = getFirestore(app);
 
+      const clientId = getOrCreateClientId();
+      const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
+
+      // Refreshed by loadLeaderboard(); used to nudge submitters toward an existing name
+      // instead of silently creating a near-duplicate entry (see findSimilarNominee below).
+      let knownNominees = [];
+
+      const SIMILARITY_THRESHOLD = 0.72;
+      function findSimilarNominee(name) {
+        let best = null;
+        let bestScore = 0;
+        for (const nominee of knownNominees) {
+          const score = nameSimilarity(name, nominee.name);
+          if (score >= SIMILARITY_THRESHOLD && score > bestScore) {
+            best = nominee;
+            bestScore = score;
+          }
+        }
+        return best;
+      }
+
       let submissionsOpen = true;
       let votingOpen = false;
       try {
@@ -338,12 +611,19 @@
         console.warn('Could not load leaderboard config, defaulting to submissions-open/voting-closed:', err);
       }
 
-      if (!submissionsOpen) {
-        form.style.display = 'none';
-        showStatus('closed', "Suggestions are closed for now — thanks to everyone who submitted! See who's been suggested below.");
+      function applySubmissionsOpenState() {
+        if (!submissionsOpen) {
+          form.style.display = 'none';
+          showStatus('closed', "Suggestions are closed for now — thanks to everyone who submitted! See who's been suggested below.");
+        } else {
+          form.style.display = '';
+          statusEl.className = '';
+          statusEl.textContent = '';
+        }
       }
+      applySubmissionsOpenState();
 
-      function renderNomineeRow(nominee, index, clientDocId) {
+      function renderNomineeRow(nominee, index) {
         const li = document.createElement('li');
         li.className = 'nominee-row';
 
@@ -407,13 +687,132 @@
           });
         }
 
+        // Ownership here is device-based (same hashed local client id used for votes) —
+        // there's no sign-in, so these controls only appear for the device that submitted,
+        // or for any row once admin mode is passcode-unlocked in this browser.
+        // Hidden once submissions close since the rules would reject the write anyway —
+        // use the Firebase console (Admin SDK bypasses rules) to edit/delete after that.
+        if ((nominee.isMine || isAdminUnlocked) && submissionsOpen) {
+          const actions = document.createElement('div');
+          actions.className = 'nominee-actions';
+
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'nominee-action-btn';
+          editBtn.textContent = 'Edit';
+          editBtn.addEventListener('click', () => showEditRow(li, nominee));
+          actions.appendChild(editBtn);
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'nominee-action-btn';
+          deleteBtn.textContent = 'Delete';
+          deleteBtn.addEventListener('click', () => handleDelete(nominee));
+          actions.appendChild(deleteBtn);
+
+          li.appendChild(actions);
+        }
+
         return li;
+      }
+
+      function showEditRow(li, nominee) {
+        li.innerHTML = '';
+        li.className = 'nominee-edit-row';
+
+        const nameLabel = document.createElement('div');
+        nameLabel.className = 'nominee-name';
+        nameLabel.textContent = `Editing: ${nominee.name}`;
+        li.appendChild(nameLabel);
+
+        const linkInputEdit = document.createElement('input');
+        linkInputEdit.type = 'text';
+        linkInputEdit.placeholder = 'Instagram or website (optional)';
+        linkInputEdit.maxLength = 200;
+        linkInputEdit.value = nominee.link || '';
+        li.appendChild(linkInputEdit);
+
+        const noteInputEdit = document.createElement('input');
+        noteInputEdit.type = 'text';
+        noteInputEdit.placeholder = 'Why them? (optional)';
+        noteInputEdit.maxLength = 300;
+        noteInputEdit.value = nominee.note || '';
+        li.appendChild(noteInputEdit);
+
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'nominee-edit-actions';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.textContent = 'Save';
+        actionsRow.appendChild(saveBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'cancel-btn';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.addEventListener('click', () => {
+          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+        });
+        actionsRow.appendChild(cancelBtn);
+
+        li.appendChild(actionsRow);
+
+        saveBtn.addEventListener('click', async () => {
+          saveBtn.disabled = true;
+          try {
+            const newLink = String(linkInputEdit.value || '').trim().slice(0, 200);
+            const newNote = String(noteInputEdit.value || '').trim().slice(0, 300);
+            const nowIso = new Date().toISOString();
+            const nominationRef = doc(db, 'instructorNominations', nominee.id);
+            const snap = await getDoc(nominationRef);
+            const current = snap.exists() ? snap.data() : {};
+            await updateDoc(nominationRef, {
+              submissionCount: (Number(current.submissionCount) || 1) + 1,
+              lastSubmittedAtIso: nowIso,
+              link: newLink,
+              note: newNote
+            });
+            await setDoc(doc(db, 'instructorNominations', nominee.id, 'submitters', clientDocId), {
+              link: newLink,
+              note: newNote,
+              submittedAtIso: nowIso
+            }, { merge: true });
+            loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+          } catch (err) {
+            console.error('Edit failed:', err);
+            alert('Could not save your changes right now — please try again.');
+            saveBtn.disabled = false;
+          }
+        });
+      }
+
+      async function handleDelete(nominee) {
+        const confirmed = confirm(`Remove your suggestion of "${nominee.name}"?`);
+        if (!confirmed) return;
+        try {
+          await deleteDoc(doc(db, 'instructorNominations', nominee.id, 'submitters', clientDocId));
+
+          // If no other device still has a submitter record for this instructor and nobody
+          // has voted for it yet, the shared nomination doc can go too. Otherwise leave it —
+          // it may still represent other people's interest or an active vote.
+          const [votesSnap, submittersSnap] = await Promise.all([
+            getDocs(collection(db, 'instructorNominations', nominee.id, 'votes')),
+            getDocs(collection(db, 'instructorNominations', nominee.id, 'submitters'))
+          ]);
+          if (votesSnap.size === 0 && submittersSnap.size === 0) {
+            await deleteDoc(doc(db, 'instructorNominations', nominee.id));
+          }
+
+          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+        } catch (err) {
+          console.error('Delete failed:', err);
+          alert('Could not remove your suggestion right now — please try again.');
+        }
       }
 
       async function loadLeaderboard() {
         listEl.innerHTML = '';
-        const clientId = getOrCreateClientId();
-        const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
 
         const nominationsSnap = await getDocs(collection(db, 'instructorNominations'));
         let nominees = [];
@@ -421,12 +820,22 @@
         for (const nominationDoc of nominationsSnap.docs) {
           const data = nominationDoc.data() || {};
           if (!data.name) continue;
-          const nominee = { id: nominationDoc.id, name: data.name, link: data.link || '', votes: 0, voted: false };
+          const nominee = {
+            id: nominationDoc.id,
+            name: data.name,
+            link: data.link || '',
+            note: data.note || '',
+            votes: 0,
+            voted: false,
+            isMine: false
+          };
           if (votingOpen) {
             const votesSnap = await getDocs(collection(db, 'instructorNominations', nominationDoc.id, 'votes'));
             nominee.votes = votesSnap.size;
             nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
           }
+          const submitterSnap = await getDoc(doc(db, 'instructorNominations', nominationDoc.id, 'submitters', clientDocId));
+          nominee.isMine = submitterSnap.exists();
           nominees.push(nominee);
         }
 
@@ -442,19 +851,206 @@
 
         emptyStateEl.style.display = nominees.length ? 'none' : 'block';
         nominees.forEach((nominee, index) => {
-          listEl.appendChild(renderNomineeRow(nominee, index, clientDocId));
+          listEl.appendChild(renderNomineeRow(nominee, index));
+        });
+
+        knownNominees = nominees.map((n) => ({ id: n.id, name: n.name }));
+      }
+
+      function updateAdminToggleButton(button, isOpen) {
+        button.textContent = isOpen ? 'Open' : 'Closed';
+        button.className = `admin-toggle-btn ${isOpen ? 'state-open' : 'state-closed'}`;
+      }
+
+      function refreshAdminPanel() {
+        if (!isAdminUnlocked) {
+          adminPanel.style.display = 'none';
+          return;
+        }
+        adminPanel.style.display = 'block';
+        updateAdminToggleButton(adminToggleSubmissions, submissionsOpen);
+        updateAdminToggleButton(adminToggleVoting, votingOpen);
+      }
+      refreshAdminPanel();
+
+      async function writeLeaderboardConfig(nextSubmissionsOpen, nextVotingOpen) {
+        await setDoc(doc(db, 'instructorLeaderboardConfig', 'settings'), {
+          submissionsOpen: nextSubmissionsOpen,
+          votingOpen: nextVotingOpen,
+          updatedAtIso: new Date().toISOString()
         });
       }
+
+      function openAdminPasscodePrompt() {
+        adminPasscodeInput.value = '';
+        adminPasscodeOverlay.classList.add('show');
+        adminPasscodeInput.focus();
+      }
+
+      // Same hidden trigger as the main quilt app's admin corner: long-press (or 5 quick
+      // taps) inside an invisible top-right zone. No visible "Admin" affordance on the page.
+      (function setupAdminCornerTrigger() {
+        const adminCorner = document.getElementById('admin-corner');
+        const cornerW = 120;
+        const cornerH = 120;
+        const holdMs = 1800;
+        const moveCancelPx = 48;
+        let pressTimer = null;
+        let holdStart = null;
+        let activeTouchId = null;
+        let tapCount = 0;
+        let tapResetTimer = 0;
+
+        function isCornerPoint(x, y) {
+          return x >= window.innerWidth - cornerW && y >= 0 && y <= cornerH;
+        }
+        function clearPressTimer() {
+          if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+          }
+          holdStart = null;
+          activeTouchId = null;
+        }
+        function noteTap() {
+          tapCount += 1;
+          clearTimeout(tapResetTimer);
+          tapResetTimer = setTimeout(() => {
+            tapCount = 0;
+          }, 1200);
+          if (tapCount >= 5) {
+            tapCount = 0;
+            openAdminPasscodePrompt();
+          }
+        }
+        function beginHold(x, y, touchId = null) {
+          clearPressTimer();
+          activeTouchId = touchId;
+          holdStart = { x, y };
+          pressTimer = setTimeout(() => {
+            pressTimer = null;
+            openAdminPasscodePrompt();
+          }, holdMs);
+        }
+
+        adminCorner.addEventListener('mousedown', (e) => {
+          beginHold(e.clientX, e.clientY);
+        });
+        document.addEventListener('mouseup', () => {
+          if (activeTouchId != null) return;
+          if (pressTimer) {
+            clearPressTimer();
+            noteTap();
+          }
+        });
+        document.addEventListener('mousemove', (e) => {
+          if (activeTouchId != null || !pressTimer || !holdStart) return;
+          if (Math.hypot(e.clientX - holdStart.x, e.clientY - holdStart.y) > moveCancelPx) clearPressTimer();
+        });
+
+        adminCorner.addEventListener('touchstart', (e) => {
+          const t = e.changedTouches[0];
+          if (!t || !isCornerPoint(t.clientX, t.clientY)) return;
+          beginHold(t.clientX, t.clientY, t.identifier);
+        }, { passive: true });
+        document.addEventListener('touchmove', (e) => {
+          if (!pressTimer || !holdStart || activeTouchId == null) return;
+          for (const t of e.touches) {
+            if (t.identifier !== activeTouchId) continue;
+            if (Math.hypot(t.clientX - holdStart.x, t.clientY - holdStart.y) > moveCancelPx) clearPressTimer();
+            return;
+          }
+        }, { passive: true });
+        document.addEventListener('touchend', (e) => {
+          for (const t of e.changedTouches) {
+            if (t.identifier !== activeTouchId) continue;
+            if (pressTimer) {
+              clearPressTimer();
+              noteTap();
+            }
+            return;
+          }
+        }, { passive: true });
+        document.addEventListener('touchcancel', (e) => {
+          for (const t of e.changedTouches) {
+            if (t.identifier === activeTouchId) clearPressTimer();
+          }
+        }, { passive: true });
+      })();
+
+      adminPasscodeCancel.addEventListener('click', () => {
+        adminPasscodeOverlay.classList.remove('show');
+      });
+
+      adminPasscodeSubmit.addEventListener('click', () => {
+        if (adminPasscodeInput.value === ADMIN_PASSCODE) {
+          isAdminUnlocked = true;
+          localStorage.setItem('nookAdminUnlocked', 'true');
+          adminPasscodeOverlay.classList.remove('show');
+          refreshAdminPanel();
+          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+        } else {
+          alert('Incorrect passcode.');
+        }
+      });
+
+      adminPasscodeInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') adminPasscodeSubmit.click();
+      });
+
+      adminLockBtn.addEventListener('click', () => {
+        isAdminUnlocked = false;
+        localStorage.removeItem('nookAdminUnlocked');
+        refreshAdminPanel();
+        loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+      });
+
+      adminToggleSubmissions.addEventListener('click', async () => {
+        const next = !submissionsOpen;
+        adminToggleSubmissions.disabled = true;
+        try {
+          await writeLeaderboardConfig(next, votingOpen);
+          submissionsOpen = next;
+          applySubmissionsOpenState();
+          refreshAdminPanel();
+          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+        } catch (err) {
+          console.error('Failed to update submissions flag:', err);
+          alert('Could not update — please try again.');
+        } finally {
+          adminToggleSubmissions.disabled = false;
+        }
+      });
+
+      adminToggleVoting.addEventListener('click', async () => {
+        const next = !votingOpen;
+        adminToggleVoting.disabled = true;
+        try {
+          await writeLeaderboardConfig(submissionsOpen, next);
+          votingOpen = next;
+          refreshAdminPanel();
+          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+        } catch (err) {
+          console.error('Failed to update voting flag:', err);
+          alert('Could not update — please try again.');
+        } finally {
+          adminToggleVoting.disabled = false;
+        }
+      });
 
       loadLeaderboard().catch((err) => {
         console.error('Failed to load leaderboard:', err);
         bannerEl.textContent = 'Could not load suggestions right now — please try again in a moment.';
       });
 
-      if (!submissionsOpen) return;
-
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
+        // Belt-and-suspenders: the form is hidden when closed, but admin mode can flip
+        // submissionsOpen live, so re-check rather than trusting the form's visibility.
+        if (!submissionsOpen) {
+          showStatus('closed', 'Suggestions are closed right now.');
+          return;
+        }
         const name = normalizeName(nameInput.value);
         const link = String(linkInput.value || '').trim().slice(0, 200);
         const note = String(noteInput.value || '').trim().slice(0, 300);
@@ -467,10 +1063,32 @@
         submitButton.disabled = true;
         try {
           const nameKey = name.toLowerCase();
-          const nominationId = (await sha256Hex(nameKey)).slice(0, 32);
-          const nominationRef = doc(db, 'instructorNominations', nominationId);
+          const ownNominationId = (await sha256Hex(nameKey)).slice(0, 32);
+          let nominationId = ownNominationId;
+          let nominationRef = doc(db, 'instructorNominations', nominationId);
           const nowIso = new Date().toISOString();
-          const existingSnap = await getDoc(nominationRef);
+          let existingSnap = await getDoc(nominationRef);
+
+          // No exact-name match — check for a similar existing entry (typo, nickname,
+          // "Jane" vs "Jane Doe") and ask before quietly creating a near-duplicate row.
+          if (!existingSnap.exists()) {
+            const similar = findSimilarNominee(name);
+            if (similar) {
+              const sameEntry = await showConfirmModal(
+                `We have "${similar.name}" on the list already. Is that who you meant?`
+              );
+              if (sameEntry) {
+                const matchedSnap = await getDoc(doc(db, 'instructorNominations', similar.id));
+                if (matchedSnap.exists()) {
+                  nominationId = similar.id;
+                  nominationRef = doc(db, 'instructorNominations', nominationId);
+                  existingSnap = matchedSnap;
+                }
+                // else: it was removed since the page loaded — fall through and
+                // add "name" as its own fresh entry under ownNominationId instead.
+              }
+            }
+          }
 
           if (existingSnap.exists()) {
             const existing = existingSnap.data() || {};
@@ -480,7 +1098,7 @@
               link: link || existing.link || '',
               note: note || existing.note || ''
             });
-            showStatus('duplicate', `You've already suggested ${name} — thanks for the enthusiasm! We've noted your interest again.`);
+            showStatus('duplicate', `You've already suggested ${existing.name || name} — thanks for the enthusiasm! We've noted your interest again.`);
           } else {
             await setDoc(nominationRef, {
               name,
@@ -493,6 +1111,14 @@
             });
             showStatus('success', `Thanks! ${name} has been added to the suggestion list.`);
           }
+
+          // Records this device as a submitter so the leaderboard can show Edit/Delete
+          // controls for it (see loadLeaderboard's isMine check).
+          await setDoc(doc(db, 'instructorNominations', nominationId, 'submitters', clientDocId), {
+            link,
+            note,
+            submittedAtIso: nowIso
+          }, { merge: true });
 
           form.reset();
           loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
