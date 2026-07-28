@@ -3,7 +3,7 @@ name: Notion Firestore Sync
 on:
   schedule:
     # 06:30 UTC — 30 min before daily quilt reset (07:00). Uses --start=opening so
-    # scheduling + cutouts target the opening app-day (stable if Actions runs late).
+    # scheduling targets the opening app-day (stable if Actions runs late).
     - cron: "30 6 * * *"
   workflow_dispatch:
     inputs:
@@ -174,25 +174,7 @@ jobs:
           GEMINI_PREFILL_MODEL: ${{ secrets.GEMINI_PREFILL_MODEL }}
         run: node scripts/finalize-scheduled-prefill.cjs "${START_ARG}" --window=7 --limit=7
 
-      - name: Process speaker cutouts for scheduled quotes
-        timeout-minutes: 10
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
-          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
-          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
-        run: node scripts/process-speaker-cutouts.cjs --scheduled "${START_ARG}" --window=7 --limit=3 --soft-fail
-
-      - name: Process tomorrow's speaker cutout (admin preview lookahead)
-        timeout-minutes: 5
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
-          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-          FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
-          FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
-        run: node scripts/process-speaker-cutouts.cjs --opening-plus-one-speaker --soft-fail
+      # Speaker cutouts: reviewed-only — Notion "Reviewed" → POST /api/process-reviewed-quote-assets
 
       - name: Sync usage (Firestore -> Notion)
         timeout-minutes: 8
