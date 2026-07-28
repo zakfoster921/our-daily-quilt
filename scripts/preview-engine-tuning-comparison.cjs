@@ -315,7 +315,11 @@ async function labelPanelBuffer(panel) {
 }
 
 async function writeContactSheet(panelImages, contactPath) {
-  const cols = Math.min(2, panelImages.length);
+  const requestedCols = Number(process.env.CONTACT_COLS);
+  const cols =
+    Number.isFinite(requestedCols) && requestedCols > 0
+      ? Math.min(requestedCols, panelImages.length)
+      : Math.min(3, panelImages.length);
   const rows = Math.ceil(panelImages.length / cols);
   const tileW = OUT_W;
   const tileH = OUT_H;
@@ -375,8 +379,13 @@ function writePreviewHtml(outDir, dateKey, summary, cacheBust) {
 <body>
   <main>
     <h1>${dateKey} — fair engine comparison</h1>
-    <p>Left: engine at commit ${summary.oldCommit}. Right: current engine. Both replay the same ${summary.replayColorCount} submission colors with the same test seed. This is <strong>not</strong> the live quilt (which used production randomness and ${summary.liveContributorCount} picks).</p>
-    <img src="contact-sheet.png${q}" alt="Pre vs post tuning" />
+    <p>Three different quilts — not three versions of the same one.</p>
+    <ul>
+      <li><strong>Live (app):</strong> built incrementally today with production randomness (${summary.liveContributorCount} picks).</li>
+      <li><strong>Pre Jul 21:</strong> commit ${summary.oldCommit}, same ${summary.replayColorCount} submission colors + test seed, replayed from scratch.</li>
+      <li><strong>Current engine:</strong> same colors + same test seed, current code.</li>
+    </ul>
+    <img src="contact-sheet.png${q}" alt="Live vs replays" />
   </main>
 </body>
 </html>`;
@@ -393,24 +402,35 @@ async function main() {
   const oldReplay = replayWithEngine(dateKey, data.colors, oldEngineRel, 'pre-tuning');
   const newReplay = replayWithEngine(dateKey, data.colors, newEngineRel, 'post-tuning');
 
-  const panels = [
+  const panels = [];
+  if (process.env.INCLUDE_LIVE !== '0' && data.liveBlocks.length) {
+    panels.push({
+      id: 'live',
+      label: 'Live (app)',
+      subtitle: `${data.liveContributorCount} picks · ${data.liveBlocks.length} blocks · production randomness`,
+      blocks: data.liveBlocks,
+      submissionCount: data.liveContributorCount,
+      expectedFingerprint: computeQuiltFingerprint(data.liveBlocks)
+    });
+  }
+  panels.push(
     {
       id: 'pre-tuning',
-      label: 'Pre-tuning',
-      subtitle: `${OLD_COMMIT} · ${data.colors.length} colors · same seed · ${oldReplay.blocks.length} blocks`,
+      label: 'Pre Jul 21 replay',
+      subtitle: `${OLD_COMMIT} · ${data.colors.length} colors · test seed · ${oldReplay.blocks.length} blocks`,
       blocks: oldReplay.blocks,
       submissionCount: oldReplay.submissionCount,
       expectedFingerprint: oldReplay.fingerprint
     },
     {
       id: 'post-tuning',
-      label: 'Post-tuning',
-      subtitle: `current · ${data.colors.length} colors · same seed · ${newReplay.blocks.length} blocks`,
+      label: 'Current replay',
+      subtitle: `current engine · ${data.colors.length} colors · test seed · ${newReplay.blocks.length} blocks`,
       blocks: newReplay.blocks,
       submissionCount: newReplay.submissionCount,
       expectedFingerprint: newReplay.fingerprint
     }
-  ];
+  );
 
   const outDir = path.join(ROOT, 'tmp', 'engine-tuning-comparison', dateKey, OLD_COMMIT);
   fs.mkdirSync(outDir, { recursive: true });
@@ -435,6 +455,7 @@ async function main() {
     replayColorCount: data.colors.length,
     liveContributorCount: data.liveContributorCount,
     liveBlockCount: data.liveBlocks.length,
+    liveFingerprint: computeQuiltFingerprint(data.liveBlocks),
     replayEventCount: data.replayEventCount,
     preTuningBlockCount: oldReplay.blocks.length,
     postTuningBlockCount: newReplay.blocks.length,
