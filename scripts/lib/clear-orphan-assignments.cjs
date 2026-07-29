@@ -108,28 +108,29 @@ async function clearCatalogScheduleForRemovedSourceIds(db, options) {
     if (!snap.exists) continue;
     const data = snap.data() || {};
     const ds = String(data.date_scheduled ?? data.dateScheduled ?? '').trim();
-    if (!ds) continue;
     sourceIds.push(sid);
-    clearedCatalogDates += 1;
+    const patch = {
+      notionPageRemoved: true,
+      notionPageRemovedAt: updatedAt,
+      scheduleUpdatedAt: updatedAt,
+      scheduleSource: 'notion-page-removed'
+    };
+    if (ds) {
+      patch.dateScheduled = deleteField;
+      patch.date_scheduled = deleteField;
+      clearedCatalogDates += 1;
+    }
     if (dryRun) continue;
-    await ref.set(
-      {
-        dateScheduled: deleteField,
-        date_scheduled: deleteField,
-        scheduleUpdatedAt: updatedAt,
-        scheduleSource: 'notion-page-removed'
-      },
-      { merge: true }
-    );
+    await ref.set(patch, { merge: true });
   }
 
-  if (dryRun && clearedCatalogDates) {
+  if (dryRun && sourceIds.length) {
     console.log(
-      `[sync] dry-run: would clear date_scheduled on ${clearedCatalogDates} catalog row(s) for removed Notion quote(s): ${sourceIds.join(', ')}`
+      `[sync] dry-run: would mark ${sourceIds.length} catalog row(s) removed from Notion (${clearedCatalogDates} with date_scheduled cleared): ${sourceIds.join(', ')}`
     );
-  } else if (clearedCatalogDates) {
+  } else if (sourceIds.length) {
     console.log(
-      `[sync] cleared date_scheduled on ${clearedCatalogDates} catalog row(s) for removed Notion quote(s): ${sourceIds.join(', ')}`
+      `[sync] marked ${sourceIds.length} catalog row(s) removed from Notion (${clearedCatalogDates} date_scheduled cleared): ${sourceIds.join(', ')}`
     );
   }
 

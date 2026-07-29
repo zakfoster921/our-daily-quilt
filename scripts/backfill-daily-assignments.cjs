@@ -292,6 +292,7 @@ async function main() {
   snap.forEach((docSnap) => {
     const d = docSnap.data() || {};
     if (d.source !== 'notion') return;
+    if (d.notionPageRemoved === true) return;
     const approved =
       typeof d.approved === 'boolean'
         ? d.approved

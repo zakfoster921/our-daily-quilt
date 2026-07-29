@@ -242,10 +242,21 @@ async function main() {
         { merge: true }
       );
       if (schema && Object.keys(notionProperties).length) {
-        await notionFetchJson(`/pages/${item.sourceId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ properties: notionProperties })
-        });
+        try {
+          await notionFetchJson(`/pages/${item.sourceId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ properties: notionProperties })
+          });
+        } catch (e) {
+          const msg = String(e?.message || e);
+          if (/archived|unarchive|in_trash/i.test(msg)) {
+            console.warn(
+              `[finalize-prefill] Firestore patched but Notion page is trashed — skipped Notion write for ${item.dateKey} ${item.sourceId}`
+            );
+          } else {
+            throw e;
+          }
+        }
       }
 
       patched += 1;
