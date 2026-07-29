@@ -46,7 +46,9 @@ const {
 } = require('./lib/sync-window.cjs');
 const {
   isNotionPageMissingError,
+  isNotionPageRemoved,
   clearDailyAssignmentsForRemovedSourceIds,
+  clearCatalogScheduleForRemovedSourceIds,
   clearWindowAssignmentsMissingFromCatalog
 } = require('./lib/clear-orphan-assignments.cjs');
 
@@ -1449,8 +1451,15 @@ async function run() {
       try {
         const page = await notionGetPage(pageId, notionToken);
         if (page && page.id) {
-          byId.set(page.id, page);
-          extraPageFetches += 1;
+          if (isNotionPageRemoved(page)) {
+            removedNotionSourceIds.add(pageId);
+            console.warn(
+              `[sync] Notion page deleted/trashed — will clear assignment slots for ${pageId}`
+            );
+          } else {
+            byId.set(page.id, page);
+            extraPageFetches += 1;
+          }
         }
       } catch (e) {
         if (isNotionPageMissingError(e)) {
@@ -1469,6 +1478,14 @@ async function run() {
     console.log('[sync] full-catalog sync (all Notion rows)');
     rowsToSync = await queryAllNotionPages(databaseId, notionToken, null);
   }
+
+  rowsToSync = rowsToSync.filter((row) => {
+    if (!row?.id) return false;
+    if (!isNotionPageRemoved(row)) return true;
+    removedNotionSourceIds.add(row.id);
+    console.warn(`[sync] Notion page deleted/trashed — will clear assignment slots for ${row.id}`);
+    return false;
+  });
 
   const fetchedPages = rowsToSync.length;
   const {
@@ -1535,6 +1552,12 @@ async function run() {
   });
   assignmentsCleared += clearedFromRemoved.clearedSlots;
 
+  const clearedCatalog = await clearCatalogScheduleForRemovedSourceIds(db, {
+    quotesCollection: collectionName,
+    removedSourceIds: removedNotionSourceIds,
+    dryRun
+  });
+
   if (window) {
     const clearedFromCatalog = await clearWindowAssignmentsMissingFromCatalog(db, {
       window,
@@ -1547,7 +1570,7 @@ async function run() {
 
   const windowLabel = window ? `${window.startKey}..${window.endKey}` : 'full-catalog';
   console.log(
-    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} scheduleConflictClears=${scheduleConflictClears} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} assignmentsCleared=${assignmentsCleared} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} scheduleConflictClears=${scheduleConflictClears} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} assignmentsCleared=${assignmentsCleared} catalogScheduleClears=${clearedCatalog.clearedCatalogDates} collection=${collectionName}`
   );
 }
 

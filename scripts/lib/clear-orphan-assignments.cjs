@@ -3,7 +3,14 @@
  * catalog row is gone — so deleting in Notion removes the quote from scheduled days too.
  */
 
+const admin = require('firebase-admin');
 const { isDateInSyncWindow } = require('./sync-window.cjs');
+
+/** Notion "delete" moves a page to trash; GET still succeeds with `archived: true`. */
+function isNotionPageRemoved(page) {
+  if (!page || typeof page !== 'object') return false;
+  return page.archived === true || page.in_trash === true;
+}
 
 function isNotionPageMissingError(err) {
   const status = err && typeof err.notionStatus === 'number' ? err.notionStatus : 0;
@@ -80,6 +87,56 @@ async function clearDailyAssignmentsForRemovedSourceIds(db, options) {
 }
 
 /**
+ * Clear stale `date_scheduled` on catalog rows whose Notion page was deleted/trashed,
+ * so reconcile and gap-fill do not treat the day as still booked.
+ */
+async function clearCatalogScheduleForRemovedSourceIds(db, options) {
+  const quotesCollection =
+    options.quotesCollection || process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const dryRun = options.dryRun === true;
+  const removed = normalizeRemovedSourceIds(options.removedSourceIds);
+  if (!removed.size) return { clearedCatalogDates: 0, sourceIds: [] };
+
+  const deleteField = admin.firestore.FieldValue.delete();
+  const updatedAt = new Date().toISOString();
+  const sourceIds = [];
+  let clearedCatalogDates = 0;
+
+  for (const sid of removed) {
+    const ref = db.collection(quotesCollection).doc(sid);
+    const snap = await ref.get();
+    if (!snap.exists) continue;
+    const data = snap.data() || {};
+    const ds = String(data.date_scheduled ?? data.dateScheduled ?? '').trim();
+    if (!ds) continue;
+    sourceIds.push(sid);
+    clearedCatalogDates += 1;
+    if (dryRun) continue;
+    await ref.set(
+      {
+        dateScheduled: deleteField,
+        date_scheduled: deleteField,
+        scheduleUpdatedAt: updatedAt,
+        scheduleSource: 'notion-page-removed'
+      },
+      { merge: true }
+    );
+  }
+
+  if (dryRun && clearedCatalogDates) {
+    console.log(
+      `[sync] dry-run: would clear date_scheduled on ${clearedCatalogDates} catalog row(s) for removed Notion quote(s): ${sourceIds.join(', ')}`
+    );
+  } else if (clearedCatalogDates) {
+    console.log(
+      `[sync] cleared date_scheduled on ${clearedCatalogDates} catalog row(s) for removed Notion quote(s): ${sourceIds.join(', ')}`
+    );
+  }
+
+  return { clearedCatalogDates, sourceIds };
+}
+
+/**
  * Assignments in the sync window whose sourceId no longer exists in `quotes/`.
  */
 async function clearWindowAssignmentsMissingFromCatalog(db, options) {
@@ -114,6 +171,8 @@ async function clearWindowAssignmentsMissingFromCatalog(db, options) {
 
 module.exports = {
   isNotionPageMissingError,
+  isNotionPageRemoved,
   clearDailyAssignmentsForRemovedSourceIds,
+  clearCatalogScheduleForRemovedSourceIds,
   clearWindowAssignmentsMissingFromCatalog
 };

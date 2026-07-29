@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 const assert = require('assert');
-const { isNotionPageMissingError } = require('./lib/clear-orphan-assignments.cjs');
+const {
+  isNotionPageMissingError,
+  isNotionPageRemoved
+} = require('./lib/clear-orphan-assignments.cjs');
 
 assert.strictEqual(isNotionPageMissingError({ notionStatus: 404 }), true);
 assert.strictEqual(
@@ -9,5 +12,10 @@ assert.strictEqual(
   true
 );
 assert.strictEqual(isNotionPageMissingError({ notionStatus: 500 }), false);
+
+assert.strictEqual(isNotionPageRemoved({ archived: true, id: 'abc' }), true);
+assert.strictEqual(isNotionPageRemoved({ in_trash: true, id: 'abc' }), true);
+assert.strictEqual(isNotionPageRemoved({ archived: false, id: 'abc' }), false);
+assert.strictEqual(isNotionPageRemoved(null), false);
 
 console.log('smoke-clear-orphan-assignments: ok');
