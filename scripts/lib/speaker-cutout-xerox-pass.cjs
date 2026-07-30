@@ -3,17 +3,56 @@
 
 /**
  * 1990s local newspaper portrait treatment.
- * grayscale → adaptive contrast (luminance-aware) → brightness → sepia warm tint
+ * grayscale → adaptive contrast → brightness → sepia → organic film grain
  *
  * Replaces the old "punk flyer / photocopier" pass (high contrast, lifted blacks, band grain).
- * Registration offset and scan lines are applied in CSS/UI layer on top of this.
+ * Registration offset is applied in CSS/UI layer on top of this.
  */
 const NEWSPAPER_TONE = Object.freeze({
   brightness: 1.32,
   sepia: 0.32,
   /** Darkest visible tone — avoids true-black fringe on cutout edges after multiply blend. */
   blackFloor: 62,
+  /** Luminance noise amplitude at ~300×450px; scales slightly with resolution. */
+  grainAmp: 7
 });
+
+function hashSeedToUnit(seed, x, y) {
+  let h = 0;
+  const s = `${String(seed || 'odq')}:${x}:${y}`;
+  for (let i = 0; i < s.length; i += 1) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+/** Seeded film grain — stronger in midtones, no photocopier banding. */
+function applyNewspaperFilmGrainPass(data, width, height, seed = 'odq', opts = {}) {
+  const d = data;
+  const w = Math.max(1, width | 0);
+  const h = Math.max(1, height | 0);
+  const blackFloor = opts.blackFloor ?? NEWSPAPER_TONE.blackFloor;
+  const refPixels = 300 * 450;
+  const scale = Math.sqrt((w * h) / refPixels);
+  const amp = (opts.grainAmp ?? NEWSPAPER_TONE.grainAmp) * Math.min(1.35, Math.max(0.85, scale));
+
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 4;
+      if (d[i + 3] < 8) continue;
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const midWeight = 0.52 + 0.48 * (1 - Math.min(1, Math.abs(lum - 145) / 145));
+      const n = hashSeedToUnit(seed, x, y) * 2 - 1;
+      const delta = n * amp * midWeight;
+      d[i] = Math.max(blackFloor, Math.min(255, Math.round(d[i] + delta)));
+      d[i + 1] = Math.max(blackFloor, Math.min(255, Math.round(d[i + 1] + delta * 0.96)));
+      d[i + 2] = Math.max(blackFloor, Math.min(255, Math.round(d[i + 2] + delta * 0.88)));
+    }
+  }
+}
 
 /**
  * Two-factor adaptive contrast:
@@ -49,9 +88,9 @@ function computeAdaptiveContrast(data, width, height) {
  * @param {Buffer|Uint8ClampedArray} data  Raw RGBA pixels, modified in place.
  * @param {number} width
  * @param {number} height
- * @param {string} [_seed]  Unused — kept for API compatibility with old xerox pass.
+ * @param {string} [seed]  Stable per-speaker seed for film grain.
  */
-function applySpeakerCutoutXeroxRgba(data, width, height, _seed = 'odq') {
+function applySpeakerCutoutXeroxRgba(data, width, height, seed = 'odq') {
   const d = data;
   const w = Math.max(1, width | 0);
   const h = Math.max(1, height | 0);
@@ -85,6 +124,8 @@ function applySpeakerCutoutXeroxRgba(data, width, height, _seed = 'odq') {
       d[i + 2] = Math.round(b + (sb - b) * sepia);
     }
   }
+
+  applyNewspaperFilmGrainPass(d, w, h, seed, { blackFloor });
 }
 
 /**
@@ -115,6 +156,7 @@ function rgbaLooksSpeakerCutoutXerox(data, width, height) {
 module.exports = {
   NEWSPAPER_TONE,
   computeAdaptiveContrast,
+  applyNewspaperFilmGrainPass,
   applySpeakerCutoutXeroxRgba,
   rgbaLooksSpeakerCutoutXerox
 };
