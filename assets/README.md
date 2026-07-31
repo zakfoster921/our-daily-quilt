@@ -11,3 +11,5 @@ node scripts/render-library-pocket-empty.cjs
 ```
 
 (requires `assets/library-pocket-source.png` and Playwright locally)
+
+**IG carousel slide 2 (yesterday stats):** optional `assets/ig-green-cutting-mat.jpg` (or `.webp` / `.png`) — green self-healing mat photo for the cutting-table collage. Without it, compose uses a procedural grid fallback.
