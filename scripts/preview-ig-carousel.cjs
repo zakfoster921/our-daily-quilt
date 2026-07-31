@@ -2,8 +2,8 @@
 /* eslint-disable no-console */
 /**
  * Preview integrated IG carousel PNGs for a quilt day (writes tmp/carousel-*.png).
- * Slide 1 = layout B (+ speaker cutout seam into slide 2), slides 2–3 = shared quilt bg (flip A, A).
- * Reflection slide 2 uses Playwright screenshot of live reflection DOM (not html2canvas).
+ * Slide 1 = layout B (+ speaker cutout seam into slide 2 yesterday stats), slide 2 = yesterday stats,
+ * slide 3 = reflection wall, slide 4 = contributor clipping.
  * Usage: APP_URL=https://… DATE_KEY=2026-06-22 node scripts/preview-ig-carousel.cjs
  */
 const fs = require('fs');
@@ -161,15 +161,14 @@ async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture)
           yesterdayStatsCardsLayerDeviceScaleFactor
         }
       );
-      if (!integrated?.carouselSlide1 || !integrated?.carouselSlide2 || !integrated?.carouselSlide3) {
+      if (!integrated?.carouselSlide1 || !integrated?.carouselSlide2 || !integrated?.carouselSlide4) {
         throw new Error('Integrated carousel generation returned empty slides');
       }
       return {
         slide1: integrated.carouselSlide1,
         slide2: integrated.carouselSlide2,
-        slide2Reflection: integrated.carouselSlide2Reflection || null,
-        slide3: integrated.carouselSlide3,
-        slide4: integrated.carouselSlide4 || null,
+        slide3: integrated.carouselSlide3 || null,
+        slide4: integrated.carouselSlide4,
         meta: integrated.meta || null,
         tuneMeta: ctx.tuneMeta || null
       };
@@ -244,23 +243,17 @@ async function main() {
       fs.writeFileSync(path.join(outDir, filename), Buffer.from(b64, 'base64'));
     };
     writeDataUrl(result.slide1, `carousel-slide-1-layout-b-${dateKey}.png`);
-    writeDataUrl(result.slide2, `carousel-slide-2-${dateKey}.png`);
-    writeDataUrl(result.slide3, `carousel-slide-3-${dateKey}.png`);
-    if (result.slide2Reflection) {
-      writeDataUrl(result.slide2Reflection, `carousel-slide-2-reflection-${dateKey}.png`);
-      console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-reflection-${dateKey}.png`);
+    writeDataUrl(result.slide2, `carousel-slide-2-yesterday-stats-${dateKey}.png`);
+    if (result.slide3) {
+      writeDataUrl(result.slide3, `carousel-slide-3-reflection-${dateKey}.png`);
+      console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-3-reflection-${dateKey}.png`);
     } else {
-      console.log('[preview-ig-carousel] no reflection slide 2 (need reflection prompt + at least one response)');
+      console.log('[preview-ig-carousel] no reflection slide 3 (need reflection prompt + at least one response)');
     }
+    writeDataUrl(result.slide4, `carousel-slide-4-contributors-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
-    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-${dateKey}.png`);
-    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-3-${dateKey}.png`);
-    if (result.slide4) {
-      writeDataUrl(result.slide4, `carousel-slide-4-yesterday-stats-${dateKey}.png`);
-      console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-4-yesterday-stats-${dateKey}.png`);
-    } else {
-      console.log('[preview-ig-carousel] no slide 4 yesterday stats (Playwright capture or compose failed)');
-    }
+    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-yesterday-stats-${dateKey}.png`);
+    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-4-contributors-${dateKey}.png`);
     if (result.meta?.speakerSeam) {
       console.log(`[preview-ig-carousel] speakerSeam=${JSON.stringify(result.meta.speakerSeam)}`);
     }

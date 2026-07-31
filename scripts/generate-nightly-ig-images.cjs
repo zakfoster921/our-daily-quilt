@@ -831,14 +831,14 @@ async function runNightlyIgAttempt({
         const carouselOptions = { winningQuiltName };
         if (reflectionCardsCapture?.base64) {
           Object.assign(carouselOptions, {
-            slide2Variant: 'reflection',
             includeSlide2Reflection: true,
+            includeSlide3Reflection: true,
             cardsPngBase64: reflectionCardsCapture.base64,
             cardsLayerLogicalWidth: reflectionCardsCapture.logicalWidth,
             cardsLayerLogicalHeight: reflectionCardsCapture.logicalHeight,
             cardsLayerDeviceScaleFactor: reflectionCardsCapture.deviceScaleFactor
           });
-          log('carousel slide 2: reflection wall (Playwright DOM capture)');
+          log('carousel slide 3: reflection wall (Playwright DOM capture)');
         }
         if (yesterdayStatsCardsCapture?.base64) {
           Object.assign(carouselOptions, {
@@ -848,7 +848,7 @@ async function runNightlyIgAttempt({
             yesterdayStatsCardsLayerLogicalHeight: yesterdayStatsCardsCapture.logicalHeight,
             yesterdayStatsCardsLayerDeviceScaleFactor: yesterdayStatsCardsCapture.deviceScaleFactor
           });
-          log('carousel slide 4: yesterday stats card (Playwright DOM capture)');
+          log('carousel slide 2: yesterday stats card (Playwright DOM capture)');
         }
         const integratedCarousel = await timed('integrated IG carousel', () =>
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey, carouselOptions)
@@ -856,15 +856,15 @@ async function runNightlyIgAttempt({
         if (
           !integratedCarousel?.carouselSlide1 ||
           !integratedCarousel?.carouselSlide2 ||
-          !integratedCarousel?.carouselSlide3
+          !integratedCarousel?.carouselSlide4
         ) {
           throw new Error(`Integrated carousel slides were not generated for ${dateKey}`);
         }
         let carouselSlide1ImageData = integratedCarousel.carouselSlide1;
         const carouselSlide1StripsImageData = integratedCarousel.carouselSlide1;
         const carouselSlide2ImageData = integratedCarousel.carouselSlide2;
-        const carouselSlide3ImageData = integratedCarousel.carouselSlide3;
-        const carouselSlide4ImageData = integratedCarousel.carouselSlide4 || null;
+        const carouselSlide3ImageData = integratedCarousel.carouselSlide3 || null;
+        const carouselSlide4ImageData = integratedCarousel.carouselSlide4;
         if (integratedCarousel.meta) {
           const m = integratedCarousel.meta;
           log(
@@ -885,9 +885,7 @@ async function runNightlyIgAttempt({
           }
         }
         log(
-          reflectionCardsCapture?.base64 && integratedCarousel?.meta?.reflectionSlide
-            ? 'integrated carousel: slide 2 = reflection wall; slide 3 = contributor clipping; slide 4 = yesterday stats when captured'
-            : 'integrated carousel: slide 1 strips base (+ speaker seam), slides 2–3 = shared quilt bg (flip A, A); slide 4 when captured'
+          'integrated carousel: slide 1 = layout B (+ speaker seam); slide 2 = yesterday stats; slide 3 = reflection when captured; slide 4 = contributors (mirrored quilt)'
         );
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
@@ -1036,11 +1034,11 @@ async function runNightlyIgAttempt({
         if (!doc.carouselSlide2Url) {
           throw new Error('carousel slide 2 URL missing after nightly upload');
         }
-        if (!doc.carouselSlide3Url) {
-          throw new Error('carousel slide 3 URL missing after nightly upload');
-        }
-        if (carouselSlide4ImageData && !doc.carouselSlide4Url) {
+        if (!doc.carouselSlide4Url) {
           throw new Error('carousel slide 4 URL missing after nightly upload');
+        }
+        if (carouselSlide3ImageData && !doc.carouselSlide3Url) {
+          throw new Error('carousel slide 3 URL missing after nightly upload');
         }
         if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
           throw new Error('layout B story URL missing after nightly upload');
@@ -1105,8 +1103,8 @@ async function runNightlyIgAttempt({
     if (!verify.carouselSlide2Url) {
       throw new Error('verify failed: carousel slide 2 URL missing');
     }
-    if (!verify.carouselSlide3Url) {
-      throw new Error('verify failed: carousel slide 3 URL missing');
+    if (!verify.carouselSlide4Url) {
+      throw new Error('verify failed: carousel slide 4 URL missing');
     }
     const verifyBlocks = Number(verify.blockCount) || 0;
     if (verifyBlocks <= 1) {
