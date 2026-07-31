@@ -5,6 +5,9 @@
  * Used by preview-ig-carousel and nightly IG when building slide 2 reflection.
  */
 async function captureIgReflectionCardsPng(page, options = {}) {
+  const prevViewport = page.viewportSize?.() || null;
+  await page.setViewportSize({ width: 980, height: 1400 });
+
   const prep = await page.evaluate(async (opts) => {
     const app = window.app;
     if (typeof app?.prepareIgReflectionSlidePlaywrightCapture !== 'function') {
@@ -12,52 +15,38 @@ async function captureIgReflectionCardsPng(page, options = {}) {
     }
     return app.prepareIgReflectionSlidePlaywrightCapture(opts);
   }, options);
-  if (!prep?.selector) return null;
+  if (!prep?.selector) {
+    if (prevViewport) await page.setViewportSize(prevViewport);
+    return null;
+  }
 
   try {
     await page.evaluate(() => document.fonts?.ready?.catch?.(() => {}));
-    await page.waitForTimeout(350);
+    await page.waitForTimeout(400);
 
-    const box = await page.evaluate((sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      el.style.opacity = '1';
-      el.style.visibility = 'visible';
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return null;
-      return {
-        x: Math.max(0, r.x),
-        y: Math.max(0, r.y),
-        width: r.width,
-        height: r.height
-      };
-    }, prep.selector);
+    const locator = page.locator(prep.selector);
+    await locator.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
 
-    if (!box || box.width < 4 || box.height < 4) {
-      throw new Error(`Reflection capture host has no layout (${JSON.stringify(box)})`);
-    }
-
-    const buffer = await page.screenshot({
+    const buffer = await locator.screenshot({
       type: 'png',
-      omitBackground: false,
-      clip: {
-        x: box.x,
-        y: box.y,
-        width: Math.min(box.width, 2000),
-        height: Math.min(box.height, 2000)
-      }
+      omitBackground: true,
+      animations: 'disabled'
     });
+
+    const deviceScaleFactor = prevViewport ? 2 : 2;
 
     return {
       base64: buffer.toString('base64'),
       meta: prep,
       logicalWidth: prep.logicalWidth,
-      logicalHeight: prep.logicalHeight
+      logicalHeight: prep.logicalHeight,
+      deviceScaleFactor
     };
   } finally {
     await page
       .evaluate(() => window.app?.teardownIgReflectionSlidePlaywrightCapture?.())
       .catch(() => {});
+    if (prevViewport) await page.setViewportSize(prevViewport);
   }
 }
 

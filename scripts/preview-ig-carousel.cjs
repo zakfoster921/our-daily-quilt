@@ -92,7 +92,7 @@ async function setupQuiltPage(page, dateKey) {
 async function buildCarousel(page, dateKey, cardsCapture) {
   const cardsPngBase64 = cardsCapture?.base64 || null;
   return page.evaluate(
-    async ({ dateKey: dk, cardsPngBase64: cardsB64, cardsLayerLogicalWidth, cardsLayerLogicalHeight }) => {
+    async ({ dateKey: dk, cardsPngBase64: cardsB64, cardsLayerLogicalWidth, cardsLayerLogicalHeight, cardsLayerDeviceScaleFactor }) => {
       const app = window.app;
       const arch = app?.archiveService;
       const ctx = window.__previewIgCarouselContext || {};
@@ -123,7 +123,8 @@ async function buildCarousel(page, dateKey, cardsCapture) {
           includeSlide2Reflection: true,
           cardsPngBase64: cardsB64 || null,
           cardsLayerLogicalWidth,
-          cardsLayerLogicalHeight
+          cardsLayerLogicalHeight,
+          cardsLayerDeviceScaleFactor
         }
       );
       if (!integrated?.carouselSlide1 || !integrated?.carouselSlide2 || !integrated?.carouselSlide3) {
@@ -138,7 +139,13 @@ async function buildCarousel(page, dateKey, cardsCapture) {
         tuneMeta: ctx.tuneMeta || null
       };
     },
-    { dateKey, cardsPngBase64, cardsLayerLogicalWidth: cardsCapture?.logicalWidth, cardsLayerLogicalHeight: cardsCapture?.logicalHeight }
+    {
+      dateKey,
+      cardsPngBase64,
+      cardsLayerLogicalWidth: cardsCapture?.logicalWidth,
+      cardsLayerLogicalHeight: cardsCapture?.logicalHeight,
+      cardsLayerDeviceScaleFactor: cardsCapture?.deviceScaleFactor
+    }
   );
 }
 
