@@ -12297,64 +12297,84 @@
       text-align: center;
       opacity: 0;
       pointer-events: auto;
-      transition: opacity 0.12s ease-out;
+      overflow: hidden;
+      transition: opacity 0.12s ease-out, background-color 0.28s ease, color 0.28s ease;
     }
 
     .color-submit-transition.color-submit-transition--visible {
       opacity: 1;
     }
 
+    .color-submit-transition__paper {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background: #f6f4f1;
+      opacity: 0;
+      transition: opacity 0.32s ease;
+      pointer-events: none;
+    }
+
+    .color-submit-transition__color-sheet {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      background: var(--submit-color, #f6f4f1);
+      opacity: 1;
+      transition: opacity 0.38s ease;
+      pointer-events: none;
+    }
+
+    .color-submit-transition--shrinking .color-submit-transition__paper {
+      opacity: 1;
+    }
+
+    .color-submit-transition--shrinking .color-submit-transition__color-sheet {
+      opacity: 0;
+    }
+
     .color-submit-transition__message {
+      position: relative;
+      z-index: 3;
       max-width: min(78vw, 460px);
       font-family: var(--quilt-dm-sans-font, 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif);
       font-size: clamp(1.4rem, 5vw, 2rem);
       font-weight: 400;
       line-height: 1.25;
       letter-spacing: 0.02em;
-    }
-
-    .color-submit-transition__spinner {
-      width: 34px;
-      height: 34px;
-      border-radius: 999px;
-      border: 1.5px solid currentColor;
-      border-top-color: transparent;
-      opacity: 0.72;
-      animation: colorSubmitSpinner 0.9s linear infinite;
-    }
-
-    @keyframes colorSubmitSpinner {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    .color-submit-transition--piece {
+      opacity: 0;
+      transform: translateY(8px);
       transition:
-        opacity 0.45s ease,
-        background-color 0.35s ease,
-        color 0.35s ease;
+        opacity 0.42s ease,
+        transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .color-submit-transition--shrink-settled .color-submit-transition__message:not([hidden]) {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     .color-submit-transition__piece-stage {
+      position: relative;
+      z-index: 1;
       width: min(74vw, 340px);
       height: min(74vw, 340px);
       display: flex;
       align-items: center;
       justify-content: center;
+      flex: 0 0 auto;
     }
 
     .color-submit-transition__piece-frame {
       width: 100%;
       height: 100%;
+      transform: scale(var(--color-submit-shrink-from, 8));
+      transform-origin: center center;
       filter:
         drop-shadow(0 2px 0 rgba(255, 255, 255, 0.42))
         drop-shadow(0 14px 28px rgba(28, 32, 40, 0.16));
-      transform: scale(0.84) translateY(12px);
-      opacity: 0;
-      transition:
-        transform 0.58s cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 0.48s ease;
+      transition: transform 0.76s cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
     }
 
     .color-submit-transition__piece-svg {
@@ -12364,28 +12384,35 @@
       overflow: visible;
     }
 
-    .color-submit-transition--piece-visible .color-submit-transition__piece-frame {
-      transform: scale(1) translateY(0);
-      opacity: 1;
+    .color-submit-transition--shrink-settled .color-submit-transition__piece-frame {
+      transform: scale(1);
     }
 
     .color-submit-transition--piece-exit .color-submit-transition__piece-frame {
-      transform: scale(0.52) translateY(-10vh);
+      transform: scale(0.88) translateY(-4vh);
       opacity: 0;
       transition:
-        transform 0.52s cubic-bezier(0.42, 0, 0.58, 1),
-        opacity 0.42s ease;
+        transform 0.46s cubic-bezier(0.42, 0, 0.58, 1),
+        opacity 0.38s ease;
     }
 
     .color-submit-transition--piece-exit {
       opacity: 0;
-      transition: opacity 0.48s ease;
+      transition: opacity 0.42s ease;
+    }
+
+    .color-submit-transition--piece-exit .color-submit-transition__message {
+      opacity: 0;
+      transform: translateY(-6px);
     }
 
     @media (prefers-reduced-motion: reduce) {
       .color-submit-transition__piece-frame,
       .color-submit-transition--piece-exit .color-submit-transition__piece-frame,
-      .color-submit-transition--piece-exit {
+      .color-submit-transition--piece-exit,
+      .color-submit-transition__message,
+      .color-submit-transition__paper,
+      .color-submit-transition__color-sheet {
         transition: none;
       }
     }
