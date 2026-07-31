@@ -46,7 +46,14 @@ async function captureIgReflectionCardsPng(page, options = {}) {
   }
 
   try {
-    await page.evaluate(() => document.fonts?.ready?.catch?.(() => {}));
+    await page.evaluate(async () => {
+      try {
+        await document.fonts.load('250 16px "Chivo Mono"');
+      } catch (_) {
+        /* non-fatal */
+      }
+      await document.fonts?.ready?.catch?.(() => {});
+    });
     await page.waitForTimeout(400);
 
     const locator = page.locator(prep.selector);
