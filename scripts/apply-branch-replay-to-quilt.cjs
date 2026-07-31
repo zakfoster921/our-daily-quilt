@@ -102,8 +102,22 @@ async function main() {
   const replay = replaySequence(dateKey, colors, 'baseline', colors.length, {
     macroStructureFrozen: false
   });
-  const fingerprint = computeQuiltFingerprint(replay.blocks);
+  const blocks = serializeServerQuiltBlocks(
+    createServerQuiltEngine({
+      userId: 'apply-branch-replay',
+      blocks: replay.blocks,
+      submissionCount: replay.submissionCount,
+      colorReplayEvents: replay.colorReplayEvents,
+      macroStructureFrozen: replay.macroStructureFrozen
+    })
+  );
+  const fingerprint = computeQuiltFingerprint(blocks);
   const liveFingerprint = computeQuiltFingerprint(data.liveBlocks);
+  const replayEventCount = Array.isArray(replay.colorReplayEvents) ? replay.colorReplayEvents.length : 0;
+  const replayEventsBytes = Buffer.byteLength(JSON.stringify(replay.colorReplayEvents || []));
+  const blocksBytes = Buffer.byteLength(JSON.stringify(blocks));
+  const keepReplay = String(process.env.KEEP_REPLAY_EVENTS || '').trim() === '1';
+  const omitReplayEvents = !keepReplay || blocksBytes + replayEventsBytes > 950000;
 
   const plan = {
     dateKey,
@@ -111,11 +125,12 @@ async function main() {
     replayColorCount: colors.length,
     liveContributorCount: data.liveContributorCount,
     liveBlockCount: data.liveBlocks.length,
-    replayBlockCount: replay.blocks.length,
+    replayBlockCount: blocks.length,
     replaySubmissionCount: replay.submissionCount,
     liveFingerprint,
     replayFingerprint: fingerprint,
-    replayEventCount: Array.isArray(replay.colorReplayEvents) ? replay.colorReplayEvents.length : 0,
+    replayEventCount,
+    omitReplayEvents,
     skippedReplayColors: replay.skippedColors || [],
     macroStructureFrozen: replay.macroStructureFrozen === true
   };
@@ -138,9 +153,9 @@ async function main() {
 
   await quiltRef.set(
     {
-      blocks: replay.blocks,
+      blocks,
       contributorCount: Math.max(1, Number(replay.submissionCount) || colors.length),
-      colorReplayEvents: Array.isArray(replay.colorReplayEvents) ? replay.colorReplayEvents : [],
+      colorReplayEvents: omitReplayEvents ? [] : replay.colorReplayEvents,
       macroStructureFrozen: replay.macroStructureFrozen === true,
       quiltFingerprint: fingerprint,
       lastUpdated: nowIso,
@@ -152,13 +167,16 @@ async function main() {
         at: nowIso,
         replayColorCount: colors.length,
         previousFingerprint: liveFingerprint,
-        replayFingerprint: fingerprint
+        replayFingerprint: fingerprint,
+        omitReplayEvents
       }
     },
     { merge: true }
   );
 
-  console.log(`[apply-branch-replay] wrote quilts/${dateKey} (${replay.blocks.length} blocks, fp ${fingerprint})`);
+  console.log(
+    `[apply-branch-replay] wrote quilts/${dateKey} (${blocks.length} blocks, fp ${fingerprint}${omitReplayEvents ? ', replay events omitted' : ''})`
+  );
 }
 
 main().catch((error) => {
