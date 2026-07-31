@@ -10,13 +10,21 @@ const sharp = require('sharp');
 async function keyOutWarmPaperBackground(pngBuffer) {
   const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
+  const isPaperFill = (r, g, b) =>
+    Math.abs(r - 246) <= 8 &&
+    Math.abs(g - 244) <= 8 &&
+    Math.abs(b - 241) <= 8 &&
+    r - b <= 8;
+  const isTapeTone = (r, g, b) => r - b >= 10 && g >= b && r >= 200 && r <= 245;
   for (let i = 0; i < data.length; i += channels) {
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
     const a = data[i + 3];
 
-    if (Math.abs(r - 246) <= 10 && Math.abs(g - 244) <= 10 && Math.abs(b - 241) <= 10) {
+    if (isTapeTone(r, g, b)) continue;
+
+    if (a >= 248 && isPaperFill(r, g, b)) {
       data[i + 3] = 0;
       continue;
     }
