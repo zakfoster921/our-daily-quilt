@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { captureIgReflectionCardsPng } = require('./ig-reflection-playwright-capture.cjs');
 
 /** Active quilt calendar day (UTC 07:00 boundary). Used for live quilt-screen newspaper clipping. */
 function getActiveQuiltDateKey(d = new Date()) {
@@ -40,6 +41,59 @@ async function writeFailureArtifacts(page, attempt, outDir) {
     console.log(`[nightly-ig] wrote failure artifacts: ${png}, ${html}`);
   } catch (e) {
     console.warn('[nightly-ig] could not write failure artifacts:', e.message || String(e));
+  }
+}
+
+/** Resolve reflection prompt + highlighted themes for Playwright slide-2 capture. */
+async function prepareReflectionCaptureForNightly(page, dateKey) {
+  return page.evaluate(async ({ dateKey: dk }) => {
+    const app = window.app;
+    if (!app) return null;
+    await app.loadDeferredAdminSlice?.();
+    const qs = app.quoteService;
+    let quote = null;
+    if (qs?.getQuoteResolvedForInstagramDateKey) {
+      quote = (await qs.getQuoteResolvedForInstagramDateKey(dk)) || null;
+    }
+    quote = quote || { text: '', body: '', author: '' };
+    const IgCompose = window.IgCarouselReflectionSlideCompose;
+    if (typeof app.buildReflectionWallThemesForDateKey !== 'function' || !IgCompose) return null;
+    const { prompt, wallThemes } = await app.buildReflectionWallThemesForDateKey(dk, quote);
+    const { entries } = IgCompose.resolveReflectionSlideThemes(wallThemes, dk);
+    if (!prompt || !entries.length) return null;
+    return {
+      reflectionPrompt: prompt,
+      themeEntries: IgCompose.entriesToWallThemes(entries),
+      dateKey: dk
+    };
+  }, { dateKey });
+}
+
+async function captureReflectionCardsForNightly(page, dateKey) {
+  try {
+    const reflectionOpts = await prepareReflectionCaptureForNightly(page, dateKey);
+    if (!reflectionOpts) {
+      console.log('[nightly-ig] reflection slide 2 skipped (no prompt or highlighted responses)');
+      return null;
+    }
+    const capture = await captureIgReflectionCardsPng(page, reflectionOpts);
+    if (!capture?.base64) {
+      console.log('[nightly-ig] reflection Playwright capture returned empty — quilt slide 2 fallback');
+      return null;
+    }
+    console.log('[nightly-ig] reflection cards captured via Playwright DOM screenshot');
+    return {
+      base64: capture.base64,
+      logicalWidth: capture.logicalWidth,
+      logicalHeight: capture.logicalHeight,
+      deviceScaleFactor: capture.deviceScaleFactor
+    };
+  } catch (err) {
+    console.warn(
+      '[nightly-ig] reflection capture failed — quilt slide 2 fallback:',
+      err?.message || err
+    );
+    return null;
   }
 }
 
@@ -176,6 +230,10 @@ async function runNightlyIgAttempt({
       void apiBase;
     }, { dateKey, apiBase });
 
+    const reflectionCardsCapture = clippingOnly
+      ? null
+      : await captureReflectionCardsForNightly(page, dateKey);
+
     console.log(
       `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
@@ -191,7 +249,8 @@ async function runNightlyIgAttempt({
         strictQuote,
         clippingOnly,
         minNewspaperClippingBytes,
-        apiBase
+        apiBase,
+        reflectionCardsCapture
       }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         const timed = async (label, fn) => {
@@ -718,6 +777,17 @@ async function runNightlyIgAttempt({
           log(`slide 3 quilt name fetch failed: ${nameErr?.message || nameErr}`);
         }
         const carouselOptions = { winningQuiltName };
+        if (reflectionCardsCapture?.base64) {
+          Object.assign(carouselOptions, {
+            slide2Variant: 'reflection',
+            includeSlide2Reflection: true,
+            cardsPngBase64: reflectionCardsCapture.base64,
+            cardsLayerLogicalWidth: reflectionCardsCapture.logicalWidth,
+            cardsLayerLogicalHeight: reflectionCardsCapture.logicalHeight,
+            cardsLayerDeviceScaleFactor: reflectionCardsCapture.deviceScaleFactor
+          });
+          log('carousel slide 2: reflection wall (Playwright DOM capture)');
+        }
         const integratedCarousel = await timed('integrated IG carousel', () =>
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey, carouselOptions)
         );
@@ -744,8 +814,15 @@ async function runNightlyIgAttempt({
           } else {
             log('carousel speaker seam skipped (no cutout or compose unavailable)');
           }
+          if (m.reflectionSlide) {
+            log(`reflection slide meta: ${JSON.stringify(m.reflectionSlide)}`);
+          }
         }
-        log('integrated carousel: slide 1 strips base (+ speaker seam), slides 2–3 = shared quilt bg (flip A, A)');
+        log(
+          reflectionCardsCapture?.base64 && integratedCarousel?.meta?.reflectionSlide
+            ? 'integrated carousel: slide 2 = reflection wall; slide 3 = contributor clipping'
+            : 'integrated carousel: slide 1 strips base (+ speaker seam), slides 2–3 = shared quilt bg (flip A, A)'
+        );
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
             `generateInstagramQuiltScreen9x16ImageData missing on deployed app — deploy our-daily-beta.html before nightly IG`
@@ -872,8 +949,15 @@ async function runNightlyIgAttempt({
               ...uploadPayload,
               storageCacheControl: 'no-store',
               exportDebug: quiltExportMeta
-                ? { quiltScreen9x16: quiltExportMeta, nightly: true }
-                : { nightly: true }
+                ? {
+                    quiltScreen9x16: quiltExportMeta,
+                    nightly: true,
+                    carouselSlide2Source: reflectionCardsCapture?.base64 ? 'reflection' : 'quilt'
+                  }
+                : {
+                    nightly: true,
+                    carouselSlide2Source: reflectionCardsCapture?.base64 ? 'reflection' : 'quilt'
+                  }
             })
           );
         } else {
@@ -916,7 +1000,7 @@ async function runNightlyIgAttempt({
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase }
+      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase, reflectionCardsCapture }
     );
 
     if (clippingOnly) {
@@ -1076,5 +1160,7 @@ if (require.main === module) {
 module.exports = {
   runNightlyIgAttempt,
   getActiveQuiltDateKey,
-  getCompletedQuiltDateKey
+  getCompletedQuiltDateKey,
+  prepareReflectionCaptureForNightly,
+  captureReflectionCardsForNightly
 };
