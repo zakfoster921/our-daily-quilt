@@ -1254,7 +1254,8 @@ const PREFILL_PROTECTED_SYNC_FIELDS = [
   ['watch_for', 'watchFor'],
   ['good_day', 'goodDay'],
   ['rough_day', 'roughDay'],
-  ['small_act', 'smallAct']
+  ['small_act', 'smallAct'],
+  ['art_recs', 'artRecs']
 ];
 
 function readExistingPrefillField(existing, snakeKey, camelKey) {

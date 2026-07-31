@@ -117,7 +117,7 @@ async function fetchNotionPageContext(pageId) {
   try {
     const page = await notionFetchJson(`/pages/${id}`);
     const fields = {};
-    for (const field of ['community_prompt', 'watch_for', 'good_day', 'rough_day']) {
+    for (const field of ['community_prompt', 'watch_for', 'good_day', 'rough_day', 'art_recs']) {
       fields[field] = readNotionFieldFromPageProperties(page?.properties, field);
     }
     return {
