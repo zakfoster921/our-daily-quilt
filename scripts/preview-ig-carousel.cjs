@@ -14,6 +14,28 @@ const {
   captureIgYesterdayStatsCardsPng
 } = require('./ig-reflection-playwright-capture.cjs');
 
+async function pinQuoteCatalogForDateKey(page, dateKey) {
+  await page.evaluate(async ({ dateKey: dk }) => {
+    const qs = window.app?.quoteService;
+    if (!qs?.loadQuotesFromFirestore) {
+      throw new Error('quoteService.loadQuotesFromFirestore missing');
+    }
+    const catalogOk = await qs.loadQuotesFromFirestore({ requireServer: true, timeoutMs: 45000 });
+    if (!catalogOk) {
+      throw new Error('Firestore quote catalog failed to load');
+    }
+    const indexesOk = await qs.regenerateShuffledIndexes?.({ requireServer: true });
+    if (indexesOk === false) {
+      throw new Error('Firestore shuffled quote indexes failed to load');
+    }
+    if (typeof qs.resolveQuoteForCalendarKeyFresh === 'function') {
+      await qs.resolveQuoteForCalendarKeyFresh(dk);
+    } else if (typeof qs.resolveAndPinCalendarKey === 'function') {
+      await qs.resolveAndPinCalendarKey(dk, { requireLive: true });
+    }
+  }, { dateKey });
+}
+
 async function setupQuiltPage(page, dateKey) {
   return page.evaluate(async ({ dateKey: dk }) => {
     const app = window.app;
@@ -164,11 +186,39 @@ async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture)
       if (!integrated?.carouselSlide1 || !integrated?.carouselSlide2 || !integrated?.carouselSlide4) {
         throw new Error('Integrated carousel generation returned empty slides');
       }
+
+      let slide1 = integrated.carouselSlide1;
+      if (typeof arch.generateNewspaperClippingImageData === 'function') {
+        const clippingDataUrl = await arch.generateNewspaperClippingImageData(dk);
+        if (
+          clippingDataUrl &&
+          typeof arch.composeCarouselSlide1QuoteClippingImageData === 'function'
+        ) {
+          const shortCarouselQuote =
+            typeof arch._isShortCarouselQuote === 'function'
+              ? arch._isShortCarouselQuote(quote)
+              : false;
+          const clippingSlide1 = await arch.composeCarouselSlide1QuoteClippingImageData(
+            blocks,
+            quote,
+            dk,
+            {
+              clippingDataUrl,
+              clippingMeta: arch._lastNewspaperClippingComposeMeta || null,
+              carouselShortQuote: shortCarouselQuote
+            }
+          );
+          if (clippingSlide1) slide1 = clippingSlide1;
+        }
+      }
+
       return {
-        slide1: integrated.carouselSlide1,
+        slide1,
         slide2: integrated.carouselSlide2,
         slide3: integrated.carouselSlide3 || null,
         slide4: integrated.carouselSlide4,
+        quoteText: String(quote.text ?? quote.body ?? '').trim(),
+        quoteAuthor: String(quote.author ?? '').trim(),
         meta: integrated.meta || null,
         tuneMeta: ctx.tuneMeta || null
       };
@@ -211,6 +261,9 @@ async function main() {
       timeout: 180000
     });
 
+    console.log(`[preview-ig-carousel] pinning quote catalog for ${dateKey}…`);
+    await pinQuoteCatalogForDateKey(page, dateKey);
+
     const setup = await setupQuiltPage(page, dateKey);
 
     let cardsCapture = null;
@@ -251,6 +304,11 @@ async function main() {
       console.log('[preview-ig-carousel] no reflection slide 3 (need reflection prompt + at least one response)');
     }
     writeDataUrl(result.slide4, `carousel-slide-4-contributors-${dateKey}.png`);
+    if (result.quoteText) {
+      console.log(
+        `[preview-ig-carousel] slide 1 quote (${dateKey}): "${result.quoteText}" — ${result.quoteAuthor || '(no author)'}`
+      );
+    }
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-yesterday-stats-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-4-contributors-${dateKey}.png`);
