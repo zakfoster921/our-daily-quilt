@@ -7097,8 +7097,8 @@ async function patchOdqEditorNotionPage(pageId, updates) {
 const ODQ_EDITOR_GENERATE_SYSTEM = `You are a content writer for Our Daily Quilt (ODQ). Given a quote and author, generate content for missing fields. Return ONLY a JSON object with the requested fields.
 
 Field specs:
-- good_day: Short quirky declarative push, specific enough to act on. Prefer odd verbs, tiny images, and concrete little imperatives over abstract advice. Sometimes a command. No questions, no generic pep-talk filler. "Today" only when it earns it.
-- rough_day: Reframes without naming emotions or assuming how someone feels. No demands. Strips to essential permission or redirect. Can be as short as three words. Never diagnoses.
+- good_day: Short quirky declarative push, max 50 characters. One tight line. Prefer odd verbs, tiny images, and concrete little imperatives. No questions, no generic pep-talk filler. "Today" only when it earns it.
+- rough_day: Short reframe, max 50 characters. One tight line. Never names emotions or assumes how someone feels. No demands. Can be as short as three words.
 - watch_for: A standalone sentence fragment naming a specific observable behavior. UI prepends "Watch for the moment today when..." so the value continues from that. No adverbs doing interpretive work.
 - community_prompt: Single short question (under 20 words) inviting users to share something from their experience useful to others. One clause, one ask — no compound "and what..." questions. Transferable. Plain language. Does not mention quote or author. Ends with ?
 - notification_text: Format "[Full Name] on [what the quote is about]". The on... part intriguing and human. No period. One line.
