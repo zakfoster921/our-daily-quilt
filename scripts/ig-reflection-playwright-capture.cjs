@@ -4,9 +4,26 @@
  * Playwright screenshot of the live reflection wall DOM (paper, tape, clip-path).
  * Used by preview-ig-carousel and nightly IG when building slide 2 reflection.
  */
+const sharp = require('sharp');
+
+/** Key out app warm paper (#f6f4f1) that fills screenshot margins when omitBackground misses. */
+async function keyOutWarmPaperBackground(pngBuffer) {
+  const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  for (let i = 0; i < data.length; i += channels) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    if (Math.abs(r - 246) <= 10 && Math.abs(g - 244) <= 10 && Math.abs(b - 241) <= 10) {
+      data[i + 3] = 0;
+    }
+  }
+  return sharp(data, { raw: { width, height, channels } }).png().toBuffer();
+}
+
 async function captureIgReflectionCardsPng(page, options = {}) {
   const prevViewport = page.viewportSize?.() || null;
-  await page.setViewportSize({ width: 980, height: 1400 });
+  await page.setViewportSize({ width: 1080, height: 1500 });
 
   const prep = await page.evaluate(async (opts) => {
     const app = window.app;
@@ -27,11 +44,12 @@ async function captureIgReflectionCardsPng(page, options = {}) {
     const locator = page.locator(prep.selector);
     await locator.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
 
-    const buffer = await locator.screenshot({
+    let buffer = await locator.screenshot({
       type: 'png',
       omitBackground: true,
       animations: 'disabled'
     });
+    buffer = await keyOutWarmPaperBackground(buffer);
 
     const deviceScaleFactor = prevViewport ? 2 : 2;
 
@@ -50,4 +68,4 @@ async function captureIgReflectionCardsPng(page, options = {}) {
   }
 }
 
-module.exports = { captureIgReflectionCardsPng };
+module.exports = { captureIgReflectionCardsPng, keyOutWarmPaperBackground };
