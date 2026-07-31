@@ -89,7 +89,8 @@ async function captureReflectionCardsForNightly(page, dateKey) {
       base64: capture.base64,
       logicalWidth: capture.logicalWidth,
       logicalHeight: capture.logicalHeight,
-      deviceScaleFactor: capture.deviceScaleFactor
+      deviceScaleFactor: capture.deviceScaleFactor,
+      cardPieceRects: capture.meta?.cardPieceRects || null
     };
   } catch (err) {
     console.warn(
@@ -836,7 +837,8 @@ async function runNightlyIgAttempt({
             cardsPngBase64: reflectionCardsCapture.base64,
             cardsLayerLogicalWidth: reflectionCardsCapture.logicalWidth,
             cardsLayerLogicalHeight: reflectionCardsCapture.logicalHeight,
-            cardsLayerDeviceScaleFactor: reflectionCardsCapture.deviceScaleFactor
+            cardsLayerDeviceScaleFactor: reflectionCardsCapture.deviceScaleFactor,
+            cardPieceRects: reflectionCardsCapture.cardPieceRects
           });
           log('carousel slide 3: reflection wall (Playwright DOM capture)');
         }

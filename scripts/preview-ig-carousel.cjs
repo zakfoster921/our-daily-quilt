@@ -128,6 +128,7 @@ async function setupQuiltPage(page, dateKey) {
 
 async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture) {
   const cardsPngBase64 = cardsCapture?.base64 || null;
+  const cardPieceRects = cardsCapture?.meta?.cardPieceRects || cardsCapture?.cardPieceRects || null;
   return page.evaluate(
     async ({
       dateKey: dk,
@@ -135,6 +136,7 @@ async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture)
       cardsLayerLogicalWidth,
       cardsLayerLogicalHeight,
       cardsLayerDeviceScaleFactor,
+      cardPieceRects: pieceRects,
       yesterdayStatsCardsPngBase64,
       yesterdayStatsCardsLayerLogicalWidth,
       yesterdayStatsCardsLayerLogicalHeight,
@@ -176,6 +178,7 @@ async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture)
           cardsLayerLogicalWidth,
           cardsLayerLogicalHeight,
           cardsLayerDeviceScaleFactor,
+          cardPieceRects: pieceRects || null,
           contributorCount: contributorCount || ctx.contributorCount || null,
           yesterdayStatsCardsPngBase64: yesterdayStatsCardsPngBase64 || null,
           yesterdayStatsCardsLayerLogicalWidth,
@@ -204,6 +207,7 @@ async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture)
       cardsLayerLogicalWidth: cardsCapture?.logicalWidth,
       cardsLayerLogicalHeight: cardsCapture?.logicalHeight,
       cardsLayerDeviceScaleFactor: cardsCapture?.deviceScaleFactor,
+      cardPieceRects,
       yesterdayStatsCardsPngBase64: yesterdayStatsCapture?.base64 || null,
       yesterdayStatsCardsLayerLogicalWidth: yesterdayStatsCapture?.logicalWidth,
       yesterdayStatsCardsLayerLogicalHeight: yesterdayStatsCapture?.logicalHeight,
