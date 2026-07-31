@@ -187,33 +187,8 @@ async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture)
         throw new Error('Integrated carousel generation returned empty slides');
       }
 
-      let slide1 = integrated.carouselSlide1;
-      if (typeof arch.generateNewspaperClippingImageData === 'function') {
-        const clippingDataUrl = await arch.generateNewspaperClippingImageData(dk);
-        if (
-          clippingDataUrl &&
-          typeof arch.composeCarouselSlide1QuoteClippingImageData === 'function'
-        ) {
-          const shortCarouselQuote =
-            typeof arch._isShortCarouselQuote === 'function'
-              ? arch._isShortCarouselQuote(quote)
-              : false;
-          const clippingSlide1 = await arch.composeCarouselSlide1QuoteClippingImageData(
-            blocks,
-            quote,
-            dk,
-            {
-              clippingDataUrl,
-              clippingMeta: arch._lastNewspaperClippingComposeMeta || null,
-              carouselShortQuote: shortCarouselQuote
-            }
-          );
-          if (clippingSlide1) slide1 = clippingSlide1;
-        }
-      }
-
       return {
-        slide1,
+        slide1: integrated.carouselSlide1,
         slide2: integrated.carouselSlide2,
         slide3: integrated.carouselSlide3 || null,
         slide4: integrated.carouselSlide4,

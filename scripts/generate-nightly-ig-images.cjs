@@ -920,36 +920,8 @@ async function runNightlyIgAttempt({
           );
           assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
         }
-        // Slide 1 = quote clipping on quilt+speaker (replaces Layout B strips for Zapier feed).
-        if (
-          newspaperClippingImageData &&
-          typeof arch.composeCarouselSlide1QuoteClippingImageData === 'function'
-        ) {
-          log('composing carousel slide 1 quote-clipping alternate…');
-          const shortCarouselQuote =
-            typeof arch._isShortCarouselQuote === 'function'
-              ? arch._isShortCarouselQuote(quote)
-              : false;
-          const clippingSlide1 = await timed('carousel slide 1 quote clipping', () =>
-            arch.composeCarouselSlide1QuoteClippingImageData(blocks, quote, dateKey, {
-              clippingDataUrl: newspaperClippingImageData,
-              clippingMeta: newspaperClippingDisplayMeta || arch._lastNewspaperClippingComposeMeta || null,
-              carouselShortQuote: shortCarouselQuote
-            })
-          );
-          if (!clippingSlide1) {
-            throw new Error(`Carousel slide 1 quote-clipping compose failed for ${dateKey}`);
-          }
-          carouselSlide1ImageData = clippingSlide1;
-          const clipMeta = arch._lastCarouselSlide1ClippingMeta || null;
-          log(
-            `carousel slide 1 = quote clipping overlay; meta=${JSON.stringify(clipMeta || {})}`
-          );
-        } else if (newspaperClippingImageData) {
-          throw new Error(
-            'composeCarouselSlide1QuoteClippingImageData missing on deployed app — deploy archive-service before nightly IG'
-          );
-        }
+        // Carousel slide 1 = Layout B quote strips (+ speaker seam into slide 2).
+        log('carousel slide 1 = Layout B quote strips (+ speaker seam)');
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
         if (quiltExportMeta) {
           log(`quilt export meta: ${JSON.stringify(quiltExportMeta)}`);
@@ -984,7 +956,7 @@ async function runNightlyIgAttempt({
         const uploadPayload = {
           dateKey,
           carouselSlide1ImageData,
-          /** Keep strip Layout B available for admin/tune; Zapier slide 1 is quote-clipping. */
+          /** layout-b.png mirrors carousel slide 1 (quote strips + speaker seam). */
           postLayoutBImageData: carouselSlide1StripsImageData,
           carouselSlide2ImageData,
           carouselSlide3ImageData,
