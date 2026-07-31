@@ -9,7 +9,10 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
-const { captureIgReflectionCardsPng } = require('./ig-reflection-playwright-capture.cjs');
+const {
+  captureIgReflectionCardsPng,
+  captureIgYesterdayStatsCardsPng
+} = require('./ig-reflection-playwright-capture.cjs');
 
 async function setupQuiltPage(page, dateKey) {
   return page.evaluate(async ({ dateKey: dk }) => {
@@ -84,19 +87,45 @@ async function setupQuiltPage(page, dateKey) {
       }
     }
 
-    window.__previewIgCarouselContext = { dateKey: dk, tuneMeta };
-    return { reflectionCapture, tuneMeta };
+    let contributorCount = Math.max(1, contributors.length || blocks.length - 1 || 1);
+    if (window.db && window.firestore) {
+      const qSnap = await window.firestore.getDoc(window.firestore.doc(window.db, 'quilts', dk));
+      if (qSnap.exists()) {
+        const qData = qSnap.data() || {};
+        contributorCount = Math.max(
+          1,
+          Number(qData.contributorCount) || contributors.length || blocks.length - 1 || 1
+        );
+      }
+    }
+
+    window.__previewIgCarouselContext = { dateKey: dk, tuneMeta, contributorCount };
+    return { reflectionCapture, tuneMeta, contributorCount };
   }, { dateKey });
 }
 
-async function buildCarousel(page, dateKey, cardsCapture) {
+async function buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture) {
   const cardsPngBase64 = cardsCapture?.base64 || null;
   return page.evaluate(
-    async ({ dateKey: dk, cardsPngBase64: cardsB64, cardsLayerLogicalWidth, cardsLayerLogicalHeight, cardsLayerDeviceScaleFactor }) => {
+    async ({
+      dateKey: dk,
+      cardsPngBase64: cardsB64,
+      cardsLayerLogicalWidth,
+      cardsLayerLogicalHeight,
+      cardsLayerDeviceScaleFactor,
+      yesterdayStatsCardsPngBase64,
+      yesterdayStatsCardsLayerLogicalWidth,
+      yesterdayStatsCardsLayerLogicalHeight,
+      yesterdayStatsCardsLayerDeviceScaleFactor,
+      contributorCount
+    }) => {
       const app = window.app;
       const arch = app?.archiveService;
       const ctx = window.__previewIgCarouselContext || {};
       if (cardsB64) globalThis.__igReflectionPlaywrightCardsPng = cardsB64;
+      if (yesterdayStatsCardsPngBase64) {
+        globalThis.__igYesterdayStatsPlaywrightCardsPng = yesterdayStatsCardsPngBase64;
+      }
       let blocks = [];
       let contributors = [];
       if (window.db && window.firestore) {
@@ -124,7 +153,12 @@ async function buildCarousel(page, dateKey, cardsCapture) {
           cardsPngBase64: cardsB64 || null,
           cardsLayerLogicalWidth,
           cardsLayerLogicalHeight,
-          cardsLayerDeviceScaleFactor
+          cardsLayerDeviceScaleFactor,
+          contributorCount: contributorCount || ctx.contributorCount || null,
+          yesterdayStatsCardsPngBase64: yesterdayStatsCardsPngBase64 || null,
+          yesterdayStatsCardsLayerLogicalWidth,
+          yesterdayStatsCardsLayerLogicalHeight,
+          yesterdayStatsCardsLayerDeviceScaleFactor
         }
       );
       if (!integrated?.carouselSlide1 || !integrated?.carouselSlide2 || !integrated?.carouselSlide3) {
@@ -135,6 +169,7 @@ async function buildCarousel(page, dateKey, cardsCapture) {
         slide2: integrated.carouselSlide2,
         slide2Reflection: integrated.carouselSlide2Reflection || null,
         slide3: integrated.carouselSlide3,
+        slide4: integrated.carouselSlide4 || null,
         meta: integrated.meta || null,
         tuneMeta: ctx.tuneMeta || null
       };
@@ -144,7 +179,12 @@ async function buildCarousel(page, dateKey, cardsCapture) {
       cardsPngBase64,
       cardsLayerLogicalWidth: cardsCapture?.logicalWidth,
       cardsLayerLogicalHeight: cardsCapture?.logicalHeight,
-      cardsLayerDeviceScaleFactor: cardsCapture?.deviceScaleFactor
+      cardsLayerDeviceScaleFactor: cardsCapture?.deviceScaleFactor,
+      yesterdayStatsCardsPngBase64: yesterdayStatsCapture?.base64 || null,
+      yesterdayStatsCardsLayerLogicalWidth: yesterdayStatsCapture?.logicalWidth,
+      yesterdayStatsCardsLayerLogicalHeight: yesterdayStatsCapture?.logicalHeight,
+      yesterdayStatsCardsLayerDeviceScaleFactor: yesterdayStatsCapture?.deviceScaleFactor,
+      contributorCount: yesterdayStatsCapture?.contributorCount || null
     }
   );
 }
@@ -184,7 +224,20 @@ async function main() {
       }
     }
 
-    const result = await buildCarousel(page, dateKey, cardsCapture);
+    const contributorCount = Math.max(1, Number(setup?.contributorCount) || 1);
+    let yesterdayStatsCapture = null;
+    yesterdayStatsCapture = await captureIgYesterdayStatsCardsPng(page, {
+      contributorCount,
+      dateKey
+    });
+    if (yesterdayStatsCapture?.base64) {
+      yesterdayStatsCapture.contributorCount = contributorCount;
+      console.log('[preview-ig-carousel] captured yesterday stats card via Playwright DOM screenshot');
+    } else {
+      console.warn('[preview-ig-carousel] yesterday stats Playwright capture returned empty');
+    }
+
+    const result = await buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture);
 
     const writeDataUrl = (dataUrl, filename) => {
       const b64 = String(dataUrl).replace(/^data:image\/png;base64,/, '');
@@ -202,6 +255,12 @@ async function main() {
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-2-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-3-${dateKey}.png`);
+    if (result.slide4) {
+      writeDataUrl(result.slide4, `carousel-slide-4-yesterday-stats-${dateKey}.png`);
+      console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-4-yesterday-stats-${dateKey}.png`);
+    } else {
+      console.log('[preview-ig-carousel] no slide 4 yesterday stats (Playwright capture or compose failed)');
+    }
     if (result.meta?.speakerSeam) {
       console.log(`[preview-ig-carousel] speakerSeam=${JSON.stringify(result.meta.speakerSeam)}`);
     }

@@ -37,17 +37,20 @@ async function keyOutWarmPaperBackground(pngBuffer) {
   return sharp(data, { raw: { width, height, channels } }).png().toBuffer();
 }
 
-async function captureIgReflectionCardsPng(page, options = {}) {
+async function captureIgPlaywrightCardsPng(page, options = {}, prepMethod = 'prepareIgReflectionSlidePlaywrightCapture') {
   const prevViewport = page.viewportSize?.() || null;
   await page.setViewportSize({ width: 1080, height: 1500 });
 
-  const prep = await page.evaluate(async (opts) => {
-    const app = window.app;
-    if (typeof app?.prepareIgReflectionSlidePlaywrightCapture !== 'function') {
-      throw new Error('app.prepareIgReflectionSlidePlaywrightCapture missing');
-    }
-    return app.prepareIgReflectionSlidePlaywrightCapture(opts);
-  }, options);
+  const prep = await page.evaluate(
+    async ({ opts, method }) => {
+      const app = window.app;
+      if (typeof app?.[method] !== 'function') {
+        throw new Error(`app.${method} missing`);
+      }
+      return app[method](opts);
+    },
+    { opts: options, method: prepMethod }
+  );
   if (!prep?.selector) {
     if (prevViewport) await page.setViewportSize(prevViewport);
     return null;
@@ -57,6 +60,7 @@ async function captureIgReflectionCardsPng(page, options = {}) {
     await page.evaluate(async () => {
       try {
         await document.fonts.load('250 16px "Chivo Mono"');
+        await document.fonts.load('600 16px "Chivo Mono"');
       } catch (_) {
         /* non-fatal */
       }
@@ -91,4 +95,17 @@ async function captureIgReflectionCardsPng(page, options = {}) {
   }
 }
 
-module.exports = { captureIgReflectionCardsPng, keyOutWarmPaperBackground };
+async function captureIgReflectionCardsPng(page, options = {}) {
+  return captureIgPlaywrightCardsPng(page, options, 'prepareIgReflectionSlidePlaywrightCapture');
+}
+
+async function captureIgYesterdayStatsCardsPng(page, options = {}) {
+  return captureIgPlaywrightCardsPng(page, options, 'prepareIgYesterdayStatsSlidePlaywrightCapture');
+}
+
+module.exports = {
+  captureIgReflectionCardsPng,
+  captureIgYesterdayStatsCardsPng,
+  captureIgPlaywrightCardsPng,
+  keyOutWarmPaperBackground
+};

@@ -8,7 +8,10 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
-const { captureIgReflectionCardsPng } = require('./ig-reflection-playwright-capture.cjs');
+const {
+  captureIgReflectionCardsPng,
+  captureIgYesterdayStatsCardsPng
+} = require('./ig-reflection-playwright-capture.cjs');
 
 /** Active quilt calendar day (UTC 07:00 boundary). Used for live quilt-screen newspaper clipping. */
 function getActiveQuiltDateKey(d = new Date()) {
@@ -93,6 +96,47 @@ async function captureReflectionCardsForNightly(page, dateKey) {
       '[nightly-ig] reflection capture failed — quilt slide 2 fallback:',
       err?.message || err
     );
+    return null;
+  }
+}
+
+async function resolveContributorCountForNightly(page, dateKey) {
+  return page.evaluate(async ({ dateKey: dk }) => {
+    let count = 1;
+    if (window.db && window.firestore) {
+      const snap = await window.firestore.getDoc(window.firestore.doc(window.db, 'quilts', dk));
+      if (snap.exists()) {
+        const data = snap.data() || {};
+        const contributors = Array.isArray(data.contributors) ? data.contributors : [];
+        const blocks = Array.isArray(data.blocks) ? data.blocks : [];
+        count = Math.max(
+          1,
+          Number(data.contributorCount) || contributors.length || Math.max(0, blocks.length - 1) || 1
+        );
+      }
+    }
+    return count;
+  }, { dateKey });
+}
+
+async function captureYesterdayStatsCardsForNightly(page, dateKey, contributorCount) {
+  try {
+    const count = Math.max(1, Math.floor(Number(contributorCount) || 1));
+    const capture = await captureIgYesterdayStatsCardsPng(page, { contributorCount: count, dateKey });
+    if (!capture?.base64) {
+      console.log('[nightly-ig] yesterday stats Playwright capture returned empty — slide 4 skipped');
+      return null;
+    }
+    console.log('[nightly-ig] yesterday stats card captured via Playwright DOM screenshot');
+    return {
+      base64: capture.base64,
+      logicalWidth: capture.logicalWidth,
+      logicalHeight: capture.logicalHeight,
+      deviceScaleFactor: capture.deviceScaleFactor,
+      contributorCount: count
+    };
+  } catch (err) {
+    console.warn('[nightly-ig] yesterday stats capture failed — slide 4 skipped:', err?.message || err);
     return null;
   }
 }
@@ -234,6 +278,13 @@ async function runNightlyIgAttempt({
       ? null
       : await captureReflectionCardsForNightly(page, dateKey);
 
+    const igContributorCount = clippingOnly
+      ? 1
+      : await resolveContributorCountForNightly(page, dateKey);
+    const yesterdayStatsCardsCapture = clippingOnly
+      ? null
+      : await captureYesterdayStatsCardsForNightly(page, dateKey, igContributorCount);
+
     console.log(
       `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
@@ -250,7 +301,8 @@ async function runNightlyIgAttempt({
         clippingOnly,
         minNewspaperClippingBytes,
         apiBase,
-        reflectionCardsCapture
+        reflectionCardsCapture,
+        yesterdayStatsCardsCapture
       }) => {
         const log = (step) => console.log(`[nightly-ig:page] ${step}`);
         const timed = async (label, fn) => {
@@ -788,6 +840,16 @@ async function runNightlyIgAttempt({
           });
           log('carousel slide 2: reflection wall (Playwright DOM capture)');
         }
+        if (yesterdayStatsCardsCapture?.base64) {
+          Object.assign(carouselOptions, {
+            contributorCount: yesterdayStatsCardsCapture.contributorCount,
+            yesterdayStatsCardsPngBase64: yesterdayStatsCardsCapture.base64,
+            yesterdayStatsCardsLayerLogicalWidth: yesterdayStatsCardsCapture.logicalWidth,
+            yesterdayStatsCardsLayerLogicalHeight: yesterdayStatsCardsCapture.logicalHeight,
+            yesterdayStatsCardsLayerDeviceScaleFactor: yesterdayStatsCardsCapture.deviceScaleFactor
+          });
+          log('carousel slide 4: yesterday stats card (Playwright DOM capture)');
+        }
         const integratedCarousel = await timed('integrated IG carousel', () =>
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey, carouselOptions)
         );
@@ -802,6 +864,7 @@ async function runNightlyIgAttempt({
         const carouselSlide1StripsImageData = integratedCarousel.carouselSlide1;
         const carouselSlide2ImageData = integratedCarousel.carouselSlide2;
         const carouselSlide3ImageData = integratedCarousel.carouselSlide3;
+        const carouselSlide4ImageData = integratedCarousel.carouselSlide4 || null;
         if (integratedCarousel.meta) {
           const m = integratedCarousel.meta;
           log(
@@ -817,11 +880,14 @@ async function runNightlyIgAttempt({
           if (m.reflectionSlide) {
             log(`reflection slide meta: ${JSON.stringify(m.reflectionSlide)}`);
           }
+          if (m.yesterdayStatsSlide) {
+            log(`yesterday stats slide meta: ${JSON.stringify(m.yesterdayStatsSlide)}`);
+          }
         }
         log(
           reflectionCardsCapture?.base64 && integratedCarousel?.meta?.reflectionSlide
-            ? 'integrated carousel: slide 2 = reflection wall; slide 3 = contributor clipping'
-            : 'integrated carousel: slide 1 strips base (+ speaker seam), slides 2–3 = shared quilt bg (flip A, A)'
+            ? 'integrated carousel: slide 2 = reflection wall; slide 3 = contributor clipping; slide 4 = yesterday stats when captured'
+            : 'integrated carousel: slide 1 strips base (+ speaker seam), slides 2–3 = shared quilt bg (flip A, A); slide 4 when captured'
         );
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
@@ -924,6 +990,7 @@ async function runNightlyIgAttempt({
           postLayoutBImageData: carouselSlide1StripsImageData,
           carouselSlide2ImageData,
           carouselSlide3ImageData,
+          carouselSlide4ImageData,
           quiltScreen9x16ImageData,
           newspaperClippingImageData,
           newspaperClippingDisplayMeta,
@@ -972,6 +1039,9 @@ async function runNightlyIgAttempt({
         if (!doc.carouselSlide3Url) {
           throw new Error('carousel slide 3 URL missing after nightly upload');
         }
+        if (carouselSlide4ImageData && !doc.carouselSlide4Url) {
+          throw new Error('carousel slide 4 URL missing after nightly upload');
+        }
         if (!doc.storyLayoutBImageStorageUrl && !doc.layoutBStoryUrl && !doc.storyLayoutBUrl) {
           throw new Error('layout B story URL missing after nightly upload');
         }
@@ -988,6 +1058,7 @@ async function runNightlyIgAttempt({
           carouselSlide1Url: doc.carouselSlide1Url || doc.classicUrl || '',
           carouselSlide2Url: doc.carouselSlide2Url || '',
           carouselSlide3Url: doc.carouselSlide3Url || '',
+          carouselSlide4Url: doc.carouselSlide4Url || '',
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
           quiltStoryUrl:
             doc.quiltStoryUrl ||
@@ -1000,7 +1071,7 @@ async function runNightlyIgAttempt({
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase, reflectionCardsCapture }
+      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase, reflectionCardsCapture, yesterdayStatsCardsCapture }
     );
 
     if (clippingOnly) {
