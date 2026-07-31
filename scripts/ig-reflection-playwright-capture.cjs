@@ -6,7 +6,7 @@
  */
 const sharp = require('sharp');
 
-/** Key out app warm paper (#f6f4f1) that fills screenshot margins when omitBackground misses. */
+/** Key out warm paper + clip-path white fringe from Playwright PNG captures. */
 async function keyOutWarmPaperBackground(pngBuffer) {
   const { data, info } = await sharp(pngBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
@@ -14,7 +14,15 @@ async function keyOutWarmPaperBackground(pngBuffer) {
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
+    const a = data[i + 3];
+
     if (Math.abs(r - 246) <= 10 && Math.abs(g - 244) <= 10 && Math.abs(b - 241) <= 10) {
+      data[i + 3] = 0;
+      continue;
+    }
+
+    // Anti-aliased white halo at hand-cut scalloped edges (after background removal).
+    if (a > 0 && a < 235 && r > 244 && g > 242 && b > 236) {
       data[i + 3] = 0;
     }
   }
