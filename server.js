@@ -51,7 +51,9 @@ try {
 }
 
 const {
-  normalizeArtRecsPrefillValue
+  normalizeArtRecsPrefillValue,
+  isCommunityPromptPrefillValid,
+  COMMUNITY_PROMPT_PREFILL_REQUIREMENT
 } = require('./lib/submitted-quote-prefill-prompts');
 const {
   buildKeywordEmphasisPrompt,
@@ -63,7 +65,10 @@ const {
 const {
   fetchWikipediaSpeakerInfo,
   buildPrefillNotionProperties,
-  buildPrefillFirestorePayload
+  buildPrefillFirestorePayload,
+  extractPrefillJsonFromText,
+  pickPrefillStringLoose,
+  normalizeWatchForPrefillValue
 } = require('./lib/quote-creative-prefill.cjs');
 const {
   REFLECTION_MODERATION_BODY_MAX,
@@ -7150,6 +7155,24 @@ async function generateOdqEditorMissingFields({ quote, author, existing = {} }) 
     if (key === 'art_recs') value = normalizeArtRecsPrefillValue(value);
     if (String(value || '').trim()) out[key] = String(value).trim();
   }
+
+  if (missing.includes('community_prompt') && out.community_prompt && !isCommunityPromptPrefillValid(out.community_prompt)) {
+    const repairUser = `${userPrompt}\n\nYour community_prompt was too long or compound. Return ONLY JSON with key community_prompt.\n- ${COMMUNITY_PROMPT_PREFILL_REQUIREMENT}\n\nBad value: ${out.community_prompt}`;
+    const repairText = await postOdqEditorGenerateToClaude({
+      apiKey,
+      model,
+      system: ODQ_EDITOR_GENERATE_SYSTEM,
+      user: repairUser
+    });
+    const repairParsed = extractPrefillJsonFromText(repairText);
+    const repaired = pickPrefillStringLoose(repairParsed, 'community_prompt', 'communityPrompt');
+    if (String(repaired || '').trim() && isCommunityPromptPrefillValid(repaired)) {
+      out.community_prompt = String(repaired).trim();
+    } else {
+      delete out.community_prompt;
+    }
+  }
+
   return out;
 }
 
