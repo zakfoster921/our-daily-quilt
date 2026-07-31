@@ -754,6 +754,27 @@ async function runNightlyIgAttempt({
             'buildIntegratedInstagramCarouselImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
           );
         }
+        if (typeof globalThis.odqPrefetchLayoutBTuneFields === 'function') {
+          try {
+            const tunePrefetch = await globalThis.odqPrefetchLayoutBTuneFields(dateKey, 12000);
+            log(
+              `layout B tune prefetch: ok=${!!tunePrefetch?.ok} source=${String(tunePrefetch?.source || '?')} updatedAt=${String(tunePrefetch?.layoutBTuneUpdatedAt || '')}`
+            );
+          } catch (tunePrefetchErr) {
+            log(`layout B tune prefetch failed: ${tunePrefetchErr?.message || tunePrefetchErr}`);
+          }
+        }
+        try {
+          const igDoc = await readFirestoreDoc('instagram-images', dateKey);
+          const stripPlanCount = Array.isArray(igDoc?.layoutBPostStripPlan)
+            ? igDoc.layoutBPostStripPlan.length
+            : 0;
+          if (stripPlanCount) {
+            log(`layout B post strip plan on doc: ${stripPlanCount} strips (nightly carousel will replay)`);
+          }
+        } catch (_) {
+          /* optional */
+        }
         if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
           arch._clearLayoutBStoryRefStripPlan();
         }
