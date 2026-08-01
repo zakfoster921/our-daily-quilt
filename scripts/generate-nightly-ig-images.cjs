@@ -748,7 +748,7 @@ async function runNightlyIgAttempt({
           return dataUrl;
         };
 
-        log('generating integrated IG carousel (layout B + quilt pair + speaker seam)…');
+        log('generating integrated IG carousel (layout B + quilt pair)…');
         if (!arch.buildIntegratedInstagramCarouselImageData) {
           throw new Error(
             'buildIntegratedInstagramCarouselImageData missing on deployed app — deploy our-daily-beta.html before nightly IG'
@@ -893,13 +893,6 @@ async function runNightlyIgAttempt({
           log(
             `integrated carousel meta names=${m.nameCount ?? '?'} clip=${m.clippingContentWidth ?? '?'}×${m.clippingContentHeight ?? '?'} rev=${m.contributorList?.exportRev ?? m.exportRev ?? '?'}`
           );
-          if (m.speakerSeam?.overlapPx) {
-            log(
-              `carousel speaker seam overlap=${m.speakerSeam.overlapPx}px (${Math.round((m.speakerSeam.overlapFraction || 0) * 100)}% of cutout width)`
-            );
-          } else {
-            log('carousel speaker seam skipped (no cutout or compose unavailable)');
-          }
           if (m.reflectionSlide) {
             log(`reflection slide meta: ${JSON.stringify(m.reflectionSlide)}`);
           }
@@ -908,7 +901,7 @@ async function runNightlyIgAttempt({
           }
         }
         log(
-          'integrated carousel post order: 1 = layout B; 2 = reflection; 3 = contributors; 4 = yesterday stats (speaker seam baked into slide 4 image)'
+          'integrated carousel post order: 1 = layout B; 2 = reflection; 3 = contributors; 4 = yesterday stats'
         );
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
@@ -943,8 +936,8 @@ async function runNightlyIgAttempt({
           );
           assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
         }
-        // Carousel slide 1 = Layout B quote strips (+ speaker seam into slide 2).
-        log('carousel slide 1 = Layout B quote strips (+ speaker seam)');
+        // Carousel slide 1 = Layout B quote strips.
+        log('carousel slide 1 = Layout B quote strips');
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
         if (quiltExportMeta) {
           log(`quilt export meta: ${JSON.stringify(quiltExportMeta)}`);
@@ -979,7 +972,7 @@ async function runNightlyIgAttempt({
         const uploadPayload = {
           dateKey,
           carouselSlide1ImageData,
-          /** layout-b.png mirrors carousel slide 1 (quote strips + speaker seam). */
+          /** layout-b.png mirrors carousel slide 1 (quote strips). */
           postLayoutBImageData: carouselSlide1StripsImageData,
           carouselSlide2ImageData,
           carouselSlide3ImageData,

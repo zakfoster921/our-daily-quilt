@@ -2,8 +2,8 @@
 /* eslint-disable no-console */
 /**
  * Preview integrated IG carousel PNGs for a quilt day (writes tmp/carousel-*.png).
- * Slide 1 = layout B (+ speaker seam into yesterday stats), post slide 2 = reflection,
- * post slide 3 = contributors, post slide 4 = yesterday stats (order 1, 3, 4, 2).
+ * Slide 1 = layout B, post slide 2 = reflection, post slide 3 = contributors,
+ * post slide 4 = yesterday stats (order 1, 3, 4, 2).
  * Usage: APP_URL=https://… DATE_KEY=2026-06-22 node scripts/preview-ig-carousel.cjs
  */
 const fs = require('fs');
@@ -291,9 +291,7 @@ async function main() {
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-3-contributors-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-4-yesterday-stats-${dateKey}.png`);
-    if (result.meta?.speakerSeam) {
-      console.log(`[preview-ig-carousel] speakerSeam=${JSON.stringify(result.meta.speakerSeam)}`);
-    }
+
     if (result.meta) {
       console.log(`[preview-ig-carousel] meta=${JSON.stringify(result.meta)}`);
     }
