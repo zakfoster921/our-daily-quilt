@@ -51,8 +51,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     private func configureAudioSession() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try AVAudioSession.sharedInstance().setActive(true)
+            // mixWithOthers keeps Spotify / Apple Music playing; don't setActive on launch —
+            // WKWebView activates the session when the user actually plays a video.
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
         } catch {
             NSLog("AVAudioSession configure failed: \(error.localizedDescription)")
         }
