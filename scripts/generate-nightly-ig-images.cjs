@@ -1026,9 +1026,12 @@ async function runNightlyIgAttempt({
         if (!doc.carouselSlide3Url) {
           throw new Error('carousel slide 3 (contributors) URL missing after nightly upload');
         }
-        if (!doc.carouselSlide4Url) {
+        const carouselSlide4Url =
+          doc.carouselSlide4Url || doc.carouselSlide4ImageStorageUrl || '';
+        if (!carouselSlide4Url) {
           throw new Error('carousel slide 4 (quilt-only mat) URL missing after nightly upload');
         }
+        log(`carousel slide 4 (quilt-only mat): ${carouselSlide4Url}`);
         if (carouselSlide2ImageData && !doc.carouselSlide2Url) {
           throw new Error('carousel slide 2 (reflection) URL missing after nightly upload');
         }
@@ -1048,7 +1051,7 @@ async function runNightlyIgAttempt({
           carouselSlide1Url: doc.carouselSlide1Url || doc.classicUrl || '',
           carouselSlide2Url: doc.carouselSlide2Url || '',
           carouselSlide3Url: doc.carouselSlide3Url || '',
-          carouselSlide4Url: doc.carouselSlide4Url || '',
+          carouselSlide4Url,
           quiltScreen9x16Url: doc.quiltScreen9x16Url || doc.quiltScreen9x16ImageStorageUrl || '',
           quiltStoryUrl:
             doc.quiltStoryUrl ||
@@ -1120,6 +1123,14 @@ async function runNightlyIgAttempt({
     if (!quiltScreen9x16Url) {
       throw new Error('verify failed: quilt screen 9:16 image URL missing');
     }
+    const carouselSlide4Url =
+      verify.carouselSlide4Url || result.carouselSlide4Url || '';
+    const carouselPostOrderUrls = [
+      verify.carouselSlide1Url || verify.imageUrl || result.carouselSlide1Url || '',
+      verify.carouselSlide3Url || result.carouselSlide3Url || '',
+      carouselSlide4Url,
+      verify.carouselSlide2Url || result.carouselSlide2Url || ''
+    ].filter(Boolean);
     return {
       success: true,
       date: dateKey,
@@ -1130,6 +1141,8 @@ async function runNightlyIgAttempt({
       carouselSlide1Url: verify.carouselSlide1Url || verify.imageUrl || '',
       carouselSlide2Url: verify.carouselSlide2Url || '',
       carouselSlide3Url: verify.carouselSlide3Url || '',
+      carouselSlide4Url,
+      carouselPostOrderUrls,
       quiltScreen9x16ImageUrl: quiltScreen9x16Url,
       storyLayoutBImageUrl: storyUrl
     };

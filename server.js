@@ -5468,9 +5468,15 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-26-carousel-order-1-3-4-2';
+    const apiVersion = 'instagram-api-27-carousel-post-order-urls';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
-    // Integrated carousel post order: 1 layout B, 2 reflection, 3 contributors, 4 yesterday stats.
+    // Integrated carousel post order: 1 layout B, 3 contributors, 4 quilt-only mat, 2 reflection.
+    const carouselPostOrderUrls = [
+      carouselSlide1Url || imageUrl,
+      carouselSlide3Url,
+      carouselSlide4Url,
+      carouselSlide2Url
+    ].filter(Boolean);
     const imageUrls = [
       carouselSlide1Url || imageUrl,
       carouselSlide2Url,
@@ -5495,6 +5501,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       carouselSlide2Url: carouselSlide2Url || '',
       carouselSlide3Url: carouselSlide3Url || '',
       carouselSlide4Url: carouselSlide4Url || '',
+      carouselPostOrderUrls,
       layoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
       storyLayoutBImageUrl,
       layoutBStoryImageUrl: storyLayoutBImageUrl,
@@ -5534,12 +5541,13 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       hasCarouselSlide2: !!carouselSlide2Url,
       hasCarouselSlide3: !!carouselSlide3Url,
       hasCarouselSlide4: !!carouselSlide4Url,
+      hasCarouselPostOrder: carouselPostOrderUrls.length >= 3,
       blockCount: Number(imageData.blockCount) || 0,
       contributorCount: Math.max(1, Number(imageData.contributorCount) || 1),
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'Integrated IG carousel post order: carouselSlide1Url = layout B (4:5). carouselSlide2Url = reflection wall when present. carouselSlide3Url = contributor clipping. carouselSlide4Url = quilt-only on green mat (temporary). imageUrl aliases carouselSlide1Url. layoutBSpeakerImageUrl = layout-b-speaker.png when present. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png (quilt-only 9:16). storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
+        'Integrated IG carousel post order: carouselSlide1Url = layout B (4:5). carouselSlide2Url = reflection wall when present. carouselSlide3Url = contributor clipping. carouselSlide4Url = quilt-only on green mat (temporary). carouselPostOrderUrls = [1,3,4,2] for Zapier carousel publish order. imageUrl aliases carouselSlide1Url. layoutBSpeakerImageUrl = layout-b-speaker.png when present. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png (quilt-only 9:16). storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
     };
     
     console.log(
@@ -5873,6 +5881,12 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
     }
 
     if (docPayload.carouselSlide1Url || docPayload.carouselSlide2Url || docPayload.classicUrl) {
+      docPayload.carouselPostOrderUrls = [
+        docPayload.carouselSlide1Url || docPayload.classicUrl,
+        docPayload.carouselSlide3Url,
+        docPayload.carouselSlide4Url,
+        docPayload.carouselSlide2Url
+      ].filter(Boolean);
       docPayload.imageUrls = [
         docPayload.carouselSlide1Url || docPayload.classicUrl,
         docPayload.carouselSlide2Url,
