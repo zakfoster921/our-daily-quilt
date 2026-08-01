@@ -3,7 +3,7 @@
 /**
  * Preview integrated IG carousel PNGs for a quilt day (writes tmp/carousel-*.png).
  * Slide 1 = layout B, post slide 2 = reflection, post slide 3 = contributors,
- * post slide 4 = yesterday stats (order 1, 3, 4, 2).
+ * post slide 4 = quilt-only on green mat (order 1, 3, 4, 2).
  * Usage: APP_URL=https://… DATE_KEY=2026-06-22 node scripts/preview-ig-carousel.cjs
  */
 const fs = require('fs');
@@ -255,18 +255,9 @@ async function main() {
       }
     }
 
+    /* Yesterday stats Playwright capture disabled while slide 4 is quilt-only mat. */
     const contributorCount = Math.max(1, Number(setup?.contributorCount) || 1);
-    let yesterdayStatsCapture = null;
-    yesterdayStatsCapture = await captureIgYesterdayStatsCardsPng(page, {
-      contributorCount,
-      dateKey
-    });
-    if (yesterdayStatsCapture?.base64) {
-      yesterdayStatsCapture.contributorCount = contributorCount;
-      console.log('[preview-ig-carousel] captured yesterday stats card via Playwright DOM screenshot');
-    } else {
-      console.warn('[preview-ig-carousel] yesterday stats Playwright capture returned empty');
-    }
+    const yesterdayStatsCapture = null;
 
     const result = await buildCarousel(page, dateKey, cardsCapture, yesterdayStatsCapture);
 
@@ -282,7 +273,7 @@ async function main() {
       console.log('[preview-ig-carousel] no reflection post slide 2 (need reflection prompt + at least one response)');
     }
     writeDataUrl(result.slide3, `carousel-slide-3-contributors-${dateKey}.png`);
-    writeDataUrl(result.slide4, `carousel-slide-4-yesterday-stats-${dateKey}.png`);
+    writeDataUrl(result.slide4, `carousel-slide-4-quilt-only-${dateKey}.png`);
     if (result.quoteText) {
       console.log(
         `[preview-ig-carousel] slide 1 quote (${dateKey}): "${result.quoteText}" — ${result.quoteAuthor || '(no author)'}`
@@ -290,7 +281,7 @@ async function main() {
     }
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-1-layout-b-${dateKey}.png`);
     console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-3-contributors-${dateKey}.png`);
-    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-4-yesterday-stats-${dateKey}.png`);
+    console.log(`[preview-ig-carousel] wrote tmp/carousel-slide-4-quilt-only-${dateKey}.png`);
 
     if (result.meta) {
       console.log(`[preview-ig-carousel] meta=${JSON.stringify(result.meta)}`);

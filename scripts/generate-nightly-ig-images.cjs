@@ -863,7 +863,8 @@ async function runNightlyIgAttempt({
           });
           log('carousel post slide 2: reflection wall (Playwright DOM capture)');
         }
-        if (yesterdayStatsCardsCapture?.base64) {
+        /* Yesterday stats Playwright capture disabled while slide 4 is quilt-only mat. */
+        if (false && yesterdayStatsCardsCapture?.base64) {
           Object.assign(carouselOptions, {
             contributorCount: yesterdayStatsCardsCapture.contributorCount,
             yesterdayStatsCardsPngBase64: yesterdayStatsCardsCapture.base64,
@@ -896,12 +897,15 @@ async function runNightlyIgAttempt({
           if (m.reflectionSlide) {
             log(`reflection slide meta: ${JSON.stringify(m.reflectionSlide)}`);
           }
+          if (m.quiltOnlySlide4) {
+            log(`quilt-only slide 4 meta: ${JSON.stringify(m.quiltOnlySlide4)}`);
+          }
           if (m.yesterdayStatsSlide) {
             log(`yesterday stats slide meta: ${JSON.stringify(m.yesterdayStatsSlide)}`);
           }
         }
         log(
-          'integrated carousel post order: 1 = layout B; 2 = reflection; 3 = contributors; 4 = yesterday stats'
+          'integrated carousel post order: 1 = layout B; 2 = reflection; 3 = contributors; 4 = quilt-only mat'
         );
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
@@ -1023,7 +1027,7 @@ async function runNightlyIgAttempt({
           throw new Error('carousel slide 3 (contributors) URL missing after nightly upload');
         }
         if (!doc.carouselSlide4Url) {
-          throw new Error('carousel slide 4 (yesterday stats) URL missing after nightly upload');
+          throw new Error('carousel slide 4 (quilt-only mat) URL missing after nightly upload');
         }
         if (carouselSlide2ImageData && !doc.carouselSlide2Url) {
           throw new Error('carousel slide 2 (reflection) URL missing after nightly upload');
@@ -1092,7 +1096,7 @@ async function runNightlyIgAttempt({
       throw new Error('verify failed: carousel slide 3 (contributors) URL missing');
     }
     if (!verify.carouselSlide4Url) {
-      throw new Error('verify failed: carousel slide 4 (yesterday stats) URL missing');
+      throw new Error('verify failed: carousel slide 4 (quilt-only mat) URL missing');
     }
     const verifyBlocks = Number(verify.blockCount) || 0;
     if (verifyBlocks <= 1) {
