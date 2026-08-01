@@ -5463,9 +5463,9 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-25-carousel-slide4-yesterday-stats';
+    const apiVersion = 'instagram-api-26-carousel-order-1-3-4-2';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
-    // Integrated carousel: slide 1 = layout B, slides 2–4 = quilt pair + contributors + yesterday stats.
+    // Integrated carousel post order: 1 layout B, 2 reflection, 3 contributors, 4 yesterday stats.
     const imageUrls = [
       carouselSlide1Url || imageUrl,
       carouselSlide2Url,
@@ -5534,7 +5534,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'Integrated IG carousel: carouselSlide1Url = Layout B quote strips (4:5, speaker seam into slide 2). carouselSlide2Url = yesterday stats. carouselSlide3Url = reflection wall when present. carouselSlide4Url = contributor clipping. imageUrl aliases carouselSlide1Url. layoutBSpeakerImageUrl = layout-b-speaker.png when present. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png (quilt-only 9:16). storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
+        'Integrated IG carousel post order: carouselSlide1Url = layout B (4:5). carouselSlide2Url = reflection wall when present. carouselSlide3Url = contributor clipping. carouselSlide4Url = yesterday stats (speaker seam image). imageUrl aliases carouselSlide1Url. layoutBSpeakerImageUrl = layout-b-speaker.png when present. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png (quilt-only 9:16). storyLayoutBImageUrl = layout-b-story.png (9:16). reelVideoUrl = IG-ready MP4 when present, else WebM. readyForInstagram=true after nightly GitHub images job.'
     };
     
     console.log(
