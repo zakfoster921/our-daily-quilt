@@ -62,6 +62,7 @@ async function captureIgPlaywrightCardsPng(page, options = {}, prepMethod = 'pre
         await document.fonts.load('400 16px "Barlow"');
         await document.fonts.load('600 16px "Barlow"');
         await document.fonts.load('italic 400 16px "Barlow"');
+        await document.fonts.load('italic 600 16px "Barlow"');
       } catch (_) {
         /* non-fatal */
       }
