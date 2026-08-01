@@ -1960,14 +1960,19 @@ const MIRROR_BOTTOM_LAYOUT_SINGLE = 'single';
 const MIRROR_BOTTOM_LAYOUT_DOUBLE = 'doubleSideBySide';
 const MIRROR_TUNE_HISTORY_MAX = 80;
 
-/** Strip plan for Firestore: positions only (quote text comes from the day’s quote at render). */
+/** Strip plan for Firestore: positions + optional rotation (quote text comes from the day’s quote at render). */
 function serverCompactLayoutBPostStripPlan(stripPlan) {
   if (!Array.isArray(stripPlan) || !stripPlan.length) return null;
-  return stripPlan.map((s) => ({
-    role: String(s?.role || 'quote').trim() || 'quote',
-    x: Number(s?.x) || 0,
-    y: Number(s?.y) || 0
-  }));
+  return stripPlan.map((s) => {
+    const row = {
+      role: String(s?.role || 'quote').trim() || 'quote',
+      x: Number(s?.x) || 0,
+      y: Number(s?.y) || 0
+    };
+    const angle = Number(s?.angle);
+    if (Number.isFinite(angle)) row.angle = angle;
+    return row;
+  });
 }
 
 function serverNormalizeMirrorBottomLayout(value) {
