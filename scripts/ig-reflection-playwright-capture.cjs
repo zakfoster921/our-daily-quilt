@@ -59,8 +59,8 @@ async function captureIgPlaywrightCardsPng(page, options = {}, prepMethod = 'pre
   try {
     await page.evaluate(async () => {
       try {
-        await document.fonts.load('250 16px "Chivo Mono"');
-        await document.fonts.load('600 16px "Chivo Mono"');
+        await document.fonts.load('400 16px "DM Sans"');
+        await document.fonts.load('italic 400 16px "DM Sans"');
       } catch (_) {
         /* non-fatal */
       }
