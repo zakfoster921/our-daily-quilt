@@ -1971,6 +1971,33 @@ function serverCompactLayoutBPostStripPlan(stripPlan) {
     };
     const angle = Number(s?.angle);
     if (Number.isFinite(angle)) row.angle = angle;
+    if (Array.isArray(s?.lines) && s.lines.length) {
+      row.lines = s.lines.map((ln) => String(ln ?? ''));
+    } else if (s?.text) {
+      row.text = String(s.text);
+    }
+    if (s?.font) row.font = String(s.font);
+    const w = Number(s?.w);
+    const h = Number(s?.h);
+    const lh = Number(s?.lh);
+    if (Number.isFinite(w) && w > 0) row.w = Math.round(w);
+    if (Number.isFinite(h) && h > 0) row.h = Math.round(h);
+    if (Number.isFinite(lh) && lh > 0) row.lh = lh;
+    if (s?.authorCutoutLabel === true) row.authorCutoutLabel = true;
+    if (s?.isKeywordEmphasis === true) row.isKeywordEmphasis = true;
+    if (s?.isKeywordConnector === true) row.isKeywordConnector = true;
+    const extraPad = Number(s?.extraPaperPadX);
+    if (Number.isFinite(extraPad) && extraPad > 0) row.extraPaperPadX = extraPad;
+    if (Array.isArray(s?.textRuns) && s.textRuns.length) {
+      row.textRuns = s.textRuns.map((r) => {
+        const run = { text: String(r?.text ?? '') };
+        if (r?.bold) run.bold = true;
+        if (r?.italic) run.italic = true;
+        if (r?.underline) run.underline = true;
+        if (r?.color) run.color = String(r.color);
+        return run;
+      });
+    }
     return row;
   });
 }
