@@ -91,8 +91,8 @@
       overflow: auto;
     }
     .stage {
-      width: min(420px, 100%);
-      max-height: min(88vh, 920px);
+      width: min(360px, 100%);
+      aspect-ratio: 273 / 720;
       background: #fff;
       border: 1px solid rgba(0, 0, 0, 0.1);
       border-radius: 10px;
@@ -148,8 +148,8 @@
   <script src="/lib/utils-quilt-render.js"></script>
   <script src="/lib/utils-zapier.js"></script>
   <script src="/lib/quilt-mirror-layout.js"></script>
-  <script src="/lib/simple-quilt-engine.js?v=18"></script>
-  <script src="/lib/quilt-renderer-v2.js?v=18"></script>
+  <script src="/lib/simple-quilt-engine.js?v=19"></script>
+  <script src="/lib/quilt-renderer-v2.js?v=19"></script>
 
   <script>
     window.Utils = window.UtilsCore;
@@ -202,63 +202,27 @@
       return typeof Utils.getTodayKey === 'function' ? Utils.getTodayKey() : 'quilt-builder';
     }
 
-    function primaryQuiltAspect() {
-      const dims = Utils.getQuiltDimensions(builderDateKey());
-      return `${dims.width} / ${dims.height}`;
-    }
-
-    function builderViewport() {
-      const stageWidth = Math.min(420, document.querySelector('.stage')?.parentElement?.clientWidth || 420);
+    function builderStageMetrics() {
       const ref =
         typeof QuiltMirrorLayout !== 'undefined' && QuiltMirrorLayout.CANVAS_HEIGHT_REFERENCE
           ? QuiltMirrorLayout.CANVAS_HEIGHT_REFERENCE
           : { width: 273, height: 720 };
-      if (typeof QuiltMirrorLayout !== 'undefined' && typeof QuiltMirrorLayout.resolveViewport === 'function') {
-        return QuiltMirrorLayout.resolveViewport(stageWidth, ref.height);
-      }
-      return { width: stageWidth, height: ref.height, w: stageWidth, h: ref.height };
+      const stageWidth = Math.min(360, document.querySelector('.stage')?.parentElement?.clientWidth || 360);
+      const stageHeight = stageWidth * (ref.height / ref.width);
+      const viewport = { width: stageWidth, height: stageHeight, w: stageWidth, h: stageHeight };
+      return { stageWidth, stageHeight, viewport, aspect: `${ref.width} / ${ref.height}` };
     }
 
-    function mirroredLayoutForBlocks(blocks) {
-      if (
-        typeof QuiltMirrorLayout === 'undefined' ||
-        typeof QuiltMirrorLayout.computeFromBlocks !== 'function' ||
-        !Array.isArray(blocks) ||
-        !blocks.length
-      ) {
-        return null;
-      }
-      const viewport = builderViewport();
-      return QuiltMirrorLayout.computeFromBlocks(blocks, {
-        dateKey: builderDateKey(),
-        viewportW: viewport.width,
-        viewportH: viewport.height,
-        fitMode: QuiltMirrorLayout.LIVE_SCREEN_FIT,
-        preferFullMirroredField: true
-      });
-    }
-
-    function syncBuilderStage(blocks) {
+    function syncBuilderStage() {
       const stage = document.querySelector('.stage');
       if (!stage || !renderer) return;
 
-      const viewport = builderViewport();
+      const { stageWidth, stageHeight, viewport, aspect } = builderStageMetrics();
       renderer._renderViewportOverride = viewport;
-
-      const layout = mirroredLayoutForBlocks(blocks);
-      const vb = layout?.viewBox;
-      const stageWidth = Math.min(420, stage.parentElement?.clientWidth || 420);
-      if (vb?.width > 0 && vb?.height > 0) {
-        stage.style.width = `${stageWidth}px`;
-        stage.style.aspectRatio = `${vb.width} / ${vb.height}`;
-        stage.style.height = `${stageWidth * (vb.height / vb.width)}px`;
-        stage.style.maxHeight = 'none';
-      } else {
-        stage.style.width = `${stageWidth}px`;
-        stage.style.aspectRatio = primaryQuiltAspect();
-        stage.style.height = '';
-        stage.style.maxHeight = 'min(88vh, 920px)';
-      }
+      stage.style.width = `${stageWidth}px`;
+      stage.style.height = `${stageHeight}px`;
+      stage.style.aspectRatio = aspect;
+      stage.style.maxHeight = 'none';
     }
 
     function configureRenderer(r) {
@@ -268,19 +232,19 @@
       }
       r._forcePrimaryOnlyPreview = false;
       r._exportDisableSplitBandFit = true;
-      r._exportFullQuiltField = true;
+      r._exportFullQuiltField = false;
       r._exportDateKeyOverride = builderDateKey();
       r._gridSeamUnderpaintBleed = () => 2.25;
       r._buildLiveGapUnderpaintGroup = () => null;
-      r._renderViewportOverride = builderViewport();
+      r._renderViewportOverride = builderStageMetrics().viewport;
       if (typeof r.setBacksidePreviewEnabled === 'function') {
         r.setBacksidePreviewEnabled(false);
       }
     }
 
     function renderQuilt(addResult) {
+      syncBuilderStage();
       const blocks = engine.blocks || [];
-      syncBuilderStage(blocks);
       renderer.setLastAddedIndex(null);
       if (addResult) {
         const highlightIds = new Set(
@@ -299,7 +263,7 @@
       if (svg) {
         svg.querySelectorAll('[data-live-gap-underpaint]').forEach((node) => node.remove());
       }
-      syncBuilderStage(blocks);
+      syncBuilderStage();
       updateStats();
     }
 
@@ -380,7 +344,7 @@
 
       window.addEventListener('resize', () => {
         if (!engine || !renderer) return;
-        syncBuilderStage(engine.blocks || []);
+        syncBuilderStage();
         renderer.renderBlocks(engine.blocks || [], [], engine.submissionCount || 0);
       });
 
@@ -402,8 +366,7 @@
         renderer = new QuiltRendererV2(noopLogger);
         configureRenderer(renderer);
         renderer.initialize();
-        const stage = document.querySelector('.stage');
-        if (stage) stage.style.aspectRatio = primaryQuiltAspect();
+        syncBuilderStage();
         resetEngine();
         wireUi();
       } catch (error) {
