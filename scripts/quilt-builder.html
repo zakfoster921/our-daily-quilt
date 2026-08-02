@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quilt builder</title>
+  <style>
+    :root {
+      --bg: #f6f4f1;
+      --ink: #1f1b16;
+      --muted: #6b635a;
+      --accent: #1f1b16;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .lede {
+      margin: 0.15rem 0 0;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    button {
+      font: inherit;
+      border: 1px solid rgba(0, 0, 0, 0.22);
+      background: #fff;
+      color: var(--ink);
+      padding: 0.5rem 0.9rem;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #fffef9; }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    button.primary:hover { opacity: 0.92; }
+    button:disabled { opacity: 0.45; cursor: wait; }
+    .stats {
+      font-size: 0.82rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 1rem;
+    }
+    .stats strong { color: var(--ink); font-weight: 600; }
+    .swatch {
+      display: inline-block;
+      width: 0.85rem;
+      height: 0.85rem;
+      border-radius: 2px;
+      vertical-align: -0.12rem;
+      margin-right: 0.25rem;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+    }
+    main {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+      min-height: 0;
+    }
+    .stage {
+      width: min(520px, 100%);
+      aspect-ratio: 4 / 5;
+      background: #fff;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06);
+    }
+    #quilt {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Quilt builder</h1>
+      <p class="lede">Live engine — random Rumi colors, one click at a time. Nothing is saved.</p>
+    </div>
+    <div class="controls">
+      <button type="button" class="primary" id="add-color">Add color</button>
+      <button type="button" id="add-ten">+10</button>
+      <button type="button" id="reset">Reset</button>
+    </div>
+    <div class="stats" id="stats" aria-live="polite"></div>
+  </header>
+  <main>
+    <div class="stage">
+      <svg id="quilt" aria-label="Quilt preview"></svg>
+    </div>
+  </main>
+
+  <script>window.odqEnableAdminTools = function () { return false; };</script>
+  <script src="../rumi-colors.js"></script>
+  <script src="../lib/app-config.js"></script>
+  <script src="../lib/quote-mood-colors.js"></script>
+  <script src="../lib/color-utils-v2.js"></script>
+  <script src="../lib/utils-core.js"></script>
+  <script src="../lib/utils-color.js"></script>
+  <script src="../lib/utils-client.js"></script>
+  <script src="../lib/utils-quilt.js"></script>
+  <script src="../lib/utils-quilt-render.js"></script>
+  <script src="../lib/quilt-mirror-layout.js"></script>
+  <script src="../lib/simple-quilt-engine.js"></script>
+  <script src="../lib/quilt-renderer-v2.js"></script>
+
+  <script>
+    window.Utils = window.UtilsCore;
+    if (Array.isArray(window.rumiColors)) {
+      window.__ODQ_RUMI_COLORS__ = window.rumiColors;
+    }
+
+    const noopLogger = { log() {}, warn() {}, error() {} };
+    let engine;
+    let renderer;
+    let lastColor = '';
+
+    function rumiPalette() {
+      const raw = Array.isArray(window.__ODQ_RUMI_COLORS__) ? window.__ODQ_RUMI_COLORS__ : [];
+      return raw.filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c));
+    }
+
+    function pickRumiColor() {
+      const palette = rumiPalette();
+      if (!palette.length) return '#c8a882';
+      return palette[Math.floor(Math.random() * palette.length)];
+    }
+
+    function countSpecialFamilies(blocks) {
+      const ids = new Set();
+      (blocks || []).forEach((block) => {
+        if (!block || block.specialPatternType === 'diagonalAxis') return;
+        if (block.originalPatternId) ids.add(block.originalPatternId);
+        else if (block.patternType === 'special') ids.add(block.id);
+      });
+      return ids.size;
+    }
+
+    function specialTypeSummary(blocks) {
+      const types = new Set();
+      (blocks || []).forEach((b) => {
+        if (b?.specialPatternType && b.specialPatternType !== 'diagonalAxis') {
+          types.add(b.specialPatternType);
+        }
+      });
+      return [...types].sort().join(', ') || '—';
+    }
+
+    function configureRenderer(r) {
+      r._forcePrimaryOnlyPreview = true;
+      r._exportDisableSplitBandFit = true;
+      r._exportFullQuiltField = true;
+      r._gridSeamUnderpaintBleed = () => 2.25;
+      r._buildLiveGapUnderpaintGroup = () => null;
+      if (typeof r.setBacksidePreviewEnabled === 'function') {
+        r.setBacksidePreviewEnabled(false);
+      }
+    }
+
+    function renderQuilt(highlightLast) {
+      const blocks = engine.blocks || [];
+      if (highlightLast && blocks.length) {
+        renderer.setLastAddedIndex(blocks.length - 1);
+      }
+      renderer.renderBlocks(blocks, [], engine.submissionCount || 0);
+      const svg = document.getElementById('quilt');
+      if (svg) {
+        svg.querySelectorAll('[data-live-gap-underpaint]').forEach((node) => node.remove());
+      }
+      updateStats();
+    }
+
+    function updateStats() {
+      const el = document.getElementById('stats');
+      if (!el) return;
+      const blocks = engine?.blocks?.length || 0;
+      const picks = typeof engine?.getContributorPickCount === 'function'
+        ? engine.getContributorPickCount()
+        : Math.max(0, (engine?.submissionCount || 0) - 1);
+      const specials = countSpecialFamilies(engine?.blocks);
+      const frozen = engine?.macroStructureFrozen ? 'yes' : 'no';
+      const layout = engine?.macroLayoutMode === 'columns' ? 'columns' : 'default';
+      const swatch = lastColor
+        ? `<span class="swatch" style="background:${lastColor}"></span>`
+        : '';
+      el.innerHTML = `
+        <span><strong>${picks}</strong> colors</span>
+        <span><strong>${blocks}</strong> blocks</span>
+        <span><strong>${specials}</strong> specials</span>
+        <span>macro frozen: <strong>${frozen}</strong></span>
+        <span>last ${swatch}<strong>${lastColor || '—'}</strong></span>
+        <span>motifs: ${specialTypeSummary(engine?.blocks)}</span>
+      `;
+    }
+
+    function resetEngine() {
+      engine = new SimpleQuiltEngine('quilt-builder', { recordColorReplayEvents: false });
+      engine.recordUserContribution = () => {};
+      engine._suppressSplitWarnings = true;
+      engine.initialize();
+      lastColor = '';
+      renderQuilt(false);
+    }
+
+    function addOneColor() {
+      const color = pickRumiColor();
+      const result = engine.addColor(color);
+      if (!result) {
+        updateStats();
+        return false;
+      }
+      lastColor = result.appliedColor || color;
+      renderQuilt(true);
+      return true;
+    }
+
+    function wireUi() {
+      const addBtn = document.getElementById('add-color');
+      const addTenBtn = document.getElementById('add-ten');
+      const resetBtn = document.getElementById('reset');
+
+      addBtn.addEventListener('click', () => addOneColor());
+      addTenBtn.addEventListener('click', () => {
+        addTenBtn.disabled = true;
+        addBtn.disabled = true;
+        let added = 0;
+        for (let i = 0; i < 10; i++) {
+          if (addOneColor()) added += 1;
+        }
+        addTenBtn.disabled = false;
+        addBtn.disabled = false;
+        if (added < 10) noopLogger.warn(`Stopped after ${added} adds — quilt may be full.`);
+      });
+      resetBtn.addEventListener('click', () => resetEngine());
+
+      window.addEventListener('keydown', (e) => {
+        if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+        if (e.key === ' ' || e.key === 'a' || e.key === 'A') {
+          e.preventDefault();
+          addOneColor();
+        }
+        if (e.key === 'r' || e.key === 'R') resetEngine();
+      });
+    }
+
+    function boot() {
+      renderer = new QuiltRendererV2(noopLogger);
+      configureRenderer(renderer);
+      renderer.initialize();
+      resetEngine();
+      wireUi();
+    }
+
+    boot();
+  </script>
+</body>
+</html>
