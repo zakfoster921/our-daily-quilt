@@ -149,8 +149,8 @@
   <script src="/lib/utils-quilt-render.js"></script>
   <script src="/lib/utils-zapier.js"></script>
   <script src="/lib/quilt-mirror-layout.js"></script>
-  <script src="/lib/simple-quilt-engine.js?v=30"></script>
-  <script src="/lib/quilt-renderer-v2.js?v=30"></script>
+  <script src="/lib/simple-quilt-engine.js?v=31"></script>
+  <script src="/lib/quilt-renderer-v2.js?v=31"></script>
 
   <script>
     window.Utils = window.UtilsCore;
@@ -169,6 +169,24 @@
     let lastError = '';
     const undoStack = [];
     const UNDO_STACK_MAX = 80;
+
+    function builderMacroFreezeAt() {
+      try {
+        const v = new URLSearchParams(window.location.search || '').get('macroFreezeAt');
+        const n = v != null ? parseInt(v, 10) : NaN;
+        return Number.isFinite(n) && n >= 2 ? n : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function countMacroRegions(blocks) {
+      const ids = new Set();
+      (blocks || []).forEach((b) => {
+        if (b?.macroRegionId != null) ids.add(b.macroRegionId);
+      });
+      return ids.size;
+    }
 
     function captureEngineSnapshot() {
       if (!engine) return null;
@@ -338,6 +356,12 @@
         : Math.max(0, (engine?.submissionCount || 0) - 1);
       const specials = countSpecialFamilies(engine?.blocks);
       const frozen = engine?.macroStructureFrozen ? 'yes' : 'no';
+      const freezeAt =
+        engine?.macroFreezeAtBlockCountOverride ??
+        SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT;
+      const macroRegions = engine?.macroStructureFrozen
+        ? countMacroRegions(engine.blocks)
+        : '—';
       const layout = engine?.macroLayoutMode === 'columns' ? 'columns' : 'default';
       const swatch = lastColor
         ? `<span class="swatch" style="background:${lastColor}"></span>`
@@ -347,6 +371,9 @@
         <span><strong>${blocks}</strong> blocks</span>
         <span><strong>${specials}</strong> specials</span>
         <span>macro frozen: <strong>${frozen}</strong></span>
+        <span>freeze at: <strong>${freezeAt}</strong></span>
+        <span>macro regions: <strong>${macroRegions}</strong></span>
+        <span>layout: <strong>${layout}</strong></span>
         <span>last ${swatch}<strong>${lastColor || '—'}</strong></span>
         <span>motifs: ${specialTypeSummary(engine?.blocks)}</span>
         ${lastError ? `<span style="color:#b42318">error: ${lastError}</span>` : ''}
