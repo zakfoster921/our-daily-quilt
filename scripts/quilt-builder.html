@@ -65,6 +65,21 @@
     }
     button.primary:hover { opacity: 0.92; }
     button:disabled { opacity: 0.45; cursor: wait; }
+    label.macro-freeze {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    label.macro-freeze select {
+      font: inherit;
+      border: 1px solid rgba(0, 0, 0, 0.22);
+      background: #fff;
+      color: var(--ink);
+      padding: 0.45rem 0.55rem;
+      border-radius: 6px;
+    }
     .stats {
       font-size: 0.82rem;
       color: var(--muted);
@@ -119,9 +134,17 @@
   <header>
     <div>
       <h1>Quilt builder</h1>
-      <p class="lede">Live engine — random Rumi colors, one click at a time. Nothing is saved.</p>
+      <p class="lede">Live engine — random Rumi colors. Macro freeze threshold is adjustable below (live app uses 25).</p>
     </div>
     <div class="controls">
+      <label class="macro-freeze" for="macro-freeze-at">
+        Macro freeze
+        <select id="macro-freeze-at" aria-label="Macro freeze at block count">
+          <option value="10" selected>at 10 blocks</option>
+          <option value="25">at 25 blocks (live)</option>
+          <option value="50">at 50 blocks</option>
+        </select>
+      </label>
       <button type="button" class="primary" id="add-color">Add color</button>
       <button type="button" id="add-ten">+10</button>
       <button type="button" id="undo" disabled>Undo</button>
@@ -149,8 +172,8 @@
   <script src="/lib/utils-quilt-render.js"></script>
   <script src="/lib/utils-zapier.js"></script>
   <script src="/lib/quilt-mirror-layout.js"></script>
-  <script src="/lib/simple-quilt-engine.js?v=31"></script>
-  <script src="/lib/quilt-renderer-v2.js?v=31"></script>
+  <script src="/lib/simple-quilt-engine.js?v=32"></script>
+  <script src="/lib/quilt-renderer-v2.js?v=32"></script>
 
   <script>
     window.Utils = window.UtilsCore;
@@ -170,13 +193,42 @@
     const undoStack = [];
     const UNDO_STACK_MAX = 80;
 
-    function builderMacroFreezeAt() {
+    function builderMacroFreezeAtFromUrl() {
       try {
         const v = new URLSearchParams(window.location.search || '').get('macroFreezeAt');
         const n = v != null ? parseInt(v, 10) : NaN;
         return Number.isFinite(n) && n >= 2 ? n : null;
       } catch (_) {
         return null;
+      }
+    }
+
+    function syncMacroFreezeSelectFromUrl() {
+      const fromUrl = builderMacroFreezeAtFromUrl();
+      const sel = document.getElementById('macro-freeze-at');
+      if (!sel || fromUrl == null) return;
+      const opt = sel.querySelector(`option[value="${fromUrl}"]`);
+      if (opt) sel.value = String(fromUrl);
+      else {
+        const custom = document.createElement('option');
+        custom.value = String(fromUrl);
+        custom.textContent = `at ${fromUrl} blocks`;
+        custom.selected = true;
+        sel.appendChild(custom);
+      }
+    }
+
+    function selectedMacroFreezeAt() {
+      const sel = document.getElementById('macro-freeze-at');
+      const n = sel ? parseInt(sel.value, 10) : NaN;
+      return Number.isFinite(n) && n >= 2 ? n : SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT;
+    }
+
+    function applyMacroFreezeOverrideToEngine() {
+      if (!engine) return;
+      engine.macroFreezeAtBlockCountOverride = selectedMacroFreezeAt();
+      if (!engine.macroStructureFrozen) {
+        engine.maybeApplyMacroStructureFreezeAfterMutation();
       }
     }
 
@@ -381,7 +433,10 @@
     }
 
     function resetEngine() {
-      engine = new SimpleQuiltEngine('quilt-builder', { recordColorReplayEvents: false });
+      engine = new SimpleQuiltEngine('quilt-builder', {
+        recordColorReplayEvents: false,
+        macroFreezeAtBlockCount: selectedMacroFreezeAt()
+      });
       engine.recordUserContribution = () => {};
       engine._suppressSplitWarnings = true;
       engine.initialize();
@@ -423,6 +478,12 @@
       const addTenBtn = document.getElementById('add-ten');
       const undoBtn = document.getElementById('undo');
       const resetBtn = document.getElementById('reset');
+      const macroFreezeSel = document.getElementById('macro-freeze-at');
+
+      macroFreezeSel?.addEventListener('change', () => {
+        applyMacroFreezeOverrideToEngine();
+        renderQuilt(null);
+      });
 
       addBtn.addEventListener('click', () => addOneColor());
       undoBtn.addEventListener('click', () => undoLastAdd());
@@ -468,6 +529,7 @@
         configureRenderer(renderer);
         renderer.initialize();
         syncBuilderStage();
+        syncMacroFreezeSelectFromUrl();
         resetEngine();
         wireUi();
       } catch (error) {
