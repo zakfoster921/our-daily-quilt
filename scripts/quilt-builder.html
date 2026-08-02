@@ -148,8 +148,8 @@
   <script src="/lib/utils-quilt-render.js"></script>
   <script src="/lib/utils-zapier.js"></script>
   <script src="/lib/quilt-mirror-layout.js"></script>
-  <script src="/lib/simple-quilt-engine.js?v=17"></script>
-  <script src="/lib/quilt-renderer-v2.js?v=17"></script>
+  <script src="/lib/simple-quilt-engine.js?v=18"></script>
+  <script src="/lib/quilt-renderer-v2.js?v=18"></script>
 
   <script>
     window.Utils = window.UtilsCore;
@@ -207,38 +207,57 @@
       return `${dims.width} / ${dims.height}`;
     }
 
-    function updateStageFrame() {
-      const stage = document.querySelector('.stage');
-      const container = document.querySelector('.builder-quilt-container');
-      const svg = document.getElementById('quilt');
-      if (!stage || !container || !svg) return;
-
-      const vb = svg.getAttribute('viewBox');
-      let aspectW = 0;
-      let aspectH = 0;
-      if (vb) {
-        const parts = vb.trim().split(/\s+/).map(Number);
-        if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-          aspectW = parts[2];
-          aspectH = parts[3];
-        }
-      }
-      if (!(aspectW > 0 && aspectH > 0)) {
-        const dims = Utils.getQuiltDimensions(builderDateKey());
-        aspectW = dims.width;
-        aspectH = dims.height;
-      }
-
-      stage.style.aspectRatio = `${aspectW} / ${aspectH}`;
-      const stageWidth = Math.min(420, stage.parentElement?.clientWidth || 420);
-      const fitHeight = stageWidth * (aspectH / aspectW);
-      stage.style.height = `${Math.min(fitHeight, Math.max(320, window.innerHeight * 0.88))}px`;
-
+    function builderViewport() {
+      const stageWidth = Math.min(420, document.querySelector('.stage')?.parentElement?.clientWidth || 420);
+      const ref =
+        typeof QuiltMirrorLayout !== 'undefined' && QuiltMirrorLayout.CANVAS_HEIGHT_REFERENCE
+          ? QuiltMirrorLayout.CANVAS_HEIGHT_REFERENCE
+          : { width: 273, height: 720 };
       if (typeof QuiltMirrorLayout !== 'undefined' && typeof QuiltMirrorLayout.resolveViewport === 'function') {
-        const viewport = QuiltMirrorLayout.resolveViewport(stageWidth, fitHeight);
-        renderer._renderViewportOverride = viewport;
+        return QuiltMirrorLayout.resolveViewport(stageWidth, ref.height);
+      }
+      return { width: stageWidth, height: ref.height, w: stageWidth, h: ref.height };
+    }
+
+    function mirroredLayoutForBlocks(blocks) {
+      if (
+        typeof QuiltMirrorLayout === 'undefined' ||
+        typeof QuiltMirrorLayout.computeFromBlocks !== 'function' ||
+        !Array.isArray(blocks) ||
+        !blocks.length
+      ) {
+        return null;
+      }
+      const viewport = builderViewport();
+      return QuiltMirrorLayout.computeFromBlocks(blocks, {
+        dateKey: builderDateKey(),
+        viewportW: viewport.width,
+        viewportH: viewport.height,
+        fitMode: QuiltMirrorLayout.LIVE_SCREEN_FIT,
+        preferFullMirroredField: true
+      });
+    }
+
+    function syncBuilderStage(blocks) {
+      const stage = document.querySelector('.stage');
+      if (!stage || !renderer) return;
+
+      const viewport = builderViewport();
+      renderer._renderViewportOverride = viewport;
+
+      const layout = mirroredLayoutForBlocks(blocks);
+      const vb = layout?.viewBox;
+      const stageWidth = Math.min(420, stage.parentElement?.clientWidth || 420);
+      if (vb?.width > 0 && vb?.height > 0) {
+        stage.style.width = `${stageWidth}px`;
+        stage.style.aspectRatio = `${vb.width} / ${vb.height}`;
+        stage.style.height = `${stageWidth * (vb.height / vb.width)}px`;
+        stage.style.maxHeight = 'none';
       } else {
-        renderer._renderViewportOverride = { width: stageWidth, height: fitHeight, w: stageWidth, h: fitHeight };
+        stage.style.width = `${stageWidth}px`;
+        stage.style.aspectRatio = primaryQuiltAspect();
+        stage.style.height = '';
+        stage.style.maxHeight = 'min(88vh, 920px)';
       }
     }
 
@@ -253,14 +272,15 @@
       r._exportDateKeyOverride = builderDateKey();
       r._gridSeamUnderpaintBleed = () => 2.25;
       r._buildLiveGapUnderpaintGroup = () => null;
+      r._renderViewportOverride = builderViewport();
       if (typeof r.setBacksidePreviewEnabled === 'function') {
         r.setBacksidePreviewEnabled(false);
       }
     }
 
     function renderQuilt(addResult) {
-      updateStageFrame();
       const blocks = engine.blocks || [];
+      syncBuilderStage(blocks);
       renderer.setLastAddedIndex(null);
       if (addResult) {
         const highlightIds = new Set(
@@ -279,7 +299,7 @@
       if (svg) {
         svg.querySelectorAll('[data-live-gap-underpaint]').forEach((node) => node.remove());
       }
-      updateStageFrame();
+      syncBuilderStage(blocks);
       updateStats();
     }
 
@@ -359,7 +379,9 @@
       resetBtn.addEventListener('click', () => resetEngine());
 
       window.addEventListener('resize', () => {
-        if (engine && renderer) renderQuilt(null);
+        if (!engine || !renderer) return;
+        syncBuilderStage(engine.blocks || []);
+        renderer.renderBlocks(engine.blocks || [], [], engine.submissionCount || 0);
       });
 
       window.addEventListener('keydown', (e) => {
