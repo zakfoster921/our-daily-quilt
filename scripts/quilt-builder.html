@@ -124,6 +124,7 @@
     <div class="controls">
       <button type="button" class="primary" id="add-color">Add color</button>
       <button type="button" id="add-ten">+10</button>
+      <button type="button" id="undo" disabled>Undo</button>
       <button type="button" id="reset">Reset</button>
     </div>
     <div class="stats" id="stats" aria-live="polite"></div>
@@ -148,8 +149,8 @@
   <script src="/lib/utils-quilt-render.js"></script>
   <script src="/lib/utils-zapier.js"></script>
   <script src="/lib/quilt-mirror-layout.js"></script>
-  <script src="/lib/simple-quilt-engine.js?v=21"></script>
-  <script src="/lib/quilt-renderer-v2.js?v=21"></script>
+  <script src="/lib/simple-quilt-engine.js?v=22"></script>
+  <script src="/lib/quilt-renderer-v2.js?v=22"></script>
 
   <script>
     window.Utils = window.UtilsCore;
@@ -166,6 +167,67 @@
     let renderer;
     let lastColor = '';
     let lastError = '';
+    const undoStack = [];
+    const UNDO_STACK_MAX = 80;
+
+    function captureEngineSnapshot() {
+      if (!engine) return null;
+      return {
+        blocks: JSON.parse(JSON.stringify(engine.blocks || [])),
+        submissionCount: Number(engine.submissionCount) || 0,
+        macroStructureFrozen: engine.macroStructureFrozen === true,
+        macroLayoutMode: engine.macroLayoutMode,
+        macroColumnBands: Array.isArray(engine._macroColumnBands)
+          ? JSON.parse(JSON.stringify(engine._macroColumnBands))
+          : null,
+        lastColor
+      };
+    }
+
+    function restoreEngineSnapshot(snap) {
+      if (!engine || !snap) return;
+      engine.blocks = JSON.parse(JSON.stringify(snap.blocks || []));
+      engine.submissionCount = Number(snap.submissionCount) || 0;
+      engine.macroStructureFrozen = snap.macroStructureFrozen === true;
+      engine.macroLayoutMode = snap.macroLayoutMode;
+      engine._macroColumnBands = snap.macroColumnBands
+        ? JSON.parse(JSON.stringify(snap.macroColumnBands))
+        : null;
+      lastColor = snap.lastColor || '';
+    }
+
+    function pushUndoSnapshot() {
+      const snap = captureEngineSnapshot();
+      if (!snap) return;
+      undoStack.push(snap);
+      if (undoStack.length > UNDO_STACK_MAX) undoStack.shift();
+      updateUndoButton();
+    }
+
+    function undoLastAdd() {
+      const snap = undoStack.pop();
+      if (!snap) {
+        updateUndoButton();
+        return false;
+      }
+      restoreEngineSnapshot(snap);
+      lastError = '';
+      renderQuilt(null);
+      updateUndoButton();
+      return true;
+    }
+
+    function updateUndoButton() {
+      const btn = document.getElementById('undo');
+      if (!btn) return;
+      const canUndo = undoStack.length > 0;
+      btn.disabled = !canUndo;
+    }
+
+    function clearUndoStack() {
+      undoStack.length = 0;
+      updateUndoButton();
+    }
 
     function rumiPalette() {
       const raw = Array.isArray(window.__ODQ_RUMI_COLORS__) ? window.__ODQ_RUMI_COLORS__ : [];
@@ -304,14 +366,18 @@
       engine.recordColorReplayEvents = false;
       lastColor = '';
       lastError = '';
+      clearUndoStack();
       renderQuilt(null);
     }
 
     function addOneColor() {
       try {
+        pushUndoSnapshot();
         const color = pickRumiColor();
         const result = engine.addColor(color);
         if (!result) {
+          undoStack.pop();
+          updateUndoButton();
           lastError = 'addColor returned false — quilt may be full.';
           updateStats();
           return false;
@@ -331,9 +397,11 @@
     function wireUi() {
       const addBtn = document.getElementById('add-color');
       const addTenBtn = document.getElementById('add-ten');
+      const undoBtn = document.getElementById('undo');
       const resetBtn = document.getElementById('reset');
 
       addBtn.addEventListener('click', () => addOneColor());
+      undoBtn.addEventListener('click', () => undoLastAdd());
       addTenBtn.addEventListener('click', () => {
         addTenBtn.disabled = true;
         addBtn.disabled = true;
@@ -358,6 +426,10 @@
         if (e.key === ' ' || e.key === 'a' || e.key === 'A') {
           e.preventDefault();
           addOneColor();
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+          e.preventDefault();
+          undoLastAdd();
         }
         if (e.key === 'r' || e.key === 'R') resetEngine();
       });
