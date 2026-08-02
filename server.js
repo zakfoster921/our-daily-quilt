@@ -158,6 +158,15 @@ app.get('/instructor-submit', (_req, res) => sendPublicRootFile(res, 'instructor
 app.get('/instructor-submit.html', (_req, res) => sendPublicRootFile(res, 'instructor-submit.html'));
 app.get('/instructor-leaderboard', (_req, res) => sendPublicRootFile(res, 'instructor-leaderboard.html'));
 app.get('/instructor-leaderboard.html', (_req, res) => sendPublicRootFile(res, 'instructor-leaderboard.html'));
+app.get('/quilt-builder', (_req, res) =>
+  res.sendFile(path.join(ROOT_DIR, 'scripts', 'quilt-builder.html'))
+);
+app.get('/quilt-builder.html', (_req, res) =>
+  res.sendFile(path.join(ROOT_DIR, 'scripts', 'quilt-builder.html'))
+);
+app.get('/scripts/quilt-builder.html', (_req, res) =>
+  res.sendFile(path.join(ROOT_DIR, 'scripts', 'quilt-builder.html'))
+);
 app.get('/:fileName', (req, res, next) => {
   const fileName = String(req.params.fileName || '');
   if (!PUBLIC_ROOT_FILES.has(fileName)) return next();
@@ -174,6 +183,10 @@ app.use(
 app.use(
   '/styles',
   express.static(path.join(ROOT_DIR, 'styles'), staticAssetOptions())
+);
+app.use(
+  '/scripts',
+  express.static(path.join(ROOT_DIR, 'scripts'), staticAssetOptions())
 );
 
 // In-memory storage for generated images
