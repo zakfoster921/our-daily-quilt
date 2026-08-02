@@ -9256,6 +9256,7 @@ app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
       colorReplayEvents: Array.isArray(data.colorReplayEvents) ? data.colorReplayEvents : [],
       contributors: Array.isArray(data.contributors) ? data.contributors : [],
       macroStructureFrozen: data.macroStructureFrozen === true,
+      macroLayoutMode: data.macroLayoutMode === 'columns' ? 'columns' : undefined,
       mirrorBottomLayout: data.mirrorBottomLayout,
       mirrorFlipX: data.mirrorFlipX,
       mirrorFlipY: data.mirrorFlipY,
@@ -9724,7 +9725,9 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         blocks: currentBlocks,
         submissionCount: deriveServerQuiltSubmissionCount(currentQuilt),
         colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
-        macroStructureFrozen: currentQuilt.macroStructureFrozen === true
+        macroStructureFrozen: currentQuilt.macroStructureFrozen === true,
+        macroLayoutMode: currentQuilt.macroLayoutMode,
+        quiltDateKey: appDateKey
       });
       engine.dailyMoodColorHex = dailyMoodColorHex;
       const addResult = engine.addColor(color);
@@ -9751,6 +9754,10 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         typeof engine.getColorReplayEvents === 'function' ? engine.getColorReplayEvents() : [];
       const quiltFingerprint = computeQuiltFingerprint(blocks);
       const macroStructureFrozen = engine.macroStructureFrozen === true;
+      const macroLayoutMode =
+        engine.macroLayoutMode === 'columns' || engine.macroLayoutMode === 'default'
+          ? engine.macroLayoutMode
+          : undefined;
       const writeProvenance = buildServerQuiltWriteProvenance('color-submission', req, {
         submissionId,
         clientBuildId: clientBuildId || null
@@ -9765,7 +9772,8 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         colorReplayEvents,
         contributors,
         writeProvenance,
-        macroStructureFrozen
+        macroStructureFrozen,
+        ...(macroLayoutMode ? { macroLayoutMode } : {})
       }, { merge: true });
 
       tx.set(submissionRef, {
@@ -9977,6 +9985,8 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
       let colorReplayEvents = Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [];
       let contributors = normalizeQuiltContributorEntries(currentQuilt.contributors || []);
       let macroStructureFrozen = currentQuilt.macroStructureFrozen === true;
+      let macroLayoutMode =
+        currentQuilt.macroLayoutMode === 'columns' ? 'columns' : undefined;
       let appliedCount = 0;
       let dedicatedBlockId = '';
       let lastColor = '';
@@ -9996,6 +10006,7 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
           }, 0)
         );
         macroStructureFrozen = body.macroStructureFrozen === true;
+        macroLayoutMode = body.macroLayoutMode === 'columns' ? 'columns' : undefined;
         appliedCount = 1;
       } else {
         const engine = createServerQuiltEngine({
@@ -10003,7 +10014,9 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
           blocks: currentBlocks,
           submissionCount: deriveServerQuiltSubmissionCount(currentQuilt),
           colorReplayEvents,
-          macroStructureFrozen
+          macroStructureFrozen,
+          macroLayoutMode: currentQuilt.macroLayoutMode,
+          quiltDateKey: appDateKey
         });
         const addAdminContributor = () => {
           appliedCount += 1;
@@ -10086,6 +10099,10 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
         blocks = serializeServerQuiltBlocks(engine);
         colorReplayEvents = typeof engine.getColorReplayEvents === 'function' ? engine.getColorReplayEvents() : [];
         macroStructureFrozen = engine.macroStructureFrozen === true;
+        macroLayoutMode =
+          engine.macroLayoutMode === 'columns' || engine.macroLayoutMode === 'default'
+            ? engine.macroLayoutMode
+            : undefined;
         contributors = normalizeQuiltContributorEntries(contributors);
         contributorCount = Math.max(1, Number(engine.submissionCount) || 0, contributors.length);
       }
@@ -10104,7 +10121,8 @@ app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) 
         colorReplayEvents,
         contributors,
         writeProvenance,
-        macroStructureFrozen
+        macroStructureFrozen,
+        ...(typeof macroLayoutMode !== 'undefined' && macroLayoutMode ? { macroLayoutMode } : {})
       }, { merge: true });
       tx.set(mutationRef, {
         mutationId: mutationRef.id,

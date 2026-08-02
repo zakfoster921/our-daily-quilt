@@ -98,11 +98,14 @@ function createServerQuiltEngine({
   submissionCount,
   colorReplayEvents,
   macroStructureFrozen,
+  macroLayoutMode,
+  quiltDateKey,
   engineRelPath
 } = {}) {
   const { SimpleQuiltEngine } = loadServerQuiltRuntime({ engineRelPath });
   const engine = new SimpleQuiltEngine(String(userId || 'server-color-submission'), {
-    recordColorReplayEvents: true
+    recordColorReplayEvents: true,
+    quiltDateKey: quiltDateKey || ''
   });
   // Server writes the durable audit doc; browser local contribution history is client-only.
   engine.recordUserContribution = () => {};
@@ -113,8 +116,17 @@ function createServerQuiltEngine({
     engine.submissionCount = Math.max(0, Math.floor(Number(submissionCount) || 0));
     engine.recordColorReplayEvents = true;
     engine.macroStructureFrozen = macroStructureFrozen === true;
+    if (quiltDateKey && typeof engine.setQuiltDateKey === 'function') {
+      engine.setQuiltDateKey(quiltDateKey);
+    }
+    if (typeof engine.hydrateMacroLayoutFromPersistence === 'function') {
+      engine.hydrateMacroLayoutFromPersistence(macroLayoutMode);
+    }
     if (typeof engine.setColorReplayEvents === 'function') {
       engine.setColorReplayEvents(Array.isArray(colorReplayEvents) ? colorReplayEvents : []);
+    }
+    if (macroStructureFrozen === true && typeof engine.repairMacroRegionIdsAfterLoadIfFrozen === 'function') {
+      engine.repairMacroRegionIdsAfterLoadIfFrozen();
     }
   } else {
     engine.initialize();
