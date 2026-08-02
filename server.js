@@ -1970,7 +1970,7 @@ function serverCompactLayoutBPostStripPlan(stripPlan) {
       y: Number(s?.y) || 0
     };
     const angle = Number(s?.angle);
-    if (Number.isFinite(angle)) row.angle = angle;
+    if (s && ('angle' in s) && Number.isFinite(angle)) row.angle = angle;
     if (Array.isArray(s?.lines) && s.lines.length) {
       row.lines = s.lines.map((ln) => String(ln ?? ''));
     } else if (s?.text) {
