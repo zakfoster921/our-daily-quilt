@@ -134,20 +134,26 @@
   <script src="/lib/utils-client.js"></script>
   <script src="/lib/utils-quilt.js"></script>
   <script src="/lib/utils-quilt-render.js"></script>
+  <script src="/lib/utils-zapier.js"></script>
   <script src="/lib/quilt-mirror-layout.js"></script>
   <script src="/lib/simple-quilt-engine.js"></script>
   <script src="/lib/quilt-renderer-v2.js"></script>
 
   <script>
     window.Utils = window.UtilsCore;
-    if (Array.isArray(window.rumiColors)) {
-      window.__ODQ_RUMI_COLORS__ = window.rumiColors;
+    if (typeof rumiColors !== 'undefined' && Array.isArray(rumiColors)) {
+      window.__ODQ_RUMI_COLORS__ = rumiColors;
     }
 
-    const noopLogger = { log() {}, warn() {}, error() {} };
+    const noopLogger = {
+      log() {},
+      warn(...args) { console.warn(...args); },
+      error(...args) { console.error(...args); }
+    };
     let engine;
     let renderer;
     let lastColor = '';
+    let lastError = '';
 
     function rumiPalette() {
       const raw = Array.isArray(window.__ODQ_RUMI_COLORS__) ? window.__ODQ_RUMI_COLORS__ : [];
@@ -224,6 +230,7 @@
         <span>macro frozen: <strong>${frozen}</strong></span>
         <span>last ${swatch}<strong>${lastColor || '—'}</strong></span>
         <span>motifs: ${specialTypeSummary(engine?.blocks)}</span>
+        ${lastError ? `<span style="color:#b42318">error: ${lastError}</span>` : ''}
       `;
     }
 
@@ -232,20 +239,31 @@
       engine.recordUserContribution = () => {};
       engine._suppressSplitWarnings = true;
       engine.initialize();
+      engine.recordColorReplayEvents = false;
       lastColor = '';
+      lastError = '';
       renderQuilt(false);
     }
 
     function addOneColor() {
-      const color = pickRumiColor();
-      const result = engine.addColor(color);
-      if (!result) {
+      try {
+        const color = pickRumiColor();
+        const result = engine.addColor(color);
+        if (!result) {
+          lastError = 'addColor returned false — quilt may be full.';
+          updateStats();
+          return false;
+        }
+        lastError = '';
+        lastColor = result.appliedColor || color;
+        renderQuilt(true);
+        return true;
+      } catch (error) {
+        lastError = error?.message || String(error);
         updateStats();
+        console.error(error);
         return false;
       }
-      lastColor = result.appliedColor || color;
-      renderQuilt(true);
-      return true;
     }
 
     function wireUi() {
@@ -278,11 +296,21 @@
     }
 
     function boot() {
-      renderer = new QuiltRendererV2(noopLogger);
-      configureRenderer(renderer);
-      renderer.initialize();
-      resetEngine();
-      wireUi();
+      try {
+        if (typeof Utils?.polygonPiecesForFirestore !== 'function') {
+          throw new Error('utils-zapier.js did not load (polygonPiecesForFirestore missing)');
+        }
+        renderer = new QuiltRendererV2(noopLogger);
+        configureRenderer(renderer);
+        renderer.initialize();
+        resetEngine();
+        wireUi();
+      } catch (error) {
+        lastError = error?.message || String(error);
+        const el = document.getElementById('stats');
+        if (el) el.textContent = `Boot failed: ${lastError}`;
+        console.error(error);
+      }
     }
 
     boot();
