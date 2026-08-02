@@ -187,6 +187,10 @@
     }
 
     function configureRenderer(r) {
+      r._builderPreviewMode = true;
+      if (typeof r.setBuilderPreviewMode === 'function') {
+        r.setBuilderPreviewMode(true);
+      }
       r._forcePrimaryOnlyPreview = true;
       r._exportDisableSplitBandFit = true;
       r._exportFullQuiltField = true;
@@ -197,10 +201,20 @@
       }
     }
 
-    function renderQuilt(highlightLast) {
+    function renderQuilt(addResult) {
       const blocks = engine.blocks || [];
-      if (highlightLast && blocks.length) {
-        renderer.setLastAddedIndex(blocks.length - 1);
+      renderer.setLastAddedIndex(null);
+      if (addResult) {
+        const highlightIds = new Set(
+          (addResult.newBlocks || [])
+            .filter((b) => Number(b?.submissionIndex) === Number(addResult.submissionIndex))
+            .map((b) => b.id)
+        );
+        if (addResult.dedicatedBlockId) highlightIds.add(addResult.dedicatedBlockId);
+        if (highlightIds.size) {
+          const idx = blocks.findIndex((b) => highlightIds.has(b.id));
+          if (idx >= 0) renderer.setLastAddedIndex(idx);
+        }
       }
       renderer.renderBlocks(blocks, [], engine.submissionCount || 0);
       const svg = document.getElementById('quilt');
@@ -242,7 +256,7 @@
       engine.recordColorReplayEvents = false;
       lastColor = '';
       lastError = '';
-      renderQuilt(false);
+      renderQuilt(null);
     }
 
     function addOneColor() {
@@ -256,7 +270,7 @@
         }
         lastError = '';
         lastColor = result.appliedColor || color;
-        renderQuilt(true);
+        renderQuilt(result);
         return true;
       } catch (error) {
         lastError = error?.message || String(error);
