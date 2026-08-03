@@ -7,7 +7,7 @@ android {
         applicationId "com.zakfoster.ourdailyquilt"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 78
+        versionCode 79
         versionName "3.19"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -33,17 +33,35 @@ android {
     }
 }
 
-tasks.register("cleanICloudDuplicateXmlResources") {
+tasks.register("cleanICloudDuplicates") {
     doLast {
-        fileTree(dir: "src/main/res/xml", include: "config *.xml").each { duplicate ->
-            logger.lifecycle("Removing iCloud duplicate Android XML resource: ${duplicate.name}")
-            duplicate.delete()
+        def roots = [file("src/main/res"), file("${buildDir}")].findAll { it.exists() }
+        def duplicates = []
+        roots.each { root ->
+            root.eachFileRecurse { candidate ->
+                if (candidate.name.contains(" 2")) {
+                    duplicates << candidate
+                }
+            }
+        }
+        // Delete deepest paths first so parent directory walks stay stable.
+        duplicates.sort { a, b -> b.path.length() <=> a.path.length() }.each { duplicate ->
+            logger.lifecycle("Removing iCloud duplicate: ${duplicate.path}")
+            if (duplicate.directory) {
+                duplicate.deleteDir()
+            } else {
+                duplicate.delete()
+            }
         }
     }
 }
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Resources") }.configureEach {
-    dependsOn("cleanICloudDuplicateXmlResources")
+    dependsOn("cleanICloudDuplicates")
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.contains("Dex") }.configureEach {
+    dependsOn("cleanICloudDuplicates")
 }
 
 repositories {
