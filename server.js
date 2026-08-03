@@ -14843,6 +14843,7 @@ app.listen(PORT, () => {
   console.log(`🧪 Test endpoint: http://localhost:${PORT}/api/test-instagram`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
+  console.log(`✂️ Post-color lab: http://localhost:${PORT}/post-color-lab`);
   startHeartSweepScheduler();
   startDailyQuotePushScheduler();
   openOdqEditorInBrowser(PORT);
