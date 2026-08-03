@@ -99,6 +99,16 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTION_API_VERSION = '2022-06-28';
+
+/** Local Notion quote editor — off unless ODQ_EDITOR_ENABLED=1 (see npm run editor). */
+function isOdqEditorEnabled() {
+  const flag = String(process.env.ODQ_EDITOR_ENABLED || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(flag);
+}
+
+function sendOdqEditorDisabled(res) {
+  return res.status(404).json({ success: false, error: 'odq_editor_disabled' });
+}
 const ROOT_DIR = __dirname;
 const ONE_KB = 1024;
 const ONE_MB = 1024 * ONE_KB;
@@ -150,8 +160,14 @@ app.get('/intro-persona-frame', (_req, res) => sendPublicRootFile(res, 'intro-pe
 app.get('/intro-persona-frame.html', (_req, res) => sendPublicRootFile(res, 'intro-persona-frame.html'));
 app.get('/intro-persona-nav-lab', (_req, res) => sendPublicRootFile(res, 'intro-persona-nav-lab.html'));
 app.get('/intro-persona-nav-lab.html', (_req, res) => sendPublicRootFile(res, 'intro-persona-nav-lab.html'));
-app.get('/odq-editor', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
-app.get('/odq-editor.html', (_req, res) => sendPublicRootFile(res, 'odq-editor.html'));
+app.get('/odq-editor', (_req, res) => {
+  if (!isOdqEditorEnabled()) return res.status(404).send('Not found');
+  return sendPublicRootFile(res, 'odq-editor.html');
+});
+app.get('/odq-editor.html', (_req, res) => {
+  if (!isOdqEditorEnabled()) return res.status(404).send('Not found');
+  return sendPublicRootFile(res, 'odq-editor.html');
+});
 app.get('/preview-slide3-name-strip', (_req, res) => sendPublicRootFile(res, 'preview-slide3-name-strip.html'));
 app.get('/preview-slide3-name-strip.html', (_req, res) => sendPublicRootFile(res, 'preview-slide3-name-strip.html'));
 app.get('/instructor-submit', (_req, res) => sendPublicRootFile(res, 'instructor-submit.html'));
@@ -169,6 +185,9 @@ app.get('/scripts/quilt-builder.html', (_req, res) =>
 );
 app.get('/:fileName', (req, res, next) => {
   const fileName = String(req.params.fileName || '');
+  if (fileName === 'odq-editor.html' && !isOdqEditorEnabled()) {
+    return res.status(404).send('Not found');
+  }
   if (!PUBLIC_ROOT_FILES.has(fileName)) return next();
   return sendPublicRootFile(res, fileName);
 });
@@ -7262,11 +7281,13 @@ async function generateOdqEditorMissingFields({ quote, author, existing = {} }) 
 
 app.options('/api/odq-editor/quote/:dateKey', (req, res) => {
   setOdqEditorCors(res);
+  if (!isOdqEditorEnabled()) return sendOdqEditorDisabled(res);
   return res.status(204).end();
 });
 
 app.get('/api/odq-editor/quote/:dateKey', async (req, res) => {
   setOdqEditorCors(res);
+  if (!isOdqEditorEnabled()) return sendOdqEditorDisabled(res);
   try {
     const dateKey = String(req.params.dateKey || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
@@ -7285,11 +7306,13 @@ app.get('/api/odq-editor/quote/:dateKey', async (req, res) => {
 
 app.options('/api/odq-editor/generate-missing', (req, res) => {
   setOdqEditorCors(res);
+  if (!isOdqEditorEnabled()) return sendOdqEditorDisabled(res);
   return res.status(204).end();
 });
 
 app.post('/api/odq-editor/generate-missing', async (req, res) => {
   setOdqEditorCors(res);
+  if (!isOdqEditorEnabled()) return sendOdqEditorDisabled(res);
   if (!verifyOdqEditorWriteToken(req, res)) return;
   try {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -7309,11 +7332,13 @@ app.post('/api/odq-editor/generate-missing', async (req, res) => {
 
 app.options('/api/odq-editor/quote/:pageId', (req, res) => {
   setOdqEditorCors(res);
+  if (!isOdqEditorEnabled()) return sendOdqEditorDisabled(res);
   return res.status(204).end();
 });
 
 app.patch('/api/odq-editor/quote/:pageId', async (req, res) => {
   setOdqEditorCors(res);
+  if (!isOdqEditorEnabled()) return sendOdqEditorDisabled(res);
   if (!verifyOdqEditorWriteToken(req, res)) return;
   try {
     const pageId = String(req.params.pageId || '').trim();
@@ -14785,6 +14810,7 @@ app.delete('/api/social-posts/:postId/comments/:commentId', limitSocialComment, 
 });
 
 function openOdqEditorInBrowser(port) {
+  if (!isOdqEditorEnabled()) return;
   const flag = String(process.env.AUTO_OPEN_ODQ_EDITOR || '').trim().toLowerCase();
   if (!['1', 'true', 'yes', 'on'].includes(flag)) return;
   const url = `http://localhost:${port}/odq-editor`;
