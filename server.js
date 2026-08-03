@@ -89,7 +89,8 @@ const { resolvePromptThemesForDateKey } = require('./scripts/lib/reflection-arch
 const {
   createServerQuiltEngine,
   serializeServerQuiltBlocks,
-  computeQuiltFingerprint
+  computeQuiltFingerprint,
+  previewColorPlacement
 } = require('./scripts/lib/server-quilt-engine.cjs');
 const { resolveQuoteMoodColor } = require('./lib/quote-mood-colors.js');
 const {
@@ -276,6 +277,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-leaderboard-clear', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-delete', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
+  ['/api/post-color-lab-preview', 8 * ONE_KB],
   ['/api/mood-scratch', 4 * ONE_KB],
   ['/api/story-preview-share', 4 * ONE_KB],
   ['/api/day-visit', 4 * ONE_KB],
@@ -9903,6 +9905,80 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
       success: false,
       error: error.message || 'Color submission failed',
       timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+app.options('/api/post-color-lab-preview', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+/** Read-only placement preview for post-color-lab — runs server engine, no Firestore writes. */
+app.post('/api/post-color-lab-preview', limitColorSubmission, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  const startedAt = Date.now();
+  try {
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const color = normalizeSubmittedColorHex(body.color || body.hex || body.selectedColor);
+    const appDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(body.appDateKey || body.dateKey || '').trim())
+      ? String(body.appDateKey || body.dateKey).trim()
+      : getAppDateKey();
+    const clientId = String(body.clientId || body.deviceId || body.userId || 'post-color-lab').trim().slice(0, 160);
+
+    if (!color) {
+      return res.status(400).json({ success: false, error: 'Valid #RRGGBB color is required' });
+    }
+
+    const quiltSnap = await db.collection('quilts').doc(appDateKey).get();
+    const currentQuilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
+    const currentBlocks = Array.isArray(currentQuilt.blocks) ? currentQuilt.blocks : [];
+    const dailyMoodColorHex = await resolveDailyMoodColorHexForDateKey(appDateKey);
+    const preview = previewColorPlacement({
+      userId: clientId,
+      clientId,
+      blocks: currentBlocks,
+      submissionCount: deriveServerQuiltSubmissionCount(currentQuilt),
+      colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
+      macroStructureFrozen: currentQuilt.macroStructureFrozen === true,
+      macroLayoutMode: currentQuilt.macroLayoutMode,
+      quiltDateKey: appDateKey,
+      dailyMoodColorHex,
+      color
+    });
+
+    if (!preview.ok) {
+      return res.status(422).json({
+        success: false,
+        error: preview.error || 'Color placement preview failed'
+      });
+    }
+
+    return res.json({
+      success: true,
+      preview: true,
+      appDateKey,
+      color,
+      appliedColor: preview.appliedColor,
+      dedicatedBlockId: preview.dedicatedBlockId,
+      submissionIndex: preview.submissionIndex,
+      targetPolygon: preview.targetPolygon,
+      sideCount: preview.sideCount,
+      blockCount: currentBlocks.length,
+      contributorCount:
+        currentQuilt.contributorCount || Math.max(1, deriveServerQuiltSubmissionCount(currentQuilt)),
+      serverMs: Date.now() - startedAt
+    });
+  } catch (error) {
+    console.error('❌ post-color-lab-preview failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'post-color-lab-preview failed',
+      serverMs: Date.now() - startedAt
     });
   }
 });

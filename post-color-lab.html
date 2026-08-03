@@ -252,6 +252,16 @@
       <label for="shapePreset">Block shape (mock)</label>
       <select id="shapePreset"></select>
 
+      <label>
+        <input type="checkbox" id="useLiveServer"> Live server preview (no save)
+      </label>
+      <p class="note" id="liveServerNote" hidden>
+        Calls <code>/api/post-color-lab-preview</code> with today&apos;s quilt. Runs the real placement engine but does not write to Firestore.
+      </p>
+
+      <label for="appDateKey">Quilt date</label>
+      <input type="date" id="appDateKey">
+
       <label for="colorInput">User color</label>
       <input type="color" id="colorInput" value="#6fa8dc">
 
@@ -289,12 +299,15 @@
 
   <script src="lib/ig-carousel-cutting-mat-bg.js?v=1"></script>
   <script src="lib/ig-carousel-paper-depth.js?v=2"></script>
-  <script src="lib/post-color-cut-reveal.js?v=5"></script>
+  <script src="lib/post-color-cut-reveal.js?v=6"></script>
   <script>
     (function () {
       const api = window.PostColorCutReveal;
       const presets = api.SHAPE_PRESETS;
       const shapeSelect = document.getElementById('shapePreset');
+      const useLiveServer = document.getElementById('useLiveServer');
+      const liveServerNote = document.getElementById('liveServerNote');
+      const appDateKey = document.getElementById('appDateKey');
       const colorInput = document.getElementById('colorInput');
       const serverDelay = document.getElementById('serverDelay');
       const serverDelayVal = document.getElementById('serverDelayVal');
@@ -317,6 +330,23 @@
         shapeSelect.appendChild(opt);
       });
       shapeSelect.value = 'shard';
+
+      const today = new Date();
+      appDateKey.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      function syncLiveModeUi() {
+        const live = useLiveServer.checked;
+        shapeSelect.disabled = live;
+        serverDelay.disabled = live;
+        liveServerNote.hidden = !live;
+        if (live) {
+          serverDelayVal.textContent = 'real server';
+        } else {
+          serverDelayVal.textContent = serverDelay.value;
+        }
+      }
+      useLiveServer.addEventListener('change', syncLiveModeUi);
+      syncLiveModeUi();
 
       for (let i = 0; i < 16; i++) {
         const cell = document.createElement('span');
@@ -349,23 +379,35 @@
         mockQuilt.classList.remove('is-visible');
         const plan = await controller.prepare({
           shapePreset: shapeSelect.value,
-          color: colorInput.value
+          color: colorInput.value,
+          appDateKey: appDateKey.value
         });
-        metaEl.textContent = `Shape sides: ${plan.target.length} · planned cuts: ${plan.cutCount} (max ${api.MAX_CUTS})`;
+        const mode = useLiveServer.checked ? 'live server shape on play' : `planned cuts: ${plan.cutCount}`;
+        metaEl.textContent = `Shape sides: ${plan.target.length} · ${mode} (max ${api.MAX_CUTS})`;
         return plan;
       }
 
       playBtn.addEventListener('click', async () => {
         playBtn.disabled = true;
         resetBtn.disabled = true;
-        statusEl.textContent = 'Preparing…';
+        statusEl.textContent = useLiveServer.checked ? 'Waiting on server…' : 'Preparing…';
         try {
-          await prepareOnly();
-          statusEl.textContent = 'Playing…';
+          if (!useLiveServer.checked) {
+            await prepareOnly();
+          } else {
+            await controller.prepare({
+              shapePreset: shapeSelect.value,
+              color: colorInput.value,
+              appDateKey: appDateKey.value
+            });
+          }
+          statusEl.textContent = useLiveServer.checked ? 'Waiting on server…' : 'Playing…';
           const result = await controller.play({
             color: colorInput.value,
             shapePreset: shapeSelect.value,
-            serverDelayMs: Number(serverDelay.value),
+            appDateKey: appDateKey.value,
+            useLiveServer: useLiveServer.checked,
+            serverDelayMs: useLiveServer.checked ? 0 : Number(serverDelay.value),
             cutMs: Number(cutMs.value),
             restMs: Number(restMs.value)
           });
@@ -373,7 +415,15 @@
             statusEl.textContent = 'Stopped.';
           } else {
             mockQuilt.classList.add('is-visible');
-            statusEl.textContent = `Done — ${result.cutCount} cut${result.cutCount === 1 ? '' : 's'}, then quilt handoff.`;
+            if (result.livePreview) {
+              const lp = result.livePreview;
+              metaEl.textContent =
+                `Live shape: ${lp.sideCount} sides · ${result.cutCount} cuts · server ${lp.serverMs}ms · block ${String(lp.dedicatedBlockId || '').slice(0, 10)}`;
+              statusEl.textContent =
+                `Done — server ${lp.serverMs}ms (client ${lp.clientMs}ms), ${result.cutCount} cuts, then quilt handoff.`;
+            } else {
+              statusEl.textContent = `Done — ${result.cutCount} cut${result.cutCount === 1 ? '' : 's'}, then quilt handoff.`;
+            }
           }
         } catch (err) {
           statusEl.textContent = err?.message || 'Playback failed.';

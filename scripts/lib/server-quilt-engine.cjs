@@ -160,9 +160,101 @@ function computeQuiltFingerprint(blocks, options = {}) {
     : '';
 }
 
+function resolveDedicatedBlock(engine, addResult, clientId) {
+  const dedicatedId = String(addResult?.dedicatedBlockId || '').trim();
+  if (dedicatedId) {
+    const block = (engine.blocks || []).find((b) => String(b.id || '') === dedicatedId);
+    if (block) return block;
+  }
+  const submissionIndex = Number(addResult?.submissionIndex) || Number(engine.submissionCount) || 0;
+  const uid = String(clientId || '').trim();
+  return (
+    (engine.blocks || []).find((block) => {
+      if (Number(block?.submissionIndex) !== submissionIndex) return false;
+      if (String(block?.contributorId || '').trim() === uid) return true;
+      const ids = Array.isArray(block?.contributorIds) ? block.contributorIds : [];
+      return ids.some((id) => String(id || '').trim() === uid);
+    }) || null
+  );
+}
+
+function extractBlockPolygonPoints(engine, block) {
+  if (!block) return null;
+  if (typeof engine?._buildMacroFrozenOutline === 'function') {
+    const outline = engine._buildMacroFrozenOutline(block);
+    if (outline?.type === 'polygon' && Array.isArray(outline.points) && outline.points.length >= 3) {
+      return outline.points.map((p) => [Number(p.x), Number(p.y)]);
+    }
+    if (
+      outline?.type === 'polygons' &&
+      Array.isArray(outline.pieces) &&
+      outline.pieces[0]?.points?.length >= 3
+    ) {
+      return outline.pieces[0].points.map((p) => [Number(p.x), Number(p.y)]);
+    }
+  }
+  const x = Number(block.x) || 0;
+  const y = Number(block.y) || 0;
+  const w = Number(block.width) || 1;
+  const h = Number(block.height) || 1;
+  return [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h]
+  ];
+}
+
+/** Read-only color placement for post-color lab — no Firestore writes. */
+function previewColorPlacement({
+  userId,
+  blocks,
+  submissionCount,
+  colorReplayEvents,
+  macroStructureFrozen,
+  macroLayoutMode,
+  quiltDateKey,
+  dailyMoodColorHex,
+  color,
+  clientId
+} = {}) {
+  const engine = createServerQuiltEngine({
+    userId,
+    blocks,
+    submissionCount,
+    colorReplayEvents,
+    macroStructureFrozen,
+    macroLayoutMode,
+    quiltDateKey
+  });
+  engine.dailyMoodColorHex = dailyMoodColorHex || null;
+  const addResult = engine.addColor(color);
+  if (!addResult) {
+    return { ok: false, error: 'Could not place color on quilt' };
+  }
+  const dedicatedBlock = resolveDedicatedBlock(engine, addResult, clientId || userId);
+  const targetPolygon = extractBlockPolygonPoints(engine, dedicatedBlock);
+  if (!targetPolygon || targetPolygon.length < 3) {
+    return { ok: false, error: 'Could not resolve dedicated block outline' };
+  }
+  return {
+    ok: true,
+    addResult,
+    dedicatedBlock,
+    targetPolygon,
+    sideCount: targetPolygon.length,
+    appliedColor: addResult.appliedColor || color,
+    dedicatedBlockId: addResult.dedicatedBlockId || dedicatedBlock?.id || '',
+    submissionIndex: Number(addResult.submissionIndex) || Number(engine.submissionCount) || 0
+  };
+}
+
 module.exports = {
   loadServerQuiltRuntime,
   createServerQuiltEngine,
   serializeServerQuiltBlocks,
-  computeQuiltFingerprint
+  computeQuiltFingerprint,
+  resolveDedicatedBlock,
+  extractBlockPolygonPoints,
+  previewColorPlacement
 };
