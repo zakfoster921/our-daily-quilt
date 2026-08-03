@@ -87,6 +87,7 @@ const { repairFirstResponseFromCatalog } = require('./scripts/lib/repair-first-r
 const { repairReflectionPublishedFromRaw } = require('./scripts/lib/repair-reflection-published-from-raw-lib.cjs');
 const { resolvePromptThemesForDateKey } = require('./scripts/lib/reflection-archive-prompt-themes.cjs');
 const {
+  loadServerQuiltRuntime,
   createServerQuiltEngine,
   serializeServerQuiltBlocks,
   computeQuiltFingerprint,
@@ -277,7 +278,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-leaderboard-clear', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-delete', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
-  ['/api/post-color-lab-preview', 8 * ONE_KB],
+  ['/api/post-color-lab-preview', 4 * ONE_MB],
   ['/api/mood-scratch', 4 * ONE_KB],
   ['/api/story-preview-share', 4 * ONE_KB],
   ['/api/day-visit', 4 * ONE_KB],
@@ -9934,10 +9935,32 @@ app.post('/api/post-color-lab-preview', limitColorSubmission, async (req, res) =
       return res.status(400).json({ success: false, error: 'Valid #RRGGBB color is required' });
     }
 
-    const quiltSnap = await db.collection('quilts').doc(appDateKey).get();
-    const currentQuilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
-    const currentBlocks = Array.isArray(currentQuilt.blocks) ? currentQuilt.blocks : [];
-    const dailyMoodColorHex = await resolveDailyMoodColorHexForDateKey(appDateKey);
+    const bodyBlocks = Array.isArray(body.blocks) ? body.blocks : null;
+    let currentQuilt = {};
+    let currentBlocks = [];
+    let quiltMs = 0;
+
+    if (bodyBlocks) {
+      currentBlocks = bodyBlocks;
+      currentQuilt = {
+        contributorCount: Number(body.contributorCount) || 1,
+        colorReplayEvents: Array.isArray(body.colorReplayEvents) ? body.colorReplayEvents : [],
+        macroStructureFrozen: body.macroStructureFrozen === true,
+        macroLayoutMode: body.macroLayoutMode
+      };
+    } else {
+      const quiltStarted = Date.now();
+      const quiltSnap = await db.collection('quilts').doc(appDateKey).get();
+      quiltMs = Date.now() - quiltStarted;
+      currentQuilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
+      currentBlocks = Array.isArray(currentQuilt.blocks) ? currentQuilt.blocks : [];
+    }
+
+    const skipMood = body.skipMood !== false;
+    const dailyMoodColorHex = skipMood
+      ? resolveQuoteMoodColor('Tender') || null
+      : await resolveDailyMoodColorHexForDateKey(appDateKey);
+    const engineStarted = Date.now();
     const preview = previewColorPlacement({
       userId: clientId,
       clientId,
@@ -9950,6 +9973,7 @@ app.post('/api/post-color-lab-preview', limitColorSubmission, async (req, res) =
       dailyMoodColorHex,
       color
     });
+    const engineMs = Date.now() - engineStarted;
 
     if (!preview.ok) {
       return res.status(422).json({
@@ -9971,7 +9995,8 @@ app.post('/api/post-color-lab-preview', limitColorSubmission, async (req, res) =
       blockCount: currentBlocks.length,
       contributorCount:
         currentQuilt.contributorCount || Math.max(1, deriveServerQuiltSubmissionCount(currentQuilt)),
-      serverMs: Date.now() - startedAt
+      serverMs: Date.now() - startedAt,
+      timing: { quiltMs, engineMs }
     });
   } catch (error) {
     console.error('❌ post-color-lab-preview failed:', error);
@@ -14920,6 +14945,12 @@ app.listen(PORT, () => {
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🧪 Simple test: http://localhost:${PORT}/api/simple-test`);
   console.log(`✂️ Post-color lab: http://localhost:${PORT}/post-color-lab`);
+  try {
+    loadServerQuiltRuntime();
+    console.log('🧵 Server quilt engine prewarmed');
+  } catch (prewarmErr) {
+    console.warn('⚠️ Server quilt engine prewarm failed:', prewarmErr?.message || prewarmErr);
+  }
   startHeartSweepScheduler();
   startDailyQuotePushScheduler();
   openOdqEditorInBrowser(PORT);

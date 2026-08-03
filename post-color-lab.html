@@ -256,7 +256,7 @@
         <input type="checkbox" id="useLiveServer"> Live server preview (no save)
       </label>
       <p class="note" id="liveServerNote" hidden>
-        Calls <code>/api/post-color-lab-preview</code> with today&apos;s quilt. Runs the real placement engine but does not write to Firestore.
+        Needs <code>npm start</code> (not <code>dev:static</code>). Loads today&apos;s quilt, then runs placement preview — no Firestore save. Engine step usually takes a few seconds on a full quilt.
       </p>
 
       <label for="appDateKey">Quilt date</label>
@@ -299,7 +299,7 @@
 
   <script src="lib/ig-carousel-cutting-mat-bg.js?v=1"></script>
   <script src="lib/ig-carousel-paper-depth.js?v=2"></script>
-  <script src="lib/post-color-cut-reveal.js?v=6"></script>
+  <script src="lib/post-color-cut-reveal.js?v=7"></script>
   <script>
     (function () {
       const api = window.PostColorCutReveal;
@@ -390,18 +390,30 @@
       playBtn.addEventListener('click', async () => {
         playBtn.disabled = true;
         resetBtn.disabled = true;
-        statusEl.textContent = useLiveServer.checked ? 'Waiting on server…' : 'Preparing…';
+        let waitTick = null;
+        const waitStarted = Date.now();
+        const stopWaitTick = () => {
+          if (waitTick) clearInterval(waitTick);
+          waitTick = null;
+        };
+        const bumpWaitStatus = (prefix) => {
+          const s = Math.max(1, Math.round((Date.now() - waitStarted) / 1000));
+          statusEl.textContent = `${prefix} ${s}s`;
+        };
         try {
           if (!useLiveServer.checked) {
+            statusEl.textContent = 'Preparing…';
             await prepareOnly();
+            statusEl.textContent = 'Playing…';
           } else {
             await controller.prepare({
               shapePreset: shapeSelect.value,
               color: colorInput.value,
               appDateKey: appDateKey.value
             });
+            statusEl.textContent = 'Loading quilt…';
+            waitTick = setInterval(() => bumpWaitStatus('Waiting on server…'), 500);
           }
-          statusEl.textContent = useLiveServer.checked ? 'Waiting on server…' : 'Playing…';
           const result = await controller.play({
             color: colorInput.value,
             shapePreset: shapeSelect.value,
@@ -409,8 +421,13 @@
             useLiveServer: useLiveServer.checked,
             serverDelayMs: useLiveServer.checked ? 0 : Number(serverDelay.value),
             cutMs: Number(cutMs.value),
-            restMs: Number(restMs.value)
+            restMs: Number(restMs.value),
+            onServerProgress: (info) => {
+              if (info?.phase === 'quilt') statusEl.textContent = 'Loading quilt…';
+              else bumpWaitStatus('Running placement…');
+            }
           });
+          stopWaitTick();
           if (result?.aborted) {
             statusEl.textContent = 'Stopped.';
           } else {
@@ -418,16 +435,18 @@
             if (result.livePreview) {
               const lp = result.livePreview;
               metaEl.textContent =
-                `Live shape: ${lp.sideCount} sides · ${result.cutCount} cuts · server ${lp.serverMs}ms · block ${String(lp.dedicatedBlockId || '').slice(0, 10)}`;
+                `Live shape: ${lp.sideCount} sides · ${result.cutCount} cuts · quilt ${lp.quiltMs || '—'}ms · engine ${lp.engineMs || '—'}ms`;
               statusEl.textContent =
-                `Done — server ${lp.serverMs}ms (client ${lp.clientMs}ms), ${result.cutCount} cuts, then quilt handoff.`;
+                `Done — server ${lp.serverMs}ms total (${lp.clientMs}ms client), ${result.cutCount} cuts.`;
             } else {
               statusEl.textContent = `Done — ${result.cutCount} cut${result.cutCount === 1 ? '' : 's'}, then quilt handoff.`;
             }
           }
         } catch (err) {
+          stopWaitTick();
           statusEl.textContent = err?.message || 'Playback failed.';
         } finally {
+          stopWaitTick();
           playBtn.disabled = false;
           resetBtn.disabled = false;
         }
