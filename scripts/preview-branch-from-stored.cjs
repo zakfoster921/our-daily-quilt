@@ -464,8 +464,9 @@ async function writeDiffImage(leftPanel, rightPanel, outPath, title) {
   return { pct: Number(pct) };
 }
 
-async function writeContactSheet(panelImages, contactPath) {
-  const cols = Math.min(2, panelImages.length);
+async function writeContactSheet(panelImages, contactPath, options = {}) {
+  const maxCols = Math.max(1, Math.floor(Number(options.maxCols) || 2));
+  const cols = Math.min(maxCols, panelImages.length);
   const rows = Math.ceil(panelImages.length / cols);
   const tileW = OUT_W;
   const tileH = OUT_H;
@@ -611,7 +612,24 @@ async function main() {
   console.log(`[branch-preview] open ${path.join(outDir, 'preview.html')}`);
 }
 
-main().catch((err) => {
-  console.error('[branch-preview] failed:', err && err.stack ? err.stack : err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[branch-preview] failed:', err && err.stack ? err.stack : err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  fetchBranchData,
+  colorsForReplay,
+  renderPanels,
+  labelPanelBuffer,
+  writeContactSheet,
+  writePreviewHtml,
+  computeQuiltFingerprint,
+  OUT_W,
+  OUT_H,
+  CONTACT_LABEL_H,
+  CONTACT_GAP,
+  ROOT
+};

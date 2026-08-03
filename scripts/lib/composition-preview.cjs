@@ -1170,7 +1170,9 @@ function replaySequence(dateKey, colors, modeKey, lockAt, options = {}) {
         blocks: Array.isArray(options.initialBlocks) ? options.initialBlocks : [],
         submissionCount: Math.max(0, Math.floor(Number(options.initialSubmissionCount) || 0)),
         colorReplayEvents: [],
-        macroStructureFrozen: options.macroStructureFrozen === true
+        macroStructureFrozen: options.macroStructureFrozen === true,
+        quiltDateKey: options.quiltDateKey || dateKey,
+        engineOptions: options.engineOptions
       });
       if (options.lockPalette === true) installPaletteLock(engine);
       const skippedColors = [];

@@ -100,12 +100,18 @@ function createServerQuiltEngine({
   macroStructureFrozen,
   macroLayoutMode,
   quiltDateKey,
-  engineRelPath
+  engineRelPath,
+  engineOptions
 } = {}) {
   const { SimpleQuiltEngine } = loadServerQuiltRuntime({ engineRelPath });
+  const tuning =
+    engineOptions && typeof engineOptions === 'object' && !Array.isArray(engineOptions)
+      ? engineOptions
+      : {};
   const engine = new SimpleQuiltEngine(String(userId || 'server-color-submission'), {
     recordColorReplayEvents: true,
-    quiltDateKey: quiltDateKey || ''
+    quiltDateKey: quiltDateKey || '',
+    ...tuning
   });
   // Server writes the durable audit doc; browser local contribution history is client-only.
   engine.recordUserContribution = () => {};
