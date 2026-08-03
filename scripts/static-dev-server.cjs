@@ -211,5 +211,6 @@ server.listen(PORT, () => {
   console.log('📂 Static dev server + /api/proxy-image (no node-canvas)');
   console.log(`   Open: http://127.0.0.1:${PORT}/our-daily-beta`);
   console.log(`   Quilt builder: http://127.0.0.1:${PORT}/quilt-builder`);
+  console.log(`   Post-color lab: http://127.0.0.1:${PORT}/post-color-lab`);
   console.log('   Full API + Firestore admin: npm run dev');
 });
