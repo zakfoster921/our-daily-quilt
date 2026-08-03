@@ -100,7 +100,14 @@ async function main() {
   if (!colors.length) throw new Error(`No colors to replay for ${dateKey}`);
 
   const replay = replaySequence(dateKey, colors, 'baseline', colors.length, {
-    macroStructureFrozen: false
+    macroStructureFrozen: false,
+    quiltDateKey: dateKey,
+    engineOptions: {
+      macroFreezeAtBlockCount: 5,
+      macroFlattenedAngledSplitProb: 0.85,
+      bandRowSpecialWeight: 0,
+      specialStructureScaleMultiplier: 0
+    }
   });
   const blocks = serializeServerQuiltBlocks(
     createServerQuiltEngine({
@@ -163,7 +170,7 @@ async function main() {
       contributors,
       writeProvenance: {
         writer: 'script',
-        reason: 'apply-branch-replay',
+        reason: 'apply-builder-tuning-replay',
         at: nowIso,
         replayColorCount: colors.length,
         previousFingerprint: liveFingerprint,
