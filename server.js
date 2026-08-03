@@ -3774,9 +3774,17 @@ function notionPropToPlain(prop) {
 }
 
 function getNotionPropPlainByAliases(pageProperties, ...aliases) {
-  const targetKeys = new Set(aliases.map(normNotionPropKey).filter(Boolean));
-  const found = Object.entries(pageProperties || {}).find(([name]) => targetKeys.has(normNotionPropKey(name)));
-  return found ? notionPropToPlain(found[1]) : '';
+  let fallback = '';
+  for (const alias of aliases) {
+    const target = normNotionPropKey(alias);
+    if (!target) continue;
+    const found = Object.entries(pageProperties || {}).find(([name]) => normNotionPropKey(name) === target);
+    if (!found) continue;
+    const text = String(notionPropToPlain(found[1]) || '').trim();
+    if (text) return text;
+    if (!fallback) fallback = text;
+  }
+  return fallback;
 }
 
 function extractAuthorFromNotionPage(page) {
