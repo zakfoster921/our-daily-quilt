@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Post-color cut reveal — lab</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1816;
+      color: #e8e4dc;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 320px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .panel {
+      padding: 1rem 1.1rem 2rem;
+      background: #252220;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      overflow-y: auto;
+    }
+    .panel h1 { font-size: 1rem; font-weight: 600; margin: 0 0 0.35rem; }
+    .panel .note {
+      font-size: 0.78rem;
+      color: #9a9590;
+      line-height: 1.45;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8a8580;
+      margin: 0.7rem 0 0.25rem;
+    }
+    input[type="color"], select, input[type="range"], input[type="number"] {
+      width: 100%;
+      font: inherit;
+      font-size: 0.88rem;
+      padding: 0.45rem 0.5rem;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      background: #1a1816;
+      color: #e8e4dc;
+    }
+    input[type="color"] {
+      height: 2.5rem;
+      padding: 0.2rem;
+      cursor: pointer;
+    }
+    input[type="range"] { padding: 0; }
+    .range-value {
+      font-size: 0.78rem;
+      color: #9a9590;
+      margin-top: 0.2rem;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.45rem 0.75rem;
+      font: inherit;
+      font-size: 0.82rem;
+      border: 1px solid #e6d4a8;
+      border-radius: 4px;
+      background: #e6d4a8;
+      color: #1a1610;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn.secondary {
+      background: #252220;
+      color: #e8e4dc;
+      border-color: rgba(255,255,255,0.14);
+    }
+    .status {
+      font-size: 0.78rem;
+      color: #9a9590;
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+      line-height: 1.45;
+    }
+    .preview-wrap {
+      padding: 1.5rem 1rem 3rem;
+      background: #121110;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+    .phone-shell {
+      width: min(390px, calc(100vw - 2rem));
+      aspect-ratio: 390 / 844;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow:
+        0 24px 60px rgba(0, 0, 0, 0.45),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      position: relative;
+      background: #123c28;
+    }
+    .phone-shell__quilt {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(246, 244, 241, 0.98) 0%, rgba(238, 234, 226, 0.98) 100%);
+      opacity: 0;
+      transform: scale(1.03);
+      transition:
+        opacity 0.65s ease,
+        transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      pointer-events: none;
+    }
+    .phone-shell__quilt.is-visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .phone-shell__quilt-card {
+      width: 78%;
+      aspect-ratio: 1;
+      border-radius: 6px;
+      box-shadow:
+        0 10px 28px rgba(45, 36, 29, 0.16),
+        0 2px 6px rgba(45, 36, 29, 0.08);
+      background: rgba(255, 255, 255, 0.35);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(4, 1fr);
+      gap: 2px;
+      padding: 8px;
+    }
+    .phone-shell__quilt-card span {
+      border-radius: 2px;
+      background: var(--block-color, #6fa8dc);
+    }
+    .phone-shell__quilt-label {
+      position: absolute;
+      bottom: 1.4rem;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(42, 34, 28, 0.55);
+    }
+    .post-color-cut-reveal,
+    .post-color-cut-reveal__stage {
+      width: 100%;
+      height: 100%;
+    }
+    .post-color-cut-reveal__stage {
+      position: relative;
+      overflow: hidden;
+    }
+    .post-color-cut-reveal__mat,
+    .post-color-cut-reveal__fabric {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .post-color-cut-reveal__fabric-path {
+      stroke: rgba(255, 255, 255, 0.08);
+      stroke-width: 1.2;
+    }
+    .post-color-cut-reveal__scrap {
+      stroke: rgba(255, 255, 255, 0.06);
+      stroke-width: 0.8;
+      transform-box: fill-box;
+      transform-origin: center;
+      transition:
+        transform 0.58s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.58s ease;
+    }
+    .post-color-cut-reveal__scrap.is-peeled {
+      transform: translate(var(--slide-x, 0), var(--slide-y, 0)) rotate(var(--slide-r, 0deg));
+      opacity: 0.72;
+    }
+    .post-color-cut-reveal__cut-line {
+      stroke: rgba(255, 255, 255, 0.82);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+    }
+    .post-color-cut-reveal__cut-line.is-visible { opacity: 0.95; }
+    .post-color-cut-reveal__cut-line.is-faded {
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+    .post-color-cut-reveal__stage--resting .post-color-cut-reveal__remaining path {
+      transition: filter 0.35s ease;
+    }
+    .post-color-cut-reveal__stage--to-quilt {
+      opacity: 0;
+      transform: scale(0.96);
+      transition:
+        opacity 0.65s ease,
+        transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .meta {
+      font-size: 0.78rem;
+      color: #9a9590;
+      text-align: center;
+      max-width: 390px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h1>Post-color cut reveal</h1>
+      <p class="note">
+        Workshop screen between color picker and quilt. Green mat + wonky color square → cuts peel scrap off the mat (max 8) → piece rests → quilt handoff.
+        Open <code>/post-color-lab</code> after <code>npm start</code>.
+      </p>
+
+      <label for="shapePreset">Block shape (mock)</label>
+      <select id="shapePreset"></select>
+
+      <label for="colorInput">User color</label>
+      <input type="color" id="colorInput" value="#6fa8dc">
+
+      <label for="serverDelay">Simulated server delay (ms)</label>
+      <input type="range" id="serverDelay" min="0" max="3000" step="100" value="900">
+      <div class="range-value"><span id="serverDelayVal">900</span> ms before cuts start</div>
+
+      <label for="cutMs">Cut duration (ms)</label>
+      <input type="range" id="cutMs" min="300" max="900" step="20" value="580">
+      <div class="range-value"><span id="cutMsVal">580</span> ms per cut</div>
+
+      <label for="restMs">Rest on mat (ms)</label>
+      <input type="range" id="restMs" min="400" max="2200" step="50" value="1100">
+      <div class="range-value"><span id="restMsVal">1100</span> ms before quilt</div>
+
+      <div class="btn-row">
+        <button type="button" class="btn" id="playBtn">Play sequence</button>
+        <button type="button" class="btn secondary" id="resetBtn">Reset</button>
+      </div>
+
+      <div class="status" id="status">Ready.</div>
+    </aside>
+
+    <main class="preview-wrap">
+      <div class="phone-shell" id="phoneShell">
+        <div id="revealMount"></div>
+        <div class="phone-shell__quilt" id="mockQuilt" aria-hidden="true">
+          <div class="phone-shell__quilt-card" id="mockQuiltGrid"></div>
+          <div class="phone-shell__quilt-label">Quilt screen (mock)</div>
+        </div>
+      </div>
+      <p class="meta" id="meta">Cuts: —</p>
+    </main>
+  </div>
+
+  <script src="lib/ig-carousel-cutting-mat-bg.js?v=1"></script>
+  <script src="lib/post-color-cut-reveal.js?v=1"></script>
+  <script>
+    (function () {
+      const api = window.PostColorCutReveal;
+      const presets = api.SHAPE_PRESETS;
+      const shapeSelect = document.getElementById('shapePreset');
+      const colorInput = document.getElementById('colorInput');
+      const serverDelay = document.getElementById('serverDelay');
+      const serverDelayVal = document.getElementById('serverDelayVal');
+      const cutMs = document.getElementById('cutMs');
+      const cutMsVal = document.getElementById('cutMsVal');
+      const restMs = document.getElementById('restMs');
+      const restMsVal = document.getElementById('restMsVal');
+      const playBtn = document.getElementById('playBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      const statusEl = document.getElementById('status');
+      const metaEl = document.getElementById('meta');
+      const revealMount = document.getElementById('revealMount');
+      const mockQuilt = document.getElementById('mockQuilt');
+      const mockQuiltGrid = document.getElementById('mockQuiltGrid');
+
+      Object.keys(presets).forEach((key) => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = presets[key].label;
+        shapeSelect.appendChild(opt);
+      });
+      shapeSelect.value = 'shard';
+
+      for (let i = 0; i < 16; i++) {
+        const cell = document.createElement('span');
+        cell.style.opacity = 0.35 + Math.random() * 0.55;
+        if (i === 7) cell.style.setProperty('--block-color', colorInput.value);
+        mockQuiltGrid.appendChild(cell);
+      }
+
+      let controller = api.mount(revealMount, {
+        panelW: 390,
+        panelH: 844,
+        shapePreset: shapeSelect.value,
+        color: colorInput.value
+      });
+
+      function bindRange(input, labelEl, suffix) {
+        input.addEventListener('input', () => {
+          labelEl.textContent = `${input.value}${suffix || ''}`;
+        });
+      }
+      bindRange(serverDelay, serverDelayVal);
+      bindRange(cutMs, cutMsVal);
+      bindRange(restMs, restMsVal);
+
+      colorInput.addEventListener('input', () => {
+        mockQuiltGrid.children[7]?.style.setProperty('--block-color', colorInput.value);
+      });
+
+      async function prepareOnly() {
+        mockQuilt.classList.remove('is-visible');
+        const plan = await controller.prepare({
+          shapePreset: shapeSelect.value,
+          color: colorInput.value
+        });
+        metaEl.textContent = `Shape sides: ${plan.target.length} · planned cuts: ${plan.cutCount} (max ${api.MAX_CUTS})`;
+        return plan;
+      }
+
+      playBtn.addEventListener('click', async () => {
+        playBtn.disabled = true;
+        resetBtn.disabled = true;
+        statusEl.textContent = 'Preparing…';
+        try {
+          await prepareOnly();
+          statusEl.textContent = 'Playing…';
+          const result = await controller.play({
+            color: colorInput.value,
+            shapePreset: shapeSelect.value,
+            serverDelayMs: Number(serverDelay.value),
+            cutMs: Number(cutMs.value),
+            restMs: Number(restMs.value)
+          });
+          if (result?.aborted) {
+            statusEl.textContent = 'Stopped.';
+          } else {
+            mockQuilt.classList.add('is-visible');
+            statusEl.textContent = `Done — ${result.cutCount} cut${result.cutCount === 1 ? '' : 's'}, then quilt handoff.`;
+          }
+        } catch (err) {
+          statusEl.textContent = err?.message || 'Playback failed.';
+        } finally {
+          playBtn.disabled = false;
+          resetBtn.disabled = false;
+        }
+      });
+
+      resetBtn.addEventListener('click', async () => {
+        controller.abort();
+        controller.destroy();
+        revealMount.innerHTML = '';
+        mockQuilt.classList.remove('is-visible');
+        controller = api.mount(revealMount, {
+          panelW: 390,
+          panelH: 844,
+          shapePreset: shapeSelect.value,
+          color: colorInput.value
+        });
+        await prepareOnly();
+        statusEl.textContent = 'Reset.';
+      });
+
+      prepareOnly();
+    })();
+  </script>
+</body>
+</html>

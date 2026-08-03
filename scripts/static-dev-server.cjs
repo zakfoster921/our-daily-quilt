@@ -35,6 +35,7 @@ const HTML_ALIASES = new Map([
   ['our-daily-beta', 'our-daily-beta.html'],
   ['mood-triptych-lab', 'mood-triptych-lab.html'],
   ['speaker-cutout-lab', 'speaker-cutout-lab.html'],
+  ['post-color-lab', 'post-color-lab.html'],
   ['intro-persona-triptych-lab', 'intro-persona-triptych-lab.html'],
   ['intro-persona-nav-lab', 'intro-persona-nav-lab.html'],
   ['intro-persona-frame', 'intro-persona-frame.html'],

@@ -116,6 +116,7 @@ const PUBLIC_ROOT_FILES = new Set([
   'index.html',
   'our-daily-beta.html',
   'speaker-cutout-lab.html',
+  'post-color-lab.html',
   'intro-persona-triptych-lab.html',
   'intro-persona-nav-lab.html',
   'intro-persona-frame.html',
@@ -154,6 +155,8 @@ app.get('/our-daily-beta', (_req, res) => sendPublicRootFile(res, 'our-daily-bet
 app.get('/our-daily-beta.html', (_req, res) => sendPublicRootFile(res, 'our-daily-beta.html'));
 app.get('/speaker-cutout-lab', (_req, res) => sendPublicRootFile(res, 'speaker-cutout-lab.html'));
 app.get('/speaker-cutout-lab.html', (_req, res) => sendPublicRootFile(res, 'speaker-cutout-lab.html'));
+app.get('/post-color-lab', (_req, res) => sendPublicRootFile(res, 'post-color-lab.html'));
+app.get('/post-color-lab.html', (_req, res) => sendPublicRootFile(res, 'post-color-lab.html'));
 app.get('/intro-persona-triptych-lab', (_req, res) => sendPublicRootFile(res, 'intro-persona-triptych-lab.html'));
 app.get('/intro-persona-triptych-lab.html', (_req, res) => sendPublicRootFile(res, 'intro-persona-triptych-lab.html'));
 app.get('/intro-persona-frame', (_req, res) => sendPublicRootFile(res, 'intro-persona-frame.html'));
