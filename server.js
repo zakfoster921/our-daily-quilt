@@ -91,7 +91,9 @@ const {
   createServerQuiltEngine,
   serializeServerQuiltBlocks,
   computeQuiltFingerprint,
-  previewColorPlacement
+  previewColorPlacement,
+  resolveDedicatedBlock,
+  extractBlockPolygonPoints
 } = require('./scripts/lib/server-quilt-engine.cjs');
 const { resolveQuoteMoodColor } = require('./lib/quote-mood-colors.js');
 const {
@@ -9667,6 +9669,29 @@ app.post('/api/story-preview-share', limitStoryPreviewShare, async (req, res) =>
   }
 });
 
+function appendColorSubmissionCutRevealFields(payload, engine, addResult, clientId, fallbackColor) {
+  if (!payload || !engine) return payload;
+  const dedicatedBlock = resolveDedicatedBlock(engine, addResult, clientId);
+  const targetPolygon = extractBlockPolygonPoints(engine, dedicatedBlock);
+  if (!targetPolygon || targetPolygon.length < 3) return payload;
+  payload.targetPolygon = targetPolygon;
+  payload.sideCount = targetPolygon.length;
+  payload.appliedColor = addResult?.appliedColor || fallbackColor || payload.appliedColor || payload.color;
+  return payload;
+}
+
+function buildCutRevealEngineFromQuilt(currentQuilt, currentBlocks, appDateKey, clientId) {
+  return createServerQuiltEngine({
+    userId: clientId,
+    blocks: currentBlocks,
+    submissionCount: deriveServerQuiltSubmissionCount(currentQuilt),
+    colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
+    macroStructureFrozen: currentQuilt.macroStructureFrozen === true,
+    macroLayoutMode: currentQuilt.macroLayoutMode,
+    quiltDateKey: appDateKey
+  });
+}
+
 app.options('/api/color-submission', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -9674,6 +9699,7 @@ app.options('/api/color-submission', (req, res) => {
 
 app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
   setQuoteSubmissionCors(res);
+  const startedAt = Date.now();
   try {
     if (!db) {
       return res.status(503).json({ success: false, error: 'Firestore not initialized' });
@@ -9757,6 +9783,8 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
           color: existingSubmission.color || color,
           status: existingSubmission.status || 'success',
           dedicatedBlockId: existingSubmission.dedicatedBlockId || '',
+          appliedColor: existingSubmission.appliedColor || existingSubmission.color || color,
+          submissionIndex: Number(existingSubmission.submissionIndex) || 0,
           blocks: currentBlocks,
           contributorCount: currentQuilt.contributorCount || Math.max(1, deriveServerQuiltSubmissionCount(currentQuilt)),
           colorReplayEvents: Array.isArray(currentQuilt.colorReplayEvents) ? currentQuilt.colorReplayEvents : [],
@@ -9768,6 +9796,23 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
               ? currentQuilt.quiltFingerprint
               : computeQuiltFingerprint(currentBlocks)
         };
+        const duplicateEngine = buildCutRevealEngineFromQuilt(
+          currentQuilt,
+          currentBlocks,
+          appDateKey,
+          clientId
+        );
+        appendColorSubmissionCutRevealFields(
+          responsePayload,
+          duplicateEngine,
+          {
+            dedicatedBlockId: responsePayload.dedicatedBlockId,
+            submissionIndex: responsePayload.submissionIndex,
+            appliedColor: responsePayload.appliedColor
+          },
+          clientId,
+          responsePayload.color
+        );
         return;
       }
 
@@ -9897,8 +9942,12 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
         quiltFingerprint,
         firstTimeUser: isFirstTimeUser
       };
+      appendColorSubmissionCutRevealFields(responsePayload, engine, addResult, clientId, color);
     });
 
+    if (responsePayload) {
+      responsePayload.serverMs = Date.now() - startedAt;
+    }
     return res.json(responsePayload || { success: false, error: 'Color submission failed' });
   } catch (error) {
     console.error('❌ Color submission failed:', error);
