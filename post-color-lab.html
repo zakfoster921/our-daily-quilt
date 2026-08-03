@@ -305,7 +305,7 @@
 
   <script src="lib/ig-carousel-cutting-mat-bg.js?v=1"></script>
   <script src="lib/ig-carousel-paper-depth.js?v=2"></script>
-  <script src="lib/post-color-cut-reveal.js?v=16"></script>
+  <script src="lib/post-color-cut-reveal.js?v=17"></script>
   <script>
     (function () {
       const api = window.PostColorCutReveal;
@@ -454,10 +454,14 @@
             mockQuilt.classList.add('is-visible');
             if (result.livePreview) {
               const lp = result.livePreview;
+              const t = result.timing || {};
               metaEl.textContent =
-                `Live shape: ${lp.sideCount} sides · ${result.mockCutCount} mock + ${result.realCutCount} real cuts · engine ${lp.engineMs || '—'}ms`;
+                `Server ${t.serverMs ?? lp.serverMs}ms (engine ${t.engineMs ?? lp.engineMs ?? '—'}ms) · screen ${t.totalMs ?? '—'}ms · after shape ${t.postServerMs ?? '—'}ms · ${result.mockCutCount} mock + ${result.realCutCount} real cuts`;
               statusEl.textContent =
-                `Done — ${result.mockCutCount} mock cuts during wait, ${result.realCutCount} real cuts, server ${lp.serverMs}ms.`;
+                `Done — server ${t.serverMs ?? lp.serverMs}ms, screen ${t.totalMs ?? '—'}ms total (${t.postServerMs ?? '—'}ms after shape ready).`;
+            } else if (result.timing?.totalMs) {
+              metaEl.textContent = `Screen ${result.timing.totalMs}ms · ${result.cutCount} cuts`;
+              statusEl.textContent = `Done — ${result.timing.totalMs}ms on this screen.`;
             } else {
               statusEl.textContent = `Done — ${result.cutCount} cut${result.cutCount === 1 ? '' : 's'}, then quilt handoff.`;
             }
