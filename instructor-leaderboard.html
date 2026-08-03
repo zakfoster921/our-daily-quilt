@@ -283,11 +283,9 @@
       const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
 
       const nominationsSnap = await getDocs(collection(db, 'instructorNominations'));
-      let nominees = [];
-
-      for (const nominationDoc of nominationsSnap.docs) {
+      const nomineeResults = await Promise.all(nominationsSnap.docs.map(async (nominationDoc) => {
         const data = nominationDoc.data() || {};
-        if (!data.name) continue;
+        if (!data.name) return null;
         const nominee = {
           id: nominationDoc.id,
           name: data.name,
@@ -300,8 +298,9 @@
           nominee.votes = votesSnap.size;
           nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
         }
-        nominees.push(nominee);
-      }
+        return nominee;
+      }));
+      let nominees = nomineeResults.filter(Boolean);
 
       if (votingOpen) {
         nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));

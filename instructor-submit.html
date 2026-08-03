@@ -585,6 +585,7 @@
       // Refreshed by loadLeaderboard(); used to nudge submitters toward an existing name
       // instead of silently creating a near-duplicate entry (see findSimilarNominee below).
       let knownNominees = [];
+      let cachedNominees = [];
 
       const SIMILARITY_THRESHOLD = 0.72;
       function findSimilarNominee(name) {
@@ -626,6 +627,7 @@
       function renderNomineeRow(nominee, index) {
         const li = document.createElement('li');
         li.className = 'nominee-row';
+        li.dataset.nomineeId = nominee.id;
 
         const rank = document.createElement('div');
         rank.className = 'nominee-rank';
@@ -752,7 +754,7 @@
         cancelBtn.className = 'cancel-btn';
         cancelBtn.textContent = 'Cancel';
         cancelBtn.addEventListener('click', () => {
-          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+          replaceNomineeRow(nominee);
         });
         actionsRow.appendChild(cancelBtn);
 
@@ -778,7 +780,9 @@
               note: newNote,
               submittedAtIso: nowIso
             }, { merge: true });
-            loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+            nominee.link = newLink;
+            nominee.note = newNote;
+            replaceNomineeRow(nominee);
           } catch (err) {
             console.error('Edit failed:', err);
             alert('Could not save your changes right now — please try again.');
@@ -804,57 +808,104 @@
             await deleteDoc(doc(db, 'instructorNominations', nominee.id));
           }
 
-          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+          removeNomineeFromList(nominee.id);
         } catch (err) {
           console.error('Delete failed:', err);
           alert('Could not remove your suggestion right now — please try again.');
         }
       }
 
-      async function loadLeaderboard() {
-        listEl.innerHTML = '';
-
-        const nominationsSnap = await getDocs(collection(db, 'instructorNominations'));
-        let nominees = [];
-
-        for (const nominationDoc of nominationsSnap.docs) {
-          const data = nominationDoc.data() || {};
-          if (!data.name) continue;
-          const nominee = {
-            id: nominationDoc.id,
-            name: data.name,
-            link: data.link || '',
-            note: data.note || '',
-            votes: 0,
-            voted: false,
-            isMine: false
-          };
-          if (votingOpen) {
-            const votesSnap = await getDocs(collection(db, 'instructorNominations', nominationDoc.id, 'votes'));
-            nominee.votes = votesSnap.size;
-            nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
-          }
-          const submitterSnap = await getDoc(doc(db, 'instructorNominations', nominationDoc.id, 'submitters', clientDocId));
-          nominee.isMine = submitterSnap.exists();
-          nominees.push(nominee);
+      async function buildNomineeFromDoc(nominationDoc) {
+        const data = nominationDoc.data() || {};
+        if (!data.name) return null;
+        const nominee = {
+          id: nominationDoc.id,
+          name: data.name,
+          link: data.link || '',
+          note: data.note || '',
+          votes: 0,
+          voted: false,
+          isMine: false
+        };
+        const [votesSnap, submitterSnap] = await Promise.all([
+          votingOpen
+            ? getDocs(collection(db, 'instructorNominations', nominationDoc.id, 'votes'))
+            : Promise.resolve(null),
+          getDoc(doc(db, 'instructorNominations', nominationDoc.id, 'submitters', clientDocId))
+        ]);
+        if (votesSnap) {
+          nominee.votes = votesSnap.size;
+          nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
         }
+        nominee.isMine = submitterSnap.exists();
+        return nominee;
+      }
 
+      async function fetchNominees() {
+        const nominationsSnap = await getDocs(collection(db, 'instructorNominations'));
+        const nominees = await Promise.all(nominationsSnap.docs.map((docSnap) => buildNomineeFromDoc(docSnap)));
+        return nominees.filter(Boolean);
+      }
+
+      function sortNominees(nominees) {
         if (votingOpen) {
           nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
+        } else {
+          nominees.sort((a, b) => a.name.localeCompare(b.name));
+        }
+      }
+
+      function updateLeaderboardBanner(nominees) {
+        if (votingOpen) {
           bannerEl.className = 'open';
           bannerEl.textContent = 'Voting is open — tap a heart to support your favorites.';
         } else {
-          nominees.sort((a, b) => a.name.localeCompare(b.name));
           bannerEl.className = '';
           bannerEl.textContent = "Voting isn't open yet. Check back soon!";
         }
+      }
 
-        emptyStateEl.style.display = nominees.length ? 'none' : 'block';
-        nominees.forEach((nominee, index) => {
-          listEl.appendChild(renderNomineeRow(nominee, index));
-        });
-
+      function renderLeaderboardList(nominees) {
+        cachedNominees = nominees;
         knownNominees = nominees.map((n) => ({ id: n.id, name: n.name }));
+        sortNominees(nominees);
+        updateLeaderboardBanner(nominees);
+        emptyStateEl.style.display = nominees.length ? 'none' : 'block';
+        listEl.replaceChildren(...nominees.map((nominee, index) => renderNomineeRow(nominee, index)));
+      }
+
+      function replaceNomineeRow(nominee) {
+        const index = cachedNominees.findIndex((n) => n.id === nominee.id);
+        if (index === -1) return;
+        cachedNominees[index] = nominee;
+        const li = listEl.querySelector(`[data-nominee-id="${nominee.id}"]`);
+        if (li) li.replaceWith(renderNomineeRow(nominee, index));
+      }
+
+      function removeNomineeFromList(nomineeId) {
+        cachedNominees = cachedNominees.filter((n) => n.id !== nomineeId);
+        knownNominees = cachedNominees.map((n) => ({ id: n.id, name: n.name }));
+        listEl.querySelector(`[data-nominee-id="${nomineeId}"]`)?.remove();
+        emptyStateEl.style.display = cachedNominees.length ? 'none' : 'block';
+      }
+
+      async function refreshNomineeById(nominationId) {
+        const snap = await getDoc(doc(db, 'instructorNominations', nominationId));
+        if (!snap.exists()) return;
+        const nominee = await buildNomineeFromDoc(snap);
+        if (!nominee) return;
+        const existingIndex = cachedNominees.findIndex((n) => n.id === nominationId);
+        if (existingIndex === -1) {
+          cachedNominees.push(nominee);
+        } else {
+          cachedNominees[existingIndex] = nominee;
+        }
+        renderLeaderboardList([...cachedNominees]);
+      }
+
+      async function loadLeaderboard() {
+        const nominees = await fetchNominees();
+        renderLeaderboardList(nominees);
       }
 
       function updateAdminToggleButton(button, isOpen) {
@@ -1121,7 +1172,7 @@
           }, { merge: true });
 
           form.reset();
-          loadLeaderboard().catch((err) => console.error('Failed to refresh leaderboard:', err));
+          refreshNomineeById(nominationId).catch((err) => console.error('Failed to refresh nominee row:', err));
         } catch (err) {
           console.error('Instructor nomination failed:', err);
           if (err && err.code === 'permission-denied') {
