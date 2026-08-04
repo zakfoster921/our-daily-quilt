@@ -575,7 +575,7 @@
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js')
     ]).then(async ([{ initializeApp }, firestoreModule]) => {
-      const { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc } = firestoreModule;
+      const { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch } = firestoreModule;
       const app = initializeApp(CONFIG.FIREBASE);
       const db = getFirestore(app);
 
@@ -791,10 +791,31 @@
         });
       }
 
+      async function deleteNominationFully(nominationId) {
+        const [votesSnap, submittersSnap] = await Promise.all([
+          getDocs(collection(db, 'instructorNominations', nominationId, 'votes')),
+          getDocs(collection(db, 'instructorNominations', nominationId, 'submitters'))
+        ]);
+        const batch = writeBatch(db);
+        for (const voteDoc of votesSnap.docs) batch.delete(voteDoc.ref);
+        for (const submitterDoc of submittersSnap.docs) batch.delete(submitterDoc.ref);
+        batch.delete(doc(db, 'instructorNominations', nominationId));
+        await batch.commit();
+      }
+
       async function handleDelete(nominee) {
-        const confirmed = confirm(`Remove your suggestion of "${nominee.name}"?`);
-        if (!confirmed) return;
+        const adminRemovingEntry = isAdminUnlocked;
+        const message = adminRemovingEntry
+          ? `Remove "${nominee.name}" from the list entirely?`
+          : `Remove your suggestion of "${nominee.name}"?`;
+        if (!confirm(message)) return;
         try {
+          if (adminRemovingEntry) {
+            await deleteNominationFully(nominee.id);
+            removeNomineeFromList(nominee.id);
+            return;
+          }
+
           await deleteDoc(doc(db, 'instructorNominations', nominee.id, 'submitters', clientDocId));
 
           // If no other device still has a submitter record for this instructor and nobody
@@ -806,9 +827,11 @@
           ]);
           if (votesSnap.size === 0 && submittersSnap.size === 0) {
             await deleteDoc(doc(db, 'instructorNominations', nominee.id));
+            removeNomineeFromList(nominee.id);
+          } else {
+            nominee.isMine = false;
+            replaceNomineeRow(nominee);
           }
-
-          removeNomineeFromList(nominee.id);
         } catch (err) {
           console.error('Delete failed:', err);
           alert('Could not remove your suggestion right now — please try again.');
