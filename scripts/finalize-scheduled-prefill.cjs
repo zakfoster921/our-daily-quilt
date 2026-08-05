@@ -35,6 +35,7 @@ const { addDays, isDateKey, resolveStartDateKey } = require('./lib/app-date-key.
 const {
   SCHEDULED_CREATIVE_FIELDS,
   PREFILL_CREATIVE_PROMPT_VERSION,
+  PRESERVE_IF_NOTION_EDITED_AFTER_PREFILL,
   QUOTE_MOOD_OPTIONS,
   chooseScheduledFieldsToPatch,
   readCatalogField,
@@ -117,7 +118,7 @@ async function fetchNotionPageContext(pageId) {
   try {
     const page = await notionFetchJson(`/pages/${id}`);
     const fields = {};
-    for (const field of ['community_prompt', 'watch_for', 'good_day', 'rough_day', 'art_recs']) {
+    for (const field of PRESERVE_IF_NOTION_EDITED_AFTER_PREFILL) {
       fields[field] = readNotionFieldFromPageProperties(page?.properties, field);
     }
     return {
