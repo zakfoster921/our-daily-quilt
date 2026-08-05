@@ -65,8 +65,6 @@ async function optimizeSpeakerCutoutPng(inputBuffer, options = {}) {
     .png({
       compressionLevel: 9,
       adaptiveFiltering: true,
-      palette: true,
-      quality: 80,
       effort: 10
     })
     .toBuffer({ resolveWithObject: true });
