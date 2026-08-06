@@ -503,6 +503,12 @@ const limitInstagramAssetPush = createRateLimiter({
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_IG_ASSET_PUSH_PER_10_MIN, 12)
 });
+/** Tune modal saves — separate from heavy IG asset pushes so arranging strips is not rate-limited. */
+const limitLayoutBTunePush = createRateLimiter({
+  name: 'push-layout-b-tune',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_LAYOUT_B_TUNE_PER_10_MIN, 60)
+});
 const limitTranscodeReel = createRateLimiter({
   name: 'transcode-instagram-reel',
   windowMs: 60 * 60 * 1000,
@@ -6038,7 +6044,7 @@ app.options('/api/push-layout-b-tune', (req, res) => {
  * Admin tune modal: merge Layout B speaker/keyword/strip/zoom fields without client Firebase Auth.
  * iOS WebView often hangs on signInAnonymously; Admin SDK writes bypass that path.
  */
-app.post('/api/push-layout-b-tune', limitInstagramAssetPush, optionalInstagramAssetAuth, async (req, res) => {
+app.post('/api/push-layout-b-tune', limitLayoutBTunePush, optionalInstagramAssetAuth, async (req, res) => {
   setInstagramApiCors(res);
   try {
     if (!db) {
@@ -6089,7 +6095,7 @@ app.options('/api/push-quilt-mirror-tune', (req, res) => {
 /**
  * Admin mirror tune modal: persist bottom-field flip flags on quilts/{dateKey}.
  */
-app.post('/api/push-quilt-mirror-tune', limitInstagramAssetPush, optionalInstagramAssetAuth, async (req, res) => {
+app.post('/api/push-quilt-mirror-tune', limitLayoutBTunePush, optionalInstagramAssetAuth, async (req, res) => {
   setInstagramApiCors(res);
   try {
     if (!db) {
