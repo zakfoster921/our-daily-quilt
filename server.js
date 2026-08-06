@@ -2094,6 +2094,117 @@ function serverMirrorBottomLayoutUsesDupTiles(tune) {
   return layout === MIRROR_BOTTOM_LAYOUT_DOUBLE || layout === MIRROR_BOTTOM_LAYOUT_QUAD;
 }
 
+const SERVER_MIRROR_QUAD_TILE_IDS = ['tl', 'tr', 'bl', 'br'];
+
+function serverQuadFirestoreFieldKey(tileId, kind) {
+  const id = String(tileId || '').trim().toLowerCase();
+  if (!SERVER_MIRROR_QUAD_TILE_IDS.includes(id)) return null;
+  const label = id.toUpperCase();
+  if (kind === 'flipX') return `mirrorQuad${label}FlipX`;
+  if (kind === 'flipY') return `mirrorQuad${label}FlipY`;
+  if (kind === 'nudgeX') return `mirrorQuad${label}NudgeX`;
+  if (kind === 'nudgeY') return `mirrorQuad${label}NudgeY`;
+  return null;
+}
+
+function serverDefaultQuadTileFieldsFromDup2(leftFlipX, leftFlipY, rightFlipX, rightFlipY) {
+  const lx = serverNormalizeMirrorFlipFlag(leftFlipX, false);
+  const ly = serverNormalizeMirrorFlipFlag(leftFlipY, false);
+  const rx = serverNormalizeMirrorFlipFlag(rightFlipX, false);
+  const ry = serverNormalizeMirrorFlipFlag(rightFlipY, false);
+  return {
+    tlFlipX: lx,
+    tlFlipY: ly,
+    trFlipX: rx,
+    trFlipY: ry,
+    blFlipX: lx,
+    blFlipY: !ly,
+    brFlipX: rx,
+    brFlipY: !ry,
+    tlNudgeX: 0,
+    tlNudgeY: 0,
+    trNudgeX: 0,
+    trNudgeY: 0,
+    blNudgeX: 0,
+    blNudgeY: 0,
+    brNudgeX: 0,
+    brNudgeY: 0
+  };
+}
+
+function serverRawHasQuadTileFields(raw) {
+  if (!raw || typeof raw !== 'object') return false;
+  return SERVER_MIRROR_QUAD_TILE_IDS.some((id) => {
+    return (
+      Object.prototype.hasOwnProperty.call(raw, `${id}FlipX`) ||
+      Object.prototype.hasOwnProperty.call(raw, `${id}FlipY`) ||
+      Object.prototype.hasOwnProperty.call(raw, `${id}NudgeX`) ||
+      Object.prototype.hasOwnProperty.call(raw, `${id}NudgeY`) ||
+      Object.prototype.hasOwnProperty.call(raw, serverQuadFirestoreFieldKey(id, 'flipX')) ||
+      Object.prototype.hasOwnProperty.call(raw, serverQuadFirestoreFieldKey(id, 'flipY')) ||
+      Object.prototype.hasOwnProperty.call(raw, serverQuadFirestoreFieldKey(id, 'nudgeX')) ||
+      Object.prototype.hasOwnProperty.call(raw, serverQuadFirestoreFieldKey(id, 'nudgeY'))
+    );
+  });
+}
+
+function serverParseQuadTileFields(raw, leftFlipX, leftFlipY, rightFlipX, rightFlipY) {
+  const defaults = serverDefaultQuadTileFieldsFromDup2(
+    leftFlipX,
+    leftFlipY,
+    rightFlipX,
+    rightFlipY
+  );
+  if (!serverRawHasQuadTileFields(raw)) return defaults;
+  const out = { ...defaults };
+  SERVER_MIRROR_QUAD_TILE_IDS.forEach((id) => {
+    const fxKey = `${id}FlipX`;
+    const fyKey = `${id}FlipY`;
+    const nxKey = `${id}NudgeX`;
+    const nyKey = `${id}NudgeY`;
+    const fxSrc = Object.prototype.hasOwnProperty.call(raw, fxKey)
+      ? raw[fxKey]
+      : raw[serverQuadFirestoreFieldKey(id, 'flipX')];
+    const fySrc = Object.prototype.hasOwnProperty.call(raw, fyKey)
+      ? raw[fyKey]
+      : raw[serverQuadFirestoreFieldKey(id, 'flipY')];
+    const nxSrc = Object.prototype.hasOwnProperty.call(raw, nxKey)
+      ? raw[nxKey]
+      : raw[serverQuadFirestoreFieldKey(id, 'nudgeX')];
+    const nySrc = Object.prototype.hasOwnProperty.call(raw, nyKey)
+      ? raw[nyKey]
+      : raw[serverQuadFirestoreFieldKey(id, 'nudgeY')];
+    if (fxSrc !== undefined) out[fxKey] = serverNormalizeMirrorFlipFlag(fxSrc, defaults[fxKey]);
+    if (fySrc !== undefined) out[fyKey] = serverNormalizeMirrorFlipFlag(fySrc, defaults[fyKey]);
+    if (nxSrc !== undefined) out[nxKey] = serverNormalizeMirrorTileNudge(nxSrc);
+    if (nySrc !== undefined) out[nyKey] = serverNormalizeMirrorTileNudge(nySrc);
+  });
+  return out;
+}
+
+function serverQuadTileFieldsPlain(tune) {
+  const t = tune || {};
+  return serverParseQuadTileFields(
+    t,
+    t.leftFlipX,
+    t.leftFlipY,
+    t.rightFlipX,
+    t.rightFlipY
+  );
+}
+
+function serverQuadTileFieldsToFirestore(tune) {
+  const plain = serverQuadTileFieldsPlain(tune);
+  const out = {};
+  SERVER_MIRROR_QUAD_TILE_IDS.forEach((id) => {
+    out[serverQuadFirestoreFieldKey(id, 'flipX')] = plain[`${id}FlipX`];
+    out[serverQuadFirestoreFieldKey(id, 'flipY')] = plain[`${id}FlipY`];
+    out[serverQuadFirestoreFieldKey(id, 'nudgeX')] = plain[`${id}NudgeX`];
+    out[serverQuadFirestoreFieldKey(id, 'nudgeY')] = plain[`${id}NudgeY`];
+  });
+  return out;
+}
+
 function serverNormalizeMirrorFlipFlag(value, fallback) {
   if (typeof value === 'boolean') return value;
   if (value === 1 || value === '1' || value === 'true') return true;
@@ -2115,20 +2226,26 @@ function serverNormalizeMirrorTileNudge(value) {
 
 function serverMirrorTuneFromQuiltData(data) {
   const d = data && typeof data === 'object' ? data : {};
+  const leftFlipX = serverNormalizeMirrorFlipFlag(d.mirrorBottomLeftFlipX, false);
+  const leftFlipY = serverNormalizeMirrorFlipFlag(d.mirrorBottomLeftFlipY, false);
+  const rightFlipX = serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipX, false);
+  const rightFlipY = serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipY, false);
+  const quad = serverParseQuadTileFields(d, leftFlipX, leftFlipY, rightFlipX, rightFlipY);
   return {
     bottomLayout: serverNormalizeMirrorBottomLayout(d.mirrorBottomLayout),
     flipX: serverNormalizeMirrorFlipFlag(d.mirrorFlipX, MIRROR_TUNE_DEFAULT_FLIP_X),
     flipY: serverNormalizeMirrorFlipFlag(d.mirrorFlipY, MIRROR_TUNE_DEFAULT_FLIP_Y),
-    leftFlipX: serverNormalizeMirrorFlipFlag(d.mirrorBottomLeftFlipX, false),
-    leftFlipY: serverNormalizeMirrorFlipFlag(d.mirrorBottomLeftFlipY, false),
-    rightFlipX: serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipX, false),
-    rightFlipY: serverNormalizeMirrorFlipFlag(d.mirrorBottomRightFlipY, false),
+    leftFlipX,
+    leftFlipY,
+    rightFlipX,
+    rightFlipY,
     nudgeSeamY: serverNormalizeMirrorSeamNudge(d.mirrorSeamNudgeY),
     nudgeMirrorY: serverNormalizeMirrorSeamNudge(d.mirrorFieldNudgeY),
     nudgeTileSeamX: serverNormalizeMirrorTileNudge(d.mirrorTileSeamNudgeX),
     nudgeLeftTileX: serverNormalizeMirrorTileNudge(d.mirrorBottomLeftNudgeX),
     nudgeLeftTileY: serverNormalizeMirrorTileNudge(d.mirrorBottomLeftNudgeY),
-    nudgeRightTileY: serverNormalizeMirrorTileNudge(d.mirrorBottomRightNudgeY)
+    nudgeRightTileY: serverNormalizeMirrorTileNudge(d.mirrorBottomRightNudgeY),
+    ...quad
   };
 }
 
@@ -2145,7 +2262,8 @@ function serverMirrorTileFlipLabel(prefix, flipX, flipY) {
 function serverMirrorTuneModeLabelFromTune(tune) {
   const t = tune || {};
   if (serverMirrorBottomLayoutIsQuad(t)) {
-    return `Dup ×4 (${serverMirrorTileFlipLabel('L', t.leftFlipX, t.leftFlipY)} ${serverMirrorTileFlipLabel('R', t.rightFlipX, t.rightFlipY)})`;
+    const q = serverQuadTileFieldsPlain(t);
+    return `Dup ×4 (${serverMirrorTileFlipLabel('TL', q.tlFlipX, q.tlFlipY)} ${serverMirrorTileFlipLabel('TR', q.trFlipX, q.trFlipY)} ${serverMirrorTileFlipLabel('BL', q.blFlipX, q.blFlipY)} ${serverMirrorTileFlipLabel('BR', q.brFlipX, q.brFlipY)})`;
   }
   if (serverMirrorBottomLayoutIsDouble(t)) {
     return `Dup ×2 (${serverMirrorTileFlipLabel('L', t.leftFlipX, t.leftFlipY)} ${serverMirrorTileFlipLabel('R', t.rightFlipX, t.rightFlipY)})`;
@@ -2190,7 +2308,8 @@ function serverMirrorTuneSnapshotFields(tune) {
     nudgeTileSeamX: serverNormalizeMirrorTileNudge(t.nudgeTileSeamX),
     nudgeLeftTileX: serverNormalizeMirrorTileNudge(t.nudgeLeftTileX),
     nudgeLeftTileY: serverNormalizeMirrorTileNudge(t.nudgeLeftTileY),
-    nudgeRightTileY: serverNormalizeMirrorTileNudge(t.nudgeRightTileY)
+    nudgeRightTileY: serverNormalizeMirrorTileNudge(t.nudgeRightTileY),
+    ...serverQuadTileFieldsPlain(t)
   };
 }
 
@@ -2210,7 +2329,14 @@ function serverMirrorTuneSnapshotsEqual(a, b) {
     left.nudgeTileSeamX === right.nudgeTileSeamX &&
     left.nudgeLeftTileX === right.nudgeLeftTileX &&
     left.nudgeLeftTileY === right.nudgeLeftTileY &&
-    left.nudgeRightTileY === right.nudgeRightTileY
+    left.nudgeRightTileY === right.nudgeRightTileY &&
+    SERVER_MIRROR_QUAD_TILE_IDS.every(
+      (id) =>
+        left[`${id}FlipX`] === right[`${id}FlipX`] &&
+        left[`${id}FlipY`] === right[`${id}FlipY`] &&
+        left[`${id}NudgeX`] === right[`${id}NudgeX`] &&
+        left[`${id}NudgeY`] === right[`${id}NudgeY`]
+    )
   );
 }
 
@@ -6145,6 +6271,13 @@ app.post('/api/push-quilt-mirror-tune', limitLayoutBTunePush, optionalInstagramA
     const nudgeLeftTileX = serverNormalizeMirrorTileNudge(body.mirrorBottomLeftNudgeX);
     const nudgeLeftTileY = serverNormalizeMirrorTileNudge(body.mirrorBottomLeftNudgeY);
     const nudgeRightTileY = serverNormalizeMirrorTileNudge(body.mirrorBottomRightNudgeY);
+    const quad = serverParseQuadTileFields(
+      body,
+      leftFlipX,
+      leftFlipY,
+      rightFlipX,
+      rightFlipY
+    );
     const mirrorTuneUpdatedAt = String(
       body.mirrorTuneUpdatedAt || new Date().toISOString()
     ).trim();
@@ -6170,7 +6303,8 @@ app.post('/api/push-quilt-mirror-tune', limitLayoutBTunePush, optionalInstagramA
       nudgeTileSeamX,
       nudgeLeftTileX,
       nudgeLeftTileY,
-      nudgeRightTileY
+      nudgeRightTileY,
+      ...quad
     };
     const blocks = Array.isArray(existingData.blocks) ? existingData.blocks : [];
     const historyEntry = serverMirrorTuneHistoryEntry(beforeTune, afterTune, req, {
@@ -6198,6 +6332,7 @@ app.post('/api/push-quilt-mirror-tune', limitLayoutBTunePush, optionalInstagramA
       mirrorBottomLeftNudgeX: nudgeLeftTileX,
       mirrorBottomLeftNudgeY: nudgeLeftTileY,
       mirrorBottomRightNudgeY: nudgeRightTileY,
+      ...serverQuadTileFieldsToFirestore(afterTune),
       mirrorSeamNudgeX: admin.firestore.FieldValue.delete(),
       mirrorTuneUpdatedAt,
       mirrorTuneUpdatedBy
@@ -6227,6 +6362,7 @@ app.post('/api/push-quilt-mirror-tune', limitLayoutBTunePush, optionalInstagramA
       mirrorBottomLeftNudgeX: Number(data.mirrorBottomLeftNudgeX) || 0,
       mirrorBottomLeftNudgeY: Number(data.mirrorBottomLeftNudgeY) || 0,
       mirrorBottomRightNudgeY: Number(data.mirrorBottomRightNudgeY) || 0,
+      ...serverQuadTileFieldsToFirestore(serverMirrorTuneFromQuiltData(data)),
       mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt || mirrorTuneUpdatedAt,
       mirrorTuneUpdatedBy: data.mirrorTuneUpdatedBy || mirrorTuneUpdatedBy,
       mirrorTuneHistoryCount: Array.isArray(data.mirrorTuneHistory) ? data.mirrorTuneHistory.length : 0,
@@ -9468,6 +9604,7 @@ app.get('/api/quilt/:dateKey', limitProxyImage, async (req, res) => {
       mirrorBottomLeftNudgeX: data.mirrorBottomLeftNudgeX,
       mirrorBottomLeftNudgeY: data.mirrorBottomLeftNudgeY,
       mirrorBottomRightNudgeY: data.mirrorBottomRightNudgeY,
+      ...serverQuadTileFieldsToFirestore(serverMirrorTuneFromQuiltData(data)),
       mirrorTuneUpdatedAt: data.mirrorTuneUpdatedAt
     });
   } catch (error) {
