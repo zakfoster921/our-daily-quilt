@@ -180,6 +180,7 @@ async function main() {
     const quoteSnap = await db.collection(quotesCollection).doc(sourceId).get();
     if (!quoteSnap.exists) continue;
     const data = quoteSnap.data() || {};
+    if (data.notionPageRemoved === true) continue;
     const quoteText = String(data.text || data.quote || '').trim();
     const authorName = String(data.author || '').trim();
     if (!quoteText || !authorName) continue;

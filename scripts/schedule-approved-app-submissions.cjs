@@ -243,6 +243,8 @@ async function main() {
   quotesSnap.forEach((docSnap) => {
     const d = docSnap.data() || {};
     if (d.source !== 'notion') return;
+    // Soft-deleted Notion pages stay in the catalog for windowed sync; never reschedule them.
+    if (d.notionPageRemoved === true) return;
     if (!isApprovedQuoteData(d)) return;
     const text = String(d.text || '').trim();
     const author = String(d.author || '').trim();

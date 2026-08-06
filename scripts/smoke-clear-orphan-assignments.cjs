@@ -3,7 +3,9 @@
 const assert = require('assert');
 const {
   isNotionPageMissingError,
-  isNotionPageRemoved
+  isNotionPageRemoved,
+  clearWindowAssignmentsMissingFromCatalog,
+  clearStaleScheduleForRemovedCatalogRows
 } = require('./lib/clear-orphan-assignments.cjs');
 
 assert.strictEqual(isNotionPageMissingError({ notionStatus: 404 }), true);
@@ -17,5 +19,8 @@ assert.strictEqual(isNotionPageRemoved({ archived: true, id: 'abc' }), true);
 assert.strictEqual(isNotionPageRemoved({ in_trash: true, id: 'abc' }), true);
 assert.strictEqual(isNotionPageRemoved({ archived: false, id: 'abc' }), false);
 assert.strictEqual(isNotionPageRemoved(null), false);
+
+assert.strictEqual(typeof clearWindowAssignmentsMissingFromCatalog, 'function');
+assert.strictEqual(typeof clearStaleScheduleForRemovedCatalogRows, 'function');
 
 console.log('smoke-clear-orphan-assignments: ok');

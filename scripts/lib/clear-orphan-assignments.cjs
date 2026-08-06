@@ -108,10 +108,13 @@ async function clearCatalogScheduleForRemovedSourceIds(db, options) {
     if (!snap.exists) continue;
     const data = snap.data() || {};
     const ds = String(data.date_scheduled ?? data.dateScheduled ?? '').trim();
+    const alreadyMarked = data.notionPageRemoved === true;
+    // Already soft-deleted with no schedule left — nothing to heal.
+    if (alreadyMarked && !ds) continue;
     sourceIds.push(sid);
     const patch = {
       notionPageRemoved: true,
-      notionPageRemovedAt: updatedAt,
+      notionPageRemovedAt: data.notionPageRemovedAt || updatedAt,
       scheduleUpdatedAt: updatedAt,
       scheduleSource: 'notion-page-removed'
     };
@@ -151,7 +154,12 @@ async function clearWindowAssignmentsMissingFromCatalog(db, options) {
 
   const quotesSnap = await db.collection(quotesCollection).where('source', '==', 'notion').get();
   const validIds = new Set();
-  quotesSnap.forEach((docSnap) => validIds.add(docSnap.id));
+  quotesSnap.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    // Soft-deleted pages still exist in the catalog; treat them as missing so slots clear.
+    if (data.notionPageRemoved === true) return;
+    validIds.add(docSnap.id);
+  });
 
   const assignSnap = await db.collection(assignmentsCollection).get();
   const missingSourceIds = new Set();
@@ -170,10 +178,48 @@ async function clearWindowAssignmentsMissingFromCatalog(db, options) {
   });
 }
 
+/**
+ * Self-heal: any catalog row already marked `notionPageRemoved` must not keep a
+ * date_scheduled or occupy dailyQuoteAssignments (priority-append used to rebook them).
+ */
+async function clearStaleScheduleForRemovedCatalogRows(db, options = {}) {
+  const quotesCollection =
+    options.quotesCollection || process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
+  const assignmentsCollection =
+    options.assignmentsCollection || process.env.FIRESTORE_ASSIGNMENTS_COLLECTION || 'dailyQuoteAssignments';
+  const dryRun = options.dryRun === true;
+
+  const snap = await db.collection(quotesCollection).where('notionPageRemoved', '==', true).get();
+  const removedSourceIds = [];
+  snap.forEach((docSnap) => removedSourceIds.push(docSnap.id));
+  if (!removedSourceIds.length) {
+    return { clearedSlots: 0, clearedCatalogDates: 0, sourceIds: [] };
+  }
+
+  const clearedAssign = await clearDailyAssignmentsForRemovedSourceIds(db, {
+    assignmentsCollection,
+    quotesCollection,
+    removedSourceIds,
+    dryRun
+  });
+  const clearedCatalog = await clearCatalogScheduleForRemovedSourceIds(db, {
+    quotesCollection,
+    removedSourceIds,
+    dryRun
+  });
+
+  return {
+    clearedSlots: clearedAssign.clearedSlots,
+    clearedCatalogDates: clearedCatalog.clearedCatalogDates,
+    sourceIds: removedSourceIds
+  };
+}
+
 module.exports = {
   isNotionPageMissingError,
   isNotionPageRemoved,
   clearDailyAssignmentsForRemovedSourceIds,
   clearCatalogScheduleForRemovedSourceIds,
-  clearWindowAssignmentsMissingFromCatalog
+  clearWindowAssignmentsMissingFromCatalog,
+  clearStaleScheduleForRemovedCatalogRows
 };

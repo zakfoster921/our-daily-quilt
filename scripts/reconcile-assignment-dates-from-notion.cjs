@@ -363,6 +363,8 @@ function resolveSchedulePlacements(quoteBySourceId, start) {
 function quoteRowFromFirestore(docSnap) {
   const d = docSnap.data() || {};
   if (d.source !== 'notion') return null;
+  // Soft-deleted Notion pages must not pin or birthday-rotate into the schedule.
+  if (d.notionPageRemoved === true) return null;
   if (!isApprovedQuoteData(d)) return null;
   const text = String(d.text || '').trim();
   const author = String(d.author || '').trim();

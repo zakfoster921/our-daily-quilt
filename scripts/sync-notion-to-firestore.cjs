@@ -49,7 +49,8 @@ const {
   isNotionPageRemoved,
   clearDailyAssignmentsForRemovedSourceIds,
   clearCatalogScheduleForRemovedSourceIds,
-  clearWindowAssignmentsMissingFromCatalog
+  clearWindowAssignmentsMissingFromCatalog,
+  clearStaleScheduleForRemovedCatalogRows
 } = require('./lib/clear-orphan-assignments.cjs');
 
 const NOTION_API_VERSION = '2022-06-28';
@@ -1569,9 +1570,18 @@ async function run() {
     assignmentsCleared += clearedFromCatalog.clearedSlots;
   }
 
+  // Sweep soft-deleted catalog rows that may have been rebooked before schedulers
+  // learned to skip notionPageRemoved (clears date_scheduled + assignment slots).
+  const clearedStaleRemoved = await clearStaleScheduleForRemovedCatalogRows(db, {
+    quotesCollection: collectionName,
+    assignmentsCollection,
+    dryRun
+  });
+  assignmentsCleared += clearedStaleRemoved.clearedSlots;
+
   const windowLabel = window ? `${window.startKey}..${window.endKey}` : 'full-catalog';
   console.log(
-    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} scheduleConflictClears=${scheduleConflictClears} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} assignmentsCleared=${assignmentsCleared} catalogScheduleClears=${clearedCatalog.clearedCatalogDates} collection=${collectionName}`
+    `[sync] complete dryRun=${dryRun} scope=${windowLabel} fetched=${fetchedPages} writes=${writeCount} assignmentMirrors=${assignmentMirrors} scheduleConflictClears=${scheduleConflictClears} keywordEmphasisMirrors=${keywordEmphasisMirrors} fortunes=${fortuneCount} skipped=${skipCount} orphansRemoved=${orphanDeleteCount} assignmentsCleared=${assignmentsCleared} catalogScheduleClears=${clearedCatalog.clearedCatalogDates + clearedStaleRemoved.clearedCatalogDates} collection=${collectionName}`
   );
 }
 
