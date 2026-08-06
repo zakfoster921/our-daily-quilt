@@ -280,6 +280,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/quilt-name-leaderboard-clear', 4 * ONE_KB],
   ['/api/quilt-name-leaderboard-delete', 4 * ONE_KB],
   ['/api/color-submission', 8 * ONE_KB],
+  ['/api/validate-contributor-name', 4 * ONE_KB],
   ['/api/post-color-lab-preview', 4 * ONE_MB],
   ['/api/mood-scratch', 4 * ONE_KB],
   ['/api/story-preview-share', 4 * ONE_KB],
@@ -546,6 +547,11 @@ const limitColorSubmission = createRateLimiter({
   name: 'color-submission',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_COLOR_SUBMISSION_PER_10_MIN, 10)
+});
+const limitValidateContributorName = createRateLimiter({
+  name: 'validate-contributor-name',
+  windowMs: 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_VALIDATE_CONTRIBUTOR_NAME_PER_MIN, 30)
 });
 const limitMoodScratch = createRateLimiter({
   name: 'mood-scratch',
@@ -7839,11 +7845,90 @@ async function moderateQuiltNameWithAi(word) {
   return { ...parsed, provider: 'anthropic', model };
 }
 
+const CONTRIBUTOR_NAME_MODERATION_ERROR = 'There seems to be a problem with this name. Please try another.';
+const contributorNameModerationCache = new Map();
+
+function shouldSkipContributorNameModeration(name) {
+  const normalized = String(name || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return true;
+  return normalized.toLowerCase() === 'friend';
+}
+
+function moderateContributorNameLocally(name) {
+  const normalized = normalizeSubmittedAuthorName(name);
+  if (!normalized) {
+    return { action: 'reject', provider: 'local-fallback', model: null };
+  }
+  if (shouldSkipContributorNameModeration(normalized)) {
+    return { action: 'allow', provider: 'local-skip', model: null };
+  }
+  if (QUILT_NAME_LOCAL_REJECT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return { action: 'reject', provider: 'local-fallback', model: null };
+  }
+  return { action: 'allow', provider: 'local-fallback', model: null };
+}
+
+function buildContributorNameModerationPrompt(name) {
+  return `Review ONE contributor first name for a community quilt: "${name}"
+
+Reject if it is obscenity, hate speech, a slur, sexually explicit, glorifies violence, demeans a protected group, or is clearly inappropriate for a warm community art ritual.
+
+Allow real first names, initials (e.g. A.J.), and innocent words in any language — including words for "friend" in other languages.
+
+Return ONLY valid JSON, no markdown:
+{"action":"allow"}
+or
+{"action":"reject"}`;
+}
+
+async function moderateContributorNameWithAi(name) {
+  const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  const model = String(
+    process.env.ANTHROPIC_QUILT_NAME_MODERATION_MODEL || process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001'
+  ).trim();
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
+  const raw = await postReflectionThemesToClaude({
+    apiKey,
+    model,
+    prompt: buildContributorNameModerationPrompt(name),
+    maxTokens: 48
+  });
+  const parsed = parseQuiltNameModerationResult(raw);
+  if (!parsed) throw new Error('Contributor name moderation returned unusable JSON');
+  return { ...parsed, provider: 'anthropic', model };
+}
+
+async function assertContributorNameAllowed(name) {
+  const normalized = normalizeSubmittedAuthorName(name);
+  if (shouldSkipContributorNameModeration(normalized)) {
+    return { action: 'allow', provider: 'local-skip', model: null };
+  }
+  const cacheKey = normalized.toLowerCase();
+  const cached = contributorNameModerationCache.get(cacheKey);
+  if (cached) {
+    if (cached.action === 'reject') throw new Error(CONTRIBUTOR_NAME_MODERATION_ERROR);
+    return cached;
+  }
+  try {
+    const moderation = await moderateContributorNameWithAi(normalized);
+    contributorNameModerationCache.set(cacheKey, moderation);
+    if (moderation.action === 'reject') throw new Error(CONTRIBUTOR_NAME_MODERATION_ERROR);
+    return moderation;
+  } catch (error) {
+    if (/problem with this name/i.test(String(error?.message || ''))) throw error;
+    console.warn(`⚠️ Contributor name AI moderation failed for "${normalized}":`, error?.message || error);
+    const fallback = moderateContributorNameLocally(normalized);
+    contributorNameModerationCache.set(cacheKey, fallback);
+    if (fallback.action === 'reject') throw new Error(CONTRIBUTOR_NAME_MODERATION_ERROR);
+    return fallback;
+  }
+}
+
 async function assertQuiltNameAllowed(word) {
   try {
     const moderation = await moderateQuiltNameWithAi(word);
     if (moderation.action === 'reject') {
-      throw new Error('There seems to be a problem with this name. Please try another.');
+      throw new Error(CONTRIBUTOR_NAME_MODERATION_ERROR);
     }
     return moderation;
   } catch (error) {
@@ -7851,10 +7936,14 @@ async function assertQuiltNameAllowed(word) {
     console.warn(`⚠️ Quilt name AI moderation failed for "${word}":`, error?.message || error);
     const fallback = moderateQuiltNameLocally(word);
     if (fallback.action === 'reject') {
-      throw new Error('There seems to be a problem with this name. Please try another.');
+      throw new Error(CONTRIBUTOR_NAME_MODERATION_ERROR);
     }
     return fallback;
   }
+}
+
+function contributorNameErrorStatus(message) {
+  return /problem with this name/i.test(String(message || '')) ? 400 : 500;
 }
 
 function quiltNameSubmitErrorStatus(message) {
@@ -9693,6 +9782,30 @@ function buildCutRevealEngineFromQuilt(currentQuilt, currentBlocks, appDateKey, 
   });
 }
 
+app.options('/api/validate-contributor-name', (req, res) => {
+  setQuoteSubmissionCors(res);
+  return res.status(204).end();
+});
+
+app.post('/api/validate-contributor-name', limitValidateContributorName, async (req, res) => {
+  setQuoteSubmissionCors(res);
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const name = normalizeSubmittedAuthorName(body.name || body.displayName || '').slice(0, 80);
+    if (shouldSkipContributorNameModeration(name)) {
+      return res.json({ success: true, skipped: true });
+    }
+    await assertContributorNameAllowed(name);
+    return res.json({ success: true });
+  } catch (error) {
+    console.warn('POST /api/validate-contributor-name failed:', error?.message || error);
+    return res.status(contributorNameErrorStatus(error?.message)).json({
+      success: false,
+      error: error?.message || 'Name validation failed'
+    });
+  }
+});
+
 app.options('/api/color-submission', (req, res) => {
   setQuoteSubmissionCors(res);
   return res.status(204).end();
@@ -9721,6 +9834,9 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
     }
     if (!clientId) {
       return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+    if (displayName && !shouldSkipContributorNameModeration(displayName)) {
+      await assertContributorNameAllowed(displayName);
     }
 
     const quiltRef = db.collection('quilts').doc(appDateKey);
@@ -9956,7 +10072,7 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
     return res.json(responsePayload || { success: false, error: 'Color submission failed' });
   } catch (error) {
     console.error('❌ Color submission failed:', error);
-    return res.status(500).json({
+    return res.status(contributorNameErrorStatus(error?.message)).json({
       success: false,
       error: error.message || 'Color submission failed',
       timestamp: getUtcIsoNow()
