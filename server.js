@@ -2029,6 +2029,7 @@ const MIRROR_TUNE_DEFAULT_FLIP_X = true;
 const MIRROR_TUNE_DEFAULT_FLIP_Y = true;
 const MIRROR_BOTTOM_LAYOUT_SINGLE = 'single';
 const MIRROR_BOTTOM_LAYOUT_DOUBLE = 'doubleSideBySide';
+const MIRROR_BOTTOM_LAYOUT_QUAD = 'quadSideBySide';
 const MIRROR_TUNE_HISTORY_MAX = 80;
 
 /** Strip plan for Firestore: positions + optional rotation (quote text comes from the day’s quote at render). */
@@ -2074,13 +2075,23 @@ function serverCompactLayoutBPostStripPlan(stripPlan) {
 }
 
 function serverNormalizeMirrorBottomLayout(value) {
-  return String(value || '').trim() === MIRROR_BOTTOM_LAYOUT_DOUBLE
-    ? MIRROR_BOTTOM_LAYOUT_DOUBLE
-    : MIRROR_BOTTOM_LAYOUT_SINGLE;
+  const v = String(value || '').trim();
+  if (v === MIRROR_BOTTOM_LAYOUT_DOUBLE) return MIRROR_BOTTOM_LAYOUT_DOUBLE;
+  if (v === MIRROR_BOTTOM_LAYOUT_QUAD) return MIRROR_BOTTOM_LAYOUT_QUAD;
+  return MIRROR_BOTTOM_LAYOUT_SINGLE;
 }
 
 function serverMirrorBottomLayoutIsDouble(tune) {
   return serverNormalizeMirrorBottomLayout(tune?.bottomLayout) === MIRROR_BOTTOM_LAYOUT_DOUBLE;
+}
+
+function serverMirrorBottomLayoutIsQuad(tune) {
+  return serverNormalizeMirrorBottomLayout(tune?.bottomLayout) === MIRROR_BOTTOM_LAYOUT_QUAD;
+}
+
+function serverMirrorBottomLayoutUsesDupTiles(tune) {
+  const layout = serverNormalizeMirrorBottomLayout(tune?.bottomLayout);
+  return layout === MIRROR_BOTTOM_LAYOUT_DOUBLE || layout === MIRROR_BOTTOM_LAYOUT_QUAD;
 }
 
 function serverNormalizeMirrorFlipFlag(value, fallback) {
@@ -2133,6 +2144,9 @@ function serverMirrorTileFlipLabel(prefix, flipX, flipY) {
 
 function serverMirrorTuneModeLabelFromTune(tune) {
   const t = tune || {};
+  if (serverMirrorBottomLayoutIsQuad(t)) {
+    return `Dup ×4 (${serverMirrorTileFlipLabel('L', t.leftFlipX, t.leftFlipY)} ${serverMirrorTileFlipLabel('R', t.rightFlipX, t.rightFlipY)})`;
+  }
   if (serverMirrorBottomLayoutIsDouble(t)) {
     return `Dup ×2 (${serverMirrorTileFlipLabel('L', t.leftFlipX, t.leftFlipY)} ${serverMirrorTileFlipLabel('R', t.rightFlipX, t.rightFlipY)})`;
   }
@@ -2148,7 +2162,7 @@ function serverMirrorTuneModeLabel(flipX, flipY) {
 
 function serverMirrorTuneIsCustomized(tune) {
   const t = tune || {};
-  if (serverMirrorBottomLayoutIsDouble(t)) return true;
+  if (serverMirrorBottomLayoutUsesDupTiles(t)) return true;
   return (
     t.flipX !== MIRROR_TUNE_DEFAULT_FLIP_X ||
     t.flipY !== MIRROR_TUNE_DEFAULT_FLIP_Y ||
