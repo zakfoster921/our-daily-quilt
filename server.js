@@ -268,7 +268,7 @@ function notionSyncQuotesScriptArgs(startDate, syncScope) {
 const JSON_SIZE_LIMITS = new Map([
   ['/api/push-instagram-assets', 30 * ONE_MB],
   ['/api/push-layout-b-tune', 128 * ONE_KB],
-  ['/api/push-quilt-mirror-tune', 8 * ONE_KB],
+  ['/api/push-quilt-mirror-tune', 32 * ONE_KB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
   ['/api/quilt-name-words', 4 * ONE_KB],
   ['/api/quilt-name-generate', 4 * ONE_KB],
