@@ -1831,6 +1831,24 @@ function getCompletedQuiltPostingMinReadyIso(quiltDateKey) {
   return `${addDaysToDateKey(quiltDateKey, 1)}T07:00:00.000Z`;
 }
 
+/** Mark the admin “IG post” checklist for the posting app-day (banner date). */
+async function markAdminDailyIgPostCompleted(dateKey, source = 'generate_instagram') {
+  const key = String(dateKey || '').trim();
+  if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return false;
+  const nowIso = getUtcIsoNow();
+  await db.collection('adminDailyTasks').doc(key).set(
+    {
+      igPostCompleted: true,
+      igPostCompletedAtIso: nowIso,
+      igPostSource: String(source || 'generate_instagram').trim().slice(0, 80),
+      updatedAtIso: nowIso,
+      updatedBy: 'admin_daily_task_api'
+    },
+    { merge: true }
+  );
+  return true;
+}
+
 /** Completed quilt days need nightly stills; live today may still be in progress. */
 function assessInstagramReadyForZapier(dateUsed, raw = {}) {
   const key = String(dateUsed || '').trim();
@@ -5639,6 +5657,22 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
         : 'classic URL only',
       hasReelWebm || hasReelMp4 ? `+ reel (${hasReelMp4 ? 'MP4' : 'WebM only'})` : ''
     );
+
+    // Zapier successful fetch ≈ morning IG publish — light the admin pill for today's app day.
+    const adminTaskDateKey = getAppDateKey();
+    void markAdminDailyIgPostCompleted(adminTaskDateKey, 'generate_instagram')
+      .then((ok) => {
+        if (ok) {
+          console.log(`✅ Admin daily IG post marked for ${adminTaskDateKey}`);
+        }
+      })
+      .catch((markErr) => {
+        console.warn(
+          `⚠️ Could not mark admin IG post for ${adminTaskDateKey}:`,
+          markErr?.message || markErr
+        );
+      });
+
     res.json(result);
     
   } catch (error) {
