@@ -1949,24 +1949,25 @@ async function resolveDailyMoodColorHexForDateKey(dateKey) {
   const dk = String(dateKey || '').trim();
   const readMoodLabel = (data) => String(data?.mood ?? data?.Mood ?? '').trim();
   if (db && dk) {
-    for (const ref of [
-      db.collection('dailyQuoteAssignments').doc(dk),
-      db.collection('quotes').doc(dk)
-    ]) {
-      try {
-        const snap = await ref.get();
+    const assignRef = db.collection('dailyQuoteAssignments').doc(dk);
+    const quoteRef = db.collection('quotes').doc(dk);
+    let assignSnap = null;
+    try {
+      const [aSnap, qSnap] = await Promise.all([assignRef.get(), quoteRef.get()]);
+      assignSnap = aSnap;
+      for (const snap of [aSnap, qSnap]) {
         if (!snap.exists) continue;
         const label = readMoodLabel(snap.data() || {});
         if (label) {
           const hex = resolveQuoteMoodColor(label);
           if (hex) return hex;
         }
-      } catch (_) {
-        /* */
       }
+    } catch (_) {
+      /* */
     }
     try {
-      const assignSnap = await db.collection('dailyQuoteAssignments').doc(dk).get();
+      if (!assignSnap) assignSnap = await assignRef.get();
       const sourceId = String(assignSnap.data()?.sourceId || '').trim();
       if (sourceId) {
         const catalogSnap = await db.collection('quotes').doc(sourceId).get();
@@ -9731,8 +9732,9 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
     const nowIso = getUtcIsoNow();
     let responsePayload = null;
 
-    // Seed a profile for returning devices so they aren't counted as first-time after this ships.
-    if (profileRef) {
+    // Seed returning-device profiles + mood lookup in parallel (both are pre-tx reads).
+    const seedClientProfilePromise = (async () => {
+      if (!profileRef) return;
       try {
         const existingProfile = await profileRef.get();
         if (!existingProfile.exists) {
@@ -9761,9 +9763,12 @@ app.post('/api/color-submission', limitColorSubmission, async (req, res) => {
           seedError?.message || seedError
         );
       }
-    }
+    })();
 
-    const dailyMoodColorHex = await resolveDailyMoodColorHexForDateKey(appDateKey);
+    const [dailyMoodColorHex] = await Promise.all([
+      resolveDailyMoodColorHexForDateKey(appDateKey),
+      seedClientProfilePromise
+    ]);
 
     await db.runTransaction(async (tx) => {
       const submissionSnap = await tx.get(submissionRef);
