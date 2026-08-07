@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Quilt builder</title>
+  <!-- columns-preview-inject -->
   <style>
     :root {
       --bg: #f6f4f1;
@@ -72,7 +73,8 @@
       align-items: center;
       gap: 0.35rem;
     }
-    label.macro-freeze select {
+    label.macro-freeze select,
+    label.macro-freeze input[type="text"] {
       font: inherit;
       border: 1px solid rgba(0, 0, 0, 0.22);
       background: #fff;
@@ -80,6 +82,7 @@
       padding: 0.45rem 0.55rem;
       border-radius: 6px;
     }
+    label.macro-freeze input[type="text"] { width: 7.5rem; }
     .stats {
       font-size: 0.82rem;
       color: var(--muted);
@@ -133,21 +136,26 @@
 <body>
   <header>
     <div>
-      <h1>Quilt builder</h1>
-      <p class="lede">Live engine — band/row and motif specials off; macro freeze adjustable. Live app freezes at 5 blocks.</p>
+      <h1 id="page-title">Quilt builder</h1>
+      <p class="lede" id="page-lede">Live engine — add random Rumi colors. Use columns:preview for real data.</p>
     </div>
     <div class="controls">
+      <label class="macro-freeze" for="date-key">
+        Date key
+        <input id="date-key" type="text" value="" placeholder="today" aria-label="Date key" />
+      </label>
       <label class="macro-freeze" for="macro-freeze-at">
         Macro freeze
         <select id="macro-freeze-at" aria-label="Macro freeze at block count">
-          <option value="5" selected>at 5 blocks</option>
+          <option value="5">at 5 blocks</option>
           <option value="10">at 10 blocks</option>
-          <option value="25">at 25 blocks (legacy)</option>
+          <option value="25" selected>at 25 blocks</option>
           <option value="50">at 50 blocks</option>
         </select>
       </label>
       <button type="button" class="primary" id="add-color">Add color</button>
       <button type="button" id="add-ten">+10</button>
+      <button type="button" id="replay-all" hidden>Replay all</button>
       <button type="button" id="undo" disabled>Undo</button>
       <button type="button" id="reset">Reset</button>
     </div>
@@ -173,8 +181,9 @@
   <script src="/lib/utils-quilt-render.js"></script>
   <script src="/lib/utils-zapier.js"></script>
   <script src="/lib/quilt-mirror-layout.js"></script>
-  <script src="/lib/simple-quilt-engine.js?v=69"></script>
-  <script src="/lib/quilt-renderer-v2.js?v=69"></script>
+  <script src="/lib/simple-quilt-engine.js?v=70"></script>
+  <script src="/lib/composition-archetypes.js?v=1"></script>
+  <script src="/lib/quilt-renderer-v2.js?v=70"></script>
 
   <script>
     window.Utils = window.UtilsCore;
@@ -187,36 +196,39 @@
       warn(...args) { console.warn(...args); },
       error(...args) { console.error(...args); }
     };
+
     let engine;
     let renderer;
     let lastColor = '';
     let lastError = '';
+    let replayQueue = [];
+    let replayIndex = 0;
     const undoStack = [];
     const UNDO_STACK_MAX = 80;
 
-    function builderMacroFreezeAtFromUrl() {
-      try {
-        const v = new URLSearchParams(window.location.search || '').get('macroFreezeAt');
-        const n = v != null ? parseInt(v, 10) : NaN;
-        return Number.isFinite(n) && n >= 2 ? n : null;
-      } catch (_) {
-        return null;
+    const isColumnsPreview = window.__ODQ_COLUMNS_PREVIEW__ === true;
+    const embeddedReplay = Array.isArray(window.__ODQ_REPLAY_COLORS__)
+      ? window.__ODQ_REPLAY_COLORS__.filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c))
+      : [];
+
+    function builderDateKey() {
+      const input = document.getElementById('date-key');
+      const manual = String(input?.value || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(manual)) return manual;
+      if (typeof window.__ODQ_BUILDER_DATE_KEY__ === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(window.__ODQ_BUILDER_DATE_KEY__)) {
+        return window.__ODQ_BUILDER_DATE_KEY__;
       }
+      return typeof Utils.getTodayKey === 'function' ? Utils.getTodayKey() : 'quilt-builder';
     }
 
-    function syncMacroFreezeSelectFromUrl() {
-      const fromUrl = builderMacroFreezeAtFromUrl();
-      const sel = document.getElementById('macro-freeze-at');
-      if (!sel || fromUrl == null) return;
-      const opt = sel.querySelector(`option[value="${fromUrl}"]`);
-      if (opt) sel.value = String(fromUrl);
-      else {
-        const custom = document.createElement('option');
-        custom.value = String(fromUrl);
-        custom.textContent = `at ${fromUrl} blocks`;
-        custom.selected = true;
-        sel.appendChild(custom);
-      }
+    function syncDateKeyInput() {
+      const input = document.getElementById('date-key');
+      if (!input || input.value.trim()) return;
+      input.value = builderDateKey();
+    }
+
+    function useColumnsArchetype() {
+      return isColumnsPreview || embeddedReplay.length > 0;
     }
 
     function selectedMacroFreezeAt() {
@@ -251,6 +263,7 @@
         macroColumnBands: Array.isArray(engine._macroColumnBands)
           ? JSON.parse(JSON.stringify(engine._macroColumnBands))
           : null,
+        replayIndex,
         lastColor
       };
     }
@@ -264,6 +277,7 @@
       engine._macroColumnBands = snap.macroColumnBands
         ? JSON.parse(JSON.stringify(snap.macroColumnBands))
         : null;
+      replayIndex = Number(snap.replayIndex) || 0;
       lastColor = snap.lastColor || '';
     }
 
@@ -290,9 +304,7 @@
 
     function updateUndoButton() {
       const btn = document.getElementById('undo');
-      if (!btn) return;
-      const canUndo = undoStack.length > 0;
-      btn.disabled = !canUndo;
+      if (btn) btn.disabled = undoStack.length === 0;
     }
 
     function clearUndoStack() {
@@ -305,10 +317,12 @@
       return raw.filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c));
     }
 
-    function pickRumiColor() {
+    function nextColor() {
+      if (replayIndex < replayQueue.length) {
+        return replayQueue[replayIndex++];
+      }
       const palette = rumiPalette();
-      if (!palette.length) return '#c8a882';
-      return palette[Math.floor(Math.random() * palette.length)];
+      return palette.length ? palette[Math.floor(Math.random() * palette.length)] : '#c8a882';
     }
 
     function countSpecialFamilies(blocks) {
@@ -334,10 +348,6 @@
       return [...types].sort().join(', ') || '—';
     }
 
-    function builderDateKey() {
-      return typeof Utils.getTodayKey === 'function' ? Utils.getTodayKey() : 'quilt-builder';
-    }
-
     function builderStageMetrics() {
       const ref =
         typeof QuiltMirrorLayout !== 'undefined' && QuiltMirrorLayout.CANVAS_HEIGHT_REFERENCE
@@ -352,7 +362,6 @@
     function syncBuilderStage() {
       const stage = document.querySelector('.stage');
       if (!stage || !renderer) return;
-
       const { stageWidth, stageHeight, viewport, aspect } = builderStageMetrics();
       renderer._renderViewportOverride = viewport;
       stage.style.width = `${stageWidth}px`;
@@ -363,9 +372,7 @@
 
     function configureRenderer(r) {
       r._builderPreviewMode = true;
-      if (typeof r.setBuilderPreviewMode === 'function') {
-        r.setBuilderPreviewMode(true);
-      }
+      if (typeof r.setBuilderPreviewMode === 'function') r.setBuilderPreviewMode(true);
       if (typeof r.setBuilderLayeringSubmissionCap === 'function') {
         r.setBuilderLayeringSubmissionCap(0);
       } else {
@@ -377,9 +384,7 @@
       r._exportDateKeyOverride = builderDateKey();
       r._gridSeamUnderpaintBleed = () => 2.25;
       r._renderViewportOverride = builderStageMetrics().viewport;
-      if (typeof r.setBacksidePreviewEnabled === 'function') {
-        r.setBacksidePreviewEnabled(false);
-      }
+      if (typeof r.setBacksidePreviewEnabled === 'function') r.setBacksidePreviewEnabled(false);
     }
 
     function renderQuilt(addResult) {
@@ -412,15 +417,12 @@
         : Math.max(0, (engine?.submissionCount || 0) - 1);
       const specials = countSpecialFamilies(engine?.blocks);
       const frozen = engine?.macroStructureFrozen ? 'yes' : 'no';
-      const freezeAt =
-        engine?.macroFreezeAtBlockCountOverride ??
-        SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT;
-      const macroRegions = engine?.macroStructureFrozen
-        ? countMacroRegions(engine.blocks)
-        : '—';
+      const freezeAt = engine?.macroFreezeAtBlockCountOverride ?? SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT;
+      const macroRegions = engine?.macroStructureFrozen ? countMacroRegions(engine.blocks) : '—';
       const layout = engine?.macroLayoutMode === 'columns' ? 'columns' : 'default';
-      const swatch = lastColor
-        ? `<span class="swatch" style="background:${lastColor}"></span>`
+      const swatch = lastColor ? `<span class="swatch" style="background:${lastColor}"></span>` : '';
+      const replayLabel = replayQueue.length
+        ? `<span>replay: <strong>${Math.min(replayIndex, replayQueue.length)}</strong> / ${replayQueue.length}</span>`
         : '';
       el.innerHTML = `
         <span><strong>${picks}</strong> colors</span>
@@ -430,28 +432,42 @@
         <span>freeze at: <strong>${freezeAt}</strong></span>
         <span>macro regions: <strong>${macroRegions}</strong></span>
         <span>layout: <strong>${layout}</strong></span>
-        <span>bands: <strong>off</strong></span>
-        <span>motif specials: <strong>off</strong></span>
+        <span>archetype: <strong>${useColumnsArchetype() ? 'columns' : 'baseline'}</strong></span>
+        ${replayLabel}
         <span>last ${swatch}<strong>${lastColor || '—'}</strong></span>
         <span>motifs: ${specialTypeSummary(engine?.blocks)}</span>
         ${lastError ? `<span style="color:#b42318">error: ${lastError}</span>` : ''}
       `;
     }
 
+    function installArchetypeBiases() {
+      if (!engine) return;
+      if (typeof CompositionArchetypes?.clearArchetypeBiases === 'function') {
+        CompositionArchetypes.clearArchetypeBiases(engine);
+      }
+      if (useColumnsArchetype() && typeof CompositionArchetypes?.installColumnsArchetype === 'function') {
+        CompositionArchetypes.installColumnsArchetype(engine, { dateKey: builderDateKey() });
+      }
+    }
+
     function resetEngine() {
+      const columnsMode = useColumnsArchetype();
       engine = new SimpleQuiltEngine('quilt-builder', {
         recordColorReplayEvents: false,
         macroFreezeAtBlockCount: selectedMacroFreezeAt(),
-        bandRowSpecialWeight: 0,
-        specialStructureScaleMultiplier: 0,
+        bandRowSpecialWeight: columnsMode ? 1 : 0,
+        specialStructureScaleMultiplier: columnsMode ? 1 : 0,
         macroFlattenedAngledSplitProb: 0.85
       });
       engine.recordUserContribution = () => {};
       engine._suppressSplitWarnings = true;
       engine.initialize();
       engine.recordColorReplayEvents = false;
+      engine.setQuiltDateKey(builderDateKey());
+      installArchetypeBiases();
       lastColor = '';
       lastError = '';
+      replayIndex = 0;
       clearUndoStack();
       renderQuilt(null);
     }
@@ -459,7 +475,7 @@
     function addOneColor() {
       try {
         pushUndoSnapshot();
-        const color = pickRumiColor();
+        const color = nextColor();
         const result = engine.addColor(color);
         if (!result) {
           undoStack.pop();
@@ -482,32 +498,64 @@
       }
     }
 
-    function wireUi() {
+    function replayAllColors() {
+      const replayBtn = document.getElementById('replay-all');
       const addBtn = document.getElementById('add-color');
-      const addTenBtn = document.getElementById('add-ten');
-      const undoBtn = document.getElementById('undo');
-      const resetBtn = document.getElementById('reset');
-      const macroFreezeSel = document.getElementById('macro-freeze-at');
+      if (replayBtn) replayBtn.disabled = true;
+      if (addBtn) addBtn.disabled = true;
+      resetEngine();
+      let added = 0;
+      while (replayIndex < replayQueue.length) {
+        if (!addOneColor()) break;
+        added += 1;
+      }
+      if (replayBtn) replayBtn.disabled = false;
+      if (addBtn) addBtn.disabled = false;
+      if (added < replayQueue.length) {
+        noopLogger.warn(`Replay stopped after ${added} / ${replayQueue.length} colors.`);
+      }
+    }
 
-      macroFreezeSel?.addEventListener('change', () => {
+    function configurePreviewChrome() {
+      if (!embeddedReplay.length) return;
+      replayQueue = embeddedReplay.slice();
+      const title = document.getElementById('page-title');
+      const lede = document.getElementById('page-lede');
+      const replayBtn = document.getElementById('replay-all');
+      if (title) title.textContent = 'Columns preview';
+      if (lede) {
+        lede.textContent = `${builderDateKey()} — ${replayQueue.length} real colors. Space = next pick.`;
+      }
+      if (replayBtn) replayBtn.hidden = false;
+      syncDateKeyInput();
+    }
+
+    function wireUi() {
+      document.getElementById('macro-freeze-at')?.addEventListener('change', () => {
         applyMacroFreezeOverrideToEngine();
         renderQuilt(null);
       });
-
-      addBtn.addEventListener('click', () => addOneColor());
-      undoBtn.addEventListener('click', () => undoLastAdd());
-      addTenBtn.addEventListener('click', () => {
+      document.getElementById('date-key')?.addEventListener('change', () => {
+        installArchetypeBiases();
+        renderQuilt(null);
+      });
+      document.getElementById('add-color')?.addEventListener('click', () => addOneColor());
+      document.getElementById('undo')?.addEventListener('click', () => undoLastAdd());
+      document.getElementById('reset')?.addEventListener('click', () => resetEngine());
+      document.getElementById('replay-all')?.addEventListener('click', () => replayAllColors());
+      document.getElementById('add-ten')?.addEventListener('click', () => {
+        const addTenBtn = document.getElementById('add-ten');
+        const addBtn = document.getElementById('add-color');
         addTenBtn.disabled = true;
         addBtn.disabled = true;
         let added = 0;
         for (let i = 0; i < 10; i++) {
-          if (addOneColor()) added += 1;
+          if (!addOneColor()) break;
+          added += 1;
         }
         addTenBtn.disabled = false;
         addBtn.disabled = false;
-        if (added < 10) noopLogger.warn(`Stopped after ${added} adds — quilt may be full.`);
       });
-      resetBtn.addEventListener('click', () => resetEngine());
 
       window.addEventListener('resize', () => {
         if (!engine || !renderer) return;
@@ -532,13 +580,13 @@
     function boot() {
       try {
         if (typeof Utils?.polygonPiecesForFirestore !== 'function') {
-          throw new Error('utils-zapier.js did not load (polygonPiecesForFirestore missing)');
+          throw new Error('utils-zapier.js did not load');
         }
+        configurePreviewChrome();
         renderer = new QuiltRendererV2(noopLogger);
         configureRenderer(renderer);
         renderer.initialize();
         syncBuilderStage();
-        syncMacroFreezeSelectFromUrl();
         resetEngine();
         wireUi();
       } catch (error) {
