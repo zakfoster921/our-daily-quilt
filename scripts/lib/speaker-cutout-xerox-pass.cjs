@@ -3,10 +3,13 @@
 
 /**
  * 1990s local newspaper portrait treatment.
- * grayscale → adaptive contrast → brightness → sepia → organic film grain
+ * grayscale → adaptive contrast/brightness → shadow lift → sepia → organic film grain
  *
  * Replaces the old "punk flyer / photocopier" pass (high contrast, lifted blacks, band grain).
  * Registration offset is applied in CSS/UI layer on top of this.
+ *
+ * Dark-skinned subjects: stats ignore bright fabric/teeth so a white scarf can't hide a dark face,
+ * then we soften contrast, raise brightness, and lift shadows so midtones don't crush to ink.
  */
 const NEWSPAPER_TONE = Object.freeze({
   brightness: 1.32,
@@ -14,7 +17,9 @@ const NEWSPAPER_TONE = Object.freeze({
   /** Darkest visible tone — avoids true-black fringe on cutout edges after multiply blend. */
   blackFloor: 62,
   /** Luminance noise amplitude at ~300×450px; scales slightly with resolution. */
-  grainAmp: 7
+  grainAmp: 7,
+  /** Pixels brighter than this are treated as fabric/teeth, not subject skin. */
+  highlightCut: 195
 });
 
 function hashSeedToUnit(seed, x, y) {
@@ -55,32 +60,66 @@ function applyNewspaperFilmGrainPass(data, width, height, seed = 'odq', opts = {
 }
 
 /**
- * Two-factor adaptive contrast:
- * - Low stdDev (flat image) → more boost
- * - Low mean (dark/dark-skinned subject) → softer ceiling regardless of stdDev
- * Range: 1.05–1.35
+ * Subject-aware tone stats.
+ * - Excludes bright highlights (scarf/teeth) when measuring "how dark is this person"
+ * - Low subject mean → softer contrast, higher brightness, shadow lift, higher black floor
+ * Contrast range: 1.05–1.28
  */
-function computeAdaptiveContrast(data, width, height) {
+function computeAdaptiveTone(data, width, height) {
   const len = width * height * 4;
-  let sum = 0, count = 0;
-  for (let i = 0; i < len; i += 4) {
-    if (data[i + 3] < 28) continue;
-    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    count++;
-  }
-  if (!count) return 1.15;
-  const mean = sum / count;
-  let variance = 0;
+  const highlightCut = NEWSPAPER_TONE.highlightCut;
+  let sum = 0;
+  let count = 0;
+  let subjectSum = 0;
+  let subjectCount = 0;
   for (let i = 0; i < len; i += 4) {
     if (data[i + 3] < 28) continue;
     const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    variance += (lum - mean) ** 2;
+    sum += lum;
+    count += 1;
+    if (lum <= highlightCut) {
+      subjectSum += lum;
+      subjectCount += 1;
+    }
   }
-  const stdDev = Math.sqrt(variance / count);
-  const stdNorm = Math.min(1, Math.max(0, (stdDev - 20) / 60));
-  const meanFactor = Math.min(1, mean / 140) ** 2;
-  const combined = meanFactor * (1 - stdNorm * 0.5);
-  return Math.round((1.05 + 0.30 * combined) * 100) / 100;
+  if (!count) {
+    return {
+      contrast: 1.12,
+      brightness: NEWSPAPER_TONE.brightness,
+      blackFloor: NEWSPAPER_TONE.blackFloor,
+      shadowLift: 0
+    };
+  }
+  const mean = sum / count;
+  const subjectMean = subjectCount > 40 ? subjectSum / subjectCount : mean;
+  let variance = 0;
+  const varCount = subjectCount > 40 ? subjectCount : count;
+  for (let i = 0; i < len; i += 4) {
+    if (data[i + 3] < 28) continue;
+    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    if (subjectCount > 40 && lum > highlightCut) continue;
+    variance += (lum - subjectMean) ** 2;
+  }
+  const stdDev = Math.sqrt(variance / Math.max(1, varCount));
+  const stdNorm = Math.min(1, Math.max(0, (stdDev - 18) / 55));
+  // Darker faces (subjectMean ~40–90) → near-zero meanFactor → soft contrast
+  const meanFactor = Math.min(1, subjectMean / 125) ** 2.2;
+  const combined = meanFactor * (1 - stdNorm * 0.55);
+  const contrast = Math.round((1.05 + 0.23 * combined) * 100) / 100;
+
+  // Extra lift when the non-highlight subject is dark (classic dark-skin + bright cloth case).
+  const darkGap = Math.max(0, Math.min(1, (95 - subjectMean) / 55));
+  const brightness =
+    Math.round((NEWSPAPER_TONE.brightness + darkGap * 0.28) * 100) / 100;
+  const shadowLift = Math.round(darkGap * 42);
+  const blackFloor = Math.round(NEWSPAPER_TONE.blackFloor + darkGap * 22);
+
+  return { contrast, brightness, blackFloor, shadowLift, subjectMean, mean };
+}
+
+/** @deprecated use computeAdaptiveTone — kept for callers/tests */
+function computeAdaptiveContrast(data, width, height) {
+  return computeAdaptiveTone(data, width, height).contrast;
 }
 
 /**
@@ -94,19 +133,27 @@ function applySpeakerCutoutXeroxRgba(data, width, height, seed = 'odq') {
   const d = data;
   const w = Math.max(1, width | 0);
   const h = Math.max(1, height | 0);
-  const { brightness, sepia, blackFloor } = NEWSPAPER_TONE;
+  const { sepia } = NEWSPAPER_TONE;
+  const tone = computeAdaptiveTone(d, w, h);
+  const { contrast, brightness, blackFloor, shadowLift } = tone;
 
-  // Pass 1: compute adaptive contrast from source luminance
-  const contrast = computeAdaptiveContrast(d, w, h);
-
-  // Pass 2: grayscale → contrast → brightness → sepia
+  // Pass 2: grayscale → shadow lift → contrast → brightness → sepia
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       const i = (y * w + x) * 4;
-      if (d[i + 3] < 8) { d[i + 3] = 0; continue; }
+      if (d[i + 3] < 8) {
+        d[i + 3] = 0;
+        continue;
+      }
 
       // grayscale(1)
       let lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+
+      // Lift dark midtones before contrast so darker skin keeps facial detail
+      if (shadowLift > 0 && lum < 170) {
+        const t = 1 - lum / 170;
+        lum += shadowLift * t * t;
+      }
 
       // contrast (CSS spec: slope*(val - 128) + 128)
       lum = contrast * (lum - 128) + 128;
@@ -115,11 +162,13 @@ function applySpeakerCutoutXeroxRgba(data, width, height, seed = 'odq') {
       lum = Math.max(blackFloor, Math.min(255, lum * brightness));
 
       // sepia(amount) — interpolate toward full-sepia matrix
-      const r = lum, g = lum, b = lum;
+      const r = lum;
+      const g = lum;
+      const b = lum;
       const sr = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
       const sg = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
       const sb = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
-      d[i]     = Math.round(r + (sr - r) * sepia);
+      d[i] = Math.round(r + (sr - r) * sepia);
       d[i + 1] = Math.round(g + (sg - g) * sepia);
       d[i + 2] = Math.round(b + (sb - b) * sepia);
     }
@@ -139,13 +188,15 @@ function rgbaLooksSpeakerCutoutXerox(data, width, height) {
   const d = data;
   const w = Math.max(1, width | 0);
   const h = Math.max(1, height | 0);
-  let opaque = 0, warm = 0;
+  let opaque = 0;
+  let warm = 0;
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
       const i = (y * w + x) * 4;
       if (d[i + 3] < 20) continue;
       opaque += 1;
-      const r = d[i], b = d[i + 2];
+      const r = d[i];
+      const b = d[i + 2];
       // Sepia tint: red channel meaningfully higher than blue
       if (r > b + 4) warm += 1;
     }
@@ -156,6 +207,7 @@ function rgbaLooksSpeakerCutoutXerox(data, width, height) {
 module.exports = {
   NEWSPAPER_TONE,
   computeAdaptiveContrast,
+  computeAdaptiveTone,
   applyNewspaperFilmGrainPass,
   applySpeakerCutoutXeroxRgba,
   rgbaLooksSpeakerCutoutXerox
