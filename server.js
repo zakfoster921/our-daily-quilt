@@ -1847,11 +1847,24 @@ async function markAdminDailyIgPostCompleted(dateKey, source = 'generate_instagr
       igPostCompleted: true,
       igPostCompletedAtIso: nowIso,
       igPostSource: String(source || 'generate_instagram').trim().slice(0, 80),
+      igPostClearedAtIso: admin.firestore.FieldValue.delete(),
       updatedAtIso: nowIso,
       updatedBy: 'admin_daily_task_api'
     },
     { merge: true }
   );
+  return true;
+}
+
+/**
+ * Zapier morning publish (~7 AM CT / 12:00 UTC) may light the admin pill.
+ * Nightly verify (07:45 + 11:00 UTC) and other tooling must pass skipAdminTask.
+ */
+function shouldMarkAdminIgPostFromGenerateInstagram(req) {
+  const body = req?.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  if (body.skipAdminTask === true || body.verifyOnly === true) return false;
+  // After pre-Zapier nightly (11:00 UTC); Zapier posts ~12:00 UTC (7 AM CT).
+  if (new Date().getUTCHours() < 12) return false;
   return true;
 }
 
@@ -5804,20 +5817,22 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       hasReelWebm || hasReelMp4 ? `+ reel (${hasReelMp4 ? 'MP4' : 'WebM only'})` : ''
     );
 
-    // Zapier successful fetch ≈ morning IG publish — light the admin pill for today's app day.
-    const adminTaskDateKey = getAppDateKey();
-    void markAdminDailyIgPostCompleted(adminTaskDateKey, 'generate_instagram')
-      .then((ok) => {
-        if (ok) {
-          console.log(`✅ Admin daily IG post marked for ${adminTaskDateKey}`);
-        }
-      })
-      .catch((markErr) => {
-        console.warn(
-          `⚠️ Could not mark admin IG post for ${adminTaskDateKey}:`,
-          markErr?.message || markErr
-        );
-      });
+    // Zapier morning fetch ≈ IG publish. Skip nightly/SSR verify and pre-7AM CT hits.
+    if (shouldMarkAdminIgPostFromGenerateInstagram(req)) {
+      const adminTaskDateKey = getAppDateKey();
+      void markAdminDailyIgPostCompleted(adminTaskDateKey, 'generate_instagram')
+        .then((ok) => {
+          if (ok) {
+            console.log(`✅ Admin daily IG post marked for ${adminTaskDateKey}`);
+          }
+        })
+        .catch((markErr) => {
+          console.warn(
+            `⚠️ Could not mark admin IG post for ${adminTaskDateKey}:`,
+            markErr?.message || markErr
+          );
+        });
+    }
 
     res.json(result);
     
@@ -13394,8 +13409,23 @@ app.post('/api/admin-daily-tasks/:dateKey', async (req, res) => {
     const patch = { updatedAtIso: getUtcIsoNow(), updatedBy: 'admin_daily_task_api' };
     if (body.igPostCompleted === true) {
       patch.igPostCompleted = true;
-      patch.igPostCompletedAtIso = String(body.igPostCompletedAtIso || patch.updatedAtIso).trim();
-      patch.igPostSource = String(body.igPostSource || 'admin').trim().slice(0, 80);
+      // Preserve first-mark provenance when a sticky sync omits source/timestamp.
+      if (body.igPostCompletedAtIso) {
+        patch.igPostCompletedAtIso = String(body.igPostCompletedAtIso).trim();
+      }
+      if (body.igPostSource) {
+        patch.igPostSource = String(body.igPostSource).trim().slice(0, 80);
+      } else if (body.igPostCompletedAtIso) {
+        patch.igPostSource = 'admin';
+      }
+      // A fresh mark cancels any admin clear of a false-positive.
+      if (Object.prototype.hasOwnProperty.call(body, 'igPostClearedAtIso')) {
+        patch.igPostClearedAtIso = body.igPostClearedAtIso
+          ? String(body.igPostClearedAtIso).trim()
+          : admin.firestore.FieldValue.delete();
+      } else if (body.igPostCompletedAtIso || body.igPostSource) {
+        patch.igPostClearedAtIso = admin.firestore.FieldValue.delete();
+      }
     }
     if (body.previewTomorrowCompleted === true) {
       patch.previewTomorrowCompleted = true;

@@ -1084,7 +1084,8 @@ async function runNightlyIgAttempt({
     const verifyRes = await fetch(`${apiBase}/api/generate-instagram`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateKey })
+      // skipAdminTask: nightly verify must not light the morning “IG post” pill.
+      body: JSON.stringify({ date: dateKey, skipAdminTask: true, verifyOnly: true })
     });
     const verify = await verifyRes.json().catch(() => ({}));
     if (!verifyRes.ok || !verify.success) {

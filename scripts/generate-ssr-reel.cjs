@@ -307,7 +307,7 @@ async function runSsrAttempt({
     const verifyRes = await fetch(`${apiBase}/api/generate-instagram`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateKey })
+      body: JSON.stringify({ date: dateKey, skipAdminTask: true, verifyOnly: true })
     });
     const verify = await verifyRes.json().catch(() => ({}));
     if (!verifyRes.ok || !verify.success) {
