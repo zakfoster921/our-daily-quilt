@@ -41,7 +41,9 @@ const HTML_ALIASES = new Map([
   ['intro-persona-frame', 'intro-persona-frame.html'],
   ['privacy', 'privacy.html'],
   ['support', 'support.html'],
-  ['quilt-builder', 'scripts/quilt-builder.html']
+  ['quilt-builder', 'scripts/quilt-builder.html'],
+  ['columns-builder', 'scripts/columns-builder.html'],
+  ['quilt-render-shell', 'scripts/quilt-render-shell.html']
 ]);
 
 const MIME = {
@@ -211,6 +213,7 @@ server.listen(PORT, () => {
   console.log('📂 Static dev server + /api/proxy-image (no node-canvas)');
   console.log(`   Open: http://127.0.0.1:${PORT}/our-daily-beta`);
   console.log(`   Quilt builder: http://127.0.0.1:${PORT}/quilt-builder`);
+  console.log(`   Columns builder: http://127.0.0.1:${PORT}/columns-builder`);
   console.log(`   Post-color lab: http://127.0.0.1:${PORT}/post-color-lab`);
   console.log('   Full API + Firestore admin: npm run dev');
 });
