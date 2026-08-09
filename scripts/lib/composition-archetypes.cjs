@@ -13,6 +13,7 @@ const COLUMNS_PATTERN_PREF = [
 
 const VERTICAL_STRIPE_PATTERN_TYPES = new Set(['bandedColumns', 'stripes']);
 const MAX_VERTICAL_STRIPE_PATTERNS = 1;
+const COLUMNS_IN_COLUMN_DIAGONAL_SPLIT_PROB = 0.48;
 
 const COLUMN_ZONE_PATTERNS = {
   1: { top: ['hst', 'diamond'], middle: ['hst', 'diamond'], bottom: ['checkerboard', 'nestedGrid'] },
@@ -104,6 +105,26 @@ function nudgeHorizontalSplitHeight(engine, block, splitHeight) {
     return Math.min(bh - minSize, Math.max(minSize, splitHeight + nudge * 0.5));
   }
   return splitHeight;
+}
+
+function blockAllowsInColumnDiagonalSplit(engine, block, Utils) {
+  if (!blockContainedInSingleColumnBand(engine, block)) return false;
+  if (blockSpansMostOfQuiltWidth(block, Utils)) return false;
+  const w = Number(block?.width) || 0;
+  const h = Number(block?.height) || 0;
+  return w >= 100 && h >= 100;
+}
+
+function inColumnDiagonalSplit(engine, block, newColor, createDiagonal) {
+  if (typeof createDiagonal !== 'function' || !blockAllowsInColumnDiagonalSplit(engine, block)) {
+    return null;
+  }
+  const n = Number(engine.submissionCount) || 0;
+  const band = columnBandForBlock(engine, block);
+  const colId = Number(band?.regionId) || 1;
+  const roll = hashRatioFromKey(`${engine.quiltDateKey || 'columns'}:diag:${colId}:${n}`);
+  if (roll > COLUMNS_IN_COLUMN_DIAGONAL_SPLIT_PROB) return null;
+  return createDiagonal(block, newColor);
 }
 
 function blockContainedInSingleColumnBand(engine, block) {
@@ -215,6 +236,7 @@ function clearArchetypeBiases(engine) {
   delete engine._compositionHorizontalSplitRatio;
   delete engine._compositionNudgeHorizontalSplitHeight;
   delete engine._compositionAllowAngledMacroSplit;
+  delete engine._compositionInColumnDiagonalSplit;
   delete engine.__columnsVerticalStripePatternCount;
   delete engine.__compositionArchetypeStash;
   delete engine.__compositionArchetypeKey;
@@ -257,10 +279,20 @@ function installColumnsArchetype(engine, options = {}) {
   engine.macroFlattenedAngledSplitProb =
     Number.isFinite(Number(engine.macroFlattenedAngledSplitProb)) && engine.macroFlattenedAngledSplitProb > 0
       ? engine.macroFlattenedAngledSplitProb
-      : 0.85;
+      : 1;
 
   if (stash.createDiagonalAxisPattern && typeof engine.performRegularSplit === 'function') {
-    engine.createDiagonalAxisPattern = (block, newColor) => engine.performRegularSplit(block, newColor);
+    engine.createDiagonalAxisPattern = (block, newColor) => {
+      if (blockSpansQuiltWidth(block, Utils) || blockSpansMostOfQuiltWidth(block, Utils)) {
+        return engine.performRegularSplit(block, newColor);
+      }
+      if (blockContainedInSingleColumnBand(engine, block)) {
+        return stash.createDiagonalAxisPattern(block, newColor);
+      }
+      return engine.performRegularSplit(block, newColor);
+    };
+    engine._compositionInColumnDiagonalSplit = (block, newColor) =>
+      inColumnDiagonalSplit(engine, block, newColor, stash.createDiagonalAxisPattern);
   }
 
   engine.__columnsVerticalStripePatternCount = 0;
