@@ -42,6 +42,16 @@
     label select { font: inherit; padding: .45rem .55rem; border-radius: 6px; border: 1px solid rgba(0,0,0,.22); }
     .stats { font-size: .82rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .35rem 1rem; }
     .stats strong { color: var(--ink); }
+    .banner {
+      width: 100%;
+      margin: 0;
+      padding: .55rem 1.25rem;
+      font-size: .82rem;
+      background: #fff8e6;
+      border-bottom: 1px solid rgba(0,0,0,.08);
+      color: #5c4a12;
+    }
+    .banner.ok { background: #eef8f0; color: #1f4d2c; }
     main { flex: 1; display: grid; place-items: center; padding: 1rem; }
     .stage {
       width: min(360px, 100%);
@@ -60,9 +70,21 @@
   <header>
     <div>
       <h1>9-patch builder</h1>
-      <p class="lede">3×3 macro grid — checkerboard light/dark cell routing, checkerboard motifs inside cells.</p>
+      <p class="lede">Prototype only — nine-patch is not in the live app yet. Live render matches app paint rules.</p>
     </div>
     <div class="controls">
+      <label>Rules
+        <select id="rules-mode">
+          <option value="grid">Engine grid only</option>
+          <option value="archetype" selected>Full archetype (routing + motifs)</option>
+        </select>
+      </label>
+      <label>Render
+        <select id="render-mode">
+          <option value="live" selected>Live (matches app)</option>
+          <option value="preview">Builder preview (legacy)</option>
+        </select>
+      </label>
       <label>Freeze
         <select id="macro-freeze-at">
           <option value="5" selected>5 blocks</option>
@@ -76,6 +98,7 @@
     </div>
     <div class="stats" id="stats" aria-live="polite">Loading day colors…</div>
   </header>
+  <p class="banner" id="fidelity-banner">Nine-patch prototype — not shipped in production</p>
   <main>
     <div class="stage">
       <div class="quilt-container builder-quilt-container">
@@ -95,6 +118,7 @@
   <script src="/lib/quilt-mirror-layout.js"></script>
   <script src="/lib/simple-quilt-engine.js"></script>
   <script src="/lib/composition-archetypes.js"></script>
+  <script src="/scripts/lib/builder-fidelity.js"></script>
   <script src="/lib/quilt-renderer-v2.js"></script>
 
   <script>
@@ -167,24 +191,69 @@
         <span>day: <strong>${dateKey()}</strong></span>
         <span>replay: <strong>${Math.min(replayIndex, total)}</strong> / ${total || '—'}</span>
         <span>macro: <strong>${frozen}</strong> · ${regions} cells</span>
+        <span>rules: <strong>${selectedRulesMode()}</strong></span>
+        <span>render: <strong>${selectedRenderMode()}</strong></span>
         ${extra ? `<span>${extra}</span>` : ''}
       `);
+      updateFidelityBanner();
+    }
+
+    function selectedRulesMode() {
+      return document.getElementById('rules-mode')?.value === 'grid' ? 'grid' : 'archetype';
+    }
+
+    function selectedRenderMode() {
+      return document.getElementById('render-mode')?.value === 'preview' ? 'preview' : 'live';
+    }
+
+    function updateFidelityBanner() {
+      const banner = document.getElementById('fidelity-banner');
+      if (!banner) return;
+      const render = selectedRenderMode();
+      const rules = selectedRulesMode();
+      if (render === 'preview') {
+        banner.textContent = 'Legacy builder render — colors may look wrong vs the app';
+        banner.className = 'banner';
+        return;
+      }
+      if (rules === 'grid') {
+        banner.textContent = 'Live render · engine 3×3 grid only (no archetype routing)';
+        banner.className = 'banner ok';
+        return;
+      }
+      banner.textContent = 'Live render · full nine-patch prototype (not in production app)';
+      banner.className = 'banner';
+    }
+
+    function applyRendererSettings() {
+      if (!renderer || !window.BuilderFidelity) return;
+      BuilderFidelity.applyRendererMode(renderer, selectedRenderMode(), { dateKey: dateKey() });
+    }
+
+    function installLayoutRules() {
+      if (!engine) return;
+      if (typeof CompositionArchetypes?.clearArchetypeBiases === 'function') {
+        CompositionArchetypes.clearArchetypeBiases(engine);
+      }
+      const dk = dateKey();
+      if (selectedRulesMode() === 'archetype') {
+        CompositionArchetypes.installNinePatchArchetype(engine, {
+          dateKey: dk,
+          preserveProductionOdds: true
+        });
+      } else {
+        BuilderFidelity.productionNinePatchGrid(engine, dk);
+      }
     }
 
     function resetEngine() {
-      engine = new SimpleQuiltEngine('ninepatch-builder', {
-        recordColorReplayEvents: false,
-        macroFreezeAtBlockCount: selectedMacroFreezeAt(),
-        bandRowSpecialWeight: 0,
-        specialStructureScaleMultiplier: 1,
-        macroFlattenedAngledSplitProb: 0.85
+      engine = BuilderFidelity.createProductionEngine('ninepatch-builder', {
+        macroFreezeAtBlockCount: selectedMacroFreezeAt()
       });
-      engine.recordUserContribution = () => {};
-      engine._suppressSplitWarnings = true;
       engine.initialize();
-      engine.setQuiltDateKey(dateKey());
-      CompositionArchetypes.installNinePatchArchetype(engine, { dateKey: dateKey() });
+      installLayoutRules();
       replayIndex = 0;
+      updateFidelityBanner();
       renderQuilt(null);
     }
 
@@ -245,10 +314,7 @@
 
     async function boot() {
       renderer = new QuiltRendererV2(noopLogger);
-      renderer._builderPreviewMode = true;
-      renderer.setBuilderPreviewMode?.(true);
-      renderer.setBuilderLayeringSubmissionCap?.(0);
-      renderer._exportDateKeyOverride = dateKey();
+      applyRendererSettings();
       renderer.initialize();
       syncStage();
       await loadDayColors();
@@ -259,6 +325,11 @@
       document.getElementById('macro-freeze-at')?.addEventListener('change', () => {
         engine.macroFreezeAtBlockCountOverride = selectedMacroFreezeAt();
         if (!engine.macroStructureFrozen) engine.maybeApplyMacroStructureFreezeAfterMutation();
+        renderQuilt(null);
+      });
+      document.getElementById('rules-mode')?.addEventListener('change', () => resetEngine());
+      document.getElementById('render-mode')?.addEventListener('change', () => {
+        applyRendererSettings();
         renderQuilt(null);
       });
       window.addEventListener('keydown', (e) => {

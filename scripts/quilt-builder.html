@@ -183,6 +183,7 @@
   <script src="/lib/quilt-mirror-layout.js"></script>
   <script src="/lib/simple-quilt-engine.js?v=70"></script>
   <script src="/lib/composition-archetypes.js?v=1"></script>
+  <script src="/scripts/lib/builder-fidelity.js"></script>
   <script src="/lib/quilt-renderer-v2.js?v=70"></script>
 
   <script>
@@ -227,8 +228,28 @@
       input.value = builderDateKey();
     }
 
-    function useColumnsArchetype() {
+    function useColumnsLayout() {
       return isColumnsPreview || embeddedReplay.length > 0;
+    }
+
+    function useArchetypeHooks() {
+      try {
+        return new URLSearchParams(window.location.search).get('archetype') === '1';
+      } catch {
+        return false;
+      }
+    }
+
+    function useLegacyPreviewRender() {
+      try {
+        return new URLSearchParams(window.location.search).get('preview') === '1';
+      } catch {
+        return false;
+      }
+    }
+
+    function useColumnsArchetype() {
+      return useColumnsLayout() && useArchetypeHooks();
     }
 
     function selectedMacroFreezeAt() {
@@ -371,17 +392,16 @@
     }
 
     function configureRenderer(r) {
-      r._builderPreviewMode = true;
-      if (typeof r.setBuilderPreviewMode === 'function') r.setBuilderPreviewMode(true);
-      if (typeof r.setBuilderLayeringSubmissionCap === 'function') {
-        r.setBuilderLayeringSubmissionCap(0);
-      } else {
-        r._builderLayeringSubmissionCap = 0;
+      if (window.BuilderFidelity) {
+        BuilderFidelity.applyRendererMode(
+          r,
+          useLegacyPreviewRender() ? 'preview' : 'live',
+          { dateKey: builderDateKey() }
+        );
       }
       r._forcePrimaryOnlyPreview = false;
       r._exportDisableSplitBandFit = false;
       r._exportFullQuiltField = false;
-      r._exportDateKeyOverride = builderDateKey();
       r._gridSeamUnderpaintBleed = () => 2.25;
       r._renderViewportOverride = builderStageMetrics().viewport;
       if (typeof r.setBacksidePreviewEnabled === 'function') r.setBacksidePreviewEnabled(false);
@@ -420,6 +440,10 @@
       const freezeAt = engine?.macroFreezeAtBlockCountOverride ?? SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT;
       const macroRegions = engine?.macroStructureFrozen ? countMacroRegions(engine.blocks) : '—';
       const layout = engine?.macroLayoutMode === 'columns' ? 'columns' : 'default';
+      const renderMode = useLegacyPreviewRender() ? 'preview' : 'live';
+      const rulesLabel = useColumnsLayout()
+        ? (useArchetypeHooks() ? 'columns archetype' : 'production columns')
+        : 'baseline';
       const swatch = lastColor ? `<span class="swatch" style="background:${lastColor}"></span>` : '';
       const replayLabel = replayQueue.length
         ? `<span>replay: <strong>${Math.min(replayIndex, replayQueue.length)}</strong> / ${replayQueue.length}</span>`
@@ -432,7 +456,9 @@
         <span>freeze at: <strong>${freezeAt}</strong></span>
         <span>macro regions: <strong>${macroRegions}</strong></span>
         <span>layout: <strong>${layout}</strong></span>
-        <span>archetype: <strong>${useColumnsArchetype() ? 'columns' : 'baseline'}</strong></span>
+        <span>rules: <strong>${rulesLabel}</strong></span>
+        <span>render: <strong>${renderMode}</strong></span>
+        <span>archetype hooks: <strong>${useColumnsArchetype() ? 'yes' : 'no'}</strong></span>
         ${replayLabel}
         <span>last ${swatch}<strong>${lastColor || '—'}</strong></span>
         <span>motifs: ${specialTypeSummary(engine?.blocks)}</span>
@@ -445,25 +471,24 @@
       if (typeof CompositionArchetypes?.clearArchetypeBiases === 'function') {
         CompositionArchetypes.clearArchetypeBiases(engine);
       }
+      const dk = builderDateKey();
       if (useColumnsArchetype() && typeof CompositionArchetypes?.installColumnsArchetype === 'function') {
-        CompositionArchetypes.installColumnsArchetype(engine, { dateKey: builderDateKey() });
+        CompositionArchetypes.installColumnsArchetype(engine, {
+          dateKey: dk,
+          preserveProductionOdds: true
+        });
+      } else if (useColumnsLayout() && window.BuilderFidelity) {
+        BuilderFidelity.productionColumnsLayout(engine, dk);
+      } else {
+        engine.setQuiltDateKey(dk);
       }
     }
 
     function resetEngine() {
-      const columnsMode = useColumnsArchetype();
-      engine = new SimpleQuiltEngine('quilt-builder', {
-        recordColorReplayEvents: false,
-        macroFreezeAtBlockCount: selectedMacroFreezeAt(),
-        bandRowSpecialWeight: columnsMode ? 1 : 0,
-        specialStructureScaleMultiplier: columnsMode ? 1 : 0,
-        macroFlattenedAngledSplitProb: 0.85
+      engine = BuilderFidelity.createProductionEngine('quilt-builder', {
+        macroFreezeAtBlockCount: selectedMacroFreezeAt()
       });
-      engine.recordUserContribution = () => {};
-      engine._suppressSplitWarnings = true;
       engine.initialize();
-      engine.recordColorReplayEvents = false;
-      engine.setQuiltDateKey(builderDateKey());
       installArchetypeBiases();
       lastColor = '';
       lastError = '';

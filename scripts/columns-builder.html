@@ -42,6 +42,16 @@
     label select { font: inherit; padding: .45rem .55rem; border-radius: 6px; border: 1px solid rgba(0,0,0,.22); }
     .stats { font-size: .82rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .35rem 1rem; }
     .stats strong { color: var(--ink); }
+    .banner {
+      width: 100%;
+      margin: 0;
+      padding: .55rem 1.25rem;
+      font-size: .82rem;
+      background: #fff8e6;
+      border-bottom: 1px solid rgba(0,0,0,.08);
+      color: #5c4a12;
+    }
+    .banner.ok { background: #eef8f0; color: #1f4d2c; }
     main { flex: 1; display: grid; place-items: center; padding: 1rem; }
     .stage {
       width: min(360px, 100%);
@@ -60,9 +70,21 @@
   <header>
     <div>
       <h1>Columns builder</h1>
-      <p class="lede">Full-height vertical columns — horizontal splits only inside a band, never across the full quilt width.</p>
+      <p class="lede">Production columns path uses the same engine + renderer as the live app.</p>
     </div>
     <div class="controls">
+      <label>Rules
+        <select id="rules-mode">
+          <option value="production" selected>Production (app engine)</option>
+          <option value="archetype">Archetype experiment</option>
+        </select>
+      </label>
+      <label>Render
+        <select id="render-mode">
+          <option value="live" selected>Live (matches app)</option>
+          <option value="preview">Builder preview (legacy)</option>
+        </select>
+      </label>
       <label>Freeze
         <select id="macro-freeze-at">
           <option value="5" selected>5 blocks</option>
@@ -77,6 +99,7 @@
     </div>
     <div class="stats" id="stats" aria-live="polite">Loading day colors…</div>
   </header>
+  <p class="banner ok" id="fidelity-banner">Live render · production columns rules</p>
   <main>
     <div class="stage">
       <div class="quilt-container builder-quilt-container">
@@ -99,6 +122,7 @@
   <script src="/lib/quilt-mirror-layout.js"></script>
   <script src="/lib/simple-quilt-engine.js"></script>
   <script src="/lib/composition-archetypes.js"></script>
+  <script src="/scripts/lib/builder-fidelity.js"></script>
   <script src="/lib/quilt-renderer-v2.js"></script>
 
   <script>
@@ -167,31 +191,76 @@
       const frozen = engine?.macroStructureFrozen ? 'yes' : 'no';
       const regions = engine?.macroStructureFrozen ? countMacroRegions(engine.blocks) : '—';
       const total = dayData?.colors?.length || 0;
+      const summary = window.BuilderFidelity?.fidelitySummary(engine, {
+        renderMode: selectedRenderMode(),
+        rulesMode: selectedRulesMode(),
+        dateKey: dateKey()
+      }) || {};
       setStats(`
         <span><strong>${picks}</strong> colors</span>
         <span><strong>${blocks}</strong> blocks</span>
         <span>day: <strong>${dateKey()}</strong></span>
         <span>replay: <strong>${Math.min(replayIndex, total)}</strong> / ${total || '—'}</span>
         <span>macro: <strong>${frozen}</strong> · ${regions} regions</span>
+        <span>rules: <strong>${summary.rulesMode || '—'}</strong></span>
+        <span>render: <strong>${summary.renderMode || '—'}</strong></span>
         ${extra ? `<span>${extra}</span>` : ''}
       `);
+      updateFidelityBanner();
+    }
+
+    function selectedRulesMode() {
+      return document.getElementById('rules-mode')?.value === 'archetype' ? 'archetype' : 'production';
+    }
+
+    function selectedRenderMode() {
+      return document.getElementById('render-mode')?.value === 'preview' ? 'preview' : 'live';
+    }
+
+    function updateFidelityBanner() {
+      const banner = document.getElementById('fidelity-banner');
+      if (!banner || !window.BuilderFidelity) return;
+      const summary = BuilderFidelity.fidelitySummary(engine, {
+        renderMode: selectedRenderMode(),
+        rulesMode: selectedRulesMode(),
+        dateKey: dateKey()
+      });
+      banner.textContent = summary.label;
+      banner.className = summary.renderMode === 'live' && summary.rulesMode === 'production'
+        ? 'banner ok'
+        : 'banner';
+    }
+
+    function applyRendererSettings() {
+      if (!renderer || !window.BuilderFidelity) return;
+      BuilderFidelity.applyRendererMode(renderer, selectedRenderMode(), { dateKey: dateKey() });
+    }
+
+    function installLayoutRules() {
+      if (!engine) return;
+      if (typeof CompositionArchetypes?.clearArchetypeBiases === 'function') {
+        CompositionArchetypes.clearArchetypeBiases(engine);
+      }
+      const dk = dateKey();
+      if (selectedRulesMode() === 'archetype') {
+        CompositionArchetypes.installColumnsArchetype(engine, {
+          dateKey: dk,
+          preserveProductionOdds: true
+        });
+      } else {
+        BuilderFidelity.productionColumnsLayout(engine, dk);
+      }
     }
 
     function resetEngine() {
-      engine = new SimpleQuiltEngine('columns-builder', {
-        recordColorReplayEvents: false,
-        macroFreezeAtBlockCount: selectedMacroFreezeAt(),
-        bandRowSpecialWeight: 1,
-        specialStructureScaleMultiplier: 1,
-        macroFlattenedAngledSplitProb: 1
+      engine = BuilderFidelity.createProductionEngine('columns-builder', {
+        macroFreezeAtBlockCount: selectedMacroFreezeAt()
       });
-      engine.recordUserContribution = () => {};
-      engine._suppressSplitWarnings = true;
       engine.initialize();
-      engine.setQuiltDateKey(dateKey());
-      CompositionArchetypes.installColumnsArchetype(engine, { dateKey: dateKey() });
+      installLayoutRules();
       replayIndex = 0;
       lastColor = '';
+      updateFidelityBanner();
       renderQuilt(null);
     }
 
@@ -270,6 +339,11 @@
         if (!engine.macroStructureFrozen) engine.maybeApplyMacroStructureFreezeAfterMutation();
         renderQuilt(null);
       });
+      document.getElementById('rules-mode')?.addEventListener('change', () => resetEngine());
+      document.getElementById('render-mode')?.addEventListener('change', () => {
+        applyRendererSettings();
+        renderQuilt(null);
+      });
       window.addEventListener('keydown', (e) => {
         if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
         if (e.key === ' ') {
@@ -283,10 +357,7 @@
 
     async function boot() {
       renderer = new QuiltRendererV2(noopLogger);
-      renderer._builderPreviewMode = true;
-      renderer.setBuilderPreviewMode?.(true);
-      renderer.setBuilderLayeringSubmissionCap?.(0);
-      renderer._exportDateKeyOverride = dateKey();
+      applyRendererSettings();
       renderer.initialize();
       syncStage();
       await loadDayColors();
