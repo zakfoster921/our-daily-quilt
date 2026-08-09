@@ -16,7 +16,8 @@ const COLUMN_ZONE_PATTERNS = {
   1: { top: ['bandedColumns', 'stripes'], middle: ['hst', 'diamond'], bottom: ['checkerboard', 'nestedGrid'] },
   2: { top: ['stripes'], middle: ['diamond', 'cross'], bottom: ['cross', 'nestedGrid'] },
   3: { top: ['stripes', 'hst'], middle: ['insetCircle', 'framed'], bottom: ['bandedColumns', 'stripes'] },
-  4: { top: ['hst', 'diamond'], middle: ['nestedGrid', 'cross'], bottom: ['framed', 'stripes'] }
+  4: { top: ['hst', 'diamond'], middle: ['nestedGrid', 'cross'], bottom: ['framed', 'stripes'] },
+  5: { top: ['stripes'], middle: ['insetCircle', 'hst'], bottom: ['bandedColumns', 'checkerboard'] }
 };
 
 function columnBandForBlock(engine, block) {
@@ -107,6 +108,8 @@ function installColumnsArchetype(engine, options = {}) {
     engine.hydrateMacroLayoutFromPersistence('columns');
   }
   if (typeof engine._computeMacroColumnBands === 'function') {
+    engine.macroColumnMinCount = 4;
+    engine.macroColumnMaxCount = 5;
     engine._macroColumnBands = engine._computeMacroColumnBands();
   }
 
