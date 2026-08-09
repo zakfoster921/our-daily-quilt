@@ -94,6 +94,18 @@ function noteVerticalStripePattern(engine, block, pattern) {
   }
 }
 
+const COLUMNS_VERTICAL_SPLIT_MAX_BLOCK_HEIGHT_FRAC = 0.15;
+
+function primaryQuiltHeight(Utils) {
+  return quiltDims(Utils).h;
+}
+
+function blockAllowsVerticalColumnSplit(block, Utils) {
+  const quiltH = primaryQuiltHeight(Utils);
+  const bh = Number(block?.height) || 0;
+  return bh < quiltH * COLUMNS_VERTICAL_SPLIT_MAX_BLOCK_HEIGHT_FRAC;
+}
+
 function splitDirectionForColumns(engine, block, Utils) {
   if (blockIsTallStrip(block)) return 'horizontal';
   if (blockSpansQuiltWidth(block, Utils)) return 'vertical';
@@ -103,6 +115,7 @@ function splitDirectionForColumns(engine, block, Utils) {
     const bw = Number(block?.width) || 0;
     if (bw <= Number(band.width) * 0.88) return 'horizontal';
   }
+  if (!blockAllowsVerticalColumnSplit(block, Utils)) return 'horizontal';
   return 'vertical';
 }
 
