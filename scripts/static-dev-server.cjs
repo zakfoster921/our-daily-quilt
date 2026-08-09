@@ -43,6 +43,7 @@ const HTML_ALIASES = new Map([
   ['support', 'support.html'],
   ['quilt-builder', 'scripts/quilt-builder.html'],
   ['columns-builder', 'scripts/columns-builder.html'],
+  ['ninepatch-builder', 'scripts/ninepatch-builder.html'],
   ['quilt-render-shell', 'scripts/quilt-render-shell.html']
 ]);
 
@@ -214,6 +215,7 @@ server.listen(PORT, () => {
   console.log(`   Open: http://127.0.0.1:${PORT}/our-daily-beta`);
   console.log(`   Quilt builder: http://127.0.0.1:${PORT}/quilt-builder`);
   console.log(`   Columns builder: http://127.0.0.1:${PORT}/columns-builder`);
+  console.log(`   9-patch builder: http://127.0.0.1:${PORT}/ninepatch-builder`);
   console.log(`   Post-color lab: http://127.0.0.1:${PORT}/post-color-lab`);
   console.log('   Full API + Firestore admin: npm run dev');
 });
