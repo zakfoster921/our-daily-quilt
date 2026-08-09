@@ -13,7 +13,7 @@ const COLUMNS_PATTERN_PREF = [
 
 const VERTICAL_STRIPE_PATTERN_TYPES = new Set(['bandedColumns', 'stripes']);
 const MAX_VERTICAL_STRIPE_PATTERNS = 1;
-const COLUMNS_IN_COLUMN_DIAGONAL_SPLIT_PROB = 0.48;
+const COLUMNS_IN_COLUMN_DIAGONAL_SPLIT_PROB = 0.85;
 
 const COLUMN_ZONE_PATTERNS = {
   1: { top: ['hst', 'diamond'], middle: ['hst', 'diamond'], bottom: ['checkerboard', 'nestedGrid'] },
@@ -112,7 +112,7 @@ function blockAllowsInColumnDiagonalSplit(engine, block, Utils) {
   if (blockSpansMostOfQuiltWidth(block, Utils)) return false;
   const w = Number(block?.width) || 0;
   const h = Number(block?.height) || 0;
-  return w >= 100 && h >= 100;
+  return w >= 140 && h >= 140;
 }
 
 function inColumnDiagonalSplit(engine, block, newColor, createDiagonal) {
