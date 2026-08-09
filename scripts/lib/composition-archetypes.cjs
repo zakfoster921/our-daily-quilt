@@ -1,28 +1,47 @@
 'use strict';
 
 const COLUMNS_PATTERN_PREF = [
-  'checkerboard',
-  'insetCircle',
-  'cross',
-  'diamond',
   'hst',
+  'diamond',
+  'cross',
+  'insetCircle',
+  'checkerboard',
   'nestedGrid',
+  'stripes',
   'framed',
-  'stripes'
+  'bandedColumns'
 ];
 
 const VERTICAL_STRIPE_PATTERN_TYPES = new Set(['bandedColumns', 'stripes']);
-const MAX_VERTICAL_STRIPE_PATTERNS = 1;
+const MAX_VERTICAL_STRIPE_PATTERNS = 3;
 const COLUMNS_IN_COLUMN_DIAGONAL_SPLIT_PROB = 0.85;
 
 const COLUMN_ZONE_PATTERNS = {
-  1: { top: ['hst', 'diamond'], middle: ['hst', 'diamond'], bottom: ['checkerboard', 'nestedGrid'] },
-  2: { top: ['framed', 'cross'], middle: ['diamond', 'cross'], bottom: ['cross', 'nestedGrid'] },
-  3: { top: ['hst', 'insetCircle'], middle: ['insetCircle', 'framed'], bottom: ['checkerboard', 'nestedGrid'] },
-  4: { top: ['hst', 'diamond'], middle: ['nestedGrid', 'cross'], bottom: ['framed', 'checkerboard'] },
-  5: { top: ['insetCircle', 'hst'], middle: ['insetCircle', 'hst'], bottom: ['checkerboard', 'nestedGrid'] },
-  6: { top: ['cross', 'framed'], middle: ['diamond', 'nestedGrid'], bottom: ['hst', 'checkerboard'] }
+  1: { top: ['bandedColumns', 'stripes'], middle: ['hst', 'diamond'], bottom: ['checkerboard', 'nestedGrid'] },
+  2: { top: ['stripes', 'framed'], middle: ['diamond', 'stripes'], bottom: ['cross', 'nestedGrid'] },
+  3: { top: ['stripes', 'hst'], middle: ['hst', 'insetCircle'], bottom: ['insetCircle', 'bandedColumns'] },
+  4: { top: ['nestedGrid', 'checkerboard'], middle: ['checkerboard', 'cross'], bottom: ['stripes', 'bandedColumns'] },
+  5: { top: ['hst', 'framed'], middle: ['diamond', 'cross'], bottom: ['checkerboard', 'stripes'] },
+  6: { top: ['stripes', 'nestedGrid'], middle: ['insetCircle', 'hst'], bottom: ['cross', 'checkerboard'] }
 };
+
+function verticalZone(block, Utils) {
+  const y = Number(block?.y) || 0;
+  const h = Number(block?.height) || 0;
+  const cy = y + h / 2;
+  const quiltH = quiltDims(Utils).h;
+  const t = cy / quiltH;
+  if (t < 0.34) return 'top';
+  if (t < 0.67) return 'middle';
+  return 'bottom';
+}
+
+function columnZoneAllowsVerticalStripeSpecial(colId, zone) {
+  if (colId === 1 && zone === 'top') return true;
+  if (colId === 3 && zone === 'bottom') return true;
+  if (colId === 4 && zone === 'bottom') return true;
+  return false;
+}
 
 function columnBandForBlock(engine, block) {
   const bands = engine?._macroColumnBands;
@@ -148,12 +167,18 @@ function blockWouldGetVerticalStripes(block) {
   return w / h < 0.95;
 }
 
-function filterVerticalStripePatterns(engine, availablePatterns, block) {
-  let patterns = availablePatterns.filter((p) => p !== 'bandedColumns');
+function filterVerticalStripePatterns(engine, availablePatterns, block, Utils) {
+  const band = columnBandForBlock(engine, block);
+  const colId = Number(band?.regionId) || 0;
+  const zone = verticalZone(block, Utils);
+  const allowVerticalStripeZone = columnZoneAllowsVerticalStripeSpecial(colId, zone);
+  let patterns = allowVerticalStripeZone
+    ? availablePatterns.slice()
+    : availablePatterns.filter((p) => p !== 'bandedColumns');
   const used = Number(engine.__columnsVerticalStripePatternCount) || 0;
   if (used >= MAX_VERTICAL_STRIPE_PATTERNS) {
     patterns = patterns.filter((p) => !VERTICAL_STRIPE_PATTERN_TYPES.has(p));
-  } else {
+  } else if (!allowVerticalStripeZone) {
     patterns = patterns.filter((p) => {
       if (p !== 'stripes') return true;
       return !blockWouldGetVerticalStripes(block);
@@ -200,18 +225,6 @@ function splitDirectionForColumns(engine, block, Utils) {
   return 'vertical';
 }
 
-function verticalZone(block, Utils) {
-  const y = Number(block?.y) || 0;
-  const h = Number(block?.height) || 0;
-  const cy = y + h / 2;
-  const dims = Utils?.getQuiltDimensions?.();
-  const quiltH = Math.max(1, Number(dims?.height) || 1340);
-  const t = cy / quiltH;
-  if (t < 0.34) return 'top';
-  if (t < 0.67) return 'middle';
-  return 'bottom';
-}
-
 function patternsForBlock(engine, block, Utils) {
   const band = columnBandForBlock(engine, block);
   const colId = Number(band?.regionId) || 0;
@@ -230,6 +243,12 @@ function clearArchetypeBiases(engine) {
   if (stash.createDiagonalAxisPattern) engine.createDiagonalAxisPattern = stash.createDiagonalAxisPattern;
   if (stash.macroFlattenedAngledSplitProb != null) {
     engine.macroFlattenedAngledSplitProb = stash.macroFlattenedAngledSplitProb;
+  }
+  if (stash.specialStructureScaleMultiplier != null) {
+    engine.specialStructureScaleMultiplier = stash.specialStructureScaleMultiplier;
+  }
+  if (stash.bandRowSpecialWeight != null) {
+    engine.bandRowSpecialWeight = stash.bandRowSpecialWeight;
   }
   delete engine._compositionSplitDirection;
   delete engine._compositionColumnsFullHeight;
@@ -273,8 +292,13 @@ function installColumnsArchetype(engine, options = {}) {
       typeof engine.createDiagonalAxisPattern === 'function'
         ? engine.createDiagonalAxisPattern.bind(engine)
         : null,
-    macroFlattenedAngledSplitProb: engine.macroFlattenedAngledSplitProb
+    macroFlattenedAngledSplitProb: engine.macroFlattenedAngledSplitProb,
+    specialStructureScaleMultiplier: engine.specialStructureScaleMultiplier,
+    bandRowSpecialWeight: engine.bandRowSpecialWeight
   };
+
+  engine.specialStructureScaleMultiplier = Math.max(Number(engine.specialStructureScaleMultiplier) || 0, 1);
+  engine.bandRowSpecialWeight = Math.max(Number(engine.bandRowSpecialWeight) || 0, 1);
 
   engine.macroFlattenedAngledSplitProb =
     Number.isFinite(Number(engine.macroFlattenedAngledSplitProb)) && engine.macroFlattenedAngledSplitProb > 0
@@ -299,7 +323,7 @@ function installColumnsArchetype(engine, options = {}) {
 
   if (stash.selectPatternType) {
     engine.selectPatternType = (availablePatterns, block, newColor) => {
-      const filtered = filterVerticalStripePatterns(engine, availablePatterns, block);
+      const filtered = filterVerticalStripePatterns(engine, availablePatterns, block, Utils);
       const prefs = patternsForBlock(engine, block, Utils);
       for (const preferred of prefs) {
         if (filtered.includes(preferred)) {
