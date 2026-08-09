@@ -29,6 +29,36 @@ function columnBandForBlock(engine, block) {
   return bands[bands.length - 1] || null;
 }
 
+function quiltDims(Utils) {
+  const dims = Utils?.getQuiltDimensions?.();
+  return {
+    w: Math.max(1, Number(dims?.width) || 1070),
+    h: Math.max(1, Number(dims?.height) || 1340)
+  };
+}
+
+function blockSpansQuiltWidth(block, Utils) {
+  const { w: quiltW } = quiltDims(Utils);
+  const bx = Number(block?.x) || 0;
+  const bw = Number(block?.width) || 0;
+  return bx <= 4 && bw >= quiltW * 0.68;
+}
+
+function blockContainedInSingleColumnBand(engine, block) {
+  const band = columnBandForBlock(engine, block);
+  if (!band || !block) return false;
+  const bx = Number(block.x) || 0;
+  const bw = Number(block.width) || 0;
+  const eps = 3;
+  return bx >= band.x - eps && bx + bw <= band.x + band.width + eps;
+}
+
+function splitDirectionForColumns(engine, block, Utils) {
+  if (blockSpansQuiltWidth(block, Utils)) return 'vertical';
+  if (blockContainedInSingleColumnBand(engine, block)) return 'horizontal';
+  return 'vertical';
+}
+
 function verticalZone(block, Utils) {
   const y = Number(block?.y) || 0;
   const h = Number(block?.height) || 0;
@@ -61,6 +91,7 @@ function clearArchetypeBiases(engine) {
     engine.macroFlattenedAngledSplitProb = stash.macroFlattenedAngledSplitProb;
   }
   delete engine._compositionSplitDirection;
+  delete engine._compositionColumnsFullHeight;
   delete engine.__compositionArchetypeStash;
   delete engine.__compositionArchetypeKey;
 }
@@ -113,8 +144,8 @@ function installColumnsArchetype(engine, options = {}) {
     };
   }
 
-  engine._compositionSplitDirection = () =>
-    engine.macroStructureFrozen ? 'horizontal' : 'vertical';
+  engine._compositionSplitDirection = (block) => splitDirectionForColumns(engine, block, Utils);
+  engine._compositionColumnsFullHeight = true;
 
   if (stash.routeMacro) {
     engine._routeSplittableBlocksByMacroColor = (newColor, candidateBlocks) => {
