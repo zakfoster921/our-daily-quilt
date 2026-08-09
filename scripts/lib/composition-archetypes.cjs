@@ -19,15 +19,6 @@ const COLUMN_ZONE_PATTERNS = {
   4: { top: ['hst', 'diamond'], middle: ['nestedGrid', 'cross'], bottom: ['framed', 'stripes'] }
 };
 
-function quiltWidth(Utils) {
-  try {
-    const dims = Utils?.getQuiltDimensions?.();
-    return Math.max(1, Number(dims?.width) || 1070);
-  } catch (_) {
-    return 1070;
-  }
-}
-
 function columnBandForBlock(engine, block) {
   const bands = engine?._macroColumnBands;
   if (!Array.isArray(bands) || !bands.length || !block) return null;
@@ -65,6 +56,10 @@ function clearArchetypeBiases(engine) {
   if (stash.selectPatternType) engine.selectPatternType = stash.selectPatternType;
   if (stash.routeMacro) engine._routeSplittableBlocksByMacroColor = stash.routeMacro;
   if (stash.forceOversized) engine._shouldForceOversizedSplit = stash.forceOversized;
+  if (stash.createDiagonalAxisPattern) engine.createDiagonalAxisPattern = stash.createDiagonalAxisPattern;
+  if (stash.macroFlattenedAngledSplitProb != null) {
+    engine.macroFlattenedAngledSplitProb = stash.macroFlattenedAngledSplitProb;
+  }
   delete engine._compositionSplitDirection;
   delete engine.__compositionArchetypeStash;
   delete engine.__compositionArchetypeKey;
@@ -80,6 +75,9 @@ function installColumnsArchetype(engine, options = {}) {
   if (typeof engine.hydrateMacroLayoutFromPersistence === 'function') {
     engine.hydrateMacroLayoutFromPersistence('columns');
   }
+  if (typeof engine._computeMacroColumnBands === 'function') {
+    engine._macroColumnBands = engine._computeMacroColumnBands();
+  }
 
   const stash = {
     selectPatternType:
@@ -91,8 +89,19 @@ function installColumnsArchetype(engine, options = {}) {
     forceOversized:
       typeof engine._shouldForceOversizedSplit === 'function'
         ? engine._shouldForceOversizedSplit.bind(engine)
-        : null
+        : null,
+    createDiagonalAxisPattern:
+      typeof engine.createDiagonalAxisPattern === 'function'
+        ? engine.createDiagonalAxisPattern.bind(engine)
+        : null,
+    macroFlattenedAngledSplitProb: engine.macroFlattenedAngledSplitProb
   };
+
+  engine.macroFlattenedAngledSplitProb = 0;
+
+  if (stash.createDiagonalAxisPattern && typeof engine.performRegularSplit === 'function') {
+    engine.createDiagonalAxisPattern = (block, newColor) => engine.performRegularSplit(block, newColor);
+  }
 
   if (stash.selectPatternType) {
     engine.selectPatternType = (availablePatterns, block, newColor) => {
@@ -104,19 +113,14 @@ function installColumnsArchetype(engine, options = {}) {
     };
   }
 
-  engine._compositionSplitDirection = (block) => {
-    const w = Number(block?.width) || 0;
-    const h = Number(block?.height) || 0;
-    if (!engine.macroStructureFrozen && w > quiltWidth(Utils) * 0.42) return 'vertical';
-    if (h > w * 1.15) return 'horizontal';
-    return w > h * 1.15 ? 'vertical' : 'horizontal';
-  };
+  engine._compositionSplitDirection = () =>
+    engine.macroStructureFrozen ? 'horizontal' : 'vertical';
 
   if (stash.routeMacro) {
     engine._routeSplittableBlocksByMacroColor = (newColor, candidateBlocks) => {
       let routed = stash.routeMacro(newColor, candidateBlocks);
       if (!Array.isArray(routed) || routed.length <= 1) return routed;
-      if (engine.macroStructureFrozen && Array.isArray(engine._macroColumnBands)) {
+      if (Array.isArray(engine._macroColumnBands)) {
         routed = [...routed].sort((a, b) => {
           const bandA = columnBandForBlock(engine, a);
           const bandB = columnBandForBlock(engine, b);
