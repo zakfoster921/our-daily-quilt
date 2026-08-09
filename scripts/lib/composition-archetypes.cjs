@@ -214,6 +214,7 @@ function clearArchetypeBiases(engine) {
   delete engine._compositionColumnsFullHeight;
   delete engine._compositionHorizontalSplitRatio;
   delete engine._compositionNudgeHorizontalSplitHeight;
+  delete engine._compositionAllowAngledMacroSplit;
   delete engine.__columnsVerticalStripePatternCount;
   delete engine.__compositionArchetypeStash;
   delete engine.__compositionArchetypeKey;
@@ -253,7 +254,10 @@ function installColumnsArchetype(engine, options = {}) {
     macroFlattenedAngledSplitProb: engine.macroFlattenedAngledSplitProb
   };
 
-  engine.macroFlattenedAngledSplitProb = 0;
+  engine.macroFlattenedAngledSplitProb =
+    Number.isFinite(Number(engine.macroFlattenedAngledSplitProb)) && engine.macroFlattenedAngledSplitProb > 0
+      ? engine.macroFlattenedAngledSplitProb
+      : 0.85;
 
   if (stash.createDiagonalAxisPattern && typeof engine.performRegularSplit === 'function') {
     engine.createDiagonalAxisPattern = (block, newColor) => engine.performRegularSplit(block, newColor);
@@ -282,6 +286,8 @@ function installColumnsArchetype(engine, options = {}) {
   engine._compositionHorizontalSplitRatio = (block) => horizontalSplitRatioForColumn(engine, block);
   engine._compositionNudgeHorizontalSplitHeight = (block, splitHeight) =>
     nudgeHorizontalSplitHeight(engine, block, splitHeight);
+  engine._compositionAllowAngledMacroSplit = (block) =>
+    blockContainedInSingleColumnBand(engine, block);
 
   if (stash.routeMacro) {
     engine._routeSplittableBlocksByMacroColor = (newColor, candidateBlocks) => {
