@@ -582,10 +582,28 @@
       const clientId = getOrCreateClientId();
       const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
 
+      // Each browser/device can heart at most this many instructors.
+      const MAX_VOTES_PER_PERSON = 12;
+
       // Refreshed by loadLeaderboard(); used to nudge submitters toward an existing name
       // instead of silently creating a near-duplicate entry (see findSimilarNominee below).
       let knownNominees = [];
       let cachedNominees = [];
+
+      function myVoteCount() {
+        return cachedNominees.reduce((sum, n) => sum + (n.voted ? 1 : 0), 0);
+      }
+
+      function syncHeartAvailability() {
+        if (!votingOpen) return;
+        const atLimit = myVoteCount() >= MAX_VOTES_PER_PERSON;
+        listEl.querySelectorAll('.nominee-row').forEach((row) => {
+          const heart = row.querySelector('.heart-button');
+          if (!heart) return;
+          const voted = heart.classList.contains('voted');
+          heart.disabled = atLimit && !voted;
+        });
+      }
 
       const SIMILARITY_THRESHOLD = 0.72;
       function findSimilarNominee(name) {
@@ -661,7 +679,7 @@
         heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
         heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
         // Nothing is clickable/voteable until votingOpen is flipped on server-side config.
-        heartButton.disabled = !votingOpen;
+        heartButton.disabled = !votingOpen || (!nominee.voted && myVoteCount() >= MAX_VOTES_PER_PERSON);
         li.appendChild(heartButton);
 
         if (votingOpen) {
@@ -674,6 +692,10 @@
                 nominee.voted = false;
                 nominee.votes = Math.max(0, nominee.votes - 1);
               } else {
+                if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
+                  alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
+                  return;
+                }
                 await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
                 nominee.voted = true;
                 nominee.votes += 1;
@@ -681,10 +703,12 @@
               votesEl.textContent = String(nominee.votes);
               heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
               heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
+              updateLeaderboardBanner(cachedNominees);
+              syncHeartAvailability();
             } catch (err) {
               console.error('Vote failed:', err);
             } finally {
-              heartButton.disabled = false;
+              syncHeartAvailability();
             }
           });
         }
@@ -880,8 +904,12 @@
 
       function updateLeaderboardBanner(nominees) {
         if (votingOpen) {
+          const used = (nominees || cachedNominees).reduce((sum, n) => sum + (n.voted ? 1 : 0), 0);
+          const left = Math.max(0, MAX_VOTES_PER_PERSON - used);
           bannerEl.className = 'open';
-          bannerEl.textContent = 'Voting is open — tap a heart to support your favorites.';
+          bannerEl.textContent = left === 0
+            ? `You've used all ${MAX_VOTES_PER_PERSON} votes — tap a filled heart to free one up.`
+            : `Voting is open — you have ${left} of ${MAX_VOTES_PER_PERSON} votes left. Tap a heart to support your favorites.`;
         } else {
           bannerEl.className = '';
           bannerEl.textContent = "Voting isn't open yet. Check back soon!";
@@ -895,6 +923,7 @@
         updateLeaderboardBanner(nominees);
         emptyStateEl.style.display = nominees.length ? 'none' : 'block';
         listEl.replaceChildren(...nominees.map((nominee, index) => renderNomineeRow(nominee, index)));
+        syncHeartAvailability();
       }
 
       function replaceNomineeRow(nominee) {

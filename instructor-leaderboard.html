@@ -166,6 +166,9 @@
       }
     };
 
+    // Each browser/device can heart at most this many instructors.
+    const MAX_VOTES_PER_PERSON = 12;
+
     const bannerEl = document.getElementById('banner');
     const listEl = document.getElementById('nominee-list');
     const emptyStateEl = document.getElementById('empty-state');
@@ -188,85 +191,11 @@
         .join('');
     }
 
-    function renderRow(nominee, index, votingOpen) {
-      const li = document.createElement('li');
-      li.className = 'nominee-row';
-
-      const rank = document.createElement('div');
-      rank.className = 'nominee-rank';
-      rank.textContent = votingOpen ? `${index + 1}.` : '';
-      li.appendChild(rank);
-
-      const info = document.createElement('div');
-      info.className = 'nominee-info';
-      const nameEl = document.createElement('div');
-      nameEl.className = 'nominee-name';
-      nameEl.textContent = nominee.name;
-      info.appendChild(nameEl);
-      if (nominee.link) {
-        const linkEl = document.createElement('a');
-        linkEl.className = 'nominee-link';
-        linkEl.href = /^https?:\/\//i.test(nominee.link) ? nominee.link : `https://${nominee.link}`;
-        linkEl.target = '_blank';
-        linkEl.rel = 'noopener noreferrer';
-        linkEl.textContent = nominee.link;
-        info.appendChild(linkEl);
-      }
-      li.appendChild(info);
-
-      const votesEl = document.createElement('div');
-      votesEl.className = 'nominee-votes';
-      votesEl.textContent = votingOpen ? String(nominee.votes) : '';
-      li.appendChild(votesEl);
-
-      const heartButton = document.createElement('button');
-      heartButton.type = 'button';
-      heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
-      heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
-      heartButton.disabled = !votingOpen;
-      li.appendChild(heartButton);
-
-      if (votingOpen) {
-        heartButton.addEventListener('click', async () => {
-          heartButton.disabled = true;
-          try {
-            const module = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-            const { getFirestore, doc, setDoc, deleteDoc } = module;
-            const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
-            const app = initializeApp(CONFIG.FIREBASE);
-            const db = getFirestore(app);
-            const clientId = getOrCreateClientId();
-            const clientDocId = (await sha256Hex(clientId)).slice(0, 40);
-            const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
-
-            if (nominee.voted) {
-              await deleteDoc(voteRef);
-              nominee.voted = false;
-              nominee.votes = Math.max(0, nominee.votes - 1);
-            } else {
-              await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
-              nominee.voted = true;
-              nominee.votes += 1;
-            }
-            votesEl.textContent = String(nominee.votes);
-            heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
-            heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
-          } catch (err) {
-            console.error('Vote failed:', err);
-          } finally {
-            heartButton.disabled = false;
-          }
-        });
-      }
-
-      return li;
-    }
-
     Promise.all([
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js')
     ]).then(async ([{ initializeApp }, firestoreModule]) => {
-      const { getFirestore, collection, doc, getDoc, getDocs } = firestoreModule;
+      const { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc } = firestoreModule;
       const app = initializeApp(CONFIG.FIREBASE);
       const db = getFirestore(app);
 
@@ -302,15 +231,115 @@
       }));
       let nominees = nomineeResults.filter(Boolean);
 
+      function myVoteCount() {
+        return nominees.reduce((sum, n) => sum + (n.voted ? 1 : 0), 0);
+      }
+
+      function updateVoteBanner() {
+        if (!votingOpen) {
+          bannerEl.className = '';
+          bannerEl.textContent = `${nominees.length} instructor${nominees.length === 1 ? '' : 's'} suggested so far — voting opens once submissions close. Check back soon!`;
+          return;
+        }
+        const used = myVoteCount();
+        const left = Math.max(0, MAX_VOTES_PER_PERSON - used);
+        bannerEl.className = 'open';
+        bannerEl.textContent = left === 0
+          ? `You've used all ${MAX_VOTES_PER_PERSON} votes — tap a filled heart to free one up.`
+          : `Voting is open — you have ${left} of ${MAX_VOTES_PER_PERSON} votes left. Tap a heart to support your favorites.`;
+      }
+
+      function syncHeartAvailability() {
+        if (!votingOpen) return;
+        const atLimit = myVoteCount() >= MAX_VOTES_PER_PERSON;
+        listEl.querySelectorAll('.nominee-row').forEach((row) => {
+          const heart = row.querySelector('.heart-button');
+          if (!heart) return;
+          const voted = heart.classList.contains('voted');
+          heart.disabled = atLimit && !voted;
+        });
+      }
+
+      function renderRow(nominee, index) {
+        const li = document.createElement('li');
+        li.className = 'nominee-row';
+        li.dataset.nomineeId = nominee.id;
+
+        const rank = document.createElement('div');
+        rank.className = 'nominee-rank';
+        rank.textContent = votingOpen ? `${index + 1}.` : '';
+        li.appendChild(rank);
+
+        const info = document.createElement('div');
+        info.className = 'nominee-info';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'nominee-name';
+        nameEl.textContent = nominee.name;
+        info.appendChild(nameEl);
+        if (nominee.link) {
+          const linkEl = document.createElement('a');
+          linkEl.className = 'nominee-link';
+          linkEl.href = /^https?:\/\//i.test(nominee.link) ? nominee.link : `https://${nominee.link}`;
+          linkEl.target = '_blank';
+          linkEl.rel = 'noopener noreferrer';
+          linkEl.textContent = nominee.link;
+          info.appendChild(linkEl);
+        }
+        li.appendChild(info);
+
+        const votesEl = document.createElement('div');
+        votesEl.className = 'nominee-votes';
+        votesEl.textContent = votingOpen ? String(nominee.votes) : '';
+        li.appendChild(votesEl);
+
+        const heartButton = document.createElement('button');
+        heartButton.type = 'button';
+        heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
+        heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
+        heartButton.disabled = !votingOpen || (!nominee.voted && myVoteCount() >= MAX_VOTES_PER_PERSON);
+        li.appendChild(heartButton);
+
+        if (votingOpen) {
+          heartButton.addEventListener('click', async () => {
+            heartButton.disabled = true;
+            try {
+              const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
+
+              if (nominee.voted) {
+                await deleteDoc(voteRef);
+                nominee.voted = false;
+                nominee.votes = Math.max(0, nominee.votes - 1);
+              } else {
+                if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
+                  alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
+                  return;
+                }
+                await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
+                nominee.voted = true;
+                nominee.votes += 1;
+              }
+              votesEl.textContent = String(nominee.votes);
+              heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
+              heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
+              updateVoteBanner();
+              syncHeartAvailability();
+            } catch (err) {
+              console.error('Vote failed:', err);
+            } finally {
+              syncHeartAvailability();
+            }
+          });
+        }
+
+        return li;
+      }
+
       if (votingOpen) {
         nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
-        bannerEl.className = 'open';
-        bannerEl.textContent = 'Voting is open — tap a heart to support your favorites.';
       } else {
         nominees.sort((a, b) => a.name.localeCompare(b.name));
-        bannerEl.className = '';
-        bannerEl.textContent = `${nominees.length} instructor${nominees.length === 1 ? '' : 's'} suggested so far — voting opens once submissions close. Check back soon!`;
       }
+      updateVoteBanner();
 
       if (!nominees.length) {
         emptyStateEl.style.display = 'block';
@@ -318,8 +347,9 @@
       }
 
       nominees.forEach((nominee, index) => {
-        listEl.appendChild(renderRow(nominee, index, votingOpen));
+        listEl.appendChild(renderRow(nominee, index));
       });
+      syncHeartAvailability();
     }).catch((err) => {
       console.error('Failed to load leaderboard:', err);
       bannerEl.textContent = 'Could not load the leaderboard right now — please try again in a moment.';
