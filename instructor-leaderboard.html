@@ -134,6 +134,32 @@
       display: inline-block;
       margin-top: 0.35rem;
     }
+    #ballot-actions {
+      margin-top: 1.25rem;
+      display: none;
+    }
+    #ballot-actions.visible {
+      display: block;
+    }
+    #submit-ballot-button {
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background: #3f3a35;
+      border: none;
+      border-radius: 8px;
+      padding: 0.85rem 1.25rem;
+      cursor: pointer;
+      width: 100%;
+    }
+    #submit-ballot-button:hover:not([disabled]) {
+      background: #2c2824;
+    }
+    #submit-ballot-button[disabled] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -145,6 +171,10 @@
     </p>
 
     <div id="banner"></div>
+
+    <div id="ballot-actions">
+      <button id="submit-ballot-button" type="button">Submit my votes</button>
+    </div>
 
     <ul id="nominee-list"></ul>
     <p id="empty-state">No suggestions yet — <a href="/instructor-submit.html">be the first to nominate someone</a>!</p>
@@ -168,10 +198,13 @@
 
     // Each browser/device can heart at most this many instructors.
     const MAX_VOTES_PER_PERSON = 12;
+    const BALLOT_SUBMITTED_KEY = 'nookInstructorBallotSubmitted';
 
     const bannerEl = document.getElementById('banner');
     const listEl = document.getElementById('nominee-list');
     const emptyStateEl = document.getElementById('empty-state');
+    const ballotActionsEl = document.getElementById('ballot-actions');
+    const submitBallotButton = document.getElementById('submit-ballot-button');
 
     function getOrCreateClientId() {
       const key = 'nookInstructorClientId';
@@ -231,8 +264,17 @@
       }));
       let nominees = nomineeResults.filter(Boolean);
 
+      // Pick A–Z first; reveal ranked tallies only after this device submits a ballot
+      // (or if they already have votes saved from a prior visit).
+      let hasSubmittedBallot = localStorage.getItem(BALLOT_SUBMITTED_KEY) === '1'
+        || nominees.some((n) => n.voted);
+
       function myVoteCount() {
         return nominees.reduce((sum, n) => sum + (n.voted ? 1 : 0), 0);
+      }
+
+      function showingRankings() {
+        return votingOpen && hasSubmittedBallot;
       }
 
       function updateVoteBanner() {
@@ -244,9 +286,21 @@
         const used = myVoteCount();
         const left = Math.max(0, MAX_VOTES_PER_PERSON - used);
         bannerEl.className = 'open';
+        if (!hasSubmittedBallot) {
+          bannerEl.textContent = left === 0
+            ? `You've picked ${MAX_VOTES_PER_PERSON} — submit below to see the live ranking (you can still change later).`
+            : `Pick up to ${MAX_VOTES_PER_PERSON} favorites (${left} left), then submit to see the live ranking.`;
+          return;
+        }
         bannerEl.textContent = left === 0
-          ? `You've used all ${MAX_VOTES_PER_PERSON} votes — tap a filled heart to free one up.`
-          : `Voting is open — you have ${left} of ${MAX_VOTES_PER_PERSON} votes left. Tap a heart to support your favorites.`;
+          ? `Live ranking — you've used all ${MAX_VOTES_PER_PERSON} votes. Tap a filled heart to change your picks.`
+          : `Live ranking — you have ${left} of ${MAX_VOTES_PER_PERSON} votes left. Tap hearts to change your picks anytime.`;
+      }
+
+      function updateBallotActions() {
+        const showSubmit = votingOpen && !hasSubmittedBallot && nominees.length > 0;
+        ballotActionsEl.classList.toggle('visible', showSubmit);
+        submitBallotButton.disabled = myVoteCount() < 1;
       }
 
       function syncHeartAvailability() {
@@ -260,6 +314,22 @@
         });
       }
 
+      function sortNominees() {
+        if (showingRankings()) {
+          nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
+        } else {
+          nominees.sort((a, b) => a.name.localeCompare(b.name));
+        }
+      }
+
+      async function refreshVoteTotals() {
+        await Promise.all(nominees.map(async (nominee) => {
+          const votesSnap = await getDocs(collection(db, 'instructorNominations', nominee.id, 'votes'));
+          nominee.votes = votesSnap.size;
+          nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
+        }));
+      }
+
       function renderRow(nominee, index) {
         const li = document.createElement('li');
         li.className = 'nominee-row';
@@ -267,7 +337,7 @@
 
         const rank = document.createElement('div');
         rank.className = 'nominee-rank';
-        rank.textContent = votingOpen ? `${index + 1}.` : '';
+        rank.textContent = showingRankings() ? `${index + 1}.` : '';
         li.appendChild(rank);
 
         const info = document.createElement('div');
@@ -289,7 +359,7 @@
 
         const votesEl = document.createElement('div');
         votesEl.className = 'nominee-votes';
-        votesEl.textContent = votingOpen ? String(nominee.votes) : '';
+        votesEl.textContent = showingRankings() ? String(nominee.votes) : '';
         li.appendChild(votesEl);
 
         const heartButton = document.createElement('button');
@@ -303,29 +373,36 @@
           heartButton.addEventListener('click', async () => {
             heartButton.disabled = true;
             try {
-              const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
-
-              if (nominee.voted) {
-                await deleteDoc(voteRef);
-                nominee.voted = false;
-                nominee.votes = Math.max(0, nominee.votes - 1);
-              } else {
-                if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
-                  alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
-                  return;
+              if (!hasSubmittedBallot) {
+                // Draft picks stay local until they hit Submit — keeps rankings hidden.
+                if (nominee.voted) {
+                  nominee.voted = false;
+                } else {
+                  if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
+                    alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
+                    return;
+                  }
+                  nominee.voted = true;
                 }
-                await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
-                nominee.voted = true;
-                nominee.votes += 1;
+              } else {
+                const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
+                if (nominee.voted) {
+                  await deleteDoc(voteRef);
+                  nominee.voted = false;
+                  nominee.votes = Math.max(0, nominee.votes - 1);
+                } else {
+                  if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
+                    alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
+                    return;
+                  }
+                  await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
+                  nominee.voted = true;
+                  nominee.votes += 1;
+                }
               }
-              votesEl.textContent = String(nominee.votes);
-              heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
-              heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
-              updateVoteBanner();
-              syncHeartAvailability();
+              renderList();
             } catch (err) {
               console.error('Vote failed:', err);
-            } finally {
               syncHeartAvailability();
             }
           });
@@ -334,22 +411,48 @@
         return li;
       }
 
-      if (votingOpen) {
-        nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
-      } else {
-        nominees.sort((a, b) => a.name.localeCompare(b.name));
+      function renderList() {
+        sortNominees();
+        updateVoteBanner();
+        updateBallotActions();
+        if (!nominees.length) {
+          emptyStateEl.style.display = 'block';
+          listEl.replaceChildren();
+          return;
+        }
+        emptyStateEl.style.display = 'none';
+        listEl.replaceChildren(...nominees.map((nominee, index) => renderRow(nominee, index)));
+        syncHeartAvailability();
       }
-      updateVoteBanner();
 
-      if (!nominees.length) {
-        emptyStateEl.style.display = 'block';
-        return;
-      }
-
-      nominees.forEach((nominee, index) => {
-        listEl.appendChild(renderRow(nominee, index));
+      submitBallotButton.addEventListener('click', async () => {
+        if (!votingOpen || hasSubmittedBallot) return;
+        const selected = nominees.filter((n) => n.voted);
+        if (!selected.length) {
+          alert('Pick at least one instructor before submitting.');
+          return;
+        }
+        submitBallotButton.disabled = true;
+        submitBallotButton.textContent = 'Submitting…';
+        try {
+          await Promise.all(selected.map((nominee) =>
+            setDoc(doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId), {
+              createdAtIso: new Date().toISOString()
+            })
+          ));
+          localStorage.setItem(BALLOT_SUBMITTED_KEY, '1');
+          hasSubmittedBallot = true;
+          await refreshVoteTotals();
+          renderList();
+        } catch (err) {
+          console.error('Ballot submit failed:', err);
+          alert('Could not submit your votes right now — please try again.');
+          submitBallotButton.disabled = myVoteCount() < 1;
+          submitBallotButton.textContent = 'Submit my votes';
+        }
       });
-      syncHeartAvailability();
+
+      renderList();
     }).catch((err) => {
       console.error('Failed to load leaderboard:', err);
       bannerEl.textContent = 'Could not load the leaderboard right now — please try again in a moment.';

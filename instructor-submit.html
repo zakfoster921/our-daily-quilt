@@ -213,6 +213,32 @@
     .heart-button[disabled]::before {
       content: "♡";
     }
+    #ballot-actions {
+      margin-top: 1rem;
+      display: none;
+    }
+    #ballot-actions.visible {
+      display: block;
+    }
+    #submit-ballot-button {
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background: #3f3a35;
+      border: none;
+      border-radius: 8px;
+      padding: 0.85rem 1.25rem;
+      cursor: pointer;
+      width: 100%;
+    }
+    #submit-ballot-button:hover:not([disabled]) {
+      background: #2c2824;
+    }
+    #submit-ballot-button[disabled] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
     .nominee-actions {
       flex-shrink: 0;
       display: flex;
@@ -415,6 +441,9 @@
     <div class="leaderboard-section">
       <h2>INSTRUCTOR LEADERBOARD</h2>
       <div id="banner"></div>
+      <div id="ballot-actions">
+        <button id="submit-ballot-button" type="button">Submit my votes</button>
+      </div>
       <ul id="nominee-list"></ul>
       <p id="empty-state">No suggestions yet — be the first to nominate someone!</p>
     </div>
@@ -458,6 +487,8 @@
     const noteInput = document.getElementById('instructor-note');
     const bannerEl = document.getElementById('banner');
     const listEl = document.getElementById('nominee-list');
+    const ballotActionsEl = document.getElementById('ballot-actions');
+    const submitBallotButton = document.getElementById('submit-ballot-button');
     const emptyStateEl = document.getElementById('empty-state');
     const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
     const confirmModalMessage = document.getElementById('confirm-modal-message');
@@ -584,14 +615,21 @@
 
       // Each browser/device can heart at most this many instructors.
       const MAX_VOTES_PER_PERSON = 12;
+      const BALLOT_SUBMITTED_KEY = 'nookInstructorBallotSubmitted';
 
       // Refreshed by loadLeaderboard(); used to nudge submitters toward an existing name
       // instead of silently creating a near-duplicate entry (see findSimilarNominee below).
       let knownNominees = [];
       let cachedNominees = [];
+      // Pick A–Z first; reveal ranked tallies only after this device submits a ballot.
+      let hasSubmittedBallot = localStorage.getItem(BALLOT_SUBMITTED_KEY) === '1';
 
       function myVoteCount() {
         return cachedNominees.reduce((sum, n) => sum + (n.voted ? 1 : 0), 0);
+      }
+
+      function showingRankings() {
+        return votingOpen && hasSubmittedBallot;
       }
 
       function syncHeartAvailability() {
@@ -603,6 +641,13 @@
           const voted = heart.classList.contains('voted');
           heart.disabled = atLimit && !voted;
         });
+      }
+
+      function updateBallotActions() {
+        const showSubmit = votingOpen && !hasSubmittedBallot && cachedNominees.length > 0;
+        ballotActionsEl.classList.toggle('visible', showSubmit);
+        submitBallotButton.disabled = myVoteCount() < 1;
+        if (!hasSubmittedBallot) submitBallotButton.textContent = 'Submit my votes';
       }
 
       const SIMILARITY_THRESHOLD = 0.72;
@@ -649,7 +694,7 @@
 
         const rank = document.createElement('div');
         rank.className = 'nominee-rank';
-        rank.textContent = votingOpen ? `${index + 1}.` : '';
+        rank.textContent = showingRankings() ? `${index + 1}.` : '';
         li.appendChild(rank);
 
         const info = document.createElement('div');
@@ -671,7 +716,7 @@
 
         const votesEl = document.createElement('div');
         votesEl.className = 'nominee-votes';
-        votesEl.textContent = votingOpen ? String(nominee.votes) : '';
+        votesEl.textContent = showingRankings() ? String(nominee.votes) : '';
         li.appendChild(votesEl);
 
         const heartButton = document.createElement('button');
@@ -686,28 +731,35 @@
           heartButton.addEventListener('click', async () => {
             heartButton.disabled = true;
             try {
-              const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
-              if (nominee.voted) {
-                await deleteDoc(voteRef);
-                nominee.voted = false;
-                nominee.votes = Math.max(0, nominee.votes - 1);
-              } else {
-                if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
-                  alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
-                  return;
+              if (!hasSubmittedBallot) {
+                if (nominee.voted) {
+                  nominee.voted = false;
+                } else {
+                  if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
+                    alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
+                    return;
+                  }
+                  nominee.voted = true;
                 }
-                await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
-                nominee.voted = true;
-                nominee.votes += 1;
+              } else {
+                const voteRef = doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId);
+                if (nominee.voted) {
+                  await deleteDoc(voteRef);
+                  nominee.voted = false;
+                  nominee.votes = Math.max(0, nominee.votes - 1);
+                } else {
+                  if (myVoteCount() >= MAX_VOTES_PER_PERSON) {
+                    alert(`You can only vote for up to ${MAX_VOTES_PER_PERSON} instructors. Remove a heart to free up a vote.`);
+                    return;
+                  }
+                  await setDoc(voteRef, { createdAtIso: new Date().toISOString() });
+                  nominee.voted = true;
+                  nominee.votes += 1;
+                }
               }
-              votesEl.textContent = String(nominee.votes);
-              heartButton.className = `heart-button${nominee.voted ? ' voted' : ''}`;
-              heartButton.setAttribute('aria-label', nominee.voted ? `Remove vote for ${nominee.name}` : `Vote for ${nominee.name}`);
-              updateLeaderboardBanner(cachedNominees);
-              syncHeartAvailability();
+              renderLeaderboardList([...cachedNominees]);
             } catch (err) {
               console.error('Vote failed:', err);
-            } finally {
               syncHeartAvailability();
             }
           });
@@ -895,7 +947,7 @@
       }
 
       function sortNominees(nominees) {
-        if (votingOpen) {
+        if (showingRankings()) {
           nominees.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
         } else {
           nominees.sort((a, b) => a.name.localeCompare(b.name));
@@ -907,13 +959,27 @@
           const used = (nominees || cachedNominees).reduce((sum, n) => sum + (n.voted ? 1 : 0), 0);
           const left = Math.max(0, MAX_VOTES_PER_PERSON - used);
           bannerEl.className = 'open';
-          bannerEl.textContent = left === 0
-            ? `You've used all ${MAX_VOTES_PER_PERSON} votes — tap a filled heart to free one up.`
-            : `Voting is open — you have ${left} of ${MAX_VOTES_PER_PERSON} votes left. Tap a heart to support your favorites.`;
+          if (!hasSubmittedBallot) {
+            bannerEl.textContent = left === 0
+              ? `You've picked ${MAX_VOTES_PER_PERSON} — submit below to see the live ranking (you can still change later).`
+              : `Pick up to ${MAX_VOTES_PER_PERSON} favorites (${left} left), then submit to see the live ranking.`;
+          } else {
+            bannerEl.textContent = left === 0
+              ? `Live ranking — you've used all ${MAX_VOTES_PER_PERSON} votes. Tap a filled heart to change your picks.`
+              : `Live ranking — you have ${left} of ${MAX_VOTES_PER_PERSON} votes left. Tap hearts to change your picks anytime.`;
+          }
         } else {
           bannerEl.className = '';
           bannerEl.textContent = "Voting isn't open yet. Check back soon!";
         }
+      }
+
+      async function refreshVoteTotals(nominees) {
+        await Promise.all(nominees.map(async (nominee) => {
+          const votesSnap = await getDocs(collection(db, 'instructorNominations', nominee.id, 'votes'));
+          nominee.votes = votesSnap.size;
+          nominee.voted = votesSnap.docs.some((d) => d.id === clientDocId);
+        }));
       }
 
       function renderLeaderboardList(nominees) {
@@ -921,10 +987,38 @@
         knownNominees = nominees.map((n) => ({ id: n.id, name: n.name }));
         sortNominees(nominees);
         updateLeaderboardBanner(nominees);
+        updateBallotActions();
         emptyStateEl.style.display = nominees.length ? 'none' : 'block';
         listEl.replaceChildren(...nominees.map((nominee, index) => renderNomineeRow(nominee, index)));
         syncHeartAvailability();
       }
+
+      submitBallotButton.addEventListener('click', async () => {
+        if (!votingOpen || hasSubmittedBallot) return;
+        const selected = cachedNominees.filter((n) => n.voted);
+        if (!selected.length) {
+          alert('Pick at least one instructor before submitting.');
+          return;
+        }
+        submitBallotButton.disabled = true;
+        submitBallotButton.textContent = 'Submitting…';
+        try {
+          await Promise.all(selected.map((nominee) =>
+            setDoc(doc(db, 'instructorNominations', nominee.id, 'votes', clientDocId), {
+              createdAtIso: new Date().toISOString()
+            })
+          ));
+          localStorage.setItem(BALLOT_SUBMITTED_KEY, '1');
+          hasSubmittedBallot = true;
+          await refreshVoteTotals(cachedNominees);
+          renderLeaderboardList([...cachedNominees]);
+        } catch (err) {
+          console.error('Ballot submit failed:', err);
+          alert('Could not submit your votes right now — please try again.');
+          submitBallotButton.disabled = myVoteCount() < 1;
+          submitBallotButton.textContent = 'Submit my votes';
+        }
+      });
 
       function replaceNomineeRow(nominee) {
         const index = cachedNominees.findIndex((n) => n.id === nominee.id);
@@ -957,6 +1051,11 @@
 
       async function loadLeaderboard() {
         const nominees = await fetchNominees();
+        // Returning visitors who already cast votes skip straight to the ranked view.
+        if (votingOpen && nominees.some((n) => n.voted)) {
+          hasSubmittedBallot = true;
+          localStorage.setItem(BALLOT_SUBMITTED_KEY, '1');
+        }
         renderLeaderboardList(nominees);
       }
 
