@@ -13407,24 +13407,40 @@ app.post('/api/admin-daily-tasks/:dateKey', async (req, res) => {
     }
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const patch = { updatedAtIso: getUtcIsoNow(), updatedBy: 'admin_daily_task_api' };
-    if (body.igPostCompleted === true) {
-      patch.igPostCompleted = true;
-      // Preserve first-mark provenance when a sticky sync omits source/timestamp.
-      if (body.igPostCompletedAtIso) {
-        patch.igPostCompletedAtIso = String(body.igPostCompletedAtIso).trim();
-      }
-      if (body.igPostSource) {
-        patch.igPostSource = String(body.igPostSource).trim().slice(0, 80);
-      } else if (body.igPostCompletedAtIso) {
-        patch.igPostSource = 'admin';
-      }
-      // A fresh mark cancels any admin clear of a false-positive.
-      if (Object.prototype.hasOwnProperty.call(body, 'igPostClearedAtIso')) {
-        patch.igPostClearedAtIso = body.igPostClearedAtIso
-          ? String(body.igPostClearedAtIso).trim()
-          : admin.firestore.FieldValue.delete();
-      } else if (body.igPostCompletedAtIso || body.igPostSource) {
-        patch.igPostClearedAtIso = admin.firestore.FieldValue.delete();
+    const igPostSource = String(body.igPostSource || '').trim().slice(0, 80);
+    // Stale Cap builds still mark on tune/push; bare sticky syncs omit source.
+    // Only explicit admin tap / Zapier-window writers (with provenance) may complete IG post.
+    const blockedIgPostSources = new Set(['layout_b_tune_save', 'instagram_assets_push']);
+    const clearIgPost =
+      body.clearIgPost === true ||
+      body.igPostCompleted === false ||
+      (typeof body.igPostClearedAtIso === 'string' && body.igPostClearedAtIso.trim() && body.igPostCompleted !== true);
+    if (clearIgPost) {
+      patch.igPostCompleted = false;
+      patch.igPostClearedAtIso = String(body.igPostClearedAtIso || patch.updatedAtIso).trim();
+      patch.igPostSource = admin.firestore.FieldValue.delete();
+      patch.igPostCompletedAtIso = admin.firestore.FieldValue.delete();
+    } else if (body.igPostCompleted === true) {
+      if (!igPostSource || blockedIgPostSources.has(igPostSource)) {
+        console.warn(
+          `⚠️ Ignoring admin IG post mark for ${dateKey} (source=${igPostSource || 'missing'})`
+        );
+      } else {
+        patch.igPostCompleted = true;
+        if (body.igPostCompletedAtIso) {
+          patch.igPostCompletedAtIso = String(body.igPostCompletedAtIso).trim();
+        } else {
+          patch.igPostCompletedAtIso = patch.updatedAtIso;
+        }
+        patch.igPostSource = igPostSource;
+        // A fresh mark cancels any admin clear of a false-positive.
+        if (Object.prototype.hasOwnProperty.call(body, 'igPostClearedAtIso')) {
+          patch.igPostClearedAtIso = body.igPostClearedAtIso
+            ? String(body.igPostClearedAtIso).trim()
+            : admin.firestore.FieldValue.delete();
+        } else {
+          patch.igPostClearedAtIso = admin.firestore.FieldValue.delete();
+        }
       }
     }
     if (body.previewTomorrowCompleted === true) {
@@ -13435,7 +13451,10 @@ app.post('/api/admin-daily-tasks/:dateKey', async (req, res) => {
         patch.previewTomorrowDateKey = previewKey;
       }
     }
-    if (!patch.igPostCompleted && !patch.previewTomorrowCompleted) {
+    const hasIgPostPatch =
+      Object.prototype.hasOwnProperty.call(patch, 'igPostCompleted') ||
+      Object.prototype.hasOwnProperty.call(patch, 'igPostClearedAtIso');
+    if (!hasIgPostPatch && !patch.previewTomorrowCompleted) {
       return res.status(400).json({ success: false, error: 'No completed task fields provided' });
     }
     const ref = db.collection('adminDailyTasks').doc(dateKey);
