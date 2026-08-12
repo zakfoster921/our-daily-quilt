@@ -147,7 +147,7 @@ function staticAssetOptions() {
 
 app.use(compression({ threshold: 1024 }));
 app.use(enforceJsonSizeByRoute);
-app.use(express.json({ limit: '35mb', verify: verifyJsonSizeByRoute }));
+app.use(express.json({ limit: '55mb', verify: verifyJsonSizeByRoute }));
 app.use(handleJsonBodyError);
 
 function sendPublicRootFile(res, fileName) {
@@ -266,7 +266,8 @@ function notionSyncQuotesScriptArgs(startDate, syncScope) {
 }
 
 const JSON_SIZE_LIMITS = new Map([
-  ['/api/push-instagram-assets', 30 * ONE_MB],
+  // Nightly carousel now includes slide 0 + 0b (+ duplicates); keep headroom under one POST.
+  ['/api/push-instagram-assets', 50 * ONE_MB],
   ['/api/push-layout-b-tune', 128 * ONE_KB],
   ['/api/push-quilt-mirror-tune', 32 * ONE_KB],
   ['/api/transcode-instagram-reel', 4 * ONE_KB],
@@ -308,11 +309,20 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/generate-instagram', 4 * ONE_KB]
 ]);
 
+function maybeSetJsonErrorCors(req, res) {
+  // Early 413/400 responses run before route handlers; without CORS the browser
+  // reports a useless "TypeError: Failed to fetch" from localhost nightly.
+  if (String(req.path || '').startsWith('/api/push-instagram-assets')) {
+    setInstagramApiCors(res);
+  }
+}
+
 function enforceJsonSizeByRoute(req, res, next) {
   const maxBytes = JSON_SIZE_LIMITS.get(req.path);
   if (!maxBytes) return next();
   const contentLength = Number(req.headers['content-length'] || 0);
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    maybeSetJsonErrorCors(req, res);
     return res.status(413).json({
       success: false,
       error: `Request body too large; max ${Math.round(maxBytes / ONE_KB)}KB`
@@ -330,15 +340,17 @@ function verifyJsonSizeByRoute(req, _res, buf) {
   }
 }
 
-function handleJsonBodyError(err, _req, res, next) {
+function handleJsonBodyError(err, req, res, next) {
   if (!err) return next();
   if (err.status === 413 || err.type === 'entity.too.large') {
+    maybeSetJsonErrorCors(req, res);
     return res.status(413).json({
       success: false,
       error: err.message || 'Request body too large'
     });
   }
   if (err instanceof SyntaxError && 'body' in err) {
+    maybeSetJsonErrorCors(req, res);
     return res.status(400).json({
       success: false,
       error: 'Invalid JSON request body'
