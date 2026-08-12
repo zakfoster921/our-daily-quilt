@@ -5434,6 +5434,8 @@ async function getTodayInstagramImage(options = {}) {
     const storageClassicUrl = raw.imageStorageUrl || raw.classicUrl || null;
     const storageCarouselSlide0Url =
       raw.carouselSlide0ImageStorageUrl || raw.carouselSlide0Url || null;
+    const storageCarouselSlide0bUrl =
+      raw.carouselSlide0bImageStorageUrl || raw.carouselSlide0bUrl || null;
     const storageCarouselSlide1Url =
       raw.carouselSlide1ImageStorageUrl || raw.carouselSlide1Url || storageClassicUrl || null;
     const storageCarouselSlide2Url =
@@ -5595,6 +5597,7 @@ async function getTodayInstagramImage(options = {}) {
       postLayoutBSpeakerImageData: postLayoutBSpeakerField || null,
       storageClassicUrl,
       storageCarouselSlide0Url,
+      storageCarouselSlide0bUrl,
       storageCarouselSlide1Url,
       storageCarouselSlide2Url,
       storageCarouselSlide3Url,
@@ -5671,12 +5674,14 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     let quiltStoryImageUrl = '';
     let contributorCloudImageUrl = '';
     let carouselSlide0Url = '';
+    let carouselSlide0bUrl = '';
     let carouselSlide1Url = '';
     let carouselSlide2Url = '';
     let carouselSlide3Url = '';
     let carouselSlide4Url = '';
 
     carouselSlide0Url = imageData.storageCarouselSlide0Url || '';
+    carouselSlide0bUrl = imageData.storageCarouselSlide0bUrl || '';
     carouselSlide1Url = imageData.storageCarouselSlide1Url || imageData.storageClassicUrl || '';
     carouselSlide2Url = imageData.storageCarouselSlide2Url || '';
     carouselSlide3Url = imageData.storageCarouselSlide3Url || '';
@@ -5732,9 +5737,10 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     const hasReelWebm = !!reelWebmUrl;
     const hasReelMp4 = !!reelMp4Url;
     // Bump when response shape changes — curl this endpoint to confirm Railway deployed the right file.
-    const apiVersion = 'instagram-api-28-carousel-slide-0-quote-fit';
+    const apiVersion = 'instagram-api-29-carousel-slide-0b-speaker-name';
     // Zapier: never send null for URL fields (use ""), or Zapier shows "null" forever.
     // Integrated carousel post order: 0 quote-fit (when present) else 1 layout B, then 3, 4, 2.
+    // carouselSlide0bUrl = speaker cutout + vinyl name (parallel asset).
     const carouselPostOrderUrls = [
       carouselSlide0Url || carouselSlide1Url || imageUrl,
       carouselSlide3Url,
@@ -5743,6 +5749,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     ].filter(Boolean);
     const imageUrls = [
       carouselSlide0Url,
+      carouselSlide0bUrl,
       carouselSlide1Url || imageUrl,
       carouselSlide2Url,
       carouselSlide3Url,
@@ -5763,6 +5770,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       postLayoutBSpeakerImageUrl: postLayoutBSpeakerImageUrl || '',
       postLayoutBPlainImageUrl: postLayoutBImageUrl || '',
       carouselSlide0Url: carouselSlide0Url || '',
+      carouselSlide0bUrl: carouselSlide0bUrl || '',
       carouselSlide1Url: carouselSlide1Url || imageUrl,
       carouselSlide2Url: carouselSlide2Url || '',
       carouselSlide3Url: carouselSlide3Url || '',
@@ -5804,6 +5812,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       hasQuiltStory: !!quiltStoryImageUrl,
       hasContributorCloud: !!contributorCloudImageUrl,
       hasCarouselSlide0: !!carouselSlide0Url,
+      hasCarouselSlide0b: !!carouselSlide0bUrl,
       hasCarouselSlide1: !!(carouselSlide1Url || imageUrl),
       hasCarouselSlide2: !!carouselSlide2Url,
       hasCarouselSlide3: !!carouselSlide3Url,
@@ -5814,7 +5823,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'Integrated IG carousel: carouselSlide0Url = quote-fit Helvetica on quilt (preferred lead). carouselSlide1Url = layout B strips (4:5). carouselSlide2Url = reflection when present. carouselSlide3Url = contributors. carouselSlide4Url = quilt-only mat. carouselPostOrderUrls = [0|1,3,4,2]. imageUrl prefers slide 0 then slide 1. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png. readyForInstagram=true after nightly GitHub images job.'
+        'Integrated IG carousel: carouselSlide0Url = quote-fit Helvetica on quilt (preferred lead). carouselSlide0bUrl = speaker cutout + vinyl name on mat. carouselSlide1Url = layout B strips (4:5). carouselSlide2Url = reflection when present. carouselSlide3Url = contributors. carouselSlide4Url = quilt-only mat. carouselPostOrderUrls = [0|1,3,4,2]. imageUrl prefers slide 0 then slide 1. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png. readyForInstagram=true after nightly GitHub images job.'
     };
     
     console.log(
@@ -5928,6 +5937,8 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       typeof body.contributorCloudImageData === 'string' ? body.contributorCloudImageData : '';
     const carouselSlide0ImageData =
       typeof body.carouselSlide0ImageData === 'string' ? body.carouselSlide0ImageData : '';
+    const carouselSlide0bImageData =
+      typeof body.carouselSlide0bImageData === 'string' ? body.carouselSlide0bImageData : '';
     const carouselSlide1ImageData =
       typeof body.carouselSlide1ImageData === 'string' ? body.carouselSlide1ImageData : '';
     const carouselSlide2ImageData =
@@ -5939,6 +5950,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
     if (
       !instagramImage &&
       !carouselSlide0ImageData &&
+      !carouselSlide0bImageData &&
       !carouselSlide1ImageData &&
       !carouselSlide2ImageData &&
       !carouselSlide3ImageData &&
@@ -6012,6 +6024,11 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       const { publicUrl } = await saveIgPng(`${basePath}/carousel-slide-0.png`, carouselSlide0ImageData);
       docPayload.carouselSlide0ImageStorageUrl = publicUrl;
       docPayload.carouselSlide0Url = publicUrl;
+    }
+    if (carouselSlide0bImageData) {
+      const { publicUrl } = await saveIgPng(`${basePath}/carousel-slide-0b.png`, carouselSlide0bImageData);
+      docPayload.carouselSlide0bImageStorageUrl = publicUrl;
+      docPayload.carouselSlide0bUrl = publicUrl;
     }
     if (carouselSlide1ImageData) {
       const slide1Buf = parsePngDataUrlToBuffer(carouselSlide1ImageData);
@@ -6182,6 +6199,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       ].filter(Boolean);
       docPayload.imageUrls = [
         docPayload.carouselSlide0Url,
+        docPayload.carouselSlide0bUrl,
         docPayload.carouselSlide1Url || docPayload.classicUrl,
         docPayload.carouselSlide2Url,
         docPayload.carouselSlide3Url,
@@ -6194,7 +6212,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
 
     await db.collection('instagram-images').doc(dateKey).set(docPayload, { merge: true });
     console.log(
-      `✅ App backend IG push ${dateKey}: carousel0=${!!docPayload.carouselSlide0Url} carousel1=${!!docPayload.carouselSlide1Url} carousel2=${!!docPayload.carouselSlide2Url} carousel3=${!!docPayload.carouselSlide3Url} carousel4=${!!docPayload.carouselSlide4Url} layoutB=${!!docPayload.layoutBUrl} story=${!!docPayload.storyLayoutBUrl} quilt9x16=${!!docPayload.quiltScreen9x16Url}`
+      `✅ App backend IG push ${dateKey}: carousel0=${!!docPayload.carouselSlide0Url} carousel0b=${!!docPayload.carouselSlide0bUrl} carousel1=${!!docPayload.carouselSlide1Url} carousel2=${!!docPayload.carouselSlide2Url} carousel3=${!!docPayload.carouselSlide3Url} carousel4=${!!docPayload.carouselSlide4Url} layoutB=${!!docPayload.layoutBUrl} story=${!!docPayload.storyLayoutBUrl} quilt9x16=${!!docPayload.quiltScreen9x16Url}`
     );
     res.json({ success: true, date: dateKey, docPayload });
   } catch (error) {
