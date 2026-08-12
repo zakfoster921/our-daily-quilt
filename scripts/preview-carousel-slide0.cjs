@@ -27,7 +27,7 @@ const DEFAULT_QUOTE = [
 
 async function main() {
   const dateKey = String(process.env.DATE_KEY || '2026-07-31').trim();
-  const quoteText = String(process.env.QUOTE || DEFAULT_QUOTE).trim();
+  const quoteOverride = process.env.QUOTE != null ? String(process.env.QUOTE).trim() : '';
   const appUrl = String(process.env.APP_URL || 'http://127.0.0.1:3000/our-daily-beta.html').trim();
   const tmp = path.join(process.cwd(), 'tmp');
   const quiltOnlyFallback = path.join(tmp, `carousel-slide-4-quilt-only-${dateKey}.png`);
@@ -60,9 +60,10 @@ async function main() {
     }
 
     const live = await page.evaluate(
-      async ({ dateKey: dk, quoteText: qt }) => {
+      async ({ dateKey: dk, quoteOverride: qo, defaultQuote }) => {
         const app = window.app;
         const arch = app?.archiveService;
+        const qs = app?.quoteService;
         if (!arch?.generateInstagramCarouselSlide0QuoteFitImageData) {
           return { error: 'generateInstagramCarouselSlide0QuoteFitImageData missing' };
         }
@@ -82,21 +83,56 @@ async function main() {
           const state = app.quiltEngine.getState();
           app.renderer.renderBlocks(state.blocks, state.userPieces, state.submissionCount);
         }
+
+        let quoteObj = null;
+        let quoteText = qo;
+        if (!quoteText) {
+          if (qs?.loadQuotesFromFirestore) {
+            await qs.loadQuotesFromFirestore({ requireServer: true, timeoutMs: 45000 });
+          }
+          let resolved = null;
+          if (typeof qs?.resolveQuoteForCalendarKeyFresh === 'function') {
+            resolved = (await qs.resolveQuoteForCalendarKeyFresh(dk)) || null;
+          } else if (typeof qs?.getQuoteResolvedForInstagramDateKey === 'function') {
+            resolved = (await qs.getQuoteResolvedForInstagramDateKey(dk)) || null;
+          } else if (typeof qs?.resolveAndPinCalendarKey === 'function') {
+            resolved = (await qs.resolveAndPinCalendarKey(dk, { requireLive: true })) || null;
+          }
+          /** Fresh resolve may return `{ quote, source, resolution }` or a flat quote doc. */
+          quoteObj =
+            resolved?.quote && typeof resolved.quote === 'object' ? resolved.quote : resolved;
+          quoteText = String(quoteObj?.text || quoteObj?.body || quoteObj?.quote || '').trim();
+          if (!quoteText) quoteText = defaultQuote;
+        }
+        quoteObj = quoteObj && typeof quoteObj === 'object' ? quoteObj : { text: quoteText, body: quoteText };
+        if (!quoteObj.text && !quoteObj.body) {
+          quoteObj = { ...quoteObj, text: quoteText, body: quoteText };
+        }
+
         const result = await arch.generateInstagramCarouselSlide0QuoteFitImageData(
           blocks,
-          { text: qt, body: qt },
+          quoteObj,
           dk,
           { quiltFit: 'cover' }
         );
         if (!result?.dataUrl) return { error: 'slide0 compose returned empty' };
-        return { dataUrl: result.dataUrl, meta: result.meta || null };
+        return {
+          dataUrl: result.dataUrl,
+          meta: result.meta || null,
+          quoteText,
+          quoteAuthor: quoteObj?.author || quoteObj?.speaker || ''
+        };
       },
-      { dateKey, quoteText }
+      { dateKey, quoteOverride, defaultQuote: DEFAULT_QUOTE }
     );
 
     if (live?.error) throw new Error(live.error);
     dataUrl = live.dataUrl;
-    meta = live.meta;
+    meta = {
+      ...(live.meta || {}),
+      quoteText: live.quoteText || null,
+      quoteAuthor: live.quoteAuthor || null
+    };
   } catch (err) {
     console.warn('[preview-carousel-slide0] live path failed:', err.message);
     mode = 'overlay-fallback';
@@ -149,7 +185,7 @@ async function main() {
           meta: { mode: 'overlay-fallback', ...drawn, typeRect }
         };
       },
-      { b64, quoteText, PANEL_W, PANEL_H }
+      { b64, quoteText: quoteOverride || DEFAULT_QUOTE, PANEL_W, PANEL_H }
     );
     if (overlay?.error) {
       await browser.close();
