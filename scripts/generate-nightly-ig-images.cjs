@@ -878,12 +878,14 @@ async function runNightlyIgAttempt({
           arch.buildIntegratedInstagramCarouselImageData(blocks, contributors, quote, dateKey, carouselOptions)
         );
         if (
+          !integratedCarousel?.carouselSlide0 ||
           !integratedCarousel?.carouselSlide1 ||
           !integratedCarousel?.carouselSlide3 ||
           !integratedCarousel?.carouselSlide4
         ) {
           throw new Error(`Integrated carousel slides were not generated for ${dateKey}`);
         }
+        const carouselSlide0ImageData = integratedCarousel.carouselSlide0;
         let carouselSlide1ImageData = integratedCarousel.carouselSlide1;
         const carouselSlide1StripsImageData = integratedCarousel.carouselSlide1;
         const carouselSlide2ImageData = integratedCarousel.carouselSlide2;
@@ -894,6 +896,9 @@ async function runNightlyIgAttempt({
           log(
             `integrated carousel meta names=${m.nameCount ?? '?'} clip=${m.clippingContentWidth ?? '?'}×${m.clippingContentHeight ?? '?'} rev=${m.contributorList?.exportRev ?? m.exportRev ?? '?'}`
           );
+          if (m.quoteFitSlide0) {
+            log(`quote-fit slide 0 meta: ${JSON.stringify(m.quoteFitSlide0)}`);
+          }
           if (m.reflectionSlide) {
             log(`reflection slide meta: ${JSON.stringify(m.reflectionSlide)}`);
           }
@@ -905,7 +910,7 @@ async function runNightlyIgAttempt({
           }
         }
         log(
-          'integrated carousel post order: 1 = layout B; 2 = reflection; 3 = contributors; 4 = quilt-only mat'
+          'integrated carousel post order: 0 = quote-fit; 1 = layout B; 2 = reflection; 3 = contributors; 4 = quilt-only mat'
         );
         if (!arch.generateInstagramQuiltScreen9x16ImageData) {
           throw new Error(
@@ -940,8 +945,8 @@ async function runNightlyIgAttempt({
           );
           assertNewspaperPeekComposeMeta(composeMeta, clippingBytes, minNewspaperClippingBytes);
         }
-        // Carousel slide 1 = Layout B quote strips.
-        log('carousel slide 1 = Layout B quote strips');
+        // Carousel slide 0 = quote-fit Helvetica; slide 1 = Layout B quote strips.
+        log('carousel slide 0 = quote-fit Helvetica on quilt; slide 1 = Layout B quote strips');
         const quiltExportMeta = arch._igQuiltSourceExportMeta || null;
         if (quiltExportMeta) {
           log(`quilt export meta: ${JSON.stringify(quiltExportMeta)}`);
@@ -975,6 +980,7 @@ async function runNightlyIgAttempt({
         log('uploading PNGs to Storage + Firestore…');
         const uploadPayload = {
           dateKey,
+          carouselSlide0ImageData,
           carouselSlide1ImageData,
           /** layout-b.png mirrors carousel slide 1 (quote strips). */
           postLayoutBImageData: carouselSlide1StripsImageData,
@@ -1020,8 +1026,11 @@ async function runNightlyIgAttempt({
         } else {
           throw new Error('No Instagram upload helper available');
         }
+        if (!doc.carouselSlide0Url && !doc.carouselSlide0ImageStorageUrl) {
+          throw new Error('carousel slide 0 (quote-fit) URL missing after nightly upload');
+        }
         if (!doc.carouselSlide1Url && !doc.classicUrl) {
-          throw new Error('carousel slide 1 (quote clipping) URL missing after nightly upload');
+          throw new Error('carousel slide 1 (layout B strips) URL missing after nightly upload');
         }
         if (!doc.carouselSlide3Url) {
           throw new Error('carousel slide 3 (contributors) URL missing after nightly upload');
@@ -1031,6 +1040,7 @@ async function runNightlyIgAttempt({
         if (!carouselSlide4Url) {
           throw new Error('carousel slide 4 (quilt-only mat) URL missing after nightly upload');
         }
+        log(`carousel slide 0 (quote-fit): ${doc.carouselSlide0Url || doc.carouselSlide0ImageStorageUrl}`);
         log(`carousel slide 4 (quilt-only mat): ${carouselSlide4Url}`);
         if (carouselSlide2ImageData && !doc.carouselSlide2Url) {
           throw new Error('carousel slide 2 (reflection) URL missing after nightly upload');
@@ -1048,6 +1058,7 @@ async function runNightlyIgAttempt({
           contributorNameCount: contributors.length,
           readyForInstagram: !!doc.readyForInstagram,
           classicUrl: doc.carouselSlide1Url || doc.classicUrl || doc.imageStorageUrl || '',
+          carouselSlide0Url: doc.carouselSlide0Url || doc.carouselSlide0ImageStorageUrl || '',
           carouselSlide1Url: doc.carouselSlide1Url || doc.classicUrl || '',
           carouselSlide2Url: doc.carouselSlide2Url || '',
           carouselSlide3Url: doc.carouselSlide3Url || '',
@@ -1093,6 +1104,9 @@ async function runNightlyIgAttempt({
         `verify failed: HTTP ${verifyRes.status} ${verify.error || verify.message || ''}`.trim()
       );
     }
+    if (!verify.carouselSlide0Url) {
+      throw new Error('verify failed: carousel slide 0 (quote-fit) URL missing');
+    }
     if (!verify.carouselSlide1Url && !verify.imageUrl) {
       throw new Error('verify failed: carousel slide 1 (layout B) URL missing');
     }
@@ -1127,7 +1141,7 @@ async function runNightlyIgAttempt({
     const carouselSlide4Url =
       verify.carouselSlide4Url || result.carouselSlide4Url || '';
     const carouselPostOrderUrls = [
-      verify.carouselSlide1Url || verify.imageUrl || result.carouselSlide1Url || '',
+      verify.carouselSlide0Url || verify.carouselSlide1Url || verify.imageUrl || result.carouselSlide0Url || '',
       verify.carouselSlide3Url || result.carouselSlide3Url || '',
       carouselSlide4Url,
       verify.carouselSlide2Url || result.carouselSlide2Url || ''
@@ -1139,6 +1153,7 @@ async function runNightlyIgAttempt({
       blockCount: result.blockCount,
       contributorCount: result.contributorCount,
       readyForInstagram: result.readyForInstagram,
+      carouselSlide0Url: verify.carouselSlide0Url || result.carouselSlide0Url || '',
       carouselSlide1Url: verify.carouselSlide1Url || verify.imageUrl || '',
       carouselSlide2Url: verify.carouselSlide2Url || '',
       carouselSlide3Url: verify.carouselSlide3Url || '',
