@@ -22,6 +22,11 @@ const {
   optimizeSpeakerCutoutPng
 } = require('./lib/optimize-speaker-cutout-png.cjs');
 const {
+  portraitUrlHash,
+  isFirebaseSpeakerCutoutUrl,
+  cutoutStorageMatchesPortraitUrl
+} = require('./lib/speaker-cutout-portrait-match.cjs');
+const {
   buildNotionQuoteAssetProperties,
   notionGetDatabaseSchema,
   notionPatchPage
@@ -333,21 +338,31 @@ function safeName(value) {
     .slice(0, 80) || 'speaker';
 }
 
-function portraitUrlHash(imageUrl) {
-  return crypto.createHash('sha256').update(String(imageUrl || '').trim()).digest('hex').slice(0, 12);
-}
-
 function catalogCutoutSourceUrl(data) {
   return String(data.speakerCutoutSourceUrl ?? data.speaker_cutout_source_url ?? '').trim();
 }
 
-/** True when Storage path was built from this portrait URL (see speaker-cutouts/{author}-{hash}.png). */
-function cutoutStorageMatchesPortraitUrl(cutoutUrl, imageUrl) {
-  const cutout = String(cutoutUrl || '').trim();
-  const portrait = String(imageUrl || '').trim();
-  if (!cutout || !portrait) return false;
-  const hash = portraitUrlHash(portrait);
-  return cutout.includes(`-${hash}.`) || cutout.includes(`-${hash}-`);
+/**
+ * Portrait for remove.bg / xerox. Never treat an existing speaker-cutouts PNG as the source photo
+ * (that double-processes and invents a new Storage hash).
+ */
+function resolvePortraitImageUrlForCutout(data, rowId = '') {
+  const raw = String(data.speakerImageUrl || data.speaker_image_url || '').trim();
+  if (!raw) return '';
+  if (!isFirebaseSpeakerCutoutUrl(raw)) return raw;
+
+  const recovered = catalogCutoutSourceUrl(data);
+  if (recovered && !isFirebaseSpeakerCutoutUrl(recovered)) {
+    console.warn(
+      `[cutout] ${rowId || 'doc'}: speaker_image_url points at speaker-cutouts/; recovering portrait from speaker_cutout_source_url`
+    );
+    return recovered;
+  }
+
+  console.warn(
+    `[cutout] ${rowId || 'doc'}: speaker_image_url is a cutout URL and no real portrait source is available — skip`
+  );
+  return '';
 }
 
 /**
@@ -359,6 +374,7 @@ function shouldReuseExistingCutout(data, imageUrl, existingCutoutUrl, opts) {
   const existing = String(existingCutoutUrl || '').trim();
   const portrait = String(imageUrl || '').trim();
   if (!existing || !portrait) return false;
+  if (isFirebaseSpeakerCutoutUrl(portrait)) return false;
 
   const source = catalogCutoutSourceUrl(data);
   if (source && source !== portrait) return false;
@@ -496,13 +512,14 @@ async function collectRows(db, collectionName, opts) {
 
 function assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp) {
   const portrait = String(imageUrl || '').trim();
+  const safePortrait = isFirebaseSpeakerCutoutUrl(portrait) ? '' : portrait;
   return {
     speakerCutoutUrlSnapshot: cutoutUrl,
-    speakerCutoutSourceUrlSnapshot: portrait,
-    ...(portrait
+    speakerCutoutSourceUrlSnapshot: safePortrait,
+    ...(safePortrait
       ? {
-          speakerImageUrlSnapshot: portrait.slice(0, 500),
-          speaker_image_url_snapshot: portrait.slice(0, 500)
+          speakerImageUrlSnapshot: safePortrait.slice(0, 500),
+          speaker_image_url_snapshot: safePortrait.slice(0, 500)
         }
       : {}),
     speaker_cutout_updated_at: timestamp
@@ -511,20 +528,22 @@ function assignmentCutoutPayload(cutoutUrl, imageUrl, timestamp) {
 
 function dailyQuoteCutoutPayload(cutoutUrl, imageUrl, timestamp) {
   const portrait = String(imageUrl || '').trim();
+  const safePortrait = isFirebaseSpeakerCutoutUrl(portrait) ? '' : portrait;
   return {
     speaker_cutout_url: cutoutUrl,
-    speaker_cutout_source_url: portrait,
-    ...(portrait ? { speaker_image_url: portrait } : {}),
+    speaker_cutout_source_url: safePortrait,
+    ...(safePortrait ? { speaker_image_url: safePortrait } : {}),
     speaker_cutout_updated_at: timestamp
   };
 }
 
 function catalogCutoutPayload(cutoutUrl, imageUrl, timestamp) {
   const portrait = String(imageUrl || '').trim();
+  const safePortrait = isFirebaseSpeakerCutoutUrl(portrait) ? '' : portrait;
   return {
     speaker_cutout_url: cutoutUrl,
-    speaker_cutout_source_url: portrait,
-    ...(portrait ? { speaker_image_url: portrait } : {}),
+    speaker_cutout_source_url: safePortrait,
+    ...(safePortrait ? { speaker_image_url: safePortrait } : {}),
     speaker_cutout_updated_at: timestamp
   };
 }
@@ -657,7 +676,7 @@ async function main() {
       skipped += 1;
       continue;
     }
-    const imageUrl = String(d.speakerImageUrl || d.speaker_image_url || '').trim();
+    const imageUrl = resolvePortraitImageUrlForCutout(d, row.id);
     const existing = String(d.speakerCutoutUrl || d.speaker_cutout_url || '').trim();
     const reuseCutout = shouldReuseExistingCutout(d, imageUrl, existing, opts);
     const portraitUrlChanged = Boolean(existing && imageUrl && !reuseCutout);

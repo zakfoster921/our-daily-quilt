@@ -2,7 +2,10 @@
 /* eslint-disable no-console */
 const sharp = require('sharp');
 const { stripSpeakerCutoutHaloRgba } = require('./strip-speaker-cutout-halo.cjs');
-const { applySpeakerCutoutXeroxRgba } = require('./speaker-cutout-xerox-pass.cjs');
+const {
+  applySpeakerCutoutXeroxRgba,
+  rgbaLooksSpeakerCutoutXerox
+} = require('./speaker-cutout-xerox-pass.cjs');
 
 const DEFAULT_MAX_EDGE = 1200;
 
@@ -56,7 +59,13 @@ async function optimizeSpeakerCutoutPng(inputBuffer, options = {}) {
     .toBuffer({ resolveWithObject: true });
   stripSpeakerCutoutHaloRgba(raw, rawInfo.width, rawInfo.height);
   if (options.skipXerox !== true) {
-    applySpeakerCutoutXeroxRgba(raw, rawInfo.width, rawInfo.height, options.xeroxSeed || 'odq');
+    if (rgbaLooksSpeakerCutoutXerox(raw, rawInfo.width, rawInfo.height)) {
+      console.log(
+        `[cutout] skip xerox — input already looks newspaper-toned (${rawInfo.width}x${rawInfo.height})`
+      );
+    } else {
+      applySpeakerCutoutXeroxRgba(raw, rawInfo.width, rawInfo.height, options.xeroxSeed || 'odq');
+    }
   }
 
   const { data, info } = await sharp(raw, {
