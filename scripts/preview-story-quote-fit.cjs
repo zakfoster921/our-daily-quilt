@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * Preview story quote-fit (9:16 alternate of carousel slide 0 vinyl letters).
+ * Preview story quote-fit (9:16): top vinyl quote + slide-0b speaker at bottom.
  * Usage:
  *   DATE_KEY=2026-08-12 node scripts/preview-story-quote-fit.cjs
  *   QUOTE='line one / line two' DATE_KEY=2026-08-12 node scripts/preview-story-quote-fit.cjs
@@ -29,8 +29,13 @@ async function main() {
       () => !!window.app?.archiveService && !!window.db && !!window.firestore,
       { timeout: 90000 }
     );
+    // Speaker catalog hydrate (same warm-up Layout B / 0b need).
+    await page.waitForTimeout(2500);
 
     // Always inject latest compose so local edits aren't stuck behind a cached script tag.
+    await page.addScriptTag({
+      path: path.join(process.cwd(), 'lib/ig-carousel-slide0b-speaker-name-compose.js')
+    });
     await page.addScriptTag({
       path: path.join(process.cwd(), 'lib/ig-carousel-slide0-quote-fit-compose.js')
     });
@@ -41,47 +46,13 @@ async function main() {
         const arch = app?.archiveService;
         const qs = app?.quoteService;
         if (typeof arch?.generateInstagramStoryQuoteFitImageData !== 'function') {
-          // Hot-patch from injected compose if archive method isn't on the running page yet.
-          if (typeof window.composeStoryQuoteFitFromQuiltBlob === 'function') {
-            arch.generateInstagramStoryQuoteFitImageData = async (
-              blocks,
-              quoteObj = null,
-              dateKey = null,
-              storyOptions = {}
-            ) => {
-              const compose = window.composeStoryQuoteFitFromQuiltBlob;
-              const nested =
-                quoteObj?.quote && typeof quoteObj.quote === 'object' ? quoteObj.quote : null;
-              const quoteText = String(
-                storyOptions.quoteText ||
-                  quoteObj?.text ||
-                  quoteObj?.body ||
-                  nested?.text ||
-                  nested?.body ||
-                  (typeof quoteObj?.quote === 'string' ? quoteObj.quote : '') ||
-                  ''
-              ).trim();
-              if (!quoteText) return null;
-              const quiltScreenBlob = await arch._getInstagramQuiltScreenSourceBlob(
-                blocks,
-                dateKey,
-                'ig_story_quote_fit_source'
-              );
-              if (!quiltScreenBlob) return null;
-              const result = await compose(quiltScreenBlob, {
-                dateKey,
-                quoteText,
-                quiltFit: storyOptions.quiltFit || 'cover',
-                quiltMatPeekPx: storyOptions.quiltMatPeekPx,
-                textPadFrac: storyOptions.textPadFrac
-              });
-              if (!result?.blob) return null;
-              const dataUrl = await arch._blobToDataUrl(result.blob);
-              return dataUrl ? { dataUrl, meta: result.meta || null } : null;
-            };
-          } else {
-            return { error: 'generateInstagramStoryQuoteFitImageData missing' };
-          }
+          return { error: 'generateInstagramStoryQuoteFitImageData missing' };
+        }
+        if (typeof window.composeStoryQuoteFitFromQuiltBlob !== 'function') {
+          return { error: 'composeStoryQuoteFitFromQuiltBlob missing after inject' };
+        }
+        if (typeof window.IgCarouselSlide0bSpeakerNameCompose?.drawSpeakerNameStack !== 'function') {
+          return { error: 'slide0b drawSpeakerNameStack missing after inject' };
         }
 
         let blocks = [];
