@@ -6133,9 +6133,12 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
       docPayload.layoutBStoryPreviewUrl = publicUrl;
       docPayload.storyLayoutBPreviewUrl = publicUrl;
       docPayload.layoutBStoryPreviewRenderVersion =
-        typeof body.layoutBStoryRenderVersion === 'string' && body.layoutBStoryRenderVersion.trim()
-          ? body.layoutBStoryRenderVersion.trim()
-          : LAYOUT_B_STORY_RENDER_VERSION;
+        typeof body.layoutBStoryPreviewRenderVersion === 'string' &&
+        body.layoutBStoryPreviewRenderVersion.trim()
+          ? body.layoutBStoryPreviewRenderVersion.trim()
+          : typeof body.layoutBStoryRenderVersion === 'string' && body.layoutBStoryRenderVersion.trim()
+            ? body.layoutBStoryRenderVersion.trim()
+            : LAYOUT_B_STORY_RENDER_VERSION;
     }
     if (quiltScreen9x16ImageData) {
       const quiltScreenIsJpeg = /^data:image\/jpe?g;base64,/i.test(quiltScreen9x16ImageData);
