@@ -20254,14 +20254,14 @@
       }
     }
 
-    /* Story preview: cream frame + bottom share tab. Image clips green mat on-screen only
-       (download/share still includes the mat). Predecessor JPEG is 810×1440 with 36px mat peek. */
+    /* Story preview: cream frame + bottom share tab. Image scales so green mat sits
+       outside overflow (download/share still includes the mat). Preview JPEG: 810×1440, 36px peek. */
     #screen-quilt .quilt-layout-b-preview-wrap {
       --quilt-warm-neutral: var(--odq-paper-matte, #ebe8e3);
-      --quilt-story-preview-frame-inset: 0.5rem;
-      /* 36/1440 and 36/810 — slight over-crop kills subpixel green. */
-      --quilt-story-mat-clip-y: 2.6%;
-      --quilt-story-mat-clip-x: 4.5%;
+      --quilt-story-preview-frame-inset: 0.28rem;
+      /* Scale past 36px peek on each edge; tiny over-scale kills subpixel green. */
+      --quilt-story-mat-scale-x: 1.102; /* ~810 / 735 */
+      --quilt-story-mat-scale-y: 1.056; /* ~1440 / 1364 */
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -20361,16 +20361,15 @@
 
     #screen-quilt .quilt-layout-b-preview-img {
       position: absolute;
-      inset: 0;
+      left: 50%;
+      top: 50%;
       display: block;
-      width: 100%;
-      height: 100%;
+      width: calc(100% * var(--quilt-story-mat-scale-x));
+      height: calc(100% * var(--quilt-story-mat-scale-y));
+      transform: translate(-50%, -50%);
       object-fit: cover;
       object-position: center;
-      /* Green mat stays in the download blob; only cropped out of the on-screen preview. */
-      clip-path: inset(
-        var(--quilt-story-mat-clip-y) var(--quilt-story-mat-clip-x)
-      );
+      /* Green mat stays in the download blob; frame overflow hides it on-screen. */
       pointer-events: none;
       -webkit-touch-callout: none;
       user-select: none;
