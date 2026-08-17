@@ -26,6 +26,16 @@ try {
 const admin = require('firebase-admin');
 const { addDays, getAppDateKey, resolveStartDateKey } = require('./lib/app-date-key.cjs');
 const { speakerCutoutUrlForPortrait } = require('./lib/speaker-cutout-portrait-match.cjs');
+const {
+  authorCooldownDays,
+  authorFromAssignment,
+  authorIsUsed,
+  addUsedAuthor,
+  usedAuthorKeysFromAssignments,
+  buildLastUsedByAuthor,
+  orderFillPool,
+  takeNextSpacedQuote
+} = require('./lib/schedule-quote-pool.cjs');
 const { spawn } = require('child_process');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
@@ -334,6 +344,7 @@ async function main() {
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
       submittedBy: String(d.submittedBy || d.submitted_by || '').trim(),
       dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim(),
+      lastUsedDate: String(d.lastUsedDate || d.last_used_date || '').trim(),
       scheduleSource: String(d.scheduleSource || '').trim(),
       schedulePriorityAt: String(d.schedulePriorityAt || '').trim()
     });
@@ -347,12 +358,19 @@ async function main() {
 
   const quoteBySourceId = new Map(notionQuotes.map((q) => [q.sourceId, q]));
   const assignmentsSnap = await db.collection(assignmentsCollection).get();
+  const cooldownDays = authorCooldownDays();
+  const lookbackStart = addDays(opts.start, -cooldownDays);
   const futureAssignments = [];
+  const recentAssignments = [];
   assignmentsSnap.forEach((docSnap) => {
-    if (!isDateKey(docSnap.id) || docSnap.id < opts.start) return;
-    futureAssignments.push({ dateKey: docSnap.id, data: docSnap.data() || {} });
+    if (!isDateKey(docSnap.id)) return;
+    const row = { dateKey: docSnap.id, data: docSnap.data() || {} };
+    if (docSnap.id >= lookbackStart) recentAssignments.push(row);
+    if (docSnap.id >= opts.start) futureAssignments.push(row);
   });
   futureAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  recentAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  const lastUsedByAuthor = buildLastUsedByAuthor(recentAssignments, notionQuotes, quoteBySourceId);
 
   if (opts.fillGapsOnly) {
     const GAP_FILL_ASSIGNED_BY = 'near-term-gap-fill-scheduler';
@@ -395,56 +413,83 @@ async function main() {
       pinnedElsewhereInWindow.add(q.sourceId);
     }
 
-    const fillQueue = notionQuotes.filter((q) => {
-      if (usedSourceIds.has(q.sourceId)) return false;
-      if (pinnedElsewhereInWindow.has(q.sourceId)) return false;
-      if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
-      if (protectTodayFromAppSubmissions && q.submittedVia.toLowerCase() === 'app') return false;
-      return true;
-    });
-    fillQueue.sort((a, b) => {
-      const rank = (q) => {
-        if (!isDateKey(q.dateScheduled)) return 0;
-        if (q.dateScheduled > windowEnd) return 1;
-        if (windowDates.includes(q.dateScheduled)) return 3;
-        return 2;
-      };
-      const ra = rank(a);
-      const rb = rank(b);
-      if (ra !== rb) return ra - rb;
-      return compareSchedulingPoolQuotes(a, b);
-    });
+    const seenWindowAuthors = new Set();
+    const duplicateDates = [];
+    for (const dateKey of windowDates) {
+      const explicitSid = explicitDateToSourceId.get(dateKey);
+      const row = assignmentByDate.get(dateKey);
+      const sid = explicitSid || String(row?.data?.sourceId || '').trim();
+      if (!sid) continue;
+      const author = quoteBySourceId.get(sid)?.author || authorFromAssignment(row, quoteBySourceId);
+      const canReplace = dateKey !== opts.start;
+      if (authorIsUsed(author, seenWindowAuthors) && canReplace) {
+        duplicateDates.push(dateKey);
+        continue;
+      }
+      addUsedAuthor(seenWindowAuthors, author);
+    }
+
+    const replaceDateKeys = new Set(duplicateDates);
+    const datesToFill = [...new Set([...gapDates, ...duplicateDates])].sort();
+
+    const fillQueue = orderFillPool(
+      notionQuotes.filter((q) => {
+        if (usedSourceIds.has(q.sourceId)) return false;
+        if (pinnedElsewhereInWindow.has(q.sourceId)) return false;
+        if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
+        if (protectTodayFromAppSubmissions && q.submittedVia.toLowerCase() === 'app') return false;
+        return true;
+      }),
+      isCommunitySubmittedQuote
+    );
+
+    const keptWindowRows = windowDates
+      .filter((dateKey) => !replaceDateKeys.has(dateKey) && assignmentByDate.has(dateKey))
+      .map((dateKey) => assignmentByDate.get(dateKey));
+    const pastRows = recentAssignments.filter((row) => row.dateKey < opts.start);
+    const usedAuthors = usedAuthorKeysFromAssignments([...pastRows, ...keptWindowRows], quoteBySourceId);
+    for (const dateKey of windowDates) {
+      if (replaceDateKeys.has(dateKey) || assignmentByDate.has(dateKey)) continue;
+      const sid = explicitDateToSourceId.get(dateKey);
+      const quote = sid ? quoteBySourceId.get(sid) : null;
+      if (quote) addUsedAuthor(usedAuthors, quote.author);
+    }
 
     const scheduled = [];
-    for (const dateKey of gapDates) {
-      const quote = fillQueue.shift();
+    for (const dateKey of datesToFill) {
+      const quote = takeNextSpacedQuote(fillQueue, usedAuthors, lastUsedByAuthor, seenWindowAuthors);
       if (!quote) break;
       usedSourceIds.add(quote.sourceId);
+      addUsedAuthor(usedAuthors, quote.author);
+      addUsedAuthor(seenWindowAuthors, quote.author);
+      const replacedRow = replaceDateKeys.has(dateKey) ? assignmentByDate.get(dateKey) : null;
       scheduled.push({
         dateKey,
         quote,
         previousDateScheduled: isDateKey(quote.dateScheduled) ? quote.dateScheduled : '',
+        replacedSourceId: String(replacedRow?.data?.sourceId || '').trim(),
         payload: assignmentPayloadForQuote(quote, dateKey, GAP_FILL_ASSIGNED_BY)
       });
     }
 
     if (opts.dryRun) {
       console.log(
-        `[backfill] dry-run fill-gaps-only gaps=${gapDates.length} filling=${scheduled.length} start=${opts.start} windowEnd=${windowEnd}`
+        `[backfill] dry-run fill-gaps-only gaps=${gapDates.length} authorRepeats=${duplicateDates.length} filling=${scheduled.length} start=${opts.start} windowEnd=${windowEnd} authorCooldownDays=${cooldownDays}`
       );
-      if (gapDates.length && !scheduled.length) {
+      if (datesToFill.length && !scheduled.length) {
         console.log('[backfill] fill-gaps-only: no unscheduled quotes available for empty slots');
       }
       scheduled.forEach((row) => {
         const from = row.previousDateScheduled ? ` (was ${row.previousDateScheduled})` : '';
-        console.log(`  ${row.dateKey} -> ${row.payload.textSnapshot} — ${row.payload.authorSnapshot}${from}`);
+        const repeat = row.replacedSourceId ? ' [replace repeat author]' : '';
+        console.log(`  ${row.dateKey} -> ${row.payload.textSnapshot} — ${row.payload.authorSnapshot}${from}${repeat}`);
       });
       return;
     }
 
     if (!scheduled.length) {
       console.log(
-        `[backfill] fill-gaps-only no-op gaps=${gapDates.length} filled=0 (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window})`
+        `[backfill] fill-gaps-only no-op gaps=${gapDates.length} authorRepeats=${duplicateDates.length} filled=0 (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window})`
       );
       return;
     }
@@ -495,12 +540,29 @@ async function main() {
         }
       }
 
+      const replacedSid = String(row.replacedSourceId || '').trim();
+      if (replacedSid && replacedSid !== sid) {
+        const deleteField = admin.firestore.FieldValue.delete();
+        batchState.batch.set(
+          db.collection(quotesCollection).doc(replacedSid),
+          {
+            dateScheduled: deleteField,
+            date_scheduled: deleteField,
+            scheduleUpdatedAt: updatedAt,
+            scheduleSource: deleteField,
+            notionDateClearPending: true
+          },
+          { merge: true }
+        );
+        batchState.ops += 1;
+      }
+
       await commitBatchIfNeeded(db, batchState);
     }
 
     if (batchState.ops > 0) await batchState.batch.commit();
     console.log(
-      `[backfill] fill-gaps-only wrote ${writes} assignments + ${quoteWrites} quote date fields, cleared ${clearedOldSlots} vacated slots for ${scheduled.length}/${gapDates.length} empty days (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window})`
+      `[backfill] fill-gaps-only wrote ${writes} assignments + ${quoteWrites} quote date fields, cleared ${clearedOldSlots} vacated slots for ${scheduled.length}/${datesToFill.length} days (${assignmentsCollection} / ${quotesCollection}, start=${opts.start}, window=${opts.window})`
     );
 
     if (opts.syncNotion) {
@@ -531,21 +593,31 @@ async function main() {
         ? windowAssignments[windowAssignments.length - 1].dateKey
         : addDays(opts.start, -1);
 
-    const fillQueue = notionQuotes.filter((q) => {
-      if (usedSourceIds.has(q.sourceId)) return false;
-      if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
-      return true;
-    });
+    const fillQueue = orderFillPool(
+      notionQuotes.filter((q) => {
+        if (usedSourceIds.has(q.sourceId)) return false;
+        if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
+        return true;
+      }),
+      isCommunitySubmittedQuote
+    );
+    const usedAuthors = usedAuthorKeysFromAssignments(
+      recentAssignments.filter((row) => row.dateKey <= (windowAssignments[windowAssignments.length - 1]?.dateKey || opts.start)),
+      quoteBySourceId
+    );
+    const windowAuthors = usedAuthorKeysFromAssignments(windowAssignments, quoteBySourceId);
 
     const scheduled = [];
     let cursorDate = lastDate;
-    let fillIdx = 0;
-    while (scheduled.length < appendCount && fillIdx < fillQueue.length) {
-      const quote = fillQueue[fillIdx++];
+    while (scheduled.length < appendCount && fillQueue.length) {
+      const quote = takeNextSpacedQuote(fillQueue, usedAuthors, lastUsedByAuthor, windowAuthors);
+      if (!quote) break;
       const dateKey = firstOpenDateAfter(cursorDate, assignedDateKeys);
       if (dateKey > windowEnd) break;
       assignedDateKeys.add(dateKey);
       usedSourceIds.add(quote.sourceId);
+      addUsedAuthor(usedAuthors, quote.author);
+      addUsedAuthor(windowAuthors, quote.author);
       cursorDate = dateKey;
       scheduled.push({
         dateKey,
@@ -556,7 +628,7 @@ async function main() {
 
     if (opts.dryRun) {
       console.log(
-        `[backfill] dry-run append-only existing=${windowAssignments.length} target=${targetCount} appending=${scheduled.length} pruning=${pruneAssignments.length} start=${opts.start}`
+        `[backfill] dry-run append-only existing=${windowAssignments.length} target=${targetCount} appending=${scheduled.length} pruning=${pruneAssignments.length} start=${opts.start} authorCooldownDays=${cooldownDays}`
       );
       console.log('[backfill] appended assignments:');
       scheduled.forEach((row) => {
@@ -712,19 +784,36 @@ async function main() {
   }
 
   const usedSourceIds = new Set(windowSourceIds.filter(Boolean));
-  const fillQueue = notionQuotes.filter((q) => {
-    if (usedSourceIds.has(q.sourceId)) return false;
-    if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
-    if (protectTodayFromAppSubmissions && q.submittedVia.toLowerCase() === 'app') return false;
-    return true;
-  });
-  let fillIdx = 0;
+  const fillQueue = orderFillPool(
+    notionQuotes.filter((q) => {
+      if (usedSourceIds.has(q.sourceId)) return false;
+      if (isDateKey(q.dateScheduled) && q.dateScheduled < opts.start) return false;
+      if (protectTodayFromAppSubmissions && q.submittedVia.toLowerCase() === 'app') return false;
+      return true;
+    }),
+    isCommunitySubmittedQuote
+  );
+  const usedAuthors = usedAuthorKeysFromAssignments(
+    recentAssignments.filter((row) => row.dateKey < opts.start),
+    quoteBySourceId
+  );
+  const windowAuthors = new Set();
+  for (const sid of windowSourceIds) {
+    if (!sid) continue;
+    const quote = quoteBySourceId.get(sid);
+    if (quote) {
+      addUsedAuthor(usedAuthors, quote.author);
+      addUsedAuthor(windowAuthors, quote.author);
+    }
+  }
   for (let i = 0; i < windowSourceIds.length; i += 1) {
     if (windowSourceIds[i]) continue;
-    const next = fillQueue[fillIdx++];
+    const next = takeNextSpacedQuote(fillQueue, usedAuthors, lastUsedByAuthor, windowAuthors);
     if (!next) break;
     windowSourceIds[i] = next.sourceId;
     usedSourceIds.add(next.sourceId);
+    addUsedAuthor(usedAuthors, next.author);
+    addUsedAuthor(windowAuthors, next.author);
   }
 
   const scheduled = windowDates

@@ -27,6 +27,13 @@ const admin = require('firebase-admin');
 const { addDays, resolveStartDateKey } = require('./lib/app-date-key.cjs');
 const { speakerCutoutUrlForPortrait } = require('./lib/speaker-cutout-portrait-match.cjs');
 const { catalogFieldsForAssignmentMirror } = require('./lib/first-response-fields.cjs');
+const {
+  authorCooldownDays,
+  addUsedAuthor,
+  usedAuthorKeysFromAssignments,
+  buildLastUsedByAuthor,
+  takeNextSpacedQuote
+} = require('./lib/schedule-quote-pool.cjs');
 const DAILY_QUOTE_CAMEL_FIELDS_TO_DELETE = [
   'artRecs',
   'artRecsType',
@@ -279,6 +286,7 @@ async function main() {
       submittedVia: String(d.submittedVia || d.submitted_via || '').trim(),
       submittedBy: String(d.submittedBy || d.submitted_by || '').trim(),
       dateScheduled: String(d.dateScheduled || d.date_scheduled || '').trim(),
+      lastUsedDate: String(d.lastUsedDate || d.last_used_date || '').trim(),
       notionLastEditedTime: String(d.notionLastEditedTime || '').trim(),
       scheduleSource: String(d.scheduleSource || '').trim(),
       schedulePriorityAt: String(d.schedulePriorityAt || '').trim(),
@@ -297,16 +305,25 @@ async function main() {
   });
 
   const assignmentsSnap = await db.collection(assignmentsCollection).get();
+  const quoteBySourceId = new Map(notionQuotes.map((q) => [q.sourceId, q]));
+  const cooldownDays = authorCooldownDays();
+  const lookbackStart = addDays(opts.start, -cooldownDays);
   const futureAssignments = [];
+  const recentAssignments = [];
   const scheduledSourceIds = new Set();
   assignmentsSnap.forEach((docSnap) => {
-    if (!isDateKey(docSnap.id) || docSnap.id < opts.start) return;
+    if (!isDateKey(docSnap.id)) return;
     const data = docSnap.data() || {};
+    const row = { dateKey: docSnap.id, data };
+    if (docSnap.id >= lookbackStart) recentAssignments.push(row);
+    if (docSnap.id < opts.start) return;
     const sourceId = String(data.sourceId || '').trim();
     if (sourceId) scheduledSourceIds.add(sourceId);
-    futureAssignments.push({ dateKey: docSnap.id, data });
+    futureAssignments.push(row);
   });
   futureAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  recentAssignments.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  const lastUsedByAuthor = buildLastUsedByAuthor(recentAssignments, notionQuotes, quoteBySourceId);
 
   const submissionsToInsert = notionQuotes.filter((q) => {
     if (!isCommunitySubmittedQuote(q)) return false;
@@ -336,12 +353,22 @@ async function main() {
         : addDays(opts.start, -1);
 
     const scheduled = [];
-    for (const quote of submissionsToInsert) {
-      if (scheduled.length >= appendCount) break;
+    const windowAuthors = usedAuthorKeysFromAssignments(windowAssignments, quoteBySourceId);
+    const usedAuthors = usedAuthorKeysFromAssignments(
+      recentAssignments.filter((row) => row.dateKey < opts.start),
+      quoteBySourceId
+    );
+    for (const key of windowAuthors) usedAuthors.add(key);
+    const candidatePool = submissionsToInsert.slice();
+    while (scheduled.length < appendCount && candidatePool.length) {
+      const quote = takeNextSpacedQuote(candidatePool, usedAuthors, lastUsedByAuthor, windowAuthors);
+      if (!quote) break;
       const dateKey = firstOpenDateAfter(cursorDate, assignedDateKeys);
       if (dateKey > windowEnd) break;
       assignedDateKeys.add(dateKey);
       cursorDate = dateKey;
+      addUsedAuthor(usedAuthors, quote.author);
+      addUsedAuthor(windowAuthors, quote.author);
       scheduled.push({
         dateKey,
         quote,

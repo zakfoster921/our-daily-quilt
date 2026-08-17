@@ -137,6 +137,21 @@ function smokeExtractedGlobals() {
   ok('extracted module globals');
 }
 
+function smokeScheduleQuotePool() {
+  const res = spawnSync(process.execPath, [path.join(__dirname, 'test-schedule-quote-pool.cjs')], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 15000
+  });
+  process.stdout.write(res.stdout || '');
+  process.stderr.write(res.stderr || '');
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    throw new Error('test-schedule-quote-pool failed');
+  }
+  ok('schedule quote pool');
+}
+
 function smokeDailyQuotePushTime() {
   const res = spawnSync(process.execPath, [path.join(__dirname, 'test-daily-quote-push-time.cjs')], {
     cwd: ROOT,
@@ -178,6 +193,11 @@ function main() {
     smokeExtractedGlobals();
   } catch (err) {
     fail('extracted globals', err);
+  }
+  try {
+    smokeScheduleQuotePool();
+  } catch (err) {
+    fail('schedule quote pool', err);
   }
   try {
     smokeDailyQuotePushTime();
