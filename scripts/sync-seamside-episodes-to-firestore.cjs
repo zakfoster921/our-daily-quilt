@@ -270,7 +270,13 @@ async function main() {
     );
   }
   await batch.commit();
+  const jsonRows = rows
+    .map((row) => normalizeEpisodeRecord(row))
+    .filter(Boolean)
+    .sort((a, b) => a.artistName.localeCompare(b.artistName));
+  fs.writeFileSync(JSON_PATH, `${JSON.stringify(jsonRows, null, 2)}\n`);
   console.log(`[seamside-sync] wrote ${rows.length} docs to seamsideEpisodes`);
+  console.log(`[seamside-sync] wrote ${jsonRows.length} rows to ${path.relative(process.cwd(), JSON_PATH)}`);
 }
 
 if (require.main === module) {

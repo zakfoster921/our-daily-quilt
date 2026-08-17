@@ -214,6 +214,9 @@ app.use(
   '/scripts',
   express.static(path.join(ROOT_DIR, 'scripts'), staticAssetOptions())
 );
+app.get('/data/seamside-episodes.json', (_req, res) =>
+  res.sendFile(path.join(ROOT_DIR, 'data', 'seamside-episodes.json'))
+);
 
 // In-memory storage for generated images
 const imageStore = new Map();

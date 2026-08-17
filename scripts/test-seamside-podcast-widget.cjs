@@ -27,7 +27,8 @@ async function main() {
     fs.readFileSync(path.resolve(__dirname, '..', 'data', 'seamside-episodes.json'), 'utf8')
   );
   assert.ok(Array.isArray(seed) && seed.length >= 1);
-  assert.ok(String(seed[0].audioUrl || '').includes('.mp3'));
+  const demetriSeed = seed.find((row) => /demetri broxton/i.test(String(row.artistName || ''))) || seed[0];
+  assert.ok(String(demetriSeed.audioUrl || '').includes('.mp3'));
 
   const QuoteService = loadQuoteServiceClass();
   const qs = new QuoteService(null);
@@ -49,6 +50,8 @@ async function main() {
   const episode = qs.lookupSeamsideEpisodeForAuthor(seamsideQuote.author);
   assert.ok(episode);
   assert.match(episode.audioUrl, /\.mp3/i);
+  // Player shows for a matching guest even when the daily quote doc dropped submitted_via.
+  assert.ok(qs.lookupSeamsideEpisodeForAuthor(otherQuote.author));
 
   qs._seamsideEpisodes = [
     qs._normalizeSeamsideEpisodeFromFirestore(

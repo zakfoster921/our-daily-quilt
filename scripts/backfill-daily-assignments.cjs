@@ -192,6 +192,7 @@ function dailyQuotePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     speaker_guide_line: q.speakerGuideLine || '',
     speaker_keywords: String(q.speakerKeywords ?? q.speaker_keywords ?? '').trim(),
     image_attribution: q.imageAttribution || '',
+    submitted_via: String(q.submittedVia ?? q.submitted_via ?? '').trim(),
     assignedBy,
     assignedAt: updatedAt,
     updatedAt

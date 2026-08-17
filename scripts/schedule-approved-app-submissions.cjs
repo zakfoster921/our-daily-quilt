@@ -188,6 +188,7 @@ function dailyQuoteSnakePayloadForQuote(q, dateKey, assignedBy, updatedAt) {
     speaker_guide_line: String(q.speaker_guide_line ?? q.speakerGuideLine ?? '').trim(),
     speaker_keywords: String(q.speaker_keywords ?? q.speakerKeywords ?? '').trim(),
     image_attribution: String(q.image_attribution ?? q.imageAttribution ?? '').trim(),
+    submitted_via: String(q.submittedVia ?? q.submitted_via ?? '').trim(),
     assignedBy,
     assignedAt: updatedAt,
     updatedAt

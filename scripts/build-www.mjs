@@ -120,6 +120,14 @@ try {
   console.warn("build:www: rumi-colors.js missing, skipping");
 }
 try {
+  const seamsideSrc = join(root, "data", "seamside-episodes.json");
+  const seamsideDest = join(www, "data", "seamside-episodes.json");
+  await mkdir(join(www, "data"), { recursive: true });
+  await copyFile(seamsideSrc, seamsideDest);
+} catch {
+  console.warn("build:www: data/seamside-episodes.json missing, skipping");
+}
+try {
   await mkdir(join(root, "ios", "App", "App", "Fonts"), { recursive: true });
   await copyFile(cutiveSrc, cutiveIosDest);
 } catch {
