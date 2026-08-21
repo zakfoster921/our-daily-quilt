@@ -18,6 +18,14 @@ function loadQuoteServiceClass() {
   return sandbox.QuoteService;
 }
 
+function loadSeamsideWidget() {
+  const src = fs.readFileSync(path.resolve(__dirname, '..', 'lib', 'seamside-podcast-widget.js'), 'utf8');
+  const sandbox = { console };
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox);
+  return sandbox.SeamsidePodcastWidget;
+}
+
 async function main() {
   assert.strictEqual(artistSlugFromName('Demetri Broxton'), 'demetri-broxton');
   assert.strictEqual(authorsReferToSameSpeaker('— Demetri Broxton', 'Demetri Broxton'), true);
@@ -52,6 +60,14 @@ async function main() {
   assert.match(episode.audioUrl, /\.mp3/i);
   // Player shows for a matching guest even when the daily quote doc dropped submitted_via.
   assert.ok(qs.lookupSeamsideEpisodeForAuthor(otherQuote.author));
+
+  const widget = loadSeamsideWidget();
+  assert.ok(widget && typeof widget.resolvePresentation === 'function');
+  assert.strictEqual(widget.resolvePresentation(seamsideQuote, qs).mode, 'player');
+  assert.strictEqual(widget.resolvePresentation(otherQuote, qs).mode, 'player');
+  const seamsideUnknown = { text: 'x', author: 'Someone New', submitted_via: 'SEAMSIDE' };
+  assert.strictEqual(widget.resolvePresentation(seamsideUnknown, qs).mode, 'link-only');
+  assert.strictEqual(widget.resolvePresentation({ text: 'x', author: 'Someone New' }, qs).mode, 'hide');
 
   qs._seamsideEpisodes = [
     qs._normalizeSeamsideEpisodeFromFirestore(

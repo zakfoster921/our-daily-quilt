@@ -17,6 +17,7 @@ COPY lib ./lib
 COPY styles ./styles
 COPY scripts ./scripts
 COPY assets ./assets
+COPY data ./data
 
 # Expose port
 EXPOSE 3000
