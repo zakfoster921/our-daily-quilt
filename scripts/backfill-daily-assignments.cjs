@@ -72,7 +72,7 @@ function parseArgs(argv) {
   const args = {
     start: '',
     cadence: 1,
-    window: 7,
+    window: 8,
     minCount: null,
     appendOnly: false,
     fillGapsOnly: false,

@@ -4,7 +4,7 @@
  * Schedule-time creative prefill for quotes assigned in the upcoming window.
  * Single source of truth for AI + Wikipedia enrichment (no submission-time prefill).
  *
- *   node scripts/finalize-scheduled-prefill.cjs --start=today --window=7 --limit=7
+ *   node scripts/finalize-scheduled-prefill.cjs --start=today --window=8 --limit=8
  *   node scripts/finalize-scheduled-prefill.cjs --dry-run
  */
 const fs = require('fs');
@@ -50,8 +50,8 @@ const NOTION_API_VERSION = '2022-06-28';
 function parseArgs(argv) {
   const args = {
     start: 'today',
-    window: 7,
-    limit: 7,
+    window: 8,
+    limit: 8,
     dryRun: false
   };
   for (let i = 2; i < argv.length; i += 1) {
@@ -63,8 +63,8 @@ function parseArgs(argv) {
   }
   args.start = resolveStartDateKey(args.start);
   if (!isDateKey(args.start)) throw new Error('--start must resolve to YYYY-MM-DD');
-  if (!Number.isInteger(args.window) || args.window < 1) args.window = 7;
-  if (!Number.isInteger(args.limit) || args.limit < 1) args.limit = 7;
+  if (!Number.isInteger(args.window) || args.window < 1) args.window = 8;
+  if (!Number.isInteger(args.limit) || args.limit < 1) args.limit = 8;
   args.limit = Math.min(args.limit, 25);
   return args;
 }

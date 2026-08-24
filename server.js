@@ -14081,7 +14081,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const appSubmissionsResult = await runNodeScript('scripts/schedule-approved-app-submissions.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=7',
+      '--window=8',
       '--append-only'
     ]);
     if (appSubmissionsResult.code !== 0) {
@@ -14100,7 +14100,7 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const gapFillResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=7',
+      '--window=8',
       '--fill-gaps-only'
     ]);
     if (gapFillResult.code !== 0) {
@@ -14119,8 +14119,8 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
     const scheduleResult = await runNodeScript('scripts/backfill-daily-assignments.cjs', [
       `--start=${scheduleStartDate}`,
       '--cadence=1',
-      '--window=7',
-      '--min-count=7',
+      '--window=8',
+      '--min-count=8',
       '--append-only'
     ]);
     if (scheduleResult.code !== 0) {
@@ -14138,8 +14138,8 @@ app.post('/api/sync-notion-firestore', async (req, res) => {
 
     const finalizePrefillResult = await runNodeScript('scripts/finalize-scheduled-prefill.cjs', [
       `--start=${scheduleStartDate}`,
-      '--window=7',
-      '--limit=7'
+      '--window=8',
+      '--limit=8'
     ]);
     if (finalizePrefillResult.code !== 0) {
       return res.status(500).json({
