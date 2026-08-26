@@ -11101,6 +11101,56 @@ async function firestoreGetAllChunked(db, refs, chunkSize = 30) {
   return out;
 }
 
+function missingAuditSnap(id = '') {
+  return {
+    id,
+    exists: false,
+    data() {
+      return {};
+    }
+  };
+}
+
+function emptySubmissionAuditComparisons(appDateKey) {
+  const yesterdayKey = /^\d{4}-\d{2}-\d{2}$/.test(appDateKey)
+    ? addDaysToDateKey(appDateKey, -1)
+    : '';
+  return {
+    yesterdayKey,
+    weekDays: 0,
+    monthDays: 0,
+    yesterday: emptySubmissionAuditCounts(),
+    weekAvg: emptySubmissionAuditCounts(),
+    monthAvg: emptySubmissionAuditCounts(),
+    popularity: {}
+  };
+}
+
+/** Contributor counts only — full quilt docs (blocks) made Daily Audit take tens of seconds. */
+async function loadQuiltContributorSnapsForDateKeys(db, dayKeys) {
+  const keys = (Array.isArray(dayKeys) ? dayKeys : []).filter((key) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(String(key || ''))
+  );
+  if (!keys.length) return [];
+  try {
+    const sorted = [...keys].sort();
+    const snap = await db
+      .collection('quilts')
+      .where(admin.firestore.FieldPath.documentId(), '>=', sorted[0])
+      .where(admin.firestore.FieldPath.documentId(), '<=', sorted[sorted.length - 1])
+      .select('contributorCount', 'contributors')
+      .get();
+    const byId = new Map(snap.docs.map((doc) => [doc.id, doc]));
+    return keys.map((key) => byId.get(key) || missingAuditSnap(key));
+  } catch (error) {
+    console.warn('Slim quilt audit read failed, falling back to getAll:', error?.message || error);
+    return firestoreGetAllChunked(
+      db,
+      keys.map((key) => db.collection('quilts').doc(key))
+    );
+  }
+}
+
 const AUDIT_BOTTOM_DATES_START = '2026-07-01';
 
 function daysBetweenDateKeysInclusive(startKey, endKey) {
@@ -11152,21 +11202,14 @@ async function loadSubmissionAuditRankedDates(
     };
   }
   const dayKeys = daysBetweenDateKeysInclusive(floor, endKey);
-
-  const quiltRefs = dayKeys.map((key) => db.collection('quilts').doc(key));
-  const assignRefs = dayKeys.map((key) => db.collection('dailyQuoteAssignments').doc(key));
-  const [quiltSnaps, assignSnaps] = await Promise.all([
-    firestoreGetAllChunked(db, quiltRefs),
-    firestoreGetAllChunked(db, assignRefs)
-  ]);
+  const quiltSnaps = await loadQuiltContributorSnapsForDateKeys(db, dayKeys);
 
   const scored = dayKeys
-    .map((dateKey, index) => {
-      const contributors = contributorCountFromQuiltSnap(quiltSnaps[index]);
-      const assignData = assignSnaps[index]?.exists ? assignSnaps[index].data() || {} : {};
-      const quote = quoteFieldsFromAssignmentData(assignData);
-      return { dateKey, contributors, quote };
-    })
+    .map((dateKey, index) => ({
+      dateKey,
+      contributors: contributorCountFromQuiltSnap(quiltSnaps[index]),
+      quote: { text: '', author: '', notification: '', sourceId: '' }
+    }))
     .filter((row) => row.contributors > 0);
 
   const topCandidates = scored
@@ -11178,6 +11221,28 @@ async function loadSubmissionAuditRankedDates(
     .slice()
     .sort((a, b) => a.contributors - b.contributors || a.dateKey.localeCompare(b.dateKey))
     .slice(0, safeLimit);
+
+  const rankedKeys = [
+    ...new Set([...topCandidates, ...bottomCandidates].map((row) => row.dateKey).filter(Boolean))
+  ];
+  const assignSnaps = rankedKeys.length
+    ? await firestoreGetAllChunked(
+        db,
+        rankedKeys.map((key) => db.collection('dailyQuoteAssignments').doc(key))
+      )
+    : [];
+  const assignByKey = new Map(rankedKeys.map((key, index) => [key, assignSnaps[index]]));
+  const attachQuote = (row) => {
+    const assignSnap = assignByKey.get(row.dateKey);
+    const assignData = assignSnap?.exists ? assignSnap.data() || {} : {};
+    return { ...row, quote: quoteFieldsFromAssignmentData(assignData) };
+  };
+  topCandidates.forEach((row, index) => {
+    topCandidates[index] = attachQuote(row);
+  });
+  bottomCandidates.forEach((row, index) => {
+    bottomCandidates[index] = attachQuote(row);
+  });
 
   const sourceIds = [
     ...new Set(
@@ -11285,7 +11350,6 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const startKey = dayKeys[dayKeys.length - 1];
   const yesterdayKey = dayKeys[0];
 
-  const quiltRefs = dayKeys.map((key) => db.collection('quilts').doc(key));
   const nameRefs = dayKeys.map((key) => db.collection('quiltNames').doc(key));
   const scratchRefs = dayKeys.map((key) => db.collection('moodScratches').doc(key));
   const storyRefs = dayKeys.map((key) => db.collection('storyPreviewShares').doc(key));
@@ -11306,17 +11370,18 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
     reflectionReadSnaps,
     reflectionHeartUserSnaps,
     reflectionHist,
-    colorHist
+    colorHist,
+    rankedDatesPayload
   ] = await Promise.all([
-    db.getAll(...quiltRefs),
-    db.getAll(...nameRefs),
-    db.getAll(...scratchRefs),
-    db.getAll(...storyRefs),
-    db.getAll(...firstTimeRefs),
-    db.getAll(...dayVisitRefs),
-    db.getAll(...studioFloorRefs),
-    db.getAll(...reflectionReadRefs),
-    db.getAll(...reflectionHeartUserRefs),
+    loadQuiltContributorSnapsForDateKeys(db, dayKeys),
+    firestoreGetAllChunked(db, nameRefs),
+    firestoreGetAllChunked(db, scratchRefs),
+    firestoreGetAllChunked(db, storyRefs),
+    firestoreGetAllChunked(db, firstTimeRefs),
+    firestoreGetAllChunked(db, dayVisitRefs),
+    firestoreGetAllChunked(db, studioFloorRefs),
+    firestoreGetAllChunked(db, reflectionReadRefs),
+    firestoreGetAllChunked(db, reflectionHeartUserRefs),
     db
       .collection('reflectionResponses')
       .where('appDateKey', '>=', startKey)
@@ -11328,7 +11393,11 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
       .where('appDateKey', '>=', startKey)
       .where('appDateKey', '<=', appDateKey)
       .select('appDateKey', 'createdAtIso', 'createdAt')
-      .get()
+      .get(),
+    loadSubmissionAuditRankedDates(db, appDateKey, {
+      limit: 10,
+      startDate: AUDIT_BOTTOM_DATES_START
+    })
   ]);
 
   const reflectionsByDay = new Map();
@@ -11394,10 +11463,6 @@ async function loadSubmissionAuditComparisons(db, appDateKey, lookbackDays = 30)
   const ordered = dayKeys.map((key) => byDate[key]);
   const weekDays = ordered.slice(0, Math.min(7, ordered.length));
   const monthDays = ordered.slice(0, Math.min(30, ordered.length));
-  const rankedDatesPayload = await loadSubmissionAuditRankedDates(db, appDateKey, {
-    limit: 10,
-    startDate: AUDIT_BOTTOM_DATES_START
-  });
 
   return {
     yesterdayKey,
@@ -11470,7 +11535,10 @@ app.post('/api/admin/submission-audit', limitAdminQuiltMutation, async (req, res
       db.collection('studioFloorOpens').doc(appDateKey).get(),
       db.collection('reflectionReads').doc(appDateKey).get(),
       db.collection('reflectionHeartUsers').doc(appDateKey).get(),
-      loadSubmissionAuditComparisons(db, appDateKey, 30)
+      loadSubmissionAuditComparisons(db, appDateKey, 30).catch((error) => {
+        console.error('❌ Admin submission audit comparisons failed:', error);
+        return emptySubmissionAuditComparisons(appDateKey);
+      })
     ]);
 
     const quilt = quiltSnap.exists ? quiltSnap.data() || {} : {};
