@@ -35,22 +35,28 @@ android {
 
 tasks.register("cleanICloudDuplicates") {
     doLast {
-        def roots = [file("src/main/res"), file("${buildDir}")].findAll { it.exists() }
+        def roots = [file("src/main/res"), file("src/main/assets"), file("${buildDir}")].findAll { it.exists() }
         def duplicates = []
         roots.each { root ->
             root.eachFileRecurse { candidate ->
-                if (candidate.name.contains(" 2")) {
+                def isRes = candidate.path.contains("src/main/res")
+                if (candidate.name =~ / \d+(\.\w+)?$/) {
+                    duplicates << candidate
+                } else if (isRes && candidate.name.contains(" ")) {
+                    // Any file with a space in 'res' is invalid for Android
                     duplicates << candidate
                 }
             }
         }
         // Delete deepest paths first so parent directory walks stay stable.
         duplicates.sort { a, b -> b.path.length() <=> a.path.length() }.each { duplicate ->
-            logger.lifecycle("Removing iCloud duplicate: ${duplicate.path}")
-            if (duplicate.directory) {
-                duplicate.deleteDir()
-            } else {
-                duplicate.delete()
+            if (duplicate.exists()) {
+                logger.lifecycle("Removing invalid iCloud or spaced resource: ${duplicate.path}")
+                if (duplicate.directory) {
+                    duplicate.deleteDir()
+                } else {
+                    duplicate.delete()
+                }
             }
         }
     }

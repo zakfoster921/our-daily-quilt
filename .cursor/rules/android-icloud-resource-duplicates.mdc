@@ -1,0 +1,17 @@
+---
+description: iCloud duplicate files break Android resource merge — clean before store builds
+alwaysApply: true
+---
+
+# Android + iCloud duplicate resources
+
+This repo lives in iCloud Drive. Finder/iCloud creates copies like `config 2.xml` / `config 3.xml`. **AAPT rejects any `res/` file with a space in the name** (`Invalid resource name`).
+
+Before Android store prep (`npm run android:prep`, Studio bundle, `bundleRelease`):
+
+1. **Do not commit** `* 2.xml`, `config 3.xml`, or any `android/app/src/main/res` path with a space.
+2. Gradle task `cleanICloudDuplicates` in `android/app/build.gradle` runs before `merge*Resources` / `merge*Dex` and deletes `name + space + number` copies (and any spaced name under `res/`).
+3. `npm run android:prep` also strips those copies under `res/` and `assets/` before `cap sync`.
+4. If Studio still errors on invalid resource names: delete the spaced copies, then `./gradlew :app:mergeReleaseResources`.
+
+Keep the real file (`config.xml`). Only remove the numbered iCloud copies.

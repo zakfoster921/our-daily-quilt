@@ -16,6 +16,32 @@ else
   echo "WARN: android/app/build.gradle not found — skipping build bump"
 fi
 
+echo "==> remove iCloud duplicate Android resources (spaces in names break AAPT)"
+python3 - <<'PY'
+from pathlib import Path
+import re
+import shutil
+
+roots = [
+    Path("android/app/src/main/res"),
+    Path("android/app/src/main/assets"),
+]
+pat = re.compile(r" \d+(\.\w+)?$")
+removed = []
+for root in roots:
+    if not root.exists():
+        continue
+    for path in sorted(root.rglob("*"), key=lambda p: len(str(p)), reverse=True):
+        in_res = "src/main/res" in str(path)
+        if pat.search(path.name) or (in_res and " " in path.name):
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            elif path.is_file():
+                path.unlink(missing_ok=True)
+            removed.append(str(path))
+print("\n".join(removed) if removed else "none found")
+PY
+
 echo "==> npm run build:www"
 npm run build:www
 
