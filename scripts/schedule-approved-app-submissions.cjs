@@ -69,7 +69,7 @@ function parseArgs(argv) {
   const args = {
     start: 'today',
     cadence: 1,
-    window: 8,
+    window: 9,
     appendOnly: false,
     dryRun: false
   };

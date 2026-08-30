@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       sync_window:
-        description: "How many app-days to sync quotes + usage (manual runs only; cron always uses 8 days)."
+        description: "How many app-days to sync quotes + usage (manual runs only; cron always uses 9 days so the 8th day out is included)."
         required: false
         default: "1"
         type: choice
@@ -90,8 +90,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "SYNC_SCOPE_ARG=--window=8" >> "$GITHUB_ENV"
-            echo "[workflow] scheduled cron: sync window 8 days"
+            echo "SYNC_SCOPE_ARG=--window=9" >> "$GITHUB_ENV"
+            echo "[workflow] scheduled cron: sync window 9 days (today + 8 days out)"
           else
             SCOPE="${{ github.event.inputs.sync_window }}"
             SCOPE="${SCOPE:-1}"
@@ -139,7 +139,7 @@ jobs:
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
         run: |
           echo "[workflow] running priority append scheduler"
-          node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=8 --append-only
+          node scripts/schedule-approved-app-submissions.cjs "${START_ARG}" --cadence=1 --window=9 --append-only
 
       - name: Fill near-term schedule gaps
         timeout-minutes: 5
@@ -147,15 +147,15 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=8 --fill-gaps-only
+        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=9 --fill-gaps-only
 
-      - name: Append rolling 8-day quote window
+      - name: Append rolling quote window through 8 days out
         timeout-minutes: 5
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=8 --min-count=8 --append-only
+        run: node scripts/backfill-daily-assignments.cjs "${START_ARG}" --cadence=1 --window=9 --min-count=9 --append-only
 
       - name: Finalize scheduled quote prefill
         timeout-minutes: 8
@@ -172,7 +172,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           GEMINI_PREFILL_MODEL: ${{ secrets.GEMINI_PREFILL_MODEL }}
-        run: node scripts/finalize-scheduled-prefill.cjs "${START_ARG}" --window=8 --limit=8
+        run: node scripts/finalize-scheduled-prefill.cjs "${START_ARG}" --window=9 --limit=9
 
       # Speaker cutouts: reviewed-only — Notion "Reviewed" → POST /api/process-reviewed-quote-assets
 
