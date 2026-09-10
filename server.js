@@ -40,6 +40,7 @@ const LAYOUT_B_STORY_RENDER_VERSION = 'story-plain-strips-v7';
 const {
   normalizeDailyQuotePreferredHour,
   isDailyQuoteDueForToken,
+  resolveDailyQuoteDateKey,
   buildDailyQuotePushBody
 } = require('./lib/daily-quote-push-time');
 
@@ -5074,7 +5075,12 @@ async function collectDailyQuotePushTokensDue(now = new Date(), options = {}) {
     const token = String(data.token || '').trim();
     if (!token) return;
     if (!isDailyQuoteDueForToken(data, now, { force, catchUp, dateKey })) return;
-    due.push({ id: docSnap.id, token, data });
+    due.push({
+      id: docSnap.id,
+      token,
+      data,
+      quoteDateKey: resolveDailyQuoteDateKey(data, now, dateKey)
+    });
   });
 
   return { due, totalCount, dateKey };
@@ -5160,77 +5166,95 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
     };
   }
 
-  const quoteText = await getDailyQuotePushText(resolvedDateKey);
+  const groups = new Map();
+  for (const recipient of recipients) {
+    const quoteDateKey = String(recipient.quoteDateKey || resolvedDateKey).trim() || resolvedDateKey;
+    if (!groups.has(quoteDateKey)) groups.set(quoteDateKey, []);
+    groups.get(quoteDateKey).push(recipient);
+  }
+
   const lastPushAt = await getLastDailyQuotePushCompletedAt();
   const newStudioPost = await getLatestStudioFloorPostSince(lastPushAt);
-  const body = buildDailyQuotePushBody(quoteText, { hasNewPost: !!newStudioPost });
   let sent = 0;
   let failed = 0;
   let pruned = 0;
+  const quotePreviews = {};
+  let primaryPreview = '';
+  let primaryPreviewCount = 0;
 
-  for (let i = 0; i < recipients.length; i += 500) {
-    const chunk = recipients.slice(i, i + 500);
-    const message = {
-      tokens: chunk.map((r) => r.token),
-      notification: {
-        body
-      },
-      data: {
-        type: 'daily_quote',
-        date: resolvedDateKey,
-        has_studio_floor_post: newStudioPost ? '1' : '0'
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default'
+  for (const [quoteDateKey, group] of groups) {
+    const quoteText = await getDailyQuotePushText(quoteDateKey);
+    const body = buildDailyQuotePushBody(quoteText, { hasNewPost: !!newStudioPost });
+    quotePreviews[quoteDateKey] = body;
+    if (group.length >= primaryPreviewCount) {
+      primaryPreview = body;
+      primaryPreviewCount = group.length;
+    }
+
+    for (let i = 0; i < group.length; i += 500) {
+      const chunk = group.slice(i, i + 500);
+      const message = {
+        tokens: chunk.map((r) => r.token),
+        notification: {
+          body
+        },
+        data: {
+          type: 'daily_quote',
+          date: quoteDateKey,
+          has_studio_floor_post: newStudioPost ? '1' : '0'
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default'
+            }
           }
         }
-      }
-    };
-    const messaging = admin.messaging();
-    const response = typeof messaging.sendEachForMulticast === 'function'
-      ? await messaging.sendEachForMulticast(message)
-      : await messaging.sendMulticast(message);
+      };
+      const messaging = admin.messaging();
+      const response = typeof messaging.sendEachForMulticast === 'function'
+        ? await messaging.sendEachForMulticast(message)
+        : await messaging.sendMulticast(message);
 
-    sent += response.successCount || 0;
-    failed += response.failureCount || 0;
+      sent += response.successCount || 0;
+      failed += response.failureCount || 0;
 
-    await Promise.all(
-      (response.responses || []).map(async (r, idx) => {
-        const recipient = chunk[idx];
-        if (!recipient) return;
-        if (r.success) {
-          await db.collection('pushTokens').doc(recipient.id).set(
-            {
-              lastDailyQuotePushDateKey: resolvedDateKey,
-              lastDailyQuotePushAt: getUtcIsoNow()
-            },
-            { merge: true }
-          );
-          return;
-        }
-        if (isInvalidPushTokenError(r.error)) {
-          pruned += 1;
-          await db.collection('pushTokens').doc(recipient.id).set(
-            {
-              enabled: false,
-              disabledAt: getUtcIsoNow(),
-              disabledReason: String(r.error?.code || 'invalid-token')
-            },
-            { merge: true }
-          );
-        } else {
-          await db.collection('pushTokens').doc(recipient.id).set(
-            {
-              lastErrorAt: getUtcIsoNow(),
-              lastError: String(r.error?.code || r.error?.message || 'unknown')
-            },
-            { merge: true }
-          );
-        }
-      })
-    );
+      await Promise.all(
+        (response.responses || []).map(async (r, idx) => {
+          const recipient = chunk[idx];
+          if (!recipient) return;
+          if (r.success) {
+            await db.collection('pushTokens').doc(recipient.id).set(
+              {
+                lastDailyQuotePushDateKey: quoteDateKey,
+                lastDailyQuotePushAt: getUtcIsoNow()
+              },
+              { merge: true }
+            );
+            return;
+          }
+          if (isInvalidPushTokenError(r.error)) {
+            pruned += 1;
+            await db.collection('pushTokens').doc(recipient.id).set(
+              {
+                enabled: false,
+                disabledAt: getUtcIsoNow(),
+                disabledReason: String(r.error?.code || 'invalid-token')
+              },
+              { merge: true }
+            );
+          } else {
+            await db.collection('pushTokens').doc(recipient.id).set(
+              {
+                lastErrorAt: getUtcIsoNow(),
+                lastError: String(r.error?.code || r.error?.message || 'unknown')
+              },
+              { merge: true }
+            );
+          }
+        })
+      );
+    }
   }
 
   await opRef.set(
@@ -5243,7 +5267,8 @@ async function sendDailyQuotePushNotifications(dateKey = getAppDateKey(), option
       pruned,
       skipped,
       dueCount: recipients.length,
-      quotePreview: body,
+      quotePreview: primaryPreview,
+      quotePreviews,
       completedAt: getUtcIsoNow()
     },
     { merge: true }

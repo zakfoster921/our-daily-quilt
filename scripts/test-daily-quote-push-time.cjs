@@ -4,6 +4,8 @@ const assert = require('assert');
 const {
   normalizeDailyQuotePreferredHour,
   getLocalHour,
+  getLocalDateKey,
+  resolveDailyQuoteDateKey,
   isDailyQuoteDueForToken,
   buildDailyQuotePushBody,
   tokenHasNewSocialPostSinceLastPush,
@@ -41,6 +43,43 @@ function testGetLocalHour() {
 
   const invalidTz = new Date('2026-01-15T14:00:00.000Z');
   assert.strictEqual(getLocalHour('', invalidTz), 14);
+}
+
+function testResolveDailyQuoteDateKey() {
+  // 12:40 AM Central on Sept 10 — app day is still Sept 9 until 07:00 UTC.
+  const midnightCt = new Date('2026-09-10T05:40:00.000Z');
+  assert.strictEqual(getLocalDateKey('America/Chicago', midnightCt), '2026-09-10');
+  assert.strictEqual(
+    resolveDailyQuoteDateKey(
+      { timezone: 'America/Chicago', dailyQuotePreferredHour: 0 },
+      midnightCt,
+      '2026-09-09'
+    ),
+    '2026-09-10'
+  );
+
+  // 10:40 PM Pacific the evening before — still Sept 9 locally, keep yesterday's quote.
+  const eveningPt = new Date('2026-09-10T05:40:00.000Z');
+  assert.strictEqual(getLocalDateKey('America/Los_Angeles', eveningPt), '2026-09-09');
+  assert.strictEqual(
+    resolveDailyQuoteDateKey(
+      { timezone: 'America/Los_Angeles', dailyQuotePreferredHour: 22 },
+      eveningPt,
+      '2026-09-09'
+    ),
+    '2026-09-09'
+  );
+
+  // After the 07:00 UTC roll, even Hawaii evening uses the live app day.
+  const afterRoll = new Date('2026-09-10T07:30:00.000Z');
+  assert.strictEqual(
+    resolveDailyQuoteDateKey(
+      { timezone: 'Pacific/Honolulu', dailyQuotePreferredHour: 21 },
+      afterRoll,
+      '2026-09-10'
+    ),
+    '2026-09-10'
+  );
 }
 
 function testIsDailyQuoteDueForToken() {
@@ -95,6 +134,25 @@ function testIsDailyQuoteDueForToken() {
     ),
     true
   );
+
+  const midnightCt = new Date('2026-09-10T05:40:00.000Z');
+  const midnightToken = {
+    timezone: 'America/Chicago',
+    dailyQuotePreferredHour: 0,
+    lastDailyQuotePushDateKey: '2026-09-09'
+  };
+  assert.strictEqual(
+    isDailyQuoteDueForToken(midnightToken, midnightCt, { dateKey: '2026-09-09' }),
+    true
+  );
+  assert.strictEqual(
+    isDailyQuoteDueForToken(
+      { ...midnightToken, lastDailyQuotePushDateKey: '2026-09-10' },
+      midnightCt,
+      { dateKey: '2026-09-09' }
+    ),
+    false
+  );
 }
 
 function testBuildDailyQuotePushBody() {
@@ -135,6 +193,7 @@ function testTokenHasNewSocialPostSinceLastPush() {
 function main() {
   testNormalizeHour();
   testGetLocalHour();
+  testResolveDailyQuoteDateKey();
   testIsDailyQuoteDueForToken();
   testBuildDailyQuotePushBody();
   testTokenHasNewSocialPostSinceLastPush();
