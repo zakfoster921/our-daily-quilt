@@ -13,6 +13,10 @@
     if (Number.isFinite(freezeAt) && freezeAt >= 2) {
       engineOptions.macroFreezeAtBlockCount = Math.floor(freezeAt);
     }
+    const specialScale = Number(options.specialStructureScaleMultiplier);
+    if (Number.isFinite(specialScale) && specialScale >= 0) {
+      engineOptions.specialStructureScaleMultiplier = specialScale;
+    }
     const engine = new Engine(String(deviceId || 'builder-preview'), engineOptions);
     engine.recordUserContribution = () => {};
     engine._suppressSplitWarnings = true;
