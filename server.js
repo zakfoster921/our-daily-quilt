@@ -1697,14 +1697,54 @@ function insetCircleOrganicSectorPointsLocal(block, jitterMultiplier = 1) {
   return { kind: 'loop', points: clipped };
 }
 
+function clipCtxToInsetOutline(ctx, block, x, y, width, height) {
+  const bw = Math.max(1e-6, Number(block.width));
+  const bh = Math.max(1e-6, Number(block.height));
+  const bx = Number(block.x) || 0;
+  const by = Number(block.y) || 0;
+  const worldPieces = Array.isArray(block.specialParentClipPieces) && block.specialParentClipPieces.length
+    ? block.specialParentClipPieces
+    : null;
+  const localPieces = !worldPieces && Array.isArray(block.polygonPieces) && block.polygonPieces.length
+    ? block.polygonPieces
+    : null;
+  const pieces = worldPieces || localPieces;
+  if (!pieces) return false;
+  ctx.beginPath();
+  let any = false;
+  pieces.forEach((piece) => {
+    const pts = (piece?.points || [])
+      .map((p) => {
+        const px = Number(Array.isArray(p) ? p[0] : p?.x);
+        const py = Number(Array.isArray(p) ? p[1] : p?.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return null;
+        const lx = worldPieces ? px - bx : px;
+        const ly = worldPieces ? py - by : py;
+        return [x + (lx / bw) * width, y + (ly / bh) * height];
+      })
+      .filter(Boolean);
+    if (pts.length < 3) return;
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    any = true;
+  });
+  if (!any) return false;
+  ctx.clip();
+  return true;
+}
+
 function drawInsetCircleBlockToCtx(ctx, block, x, y, width, height) {
   const bw = Math.max(1e-6, Number(block.width));
   const bh = Math.max(1e-6, Number(block.height));
+  ctx.save();
+  clipCtxToInsetOutline(ctx, block, x, y, width, height);
   ctx.fillStyle = block.color || '#6c757d';
   ctx.fillRect(x, y, width, height);
   const inner = typeof block.insetInnerColor === 'string' ? block.insetInnerColor : block.color;
   const spec = insetCircleOrganicSectorPointsLocal(block, 1);
   if (spec.kind === 'none' || !(spec.points && spec.points.length >= 3)) {
+    ctx.restore();
     return;
   }
   const map = (p) => [
@@ -1718,6 +1758,7 @@ function drawInsetCircleBlockToCtx(ctx, block, x, y, width, height) {
   ctx.closePath();
   ctx.fillStyle = inner;
   ctx.fill();
+  ctx.restore();
 }
 
 /** Half-square triangle blocks (must match client geometry in our-daily-beta.html). */
