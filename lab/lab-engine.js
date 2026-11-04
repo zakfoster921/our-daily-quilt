@@ -379,6 +379,72 @@
     }
     return cells.map(toCell);
   }
+  // ---- structurally different recipes: each color is its own visible piece by construction ----
+  function logCabinShapes(colors, rnd) {
+    const n = colors.length, cw = W * (0.1 + rnd() * 0.07), chh = H * (0.05 + rnd() * 0.04), cx = W * (0.36 + rnd() * 0.28), cy = H * (0.3 + rnd() * 0.3);
+    let x0 = cx - cw / 2, x1 = cx + cw / 2, y0 = cy - chh / 2, y1 = cy + chh / 2;
+    const dist4 = { T: y0, R: W - x1, B: H - y1, L: x0 }, sides = [];
+    const keys = ['T', 'R', 'B', 'L'];
+    for (let i = 1; i < n; i++) { let tot = keys.reduce((a, k) => a + dist4[k], 0), r = rnd() * tot, pick = 'T'; for (const k of keys) { r -= dist4[k]; if (r <= 0) { pick = k; break; } } sides.push(pick); }
+    // a side that gets no log still needs closing: its last log absorbs the remainder
+    const per = {}; keys.forEach((k) => { per[k] = sides.map((sd, i) => (sd === k ? i : -1)).filter((i) => i >= 0); });
+    const thick = {}; keys.forEach((k) => { const idx = per[k]; const ws = idx.map(() => 0.55 + rnd() * 0.9), tw = ws.reduce((a, b) => a + b, 0) || 1; idx.forEach((ii, j) => { thick[ii] = (dist4[k] * ws[j]) / tw; }); });
+    const shapes = [{ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[0] }];
+    sides.forEach((sd, i) => {
+      const t = thick[i], c = colors[i + 1];
+      if (sd === 'T') { shapes.push({ pts: [[x0, y0 - t], [x1, y0 - t], [x1, y0], [x0, y0]], fill: c }); y0 -= t; }
+      else if (sd === 'B') { shapes.push({ pts: [[x0, y1], [x1, y1], [x1, y1 + t], [x0, y1 + t]], fill: c }); y1 += t; }
+      else if (sd === 'L') { shapes.push({ pts: [[x0 - t, y0], [x0, y0], [x0, y1], [x0 - t, y1]], fill: c }); x0 -= t; }
+      else { shapes.push({ pts: [[x1, y0], [x1 + t, y0], [x1 + t, y1], [x1, y1]], fill: c }); x1 += t; }
+    });
+    // close any remaining margin on sides that received no log with the last color (keeps canvas fully covered)
+    const last = colors[n - 1];
+    if (y0 > 0.5) shapes.push({ pts: [[x0, 0], [x1, 0], [x1, y0], [x0, y0]], fill: last });
+    if (y1 < H - 0.5) shapes.push({ pts: [[x0, y1], [x1, y1], [x1, H], [x0, H]], fill: last });
+    if (x0 > 0.5) shapes.push({ pts: [[0, 0], [x0, 0], [x0, H], [0, H]], fill: last });
+    if (x1 < W - 0.5) shapes.push({ pts: [[x1, 0], [W, 0], [W, H], [x1, H]], fill: last });
+    return shapes;
+  }
+  function strataShapes(colors, rnd) {
+    const n = colors.length, ws = colors.map(() => 0.5 + Math.pow(rnd(), 2) * 2.6), tw = ws.reduce((a, b) => a + b, 0);
+    const ys = [0]; ws.forEach((w) => ys.push(ys[ys.length - 1] + (w / tw) * H)); ys[n] = H;
+    const line = (k) => { // boundary polyline, sometimes with a step (a "fault") partway across
+      const y = ys[k]; if (k === 0 || k === n || rnd() > 0.4) return [[0, y], [W, y]];
+      const gap = Math.min(ys[k] - ys[k - 1], ys[k + 1] - ys[k]), off = (rnd() < 0.5 ? -1 : 1) * gap * (0.25 + rnd() * 0.3), xs = W * (0.2 + rnd() * 0.6);
+      return [[0, y], [xs, y], [xs, y + off], [W, y + off]];
+    };
+    const lines = []; for (let k = 0; k <= n; k++) lines.push(line(k));
+    return colors.map((c, k) => ({ pts: lines[k].concat(lines[k + 1].slice().reverse()), fill: c }));
+  }
+  function barShapes(colors, rnd) {
+    const n = colors.length, k = Math.max(3, Math.min(7, Math.round(Math.sqrt(n / 2.2))));
+    const pat = [1, 0.45, 1.25, 0.5, 1.1, 0.4, 0.9], bw = Array.from({ length: k }, (_, i) => pat[i % pat.length] * (0.85 + rnd() * 0.3)), tb = bw.reduce((a, b) => a + b, 0);
+    const cnt = Array(k).fill(1); for (let i = k; i < n; i++) cnt[Math.floor(rnd() * k)]++;
+    const shapes = []; let x = 0, ci = 0;
+    for (let b = 0; b < k; b++) {
+      const x1 = b === k - 1 ? W : x + (bw[b] / tb) * W, hs = Array.from({ length: cnt[b] }, () => 0.6 + rnd() * 1.4), th = hs.reduce((a, c) => a + c, 0); let y = 0;
+      hs.forEach((h, j) => { const y1 = j === hs.length - 1 ? H : y + (h / th) * H; if (ci < n) shapes.push({ pts: [[x, y], [x1, y], [x1, y1], [x, y1]], fill: colors[ci++] }); y = y1; });
+      x = x1;
+    }
+    return shapes;
+  }
+  function radialShapes(colors, rnd) {
+    const n = colors.length, cx = W * (0.38 + rnd() * 0.24), cy = H * (0.32 + rnd() * 0.26), a = W / 2, b = H / 2.4;
+    const rings = n > 40 ? 3 : n > 16 ? 2 : 1, bounds = rings === 1 ? [0.14, 2.4] : rings === 2 ? [0.12, 0.55, 2.4] : [0.1, 0.4, 0.75, 2.4];
+    const shapes = [{ pts: Array.from({ length: 32 }, (_, i) => { const t = (i / 32) * Math.PI * 2; return [cx + Math.cos(t) * a * bounds[0], cy + Math.sin(t) * b * bounds[0]]; }), fill: colors[0] }];
+    const rest = colors.slice(1), per = Array(rings).fill(0).map((_, i) => Math.floor(rest.length / rings) + (i < rest.length % rings ? 1 : 0)); let ci = 0;
+    for (let rg = 0; rg < rings; rg++) {
+      const m = per[rg], ws = Array.from({ length: m }, () => 0.6 + rnd() * 1.1), tw = ws.reduce((x, y) => x + y, 0); let ang = rnd() * Math.PI * 2;
+      const r0 = bounds[rg], r1 = bounds[rg + 1];
+      for (let j = 0; j < m; j++) {
+        const da = (ws[j] / tw) * Math.PI * 2, steps = Math.max(3, Math.ceil(da * 10)), pts = [];
+        for (let t = 0; t <= steps; t++) { const an = ang + (t / steps) * da; pts.push([cx + Math.cos(an) * a * r0, cy + Math.sin(an) * b * r0]); }
+        for (let t = steps; t >= 0; t--) { const an = ang + (t / steps) * da; pts.push([cx + Math.cos(an) * a * r1, cy + Math.sin(an) * b * r1]); }
+        shapes.push({ pts, fill: rest[ci++] }); ang += da;
+      }
+    }
+    return shapes;
+  }
   function buildFlat(colors, opts, style) {
     const seed = (opts.seed != null ? opts.seed : 1) >>> 0, rnd = mulberry32(seed ^ 0x2468ace1), n = colors.length;
     const out = { W, H, shapes: [], cells: 0, center: style, place: style, size: 1, frame: false, style };
@@ -403,6 +469,10 @@
         pieces.forEach((pc) => shapes.push({ pts: pc.pts.map(([u, v]) => bil(c.q, u, v)), fill: pcs[pc.c] }));
       });
       out.special = sp ? Math.round((sp.a / tot) * 100) : 0; amp = 0.75;
+    } else if (style === 'logcabin') { shapes = logCabinShapes(colors, rnd); amp = 0.9;
+    } else if (style === 'strata') { shapes = strataShapes(colors, rnd); amp = 1.0;
+    } else if (style === 'bars') { shapes = barShapes(colors, rnd); amp = 0.8;
+    } else if (style === 'radial') { shapes = radialShapes(colors, rnd); amp = 0.8;
     } else if (style === 'improv') {
       // improvisational strips: slanted cuts, long narrow pieces, strong wobble, asymmetric (Gee's Bend spirit)
       const cells = bspFull(colors, rnd, { areaPow: 1.1, recent: 0, recentBoost: 1, slant: 0.5, ratio: (r) => 0.16 + r() * 0.5 });
@@ -439,7 +509,7 @@
     opts = opts || {};
     const seed = (opts.seed != null ? opts.seed : 1) >>> 0;
     let style = opts.style && opts.style !== 'auto' ? opts.style : null;
-    if (!style) { const r = mulberry32(seed ^ 0x5717e5)(); style = r < 0.4 ? 'bigtop' : r < 0.65 ? 'modern' : r < 0.85 ? 'improv' : 'geometric'; }
+    if (!style) { const r = mulberry32(seed ^ 0x5717e5)(); style = r < 0.24 ? 'bigtop' : r < 0.38 ? 'modern' : r < 0.5 ? 'improv' : r < 0.6 ? 'geometric' : r < 0.72 ? 'logcabin' : r < 0.82 ? 'strata' : r < 0.9 ? 'bars' : 'radial'; }
     if (!colors.length) return { W, H, shapes: [], cells: 0, style };
     const m = style === 'bigtop' ? buildBigTop(colors, opts) : buildFlat(colors, opts, style);
     m.style = style; return m;
