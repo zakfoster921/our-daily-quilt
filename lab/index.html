@@ -28,7 +28,7 @@
   <label>Size<select id="size"><option value="auto">Auto (varies)</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
   <label>Placement<select id="place"><option value="auto">Auto (varies)</option><option value="center">Center</option><option value="sides">Split on sides</option><option value="top">Split on top</option><option value="bottom">Split on bottom</option><option value="topbottom">Top + bottom</option></select></label>
   <button id="re">New variants</button>
-  <button id="gal">Show every design</button>
+  <button id="gal">Back to variants</button>
 </div>
 <div class="strip" id="strip"></div>
 <div class="grid" id="grid"></div>
@@ -40,7 +40,7 @@
   const $=id=>document.getElementById(id);
   days.slice().reverse().forEach(d=>{const o=document.createElement('option');o.value=d.date;o.textContent=d.date+' ('+d.count+')';$('day').appendChild(o)});
   let seeds=[1,2,3,4,5,6].map((_,i)=>i+1);
-  let gallery=false;
+  let gallery=true;
   function draw(){
     const d=days.find(x=>x.date===$('day').value);const max=d.colors.length;
     $('count').max=max;if(+$('count').value>max)$('count').value=max;
@@ -48,16 +48,15 @@
     const cols=d.colors.slice(0,n);
     $('strip').innerHTML=cols.map(c=>'<i style="background:'+c+'"></i>').join('');
     if(gallery){
-      const kinds=['none','star','small','dresden','flower','wreath','bullseye','spine','pair','pairv'],places=['center','sides','top','bottom','topbottom'],combos=[];
-      kinds.forEach(k=>{if(['none','spine','pair','pairv'].includes(k))combos.push([k,'center']);else places.forEach(pl=>combos.push([k,pl]))});
-      $('grid').innerHTML=combos.map(([k,pl])=>{const m=QuiltLabEngine.build(cols,{seed:seeds[0],wonk:+$('wonk').value,patternRate:+$('pat').value,center:k,frame:$('frame').value,size:$('size').value,place:pl});return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>'+k+(['none','spine','pair','pairv'].includes(k)?'':' · '+pl)+'</small></div>'}).join('');
+      const kinds=['none','star','small','dresden','flower','wreath','bullseye','spine','pair','pairv'];
+      $('grid').innerHTML=kinds.map((k,i)=>{const m=QuiltLabEngine.build(cols,{seed:seeds[i%seeds.length]+i*13,wonk:+$('wonk').value,patternRate:+$('pat').value,center:k,frame:$('frame').value,size:$('size').value,place:$('place').value});return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>'+(i+1)+'. '+k+(m.frame?' · '+m.place:'')+'</small></div>'}).join('');
       return;
     }
     $('grid').innerHTML=seeds.map(s=>{const m=QuiltLabEngine.build(cols,{seed:s,wonk:+$('wonk').value,patternRate:+$('pat').value,center:$('center').value,frame:$('frame').value,size:$('size').value,place:$('place').value});return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>variant '+s+' · center: '+m.center+(m.frame?' · '+m.place+' · size '+m.size.toFixed(2):'')+'</small></div>'}).join('');
   }
   ['day','count','wonk','pat','center','frame','size','place'].forEach(id=>$(id).addEventListener('input',draw));
-  $('gal').addEventListener('click',()=>{gallery=!gallery;$('gal').textContent=gallery?'Back to variants':'Show every design';draw()});
-  $('re').addEventListener('click',()=>{gallery=false;$('gal').textContent='Show every design';seeds=seeds.map(()=>1+Math.floor(Math.random()*9999));draw()});
+  $('gal').addEventListener('click',()=>{gallery=!gallery;$('gal').textContent=gallery?'Back to variants':'Show 10 designs';draw()});
+  $('re').addEventListener('click',()=>{gallery=true;$('gal').textContent='Back to variants';seeds=seeds.map(()=>1+Math.floor(Math.random()*9999));draw()});
   $('day').value=days[days.length-2].date;$('count').value=days[days.length-2].colors.length;draw();
 })();
 </script></body></html>
