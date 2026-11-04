@@ -298,6 +298,29 @@
     out.place = chosen.plc === 'none' ? 'center' : chosen.plc; out.size = chosen.sc; out.frame = !!(K && frameOn && chosen.plc !== 'none' && n >= 4);
     out.hiddenRescued = chosen.hidden.length; out.dropped = chosen.plc === 'none' && kind !== 'none' && n >= 4;
     const all = bgShapes.concat(med);
+    // every submitted color must be visible: near-duplicates share an existing shape (cis); others get a piece cut from the largest patch
+    (function ensureAll() {
+      all.forEach((sh) => { if (sh.ci == null) { const k = colors.indexOf(sh.fill); if (k >= 0) sh.ci = k; } });
+      const present = new Set(all.map((sh) => sh.ci).filter((x) => x != null));
+      for (let i = 0; i < colors.length; i++) {
+        if (present.has(i)) continue;
+        let best = null, bd = 1e9;
+        all.forEach((sh) => { if (sh.ci != null && present.has(sh.ci)) { const d = dE(colors[i], colors[sh.ci]); if (d < bd) { bd = d; best = sh; } } });
+        if (best && bd < 9) { (best.cis = best.cis || [best.ci]).push(i); present.add(i); continue; }
+        const cand = all.filter((sh) => !sh.slot && !sh.noSlot && !sh.frame && sh.pts.length >= 3 && area(sh.pts) > 900).sort((a, b) => area(b.pts) - area(a.pts));
+        let done = false;
+        for (const sh of cand.slice(0, 12)) {
+          let mx = 0, a0 = null, b0 = null; for (let u = 0; u < sh.pts.length; u++) for (let v = u + 1; v < sh.pts.length; v++) { const d = dist(sh.pts[u], sh.pts[v]); if (d > mx) { mx = d; a0 = sh.pts[u]; b0 = sh.pts[v]; } }
+          const f = 0.28 + hash01(i * 13.7 + seed * 0.11) * 0.12, px = a0[0] + (b0[0] - a0[0]) * f, py = a0[1] + (b0[1] - a0[1]) * f, nx = -(b0[1] - a0[1]), ny = b0[0] - a0[0];
+          const r = split(sh.pts, [px, py], [px + nx, py + ny]);
+          if (r.ins.length < 3 || r.outs.length < 3) continue;
+          const ai = area(r.ins), ao = area(r.outs); if (Math.min(ai, ao) < 350) continue;
+          const small = ai < ao ? r.ins : r.outs, big = ai < ao ? r.outs : r.ins;
+          sh.pts = big; all.push({ pts: small, fill: colors[i], ci: i }); present.add(i); done = true; break;
+        }
+        if (!done) { const sh = all.filter((q) => q.ci != null).sort((a, b) => area(b.pts) - area(a.pts))[0]; if (sh) (sh.cis = sh.cis || [sh.ci]).push(i); present.add(i); }
+      }
+    })();
     // fabric-like tone variation (seeded, per shape)
     const vr = mulberry32(seed ^ 0x51ed270b);
     all.forEach((s) => { if (s.ci == null) { const k = colors.indexOf(s.fill); if (k >= 0) s.ci = k; } s.fill = shade(s.fill, (vr() - 0.5) * 0.07); });
@@ -312,7 +335,7 @@
       return [x + dx + ex, y + dy + ey];
     };
     const subdivide = (pts, maxSeg) => { const res = []; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const k = Math.max(1, Math.ceil(dist(a, b) / maxSeg)); for (let j = 0; j < k; j++) res.push(lerp(a, b, j / k)); } return res; };
-    out.shapes = all.map((s) => ({ pts: subdivide(s.pts, 16).map(warp), fill: s.fill, ci: s.ci }));
+    out.shapes = all.map((s) => ({ pts: subdivide(s.pts, 16).map(warp), fill: s.fill, ci: s.ci, cis: s.cis }));
     return out;
   }
 
@@ -566,11 +589,11 @@
 
   function toSvg(model, opts) {
     opts = opts || {};
-    const paths = model.shapes.map((s) => `<path${s.ci != null ? ' data-ci="' + s.ci + '"' : ''} d="M${s.pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L')}Z" fill="${s.fill}" stroke="${s.fill}" stroke-width="1.4" stroke-linejoin="round"/>`).join('');
+    const paths = model.shapes.map((s) => `<path${s.ci != null ? ' data-ci="' + (s.cis ? s.cis.join(',') : s.ci) + '"' : ''} d="M${s.pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L')}Z" fill="${s.fill}" stroke="${s.fill}" stroke-width="1.4" stroke-linejoin="round"/>`).join('');
     const bg = model.shapes.length ? model.shapes[0].fill : '#f6f4f1';
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -12 ${model.W + 24} ${model.H + 24}" width="${opts.width || 400}"><defs><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.09 0"/></filter><clipPath id="qc"><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}"/></clipPath></defs><rect x="-12" y="-12" width="${model.W + 24}" height="${model.H + 24}" fill="${bg}"/><g clip-path="url(#qc)">${paths}</g><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}" filter="url(#grain)"/></svg>`;
   }
 
-  const api = { build, toSvg, W, H };
+  const api = { build, toSvg, W, H, dE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.QuiltLabEngine = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
