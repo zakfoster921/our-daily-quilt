@@ -1798,6 +1798,24 @@ function drawQuiltBlockToCtx(ctx, block, x, y, width, height) {
 }
 
 // Generate Instagram image from quilt data (server-side fallback/manual path).
+/** Quilt Lab per-day design override (admin): labQuiltOverrides/{dateKey} = { style?: string, reroll?: number }. */
+async function getLabQuiltOverride(dateKey) {
+  try {
+    const key = String(dateKey || '').trim();
+    if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return {};
+    const snap = await db.collection('labQuiltOverrides').doc(key).get();
+    if (!snap.exists) return {};
+    const d = snap.data() || {};
+    const labQuilt = require('./lib/lab-quilt.js');
+    return {
+      style: labQuilt.STYLES.includes(String(d.style || '')) ? String(d.style) : undefined,
+      reroll: Math.max(0, Math.floor(Number(d.reroll) || 0))
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
 async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
   const canvas = createCanvas(1080, 1350); // 4:5 ratio for Instagram
   const ctx = canvas.getContext('2d');
@@ -1858,7 +1876,7 @@ async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
   if (String(process.env.LAB_QUILT_INSTAGRAM || '').trim() !== '0' && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.dateKey || ''))) {
     try {
       const labQuilt = require('./lib/lab-quilt.js');
-      const lq = labQuilt.buildLabQuilt(blocks, opts.dateKey);
+      const lq = labQuilt.buildLabQuilt(blocks, opts.dateKey, await getLabQuiltOverride(opts.dateKey));
       const labImg = await loadImage(labQuilt.renderLabQuiltPng(createCanvas, lq.model));
       ctx.drawImage(labImg, startX, startY, drawWidth, drawHeight);
       drewLabQuilt = true;
@@ -4727,7 +4745,7 @@ async function saveLabQuiltForArchive(db, dateKey, blocks, { force = false } = {
       if (snap.exists && snap.data()?.labQuiltEngineVersion) return { skipped: 'already_saved' };
     }
     const labQuilt = require('./lib/lab-quilt.js');
-    const q = labQuilt.buildLabQuilt(blocks, key);
+    const q = labQuilt.buildLabQuilt(blocks, key, await getLabQuiltOverride(key));
     const png = labQuilt.renderLabQuiltPng(createCanvas, q.model);
     const r1 = (n) => Math.round(n * 10) / 10;
     const modelJson = JSON.stringify({
@@ -4753,6 +4771,7 @@ async function saveLabQuiltForArchive(db, dateKey, blocks, { force = false } = {
         labQuiltModelUrl: model.publicUrl,
         labQuiltEngineVersion: q.version,
         labQuiltStyle: q.style,
+        labQuiltReroll: q.reroll || 0,
         labQuiltColorCount: q.colorCount,
         labQuiltShapeCount: q.model.shapes.length,
         labQuiltRenderedAt: getUtcIsoNow()
@@ -10695,7 +10714,9 @@ app.get('/api/admin/lab-quilt-preview', async (req, res) => {
     const blocks = Array.isArray(archived) && archived.length > 1 ? archived : live;
     if (!Array.isArray(blocks) || blocks.length < 2) return res.status(404).json({ success: false, error: `No quilt blocks for ${dateKey}` });
     const style = labQuilt.STYLES && labQuilt.STYLES.includes(String(req.query.style || '')) ? String(req.query.style) : undefined;
-    const q = labQuilt.buildLabQuilt(blocks, dateKey, { style });
+    const stored = await getLabQuiltOverride(dateKey);
+    const rq = req.query.reroll != null && req.query.reroll !== '' ? Math.max(0, Math.floor(Number(req.query.reroll) || 0)) : stored.reroll;
+    const q = labQuilt.buildLabQuilt(blocks, dateKey, { style: style || stored.style, reroll: rq });
     const png = labQuilt.renderLabQuiltPng(createCanvas, q.model);
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'no-store');
@@ -10706,6 +10727,64 @@ app.get('/api/admin/lab-quilt-preview', async (req, res) => {
     return res.send(png);
   } catch (error) {
     console.error('lab-quilt-preview failed:', error);
+    return res.status(500).json({ success: false, error: String(error && error.message || error) });
+  }
+});
+
+/** Quilt Lab per-day design override. Public read (the app's Instagram renderer needs it): GET /api/lab-quilt-override?dateKey=YYYY-MM-DD */
+app.get('/api/lab-quilt-override', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  const dateKey = String(req.query.dateKey || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return res.status(400).json({ success: false, error: 'dateKey must be YYYY-MM-DD' });
+  const o = await getLabQuiltOverride(dateKey);
+  return res.json({ success: true, dateKey, style: o.style || null, reroll: o.reroll || 0 });
+});
+
+/**
+ * Admin: set / change / clear a day's lab design. POST /api/admin/lab-quilt-override
+ * body (or query): dateKey, style ('auto' | one of the lab styles, omit to keep), reroll (number | 'next' | omit to keep), clear (true -> remove override)
+ * If that day is already archived, its lab image is re-rendered right away.
+ */
+app.options('/api/admin/lab-quilt-override', (req, res) => { setResetApiCors(res); res.sendStatus(204); });
+app.post('/api/admin/lab-quilt-override', async (req, res) => {
+  setResetApiCors(res);
+  try {
+    const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+    const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+    if (!expectedToken) return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    if (!providedToken || providedToken !== expectedToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    if (!db) return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const pick = (k) => (body[k] != null ? body[k] : req.query[k]);
+    const dateKey = String(pick('dateKey') || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return res.status(400).json({ success: false, error: 'dateKey must be YYYY-MM-DD' });
+    const labQuilt = require('./lib/lab-quilt.js');
+    const ref = db.collection('labQuiltOverrides').doc(dateKey);
+    const clear = ['true', '1'].includes(String(pick('clear')));
+    let next = { style: null, reroll: 0 };
+    if (!clear) {
+      const cur = await getLabQuiltOverride(dateKey);
+      next = { style: cur.style || null, reroll: cur.reroll || 0 };
+      const st = pick('style');
+      if (st != null && String(st) !== '') {
+        if (String(st) === 'auto') next.style = null;
+        else if (labQuilt.STYLES.includes(String(st))) next.style = String(st);
+        else return res.status(400).json({ success: false, error: `unknown style; use auto or one of ${labQuilt.STYLES.join(', ')}` });
+      }
+      const rr = pick('reroll');
+      if (String(rr) === 'next') next.reroll += 1;
+      else if (rr != null && rr !== '') next.reroll = Math.max(0, Math.min(999, Math.floor(Number(rr) || 0)));
+    }
+    if (clear || (!next.style && !next.reroll)) await ref.delete().catch(() => {});
+    else await ref.set({ style: next.style, reroll: next.reroll, updatedAt: getUtcIsoNow() });
+    let archive = null;
+    const aSnap = await db.collection('archives').doc(dateKey).get();
+    const aBlocks = aSnap.exists ? aSnap.data()?.quilt?.blocks : null;
+    if (Array.isArray(aBlocks) && aBlocks.length > 1) archive = await saveLabQuiltForArchive(db, dateKey, aBlocks, { force: true });
+    return res.json({ success: true, dateKey, style: next.style, reroll: next.reroll, archiveRerendered: archive });
+  } catch (error) {
+    console.error('lab-quilt-override failed:', error);
     return res.status(500).json({ success: false, error: String(error && error.message || error) });
   }
 });
