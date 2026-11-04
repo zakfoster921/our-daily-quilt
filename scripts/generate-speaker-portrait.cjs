@@ -42,6 +42,8 @@ async function main() {
 
     const info = await page.evaluate(async () => {
       const app = window.app;
+      // Never photograph an already-baked portrait: render the live widget.
+      app.fetchTodayInstagramImagesDoc = async () => null;
       const qs = app.quoteService;
       const dateKey = qs.getQuoteCalendarKeyNow();
       let quote = null;
@@ -83,7 +85,7 @@ async function main() {
       content: `
         html, body, #app, .screen, #screen-quilt { background: transparent !important; }
         #screen-quilt .quilt-container, #screen-quilt #quilt, #quilt { visibility: hidden !important; }
-        #screen-quilt .quote-speaker-slab, #screen-quilt .quote-speaker-stage::after { visibility: hidden !important; }
+        #screen-quilt .quote-speaker-slab, #screen-quilt .quote-speaker-stage::after, #screen-quilt .quote-speaker-baked-img { visibility: hidden !important; }
       `
     });
     const PAD = 28;
