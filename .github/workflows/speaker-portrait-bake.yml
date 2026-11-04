@@ -1,0 +1,88 @@
+# Pre-bakes today's speaker portrait into one flat image (so phones skip the on-device processing).
+# Manual run for now. preview=true (default) only saves screenshots as a downloadable artifact; nothing is uploaded.
+# preview=false uploads to Storage and writes speakerPortraitBaked* fields on instagram-images/{today}.
+
+name: Speaker portrait bake
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: "true = screenshots only (no upload). false = upload to Storage."
+        required: false
+        default: "true"
+      date_key:
+        description: "Optional YYYY-MM-DD. Leave empty for the current app day."
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: npm ci --ignore-scripts
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}-chromium-headless-shell
+
+      - name: Install Playwright Chromium headless shell
+        timeout-minutes: 8
+        run: npx playwright install chromium-headless-shell
+
+      - name: Start local app
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          npx --yes serve@14 -l 8765 . > tmp/serve-portrait.log 2>&1 &
+          echo "SERVE_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:8765/our-daily-beta.html" >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat tmp/serve-portrait.log || true
+          echo "::error::Local static server failed to start"
+          exit 1
+
+      - name: Render speaker portrait
+        timeout-minutes: 15
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          DATE_KEY: ${{ inputs.date_key || '' }}
+          PREVIEW: ${{ inputs.preview == 'false' && '0' || '1' }}
+          ARTIFACTS_DIR: tmp/speaker-portrait
+          APP_URL: http://127.0.0.1:8765/our-daily-beta.html
+        run: node scripts/generate-speaker-portrait.cjs
+
+      - name: Stop local app server
+        if: always()
+        run: |
+          if [ -n "${SERVE_PID:-}" ]; then kill "${SERVE_PID}" 2>/dev/null || true; fi
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: speaker-portrait-screenshots
+          path: tmp/speaker-portrait
+          if-no-files-found: ignore
