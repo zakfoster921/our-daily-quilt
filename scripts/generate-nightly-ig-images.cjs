@@ -149,7 +149,8 @@ async function runNightlyIgAttempt({
   attempt,
   outDir,
   strictQuote,
-  clippingOnly = false
+  clippingOnly = false,
+  quiltCardOnly = false
 }) {
   const evaluateTimeoutMs = Math.max(
     120000,
@@ -275,19 +276,19 @@ async function runNightlyIgAttempt({
       void apiBase;
     }, { dateKey, apiBase });
 
-    const reflectionCardsCapture = clippingOnly
+    const reflectionCardsCapture = clippingOnly || quiltCardOnly
       ? null
       : await captureReflectionCardsForNightly(page, dateKey);
 
-    const igContributorCount = clippingOnly
+    const igContributorCount = clippingOnly || quiltCardOnly
       ? 1
       : await resolveContributorCountForNightly(page, dateKey);
-    const yesterdayStatsCardsCapture = clippingOnly
+    const yesterdayStatsCardsCapture = clippingOnly || quiltCardOnly
       ? null
       : await captureYesterdayStatsCardsForNightly(page, dateKey, igContributorCount);
 
     console.log(
-      `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
+      `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : quiltCardOnly ? 'live quilt card' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
     page.setDefaultTimeout(evaluateTimeoutMs);
     const minNewspaperClippingBytes = Math.max(
@@ -300,6 +301,7 @@ async function runNightlyIgAttempt({
         dateKey,
         strictQuote,
         clippingOnly,
+        quiltCardOnly,
         minNewspaperClippingBytes,
         apiBase,
         reflectionCardsCapture,
@@ -613,6 +615,44 @@ async function runNightlyIgAttempt({
         }
         if (!arch?.generateInstagramImage) {
           throw new Error('ArchiveService.generateInstagramImage missing');
+        }
+
+        if (quiltCardOnly) {
+          if (!arch.generateInstagramQuiltScreen9x16ImageData) {
+            throw new Error('generateInstagramQuiltScreen9x16ImageData missing — deploy our-daily-beta.html');
+          }
+          log('generating live quilt card (quilt-screen 9:16)…');
+          const fullQuiltCard = await timed('live quilt card render', () =>
+            arch.generateInstagramQuiltScreen9x16ImageData(blocks, dateKey)
+          );
+          if (!fullQuiltCard) {
+            throw new Error(`Live quilt card was not generated for ${dateKey}`);
+          }
+          const quiltCardJpeg = await new Promise((resolve, reject) => {
+            const im = new Image();
+            im.onload = () => {
+              const maxW = 720;
+              const scale = Math.min(1, maxW / im.naturalWidth);
+              const c = document.createElement('canvas');
+              c.width = Math.max(1, Math.round(im.naturalWidth * scale));
+              c.height = Math.max(1, Math.round(im.naturalHeight * scale));
+              const cx = c.getContext('2d');
+              cx.fillStyle = '#f6f4f1';
+              cx.fillRect(0, 0, c.width, c.height);
+              cx.drawImage(im, 0, 0, c.width, c.height);
+              resolve({ data: c.toDataURL('image/jpeg', 0.88), width: c.width, height: c.height });
+            };
+            im.onerror = () => reject(new Error('Live quilt card downscale failed'));
+            im.src = fullQuiltCard;
+          });
+          return {
+            dateKey,
+            quiltCardOnly: true,
+            blockCount: blocks.length,
+            imageData: quiltCardJpeg.data,
+            width: quiltCardJpeg.width,
+            height: quiltCardJpeg.height
+          };
         }
 
         const qs = app.quoteService;
@@ -1098,8 +1138,25 @@ async function runNightlyIgAttempt({
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote, clippingOnly, minNewspaperClippingBytes, apiBase, reflectionCardsCapture, yesterdayStatsCardsCapture }
+      { dateKey, strictQuote, clippingOnly, quiltCardOnly, minNewspaperClippingBytes, apiBase, reflectionCardsCapture, yesterdayStatsCardsCapture }
     );
+
+    if (quiltCardOnly) {
+      const uploaded = await uploadLiveQuiltCard({
+        dateKey,
+        imageData: result.imageData,
+        blockCount: result.blockCount
+      });
+      console.log(`[nightly-ig] live quilt card ${uploaded.uploaded ? 'uploaded' : 'unchanged (skipped)'}: ${uploaded.url}`);
+      return {
+        success: true,
+        date: dateKey,
+        attempt,
+        quiltCardOnly: true,
+        blockCount: result.blockCount,
+        liveQuiltCardUrl: uploaded.url
+      };
+    }
 
     if (clippingOnly) {
       console.log('[nightly-ig] clipping-only run complete (skipping full IG verify)');
@@ -1202,6 +1259,60 @@ async function runNightlyIgAttempt({
   }
 }
 
+/**
+ * Hourly live quilt card: saves a small JPEG of today's quilt and records its URL on
+ * instagram-images/{dateKey} as liveQuiltCard* fields only (never touches Instagram/Zapier fields).
+ * Needs GOOGLE_APPLICATION_CREDENTIALS_JSON (service account); FIREBASE_STORAGE_BUCKET optional.
+ */
+async function uploadLiveQuiltCard({ dateKey, imageData, blockCount }) {
+  const crypto = require('crypto');
+  const raw = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  if (!raw) {
+    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is required to upload the live quilt card');
+  }
+  const m = /^data:image\/jpeg;base64,(.+)$/i.exec(String(imageData || ''));
+  if (!m) throw new Error('Live quilt card image data missing or not a JPEG data URL');
+  const buf = Buffer.from(m[1], 'base64');
+  if (buf.length < 5000) throw new Error(`Live quilt card JPEG is suspiciously small (${buf.length} bytes)`);
+
+  const admin = require('firebase-admin');
+  const sa = JSON.parse(raw);
+  const bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'our-daily.firebasestorage.app';
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(sa),
+      projectId: sa.project_id,
+      storageBucket: bucketName
+    });
+  }
+  const docRef = admin.firestore().collection('instagram-images').doc(dateKey);
+  const snap = await docRef.get();
+  const prev = snap.exists ? snap.data() || {} : {};
+  if (prev.liveQuiltCardUrl && Number(prev.liveQuiltCardBlockCount) === Number(blockCount)) {
+    return { uploaded: false, url: prev.liveQuiltCardUrl };
+  }
+  const token = crypto.randomUUID();
+  const dest = `live-quilt-card/${dateKey}.jpg`;
+  await admin.storage().bucket(bucketName).file(dest).save(buf, {
+    resumable: false,
+    metadata: {
+      contentType: 'image/jpeg',
+      cacheControl: 'public, max-age=300',
+      metadata: { firebaseStorageDownloadTokens: token }
+    }
+  });
+  const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(dest)}?alt=media&token=${token}`;
+  await docRef.set(
+    {
+      liveQuiltCardUrl: url,
+      liveQuiltCardUpdatedAt: new Date().toISOString(),
+      liveQuiltCardBlockCount: Number(blockCount) || 0
+    },
+    { merge: true }
+  );
+  return { uploaded: true, url, bytes: buf.length };
+}
+
 async function main() {
   const appUrl = process.env.APP_URL;
   if (!appUrl) {
@@ -1212,8 +1323,10 @@ async function main() {
     new URL(appUrl).origin;
   const now = new Date();
   const clippingOnly = String(process.env.NIGHTLY_IG_CLIPPING_ONLY || '').toLowerCase() === 'true';
+  const quiltCardOnly = String(process.env.NIGHTLY_IG_QUILT_CARD_ONLY || '').toLowerCase() === 'true';
   if (
     !clippingOnly &&
+    !quiltCardOnly &&
     !process.env.DATE_KEY &&
     process.env.NIGHTLY_IG_SKIP_SCHEDULE_GUARD !== 'true' &&
     now.getUTCHours() < 7
@@ -1224,7 +1337,8 @@ async function main() {
     );
   }
   const dateKey =
-    process.env.DATE_KEY || (clippingOnly ? getActiveQuiltDateKey(now) : getCompletedQuiltDateKey(now));
+    process.env.DATE_KEY ||
+    (clippingOnly || quiltCardOnly ? getActiveQuiltDateKey(now) : getCompletedQuiltDateKey(now));
   const strictQuote = String(process.env.NIGHTLY_IG_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);
@@ -1247,7 +1361,8 @@ async function main() {
         attempt,
         outDir,
         strictQuote,
-        clippingOnly
+        clippingOnly,
+        quiltCardOnly
       });
       console.log('[nightly-ig] result:', JSON.stringify(result, null, 2));
       if (result.newspaperClippingUrl) {
