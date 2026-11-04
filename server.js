@@ -10746,7 +10746,8 @@ app.get('/api/lab-quilt-override', async (req, res) => {
   const dateKey = String(req.query.dateKey || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return res.status(400).json({ success: false, error: 'dateKey must be YYYY-MM-DD' });
   const o = await getLabQuiltOverride(dateKey);
-  return res.json({ success: true, dateKey, style: o.style || null, reroll: o.reroll || 0 });
+  // liveEnabled is the remote kill switch for the in-app lab quilt (set LAB_QUILT_LIVE=0 on the server to send everyone back to the classic quilt)
+  return res.json({ success: true, dateKey, style: o.style || null, reroll: o.reroll || 0, liveEnabled: String(process.env.LAB_QUILT_LIVE || '').trim() !== '0' });
 });
 
 /**
