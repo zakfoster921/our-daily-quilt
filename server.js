@@ -203,6 +203,8 @@ app.use(
   '/assets',
   express.static(path.join(ROOT_DIR, 'assets'), staticAssetOptions())
 );
+// Quilt Lab engine lives in /lab; the app page loads it as lib/lab-engine.js (native build copies it into www/lib).
+app.get('/lib/lab-engine.js', (_req, res) => res.sendFile(path.join(ROOT_DIR, 'lab', 'lab-engine.js')));
 app.use(
   '/lib',
   express.static(path.join(ROOT_DIR, 'lib'), staticAssetOptions())

@@ -93,6 +93,8 @@ try {
 try {
   if (await stat(libSrc).then((s) => s.isDirectory())) {
     await copyDir(libSrc, libDest);
+    // Quilt Lab engine is canonical in lab/; the app page loads it as lib/lab-engine.js.
+    await copyFile(join(root, "lab", "lab-engine.js"), join(libDest, "lab-engine.js"));
     const appConfigSrc = join(libSrc, "app-config.js");
     const appConfigDest = join(libDest, "app-config.js");
     try {
