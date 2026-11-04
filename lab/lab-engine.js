@@ -29,6 +29,26 @@
   const rgbToHex = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
   function shade(hex, f) { const [r, g, b] = hexToRgb(hex); return rgbToHex(r + (f > 0 ? (255 - r) * f : r * f), g + (f > 0 ? (255 - g) * f : g * f), b + (f > 0 ? (255 - b) * f : b * f)); }
 
+  // perceptual color distance (CIE Lab, deltaE76) so medallion roles never blur together
+  function labOf(hex) {
+    const [r, g, b] = hexToRgb(hex).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    const x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047, y = 0.2126 * r + 0.7152 * g + 0.0722 * b, z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+  }
+  const dE = (a, b) => { const A = labOf(a), B = labOf(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
+  // pick `count` strongly contrasting colors from the day (farthest-point sampling), padding with light/dark tints if the day is too uniform
+  function contrastPalette(colors, count, startIdx) {
+    const uniq = Array.from(new Set(colors));
+    const pal = [uniq[Math.min(uniq.length - 1, startIdx)]];
+    while (pal.length < count) {
+      let bestC = null, bestD = -1;
+      uniq.forEach((c) => { if (pal.includes(c)) return; const d = Math.min(...pal.map((q) => dE(c, q))); if (d > bestD) { bestD = d; bestC = c; } });
+      if (!bestC || bestD < 24) { const base = pal[pal.length % pal.length]; const tint = shade(base, pal.length % 2 ? 0.55 : -0.5); pal.push(tint); } else pal.push(bestC);
+    }
+    return pal;
+  }
+
   // ---- geometry helpers: quads are [P00,P10,P11,P01] in (u,v) order
   const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
   const bil = (q, u, v) => { const top = lerp(q[0], q[1], u), bot = lerp(q[3], q[2], u); return lerp(top, bot, v); };
@@ -111,7 +131,8 @@
     if (kind === 'pair' && !(opts.center === 'pair') && mulberry32(seed ^ 0x1234abcd)() < 0.5) kind = 'pairv';
     out.center = kind;
     const med = [];
-    const cc = (k) => colors[Math.min(n - 1, Math.floor((((k * 3) % 7) + 0.5) * n / 7))]; // spread across the whole day
+    const medPal = contrastPalette(colors, 7, Math.floor(mrnd() * n)); // strongly contrasting, drawn from across the day
+    const cc = (k) => medPal[((k % 7) + 7) % 7];
     const diamond = (cx, cy, rad, fill) => med.push({ pts: Array.from({ length: 4 }, (_, i) => { const a = Math.PI / 4 + (i * Math.PI) / 2; return [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad]; }), fill });
     const disc = (cx, cy, rad, fill) => med.push({ pts: discPts(cx, cy, rad, 32, mrnd), fill });
     const starAt = (cx, cy, rad, fill) => med.push({ pts: Array.from({ length: 16 }, (_, i) => { const a = (i / 16) * Math.PI * 2 - Math.PI / 2; const rr = i % 2 ? rad * 0.5 : rad; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }), fill });
@@ -151,7 +172,7 @@
     const frameOn = opts.frame !== 'off';
     const frameAt = (cx, cy, R0) => {
       const N = 28, Ro = R0 * 1.2, P = (a, r) => [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
-      disc(cx, cy, R0 * 1.01, cc(5));
+      disc(cx, cy, R0 * 1.01, cc(5)); med[med.length - 1].field = true;
       for (let i = 0; i < N; i++) {
         const a0 = (i / N) * Math.PI * 2, a1 = ((i + 1) / N) * Math.PI * 2, am = (a0 + a1) / 2, a2 = ((i + 2) / N) * Math.PI * 2, am2 = (a1 + a2) / 2;
         med.push({ pts: [P(a0, R0), P(a1, R0), P(am, Ro)], fill: cc(6), slot: true });
@@ -246,6 +267,8 @@
       if (chosen.hidden.length) {
         const slots = med.filter((m) => m.slot);
         slots.forEach((m, j) => { m.fill = colors[chosen.hidden[j % chosen.hidden.length]]; });
+        const hc = chosen.hidden.map((i) => colors[i]);
+        med.filter((m) => m.field).forEach((m) => { let bc = m.fill, bd = -1; medPal.concat(colors).forEach((c) => { const d = Math.min(...hc.map((q) => dE(c, q))); if (d > bd) { bd = d; bc = c; } }); if (bd < 30) bc = shade(bc, hc.every((q) => labOf(q)[0] > 55) ? -0.55 : 0.55); m.fill = bc; });
       }
       chosen.plcName = chosen.plc;
     } else { med.length = 0; bgShapes = bg0; chosen = { plc: 'none', sc: 0, hidden: [] }; }
