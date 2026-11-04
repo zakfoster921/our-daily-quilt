@@ -146,8 +146,8 @@
       ring(R, cs[0], 0.045); ring(R * 0.8, cs[1], 0.03); ring(R * 0.6, cs[2], 0.02); ring(R * 0.4, cs[3], 0.0); disc(cx, cy, R * 0.2, cs[0]);
     };
     const baseBig = Math.min(W, H) * (0.2 + Math.min(0.06, n * 0.0012));
-    // integrating frame: field + sawtooth ring + outer ring, so the medallion is set INTO the quilt
-    const frameOn = opts.frame === 'on' ? true : opts.frame === 'off' ? false : mrnd() < 0.9;
+    // integrating frame: field + two-color sawtooth band (now the default), so the medallion is set INTO the quilt
+    const frameOn = opts.frame !== 'off';
     const frameAt = (cx, cy, R0) => {
       const N = 28, Ro = R0 * 1.2, P = (a, r) => [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
       disc(cx, cy, R0 * 1.01, cc(5));
@@ -157,45 +157,66 @@
         med.push({ pts: [P(am, Ro), P(am2, Ro), P(a1, R0)], fill: cc(2) });
       }
     };
-    const FR = { star: [CX, H * 0.42, baseBig * 1.42], small: [CX, H * 0.5, baseBig * 0.74], dresden: [CX, H * 0.44, baseBig * 1.45 * 1.14], flower: [CX, H * 0.44, baseBig * 1.55 * 1.02], wreath: [CX, H * 0.44, baseBig * 1.5 * 1.12], bullseye: [CX, H * 0.44, baseBig * 1.4 * 1.1] };
-    out.frame = frameOn && n >= 4 && !!FR[kind];
-    if (out.frame) frameAt(FR[kind][0], FR[kind][1], FR[kind][2]);
-    if (n >= 4) {
-      if (kind === 'star') medallion(CX, H * 0.42, baseBig, 0);
-      else if (kind === 'small') { const b = baseBig * 0.5; diamond(CX, H * 0.5, b * 1.4, cc(2)); disc(CX, H * 0.5, b * 0.8, cc(1)); starAt(CX, H * 0.5, b * 0.55, cc(3)); }
-      else if (kind === 'spine') { [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055); diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); }); }
-      else if (kind === 'pair') { [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52; diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); }); }
-      else if (kind === 'dresden') dresden(CX, H * 0.44, baseBig * 1.45, 16, cc(1), cc(2), cc(3));
-      else if (kind === 'flower') flower(CX, H * 0.44, baseBig * 1.55, 8, cc(1), cc(2), cc(3), cc(4));
-      else if (kind === 'wreath') wreath(CX, H * 0.44, baseBig * 1.5, 14, cc(1), cc(2), cc(3));
-      else if (kind === 'bullseye') bullseye(CX, H * 0.44, baseBig * 1.4, [cc(1), cc(2), cc(3), cc(4)]);
+    // round motifs: radius of the field (R0, at scale 1), default vertical position, and a draw(cx,cy,k) at scale k
+    const KINDS = {
+      star: { R0: baseBig * 1.42, fy: 0.42, draw: (cx, cy, k) => medallion(cx, cy, baseBig * k, 0) },
+      small: { R0: baseBig * 0.74, fy: 0.5, draw: (cx, cy, k) => { const b = baseBig * 0.5 * k; diamond(cx, cy, b * 1.4, cc(2)); disc(cx, cy, b * 0.8, cc(1)); starAt(cx, cy, b * 0.55, cc(3)); } },
+      dresden: { R0: baseBig * 1.45 * 1.14, fy: 0.44, draw: (cx, cy, k) => dresden(cx, cy, baseBig * 1.45 * k, 16, cc(1), cc(2), cc(3)) },
+      flower: { R0: baseBig * 1.55 * 1.02, fy: 0.44, draw: (cx, cy, k) => flower(cx, cy, baseBig * 1.55 * k, 8, cc(1), cc(2), cc(3), cc(4)) },
+      wreath: { R0: baseBig * 1.5 * 1.12, fy: 0.44, draw: (cx, cy, k) => wreath(cx, cy, baseBig * 1.5 * k, 14, cc(1), cc(2), cc(3)) },
+      bullseye: { R0: baseBig * 1.4 * 1.1, fy: 0.44, draw: (cx, cy, k) => bullseye(cx, cy, baseBig * 1.4 * k, [cc(1), cc(2), cc(3), cc(4)]) }
+    };
+    const K = KINDS[kind];
+    // size and placement vary too (own rng so other choices stay stable)
+    const prnd = mulberry32(seed ^ 0x3c3c1f1f);
+    const sizeMap = { small: 0.68, medium: 0.95, large: 1.2 };
+    let sc = opts.size && opts.size !== 'auto' ? sizeMap[opts.size] : 0.62 + prnd() * 0.58;
+    let plc = opts.place && opts.place !== 'auto' ? opts.place : null;
+    if (!plc) { const r = prnd(); plc = r < 0.4 ? 'center' : r < 0.62 ? 'sides' : r < 0.78 ? 'top' : r < 0.9 ? 'bottom' : 'topbottom'; }
+    const sideY = H * (0.3 + prnd() * 0.4);
+    out.size = sc; out.place = K ? plc : 'center'; out.frame = false;
+    const placements = [];
+    if (K && n >= 4) {
+      if (plc === 'center') placements.push([CX, H * K.fy, sc]);
+      else {
+        const e = sc * 1.1;
+        if (plc === 'sides') placements.push([0, sideY, e], [W, sideY, e]);
+        if (plc === 'top' || plc === 'topbottom') placements.push([CX, H * 0.01, e]);
+        if (plc === 'bottom' || plc === 'topbottom') placements.push([CX, H * 0.99, e]);
+      }
     }
-
-    // set the medallion INTO the patchwork: cut surrounding pieces at its outer edge (they abut, not slide under)
     let bgShapes = shapesL.concat(mirrored);
-    if (out.frame) {
-      const [fx, fy, fr] = FR[kind], Ro = fr * 1.2, M = 72;
-      const clip = Array.from({ length: M }, (_, i) => { const a = (i / M) * Math.PI * 2; return [fx + Math.cos(a) * Ro, fy + Math.sin(a) * Ro]; });
-      const cross = (a, b, p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-      const split = (poly, a, b) => {
-        const ins = [], outs = [];
-        for (let i = 0; i < poly.length; i++) {
-          const p = poly[i], q = poly[(i + 1) % poly.length], cp = cross(a, b, p), cq = cross(a, b, q);
-          if (cp >= 0) ins.push(p); else outs.push(p);
-          if ((cp >= 0) !== (cq >= 0)) { const t = cp / (cp - cq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; ins.push(x); outs.push(x); }
-        }
-        return { ins, outs };
-      };
-      const cut = [];
-      bgShapes.forEach((sh) => {
-        let rem = sh.pts;
-        for (let i = 0; i < M && rem.length >= 3; i++) {
-          const r = split(rem, clip[i], clip[(i + 1) % M]);
-          if (r.outs.length >= 3 && area(r.outs) > 0.5) cut.push({ pts: r.outs, fill: sh.fill });
-          rem = r.ins;
-        }
-      });
-      bgShapes = cut;
+    const cross = (a, b, p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    const split = (poly, a, b) => {
+      const ins = [], outs = [];
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i], q = poly[(i + 1) % poly.length], cp = cross(a, b, p), cq = cross(a, b, q);
+        if (cp >= 0) ins.push(p); else outs.push(p);
+        if ((cp >= 0) !== (cq >= 0)) { const t = cp / (cp - cq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; ins.push(x); outs.push(x); }
+      }
+      return { ins, outs };
+    };
+    placements.forEach(([cx, cy, k]) => {
+      if (frameOn) {
+        const Ro = K.R0 * k * 1.2, M = 72;
+        const clip = Array.from({ length: M }, (_, i) => { const a = (i / M) * Math.PI * 2; return [cx + Math.cos(a) * Ro, cy + Math.sin(a) * Ro]; });
+        const cut = [];
+        bgShapes.forEach((sh) => {
+          let rem = sh.pts;
+          for (let i = 0; i < M && rem.length >= 3; i++) {
+            const r = split(rem, clip[i], clip[(i + 1) % M]);
+            if (r.outs.length >= 3 && area(r.outs) > 0.5) cut.push({ pts: r.outs, fill: sh.fill });
+            rem = r.ins;
+          }
+        });
+        bgShapes = cut; out.frame = true;
+        frameAt(cx, cy, K.R0 * k);
+      }
+      K.draw(cx, cy, k);
+    });
+    if (!K && n >= 4) {
+      if (kind === 'spine') { [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055); diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); }); }
+      else if (kind === 'pair') { [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52; diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); }); }
     }
     const all = bgShapes.concat(med);
     // fabric-like tone variation (seeded, per shape)
