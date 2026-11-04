@@ -429,36 +429,22 @@
     return shapes;
   }
   function radialShapes(colors, rnd) {
-    const n = colors.length, cx = W * (0.38 + rnd() * 0.24), cy = H * (0.32 + rnd() * 0.26), a = W / 2, b = H / 2.4;
-    const rest0 = n - 1;
-    let rings = Math.max(1, Math.min(6, Math.round(Math.sqrt(n) * 0.9)));
-    while (rings > 1 && rest0 < rings * 3) rings--;
-    // several concentric rings of varied widths; the outermost runs off the quilt
-    const widths = Array.from({ length: Math.max(0, rings - 1) }, () => 0.2 + Math.pow(rnd(), 1.4) * 2.8), wsum = widths.reduce((x, y) => x + y, 0) || 1;
-    const bounds = [0.09]; widths.forEach((w) => bounds.push(bounds[bounds.length - 1] + (w / wsum) * 0.7)); bounds.push(2.4);
-    // wobbly: ring boundaries undulate, and each ray bends a little, shared by neighbours so seams stay closed
-    const ph = bounds.map(() => [rnd() * 6.28, rnd() * 6.28, 0.006 + rnd() * 0.012]);
+    // all concentric rings (no rays): a center disc, then one ring per color with varied widths; the last ring runs off the quilt
+    const n = colors.length, cx = W * (0.4 + rnd() * 0.2), cy = H * (0.34 + rnd() * 0.22), a = W / 2, b = H / 2.4;
+    const r0 = 0.1 + 0.35 * Math.sqrt(rnd()); // center size varies, favoring larger
+    const k = Math.max(0, n - 2), widths = Array.from({ length: k }, () => 0.3 + Math.pow(rnd(), 1.6) * 2.7), wsum = widths.reduce((x, y) => x + y, 0) || 1;
+    const bounds = [r0]; widths.forEach((w) => bounds.push(bounds[bounds.length - 1] + (w / wsum) * (1.9 - r0))); if (n > 1) bounds.push(3.2);
+    const ph = bounds.map(() => [rnd() * 6.28, rnd() * 6.28, 0.016 + rnd() * 0.03]);
+    ph.forEach((q, i) => { const lo = i > 0 ? bounds[i] - bounds[i - 1] : Infinity, hi = i < bounds.length - 1 ? bounds[i + 1] - bounds[i] : Infinity; q[2] = Math.min(q[2], (0.32 * Math.min(lo, hi)) / bounds[i]); }); // never let neighbouring rings cross
     const R = (bi, ang) => bounds[bi] * (1 + (bi === bounds.length - 1 ? 0 : ph[bi][2]) * (Math.sin(2 * ang + ph[bi][0]) + 0.6 * Math.sin(5 * ang + ph[bi][1])));
     const P = (bi, ang) => [cx + Math.cos(ang) * a * R(bi, ang), cy + Math.sin(ang) * b * R(bi, ang)];
-    const hub = Array.from({ length: 40 }, (_, i) => P(0, (i / 40) * Math.PI * 2));
-    const shapes = [{ pts: hub, fill: colors[0] }];
-    const rest = colors.slice(1); let ci = 0;
-    const mids = bounds.slice(0, -1).map((r0, i) => (i === bounds.length - 2 ? 0.95 : (r0 + bounds[i + 1]) / 2) + 0.15), tm = mids.reduce((x, y) => x + y, 0);
-    const per = mids.map((m) => Math.max(3, Math.floor((m / tm) * rest.length)));
-    let diff = rest.length - per.reduce((x, y) => x + y, 0); for (let g = 0; diff !== 0 && g < 500; g++) { const i = g % rings; if (diff > 0) { per[i]++; diff--; } else if (per[i] > 3) { per[i]--; diff++; } }
-    for (let rg = 0; rg < rings; rg++) {
-      const m = per[rg]; if (!m) continue;
-      const ws = Array.from({ length: m }, () => 0.6 + rnd() * 1.1), tw = ws.reduce((x, y) => x + y, 0), a0 = rnd() * Math.PI * 2;
-      const angs = [a0]; ws.forEach((w) => angs.push(angs[angs.length - 1] + (w / tw) * Math.PI * 2));
-      const bend = angs.map(() => [(rnd() - 0.5) * 0.035, rnd() * 6.28]); bend[m] = bend[0];
-      const ray = (j, t) => { const an = angs[j] + bend[j][0] * Math.sin(t * Math.PI * 1.3 + bend[j][1]); const r0 = R(rg, an), r1 = R(rg + 1, an), r = r0 + (r1 - r0) * t; return [cx + Math.cos(an) * a * r, cy + Math.sin(an) * b * r]; };
-      for (let j = 0; j < m; j++) {
-        const pts = [], ST = 10, da = angs[j + 1] - angs[j], AS = Math.max(3, Math.ceil(da * 10));
-        for (let t = 0; t <= ST; t++) pts.push(ray(j, t / ST));
-        for (let k = 1; k < AS; k++) pts.push(P(rg + 1, angs[j] + (k / AS) * da));
-        for (let t = ST; t >= 0; t--) pts.push(ray(j + 1, t / ST));
-        for (let k = AS - 1; k > 0; k--) pts.push(P(rg, angs[j] + (k / AS) * da));
-        shapes.push({ pts, fill: rest[ci++] });
+    const SEG = 28, shapes = [{ pts: Array.from({ length: 48 }, (_, i) => P(0, (i / 48) * Math.PI * 2)), fill: colors[0] }];
+    for (let i = 1; i < n; i++) {
+      for (let sg = 0; sg < SEG; sg++) {
+        const a0 = (sg / SEG) * Math.PI * 2, a1 = ((sg + 1) / SEG) * Math.PI * 2, pts = [], AS = 4;
+        for (let t = 0; t <= AS; t++) pts.push(P(i, a0 + (t / AS) * (a1 - a0)));
+        for (let t = AS; t >= 0; t--) pts.push(P(i - 1, a0 + (t / AS) * (a1 - a0)));
+        shapes.push({ pts, fill: colors[i], grp: i });
       }
     }
     return shapes;
@@ -490,7 +476,7 @@
     } else if (style === 'logcabin') { shapes = logCabinShapes(colors, rnd); amp = 0.9;
     } else if (style === 'strata') { shapes = strataShapes(colors, rnd); amp = 1.0;
     } else if (style === 'bars') { shapes = barShapes(colors, rnd); amp = 0.8;
-    } else if (style === 'radial') { shapes = radialShapes(colors, rnd); amp = 0.4;
+    } else if (style === 'radial') { shapes = radialShapes(colors, rnd); amp = 0.95;
     } else if (style === 'improv') {
       // improvisational strips: slanted cuts, long narrow pieces, strong wobble, asymmetric (Gee's Bend spirit)
       const cells = bspFull(colors, rnd, { areaPow: 1.1, recent: 0, recentBoost: 1, slant: 0.5, ratio: (r) => 0.16 + r() * 0.5 });
@@ -518,7 +504,7 @@
       }
       amp = 0.6;
     }
-    const vr = mulberry32(seed ^ 0x51ed270b); shapes.forEach((sh) => { sh.fill = shade(sh.fill, (vr() - 0.5) * (style === 'modern' ? 0.03 : 0.07)); });
+    const vr = mulberry32(seed ^ 0x51ed270b), grpTone = {}; shapes.forEach((sh) => { let t; if (sh.grp != null && grpTone[sh.grp] != null) t = grpTone[sh.grp]; else { t = (vr() - 0.5) * (style === 'modern' ? 0.03 : 0.07); if (sh.grp != null) grpTone[sh.grp] = t; } sh.fill = shade(sh.fill, t); });
     const warp = flatWarp(seed, opts.wonk != null ? amp * opts.wonk : amp);
     out.shapes = shapes.map((sh) => ({ pts: subdividePts(sh.pts, maxSeg).map(warp), fill: sh.fill }));
     out.cells = shapes.length; return out;
