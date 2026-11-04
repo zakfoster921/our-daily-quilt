@@ -344,6 +344,39 @@
     }
     return cells;
   }
+  // Modern: a dominant calm field + a reserve zone where other colors collect as aligned chips.
+  // Cuts snap to shared guide lines so edges line up across the quilt. Colors similar to the field color split the field (tonal patches).
+  function modernCells(colors, rnd) {
+    const n = colors.length, base = colors[0];
+    const gx = [0, 0.24, 0.38, 0.5, 0.62, 0.76, 1].map((v) => v * W), gy = [0, 0.12, 0.24, 0.38, 0.5, 0.62, 0.76, 0.88, 1].map((v) => v * H);
+    const mk = (x0, y0, x1, y1, zone, color, born) => ({ x0, y0, x1, y1, zone, color, born, get a() { return (this.x1 - this.x0) * (this.y1 - this.y0); } });
+    const f = [0.38, 0.5, 0.62][Math.floor(rnd() * 3)], col = rnd() < 0.5, first = rnd() < 0.5;
+    let cells;
+    if (col) { const x = first ? f * W : (1 - f) * W; cells = first ? [mk(0, 0, x, H, 'field', base, 0), mk(x, 0, W, H, 'reserve', base, 0)] : [mk(0, 0, x, H, 'reserve', base, 0), mk(x, 0, W, H, 'field', base, 0)]; }
+    else { const y = first ? f * H : (1 - f) * H; cells = first ? [mk(0, 0, W, y, 'field', base, 0), mk(0, y, W, H, 'reserve', base, 0)] : [mk(0, 0, W, y, 'reserve', base, 0), mk(0, y, W, H, 'field', base, 0)]; }
+    const fieldArea = cells.filter((c) => c.zone === 'field')[0].a;
+    const snap = (arr, lo, hi, margin) => { const ok = arr.filter((v) => v > lo + margin && v < hi - margin); if (ok.length) return ok[Math.floor(rnd() * ok.length)]; const mid = (lo + hi) / 2; arr.push(mid); arr.sort((a, b) => a - b); return mid; };
+    const toCell = (c) => ({ q: [[c.x0, c.y0], [c.x1, c.y0], [c.x1, c.y1], [c.x0, c.y1]], a: c.a, color: c.color });
+    for (let i = 1; i < n; i++) {
+      const similar = dE(colors[i], base) < 26;
+      const tonalArea = cells.filter((c) => c.zone === 'field' && c.color !== base).reduce((a, c) => a + c.a, 0);
+      let zone = similar && tonalArea < 0.28 * fieldArea ? 'field' : 'reserve';
+      let cand = cells.filter((c) => c.zone === zone && c.a > 2600);
+      if (!cand.length) { zone = zone === 'field' ? 'reserve' : 'field'; cand = cells.filter((c) => c.zone === zone && c.a > 2600); }
+      if (!cand.length) break;
+      let tot = 0; const wts = cand.map((c) => { const w = Math.pow(c.a, 0.75) * (i - c.born < 5 ? 4 : 1); tot += w; return w; });
+      let r = rnd() * tot, pick = cand[cand.length - 1];
+      for (let k = 0; k < cand.length; k++) { r -= wts[k]; if (r <= 0) { pick = cand[k]; break; } }
+      const w = pick.x1 - pick.x0, h = pick.y1 - pick.y0, vertical = w >= h * (0.9 + rnd() * 0.2);
+      let A, B;
+      if (vertical) { const x = snap(gx, pick.x0, pick.x1, w * 0.18); A = mk(pick.x0, pick.y0, x, pick.y1, zone, pick.color, i); B = mk(x, pick.y0, pick.x1, pick.y1, zone, pick.color, i); }
+      else { const y = snap(gy, pick.y0, pick.y1, h * 0.18); A = mk(pick.x0, pick.y0, pick.x1, y, zone, pick.color, i); B = mk(pick.x0, y, pick.x1, pick.y1, zone, pick.color, i); }
+      const smallA = A.a <= B.a, newOnA = zone === 'field' ? smallA : (rnd() < 0.5 ? smallA : !smallA);
+      (newOnA ? A : B).color = colors[i];
+      cells.splice(cells.indexOf(pick), 1, A, B);
+    }
+    return cells.map(toCell);
+  }
   function buildFlat(colors, opts, style) {
     const seed = (opts.seed != null ? opts.seed : 1) >>> 0, rnd = mulberry32(seed ^ 0x2468ace1), n = colors.length;
     const out = { W, H, shapes: [], cells: 0, center: style, place: style, size: 1, frame: false, style };
@@ -351,7 +384,7 @@
     if (style === 'modern') {
       // clean + minimal: a few big flat blocks, new colors cluster as smaller chips, crisp straight cuts, no patterns, no mirroring
       const ratios = [0.382, 0.5, 0.618, 0.25, 0.75, 0.3, 0.7];
-      const cells = bspFull(colors, rnd, { areaPow: 0.75, recent: 5, recentBoost: 4, slant: 0, ratio: (r) => ratios[Math.floor(r() * ratios.length)] });
+      const cells = modernCells(colors, rnd);
       // one special pattern: an off-center block, at most 20% of the quilt; it keeps its own color so no submission is hidden
       const tot = W * H, cen = (c) => [c.q.reduce((a, p) => a + p[0], 0) / 4, c.q.reduce((a, p) => a + p[1], 0) / 4];
       const ok = cells.filter((c) => c.a / tot >= 0.03 && c.a / tot <= 0.2);
