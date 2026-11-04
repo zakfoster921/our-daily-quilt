@@ -231,8 +231,9 @@
         const outline = (poly, pad) => { clips.push(poly); med.push({ pts: poly, fill: cc(0), noSlot: true }); };
         if (kind === 'nine') {
           // nine-patch medallion: a 3x3 block of squares — field corners, a vertical and a horizontal bar, and a center square
-          const c = baseBig * 0.82 * sc, x0 = CX - 1.5 * c, y0 = cy - 1.5 * c, sq = (i, j) => [[x0 + i * c, y0 + j * c], [x0 + (i + 1) * c, y0 + j * c], [x0 + (i + 1) * c, y0 + (j + 1) * c], [x0 + i * c, y0 + (j + 1) * c]];
-          clips.push(rect(x0, y0, x0 + 3 * c, y0 + 3 * c));
+          const c = baseBig * 0.64 * sc, x0 = CX - 1.5 * c, y0 = cy - 1.5 * c, sq = (i, j) => [[x0 + i * c, y0 + j * c], [x0 + (i + 1) * c, y0 + j * c], [x0 + (i + 1) * c, y0 + (j + 1) * c], [x0 + i * c, y0 + (j + 1) * c]];
+          clips.push(rect(x0 - c, y0 - c, x0 + 4 * c, y0 + 4 * c));
+          med.push({ pts: rect(x0 - c, y0 - c, x0 + 4 * c, y0 + 4 * c), fill: cc(4), noSlot: true, frame: true }); // frame as thick as one block
           for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
             const corner = i !== 1 && j !== 1, center = i === 1 && j === 1;
             med.push({ pts: sq(i, j), fill: corner ? cc(0) : center ? cc(3) : (j === 1 ? cc(1) : cc(2)), corner, noSlot: corner, cell: [x0 + i * c, y0 + j * c, c] });
@@ -284,8 +285,9 @@
         if (kind === 'nine') {
           // keep the plus on its ground; show hidden colors as pieced strips in the four corner squares
           const h = chosen.hidden, mStrips = Math.ceil(h.length / 4), corners = med.filter((m) => m.corner), rest = med.filter((m) => !m.corner);
-          med.length = 0; rest.forEach((m) => med.push(m));
-          corners.forEach((m, ci) => { const [cx0, cy0, cs] = m.cell; for (let t = 0; t < mStrips; t++) { const x1 = cx0 + (t * cs) / mStrips, x2 = cx0 + ((t + 1) * cs) / mStrips; med.unshift({ pts: [[x1, cy0], [x2, cy0], [x2, cy0 + cs], [x1, cy0 + cs]], fill: colors[h[(ci * mStrips + t) % h.length]] }); } });
+          const fr = rest.filter((m) => m.frame), inner = rest.filter((m) => !m.frame), strips = [];
+          corners.forEach((m, ci) => { const [cx0, cy0, cs] = m.cell; for (let t = 0; t < mStrips; t++) { const x1 = cx0 + (t * cs) / mStrips, x2 = cx0 + ((t + 1) * cs) / mStrips; strips.push({ pts: [[x1, cy0], [x2, cy0], [x2, cy0 + cs], [x1, cy0 + cs]], fill: colors[h[(ci * mStrips + t) % h.length]] }); } });
+          med.length = 0; fr.concat(strips, inner).forEach((m) => med.push(m));
         } else if (K) slots.forEach((m, j) => { m.fill = colors[chosen.hidden[j % chosen.hidden.length]]; });
         else slots.slice().sort((x, y) => area(y.pts) - area(x.pts)).slice(0, chosen.hidden.length).forEach((m, j) => { m.fill = colors[chosen.hidden[j]]; });
         const hc = chosen.hidden.map((i) => colors[i]);
