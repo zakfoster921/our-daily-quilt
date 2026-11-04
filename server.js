@@ -1039,7 +1039,7 @@ async function runNightlyInstagramSnapshot(options = {}) {
   const quoteLine = formatZapierCaptionFromQuoteData(qd) || 'Every day is a new beginning.';
   const quoteMood = String(qd?.mood || '').trim();
 
-  const pngDataUrl = await generateInstagramImageFromQuilt(blocks, quoteLine);
+  const pngDataUrl = await generateInstagramImageFromQuilt(blocks, quoteLine, { dateKey });
   const pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
 
   const docRef = db.collection('instagram-images').doc(dateKey);
@@ -1798,7 +1798,7 @@ function drawQuiltBlockToCtx(ctx, block, x, y, width, height) {
 }
 
 // Generate Instagram image from quilt data (server-side fallback/manual path).
-async function generateInstagramImageFromQuilt(blocks, _quote) {
+async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
   const canvas = createCanvas(1080, 1350); // 4:5 ratio for Instagram
   const ctx = canvas.getContext('2d');
   
@@ -1853,19 +1853,35 @@ async function generateInstagramImageFromQuilt(blocks, _quote) {
   const scaleX = drawWidth / sourceWidth;
   const scaleY = drawHeight / sourceHeight;
 
+  // Quilt Lab (opt-in): LAB_QUILT_INSTAGRAM=1 swaps in the lab-engine quilt for the same 9:16 area; any failure falls back to the classic blocks below.
+  let drewLabQuilt = false;
+  if (String(process.env.LAB_QUILT_INSTAGRAM || '').trim() === '1' && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.dateKey || ''))) {
+    try {
+      const labQuilt = require('./lib/lab-quilt.js');
+      const lq = labQuilt.buildLabQuilt(blocks, opts.dateKey);
+      const labImg = await loadImage(labQuilt.renderLabQuiltPng(createCanvas, lq.model));
+      ctx.drawImage(labImg, startX, startY, drawWidth, drawHeight);
+      drewLabQuilt = true;
+    } catch (labErr) {
+      console.warn('Lab quilt Instagram render failed, using classic blocks:', String(labErr?.message || labErr).slice(0, 200));
+    }
+  }
+
   // Draw the 9:16 screen composition; the white post background remains visible at the sides.
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(startX, startY, drawWidth, drawHeight);
-  ctx.clip();
-  blocks.forEach((block) => {
-    const x = startX + (Number(block.x) - sourceX) * scaleX;
-    const y = startY + (Number(block.y) - sourceY) * scaleY;
-    const width = Number(block.width) * scaleX;
-    const height = Number(block.height) * scaleY;
-    drawQuiltBlockToCtx(ctx, block, x, y, width, height);
-  });
-  ctx.restore();
+  if (!drewLabQuilt) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(startX, startY, drawWidth, drawHeight);
+    ctx.clip();
+    blocks.forEach((block) => {
+      const x = startX + (Number(block.x) - sourceX) * scaleX;
+      const y = startY + (Number(block.y) - sourceY) * scaleY;
+      const width = Number(block.width) * scaleX;
+      const height = Number(block.height) * scaleY;
+      drawQuiltBlockToCtx(ctx, block, x, y, width, height);
+    });
+    ctx.restore();
+  }
 
   // Convert to base64
   const buffer = canvas.toBuffer('image/png');
@@ -4517,7 +4533,7 @@ async function refreshStaleClassicImageFromLiveQuilt(dateKey, raw = {}) {
   console.log(
     `♻️ Refreshing stale IG carousel for ${dateKey}: instagram-images blockCount ${existingBlockCount}, live quilt ${blocks.length}`
   );
-  const pngDataUrl = await generateInstagramImageFromQuilt(blocks, '');
+  const pngDataUrl = await generateInstagramImageFromQuilt(blocks, '', { dateKey });
   const pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
   const slide1 = await firebaseSaveDownloadableFile(
     `instagram-zapier/${dateKey}/carousel-slide-1.png`,
