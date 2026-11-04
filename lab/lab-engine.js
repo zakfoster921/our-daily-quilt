@@ -430,14 +430,22 @@
   }
   function radialShapes(colors, rnd) {
     const n = colors.length, cx = W * (0.38 + rnd() * 0.24), cy = H * (0.32 + rnd() * 0.26), a = W / 2, b = H / 2.4;
-    const rings = n > 40 ? 3 : n > 16 ? 2 : 1, bounds = rings === 1 ? [0.14, 2.4] : rings === 2 ? [0.12, 0.55, 2.4] : [0.1, 0.4, 0.75, 2.4];
+    const rest0 = n - 1;
+    let rings = Math.max(1, Math.min(6, Math.round(Math.sqrt(n) * 0.9)));
+    while (rings > 1 && rest0 < rings * 3) rings--;
+    // several concentric rings of varied widths; the outermost runs off the quilt
+    const widths = Array.from({ length: Math.max(0, rings - 1) }, () => 0.5 + rnd() * 1.5), wsum = widths.reduce((x, y) => x + y, 0) || 1;
+    const bounds = [0.09]; widths.forEach((w) => bounds.push(bounds[bounds.length - 1] + (w / wsum) * 0.7)); bounds.push(2.4);
     // wobbly: ring boundaries undulate, and each ray bends a little, shared by neighbours so seams stay closed
     const ph = bounds.map(() => [rnd() * 6.28, rnd() * 6.28, 0.04 + rnd() * 0.05]);
     const R = (bi, ang) => bounds[bi] * (1 + (bi === bounds.length - 1 ? 0 : ph[bi][2]) * (Math.sin(2 * ang + ph[bi][0]) + 0.6 * Math.sin(5 * ang + ph[bi][1])));
     const P = (bi, ang) => [cx + Math.cos(ang) * a * R(bi, ang), cy + Math.sin(ang) * b * R(bi, ang)];
     const hub = Array.from({ length: 40 }, (_, i) => P(0, (i / 40) * Math.PI * 2));
     const shapes = [{ pts: hub, fill: colors[0] }];
-    const rest = colors.slice(1), per = Array(rings).fill(0).map((_, i) => Math.floor(rest.length / rings) + (i < rest.length % rings ? 1 : 0)); let ci = 0;
+    const rest = colors.slice(1); let ci = 0;
+    const mids = bounds.slice(0, -1).map((r0, i) => (i === bounds.length - 2 ? 0.95 : (r0 + bounds[i + 1]) / 2) + 0.15), tm = mids.reduce((x, y) => x + y, 0);
+    const per = mids.map((m) => Math.max(3, Math.floor((m / tm) * rest.length)));
+    let diff = rest.length - per.reduce((x, y) => x + y, 0); for (let g = 0; diff !== 0 && g < 500; g++) { const i = g % rings; if (diff > 0) { per[i]++; diff--; } else if (per[i] > 3) { per[i]--; diff++; } }
     for (let rg = 0; rg < rings; rg++) {
       const m = per[rg]; if (!m) continue;
       const ws = Array.from({ length: m }, () => 0.6 + rnd() * 1.1), tw = ws.reduce((x, y) => x + y, 0), a0 = rnd() * Math.PI * 2;
