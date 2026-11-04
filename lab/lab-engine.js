@@ -300,7 +300,7 @@
     const all = bgShapes.concat(med);
     // fabric-like tone variation (seeded, per shape)
     const vr = mulberry32(seed ^ 0x51ed270b);
-    all.forEach((s) => { s.fill = shade(s.fill, (vr() - 0.5) * 0.07); });
+    all.forEach((s) => { if (s.ci == null) { const k = colors.indexOf(s.fill); if (k >= 0) s.ci = k; } s.fill = shade(s.fill, (vr() - 0.5) * 0.07); });
 
     // organic warp: smooth, mirror-consistent, continuous (so shared edges stay closed)
     const nz = makeNoise(seed ^ 0xabcdef), amp = opts.wonk != null ? opts.wonk : 1;
@@ -312,7 +312,7 @@
       return [x + dx + ex, y + dy + ey];
     };
     const subdivide = (pts, maxSeg) => { const res = []; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const k = Math.max(1, Math.ceil(dist(a, b) / maxSeg)); for (let j = 0; j < k; j++) res.push(lerp(a, b, j / k)); } return res; };
-    out.shapes = all.map((s) => ({ pts: subdivide(s.pts, 16).map(warp), fill: s.fill }));
+    out.shapes = all.map((s) => ({ pts: subdivide(s.pts, 16).map(warp), fill: s.fill, ci: s.ci }));
     return out;
   }
 
@@ -380,114 +380,140 @@
     return cells.map(toCell);
   }
   // ---- structurally different recipes: each color is its own visible piece by construction ----
+  // ---- incremental recipes: every new color only changes a small local area (prefix-stable) ----
+  const hash01 = (x) => { let h = Math.imul(Math.floor(x * 1000003) ^ 0x9e3779b9, 2246822519); h ^= h >>> 13; h = Math.imul(h, 3266489917); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+
   function logCabinShapes(colors, rnd) {
+    // center square = color 0; each later color is a log on one side, taking a fraction of the remaining margin; leftover margin stays the last color
     const n = colors.length, cw = W * (0.1 + rnd() * 0.07), chh = H * (0.05 + rnd() * 0.04), cx = W * (0.36 + rnd() * 0.28), cy = H * (0.3 + rnd() * 0.3);
     let x0 = cx - cw / 2, x1 = cx + cw / 2, y0 = cy - chh / 2, y1 = cy + chh / 2;
-    const dist4 = { T: y0, R: W - x1, B: H - y1, L: x0 }, sides = [];
-    const keys = ['T', 'R', 'B', 'L'];
-    for (let i = 1; i < n; i++) { let tot = keys.reduce((a, k) => a + dist4[k], 0), r = rnd() * tot, pick = 'T'; for (const k of keys) { r -= dist4[k]; if (r <= 0) { pick = k; break; } } sides.push(pick); }
-    // a side that gets no log still needs closing: its last log absorbs the remainder
-    const per = {}; keys.forEach((k) => { per[k] = sides.map((sd, i) => (sd === k ? i : -1)).filter((i) => i >= 0); });
-    const thick = {}; keys.forEach((k) => { const idx = per[k]; const ws = idx.map(() => 0.55 + rnd() * 0.9), tw = ws.reduce((a, b) => a + b, 0) || 1; idx.forEach((ii, j) => { thick[ii] = (dist4[k] * ws[j]) / tw; }); });
-    const shapes = [{ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[0] }];
-    sides.forEach((sd, i) => {
-      const t = thick[i], c = colors[i + 1];
-      if (sd === 'T') { shapes.push({ pts: [[x0, y0 - t], [x1, y0 - t], [x1, y0], [x0, y0]], fill: c }); y0 -= t; }
-      else if (sd === 'B') { shapes.push({ pts: [[x0, y1], [x1, y1], [x1, y1 + t], [x0, y1 + t]], fill: c }); y1 += t; }
-      else if (sd === 'L') { shapes.push({ pts: [[x0 - t, y0], [x0, y0], [x0, y1], [x0 - t, y1]], fill: c }); x0 -= t; }
-      else { shapes.push({ pts: [[x1, y0], [x1 + t, y0], [x1 + t, y1], [x1, y1]], fill: c }); x1 += t; }
-    });
-    // close any remaining margin on sides that received no log with the last color (keeps canvas fully covered)
-    const last = colors[n - 1];
-    if (y0 > 0.5) shapes.push({ pts: [[x0, 0], [x1, 0], [x1, y0], [x0, y0]], fill: last });
-    if (y1 < H - 0.5) shapes.push({ pts: [[x0, y1], [x1, y1], [x1, H], [x0, H]], fill: last });
-    if (x0 > 0.5) shapes.push({ pts: [[0, 0], [x0, 0], [x0, H], [0, H]], fill: last });
-    if (x1 < W - 0.5) shapes.push({ pts: [[x1, 0], [W, 0], [W, H], [x1, H]], fill: last });
-    return shapes;
+    const shapes = [{ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[0], ci: 0 }];
+    const rem = { T: y0, B: H - y1, L: x0, R: W - x1 }, keys = ['T', 'R', 'B', 'L'], logs = [];
+    for (let i = 1; i < n; i++) {
+      const tot = keys.reduce((a, k) => a + rem[k], 0); let r = rnd() * tot, sd = 'T'; for (const k of keys) { r -= rem[k]; if (r <= 0) { sd = k; break; } }
+      const t = Math.min(rem[sd], Math.max(16, rem[sd] * (0.1 + rnd() * 0.28)));
+      if (sd === 'T') { logs.push({ pts: [[x0, y0 - t], [x1, y0 - t], [x1, y0], [x0, y0]], fill: colors[i], ci: i }); y0 -= t; }
+      else if (sd === 'B') { logs.push({ pts: [[x0, y1], [x1, y1], [x1, y1 + t], [x0, y1 + t]], fill: colors[i], ci: i }); y1 += t; }
+      else if (sd === 'L') { logs.push({ pts: [[x0 - t, y0], [x0, y0], [x0, y1], [x0 - t, y1]], fill: colors[i], ci: i }); x0 -= t; }
+      else { logs.push({ pts: [[x1, y0], [x1 + t, y0], [x1 + t, y1], [x1, y1]], fill: colors[i], ci: i }); x1 += t; }
+      rem[sd] -= t;
+    }
+    const last = colors[n - 1], li = n - 1;
+    if (y0 > 0.5) shapes.push({ pts: [[x0, 0], [x1, 0], [x1, y0], [x0, y0]], fill: last, ci: li });
+    if (y1 < H - 0.5) shapes.push({ pts: [[x0, y1], [x1, y1], [x1, H], [x0, H]], fill: last, ci: li });
+    if (x0 > 0.5) shapes.push({ pts: [[0, 0], [x0, 0], [x0, H], [0, H]], fill: last, ci: li });
+    if (x1 < W - 0.5) shapes.push({ pts: [[x1, 0], [W, 0], [W, H], [x1, H]], fill: last, ci: li });
+    return shapes.concat(logs);
   }
+
   function strataShapes(colors, rnd) {
-    const n = colors.length, ws = colors.map(() => 0.5 + Math.pow(rnd(), 2) * 2.6), tw = ws.reduce((a, b) => a + b, 0);
-    const ys = [0]; ws.forEach((w) => ys.push(ys[ys.length - 1] + (w / tw) * H)); ys[n] = H;
-    const line = (k) => { // boundary polyline, sometimes with a step (a "fault") partway across
-      const y = ys[k]; if (k === 0 || k === n || rnd() > 0.4) return [[0, y], [W, y]];
-      const gap = Math.min(ys[k] - ys[k - 1], ys[k + 1] - ys[k]), off = (rnd() < 0.5 ? -1 : 1) * gap * (0.25 + rnd() * 0.3), xs = W * (0.2 + rnd() * 0.6);
-      return [[0, y], [xs, y], [xs, y + off], [W, y + off]];
+    // start with one band; each new color splits a band (weighted by thickness) and takes the top or bottom part
+    const n = colors.length; let bands = [{ y0: 0, y1: H, ci: 0 }]; const faults = {};
+    for (let i = 1; i < n; i++) {
+      const cand = bands.filter((b) => b.y1 - b.y0 > 28), pool = cand.length ? cand : bands;
+      let tot = 0; const wts = pool.map((b) => { const w = Math.pow(b.y1 - b.y0, 1.1); tot += w; return w; }); let r = rnd() * tot, pick = pool[pool.length - 1];
+      for (let k = 0; k < pool.length; k++) { r -= wts[k]; if (r <= 0) { pick = pool[k]; break; } }
+      const t = 0.22 + rnd() * 0.56, ym = pick.y0 + (pick.y1 - pick.y0) * t, onTop = rnd() < 0.5;
+      const A = { y0: pick.y0, y1: ym, ci: onTop ? i : pick.ci }, B = { y0: ym, y1: pick.y1, ci: onTop ? pick.ci : i };
+      bands.splice(bands.indexOf(pick), 1, A, B);
+      const fr = [rnd(), rnd(), rnd(), rnd()]; if (fr[0] < 0.4) faults[ym.toFixed(3)] = { xs: W * (0.2 + fr[1] * 0.6), s: fr[2] < 0.5 ? -1 : 1, f: 0.25 + fr[3] * 0.3 };
+    }
+    const ys = [0].concat(bands.map((b) => b.y1)); ys[bands.length] = H;
+    const line = (k) => {
+      const y = ys[k], f = k > 0 && k < bands.length ? faults[bands[k - 1].y1.toFixed(3)] : null; if (!f) return [[0, y], [W, y]];
+      const gap = Math.min(ys[k] - ys[k - 1], ys[k + 1] - ys[k]), off = f.s * Math.min(gap * f.f, 120); return [[0, y], [f.xs, y], [f.xs, y + off], [W, y + off]];
     };
-    const lines = []; for (let k = 0; k <= n; k++) lines.push(line(k));
-    return colors.map((c, k) => ({ pts: lines[k].concat(lines[k + 1].slice().reverse()), fill: c }));
+    const lines = []; for (let k = 0; k <= bands.length; k++) lines.push(line(k));
+    return bands.map((b, k) => ({ pts: lines[k].concat(lines[k + 1].slice().reverse()), fill: colors[b.ci], ci: b.ci }));
   }
+
   function barShapes(colors, rnd) {
-    const n = colors.length, k = Math.max(3, Math.min(7, Math.round(Math.sqrt(n / 2.2))));
-    const pat = [1, 0.45, 1.25, 0.5, 1.1, 0.4, 0.9], bw = Array.from({ length: k }, (_, i) => pat[i % pat.length] * (0.85 + rnd() * 0.3)), tb = bw.reduce((a, b) => a + b, 0);
-    const cnt = Array(k).fill(1); for (let i = k; i < n; i++) cnt[Math.floor(rnd() * k)]++;
-    const shapes = []; let x = 0, ci = 0;
-    for (let b = 0; b < k; b++) {
-      const x1 = b === k - 1 ? W : x + (bw[b] / tb) * W, hs = Array.from({ length: cnt[b] }, () => 0.6 + rnd() * 1.4), th = hs.reduce((a, c) => a + c, 0); let y = 0;
-      hs.forEach((h, j) => { const y1 = j === hs.length - 1 ? H : y + (h / th) * H; if (ci < n) shapes.push({ pts: [[x, y], [x1, y], [x1, y1], [x, y1]], fill: colors[ci++] }); y = y1; });
-      x = x1;
+    // the first colors become vertical bars, then new colors split segments inside the bars
+    const n = colors.length; let segs = [{ x0: 0, y0: 0, x1: W, y1: H, ci: 0 }]; const ratios = [0.34, 0.45, 0.55, 0.66, 0.28, 0.72];
+    for (let i = 1; i < n; i++) {
+      if (i < 5) {
+        const col = segs.slice().sort((p, q) => (q.x1 - q.x0) - (p.x1 - p.x0))[0], x = col.x0 + (col.x1 - col.x0) * ratios[Math.floor(rnd() * ratios.length)], newRight = rnd() < 0.5;
+        segs.filter((sg) => sg.x0 === col.x0 && sg.x1 === col.x1).forEach((sg) => { const A = { x0: sg.x0, y0: sg.y0, x1: x, y1: sg.y1, ci: sg.ci }, B = { x0: x, y0: sg.y0, x1: sg.x1, y1: sg.y1, ci: sg.ci }; if (sg.y0 === col.y0 && sg.y1 === col.y1 || sg === segs.filter((q) => q.x0 === col.x0 && q.x1 === col.x1)[0]) (newRight ? B : A).ci = i; segs.splice(segs.indexOf(sg), 1, A, B); });
+        continue;
+      }
+      let tot = 0; const wts = segs.map((sg) => { const w = Math.pow((sg.x1 - sg.x0) * (sg.y1 - sg.y0), 0.9); tot += w; return w; }); let r = rnd() * tot, pick = segs[segs.length - 1];
+      for (let k = 0; k < segs.length; k++) { r -= wts[k]; if (r <= 0) { pick = segs[k]; break; } }
+      const y = pick.y0 + (pick.y1 - pick.y0) * (0.25 + rnd() * 0.5), onTop = rnd() < 0.5;
+      const A = { x0: pick.x0, y0: pick.y0, x1: pick.x1, y1: y, ci: onTop ? i : pick.ci }, B = { x0: pick.x0, y0: y, x1: pick.x1, y1: pick.y1, ci: onTop ? pick.ci : i };
+      segs.splice(segs.indexOf(pick), 1, A, B);
     }
+    return segs.map((sg) => ({ pts: [[sg.x0, sg.y0], [sg.x1, sg.y0], [sg.x1, sg.y1], [sg.x0, sg.y1]], fill: colors[sg.ci], ci: sg.ci }));
+  }
+
+  function geometricShapes(colors, rnd, seed) {
+    // modules halve like a quadtree (1:1 and 1:2 rectangles); each draws its own color with a bold primitive in its sibling's color
+    const n = colors.length; let mods = [{ x0: 0, y0: 0, x1: W, y1: H, ci: 0, pc: -1 }];
+    for (let i = 1; i < n; i++) {
+      const cand = mods.filter((m) => Math.min(m.x1 - m.x0, m.y1 - m.y0) > 70), pool = cand.length ? cand : mods;
+      let tot = 0; const wts = pool.map((m) => { const w = Math.pow((m.x1 - m.x0) * (m.y1 - m.y0), 1.4); tot += w; return w; }); let r = rnd() * tot, pick = pool[pool.length - 1];
+      for (let k = 0; k < pool.length; k++) { r -= wts[k]; if (r <= 0) { pick = pool[k]; break; } }
+      const w = pick.x1 - pick.x0, h = pick.y1 - pick.y0, rr = rnd(), vertical = w > h * 1.15 ? true : h > w * 1.15 ? false : rr < 0.5, newB = rnd() < 0.5;
+      const mid = vertical ? (pick.x0 + pick.x1) / 2 : (pick.y0 + pick.y1) / 2;
+      const A = vertical ? { x0: pick.x0, y0: pick.y0, x1: mid, y1: pick.y1 } : { x0: pick.x0, y0: pick.y0, x1: pick.x1, y1: mid }, B = vertical ? { x0: mid, y0: pick.y0, x1: pick.x1, y1: pick.y1 } : { x0: pick.x0, y0: mid, x1: pick.x1, y1: pick.y1 };
+      A.ci = newB ? pick.ci : i; B.ci = newB ? i : pick.ci; A.pc = B.ci; B.pc = A.ci;
+      mods.splice(mods.indexOf(pick), 1, A, B);
+    }
+    const shapes = [];
+    mods.forEach((m) => {
+      const x0 = m.x0, y0 = m.y0, x1 = m.x1, y1 = m.y1, cs = x1 - x0, rs = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(cs, rs);
+      shapes.push({ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[m.ci], ci: m.ci });
+      if (m.pc < 0) return;
+      const hr = (k) => hash01(x0 * 7.1 + y0 * 3.7 + x1 * 1.3 + y1 * 5.9 + seed * 0.37 + k), prims = ['quarter', 'half', 'circle', 'tri', 'bar', 'diamond'], kind = prims[Math.floor(hr(1) * prims.length)], rot = Math.floor(hr(2) * 4);
+      const arc = (ox, oy, r0, a0, a1, extra) => [].concat(extra || [], Array.from({ length: 20 }, (_, i) => { const a = a0 + (i / 19) * (a1 - a0); return [ox + Math.cos(a) * r0, oy + Math.sin(a) * r0]; }));
+      const corner = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]][rot], qa = (rot * Math.PI) / 2;
+      let pts;
+      if (kind === 'quarter') pts = arc(corner[0], corner[1], rad * 0.98, qa, qa + Math.PI / 2, [corner]);
+      else if (kind === 'half') pts = rot % 2 ? arc(cx, y0 + (rot === 1 ? 0 : rs), rad * 0.5, rot === 1 ? 0 : Math.PI, rot === 1 ? Math.PI : Math.PI * 2) : arc(x0 + (rot === 0 ? 0 : cs), cy, rad * 0.5, rot === 0 ? -Math.PI / 2 : Math.PI / 2, rot === 0 ? Math.PI / 2 : Math.PI * 1.5);
+      else if (kind === 'circle') pts = arc(cx, cy, rad * 0.4, 0, Math.PI * 2);
+      else if (kind === 'tri') pts = [[x0, y0], [x1, y1], rot % 2 ? [x1, y0] : [x0, y1]];
+      else if (kind === 'bar') pts = rot % 2 ? [[x0 + cs * 0.3, y0], [x0 + cs * 0.7, y0], [x0 + cs * 0.7, y1], [x0 + cs * 0.3, y1]] : [[x0, y0 + rs * 0.3], [x1, y0 + rs * 0.3], [x1, y0 + rs * 0.7], [x0, y0 + rs * 0.7]];
+      else pts = [[cx, y0 + rs * 0.08], [x1 - cs * 0.08, cy], [cx, y1 - rs * 0.08], [x0 + cs * 0.08, cy]];
+      shapes.push({ pts, fill: colors[m.pc], ci: m.pc });
+    });
     return shapes;
   }
+
   function radialShapes(colors, rnd) {
-    // concentric rings that keep going off the quilt, each ring divided into patches; every color is one patch.
-    // Outer rings are only visible near the top/bottom, so their patches are placed only on the arcs that actually show.
-    const n = colors.length, cx = W * (0.4 + rnd() * 0.2), cy = H * (0.34 + rnd() * 0.22), a = W / 2, b = H / 2.4, TAU = Math.PI * 2;
-    const r0 = 0.1 + 0.35 * Math.sqrt(rnd()); // center size varies, favoring larger
-    const inC = (x, y) => x >= 0 && x <= W && y >= 0 && y <= H;
-    const visArcs = (ri, ro) => {
-      const M = 240, vis = [];
-      for (let j = 0; j < M; j++) { const an = (j / M) * TAU; let v = false; for (let t = 0; t <= 1 && !v; t += 0.25) { const r = ri + (ro - ri) * t; v = inC(cx + Math.cos(an) * a * r, cy + Math.sin(an) * b * r); } vis.push(v); }
-      if (vis.every((x) => x)) return [{ a0: rnd() * TAU, len: TAU, full: true }];
-      if (!vis.some((x) => x)) return [];
-      const s0 = vis.indexOf(false), arcs = []; let st = -1;
-      for (let k = 1; k <= M; k++) { const idx = (s0 + k) % M; if (vis[idx] && st < 0) st = k; if (!vis[idx] && st >= 0) { arcs.push({ a0: ((s0 + st) / M) * TAU, len: ((k - st) / M) * TAU, full: false }); st = -1; } }
-      return arcs;
-    };
-    let rings = Math.max(2, Math.min(11, Math.round(n / 4))), bounds, arcs;
-    for (;;) {
-      const widths = Array.from({ length: Math.max(0, rings - 1) }, () => 0.22 + Math.pow(rnd(), 1.4) * 1.5), wsum = widths.reduce((x, y) => x + y, 0) || 1;
-      bounds = [r0]; widths.forEach((w) => bounds.push(bounds[bounds.length - 1] + (w / wsum) * (1.8 - r0))); bounds.push(3.4);
-      arcs = bounds.slice(0, -1).map((ri, i) => visArcs(ri, bounds[i + 1]));
-      if (rings <= 1 || arcs.reduce((x, y) => x + Math.max(1, y.length), 0) <= n - 1) break;
-      rings--;
+    // polar partition: a hub, then one big field split by ring cuts and angular cuts. Cells keep their cut radii/angles, so earlier cells never move.
+    const n = colors.length, cx = W * (0.4 + rnd() * 0.2), cy = H * (0.34 + rnd() * 0.22), a = W / 2, b = H / 2.4, TAU = Math.PI * 2, RV = 1.8;
+    const r0 = 0.1 + 0.35 * Math.sqrt(rnd()), inC = (x, y) => x >= 0 && x <= W && y >= 0 && y <= H;
+    const R = (rv, ang) => rv * (1 + (rv >= 3 ? 0 : 0.01 + hash01(rv * 91.7) * 0.016) * (Math.sin(2 * ang + hash01(rv * 13.3) * 6.28) + 0.6 * Math.sin(5 * ang + hash01(rv * 29.9) * 6.28)));
+    const P = (rv, ang) => [cx + Math.cos(ang) * a * R(rv, ang), cy + Math.sin(ang) * b * R(rv, ang)];
+    const visArea = (c) => { let ok = 0, tot = 0; for (let ri = 0; ri < 7; ri++) for (let ai = 0; ai < 12; ai++) { const rv = c.rin + (Math.min(c.rout, 3.2) - c.rin) * ((ri + 0.5) / 7), an = c.a0 + c.len * ((ai + 0.5) / 12); tot++; if (inC(cx + Math.cos(an) * a * rv, cy + Math.sin(an) * b * rv)) ok++; } return (ok / tot) * 0.5 * c.len * (Math.pow(Math.min(c.rout, 3.2), 2) - c.rin * c.rin) * a * b; };
+    let cells = n > 1 ? [{ rin: r0, rout: 3.4, a0: rnd() * TAU, len: TAU, ci: 1 }] : [];
+    for (let i = 2; i < n; i++) {
+      const cand = cells.map((c) => ({ c, v: visArea(c) })).filter((x) => x.v > 5000), pool = cand.length ? cand : cells.map((c) => ({ c, v: 1 }));
+      let tot = 0; pool.forEach((x) => { tot += x.v; }); let r = rnd() * tot, pick = pool[pool.length - 1].c; for (let k = 0; k < pool.length; k++) { r -= pool[k].v; if (r <= 0) { pick = pool[k].c; break; } }
+      const rtop = Math.min(pick.rout, RV), width = rtop - pick.rin, mid = (pick.rin + rtop) / 2, arc = pick.len * mid, canR = width > 0.15, canA = arc > 0.18;
+      const rr1 = rnd(), rr2 = rnd(), rr3 = rnd(), rr4 = rnd(); let ang = canA && (!canR || rr1 < arc / (arc + width)); const newOuter = rr2 < 0.5;
+      if (!canR && !canA) ang = true;
+      let A, B;
+      if (ang) { const t = pick.len * (0.25 + rr3 * 0.5); A = { rin: pick.rin, rout: pick.rout, a0: pick.a0, len: t }; B = { rin: pick.rin, rout: pick.rout, a0: pick.a0 + t, len: pick.len - t }; }
+      else { const rc = pick.rin + (rtop - pick.rin) * (0.25 + rr4 * 0.5); A = { rin: pick.rin, rout: rc, a0: pick.a0, len: pick.len }; B = { rin: rc, rout: pick.rout, a0: pick.a0, len: pick.len }; }
+      A.ci = newOuter ? pick.ci : i; B.ci = newOuter ? i : pick.ci; cells.splice(cells.indexOf(pick), 1, A, B);
     }
-    const ph = bounds.map(() => [rnd() * 6.28, rnd() * 6.28, 0.016 + rnd() * 0.03]);
-    ph.forEach((q, i) => { const lo = i > 0 ? bounds[i] - bounds[i - 1] : Infinity, hi = i < bounds.length - 1 ? bounds[i + 1] - bounds[i] : Infinity; q[2] = Math.min(q[2], (0.32 * Math.min(lo, hi)) / bounds[i]); });
-    const R = (bi, ang) => bounds[bi] * (1 + (bi === bounds.length - 1 ? 0 : ph[bi][2]) * (Math.sin(2 * ang + ph[bi][0]) + 0.6 * Math.sin(5 * ang + ph[bi][1])));
-    const P = (bi, ang) => [cx + Math.cos(ang) * a * R(bi, ang), cy + Math.sin(ang) * b * R(bi, ang)];
-    const shapes = [{ pts: Array.from({ length: 48 }, (_, i) => P(0, (i / 48) * TAU)), fill: colors[0] }];
-    const rest = colors.slice(1); if (!rest.length) return shapes;
-    // patches per ring ~ visible arc length x radius
-    const wt = arcs.map((ar, i) => ar.reduce((x, y) => x + y.len, 0) * Math.min(1.3, (bounds[i] + bounds[i + 1]) / 2 + 0.3));
-    const mins = arcs.map((ar) => (ar.length ? ar.length : 0)), tw = wt.reduce((x, y) => x + y, 0) || 1;
-    const per = wt.map((w, i) => Math.max(mins[i], Math.round((w / tw) * rest.length)));
-    for (let g = 0, diff = rest.length - per.reduce((x, y) => x + y, 0); diff !== 0 && g < 2000; g++) { const i = g % per.length; if (diff > 0 && mins[i] > 0) { per[i]++; diff--; } else if (diff < 0 && per[i] > Math.max(1, mins[i])) { per[i]--; diff++; } }
-    let ci = 0;
-    for (let rg = 0; rg < arcs.length; rg++) {
-      const ar = arcs[rg]; if (!ar.length || !per[rg]) continue;
-      const lens = ar.reduce((x, y) => x + y.len, 0), cnt = ar.map((x) => Math.max(1, Math.round((x.len / lens) * per[rg])));
-      for (let g = 0, d = per[rg] - cnt.reduce((x, y) => x + y, 0); d !== 0 && g < 500; g++) { const i = g % cnt.length; if (d > 0) { cnt[i]++; d--; } else if (cnt[i] > 1) { cnt[i]--; d++; } }
-      ar.forEach((arc, ai) => {
-        const q = cnt[ai], ws = Array.from({ length: q }, () => 0.6 + rnd() * 1.1), sw = ws.reduce((x, y) => x + y, 0), pad = arc.full ? 0 : 0.03;
-        const A0 = arc.a0 - pad, L = arc.len + 2 * pad, angs = [A0]; ws.forEach((w) => angs.push(angs[angs.length - 1] + (w / sw) * L));
-        const bend = angs.map(() => [(rnd() - 0.5) * 0.04, rnd() * 6.28]); if (arc.full) bend[q] = bend[0];
-        const ray = (j, t, nb) => { const an = angs[j] + (nb ? 0 : bend[j][0] * Math.sin(t * Math.PI * 1.3 + bend[j][1])); const r0_ = R(rg, an), r1_ = R(rg + 1, an), r = r0_ + (r1_ - r0_) * t; return [cx + Math.cos(an) * a * r, cy + Math.sin(an) * b * r]; };
-        for (let j = 0; j < q && ci < rest.length; j++) {
-          const span = angs[j + 1] - angs[j], chunks = Math.max(1, Math.ceil(span / 2.2)), color = rest[ci++];
-          for (let c = 0; c < chunks; c++) {
-            const a0 = angs[j] + (c / chunks) * span, a1 = angs[j] + ((c + 1) / chunks) * span, first = c === 0, last = c === chunks - 1, pts = [], ST = 10, AS = Math.max(3, Math.ceil((a1 - a0) * 10));
-            const rayAt = (an, t, useBend, jj) => { const ang2 = useBend ? angs[jj] + bend[jj][0] * Math.sin(t * Math.PI * 1.3 + bend[jj][1]) : an; const r0_ = R(rg, ang2), r1_ = R(rg + 1, ang2), r = r0_ + (r1_ - r0_) * t; return [cx + Math.cos(ang2) * a * r, cy + Math.sin(ang2) * b * r]; };
-            for (let t = 0; t <= ST; t++) pts.push(rayAt(a0, t / ST, first, j));
-            for (let k = 1; k < AS; k++) pts.push(P(rg + 1, a0 + (k / AS) * (a1 - a0)));
-            for (let t = ST; t >= 0; t--) pts.push(rayAt(a1, t / ST, last, j + 1));
-            for (let k = AS - 1; k > 0; k--) pts.push(P(rg, a0 + (k / AS) * (a1 - a0)));
-            shapes.push({ pts, fill: color, grp: 'p' + rg + '_' + ai + '_' + j });
-          }
-        }
-      });
-    }
+    const shapes = [{ pts: Array.from({ length: 48 }, (_, i) => P(r0, (i / 48) * TAU)), fill: colors[0], ci: 0 }];
+    const bendAt = (ang, t) => 0.018 * Math.sin(t * Math.PI * 1.3 + hash01(ang * 57.3) * 6.28);
+    cells.forEach((c) => {
+      const chunks = Math.max(1, Math.ceil(c.len / 2.2));
+      for (let k = 0; k < chunks; k++) {
+        const a0 = c.a0 + (k / chunks) * c.len, a1 = c.a0 + ((k + 1) / chunks) * c.len, first = k === 0, last = k === chunks - 1, AS = Math.max(3, Math.ceil((a1 - a0) * 10)), ST = 10, pts = [];
+        const ray = (an, t, bend) => { const an2 = an + (bend ? bendAt(an, t) : 0), rv = c.rin + (c.rout - c.rin) * t, rr = R(rv, an2); return [cx + Math.cos(an2) * a * rr, cy + Math.sin(an2) * b * rr]; };
+        for (let t = 0; t <= ST; t++) pts.push(ray(a0, t / ST, first));
+        for (let q = 1; q < AS; q++) pts.push(P(c.rout, a0 + (q / AS) * (a1 - a0)));
+        for (let t = ST; t >= 0; t--) pts.push(ray(a1, t / ST, last));
+        for (let q = AS - 1; q > 0; q--) pts.push(P(c.rin, a0 + (q / AS) * (a1 - a0)));
+        shapes.push({ pts, fill: colors[c.ci], ci: c.ci, grp: 'c' + c.ci });
+      }
+    });
     return shapes;
   }
+
   function buildFlat(colors, opts, style) {
     const seed = (opts.seed != null ? opts.seed : 1) >>> 0, rnd = mulberry32(seed ^ 0x2468ace1), n = colors.length;
     const out = { W, H, shapes: [], cells: 0, center: style, place: style, size: 1, frame: false, style };
@@ -521,31 +547,11 @@
       const cells = bspFull(colors, rnd, { areaPow: 1.1, recent: 0, recentBoost: 1, slant: 0.5, ratio: (r) => 0.16 + r() * 0.5 });
       shapes = cells.map((c) => ({ pts: c.q, fill: c.color })); amp = 1.7;
     } else {
-      // geometric: strict grid of square modules, each holding one bold primitive in a submitted color on a neighbor's color
-      const cols = Math.max(2, Math.ceil(Math.sqrt(n / 2))), rows = Math.max(2, Math.ceil(n / cols)), cs = W / cols, rs = H / rows;
-      const prims = ['quarter', 'half', 'circle', 'tri', 'bar', 'diamond', 'solid'];
-      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-        const idx = r * cols + c, fg = colors[idx % n], bgc = colors[(idx * 7 + 3) % n === idx % n ? (idx + 1) % n : (idx * 7 + 3) % n];
-        const x0 = c * cs, y0 = r * rs, x1 = x0 + cs, y1 = y0 + rs, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(cs, rs);
-        shapes.push({ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: bgc });
-        const kind = prims[Math.floor(rnd() * prims.length)], rot = Math.floor(rnd() * 4);
-        const arc = (ox, oy, r0, a0, a1, extra) => [].concat(extra || [], Array.from({ length: 20 }, (_, i) => { const a = a0 + (i / 19) * (a1 - a0); return [ox + Math.cos(a) * r0, oy + Math.sin(a) * r0]; }));
-        const corner = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]][rot], qa = rot * Math.PI / 2;
-        let pts;
-        if (kind === 'quarter') pts = arc(corner[0], corner[1], rad * 0.98, qa, qa + Math.PI / 2, [corner]);
-        else if (kind === 'half') pts = rot % 2 ? arc(cx, y0 + (rot === 1 ? 0 : rs), rad * 0.5, rot === 1 ? 0 : Math.PI, rot === 1 ? Math.PI : Math.PI * 2) : arc(x0 + (rot === 0 ? 0 : cs), cy, rad * 0.5, rot === 0 ? -Math.PI / 2 : Math.PI / 2, rot === 0 ? Math.PI / 2 : Math.PI * 1.5);
-        else if (kind === 'circle') pts = arc(cx, cy, rad * 0.42, 0, Math.PI * 2);
-        else if (kind === 'tri') pts = [[x0, y0], [x1, y1], rot % 2 ? [x1, y0] : [x0, y1]];
-        else if (kind === 'bar') pts = rot % 2 ? [[x0 + cs * 0.3, y0], [x0 + cs * 0.7, y0], [x0 + cs * 0.7, y1], [x0 + cs * 0.3, y1]] : [[x0, y0 + rs * 0.3], [x1, y0 + rs * 0.3], [x1, y0 + rs * 0.7], [x0, y0 + rs * 0.7]];
-        else if (kind === 'diamond') pts = [[cx, y0 + rs * 0.08], [x1 - cs * 0.08, cy], [cx, y1 - rs * 0.08], [x0 + cs * 0.08, cy]];
-        else pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-        shapes.push({ pts, fill: fg });
-      }
-      amp = 0.6;
+      shapes = geometricShapes(colors, rnd, seed); amp = 0.6;
     }
-    const vr = mulberry32(seed ^ 0x51ed270b), grpTone = {}; shapes.forEach((sh) => { let t; if (sh.grp != null && grpTone[sh.grp] != null) t = grpTone[sh.grp]; else { t = (vr() - 0.5) * (style === 'modern' ? 0.03 : 0.07); if (sh.grp != null) grpTone[sh.grp] = t; } sh.fill = shade(sh.fill, t); });
+    const vr = mulberry32(seed ^ 0x51ed270b), grpTone = {}; shapes.forEach((sh) => { if (sh.ci == null) { const k = colors.indexOf(sh.fill); if (k >= 0) sh.ci = k; } let t; if (sh.grp != null && grpTone[sh.grp] != null) t = grpTone[sh.grp]; else { t = (vr() - 0.5) * (style === 'modern' ? 0.03 : 0.07); if (sh.grp != null) grpTone[sh.grp] = t; } sh.fill = shade(sh.fill, t); });
     const warp = flatWarp(seed, opts.wonk != null ? amp * opts.wonk : amp);
-    out.shapes = shapes.map((sh) => ({ pts: subdividePts(sh.pts, maxSeg).map(warp), fill: sh.fill }));
+    out.shapes = shapes.map((sh) => ({ pts: subdividePts(sh.pts, maxSeg).map(warp), fill: sh.fill, ci: sh.ci }));
     out.cells = shapes.length; return out;
   }
   function build(colors, opts) {
@@ -560,7 +566,7 @@
 
   function toSvg(model, opts) {
     opts = opts || {};
-    const paths = model.shapes.map((s) => `<path d="M${s.pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L')}Z" fill="${s.fill}" stroke="${s.fill}" stroke-width="1.4" stroke-linejoin="round"/>`).join('');
+    const paths = model.shapes.map((s) => `<path${s.ci != null ? ' data-ci="' + s.ci + '"' : ''} d="M${s.pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L')}Z" fill="${s.fill}" stroke="${s.fill}" stroke-width="1.4" stroke-linejoin="round"/>`).join('');
     const bg = model.shapes.length ? model.shapes[0].fill : '#f6f4f1';
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -12 ${model.W + 24} ${model.H + 24}" width="${opts.width || 400}"><defs><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.09 0"/></filter><clipPath id="qc"><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}"/></clipPath></defs><rect x="-12" y="-12" width="${model.W + 24}" height="${model.H + 24}" fill="${bg}"/><g clip-path="url(#qc)">${paths}</g><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}" filter="url(#grain)"/></svg>`;
   }
