@@ -40,13 +40,28 @@ async function main() {
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction(() => !!window.app && window.app._portalQuiltLoaded === true, undefined, { timeout: 180000 });
 
-    const info = await page.evaluate(async () => {
+    const info = await page.evaluate(async (speakerName) => {
       const app = window.app;
       // Never photograph an already-baked portrait: render the live widget.
       app.fetchTodayInstagramImagesDoc = async () => null;
       const qs = app.quoteService;
-      const dateKey = qs.getQuoteCalendarKeyNow();
+      let dateKey = qs.getQuoteCalendarKeyNow();
       let quote = null;
+      if (speakerName) {
+        // Preview a specific speaker: find the nearest scheduled day whose quote is by them.
+        const want = speakerName.toLowerCase();
+        const base = new Date(dateKey + 'T00:00:00Z');
+        for (let off = 0; off < 800 && !quote; off++) {
+          for (const sign of off === 0 ? [1] : [1, -1]) {
+            const d = new Date(base.getTime() + sign * off * 86400000);
+            const dk = d.toISOString().slice(0, 10);
+            let q = null;
+            try { q = (await qs.resolveQuoteForCalendarKeyFresh(dk)) || qs.getQuoteForDate(dk); } catch (_) {}
+            const who = String(q?.speaker || q?.author || '').toLowerCase();
+            if (q?.text && who.includes(want)) { quote = q; dateKey = dk; break; }
+          }
+        }
+      }
       for (let i = 0; i < 60 && !quote?.text; i++) {
         quote = (await qs.getTodayQuote?.()) || app.getEffectiveQuiltQuote?.() || null;
         if (!quote?.text) await new Promise((r) => setTimeout(r, 1000));
@@ -64,9 +79,9 @@ async function main() {
         cutoutUrl: String(quote?.speakerCutoutUrl || quote?.cutoutUrl || '').trim(),
         speaker: String(quote?.speaker || quote?.author || '').trim()
       };
-    });
+    }, process.env.SPEAKER_NAME || '');
     log('quote', JSON.stringify(info));
-    const dateKey = process.env.DATE_KEY || info.dateKey;
+    const dateKey = (process.env.SPEAKER_NAME ? '' : process.env.DATE_KEY) || info.dateKey;
 
     // Wait for the portrait image to load and the layers to settle.
     await page.waitForFunction(() => {

@@ -14,6 +14,9 @@ on:
         description: "true = screenshots only (no upload). false = upload to Storage."
         required: false
         default: "true"
+      speaker_name:
+        description: "Preview a specific speaker by name (e.g. Maathai). Preview only; leave empty for today."
+        required: false
       date_key:
         description: "Optional YYYY-MM-DD. Leave empty for the current app day."
         required: false
@@ -72,7 +75,8 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
           DATE_KEY: ${{ inputs.date_key || '' }}
-          PREVIEW: ${{ inputs.preview == 'false' && '0' || '1' }}
+          SPEAKER_NAME: ${{ inputs.speaker_name || '' }}
+          PREVIEW: ${{ (inputs.preview == 'false' && inputs.speaker_name == '') && '0' || '1' }}
           ARTIFACTS_DIR: tmp/speaker-portrait
           APP_URL: http://127.0.0.1:8765/our-daily-beta.html
         run: node scripts/generate-speaker-portrait.cjs
