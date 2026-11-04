@@ -10697,8 +10697,11 @@ app.options('/api/admin/quilt-mutation', (req, res) => {
  * Quilt Lab dry run (Phase 1): renders a day's quilt with the lab engine as a PNG. Read-only: nothing is written or uploaded.
  * GET /api/admin/lab-quilt-preview?dateKey=YYYY-MM-DD[&style=bigtop|...]  (x-reset-token header or token query)
  */
+app.options('/api/admin/lab-quilt-preview', (req, res) => { setResetApiCors(res); res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS'); res.sendStatus(204); });
 app.get('/api/admin/lab-quilt-preview', async (req, res) => {
   setResetApiCors(res);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Lab-Style, X-Lab-Colors, X-Lab-Shapes');
   try {
     const expectedToken = String(process.env.RESET_TOKEN || '').trim();
     const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
