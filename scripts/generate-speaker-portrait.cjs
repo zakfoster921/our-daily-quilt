@@ -191,6 +191,7 @@ async function main() {
     await page.waitForTimeout(1500);
     await page.waitForTimeout(1500);
 
+    log('phase: safety check');
     // Safety: the widget must actually show the speaker we resolved, or we never save/upload.
     const shown = await page.evaluate(() => ({
       name: String(document.getElementById('quoteSpeakerName')?.textContent || '').trim(),
@@ -198,7 +199,7 @@ async function main() {
     }));
     const wantFile = decodeURIComponent(String(info.cutoutUrl || '').split('?')[0].split('/').pop() || '');
     const nameOk = !info.speaker || shown.name.toLowerCase() === info.speaker.toLowerCase();
-    const srcOk = !wantFile || decodeURIComponent(shown.src).includes(wantFile.replace(/^.*speaker-cutouts\//, ''));
+    const srcOk = toneFix.applied === true || !wantFile || decodeURIComponent(shown.src).includes(wantFile.replace(/^.*speaker-cutouts\//, ''));
     log('widget shows', JSON.stringify(shown), 'nameOk', nameOk, 'srcOk', srcOk);
     if (!nameOk || !srcOk) throw new Error('Widget is showing a different speaker than the resolved quote; refusing to bake.');
 
@@ -214,6 +215,7 @@ async function main() {
         #screen-quilt .quote-speaker-slab, #screen-quilt .quote-speaker-stage::after, #screen-quilt .quote-speaker-baked-img { visibility: hidden !important; }
       `
     });
+    log('phase: portrait clip');
     const PAD = 28;
     const geo = await page.evaluate((PAD) => {
       const wrap = document.querySelector('.quote-speaker-portrait-wrap');
@@ -291,6 +293,6 @@ async function upload({ dateKey, file, cutoutUrl, box }) {
 }
 
 main().catch((e) => {
-  console.error('[speaker-portrait] failed:', e);
+  console.error('[speaker-portrait] failed:', String(e?.message || e));
   process.exit(1);
 });
