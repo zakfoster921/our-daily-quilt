@@ -4695,6 +4695,62 @@ async function uploadFinalArchiveQuiltPreview(db, dateKey, blocks) {
 }
 
 /**
+ * Quilt Lab (Phase 1): save the lab-engine render of a finished day NEXT TO the existing archive image.
+ * Additive only: writes archives/{key}/lab-quilt.png + lab-quilt-model.json (shapes + contributor owners)
+ * and labQuilt* fields on archives/{key}. Nothing existing reads them yet. Never throws into the caller.
+ * Disable with LAB_QUILT_ARCHIVE_DISABLED=1.
+ */
+async function saveLabQuiltForArchive(db, dateKey, blocks, { force = false } = {}) {
+  const key = String(dateKey || '').trim();
+  if (String(process.env.LAB_QUILT_ARCHIVE_DISABLED || '').trim() === '1') return { skipped: 'disabled' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !Array.isArray(blocks) || blocks.length < 2) return { skipped: 'no_blocks' };
+  try {
+    const archiveRef = db.collection('archives').doc(key);
+    if (!force) {
+      const snap = await archiveRef.get();
+      if (snap.exists && snap.data()?.labQuiltEngineVersion) return { skipped: 'already_saved' };
+    }
+    const labQuilt = require('./lib/lab-quilt.js');
+    const q = labQuilt.buildLabQuilt(blocks, key);
+    const png = labQuilt.renderLabQuiltPng(createCanvas, q.model);
+    const r1 = (n) => Math.round(n * 10) / 10;
+    const modelJson = JSON.stringify({
+      version: q.version,
+      dateKey: key,
+      style: q.style,
+      W: q.model.W,
+      H: q.model.H,
+      colorCount: q.colorCount,
+      shapes: q.model.shapes.map((s, i) => ({
+        fill: s.fill,
+        owners: q.owners[i],
+        pts: s.pts.map((p) => [r1(p[0]), r1(p[1])])
+      }))
+    });
+    const [img, model] = await Promise.all([
+      firebaseSaveDownloadableFile(`archives/${key}/lab-quilt.png`, png, 'image/png'),
+      firebaseSaveDownloadableFile(`archives/${key}/lab-quilt-model.json`, Buffer.from(modelJson), 'application/json')
+    ]);
+    await archiveRef.set(
+      {
+        labQuiltImageUrl: img.publicUrl,
+        labQuiltModelUrl: model.publicUrl,
+        labQuiltEngineVersion: q.version,
+        labQuiltStyle: q.style,
+        labQuiltColorCount: q.colorCount,
+        labQuiltShapeCount: q.model.shapes.length,
+        labQuiltRenderedAt: getUtcIsoNow()
+      },
+      { merge: true }
+    );
+    return { saved: true, version: q.version, style: q.style, shapes: q.model.shapes.length, imageUrl: img.publicUrl };
+  } catch (err) {
+    console.warn(`Lab quilt archive for ${key} failed:`, String(err?.message || err).slice(0, 240));
+    return { error: String(err?.message || err).slice(0, 240) };
+  }
+}
+
+/**
  * Stable quilt preview URL for reflection archive / archives.
  * Priority: nightly quilt-only story image, else render from archive blocks.
  */
@@ -4869,6 +4925,10 @@ async function runDailyResetForDate(dateKey, source = 'unknown') {
         String(imgErr?.message || imgErr).slice(0, 240)
       );
     }
+  }
+
+  if (closingQuiltData && Array.isArray(closingQuiltData.blocks) && closingQuiltData.blocks.length > 1) {
+    await saveLabQuiltForArchive(db, closingKey, closingQuiltData.blocks);
   }
 
   const newQuiltSnap = await newQuiltRef.get();
@@ -10630,6 +10690,28 @@ app.get('/api/admin/lab-quilt-preview', async (req, res) => {
     return res.send(png);
   } catch (error) {
     console.error('lab-quilt-preview failed:', error);
+    return res.status(500).json({ success: false, error: String(error && error.message || error) });
+  }
+});
+
+/** Quilt Lab: (re)save the lab render for one archived day. POST /api/admin/lab-quilt-archive?dateKey=YYYY-MM-DD[&force=1] */
+app.post('/api/admin/lab-quilt-archive', async (req, res) => {
+  setResetApiCors(res);
+  try {
+    const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+    const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+    if (!expectedToken) return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    if (!providedToken || providedToken !== expectedToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    if (!db) return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    const dateKey = String(req.query.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return res.status(400).json({ success: false, error: 'dateKey must be YYYY-MM-DD' });
+    const snap = await db.collection('archives').doc(dateKey).get();
+    const blocks = snap.exists ? snap.data()?.quilt?.blocks : null;
+    if (!Array.isArray(blocks) || blocks.length < 2) return res.status(404).json({ success: false, error: `No archived blocks for ${dateKey}` });
+    const result = await saveLabQuiltForArchive(db, dateKey, blocks, { force: String(req.query.force || '') === '1' });
+    return res.json({ success: !result.error, dateKey, ...result });
+  } catch (error) {
+    console.error('lab-quilt-archive failed:', error);
     return res.status(500).json({ success: false, error: String(error && error.message || error) });
   }
 });
