@@ -146,6 +146,17 @@
       ring(R, cs[0], 0.045); ring(R * 0.8, cs[1], 0.03); ring(R * 0.6, cs[2], 0.02); ring(R * 0.4, cs[3], 0.0); disc(cx, cy, R * 0.2, cs[0]);
     };
     const baseBig = Math.min(W, H) * (0.2 + Math.min(0.06, n * 0.0012));
+    // integrating frame: field + sawtooth ring + outer ring, so the medallion is set INTO the quilt
+    const frameOn = opts.frame === 'on' ? true : opts.frame === 'off' ? false : mrnd() < 0.75;
+    const frameAt = (cx, cy, R0) => {
+      const N = 28, ringW = R0 * 0.2;
+      disc(cx, cy, R0 * 1.01, cc(5));
+      for (let i = 0; i < N; i++) { const a0 = (i / N) * Math.PI * 2, a1 = ((i + 1) / N) * Math.PI * 2, am = (a0 + a1) / 2; med.push({ pts: [[cx + Math.cos(a0) * R0, cy + Math.sin(a0) * R0], [cx + Math.cos(a1) * R0, cy + Math.sin(a1) * R0], [cx + Math.cos(am) * (R0 + ringW), cy + Math.sin(am) * (R0 + ringW)]], fill: cc(6) }); }
+      disc(cx, cy, R0 * 0.985, cc(5));
+    };
+    const FR = { star: [CX, H * 0.42, baseBig * 1.42], small: [CX, H * 0.5, baseBig * 0.74], dresden: [CX, H * 0.44, baseBig * 1.45 * 1.14], flower: [CX, H * 0.44, baseBig * 1.55 * 1.02], wreath: [CX, H * 0.44, baseBig * 1.5 * 1.12], bullseye: [CX, H * 0.44, baseBig * 1.4 * 1.1] };
+    out.frame = frameOn && n >= 4 && !!FR[kind];
+    if (out.frame) frameAt(FR[kind][0], FR[kind][1], FR[kind][2]);
     if (n >= 4) {
       if (kind === 'star') medallion(CX, H * 0.42, baseBig, 0);
       else if (kind === 'small') { const b = baseBig * 0.5; diamond(CX, H * 0.5, b * 1.4, cc(2)); disc(CX, H * 0.5, b * 0.8, cc(1)); starAt(CX, H * 0.5, b * 0.55, cc(3)); }
