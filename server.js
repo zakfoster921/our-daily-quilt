@@ -10701,7 +10701,7 @@ app.options('/api/admin/lab-quilt-preview', (req, res) => { setResetApiCors(res)
 app.get('/api/admin/lab-quilt-preview', async (req, res) => {
   setResetApiCors(res);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Lab-Style, X-Lab-Colors, X-Lab-Shapes');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Lab-Style, X-Lab-Colors, X-Lab-Shapes, X-Lab-Reroll');
   try {
     const expectedToken = String(process.env.RESET_TOKEN || '').trim();
     const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
@@ -10720,7 +10720,12 @@ app.get('/api/admin/lab-quilt-preview', async (req, res) => {
     const stored = await getLabQuiltOverride(dateKey);
     const rq = req.query.reroll != null && req.query.reroll !== '' ? Math.max(0, Math.floor(Number(req.query.reroll) || 0)) : stored.reroll;
     const q = labQuilt.buildLabQuilt(blocks, dateKey, { style: style || stored.style, reroll: rq });
-    const png = labQuilt.renderLabQuiltPng(createCanvas, q.model);
+    // optional w/h (the viewer's screen) -> render at that aspect ratio, long edge capped at 1920, so the preview fills the screen
+    const qw = Number(req.query.w), qh = Number(req.query.h);
+    let pw = 1080, ph = 1920;
+    if (qw >= 200 && qh >= 200 && qw <= 8000 && qh <= 8000) { const f = 1920 / Math.max(qw, qh); pw = Math.round(qw * f); ph = Math.round(qh * f); }
+    const png = labQuilt.renderLabQuiltPng(createCanvas, q.model, { width: pw, height: ph });
+    res.setHeader('X-Lab-Reroll', String(q.reroll || 0));
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Lab-Engine-Version', q.version);
