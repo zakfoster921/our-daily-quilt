@@ -10598,6 +10598,42 @@ app.options('/api/admin/quilt-mutation', (req, res) => {
   return res.status(204).end();
 });
 
+/**
+ * Quilt Lab dry run (Phase 1): renders a day's quilt with the lab engine as a PNG. Read-only: nothing is written or uploaded.
+ * GET /api/admin/lab-quilt-preview?dateKey=YYYY-MM-DD[&style=bigtop|...]  (x-reset-token header or token query)
+ */
+app.get('/api/admin/lab-quilt-preview', async (req, res) => {
+  setResetApiCors(res);
+  try {
+    const expectedToken = String(process.env.RESET_TOKEN || '').trim();
+    const providedToken = String(req.header('x-reset-token') || tokenFromRequest(req) || '').trim();
+    if (!expectedToken) return res.status(500).json({ success: false, error: 'RESET_TOKEN is not configured on server' });
+    if (!providedToken || providedToken !== expectedToken) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    if (!db) return res.status(503).json({ success: false, error: 'Firestore not initialized' });
+    const dateKey = String(req.query.dateKey || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return res.status(400).json({ success: false, error: 'dateKey must be YYYY-MM-DD' });
+    const labQuilt = require('./lib/lab-quilt.js');
+    const [archiveSnap, quiltSnap] = await Promise.all([db.collection('archives').doc(dateKey).get(), db.collection('quilts').doc(dateKey).get()]);
+    const archived = archiveSnap.exists ? archiveSnap.data()?.quilt?.blocks : null;
+    const live = quiltSnap.exists ? quiltSnap.data()?.blocks : null;
+    const blocks = Array.isArray(archived) && archived.length > 1 ? archived : live;
+    if (!Array.isArray(blocks) || blocks.length < 2) return res.status(404).json({ success: false, error: `No quilt blocks for ${dateKey}` });
+    const style = labQuilt.STYLES && labQuilt.STYLES.includes(String(req.query.style || '')) ? String(req.query.style) : undefined;
+    const q = labQuilt.buildLabQuilt(blocks, dateKey, { style });
+    const png = labQuilt.renderLabQuiltPng(createCanvas, q.model, { matte: ARCHIVE_QUILT_PREVIEW_BG });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Lab-Engine-Version', q.version);
+    res.setHeader('X-Lab-Style', q.style);
+    res.setHeader('X-Lab-Colors', String(q.colorCount));
+    res.setHeader('X-Lab-Shapes', String(q.model.shapes.length));
+    return res.send(png);
+  } catch (error) {
+    console.error('lab-quilt-preview failed:', error);
+    return res.status(500).json({ success: false, error: String(error && error.message || error) });
+  }
+});
+
 app.post('/api/admin/quilt-mutation', limitAdminQuiltMutation, async (req, res) => {
   setResetApiCors(res);
   try {

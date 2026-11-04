@@ -597,11 +597,13 @@
     out.shapes = shapes.map((sh) => ({ pts: subdividePts(sh.pts, maxSeg).map(warp), fill: sh.fill, ci: sh.ci, cis: sh.cis }));
     out.cells = shapes.length; return out;
   }
+  const STYLES = ['bigtop', 'modern', 'improv', 'geometric', 'logcabin', 'strata', 'bars', 'radial'];
+  function styleForSeed(seed) { const r = mulberry32((seed >>> 0) ^ 0x5717e5)(); return r < 0.24 ? 'bigtop' : r < 0.38 ? 'modern' : r < 0.5 ? 'improv' : r < 0.6 ? 'geometric' : r < 0.72 ? 'logcabin' : r < 0.82 ? 'strata' : r < 0.9 ? 'bars' : 'radial'; }
   function build(colors, opts) {
     opts = opts || {};
     const seed = (opts.seed != null ? opts.seed : 1) >>> 0;
     let style = opts.style && opts.style !== 'auto' ? opts.style : null;
-    if (!style) { const r = mulberry32(seed ^ 0x5717e5)(); style = r < 0.24 ? 'bigtop' : r < 0.38 ? 'modern' : r < 0.5 ? 'improv' : r < 0.6 ? 'geometric' : r < 0.72 ? 'logcabin' : r < 0.82 ? 'strata' : r < 0.9 ? 'bars' : 'radial'; }
+    if (!style) style = styleForSeed(seed);
     if (!colors.length) return { W, H, shapes: [], cells: 0, style };
     const m = style === 'bigtop' ? buildBigTop(colors, opts) : buildFlat(colors, opts, style);
     m.style = style; return m;
@@ -614,6 +616,6 @@
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -12 ${model.W + 24} ${model.H + 24}" width="${opts.width || 400}"><defs><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.09 0"/></filter><clipPath id="qc"><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}"/></clipPath></defs><rect x="-12" y="-12" width="${model.W + 24}" height="${model.H + 24}" fill="${bg}"/><g clip-path="url(#qc)">${paths}</g><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}" filter="url(#grain)"/></svg>`;
   }
 
-  const api = { build, toSvg, W, H, dE };
+  const api = { build, toSvg, W, H, dE, STYLES, styleForSeed, VERSION: 'lab-1' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.QuiltLabEngine = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
