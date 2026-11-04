@@ -89,6 +89,9 @@ async function main() {
       const ui = app.uiService || window.uiService;
       try { ui?.showScreen?.('screen-quilt', { skipQuiltScrollCue: true }); } catch (_) {}
       document.getElementById('screen-quilt')?.classList.add('active');
+      // Pin as "today" so any later app refresh keeps this quote (same trick the admin preview uses).
+      try { qs._pinnedByDateKey[qs.getQuoteCalendarKeyNow()] = quote; } catch (_) {}
+      try { app._adminPreview = { dateKey: qs.getQuoteCalendarKeyNow(), quote }; } catch (_) {}
       app.refreshQuoteSpeakerWidget(quote);
       return {
         dateKey,
@@ -108,6 +111,17 @@ async function main() {
       return !!wrap && !wrap.hidden && !!img && !img.hidden && img.complete && img.naturalWidth > 0;
     }, undefined, { timeout: 90000 });
     await page.waitForTimeout(6000);
+
+    // Safety: the widget must actually show the speaker we resolved, or we never save/upload.
+    const shown = await page.evaluate(() => ({
+      name: String(document.getElementById('quoteSpeakerName')?.textContent || '').trim(),
+      src: String(document.getElementById('quoteSpeakerImage')?.currentSrc || '')
+    }));
+    const wantFile = decodeURIComponent(String(info.cutoutUrl || '').split('?')[0].split('/').pop() || '');
+    const nameOk = !info.speaker || shown.name.toLowerCase() === info.speaker.toLowerCase();
+    const srcOk = !wantFile || decodeURIComponent(shown.src).includes(wantFile.replace(/^.*speaker-cutouts\//, ''));
+    log('widget shows', JSON.stringify(shown), 'nameOk', nameOk, 'srcOk', srcOk);
+    if (!nameOk || !srcOk) throw new Error('Widget is showing a different speaker than the resolved quote; refusing to bake.');
 
     const widget = page.locator('#quoteSpeakerWidget');
     await widget.scrollIntoViewIfNeeded();
