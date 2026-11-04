@@ -4709,8 +4709,25 @@ async function uploadFinalArchiveQuiltPreview(db, dateKey, blocks) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
   if (!Array.isArray(blocks) || blocks.length <= 1) return null;
 
-  const pngDataUrl = await generateArchiveQuiltPreviewFromBlocks(blocks);
-  const pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
+  // Quilt Lab: the archive screen's image is the lab-engine quilt (same design as the Instagram and in-app quilt, incl. the admin's per-day override);
+  // any failure falls back to the classic preview so an archive entry never goes without an image.
+  let pngBuf = null;
+  let engineTag = 'classic';
+  if (String(process.env.LAB_QUILT_ARCHIVE_DISABLED || '').trim() !== '1') {
+    try {
+      const labQuilt = require('./lib/lab-quilt.js');
+      const lq = labQuilt.buildLabQuilt(blocks, key, await getLabQuiltOverride(key));
+      pngBuf = labQuilt.renderLabQuiltPng(createCanvas, lq.model);
+      engineTag = lq.version;
+    } catch (labErr) {
+      console.warn(`Lab archive preview for ${key} failed, using classic:`, String(labErr?.message || labErr).slice(0, 200));
+      pngBuf = null;
+    }
+  }
+  if (!pngBuf) {
+    const pngDataUrl = await generateArchiveQuiltPreviewFromBlocks(blocks);
+    pngBuf = parsePngDataUrlToBuffer(pngDataUrl);
+  }
   const { publicUrl } = await firebaseSaveDownloadableFile(
     `archives/${key}/quilt-preview.png`,
     pngBuf,
@@ -4721,6 +4738,7 @@ async function uploadFinalArchiveQuiltPreview(db, dateKey, blocks) {
       quiltImageUrl: publicUrl,
       quiltImageSource: ARCHIVE_QUILT_IMAGE_SOURCE,
       quiltImageBlockCount: blocks.length,
+      quiltImageEngine: engineTag,
       quiltImageUpdatedAt: getUtcIsoNow()
     },
     { merge: true }
