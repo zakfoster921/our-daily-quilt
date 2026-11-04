@@ -1,0 +1,32 @@
+name: Inspect quilt doc (read-only)
+on:
+  workflow_dispatch:
+    inputs:
+      date_key:
+        description: "YYYY-MM-DD"
+        required: false
+        default: "2026-11-04"
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Inspect
+        env:
+          DATE_KEY: ${{ inputs.date_key }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+        run: node scripts/inspect-quilt-doc.cjs
+      - name: Publish to branch
+        if: always()
+        run: |
+          cd tmp/inspect
+          git init -q && git checkout -q -b quilt-inspect
+          git config user.email "bot@users.noreply.github.com" && git config user.name "inspect-bot"
+          git add -A && git commit -qm "inspect" 
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" quilt-inspect
