@@ -64,7 +64,20 @@ async function main() {
       }
       if (forceDate && !quote) {
         dateKey = forceDate;
-        try { quote = (await qs.resolveQuoteForCalendarKeyFresh(forceDate)) || qs.getQuoteForDate(forceDate); } catch (_) {}
+        const tries = [
+          ['resolveQuoteForCalendarKeyFresh', () => qs.resolveQuoteForCalendarKeyFresh(forceDate)],
+          ['getQuoteResolvedForInstagramDateKey', () => qs.getQuoteResolvedForInstagramDateKey(forceDate)],
+          ['getQuoteForDate', () => qs.getQuoteForDate(forceDate)]
+        ];
+        const seen = [];
+        for (const [name, fn] of tries) {
+          let q = null;
+          try { q = await fn(); } catch (e) { seen.push(name + ': error ' + (e?.message || e)); continue; }
+          seen.push(name + ': ' + (q?.text ? String(q.speaker || q.author || '?') : 'none'));
+          if (q?.text && !quote) quote = q;
+        }
+        window.__resolveLog = seen;
+        if (!quote) throw new Error('Could not resolve a quote for ' + forceDate + ' :: ' + seen.join(' | '));
       }
       for (let i = 0; i < 60 && !quote?.text; i++) {
         quote = (await qs.getTodayQuote?.()) || app.getEffectiveQuiltQuote?.() || null;
@@ -81,7 +94,8 @@ async function main() {
         dateKey,
         hasQuote: !!quote?.text,
         cutoutUrl: String(quote?.speakerCutoutUrl || quote?.cutoutUrl || '').trim(),
-        speaker: String(quote?.speaker || quote?.author || '').trim()
+        speaker: String(quote?.speaker || quote?.author || '').trim(),
+        resolveLog: window.__resolveLog || null
       };
     }, { speakerName: process.env.SPEAKER_NAME || '', forceDate: process.env.DATE_KEY || '' });
     log('quote', JSON.stringify(info));
