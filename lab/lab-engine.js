@@ -481,7 +481,7 @@
 
   function geometricShapes(colors, rnd, seed) {
     // modules halve like a quadtree (1:1 and 1:2 rectangles); each draws its own color with a bold primitive in its sibling's color
-    const n = colors.length; let mods = [{ x0: 0, y0: 0, x1: W, y1: H, ci: 0, pc: -1 }];
+    const CAP = 100, SIM = 15, n = Math.min(colors.length, CAP); let mods = [{ x0: 0, y0: 0, x1: W, y1: H, ci: 0, pc: -1 }];
     for (let i = 1; i < n; i++) {
       const cand = mods.filter((m) => Math.min(m.x1 - m.x0, m.y1 - m.y0) > 70), pool = cand.length ? cand : mods;
       let tot = 0; const wts = pool.map((m) => { const w = Math.pow((m.x1 - m.x0) * (m.y1 - m.y0), 1.4); tot += w; return w; }); let r = rnd() * tot, pick = pool[pool.length - 1];
@@ -495,7 +495,7 @@
     const shapes = [];
     mods.forEach((m) => {
       const x0 = m.x0, y0 = m.y0, x1 = m.x1, y1 = m.y1, cs = x1 - x0, rs = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(cs, rs);
-      shapes.push({ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[m.ci], ci: m.ci });
+      const base = { pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[m.ci], ci: m.ci }; shapes.push(base); m.shape = base;
       if (m.pc < 0 || rad < 64) return; // tiny modules stay flat so shapes only appear where they can read
       if (hash01(x0 * 2.3 + y0 * 8.1 + x1 * 4.7 + y1 * 1.9 + seed * 0.91) > 0.55) return; // about half the modules stay flat for calm between the shapes
       const hr = (k) => hash01(x0 * 7.1 + y0 * 3.7 + x1 * 1.3 + y1 * 5.9 + seed * 0.37 + k), prims = ['quarter', 'half', 'circle', 'tri', 'bar', 'diamond'], kind = prims[Math.floor(hr(1) * prims.length)], rot = Math.floor(hr(2) * 4);
@@ -510,6 +510,14 @@
       else pts = [[cx, y0 + rs * 0.08], [x1 - cs * 0.08, cy], [cx, y1 - rs * 0.08], [x0 + cs * 0.08, cy]];
       shapes.push({ pts, fill: colors[m.pc], ci: m.pc });
     });
+    // past the cap: a close-enough color shares an existing module (its contributor id is added); an outlier gets a small patch of its own
+    for (let i = n; i < colors.length; i++) {
+      let best = null, bd = 1e9; mods.forEach((m) => { const d = dE(colors[i], colors[m.ci]); if (d < bd) { bd = d; best = m; } });
+      if (best && bd < SIM) { (best.shape.cis = best.shape.cis || [best.shape.ci]).push(i); continue; }
+      const hosts = mods.filter((m) => Math.min(m.x1 - m.x0, m.y1 - m.y0) >= 64), pool = hosts.length ? hosts : mods, hm = pool[Math.floor(hash01(i * 17.3 + seed * 0.7) * pool.length)];
+      const side = Math.min(hm.x1 - hm.x0, hm.y1 - hm.y0) * 0.36, rot = Math.floor(hash01(i * 5.1 + seed) * 4), px = rot % 3 === 0 ? hm.x0 : hm.x1 - side, py = rot < 2 ? hm.y0 : hm.y1 - side, circ = hash01(i * 9.9 + seed) < 0.5;
+      shapes.push({ pts: circ ? Array.from({ length: 20 }, (_, k) => { const a = (k / 20) * Math.PI * 2; return [px + side / 2 + Math.cos(a) * side / 2, py + side / 2 + Math.sin(a) * side / 2]; }) : [[px, py], [px + side, py], [px + side, py + side], [px, py + side]], fill: colors[i], ci: i });
+    }
     return shapes;
   }
 
@@ -586,7 +594,7 @@
     }
     const vr = mulberry32(seed ^ 0x51ed270b), grpTone = {}; shapes.forEach((sh) => { if (sh.ci == null) { const k = colors.indexOf(sh.fill); if (k >= 0) sh.ci = k; } let t; if (sh.grp != null && grpTone[sh.grp] != null) t = grpTone[sh.grp]; else { t = (vr() - 0.5) * (style === 'modern' ? 0.03 : 0.07); if (sh.grp != null) grpTone[sh.grp] = t; } sh.fill = shade(sh.fill, t); });
     const warp = flatWarp(seed, opts.wonk != null ? amp * opts.wonk : amp);
-    out.shapes = shapes.map((sh) => ({ pts: subdividePts(sh.pts, maxSeg).map(warp), fill: sh.fill, ci: sh.ci }));
+    out.shapes = shapes.map((sh) => ({ pts: subdividePts(sh.pts, maxSeg).map(warp), fill: sh.fill, ci: sh.ci, cis: sh.cis }));
     out.cells = shapes.length; return out;
   }
   function build(colors, opts) {
