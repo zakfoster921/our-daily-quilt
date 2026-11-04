@@ -1855,9 +1855,9 @@ async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
   const scaleX = drawWidth / sourceWidth;
   const scaleY = drawHeight / sourceHeight;
 
-  // Quilt Lab (opt-in): LAB_QUILT_INSTAGRAM=1 swaps in the lab-engine quilt for the same 9:16 area; any failure falls back to the classic blocks below.
+  // Quilt Lab (ON by default; set LAB_QUILT_INSTAGRAM=0 to disable) swaps in the lab-engine quilt for the same 9:16 area; any failure falls back to the classic blocks below.
   let drewLabQuilt = false;
-  if (String(process.env.LAB_QUILT_INSTAGRAM || '').trim() === '1' && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.dateKey || ''))) {
+  if (String(process.env.LAB_QUILT_INSTAGRAM || '').trim() !== '0' && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.dateKey || ''))) {
     try {
       const labQuilt = require('./lib/lab-quilt.js');
       const lq = labQuilt.buildLabQuilt(blocks, opts.dateKey);
