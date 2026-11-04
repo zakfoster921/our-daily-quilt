@@ -210,6 +210,22 @@ jobs:
             NIGHTLY_IG_ARTIFACTS_DIR="${NIGHTLY_IG_ARTIFACTS_DIR}" \
             npm run nightly:newspaper-clipping
 
+      - name: Bake speaker portraits (today + tomorrow; skips if unchanged)
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          TOMORROW_KEY: ${{ steps.resolve_tomorrow.outputs.tomorrow_date_key }}
+          TODAY_KEY: ${{ steps.resolve_date.outputs.date_key }}
+        run: |
+          for DK in "${TODAY_KEY}" "${TOMORROW_KEY}"; do
+            [ -z "${DK}" ] && continue
+            echo "== bake ${DK} =="
+            APP_URL="http://127.0.0.1:8765/our-daily-beta.html" PREVIEW=0 DATE_KEY="${DK}" \
+              ARTIFACTS_DIR="tmp/speaker-portrait-${DK}" node scripts/generate-speaker-portrait.cjs || echo "bake ${DK} failed (non-fatal)"
+          done
+
       - name: Stop local app server
         if: always()
         run: |

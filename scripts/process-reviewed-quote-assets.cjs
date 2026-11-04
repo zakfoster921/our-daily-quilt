@@ -208,6 +208,20 @@ async function main() {
     }
   }
 
+  if (dateKey && !opts.skipCutout) {
+    try {
+      const prevEnv = { ...process.env };
+      process.env.PREVIEW = '0';
+      process.env.DATE_KEY = dateKey;
+      process.env.APP_URL = String(prevEnv.APP_URL || 'http://127.0.0.1:8765/our-daily-beta.html');
+      process.env.ARTIFACTS_DIR = path.join(ROOT, 'tmp', 'speaker-portrait-' + dateKey);
+      if (opts.force) process.env.FORCE = '1';
+      runNodeScript('generate-speaker-portrait.cjs', [], 'bake speaker portrait');
+    } catch (err) {
+      console.warn(`[reviewed-assets] portrait bake failed (non-fatal): ${err.message}`);
+    }
+  }
+
   const assets = await readQuoteAssets(db, opts.pageId, dateKey);
   const { properties, speakerProp, clippingProp } = buildNotionQuoteAssetProperties(schema, assets);
 
