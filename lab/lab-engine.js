@@ -147,12 +147,15 @@
     };
     const baseBig = Math.min(W, H) * (0.2 + Math.min(0.06, n * 0.0012));
     // integrating frame: field + sawtooth ring + outer ring, so the medallion is set INTO the quilt
-    const frameOn = opts.frame === 'on' ? true : opts.frame === 'off' ? false : mrnd() < 0.75;
+    const frameOn = opts.frame === 'on' ? true : opts.frame === 'off' ? false : mrnd() < 0.9;
     const frameAt = (cx, cy, R0) => {
-      const N = 28, ringW = R0 * 0.2;
+      const N = 28, Ro = R0 * 1.2, P = (a, r) => [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
       disc(cx, cy, R0 * 1.01, cc(5));
-      for (let i = 0; i < N; i++) { const a0 = (i / N) * Math.PI * 2, a1 = ((i + 1) / N) * Math.PI * 2, am = (a0 + a1) / 2; med.push({ pts: [[cx + Math.cos(a0) * R0, cy + Math.sin(a0) * R0], [cx + Math.cos(a1) * R0, cy + Math.sin(a1) * R0], [cx + Math.cos(am) * (R0 + ringW), cy + Math.sin(am) * (R0 + ringW)]], fill: cc(6) }); }
-      disc(cx, cy, R0 * 0.985, cc(5));
+      for (let i = 0; i < N; i++) {
+        const a0 = (i / N) * Math.PI * 2, a1 = ((i + 1) / N) * Math.PI * 2, am = (a0 + a1) / 2, a2 = ((i + 2) / N) * Math.PI * 2, am2 = (a1 + a2) / 2;
+        med.push({ pts: [P(a0, R0), P(a1, R0), P(am, Ro)], fill: cc(6) });
+        med.push({ pts: [P(am, Ro), P(am2, Ro), P(a1, R0)], fill: cc(2) });
+      }
     };
     const FR = { star: [CX, H * 0.42, baseBig * 1.42], small: [CX, H * 0.5, baseBig * 0.74], dresden: [CX, H * 0.44, baseBig * 1.45 * 1.14], flower: [CX, H * 0.44, baseBig * 1.55 * 1.02], wreath: [CX, H * 0.44, baseBig * 1.5 * 1.12], bullseye: [CX, H * 0.44, baseBig * 1.4 * 1.1] };
     out.frame = frameOn && n >= 4 && !!FR[kind];
@@ -168,7 +171,33 @@
       else if (kind === 'bullseye') bullseye(CX, H * 0.44, baseBig * 1.4, [cc(1), cc(2), cc(3), cc(4)]);
     }
 
-    const all = shapesL.concat(mirrored, med);
+    // set the medallion INTO the patchwork: cut surrounding pieces at its outer edge (they abut, not slide under)
+    let bgShapes = shapesL.concat(mirrored);
+    if (out.frame) {
+      const [fx, fy, fr] = FR[kind], Ro = fr * 1.2, M = 72;
+      const clip = Array.from({ length: M }, (_, i) => { const a = (i / M) * Math.PI * 2; return [fx + Math.cos(a) * Ro, fy + Math.sin(a) * Ro]; });
+      const cross = (a, b, p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+      const split = (poly, a, b) => {
+        const ins = [], outs = [];
+        for (let i = 0; i < poly.length; i++) {
+          const p = poly[i], q = poly[(i + 1) % poly.length], cp = cross(a, b, p), cq = cross(a, b, q);
+          if (cp >= 0) ins.push(p); else outs.push(p);
+          if ((cp >= 0) !== (cq >= 0)) { const t = cp / (cp - cq), x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; ins.push(x); outs.push(x); }
+        }
+        return { ins, outs };
+      };
+      const cut = [];
+      bgShapes.forEach((sh) => {
+        let rem = sh.pts;
+        for (let i = 0; i < M && rem.length >= 3; i++) {
+          const r = split(rem, clip[i], clip[(i + 1) % M]);
+          if (r.outs.length >= 3 && area(r.outs) > 0.5) cut.push({ pts: r.outs, fill: sh.fill });
+          rem = r.ins;
+        }
+      });
+      bgShapes = cut;
+    }
+    const all = bgShapes.concat(med);
     // fabric-like tone variation (seeded, per shape)
     const vr = mulberry32(seed ^ 0x51ed270b);
     all.forEach((s) => { s.fill = shade(s.fill, (vr() - 0.5) * 0.07); });
@@ -189,7 +218,7 @@
 
   function toSvg(model, opts) {
     opts = opts || {};
-    const paths = model.shapes.map((s) => `<path d="M${s.pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L')}Z" fill="${s.fill}" stroke="${s.fill}" stroke-width="0.9" stroke-linejoin="round"/>`).join('');
+    const paths = model.shapes.map((s) => `<path d="M${s.pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L')}Z" fill="${s.fill}" stroke="${s.fill}" stroke-width="1.4" stroke-linejoin="round"/>`).join('');
     const bg = model.shapes.length ? model.shapes[0].fill : '#f6f4f1';
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -12 ${model.W + 24} ${model.H + 24}" width="${opts.width || 400}"><defs><filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.09 0"/></filter><clipPath id="qc"><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}"/></clipPath></defs><rect x="-12" y="-12" width="${model.W + 24}" height="${model.H + 24}" fill="${bg}"/><g clip-path="url(#qc)">${paths}</g><rect x="-6" y="-6" width="${model.W + 12}" height="${model.H + 12}" filter="url(#grain)"/></svg>`;
   }
