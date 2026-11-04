@@ -80,10 +80,10 @@
 
     const mrnd = mulberry32(seed ^ 0x7777aaaa);
     let kind = opts.center && opts.center !== 'auto' ? opts.center : null;
-    if (!kind) { const r = mrnd(); kind = r < 0.12 ? 'none' : r < 0.22 ? 'star' : r < 0.29 ? 'small' : r < 0.34 ? 'spine' : r < 0.39 ? 'pair' : r < 0.49 ? 'dresden' : r < 0.58 ? 'flower' : r < 0.66 ? 'wreath' : r < 0.72 ? 'bullseye' : r < 0.79 ? 'arches' : r < 0.86 ? 'orbs' : r < 0.93 ? 'plus' : 'pie'; }
+    if (!kind) { const r = mrnd(); kind = r < 0.12 ? 'none' : r < 0.22 ? 'star' : r < 0.29 ? 'small' : r < 0.34 ? 'spine' : r < 0.39 ? 'pair' : r < 0.49 ? 'dresden' : r < 0.58 ? 'flower' : r < 0.66 ? 'wreath' : r < 0.72 ? 'bullseye' : r < 0.76 ? 'arches' : r < 0.82 ? 'orbs' : r < 0.87 ? 'plus' : r < 0.92 ? 'pie' : 'nine'; }
     if (kind === 'pair' && !(opts.center === 'pair') && mulberry32(seed ^ 0x1234abcd)() < 0.5) kind = 'pairv';
     out.center = kind;
-    const MODERN = ['arches', 'orbs', 'plus', 'pie'].includes(kind);
+    const MODERN = ['arches', 'orbs', 'plus', 'pie', 'nine'].includes(kind);
 
     // left half as one big quad (slightly overlapping the center seam)
     const mkCell = (q, c, ci) => ({ q, color: c, ci, locked: false, a: area(q) });
@@ -240,6 +240,14 @@
           const L = baseBig * 1.5 * sc, t = L * 0.27, e = 1.07;
           outline(rect(CX - L * e, cy - t * e, CX + L * e, cy + t * e)); outline(rect(CX - t * e, cy - L * e, CX + t * e, cy + L * e));
           med.push({ pts: rect(CX - L, cy - t, CX + L, cy + t), fill: cc(1) }, { pts: rect(CX - t, cy - L, CX + t, cy + L), fill: cc(2) }, { pts: rect(CX - t * 0.9, cy - t * 0.9, CX + t * 0.9, cy + t * 0.9), fill: cc(3) });
+        } else if (kind === 'nine') {
+          // nine-patch medallion: a 3x3 block of squares — field corners, a vertical and a horizontal bar, and a center square
+          const c = baseBig * 0.82 * sc, x0 = CX - 1.5 * c, y0 = cy - 1.5 * c, sq = (i, j) => [[x0 + i * c, y0 + j * c], [x0 + (i + 1) * c, y0 + j * c], [x0 + (i + 1) * c, y0 + (j + 1) * c], [x0 + i * c, y0 + (j + 1) * c]];
+          clips.push(rect(x0, y0, x0 + 3 * c, y0 + 3 * c));
+          for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+            const corner = i !== 1 && j !== 1, center = i === 1 && j === 1;
+            med.push({ pts: sq(i, j), fill: corner ? cc(0) : center ? cc(3) : (j === 1 ? cc(1) : cc(2)), corner, noSlot: corner, cell: [x0 + i * c, y0 + j * c, c] });
+          }
         } else {
           const R = baseBig * 1.3 * sc, wedge = (a0, a1, r) => [[CX, cy]].concat(Array.from({ length: 16 }, (_, i) => { const a = a0 + (i / 15) * (a1 - a0); return [CX + Math.cos(a) * r, cy + Math.sin(a) * r]; }));
           outline(circlePoly(CX, cy, R * 1.07));
@@ -279,7 +287,7 @@
       const clips = buildMed(plc, sc), cut = cutAll(clips), r = ratios(cut);
       const hidden = Object.keys(r).filter((k) => r[k] < MIN_VISIBLE).map(Number);
       const slots = med.filter((m) => m.slot);
-      if (hidden.length > Math.min(slots.length, 8)) continue;
+      if (hidden.length > (kind === 'nine' ? 8 : Math.min(slots.length, 8))) continue;
       const cand = { plc, sc, cut, hidden, medCopy: med.slice(), clips };
       if (!best || hidden.length < best.hidden.length) best = cand;
       if (hidden.length <= 2) { chosen = cand; break outer; }
@@ -289,7 +297,12 @@
       bgShapes = chosen.cut; med.length = 0; chosen.medCopy.forEach((m) => med.push(m));
       if (chosen.hidden.length) {
         const slots = med.filter((m) => m.slot);
-        if (K) slots.forEach((m, j) => { m.fill = colors[chosen.hidden[j % chosen.hidden.length]]; });
+        if (kind === 'nine') {
+          // keep the plus on its ground; show hidden colors as pieced strips in the four corner squares
+          const h = chosen.hidden, mStrips = Math.ceil(h.length / 4), corners = med.filter((m) => m.corner), rest = med.filter((m) => !m.corner);
+          med.length = 0; rest.forEach((m) => med.push(m));
+          corners.forEach((m, ci) => { const [cx0, cy0, cs] = m.cell; for (let t = 0; t < mStrips; t++) { const x1 = cx0 + (t * cs) / mStrips, x2 = cx0 + ((t + 1) * cs) / mStrips; med.unshift({ pts: [[x1, cy0], [x2, cy0], [x2, cy0 + cs], [x1, cy0 + cs]], fill: colors[h[(ci * mStrips + t) % h.length]] }); } });
+        } else if (K) slots.forEach((m, j) => { m.fill = colors[chosen.hidden[j % chosen.hidden.length]]; });
         else slots.slice().sort((x, y) => area(y.pts) - area(x.pts)).slice(0, chosen.hidden.length).forEach((m, j) => { m.fill = colors[chosen.hidden[j]]; });
         const hc = chosen.hidden.map((i) => colors[i]);
         med.filter((m) => m.field).forEach((m) => { let bc = m.fill, bd = -1; medPal.concat(colors).forEach((c) => { const d = Math.min(...hc.map((q) => dE(c, q))); if (d > bd) { bd = d; bc = c; } }); if (bd < 30) bc = shade(bc, hc.every((q) => labOf(q)[0] > 55) ? -0.55 : 0.55); m.fill = bc; });
