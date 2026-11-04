@@ -431,16 +431,26 @@
   function radialShapes(colors, rnd) {
     const n = colors.length, cx = W * (0.38 + rnd() * 0.24), cy = H * (0.32 + rnd() * 0.26), a = W / 2, b = H / 2.4;
     const rings = n > 40 ? 3 : n > 16 ? 2 : 1, bounds = rings === 1 ? [0.14, 2.4] : rings === 2 ? [0.12, 0.55, 2.4] : [0.1, 0.4, 0.75, 2.4];
-    const shapes = [{ pts: Array.from({ length: 32 }, (_, i) => { const t = (i / 32) * Math.PI * 2; return [cx + Math.cos(t) * a * bounds[0], cy + Math.sin(t) * b * bounds[0]]; }), fill: colors[0] }];
+    // wobbly: ring boundaries undulate, and each ray bends a little, shared by neighbours so seams stay closed
+    const ph = bounds.map(() => [rnd() * 6.28, rnd() * 6.28, 0.04 + rnd() * 0.05]);
+    const R = (bi, ang) => bounds[bi] * (1 + (bi === bounds.length - 1 ? 0 : ph[bi][2]) * (Math.sin(2 * ang + ph[bi][0]) + 0.6 * Math.sin(5 * ang + ph[bi][1])));
+    const P = (bi, ang) => [cx + Math.cos(ang) * a * R(bi, ang), cy + Math.sin(ang) * b * R(bi, ang)];
+    const hub = Array.from({ length: 40 }, (_, i) => P(0, (i / 40) * Math.PI * 2));
+    const shapes = [{ pts: hub, fill: colors[0] }];
     const rest = colors.slice(1), per = Array(rings).fill(0).map((_, i) => Math.floor(rest.length / rings) + (i < rest.length % rings ? 1 : 0)); let ci = 0;
     for (let rg = 0; rg < rings; rg++) {
-      const m = per[rg], ws = Array.from({ length: m }, () => 0.6 + rnd() * 1.1), tw = ws.reduce((x, y) => x + y, 0); let ang = rnd() * Math.PI * 2;
-      const r0 = bounds[rg], r1 = bounds[rg + 1];
+      const m = per[rg]; if (!m) continue;
+      const ws = Array.from({ length: m }, () => 0.6 + rnd() * 1.1), tw = ws.reduce((x, y) => x + y, 0), a0 = rnd() * Math.PI * 2;
+      const angs = [a0]; ws.forEach((w) => angs.push(angs[angs.length - 1] + (w / tw) * Math.PI * 2));
+      const bend = angs.map(() => [(rnd() - 0.5) * 0.16, rnd() * 6.28]); bend[m] = bend[0];
+      const ray = (j, t) => { const an = angs[j] + bend[j][0] * Math.sin(t * Math.PI * 1.3 + bend[j][1]); const r0 = R(rg, an), r1 = R(rg + 1, an), r = r0 + (r1 - r0) * t; return [cx + Math.cos(an) * a * r, cy + Math.sin(an) * b * r]; };
       for (let j = 0; j < m; j++) {
-        const da = (ws[j] / tw) * Math.PI * 2, steps = Math.max(3, Math.ceil(da * 10)), pts = [];
-        for (let t = 0; t <= steps; t++) { const an = ang + (t / steps) * da; pts.push([cx + Math.cos(an) * a * r0, cy + Math.sin(an) * b * r0]); }
-        for (let t = steps; t >= 0; t--) { const an = ang + (t / steps) * da; pts.push([cx + Math.cos(an) * a * r1, cy + Math.sin(an) * b * r1]); }
-        shapes.push({ pts, fill: rest[ci++] }); ang += da;
+        const pts = [], ST = 10, da = angs[j + 1] - angs[j], AS = Math.max(3, Math.ceil(da * 10));
+        for (let t = 0; t <= ST; t++) pts.push(ray(j, t / ST));
+        for (let k = 1; k < AS; k++) pts.push(P(rg + 1, angs[j] + (k / AS) * da));
+        for (let t = ST; t >= 0; t--) pts.push(ray(j + 1, t / ST));
+        for (let k = AS - 1; k > 0; k--) pts.push(P(rg, angs[j] + (k / AS) * da));
+        shapes.push({ pts, fill: rest[ci++] });
       }
     }
     return shapes;
@@ -472,7 +482,7 @@
     } else if (style === 'logcabin') { shapes = logCabinShapes(colors, rnd); amp = 0.9;
     } else if (style === 'strata') { shapes = strataShapes(colors, rnd); amp = 1.0;
     } else if (style === 'bars') { shapes = barShapes(colors, rnd); amp = 0.8;
-    } else if (style === 'radial') { shapes = radialShapes(colors, rnd); amp = 0.8;
+    } else if (style === 'radial') { shapes = radialShapes(colors, rnd); amp = 1.5;
     } else if (style === 'improv') {
       // improvisational strips: slanted cuts, long narrow pieces, strong wobble, asymmetric (Gee's Bend spirit)
       const cells = bspFull(colors, rnd, { areaPow: 1.1, recent: 0, recentBoost: 1, slant: 0.5, ratio: (r) => 0.16 + r() * 0.5 });
