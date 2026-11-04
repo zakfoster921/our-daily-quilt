@@ -496,14 +496,15 @@
     mods.forEach((m) => {
       const x0 = m.x0, y0 = m.y0, x1 = m.x1, y1 = m.y1, cs = x1 - x0, rs = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(cs, rs);
       shapes.push({ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[m.ci], ci: m.ci });
-      if (m.pc < 0) return;
+      if (m.pc < 0 || rad < 64) return; // tiny modules stay flat so shapes only appear where they can read
+      if (hash01(x0 * 2.3 + y0 * 8.1 + x1 * 4.7 + y1 * 1.9 + seed * 0.91) > 0.55) return; // about half the modules stay flat for calm between the shapes
       const hr = (k) => hash01(x0 * 7.1 + y0 * 3.7 + x1 * 1.3 + y1 * 5.9 + seed * 0.37 + k), prims = ['quarter', 'half', 'circle', 'tri', 'bar', 'diamond'], kind = prims[Math.floor(hr(1) * prims.length)], rot = Math.floor(hr(2) * 4);
       const arc = (ox, oy, r0, a0, a1, extra) => [].concat(extra || [], Array.from({ length: 20 }, (_, i) => { const a = a0 + (i / 19) * (a1 - a0); return [ox + Math.cos(a) * r0, oy + Math.sin(a) * r0]; }));
       const corner = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]][rot], qa = (rot * Math.PI) / 2;
       let pts;
       if (kind === 'quarter') pts = arc(corner[0], corner[1], rad * 0.98, qa, qa + Math.PI / 2, [corner]);
       else if (kind === 'half') pts = rot % 2 ? arc(cx, y0 + (rot === 1 ? 0 : rs), rad * 0.5, rot === 1 ? 0 : Math.PI, rot === 1 ? Math.PI : Math.PI * 2) : arc(x0 + (rot === 0 ? 0 : cs), cy, rad * 0.5, rot === 0 ? -Math.PI / 2 : Math.PI / 2, rot === 0 ? Math.PI / 2 : Math.PI * 1.5);
-      else if (kind === 'circle') pts = arc(cx, cy, rad * 0.4, 0, Math.PI * 2);
+      else if (kind === 'circle') pts = arc(cx, cy, rad * 0.44, 0, Math.PI * 2);
       else if (kind === 'tri') pts = [[x0, y0], [x1, y1], rot % 2 ? [x1, y0] : [x0, y1]];
       else if (kind === 'bar') pts = rot % 2 ? [[x0 + cs * 0.3, y0], [x0 + cs * 0.7, y0], [x0 + cs * 0.7, y1], [x0 + cs * 0.3, y1]] : [[x0, y0 + rs * 0.3], [x1, y0 + rs * 0.3], [x1, y0 + rs * 0.7], [x0, y0 + rs * 0.7]];
       else pts = [[cx, y0 + rs * 0.08], [x1 - cs * 0.08, cy], [cx, y1 - rs * 0.08], [x0 + cs * 0.08, cy]];
