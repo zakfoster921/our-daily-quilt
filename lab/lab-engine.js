@@ -104,17 +104,26 @@
     });
     const mirrored = shapesL.map((s) => ({ pts: s.pts.map(([x, y]) => [W - x, y]), fill: s.fill }));
 
-    // center medallion (symmetrical, traditional): concentric diamond rings + disc
+    // center motif: varies by day/seed so not every quilt gets the big star
+    const mrnd = mulberry32(seed ^ 0x7777aaaa);
+    let kind = opts.center && opts.center !== 'auto' ? opts.center : null;
+    if (!kind) { const r = mrnd(); kind = r < 0.32 ? 'none' : r < 0.55 ? 'star' : r < 0.72 ? 'small' : r < 0.87 ? 'spine' : 'pair'; }
+    out.center = kind;
     const med = [];
-    const mc = [CX, H * 0.42], base = Math.min(W, H) * (0.2 + Math.min(0.06, n * 0.0012));
-    const cs = [colors[0], colors[Math.min(n - 1, 1)], colors[Math.min(n - 1, 2)], colors[Math.min(n - 1, 3)]];
-    const ring = (rad, fill, rot) => med.push({ pts: Array.from({ length: 4 }, (_, i) => { const a = Math.PI / 4 + (i * Math.PI) / 2 + (rot || 0); return [mc[0] + Math.cos(a) * rad, mc[1] + Math.sin(a) * rad]; }), fill });
-    ring(base * 1.38, cs[1]); ring(base * 1.08, cs[2], 0); ring(base * 0.78, cs[3], 0);
-    med.push({ pts: discPts(mc[0], mc[1], base * 0.46, 36, rnd), fill: cs[0] });
-    const star = Array.from({ length: 16 }, (_, i) => { const a = (i / 16) * Math.PI * 2 - Math.PI / 2; const rr = i % 2 ? base * 0.2 : base * 0.4; return [mc[0] + Math.cos(a) * rr, mc[1] + Math.sin(a) * rr]; });
-    med.push({ pts: star, fill: cs[2] });
+    const cc = (k) => colors[Math.min(n - 1, k)];
+    const diamond = (cx, cy, rad, fill) => med.push({ pts: Array.from({ length: 4 }, (_, i) => { const a = Math.PI / 4 + (i * Math.PI) / 2; return [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad]; }), fill });
+    const disc = (cx, cy, rad, fill) => med.push({ pts: discPts(cx, cy, rad, 32, mrnd), fill });
+    const starAt = (cx, cy, rad, fill) => med.push({ pts: Array.from({ length: 16 }, (_, i) => { const a = (i / 16) * Math.PI * 2 - Math.PI / 2; const rr = i % 2 ? rad * 0.5 : rad; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }), fill });
+    const medallion = (cx, cy, base, k0) => { diamond(cx, cy, base * 1.38, cc(k0 + 1)); diamond(cx, cy, base * 1.08, cc(k0 + 2)); diamond(cx, cy, base * 0.78, cc(k0 + 3)); disc(cx, cy, base * 0.46, cc(k0)); starAt(cx, cy, base * 0.4, cc(k0 + 2)); };
+    const baseBig = Math.min(W, H) * (0.2 + Math.min(0.06, n * 0.0012));
+    if (n >= 4) {
+      if (kind === 'star') medallion(CX, H * 0.42, baseBig, 0);
+      else if (kind === 'small') { const b = baseBig * 0.5; diamond(CX, H * 0.5, b * 1.4, cc(2)); disc(CX, H * 0.5, b * 0.8, cc(1)); starAt(CX, H * 0.5, b * 0.55, cc(3)); }
+      else if (kind === 'spine') { [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055); diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); }); }
+      else if (kind === 'pair') { [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52; diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); }); }
+    }
 
-    const all = shapesL.concat(mirrored, n >= 4 ? med : []);
+    const all = shapesL.concat(mirrored, med);
     // fabric-like tone variation (seeded, per shape)
     const vr = mulberry32(seed ^ 0x51ed270b);
     all.forEach((s) => { s.fill = shade(s.fill, (vr() - 0.5) * 0.07); });
