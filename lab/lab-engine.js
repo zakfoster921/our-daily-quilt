@@ -411,16 +411,27 @@
     const n = colors.length, cw = W * (0.1 + rnd() * 0.07), chh = H * (0.05 + rnd() * 0.04), cx = W * (0.36 + rnd() * 0.28), cy = H * (0.3 + rnd() * 0.3);
     let x0 = cx - cw / 2, x1 = cx + cw / 2, y0 = cy - chh / 2, y1 = cy + chh / 2;
     const shapes = [{ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: colors[0], ci: 0 }];
-    const rem = { T: y0, B: H - y1, L: x0, R: W - x1 }, keys = ['T', 'R', 'B', 'L'], logs = [];
+    const rem = { T: y0, B: H - y1, L: x0, R: W - x1 }, keys = ['T', 'R', 'B', 'L'], rects = [], MINT = 22;
     for (let i = 1; i < n; i++) {
-      const tot = keys.reduce((a, k) => a + rem[k], 0); let r = rnd() * tot, sd = 'T'; for (const k of keys) { r -= rem[k]; if (r <= 0) { sd = k; break; } }
-      const t = Math.min(rem[sd], Math.max(16, rem[sd] * (0.1 + rnd() * 0.28)));
-      if (sd === 'T') { logs.push({ pts: [[x0, y0 - t], [x1, y0 - t], [x1, y0], [x0, y0]], fill: colors[i], ci: i }); y0 -= t; }
-      else if (sd === 'B') { logs.push({ pts: [[x0, y1], [x1, y1], [x1, y1 + t], [x0, y1 + t]], fill: colors[i], ci: i }); y1 += t; }
-      else if (sd === 'L') { logs.push({ pts: [[x0 - t, y0], [x0, y0], [x0, y1], [x0 - t, y1]], fill: colors[i], ci: i }); x0 -= t; }
-      else { logs.push({ pts: [[x1, y0], [x1 + t, y0], [x1 + t, y1], [x1, y1]], fill: colors[i], ci: i }); x1 += t; }
+      const tot = keys.reduce((a, k) => a + Math.max(0, rem[k] - MINT), 0);
+      if (tot <= 0) {
+        // margins are used up: a new color splits an existing log along its long side (weighted by area)
+        let ta = 0; const ws = rects.map((q) => { const w = (q.x1 - q.x0) * (q.y1 - q.y0); ta += w; return w; }); let r = rnd() * ta, pk = rects[rects.length - 1];
+        for (let k = 0; k < rects.length; k++) { r -= ws[k]; if (r <= 0) { pk = rects[k]; break; } }
+        const f = 0.3 + rnd() * 0.4, newFirst = rnd() < 0.5, horiz = pk.x1 - pk.x0 >= pk.y1 - pk.y0;
+        const A = horiz ? { x0: pk.x0, y0: pk.y0, x1: pk.x0 + (pk.x1 - pk.x0) * f, y1: pk.y1 } : { x0: pk.x0, y0: pk.y0, x1: pk.x1, y1: pk.y0 + (pk.y1 - pk.y0) * f };
+        const B = horiz ? { x0: A.x1, y0: pk.y0, x1: pk.x1, y1: pk.y1 } : { x0: pk.x0, y0: A.y1, x1: pk.x1, y1: pk.y1 };
+        A.ci = newFirst ? i : pk.ci; B.ci = newFirst ? pk.ci : i; rects.splice(rects.indexOf(pk), 1, A, B); continue;
+      }
+      let r = rnd() * tot, sd = 'T'; for (const k of keys) { r -= Math.max(0, rem[k] - MINT); if (r <= 0) { sd = k; break; } }
+      const room = rem[sd] - MINT, t = Math.min(room, Math.max(16, rem[sd] * (0.1 + rnd() * 0.28)));
+      if (sd === 'T') { rects.push({ x0, y0: y0 - t, x1, y1: y0, ci: i }); y0 -= t; }
+      else if (sd === 'B') { rects.push({ x0, y0: y1, x1, y1: y1 + t, ci: i }); y1 += t; }
+      else if (sd === 'L') { rects.push({ x0: x0 - t, y0, x1: x0, y1, ci: i }); x0 -= t; }
+      else { rects.push({ x0: x1, y0, x1: x1 + t, y1, ci: i }); x1 += t; }
       rem[sd] -= t;
     }
+    const logs = rects.map((q) => ({ pts: [[q.x0, q.y0], [q.x1, q.y0], [q.x1, q.y1], [q.x0, q.y1]], fill: colors[q.ci], ci: q.ci }));
     const last = colors[n - 1], li = n - 1;
     if (y0 > 0.5) shapes.push({ pts: [[x0, 0], [x1, 0], [x1, y0], [x0, y0]], fill: last, ci: li });
     if (y1 < H - 0.5) shapes.push({ pts: [[x0, y1], [x1, y1], [x1, H], [x0, H]], fill: last, ci: li });
