@@ -33,7 +33,7 @@ async function main() {
   page.on('pageerror', (e) => console.error('[speaker-portrait:pageerror]', e?.message || e));
   page.on('console', (m) => {
     const t = m.text();
-    if (/speaker|cutout/i.test(t) && m.type() !== 'log') console.log('[speaker-portrait:browser]', t.slice(0, 300));
+    if (/speaker|cutout|tone|canvas|tainted|cors/i.test(t) && m.type() !== 'log') console.log('[speaker-portrait:browser]', m.type(), t.slice(0, 300));
   });
   try {
     log('loading', APP_URL);
@@ -111,6 +111,21 @@ async function main() {
       return !!wrap && !wrap.hidden && !!img && !img.hidden && img.complete && img.naturalWidth > 0;
     }, undefined, { timeout: 90000 });
     await page.waitForTimeout(6000);
+    // Color cutouts get a newspaper tone pass on-device; wait for it so the bake includes it.
+    await page
+      .waitForFunction(() => {
+        const img = document.getElementById('quoteSpeakerImage');
+        const wrap = document.getElementById('quoteSpeakerImageWrap');
+        return img?.dataset.newspaperToned === '1' || img?.dataset.plainCutoutDirect === '1' && !wrap.classList.contains('quote-speaker-cutout--newspaper-pending') && img?.dataset.newspaperToned === '1';
+      }, undefined, { timeout: 30000 })
+      .catch(() => log('tone flag not set within 30s'));
+    const toneState = await page.evaluate(() => {
+      const img = document.getElementById('quoteSpeakerImage');
+      const wrap = document.getElementById('quoteSpeakerImageWrap');
+      return { dataset: { ...(img?.dataset || {}) }, cls: wrap?.className || '', srcStart: String(img?.currentSrc || '').slice(0, 60) };
+    });
+    log('tone state', JSON.stringify(toneState));
+    await page.waitForTimeout(1500);
 
     // Safety: the widget must actually show the speaker we resolved, or we never save/upload.
     const shown = await page.evaluate(() => ({
