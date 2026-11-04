@@ -18,6 +18,7 @@ COPY styles ./styles
 COPY scripts ./scripts
 COPY assets ./assets
 COPY data ./data
+COPY lab ./lab
 
 # Expose port
 EXPOSE 3000
