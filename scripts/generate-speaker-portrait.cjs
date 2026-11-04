@@ -246,7 +246,9 @@ async function main() {
       log('PREVIEW mode: nothing uploaded.');
       return;
     }
-    await upload({ dateKey, file: path.join(OUT, `portrait-${dateKey}.png`), cutoutUrl: info.cutoutUrl, box });
+    const result = await upload({ dateKey, file: path.join(OUT, `portrait-${dateKey}.png`), cutoutUrl: info.cutoutUrl, box });
+    fs.writeFileSync(path.join(OUT, 'upload-result.json'), JSON.stringify(result || { status: 'unknown' }, null, 2));
+    log('upload result', JSON.stringify(result));
   } finally {
     await browser.close();
   }
@@ -267,7 +269,7 @@ async function upload({ dateKey, file, cutoutUrl, box }) {
   const prev = (await ref.get()).data() || {};
   if (prev.speakerPortraitBakedUrl && prev.speakerPortraitBakedKey === key && !process.env.FORCE) {
     log('unchanged speaker; skipping upload');
-    return;
+    return { status: 'unchanged', url: prev.speakerPortraitBakedUrl, key };
   }
   const buf = await sharp(file).webp({ quality: 90, alphaQuality: 95 }).toBuffer();
   const token = crypto.randomUUID();
@@ -290,6 +292,7 @@ async function upload({ dateKey, file, cutoutUrl, box }) {
     { merge: true }
   );
   log('uploaded', dest, buf.length, 'bytes');
+  return { status: 'uploaded', dest, bytes: buf.length, url, key, speaker: undefined };
 }
 
 main().catch((e) => {
