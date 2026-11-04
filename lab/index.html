@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quilt Lab</title>
+<link rel="icon" href="../assets/favicon-32.png">
+<style>
+  :root{--bg:#f6f4f1;--ink:#26231f;--mute:#7a7268;--card:#fff;--line:#e3ded6}
+  @media (prefers-color-scheme:dark){:root{--bg:#1b1917;--ink:#efeae2;--mute:#a49b8f;--card:#26231f;--line:#3a352f}}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,sans-serif}
+  main{max-width:1100px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:4px 0 2px}p.sub{margin:0 0 14px;color:var(--mute)}
+  .bar{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:end;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+  label{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:4px}
+  select,input[type=range],button{font:inherit}select{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  button{padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+  .strip{display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:12px;border:1px solid var(--line)}.strip i{flex:1}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;text-align:center}.tile svg{width:100%;height:auto;display:block;border-radius:6px}
+  .tile small{color:var(--mute)}
+</style></head><body><main>
+<h1>Quilt Lab</h1><p class="sub">Replays a real day's colors through an experimental engine. Nothing here touches the live quilt.</p>
+<div class="bar">
+  <label>Day<select id="day"></select></label>
+  <label>Colors used: <b id="nv"></b><input id="count" type="range" min="2" max="60" value="30"></label>
+  <label>Wonk <b id="wv"></b><input id="wonk" type="range" min="0" max="2" step="0.1" value="1"></label>
+  <label>Patterns <b id="pv"></b><input id="pat" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+  <button id="re">New variants</button>
+</div>
+<div class="strip" id="strip"></div>
+<div class="grid" id="grid"></div>
+</main>
+<script src="lab-engine.js"></script>
+<script>
+(async()=>{
+  const days=await (await fetch('data/days.json')).json();
+  const $=id=>document.getElementById(id);
+  days.slice().reverse().forEach(d=>{const o=document.createElement('option');o.value=d.date;o.textContent=d.date+' ('+d.count+')';$('day').appendChild(o)});
+  let seeds=[1,2,3,4,5,6].map((_,i)=>i+1);
+  function draw(){
+    const d=days.find(x=>x.date===$('day').value);const max=d.colors.length;
+    $('count').max=max;if(+$('count').value>max)$('count').value=max;
+    const n=+$('count').value;$('nv').textContent=n+' / '+max;$('wv').textContent=$('wonk').value;$('pv').textContent=$('pat').value;
+    const cols=d.colors.slice(0,n);
+    $('strip').innerHTML=cols.map(c=>'<i style="background:'+c+'"></i>').join('');
+    $('grid').innerHTML=seeds.map(s=>{const m=QuiltLabEngine.build(cols,{seed:s,wonk:+$('wonk').value,patternRate:+$('pat').value});return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>variant '+s+'</small></div>'}).join('');
+  }
+  ['day','count','wonk','pat'].forEach(id=>$(id).addEventListener('input',draw));
+  $('re').addEventListener('click',()=>{seeds=seeds.map(()=>1+Math.floor(Math.random()*9999));draw()});
+  $('day').value=days[days.length-2].date;$('count').value=days[days.length-2].colors.length;draw();
+})();
+</script></body></html>
