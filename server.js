@@ -208,6 +208,7 @@ app.use(
   express.static(path.join(ROOT_DIR, 'lib'), staticAssetOptions())
 );
 // Quilt Lab: static, read-only experiments (colors only; no user data, no Firestore).
+app.get(['/lab', '/lab/'], (_req, res) => res.sendFile(path.join(ROOT_DIR, 'lab', 'index.html')));
 app.use(
   '/lab',
   express.static(path.join(ROOT_DIR, 'lab'), staticAssetOptions())
