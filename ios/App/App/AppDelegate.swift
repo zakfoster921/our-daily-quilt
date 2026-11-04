@@ -70,7 +70,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         bridgeViewController.view.backgroundColor = launchBackgroundColor
-        bridgeViewController.webView?.isOpaque = false
+        /* Opaque: a transparent WKWebView is alpha-blended every frame and janks scrolling. Background is already launchBackgroundColor. */
+        bridgeViewController.webView?.isOpaque = true
         bridgeViewController.webView?.backgroundColor = launchBackgroundColor
         if let scrollView = bridgeViewController.webView?.scrollView {
             scrollView.backgroundColor = launchBackgroundColor
