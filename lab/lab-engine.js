@@ -400,7 +400,7 @@
         const pieces = c.q && type === 'flyingGeese' ? PATTERNS.flyingGeese(prnd, Math.round(Math.max(cw, ch) / 90)) : PATTERNS[type](prnd);
         pieces.forEach((pc) => shapes.push({ pts: pc.pts.map(([u, v]) => bil(c.q, u, v)), fill: pcs[pc.c] }));
       });
-      out.special = sp ? Math.round((sp.a / tot) * 100) : 0; amp = 0.12;
+      out.special = sp ? Math.round((sp.a / tot) * 100) : 0; amp = 0.75;
     } else if (style === 'improv') {
       // improvisational strips: slanted cuts, long narrow pieces, strong wobble, asymmetric (Gee's Bend spirit)
       const cells = bspFull(colors, rnd, { areaPow: 1.1, recent: 0, recentBoost: 1, slant: 0.5, ratio: (r) => 0.16 + r() * 0.5 });
@@ -426,7 +426,7 @@
         else pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
         shapes.push({ pts, fill: fg });
       }
-      amp = 0.1;
+      amp = 0.6;
     }
     const vr = mulberry32(seed ^ 0x51ed270b); shapes.forEach((sh) => { sh.fill = shade(sh.fill, (vr() - 0.5) * (style === 'modern' ? 0.03 : 0.07)); });
     const warp = flatWarp(seed, opts.wonk != null ? amp * opts.wonk : amp);
