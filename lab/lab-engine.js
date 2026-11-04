@@ -107,7 +107,7 @@
     // center motif: varies by day/seed so not every quilt gets the big star
     const mrnd = mulberry32(seed ^ 0x7777aaaa);
     let kind = opts.center && opts.center !== 'auto' ? opts.center : null;
-    if (!kind) { const r = mrnd(); kind = r < 0.32 ? 'none' : r < 0.55 ? 'star' : r < 0.72 ? 'small' : r < 0.87 ? 'spine' : 'pair'; }
+    if (!kind) { const r = mrnd(); kind = r < 0.18 ? 'none' : r < 0.32 ? 'star' : r < 0.42 ? 'small' : r < 0.5 ? 'spine' : r < 0.57 ? 'pair' : r < 0.69 ? 'dresden' : r < 0.81 ? 'flower' : r < 0.91 ? 'wreath' : 'bullseye'; }
     out.center = kind;
     const med = [];
     const cc = (k) => colors[Math.min(n - 1, k)];
@@ -115,12 +115,46 @@
     const disc = (cx, cy, rad, fill) => med.push({ pts: discPts(cx, cy, rad, 32, mrnd), fill });
     const starAt = (cx, cy, rad, fill) => med.push({ pts: Array.from({ length: 16 }, (_, i) => { const a = (i / 16) * Math.PI * 2 - Math.PI / 2; const rr = i % 2 ? rad * 0.5 : rad; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }), fill });
     const medallion = (cx, cy, base, k0) => { diamond(cx, cy, base * 1.38, cc(k0 + 1)); diamond(cx, cy, base * 1.08, cc(k0 + 2)); diamond(cx, cy, base * 0.78, cc(k0 + 3)); disc(cx, cy, base * 0.46, cc(k0)); starAt(cx, cy, base * 0.4, cc(k0 + 2)); };
+    // organic / circular quilt motifs
+    const place = (cx, cy, ang, d, local) => local.map(([x, y]) => { const px = x + d; return [cx + px * Math.cos(ang) - y * Math.sin(ang), cy + px * Math.sin(ang) + y * Math.cos(ang)]; });
+    const lens = (len, wid, steps) => { const top = [], bot = []; for (let i = 0; i <= steps; i++) { const u = -1 + (2 * i) / steps; const v = wid * (1 - u * u); top.push([u * len, -v]); bot.unshift([u * len, v]); } return top.concat(bot.slice(1, -1)); };
+    const petalShape = (len, wid) => Array.from({ length: 28 }, (_, i) => { const t = (i / 28) * Math.PI * 2; return [Math.cos(t) * len, Math.sin(t) * wid * (1 + 0.12 * Math.cos(t))]; });
+    const dresden = (cx, cy, R, blades, cA, cB, cHub) => {
+      const r0 = R * 0.3, step = (Math.PI * 2) / blades;
+      for (let i = 0; i < blades; i++) {
+        const a0 = i * step - Math.PI / 2 - step / 2, a1 = a0 + step, pts = [];
+        pts.push([cx + Math.cos(a0) * r0, cy + Math.sin(a0) * r0], [cx + Math.cos(a0) * R * 0.92, cy + Math.sin(a0) * R * 0.92]);
+        for (let k = 1; k < 6; k++) { const a = a0 + (step * k) / 6; const rr = R * (0.92 + 0.12 * Math.sin((k / 6) * Math.PI)); pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]); }
+        pts.push([cx + Math.cos(a1) * R * 0.92, cy + Math.sin(a1) * R * 0.92], [cx + Math.cos(a1) * r0, cy + Math.sin(a1) * r0]);
+        med.push({ pts, fill: i % 2 ? cA : cB });
+      }
+      disc(cx, cy, r0 * 1.12, cHub); disc(cx, cy, r0 * 0.62, cA);
+    };
+    const flower = (cx, cy, R, petals, cP, cQ, cHub, cLeaf) => {
+      for (let k = 0; k < 2; k++) { const a = Math.PI / 2 + (k ? 1 : -1) * 0.95; med.push({ pts: place(cx, cy + R * 0.55, a, R * 0.62, lens(R * 0.42, R * 0.17, 14)), fill: cLeaf }); }
+      for (let i = 0; i < petals; i++) { const a = (i / petals) * Math.PI * 2 - Math.PI / 2; med.push({ pts: place(cx, cy, a, R * 0.52, petalShape(R * 0.42, R * 0.2)), fill: i % 2 ? cP : cQ }); }
+      disc(cx, cy, R * 0.3, cHub); disc(cx, cy, R * 0.16, cP);
+    };
+    const wreath = (cx, cy, R, leaves, cL, cM, cHub) => {
+      disc(cx, cy, R * 0.98, cHub);
+      for (let i = 0; i < leaves; i++) { const a = (i / leaves) * Math.PI * 2; med.push({ pts: place(cx, cy, a + 0.0, R * 0.74, lens(R * 0.2, R * 0.075, 10).map(([x, y]) => [y, x])), fill: i % 2 ? cL : cM }); }
+      for (let i = 0; i < leaves; i++) { const a = ((i + 0.5) / leaves) * Math.PI * 2; disc(cx + Math.cos(a) * R * 0.92, cy + Math.sin(a) * R * 0.92, R * 0.06, cM); }
+      starAt(cx, cy, R * 0.36, cM); disc(cx, cy, R * 0.12, cL);
+    };
+    const bullseye = (cx, cy, R, cs) => {
+      const waves = 16, ring = (rad, fill, amp) => med.push({ pts: Array.from({ length: 96 }, (_, i) => { const a = (i / 96) * Math.PI * 2; const rr = rad * (1 + amp * Math.sin(a * waves)); return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }), fill });
+      ring(R, cs[0], 0.045); ring(R * 0.8, cs[1], 0.03); ring(R * 0.6, cs[2], 0.02); ring(R * 0.4, cs[3], 0.0); disc(cx, cy, R * 0.2, cs[0]);
+    };
     const baseBig = Math.min(W, H) * (0.2 + Math.min(0.06, n * 0.0012));
     if (n >= 4) {
       if (kind === 'star') medallion(CX, H * 0.42, baseBig, 0);
       else if (kind === 'small') { const b = baseBig * 0.5; diamond(CX, H * 0.5, b * 1.4, cc(2)); disc(CX, H * 0.5, b * 0.8, cc(1)); starAt(CX, H * 0.5, b * 0.55, cc(3)); }
       else if (kind === 'spine') { [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055); diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); }); }
       else if (kind === 'pair') { [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52; diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); }); }
+      else if (kind === 'dresden') dresden(CX, H * 0.44, baseBig * 1.45, 16, cc(1), cc(2), cc(3));
+      else if (kind === 'flower') flower(CX, H * 0.44, baseBig * 1.55, 8, cc(1), cc(2), cc(3), cc(4));
+      else if (kind === 'wreath') wreath(CX, H * 0.44, baseBig * 1.5, 14, cc(1), cc(2), cc(3));
+      else if (kind === 'bullseye') bullseye(CX, H * 0.44, baseBig * 1.4, [cc(1), cc(2), cc(3), cc(4)]);
     }
 
     const all = shapesL.concat(mirrored, med);
