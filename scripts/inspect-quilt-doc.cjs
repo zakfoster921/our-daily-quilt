@@ -23,6 +23,10 @@ admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.proje
   if (subs) out.submissions = subs.docs.map((x) => { const v = x.data(); return { id: x.id, name: v.displayName, at: v.createdAtIso, idx: v.submissionIndex, blockCount: v.blockCount, source: v.source }; }).sort((a, b) => String(a.at).localeCompare(String(b.at)));
   const refl = await db.collection('reflectionResponses').where('appDateKey', '==', dateKey).get().catch((e) => ({ err: String(e) }));
   out.reflections = refl.docs ? refl.docs.map((x) => { const v = x.data(); return { id: x.id, name: v.authorDisplayName || v.displayName, at: v.createdAtIso || v.createdAt?.toDate?.().toISOString(), clientId: String(v.clientId || v.deviceId || '').slice(0, 12), keys: Object.keys(v).join(',') }; }) : refl;
+  try {
+    const ig = (await db.collection('instagram-images').doc(dateKey).get()).data() || {};
+    out.liveCard = { url: ig.liveQuiltCardUrl, at: ig.liveQuiltCardUpdatedAt, blocks: ig.liveQuiltCardBlockCount, igKeys: Object.keys(ig).length };
+  } catch (e) { out.liveCard = { err: String(e) }; }
   const prev = new Date(dateKey + 'T00:00:00Z'); prev.setUTCDate(prev.getUTCDate() - 1);
   const pk = prev.toISOString().slice(0, 10);
   const pq = (await db.collection('quilts').doc(pk).get()).data() || {};
