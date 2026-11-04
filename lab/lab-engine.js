@@ -352,7 +352,22 @@
       // clean + minimal: a few big flat blocks, new colors cluster as smaller chips, crisp straight cuts, no patterns, no mirroring
       const ratios = [0.382, 0.5, 0.618, 0.25, 0.75, 0.3, 0.7];
       const cells = bspFull(colors, rnd, { areaPow: 0.75, recent: 5, recentBoost: 4, slant: 0, ratio: (r) => ratios[Math.floor(r() * ratios.length)] });
-      shapes = cells.map((c) => ({ pts: c.q, fill: c.color })); amp = 0.12;
+      // one special pattern: an off-center block, at most 20% of the quilt; it keeps its own color so no submission is hidden
+      const tot = W * H, cen = (c) => [c.q.reduce((a, p) => a + p[0], 0) / 4, c.q.reduce((a, p) => a + p[1], 0) / 4];
+      const ok = cells.filter((c) => c.a / tot >= 0.03 && c.a / tot <= 0.2);
+      const off = ok.filter((c) => { const [x, y] = cen(c); return Math.hypot((x - CX) / W, (y - H / 2) / H) > 0.2; });
+      const pool = off.length ? off : ok, sp = pool.length ? pool[Math.floor(rnd() * pool.length)] : null;
+      shapes = [];
+      cells.forEach((c) => {
+        if (c !== sp) { shapes.push({ pts: c.q, fill: c.color }); return; }
+        const cw = (dist(c.q[0], c.q[1]) + dist(c.q[3], c.q[2])) / 2, ch = (dist(c.q[0], c.q[3]) + dist(c.q[1], c.q[2])) / 2, asp = Math.max(cw, ch) / Math.min(cw, ch);
+        const type = asp > 1.8 ? (cw < ch ? 'railFence' : 'flyingGeese') : ['pinwheel', 'ninePatch', 'circle', 'drunkard', 'diamond', 'logCabin', 'hst'][Math.floor(rnd() * 7)];
+        let other = colors[0], bd = -1; for (let k = 0; k < 8; k++) { const cand = colors[Math.floor(rnd() * n)], d = dE(cand, c.color); if (d > bd) { bd = d; other = cand; } }
+        const prnd = mulberry32((rnd() * 4294967296) >>> 0), pcs = [c.color, other];
+        const pieces = c.q && type === 'flyingGeese' ? PATTERNS.flyingGeese(prnd, Math.round(Math.max(cw, ch) / 90)) : PATTERNS[type](prnd);
+        pieces.forEach((pc) => shapes.push({ pts: pc.pts.map(([u, v]) => bil(c.q, u, v)), fill: pcs[pc.c] }));
+      });
+      out.special = sp ? Math.round((sp.a / tot) * 100) : 0; amp = 0.12;
     } else if (style === 'improv') {
       // improvisational strips: slanted cuts, long narrow pieces, strong wobble, asymmetric (Gee's Bend spirit)
       const cells = bspFull(colors, rnd, { areaPow: 1.1, recent: 0, recentBoost: 1, slant: 0.5, ratio: (r) => 0.16 + r() * 0.5 });
