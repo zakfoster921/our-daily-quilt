@@ -10620,7 +10620,7 @@ app.get('/api/admin/lab-quilt-preview', async (req, res) => {
     if (!Array.isArray(blocks) || blocks.length < 2) return res.status(404).json({ success: false, error: `No quilt blocks for ${dateKey}` });
     const style = labQuilt.STYLES && labQuilt.STYLES.includes(String(req.query.style || '')) ? String(req.query.style) : undefined;
     const q = labQuilt.buildLabQuilt(blocks, dateKey, { style });
-    const png = labQuilt.renderLabQuiltPng(createCanvas, q.model, { matte: ARCHIVE_QUILT_PREVIEW_BG });
+    const png = labQuilt.renderLabQuiltPng(createCanvas, q.model);
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Lab-Engine-Version', q.version);
