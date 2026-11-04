@@ -133,6 +133,34 @@ async function main() {
       return { dataset: { ...(img?.dataset || {}) }, cls: wrap?.className || '', srcStart: String(img?.currentSrc || '').slice(0, 60) };
     });
     log('tone state', JSON.stringify(toneState));
+    const diag = await page.evaluate(async (cutoutUrl) => {
+      const out = {};
+      try {
+        out.codeHasVivid = (await (await fetch('lib/speaker-cutout-render.js')).text()).includes('vivid');
+        const SCR = globalThis.SpeakerCutoutRender;
+        const decoded = await window.app._ensureQuoteSpeakerImageForCanvas(cutoutUrl, { skipCutoutExportFinalize: true });
+        out.decoded = !!decoded?.naturalWidth;
+        if (decoded?.naturalWidth) {
+          const c = document.createElement('canvas'); c.width = decoded.naturalWidth; c.height = decoded.naturalHeight;
+          const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(decoded, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height).data;
+          let op = 0, warm = 0, vivid = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 3] < 20) continue; op++;
+            const r = d[i], gg = d[i + 1], b = d[i + 2];
+            if (r > b + 4) warm++;
+            const lum = .299 * r + .587 * gg + .114 * b;
+            if (Math.max(r, gg, b) - Math.min(r, gg, b) > .22 * lum + 10) vivid++;
+          }
+          out.size = [c.width, c.height]; out.opaque = op; out.warm = +(warm / op).toFixed(3); out.vivid = +(vivid / op).toFixed(3);
+          out.toneStatus = SCR.toneSpeakerCutoutImageToNewspaper(decoded).status;
+        }
+        const img = document.getElementById('quoteSpeakerImage');
+        out.imgSrcIsData = /^data:/.test(img?.currentSrc || '');
+      } catch (e) { out.error = String(e?.message || e); }
+      return out;
+    }, info.cutoutUrl);
+    log('tone diag', JSON.stringify(diag));
     await page.waitForTimeout(1500);
 
     // Safety: the widget must actually show the speaker we resolved, or we never save/upload.
