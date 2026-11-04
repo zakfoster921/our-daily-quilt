@@ -92,6 +92,14 @@ async function main() {
       // Pin as "today" so any later app refresh keeps this quote (same trick the admin preview uses).
       try { qs._pinnedByDateKey[qs.getQuoteCalendarKeyNow()] = quote; } catch (_) {}
       try { app._adminPreview = { dateKey: qs.getQuoteCalendarKeyNow(), quote }; } catch (_) {}
+      // Force every repaint of the widget on this page to use the resolved quote (the app repaints on its own).
+      const forced = quote;
+      try {
+        const inner = app._refreshQuoteSpeakerWidgetNowInner.bind(app);
+        app._refreshQuoteSpeakerWidgetNowInner = () => inner(forced);
+        app.getEffectiveQuiltQuote = () => forced;
+        qs.getTodayQuote = () => forced;
+      } catch (_) {}
       app.refreshQuoteSpeakerWidget(quote);
       return {
         dateKey,
