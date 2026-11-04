@@ -78,11 +78,18 @@
     const out = { W, H, shapes: [], cells: 0 };
     if (!n) return out;
 
+    const mrnd = mulberry32(seed ^ 0x7777aaaa);
+    let kind = opts.center && opts.center !== 'auto' ? opts.center : null;
+    if (!kind) { const r = mrnd(); kind = r < 0.12 ? 'none' : r < 0.22 ? 'star' : r < 0.29 ? 'small' : r < 0.34 ? 'spine' : r < 0.39 ? 'pair' : r < 0.49 ? 'dresden' : r < 0.58 ? 'flower' : r < 0.66 ? 'wreath' : r < 0.72 ? 'bullseye' : r < 0.79 ? 'arches' : r < 0.86 ? 'orbs' : r < 0.93 ? 'plus' : 'pie'; }
+    if (kind === 'pair' && !(opts.center === 'pair') && mulberry32(seed ^ 0x1234abcd)() < 0.5) kind = 'pairv';
+    out.center = kind;
+    const MODERN = ['arches', 'orbs', 'plus', 'pie'].includes(kind);
+
     // left half as one big quad (slightly overlapping the center seam)
     const mkCell = (q, c, ci) => ({ q, color: c, ci, locked: false, a: area(q) });
     let cells = [mkCell([[0, 0], [CX, 0], [CX, H], [0, H]], colors[0], 0)];
 
-    const pPattern = opts.patternRate != null ? opts.patternRate : 0.5;
+    const pPattern = MODERN ? Math.min(0.1, opts.patternRate != null ? opts.patternRate : 0.5) : (opts.patternRate != null ? opts.patternRate : 0.5); // modern designs: calmer, plainer patchwork
     for (let i = 1; i < n; i++) {
       const cand = cells.filter((c) => !c.locked && c.a > 2400);
       if (!cand.length) break;
@@ -125,11 +132,6 @@
     const mirrored = shapesL.map((s) => ({ pts: s.pts.map(([x, y]) => [W - x, y]), fill: s.fill, ci: s.ci }));
 
     // center motif: varies by day/seed so not every quilt gets the big star
-    const mrnd = mulberry32(seed ^ 0x7777aaaa);
-    let kind = opts.center && opts.center !== 'auto' ? opts.center : null;
-    if (!kind) { const r = mrnd(); kind = r < 0.18 ? 'none' : r < 0.32 ? 'star' : r < 0.42 ? 'small' : r < 0.5 ? 'spine' : r < 0.57 ? 'pair' : r < 0.69 ? 'dresden' : r < 0.81 ? 'flower' : r < 0.91 ? 'wreath' : 'bullseye'; }
-    if (kind === 'pair' && !(opts.center === 'pair') && mulberry32(seed ^ 0x1234abcd)() < 0.5) kind = 'pairv';
-    out.center = kind;
     const med = [];
     const medPal = contrastPalette(colors, 7, Math.floor(mrnd() * n)); // strongly contrasting, drawn from across the day
     const cc = (k) => medPal[((k % 7) + 7) % 7];
@@ -223,10 +225,31 @@
         [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055) * sc; clips.push(sqPoly(CX, H * fy, b * 1.5)); diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); });
       } else if (kind === 'pair') {
         [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52 * sc; clips.push(sqPoly(x, H * 0.45, b * 1.4)); diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); });
+      } else if (MODERN) {
+        // modern: flat, bold geometry with a thin contrasting outline so it reads against the patchwork
+        const cy = H * 0.46, rect = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], half = (r, y) => Array.from({ length: 28 }, (_, i) => { const a = Math.PI + (i / 27) * Math.PI; return [CX + Math.cos(a) * r, y + Math.sin(a) * r]; });
+        const outline = (poly, pad) => { clips.push(poly); med.push({ pts: poly, fill: cc(0), noSlot: true }); };
+        if (kind === 'arches') {
+          const R = baseBig * 1.45 * sc, y = H * 0.5 + R * 0.5;
+          outline(half(R * 1.07, y)); for (let i = 0; i < 5; i++) med.push({ pts: half(R * (1 - i * 0.19), y), fill: cc(i + 1) });
+        } else if (kind === 'orbs') {
+          const R = baseBig * 1.15 * sc;
+          const d = [[CX, cy, R, 1], [CX, cy + R, R * 0.56, 2], [CX, cy - R * 0.95, R * 0.3, 3], [CX, cy, R * 0.34, 4]];
+          d.slice(0, 3).forEach(([x, y, r]) => outline(circlePoly(x, y, r * 1.07))); d.forEach(([x, y, r, k]) => med.push({ pts: circlePoly(x, y, r), fill: cc(k) }));
+        } else if (kind === 'plus') {
+          const L = baseBig * 1.5 * sc, t = L * 0.27, e = 1.07;
+          outline(rect(CX - L * e, cy - t * e, CX + L * e, cy + t * e)); outline(rect(CX - t * e, cy - L * e, CX + t * e, cy + L * e));
+          med.push({ pts: rect(CX - L, cy - t, CX + L, cy + t), fill: cc(1) }, { pts: rect(CX - t, cy - L, CX + t, cy + L), fill: cc(2) }, { pts: rect(CX - t * 0.9, cy - t * 0.9, CX + t * 0.9, cy + t * 0.9), fill: cc(3) });
+        } else {
+          const R = baseBig * 1.3 * sc, wedge = (a0, a1, r) => [[CX, cy]].concat(Array.from({ length: 16 }, (_, i) => { const a = a0 + (i / 15) * (a1 - a0); return [CX + Math.cos(a) * r, cy + Math.sin(a) * r]; }));
+          outline(circlePoly(CX, cy, R * 1.07));
+          for (let i = 0; i < 4; i++) med.push({ pts: wedge((i * Math.PI) / 2 - Math.PI / 4, ((i + 1) * Math.PI) / 2 - Math.PI / 4, i % 2 ? R * 0.8 : R), fill: cc(i + 1) });
+          med.push({ pts: circlePoly(CX, cy, R * 0.22), fill: cc(5) });
+        }
       } else if (kind === 'pairv') {
         [H * 0.27, H * 0.73].forEach((y) => { const b = baseBig * 0.6 * sc; clips.push(sqPoly(CX, y, b * 1.4)); diamond(CX, y, b * 1.4, cc(1)); diamond(CX, y, b * 1.0, cc(2)); disc(CX, y, b * 0.6, cc(3)); starAt(CX, y, b * 0.4, cc(4)); });
       }
-      if (!K) med.forEach((m) => { m.slot = true; });
+      if (!K) med.forEach((m) => { m.slot = !m.noSlot; });
       return clips;
     };
     const cutAll = (clips) => {
@@ -266,7 +289,8 @@
       bgShapes = chosen.cut; med.length = 0; chosen.medCopy.forEach((m) => med.push(m));
       if (chosen.hidden.length) {
         const slots = med.filter((m) => m.slot);
-        slots.forEach((m, j) => { m.fill = colors[chosen.hidden[j % chosen.hidden.length]]; });
+        if (K) slots.forEach((m, j) => { m.fill = colors[chosen.hidden[j % chosen.hidden.length]]; });
+        else slots.slice().sort((x, y) => area(y.pts) - area(x.pts)).slice(0, chosen.hidden.length).forEach((m, j) => { m.fill = colors[chosen.hidden[j]]; });
         const hc = chosen.hidden.map((i) => colors[i]);
         med.filter((m) => m.field).forEach((m) => { let bc = m.fill, bd = -1; medPal.concat(colors).forEach((c) => { const d = Math.min(...hc.map((q) => dE(c, q))); if (d > bd) { bd = d; bc = c; } }); if (bd < 30) bc = shade(bc, hc.every((q) => labOf(q)[0] > 55) ? -0.55 : 0.55); m.fill = bc; });
       }
