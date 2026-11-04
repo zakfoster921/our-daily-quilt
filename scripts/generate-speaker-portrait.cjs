@@ -40,7 +40,7 @@ async function main() {
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction(() => !!window.app && window.app._portalQuiltLoaded === true, undefined, { timeout: 180000 });
 
-    const info = await page.evaluate(async (speakerName) => {
+    const info = await page.evaluate(async ({ speakerName, forceDate }) => {
       const app = window.app;
       // Never photograph an already-baked portrait: render the live widget.
       app.fetchTodayInstagramImagesDoc = async () => null;
@@ -62,6 +62,10 @@ async function main() {
           }
         }
       }
+      if (forceDate && !quote) {
+        dateKey = forceDate;
+        try { quote = (await qs.resolveQuoteForCalendarKeyFresh(forceDate)) || qs.getQuoteForDate(forceDate); } catch (_) {}
+      }
       for (let i = 0; i < 60 && !quote?.text; i++) {
         quote = (await qs.getTodayQuote?.()) || app.getEffectiveQuiltQuote?.() || null;
         if (!quote?.text) await new Promise((r) => setTimeout(r, 1000));
@@ -79,9 +83,9 @@ async function main() {
         cutoutUrl: String(quote?.speakerCutoutUrl || quote?.cutoutUrl || '').trim(),
         speaker: String(quote?.speaker || quote?.author || '').trim()
       };
-    }, process.env.SPEAKER_NAME || '');
+    }, { speakerName: process.env.SPEAKER_NAME || '', forceDate: process.env.DATE_KEY || '' });
     log('quote', JSON.stringify(info));
-    const dateKey = (process.env.SPEAKER_NAME ? '' : process.env.DATE_KEY) || info.dateKey;
+    const dateKey = info.dateKey;
 
     // Wait for the portrait image to load and the layers to settle.
     await page.waitForFunction(() => {
