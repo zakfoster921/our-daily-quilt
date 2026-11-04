@@ -80,10 +80,10 @@
 
     const mrnd = mulberry32(seed ^ 0x7777aaaa);
     let kind = opts.center && opts.center !== 'auto' ? opts.center : null;
-    if (!kind) { const r = mrnd(); kind = r < 0.12 ? 'none' : r < 0.22 ? 'star' : r < 0.29 ? 'small' : r < 0.34 ? 'spine' : r < 0.39 ? 'pair' : r < 0.49 ? 'dresden' : r < 0.58 ? 'flower' : r < 0.66 ? 'wreath' : r < 0.72 ? 'bullseye' : r < 0.76 ? 'arches' : r < 0.82 ? 'orbs' : r < 0.87 ? 'plus' : r < 0.92 ? 'pie' : 'nine'; }
+    if (!kind) { const r = mrnd(); kind = r < 0.12 ? 'none' : r < 0.24 ? 'star' : r < 0.32 ? 'small' : r < 0.37 ? 'spine' : r < 0.42 ? 'pair' : r < 0.54 ? 'dresden' : r < 0.66 ? 'flower' : r < 0.78 ? 'wreath' : r < 0.9 ? 'bullseye' : 'nine'; }
     if (kind === 'pair' && !(opts.center === 'pair') && mulberry32(seed ^ 0x1234abcd)() < 0.5) kind = 'pairv';
     out.center = kind;
-    const MODERN = ['arches', 'orbs', 'plus', 'pie', 'nine'].includes(kind);
+    const MODERN = kind === 'nine';
 
     // left half as one big quad (slightly overlapping the center seam)
     const mkCell = (q, c, ci) => ({ q, color: c, ci, locked: false, a: area(q) });
@@ -229,18 +229,7 @@
         // modern: flat, bold geometry with a thin contrasting outline so it reads against the patchwork
         const cy = H * 0.46, rect = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], half = (r, y) => Array.from({ length: 28 }, (_, i) => { const a = Math.PI + (i / 27) * Math.PI; return [CX + Math.cos(a) * r, y + Math.sin(a) * r]; });
         const outline = (poly, pad) => { clips.push(poly); med.push({ pts: poly, fill: cc(0), noSlot: true }); };
-        if (kind === 'arches') {
-          const R = baseBig * 1.45 * sc, y = H * 0.5 + R * 0.5;
-          outline(half(R * 1.07, y)); for (let i = 0; i < 5; i++) med.push({ pts: half(R * (1 - i * 0.19), y), fill: cc(i + 1) });
-        } else if (kind === 'orbs') {
-          const R = baseBig * 1.15 * sc;
-          const d = [[CX, cy, R, 1], [CX, cy + R, R * 0.56, 2], [CX, cy - R * 0.95, R * 0.3, 3], [CX, cy, R * 0.34, 4]];
-          d.slice(0, 3).forEach(([x, y, r]) => outline(circlePoly(x, y, r * 1.07))); d.forEach(([x, y, r, k]) => med.push({ pts: circlePoly(x, y, r), fill: cc(k) }));
-        } else if (kind === 'plus') {
-          const L = baseBig * 1.5 * sc, t = L * 0.27, e = 1.07;
-          outline(rect(CX - L * e, cy - t * e, CX + L * e, cy + t * e)); outline(rect(CX - t * e, cy - L * e, CX + t * e, cy + L * e));
-          med.push({ pts: rect(CX - L, cy - t, CX + L, cy + t), fill: cc(1) }, { pts: rect(CX - t, cy - L, CX + t, cy + L), fill: cc(2) }, { pts: rect(CX - t * 0.9, cy - t * 0.9, CX + t * 0.9, cy + t * 0.9), fill: cc(3) });
-        } else if (kind === 'nine') {
+        if (kind === 'nine') {
           // nine-patch medallion: a 3x3 block of squares — field corners, a vertical and a horizontal bar, and a center square
           const c = baseBig * 0.82 * sc, x0 = CX - 1.5 * c, y0 = cy - 1.5 * c, sq = (i, j) => [[x0 + i * c, y0 + j * c], [x0 + (i + 1) * c, y0 + j * c], [x0 + (i + 1) * c, y0 + (j + 1) * c], [x0 + i * c, y0 + (j + 1) * c]];
           clips.push(rect(x0, y0, x0 + 3 * c, y0 + 3 * c));
@@ -248,11 +237,6 @@
             const corner = i !== 1 && j !== 1, center = i === 1 && j === 1;
             med.push({ pts: sq(i, j), fill: corner ? cc(0) : center ? cc(3) : (j === 1 ? cc(1) : cc(2)), corner, noSlot: corner, cell: [x0 + i * c, y0 + j * c, c] });
           }
-        } else {
-          const R = baseBig * 1.3 * sc, wedge = (a0, a1, r) => [[CX, cy]].concat(Array.from({ length: 16 }, (_, i) => { const a = a0 + (i / 15) * (a1 - a0); return [CX + Math.cos(a) * r, cy + Math.sin(a) * r]; }));
-          outline(circlePoly(CX, cy, R * 1.07));
-          for (let i = 0; i < 4; i++) med.push({ pts: wedge((i * Math.PI) / 2 - Math.PI / 4, ((i + 1) * Math.PI) / 2 - Math.PI / 4, i % 2 ? R * 0.8 : R), fill: cc(i + 1) });
-          med.push({ pts: circlePoly(CX, cy, R * 0.22), fill: cc(5) });
         }
       } else if (kind === 'pairv') {
         [H * 0.27, H * 0.73].forEach((y) => { const b = baseBig * 0.6 * sc; clips.push(sqPoly(CX, y, b * 1.4)); diamond(CX, y, b * 1.4, cc(1)); diamond(CX, y, b * 1.0, cc(2)); disc(CX, y, b * 0.6, cc(3)); starAt(CX, y, b * 0.4, cc(4)); });
