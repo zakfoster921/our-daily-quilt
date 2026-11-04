@@ -2,7 +2,7 @@
  * Never touches the app, Firestore, or the production engine. */
 (function (root) {
   'use strict';
-  const W = 1000, H = 1250, CX = W / 2;
+  const W = 1000, H = 2050, CX = W / 2; // phone-like portrait (~0.49), matching the in-app quilt
 
   function mulberry32(a) {
     return function () {
@@ -59,8 +59,8 @@
     if (!n) return out;
 
     // left half as one big quad (slightly overlapping the center seam)
-    const mkCell = (q, c) => ({ q, color: c, locked: false, a: area(q) });
-    let cells = [mkCell([[0, 0], [CX, 0], [CX, H], [0, H]], colors[0])];
+    const mkCell = (q, c, ci) => ({ q, color: c, ci, locked: false, a: area(q) });
+    let cells = [mkCell([[0, 0], [CX, 0], [CX, H], [0, H]], colors[0], 0)];
 
     const pPattern = opts.patternRate != null ? opts.patternRate : 0.5;
     for (let i = 1; i < n; i++) {
@@ -76,7 +76,7 @@
       let A, B;
       if (vertical) { const top = lerp(q[0], q[1], t), bot = lerp(q[3], q[2], t2); A = [q[0], top, bot, q[3]]; B = [top, q[1], q[2], bot]; }
       else { const l = lerp(q[0], q[3], t), rgt = lerp(q[1], q[2], t2); A = [q[0], q[1], rgt, l]; B = [l, rgt, q[2], q[3]]; }
-      const cA = mkCell(A, pick.color), cB = mkCell(B, colors[i]);
+      const cA = mkCell(A, pick.color, pick.ci), cB = mkCell(B, colors[i], i);
       cells.splice(cells.indexOf(pick), 1, cA, cB);
       // maybe turn one of the new halves into a traditional block built from the two colors
       [cA, cB].forEach((c) => {
@@ -89,8 +89,8 @@
         if (asp > 1.8) type = 'flyingGeese'; else type = SQUARISH[Math.floor(rnd() * SQUARISH.length)];
         if (asp > 1.8 && cw < ch) type = 'railFence';
         c.locked = true; c.pattern = type; c.pcolors = [cA === c ? cB.color : cA.color, c.color]; c.prnd = mulberry32((rnd() * 4294967296) >>> 0);
-        c.pcolors = [pick.color, colors[i]];
-        if (c === cA) c.pcolors = [colors[i], pick.color];
+        c.pcolors = [pick.color, colors[i]]; c.pci = [pick.ci, i];
+        if (c === cA) { c.pcolors = [colors[i], pick.color]; c.pci = [i, pick.ci]; }
       });
     }
     out.cells = cells.length;
@@ -98,11 +98,11 @@
     // expand to shapes in the left half, then mirror
     const shapesL = [];
     cells.forEach((c) => {
-      if (!c.pattern) { shapesL.push({ pts: c.q, fill: c.color }); return; }
+      if (!c.pattern) { shapesL.push({ pts: c.q, fill: c.color, ci: c.ci }); return; }
       const pieces = (c.pattern === 'flyingGeese' ? PATTERNS.flyingGeese(c.prnd, Math.round(Math.max(dist(c.q[0], c.q[1]), dist(c.q[3], c.q[2])) / 90)) : PATTERNS[c.pattern](c.prnd));
-      pieces.forEach((p) => shapesL.push({ pts: p.pts.map(([u, v]) => bil(c.q, u, v)), fill: c.pcolors[p.c] }));
+      pieces.forEach((p) => shapesL.push({ pts: p.pts.map(([u, v]) => bil(c.q, u, v)), fill: c.pcolors[p.c], ci: c.pci[p.c] }));
     });
-    const mirrored = shapesL.map((s) => ({ pts: s.pts.map(([x, y]) => [W - x, y]), fill: s.fill }));
+    const mirrored = shapesL.map((s) => ({ pts: s.pts.map(([x, y]) => [W - x, y]), fill: s.fill, ci: s.ci }));
 
     // center motif: varies by day/seed so not every quilt gets the big star
     const mrnd = mulberry32(seed ^ 0x7777aaaa);
@@ -111,7 +111,7 @@
     if (kind === 'pair' && !(opts.center === 'pair') && mulberry32(seed ^ 0x1234abcd)() < 0.5) kind = 'pairv';
     out.center = kind;
     const med = [];
-    const cc = (k) => colors[Math.min(n - 1, k)];
+    const cc = (k) => colors[Math.min(n - 1, Math.floor((((k * 3) % 7) + 0.5) * n / 7))]; // spread across the whole day
     const diamond = (cx, cy, rad, fill) => med.push({ pts: Array.from({ length: 4 }, (_, i) => { const a = Math.PI / 4 + (i * Math.PI) / 2; return [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad]; }), fill });
     const disc = (cx, cy, rad, fill) => med.push({ pts: discPts(cx, cy, rad, 32, mrnd), fill });
     const starAt = (cx, cy, rad, fill) => med.push({ pts: Array.from({ length: 16 }, (_, i) => { const a = (i / 16) * Math.PI * 2 - Math.PI / 2; const rr = i % 2 ? rad * 0.5 : rad; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }), fill });
@@ -154,8 +154,8 @@
       disc(cx, cy, R0 * 1.01, cc(5));
       for (let i = 0; i < N; i++) {
         const a0 = (i / N) * Math.PI * 2, a1 = ((i + 1) / N) * Math.PI * 2, am = (a0 + a1) / 2, a2 = ((i + 2) / N) * Math.PI * 2, am2 = (a1 + a2) / 2;
-        med.push({ pts: [P(a0, R0), P(a1, R0), P(am, Ro)], fill: cc(6) });
-        med.push({ pts: [P(am, Ro), P(am2, Ro), P(a1, R0)], fill: cc(2) });
+        med.push({ pts: [P(a0, R0), P(a1, R0), P(am, Ro)], fill: cc(6), slot: true });
+        med.push({ pts: [P(am, Ro), P(am2, Ro), P(a1, R0)], fill: cc(2), slot: true });
       }
     };
     // round motifs: radius of the field (R0, at scale 1), default vertical position, and a draw(cx,cy,k) at scale k
@@ -168,25 +168,15 @@
       bullseye: { R0: baseBig * 1.4 * 1.1, fy: 0.44, draw: (cx, cy, k) => bullseye(cx, cy, baseBig * 1.4 * k, [cc(1), cc(2), cc(3), cc(4)]) }
     };
     const K = KINDS[kind];
-    // size and placement vary too (own rng so other choices stay stable)
     const prnd = mulberry32(seed ^ 0x3c3c1f1f);
     const sizeMap = { small: 0.68, medium: 0.95, large: 1.2 };
-    let sc = opts.size && opts.size !== 'auto' ? sizeMap[opts.size] : 0.62 + prnd() * 0.58;
-    let plc = opts.place && opts.place !== 'auto' ? opts.place : null;
-    if (!plc) { const r = prnd(); plc = r < 0.4 ? 'center' : r < 0.62 ? 'sides' : r < 0.78 ? 'top' : r < 0.9 ? 'bottom' : 'topbottom'; }
+    const sc0 = opts.size && opts.size !== 'auto' ? sizeMap[opts.size] : 0.62 + prnd() * 0.58;
+    let plc0 = opts.place && opts.place !== 'auto' ? opts.place : null;
+    if (!plc0) { const r = prnd(); plc0 = r < 0.4 ? 'center' : r < 0.62 ? 'sides' : r < 0.78 ? 'top' : r < 0.9 ? 'bottom' : 'topbottom'; }
     const sideY = H * (0.3 + prnd() * 0.4);
-    out.size = sc; out.place = K ? plc : 'center'; out.frame = false;
-    const placements = [];
-    if (K && n >= 4) {
-      if (plc === 'center') placements.push([CX, H * K.fy, sc]);
-      else {
-        const e = sc * 1.1;
-        if (plc === 'sides') placements.push([0, sideY, e], [W, sideY, e]);
-        if (plc === 'top' || plc === 'topbottom') placements.push([CX, H * 0.01, e]);
-        if (plc === 'bottom' || plc === 'topbottom') placements.push([CX, H * 0.99, e]);
-      }
-    }
-    let bgShapes = shapesL.concat(mirrored);
+    const bg0 = shapesL.concat(mirrored);
+    const sumBy = (arr) => { const m = {}; arr.forEach((sh) => { m[sh.ci] = (m[sh.ci] || 0) + area(sh.pts); }); return m; };
+    const base0 = sumBy(bg0);
     const cross = (a, b, p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
     const split = (poly, a, b) => {
       const ins = [], outs = [];
@@ -197,29 +187,70 @@
       }
       return { ins, outs };
     };
-    placements.forEach(([cx, cy, k]) => {
-      if (frameOn) {
-        const Ro = K.R0 * k * 1.2, M = 72;
-        const clip = Array.from({ length: M }, (_, i) => { const a = (i / M) * Math.PI * 2; return [cx + Math.cos(a) * Ro, cy + Math.sin(a) * Ro]; });
-        const cut = [];
-        bgShapes.forEach((sh) => {
+    const circlePoly = (cx, cy, R) => Array.from({ length: 72 }, (_, i) => { const a = (i / 72) * Math.PI * 2; return [cx + Math.cos(a) * R, cy + Math.sin(a) * R]; });
+    const sqPoly = (cx, cy, rad) => Array.from({ length: 4 }, (_, i) => { const a = Math.PI / 4 + (i * Math.PI) / 2; return [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad]; });
+    // draw the medallion for (placement, scale) into `med`; return the convex outlines the patchwork is cut against
+    const buildMed = (plc, sc) => {
+      med.length = 0; const clips = [];
+      if (n < 4 || kind === 'none') return clips;
+      if (K) {
+        const pl = [];
+        if (plc === 'center') pl.push([CX, H * K.fy, sc]);
+        else { const e = sc * 1.1; if (plc === 'sides') pl.push([0, sideY, e], [W, sideY, e]); if (plc === 'top' || plc === 'topbottom') pl.push([CX, H * 0.01, e]); if (plc === 'bottom' || plc === 'topbottom') pl.push([CX, H * 0.99, e]); }
+        pl.forEach(([cx, cy, k]) => { if (frameOn) { clips.push(circlePoly(cx, cy, K.R0 * k * 1.2)); frameAt(cx, cy, K.R0 * k); } else clips.push(circlePoly(cx, cy, K.R0 * k)); K.draw(cx, cy, k); });
+      } else if (kind === 'spine') {
+        [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055) * sc; clips.push(sqPoly(CX, H * fy, b * 1.5)); diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); });
+      } else if (kind === 'pair') {
+        [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52 * sc; clips.push(sqPoly(x, H * 0.45, b * 1.4)); diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); });
+      } else if (kind === 'pairv') {
+        [H * 0.27, H * 0.73].forEach((y) => { const b = baseBig * 0.6 * sc; clips.push(sqPoly(CX, y, b * 1.4)); diamond(CX, y, b * 1.4, cc(1)); diamond(CX, y, b * 1.0, cc(2)); disc(CX, y, b * 0.6, cc(3)); starAt(CX, y, b * 0.4, cc(4)); });
+      }
+      if (!K) med.forEach((m) => { m.slot = true; });
+      return clips;
+    };
+    const cutAll = (clips) => {
+      let shapes = bg0;
+      clips.forEach((clip) => {
+        const M = clip.length, cut = [];
+        shapes.forEach((sh) => {
           let rem = sh.pts;
           for (let i = 0; i < M && rem.length >= 3; i++) {
             const r = split(rem, clip[i], clip[(i + 1) % M]);
-            if (r.outs.length >= 3 && area(r.outs) > 0.5) cut.push({ pts: r.outs, fill: sh.fill });
+            if (r.outs.length >= 3 && area(r.outs) > 0.5) cut.push({ pts: r.outs, fill: sh.fill, ci: sh.ci });
             rem = r.ins;
           }
         });
-        bgShapes = cut; out.frame = true;
-        frameAt(cx, cy, K.R0 * k);
-      }
-      K.draw(cx, cy, k);
-    });
-    if (!K && n >= 4) {
-      if (kind === 'spine') { [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055) * sc; diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); }); }
-      else if (kind === 'pairv') { [H * 0.27, H * 0.73].forEach((y) => { const b = baseBig * 0.6 * sc; diamond(CX, y, b * 1.4, cc(1)); diamond(CX, y, b * 1.0, cc(2)); disc(CX, y, b * 0.6, cc(3)); starAt(CX, y, b * 0.4, cc(4)); }); }
-      else if (kind === 'pair') { [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52 * sc; diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); }); }
+        shapes = cut;
+      });
+      return shapes;
+    };
+    // NON-NEGOTIABLE: every submitted color must stay clearly visible.
+    // Colors whose patchwork gets mostly covered are woven into the medallion's own frame pieces, so they still show.
+    const MIN_VISIBLE = 0.6;
+    const ratios = (shapes) => { const v = sumBy(shapes), r = {}; Object.keys(base0).forEach((k) => { r[k] = (v[k] || 0) / base0[k]; }); return r; };
+    const places = K ? [plc0].concat(['center', 'sides', 'top', 'bottom'].filter((x) => x !== plc0)) : ['center'];
+    const scales = [1, 0.85, 0.72, 0.6, 0.5].map((f) => Math.max(0.36, sc0 * f));
+    let bgShapes = bg0, chosen = null, best = null;
+    outer: for (const plc of places) for (const sc of scales) {
+      const clips = buildMed(plc, sc), cut = cutAll(clips), r = ratios(cut);
+      const hidden = Object.keys(r).filter((k) => r[k] < MIN_VISIBLE).map(Number);
+      const slots = med.filter((m) => m.slot);
+      if (hidden.length > Math.min(slots.length, 8)) continue;
+      const cand = { plc, sc, cut, hidden, medCopy: med.slice(), clips };
+      if (!best || hidden.length < best.hidden.length) best = cand;
+      if (hidden.length <= 2) { chosen = cand; break outer; }
     }
+    if (!chosen) chosen = best;
+    if (chosen) {
+      bgShapes = chosen.cut; med.length = 0; chosen.medCopy.forEach((m) => med.push(m));
+      if (chosen.hidden.length) {
+        const slots = med.filter((m) => m.slot);
+        slots.forEach((m, j) => { m.fill = colors[chosen.hidden[j % chosen.hidden.length]]; });
+      }
+      chosen.plcName = chosen.plc;
+    } else { med.length = 0; bgShapes = bg0; chosen = { plc: 'none', sc: 0, hidden: [] }; }
+    out.place = chosen.plc === 'none' ? 'center' : chosen.plc; out.size = chosen.sc; out.frame = !!(K && frameOn && chosen.plc !== 'none' && n >= 4);
+    out.hiddenRescued = chosen.hidden.length; out.dropped = chosen.plc === 'none' && kind !== 'none' && n >= 4;
     const all = bgShapes.concat(med);
     // fabric-like tone variation (seeded, per shape)
     const vr = mulberry32(seed ^ 0x51ed270b);
