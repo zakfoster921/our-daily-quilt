@@ -23,6 +23,7 @@
   <label>Colors used: <b id="nv"></b><input id="count" type="range" min="2" max="60" value="30"></label>
   <label>Wonk <b id="wv"></b><input id="wonk" type="range" min="0" max="2" step="0.1" value="1"></label>
   <label>Patterns <b id="pv"></b><input id="pat" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+  <label>Style<select id="style"><option value="auto">Auto (random)</option><option value="bigtop">Big Top (current)</option><option value="modern">Modern (clean)</option><option value="improv">Improv strips</option><option value="geometric">Geometric</option></select></label>
   <label>Center<select id="center"><option value="auto">Auto (varies)</option><option value="none">None</option><option value="star">Big star</option><option value="small">Small star</option><option value="spine">Spine</option><option value="pair">Pair (side by side)</option><option value="pairv">Pair (stacked)</option><option value="dresden">Dresden plate</option><option value="flower">Flower</option><option value="wreath">Wreath</option><option value="bullseye">Bullseye</option><option value="nine">Nine-patch (modern)</option></select></label>
   <label>Frame<select id="frame"><option value="on">On</option><option value="off">Off</option></select></label>
   <label>Size<select id="size"><option value="auto">Auto (varies)</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
@@ -49,12 +50,14 @@
     $('strip').innerHTML=cols.map(c=>'<i style="background:'+c+'"></i>').join('');
     if(gallery){
       const kinds=['none','star','small','dresden','flower','wreath','bullseye','spine','pair','pairv','nine'];
-      $('grid').innerHTML=kinds.map((k,i)=>{const m=QuiltLabEngine.build(cols,{seed:seeds[i%seeds.length]+i*13,wonk:+$('wonk').value,patternRate:+$('pat').value,center:k,frame:$('frame').value,size:$('size').value,place:$('place').value});return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>'+(i+1)+'. '+k+(m.frame?' · '+m.place:'')+'</small></div>'}).join('');
+      const tiles=[['modern',{style:'modern'}],['improv',{style:'improv'}],['geometric',{style:'geometric'}]].map(([l,o],i)=>[l,Object.assign({seed:seeds[i%seeds.length]+i*29},o)]);
+      kinds.forEach((k,i)=>tiles.push(['bigtop · '+k,{style:'bigtop',center:k,seed:seeds[i%seeds.length]+i*13}]));
+      $('grid').innerHTML=tiles.map(([label,o],i)=>{const m=QuiltLabEngine.build(cols,Object.assign({wonk:+$('wonk').value,patternRate:+$('pat').value,frame:$('frame').value,size:$('size').value,place:$('place').value},o));return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>'+(i+1)+'. '+label+'</small></div>'}).join('');
       return;
     }
-    $('grid').innerHTML=seeds.map(s=>{const m=QuiltLabEngine.build(cols,{seed:s,wonk:+$('wonk').value,patternRate:+$('pat').value,center:$('center').value,frame:$('frame').value,size:$('size').value,place:$('place').value});return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>variant '+s+' · center: '+m.center+(m.frame?' · '+m.place+' · size '+m.size.toFixed(2):'')+'</small></div>'}).join('');
+    $('grid').innerHTML=seeds.map(s=>{const m=QuiltLabEngine.build(cols,{seed:s,wonk:+$('wonk').value,patternRate:+$('pat').value,center:$('center').value,frame:$('frame').value,size:$('size').value,place:$('place').value,style:$('style').value});return '<div class="tile">'+QuiltLabEngine.toSvg(m,{width:400})+'<small>variant '+s+' · '+m.style+(m.style==='bigtop'?' · center: '+m.center:'')+(m.style==='bigtop'&&(m.frame?' · '+m.place+' · size '+m.size.toFixed(2):''))+'</small></div>'}).join('');
   }
-  ['day','count','wonk','pat','center','frame','size','place'].forEach(id=>$(id).addEventListener('input',draw));
+  ['day','count','wonk','pat','center','frame','size','place','style'].forEach(id=>$(id).addEventListener('input',draw));
   $('gal').addEventListener('click',()=>{gallery=!gallery;$('gal').textContent=gallery?'Back to variants':'Show all designs';draw()});
   $('re').addEventListener('click',()=>{gallery=true;$('gal').textContent='Back to variants';seeds=seeds.map(()=>1+Math.floor(Math.random()*9999));draw()});
   $('day').value=days[days.length-2].date;$('count').value=days[days.length-2].colors.length;draw();

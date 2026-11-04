@@ -70,7 +70,7 @@
   };
   const SQUARISH = ['hst', 'pinwheel', 'ninePatch', 'logCabin', 'circle', 'diamond', 'drunkard', 'railFence'];
 
-  function build(colors, opts) {
+  function buildBigTop(colors, opts) {
     opts = opts || {};
     const seed = (opts.seed != null ? opts.seed : 1) >>> 0;
     const rnd = mulberry32(seed ^ 0x9e3779b9);
@@ -312,6 +312,87 @@
     const subdivide = (pts, maxSeg) => { const res = []; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const k = Math.max(1, Math.ceil(dist(a, b) / maxSeg)); for (let j = 0; j < k; j++) res.push(lerp(a, b, j / k)); } return res; };
     out.shapes = all.map((s) => ({ pts: subdivide(s.pts, 16).map(warp), fill: s.fill }));
     return out;
+  }
+
+
+  // ---------- other style recipes (every submitted color is guaranteed its own visible block) ----------
+  function subdividePts(pts, maxSeg) { const res = []; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const k = Math.max(1, Math.ceil(dist(a, b) / maxSeg)); for (let j = 0; j < k; j++) res.push(lerp(a, b, j / k)); } return res; }
+  function flatWarp(seed, amp) {
+    const nz = makeNoise(seed ^ 0xabcdef);
+    return ([x, y]) => [x <= 0.5 ? -4 : x >= W - 0.5 ? W + 4 : x + (nz(x, y, 260) * 16 + nz(x + 700, y, 80) * 4) * amp, y <= 0.5 ? -4 : y >= H - 0.5 ? H + 4 : y + (nz(x + 1400, y, 260) * 14 + nz(x + 2100, y, 90) * 3.5) * amp];
+  }
+  // axis-aligned or slanted binary space partition over the whole canvas; colors[i] takes one side of the i-th cut
+  function bspFull(colors, rnd, o) {
+    let cells = [{ q: [[0, 0], [W, 0], [W, H], [0, H]], color: colors[0], born: 0 }];
+    cells[0].a = area(cells[0].q);
+    for (let i = 1; i < colors.length; i++) {
+      const cand = cells.filter((c) => c.a > 2600);
+      if (!cand.length) break;
+      let tot = 0; const wts = cand.map((c) => { const w = Math.pow(c.a, o.areaPow) * (i - c.born < o.recent ? o.recentBoost : 1); tot += w; return w; });
+      let r = rnd() * tot, pick = cand[cand.length - 1];
+      for (let k = 0; k < cand.length; k++) { r -= wts[k]; if (r <= 0) { pick = cand[k]; break; } }
+      const q = pick.q;
+      const w = (dist(q[0], q[1]) + dist(q[3], q[2])) / 2, h = (dist(q[0], q[3]) + dist(q[1], q[2])) / 2;
+      const vertical = w >= h * (0.9 + rnd() * 0.2);
+      const t = o.ratio(rnd), t2 = o.slant ? Math.max(0.15, Math.min(0.85, t + (rnd() - 0.5) * o.slant)) : t;
+      let A, B;
+      if (vertical) { const top = lerp(q[0], q[1], t), bot = lerp(q[3], q[2], t2); A = [q[0], top, bot, q[3]]; B = [top, q[1], q[2], bot]; }
+      else { const l = lerp(q[0], q[3], t), rgt = lerp(q[1], q[2], t2); A = [q[0], q[1], rgt, l]; B = [l, rgt, q[2], q[3]]; }
+      const newOnA = rnd() < 0.5;
+      const cA = { q: A, color: newOnA ? colors[i] : pick.color, born: i, a: area(A) }, cB = { q: B, color: newOnA ? pick.color : colors[i], born: i, a: area(B) };
+      cells.splice(cells.indexOf(pick), 1, cA, cB);
+    }
+    return cells;
+  }
+  function buildFlat(colors, opts, style) {
+    const seed = (opts.seed != null ? opts.seed : 1) >>> 0, rnd = mulberry32(seed ^ 0x2468ace1), n = colors.length;
+    const out = { W, H, shapes: [], cells: 0, center: style, place: style, size: 1, frame: false, style };
+    let shapes = [], amp, maxSeg = 16;
+    if (style === 'modern') {
+      // clean + minimal: a few big flat blocks, new colors cluster as smaller chips, crisp straight cuts, no patterns, no mirroring
+      const ratios = [0.382, 0.5, 0.618, 0.25, 0.75, 0.3, 0.7];
+      const cells = bspFull(colors, rnd, { areaPow: 0.75, recent: 5, recentBoost: 4, slant: 0, ratio: (r) => ratios[Math.floor(r() * ratios.length)] });
+      shapes = cells.map((c) => ({ pts: c.q, fill: c.color })); amp = 0.12;
+    } else if (style === 'improv') {
+      // improvisational strips: slanted cuts, long narrow pieces, strong wobble, asymmetric (Gee's Bend spirit)
+      const cells = bspFull(colors, rnd, { areaPow: 1.1, recent: 0, recentBoost: 1, slant: 0.5, ratio: (r) => 0.16 + r() * 0.5 });
+      shapes = cells.map((c) => ({ pts: c.q, fill: c.color })); amp = 1.7;
+    } else {
+      // geometric: strict grid of square modules, each holding one bold primitive in a submitted color on a neighbor's color
+      const cols = Math.max(2, Math.ceil(Math.sqrt(n / 2))), rows = Math.max(2, Math.ceil(n / cols)), cs = W / cols, rs = H / rows;
+      const prims = ['quarter', 'half', 'circle', 'tri', 'bar', 'diamond', 'solid'];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const idx = r * cols + c, fg = colors[idx % n], bgc = colors[(idx * 7 + 3) % n === idx % n ? (idx + 1) % n : (idx * 7 + 3) % n];
+        const x0 = c * cs, y0 = r * rs, x1 = x0 + cs, y1 = y0 + rs, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rad = Math.min(cs, rs);
+        shapes.push({ pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fill: bgc });
+        const kind = prims[Math.floor(rnd() * prims.length)], rot = Math.floor(rnd() * 4);
+        const arc = (ox, oy, r0, a0, a1, extra) => [].concat(extra || [], Array.from({ length: 20 }, (_, i) => { const a = a0 + (i / 19) * (a1 - a0); return [ox + Math.cos(a) * r0, oy + Math.sin(a) * r0]; }));
+        const corner = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]][rot], qa = rot * Math.PI / 2;
+        let pts;
+        if (kind === 'quarter') pts = arc(corner[0], corner[1], rad * 0.98, qa, qa + Math.PI / 2, [corner]);
+        else if (kind === 'half') pts = rot % 2 ? arc(cx, y0 + (rot === 1 ? 0 : rs), rad * 0.5, rot === 1 ? 0 : Math.PI, rot === 1 ? Math.PI : Math.PI * 2) : arc(x0 + (rot === 0 ? 0 : cs), cy, rad * 0.5, rot === 0 ? -Math.PI / 2 : Math.PI / 2, rot === 0 ? Math.PI / 2 : Math.PI * 1.5);
+        else if (kind === 'circle') pts = arc(cx, cy, rad * 0.42, 0, Math.PI * 2);
+        else if (kind === 'tri') pts = [[x0, y0], [x1, y1], rot % 2 ? [x1, y0] : [x0, y1]];
+        else if (kind === 'bar') pts = rot % 2 ? [[x0 + cs * 0.3, y0], [x0 + cs * 0.7, y0], [x0 + cs * 0.7, y1], [x0 + cs * 0.3, y1]] : [[x0, y0 + rs * 0.3], [x1, y0 + rs * 0.3], [x1, y0 + rs * 0.7], [x0, y0 + rs * 0.7]];
+        else if (kind === 'diamond') pts = [[cx, y0 + rs * 0.08], [x1 - cs * 0.08, cy], [cx, y1 - rs * 0.08], [x0 + cs * 0.08, cy]];
+        else pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+        shapes.push({ pts, fill: fg });
+      }
+      amp = 0.1;
+    }
+    const vr = mulberry32(seed ^ 0x51ed270b); shapes.forEach((sh) => { sh.fill = shade(sh.fill, (vr() - 0.5) * (style === 'modern' ? 0.03 : 0.07)); });
+    const warp = flatWarp(seed, opts.wonk != null ? amp * opts.wonk : amp);
+    out.shapes = shapes.map((sh) => ({ pts: subdividePts(sh.pts, maxSeg).map(warp), fill: sh.fill }));
+    out.cells = shapes.length; return out;
+  }
+  function build(colors, opts) {
+    opts = opts || {};
+    const seed = (opts.seed != null ? opts.seed : 1) >>> 0;
+    let style = opts.style && opts.style !== 'auto' ? opts.style : null;
+    if (!style) { const r = mulberry32(seed ^ 0x5717e5)(); style = r < 0.4 ? 'bigtop' : r < 0.65 ? 'modern' : r < 0.85 ? 'improv' : 'geometric'; }
+    if (!colors.length) return { W, H, shapes: [], cells: 0, style };
+    const m = style === 'bigtop' ? buildBigTop(colors, opts) : buildFlat(colors, opts, style);
+    m.style = style; return m;
   }
 
   function toSvg(model, opts) {
