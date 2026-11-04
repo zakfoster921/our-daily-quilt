@@ -22,6 +22,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   bake:
     runs-on: ubuntu-latest
@@ -78,6 +81,19 @@ jobs:
         if: always()
         run: |
           if [ -n "${SERVE_PID:-}" ]; then kill "${SERVE_PID}" 2>/dev/null || true; fi
+
+      - name: Publish preview screenshots to branch (preview only)
+        if: always() && inputs.preview != 'false'
+        run: |
+          set -euo pipefail
+          [ -d tmp/speaker-portrait ] || exit 0
+          rm -rf /tmp/preview && mkdir /tmp/preview && cp tmp/speaker-portrait/* /tmp/preview/
+          cd /tmp/preview
+          git init -q -b portrait-preview
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A && git commit -q -m "speaker portrait preview"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" portrait-preview
 
       - name: Upload screenshots
         if: always()
