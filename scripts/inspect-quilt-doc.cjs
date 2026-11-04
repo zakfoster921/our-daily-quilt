@@ -27,6 +27,7 @@ admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.proje
   const pk = prev.toISOString().slice(0, 10);
   const pq = (await db.collection('quilts').doc(pk).get()).data() || {};
   out.prevDay = { key: pk, blocks: (pq.blocks || []).length, contributors: (pq.contributors || []).map((c) => c.name + ' ' + c.firstContributedAt) };
+  out.rawBlocks = blocks; out.rawReplay = colorReplayEvents || [];
   fs.mkdirSync('tmp/inspect', { recursive: true });
   fs.writeFileSync(`tmp/inspect/quilt-${dateKey}.json`, JSON.stringify(out, null, 1));
   console.log('ok', out.blockCount, (out.submissions || []).length);
