@@ -22,7 +22,7 @@ const log = (...a) => console.log('[speaker-portrait]', ...a);
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    viewport: { width: 393, height: 852 },
+    viewport: { width: 393, height: 1100 },
     deviceScaleFactor: 2,
     isMobile: true,
     hasTouch: true,
@@ -75,12 +75,41 @@ async function main() {
     await page.waitForTimeout(6000);
 
     const widget = page.locator('#quoteSpeakerWidget');
-    const portrait = page.locator('.quote-speaker-portrait-wrap').first();
     await widget.scrollIntoViewIfNeeded();
     await widget.screenshot({ path: path.join(OUT, `widget-${dateKey}.png`) });
-    await portrait.screenshot({ path: path.join(OUT, `portrait-${dateKey}.png`), omitBackground: true });
-    const box = await portrait.boundingBox();
-    fs.writeFileSync(path.join(OUT, 'info.json'), JSON.stringify({ ...info, dateKey, box }, null, 2));
+
+    // Portrait only: transparent page, no quilt behind, no name/bio slabs. Margin keeps soft shadows.
+    await page.addStyleTag({
+      content: `
+        html, body, #app, .screen, #screen-quilt { background: transparent !important; }
+        #screen-quilt .quilt-container, #screen-quilt #quilt, #quilt { visibility: hidden !important; }
+        #screen-quilt .quote-speaker-slab, #screen-quilt .quote-speaker-stage::after { visibility: hidden !important; }
+      `
+    });
+    const PAD = 28;
+    const geo = await page.evaluate((PAD) => {
+      const wrap = document.querySelector('.quote-speaker-portrait-wrap');
+      const scroller = document.getElementById('screen-quilt');
+      const r0 = wrap.getBoundingClientRect();
+      if (scroller) scroller.scrollTop += r0.top - (PAD + 12);
+      const r = wrap.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, h: r.height, vw: innerWidth, vh: innerHeight };
+    }, PAD);
+    await page.waitForTimeout(800);
+    const clip = {
+      x: Math.max(0, geo.x - PAD),
+      y: Math.max(0, geo.y - PAD),
+      width: Math.min(geo.vw - Math.max(0, geo.x - PAD), geo.w + PAD * 2),
+      height: Math.min(geo.vh - Math.max(0, geo.y - PAD), geo.h + PAD * 2)
+    };
+    const padL = geo.x - clip.x, padT = geo.y - clip.y;
+    const box = {
+      width: geo.w, height: geo.h,
+      padLeft: padL / geo.w, padTop: padT / geo.h,
+      padRight: (clip.width - padL - geo.w) / geo.w, padBottom: (clip.height - padT - geo.h) / geo.h
+    };
+    await page.screenshot({ path: path.join(OUT, `portrait-${dateKey}.png`), clip, omitBackground: true });
+    fs.writeFileSync(path.join(OUT, 'info.json'), JSON.stringify({ ...info, dateKey, geo, clip, box }, null, 2));
     log('saved screenshots to', OUT, JSON.stringify(box));
 
     if (PREVIEW) {
@@ -106,7 +135,7 @@ async function upload({ dateKey, file, cutoutUrl, box }) {
   const key = crypto.createHash('sha1').update(String(cutoutUrl || '').split('?')[0]).digest('hex').slice(0, 16);
   const ref = admin.firestore().collection('instagram-images').doc(dateKey);
   const prev = (await ref.get()).data() || {};
-  if (prev.speakerPortraitBakedUrl && prev.speakerPortraitBakedKey === key) {
+  if (prev.speakerPortraitBakedUrl && prev.speakerPortraitBakedKey === key && !process.env.FORCE) {
     log('unchanged speaker; skipping upload');
     return;
   }
@@ -123,8 +152,10 @@ async function upload({ dateKey, file, cutoutUrl, box }) {
       speakerPortraitBakedUrl: url,
       speakerPortraitBakedKey: key,
       speakerPortraitBakedUpdatedAt: new Date().toISOString(),
-      speakerPortraitBakedWidth: Math.round(box.width),
-      speakerPortraitBakedHeight: Math.round(box.height)
+      speakerPortraitBakedCutout: String(cutoutUrl || '').split('?')[0],
+      speakerPortraitBakedPad: {
+        left: box.padLeft, top: box.padTop, right: box.padRight, bottom: box.padBottom
+      }
     },
     { merge: true }
   );
