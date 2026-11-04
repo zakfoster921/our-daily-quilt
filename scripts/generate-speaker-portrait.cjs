@@ -161,6 +161,34 @@ async function main() {
       return out;
     }, info.cutoutUrl);
     log('tone diag', JSON.stringify(diag));
+
+    // Deterministic tone: apply the app's own newspaper tone to the cutout and put it on the page ourselves,
+    // so the bake never depends on the widget's async tone/src race (which can leave the original color photo).
+    const toneFix = await page.evaluate(async (cutoutUrl) => {
+      try {
+        const app = window.app;
+        app._scheduleQuoteSpeakerNewspaperTone = () => {};
+        const SCR = globalThis.SpeakerCutoutRender;
+        const img = document.getElementById('quoteSpeakerImage');
+        const decoded = await app._ensureQuoteSpeakerImageForCanvas(cutoutUrl, { skipCutoutExportFinalize: true });
+        if (!decoded?.naturalWidth) return { status: 'no-decode' };
+        const r = SCR.toneSpeakerCutoutImageToNewspaper(decoded);
+        if (r.status !== 'toned' || !r.canvas) return { status: r.status };
+        const url = r.canvas.toDataURL('image/png');
+        img.dataset.newspaperToned = '1';
+        img.src = url;
+        await new Promise((res) => {
+          const t = setTimeout(res, 8000);
+          const done = () => { clearTimeout(t); res(); };
+          if (img.complete && img.currentSrc === url) done(); else img.onload = done;
+        });
+        return { status: 'toned', applied: String(img.currentSrc).startsWith('data:') };
+      } catch (e) {
+        return { status: 'error', message: String(e?.message || e) };
+      }
+    }, info.cutoutUrl);
+    log('tone fix', JSON.stringify(toneFix));
+    await page.waitForTimeout(1500);
     await page.waitForTimeout(1500);
 
     // Safety: the widget must actually show the speaker we resolved, or we never save/upload.
