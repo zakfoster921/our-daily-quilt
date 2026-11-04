@@ -1,0 +1,44 @@
+# Quilt Lab dry run (read-only): renders real past quilts with the lab engine via the server preview route.
+# Nothing is written to Firestore/Storage and nothing is posted. Download the PNGs from the run's Artifacts.
+name: Lab quilt preview (real data, no posting)
+
+on:
+  workflow_dispatch:
+    inputs:
+      end_date:
+        description: "Last day to render (YYYY-MM-DD)"
+        required: true
+        default: "2026-11-03"
+      days:
+        description: "How many days back (1-14)"
+        required: true
+        default: "7"
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Render days through /api/admin/lab-quilt-preview
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
+          END_DATE: ${{ inputs.end_date }}
+          DAYS: ${{ inputs.days }}
+        run: |
+          set -uo pipefail
+          [ -n "${RESET_URL:-}" ] && [ -n "${RESET_TOKEN:-}" ] || { echo "Missing RESET_URL / RESET_TOKEN secrets"; exit 1; }
+          echo "${END_DATE}" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || { echo "Bad end_date"; exit 1; }
+          N=$(( ${DAYS} > 14 ? 14 : ${DAYS} < 1 ? 1 : ${DAYS} ))
+          BASE="${RESET_URL%/api/daily-reset}"
+          mkdir -p out
+          for i in $(seq 0 $((N-1))); do
+            D=$(date -u -d "${END_DATE} -${i} day" +%F)
+            CODE=$(curl -sS -m 90 -D "out/${D}.headers" -o "out/${D}.png" -w "%{http_code}" -H "x-reset-token: ${RESET_TOKEN}" "${BASE}/api/admin/lab-quilt-preview?dateKey=${D}")
+            echo "${D}: HTTP ${CODE} $(grep -i '^x-lab-' out/${D}.headers | tr -d '\r' | tr '\n' ' ')"
+            [ "${CODE}" = "200" ] || rm -f "out/${D}.png"
+          done
+          ls -la out/*.png || { echo "No images rendered (is the latest server deployed on Railway?)"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lab-quilt-preview
+          path: out/*.png
