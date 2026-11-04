@@ -108,6 +108,7 @@
     const mrnd = mulberry32(seed ^ 0x7777aaaa);
     let kind = opts.center && opts.center !== 'auto' ? opts.center : null;
     if (!kind) { const r = mrnd(); kind = r < 0.18 ? 'none' : r < 0.32 ? 'star' : r < 0.42 ? 'small' : r < 0.5 ? 'spine' : r < 0.57 ? 'pair' : r < 0.69 ? 'dresden' : r < 0.81 ? 'flower' : r < 0.91 ? 'wreath' : 'bullseye'; }
+    if (kind === 'pair' && !(opts.center === 'pair') && mulberry32(seed ^ 0x1234abcd)() < 0.5) kind = 'pairv';
     out.center = kind;
     const med = [];
     const cc = (k) => colors[Math.min(n - 1, k)];
@@ -216,6 +217,7 @@
     });
     if (!K && n >= 4) {
       if (kind === 'spine') { [0.17, 0.5, 0.83].forEach((fy, i) => { const b = Math.min(W, H) * (i === 1 ? 0.075 : 0.055); diamond(CX, H * fy, b * 1.5, cc(i + 1)); disc(CX, H * fy, b * 0.8, cc(i + 2)); }); }
+      else if (kind === 'pairv') { [H * 0.27, H * 0.73].forEach((y) => { const b = baseBig * 0.6; diamond(CX, y, b * 1.4, cc(1)); diamond(CX, y, b * 1.0, cc(2)); disc(CX, y, b * 0.6, cc(3)); starAt(CX, y, b * 0.4, cc(4)); }); }
       else if (kind === 'pair') { [W * 0.27, W * 0.73].forEach((x) => { const b = baseBig * 0.52; diamond(x, H * 0.45, b * 1.4, cc(1)); diamond(x, H * 0.45, b * 1.0, cc(2)); disc(x, H * 0.45, b * 0.6, cc(3)); }); }
     }
     const all = bgShapes.concat(med);
