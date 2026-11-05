@@ -1,0 +1,107 @@
+# Daily: render today's carousel slide 1 (active quilt day) and push a preview to the admin device,
+# so there is a full day to adjust it in the tuner. Writes ONLY instagram-images/{today}.slide1Preview*
+# fields (never touches Instagram/Zapier fields). Tap the push to open the tuner.
+# Requires secrets: RESET_URL (ending /api/daily-reset), RESET_TOKEN, GOOGLE_APPLICATION_CREDENTIALS_JSON;
+# optional FIREBASE_STORAGE_BUCKET.
+
+name: Daily slide 1 preview (admin push)
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    # 08:30 UTC (~3:30 AM CT) — after the 07:00 UTC reset and the 07:45 UTC nightly stills.
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+    inputs:
+      date_key:
+        description: "Optional YYYY-MM-DD. Leave empty for the current app day."
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  slide1-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: npm ci --ignore-scripts
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}-chromium-headless-shell
+
+      - name: Install Playwright Chromium headless shell
+        timeout-minutes: 8
+        run: npx playwright install chromium-headless-shell
+
+      - name: Start local app (same commit as workflow)
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          npx --yes serve@14 -l 8765 . > tmp/serve-slide1-preview.log 2>&1 &
+          echo "SERVE_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:8765/our-daily-beta.html" >/dev/null; then
+              echo "Local app ready on :8765"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat tmp/serve-slide1-preview.log || true
+          echo "::error::Local static server failed to start"
+          exit 1
+
+      - name: Render slide 1 preview and push to admin
+        timeout-minutes: 18
+        env:
+          RESET_URL: ${{ secrets.RESET_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          DATE_KEY: ${{ inputs.date_key || '' }}
+          NIGHTLY_IG_SLIDE1_PREVIEW_ONLY: "true"
+          RESET_TOKEN: ${{ secrets.RESET_TOKEN }}
+          NIGHTLY_IG_MAX_ATTEMPTS: "2"
+          NIGHTLY_IG_ARTIFACTS_DIR: "tmp/slide1-preview-artifacts"
+        run: |
+          set -euo pipefail
+          if [ -z "${RESET_URL:-}" ]; then
+            echo "Missing RESET_URL secret"
+            exit 1
+          fi
+          API_BASE_URL="${RESET_URL%/api/daily-reset}"
+          APP_URL="http://127.0.0.1:8765/our-daily-beta.html"
+          APP_URL="$APP_URL" API_BASE_URL="$API_BASE_URL" DATE_KEY="${DATE_KEY:-}" \
+            node scripts/generate-nightly-ig-images.cjs
+
+      - name: Stop local app server
+        if: always()
+        run: |
+          if [ -n "${SERVE_PID:-}" ]; then
+            kill "${SERVE_PID}" 2>/dev/null || true
+          fi
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: slide1-preview-failure-artifacts
+          path: tmp/slide1-preview-artifacts
+          if-no-files-found: ignore

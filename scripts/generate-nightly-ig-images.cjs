@@ -150,7 +150,8 @@ async function runNightlyIgAttempt({
   outDir,
   strictQuote,
   clippingOnly = false,
-  quiltCardOnly = false
+  quiltCardOnly = false,
+  slide1PreviewOnly = false
 }) {
   const evaluateTimeoutMs = Math.max(
     120000,
@@ -276,19 +277,19 @@ async function runNightlyIgAttempt({
       void apiBase;
     }, { dateKey, apiBase });
 
-    const reflectionCardsCapture = clippingOnly || quiltCardOnly
+    const reflectionCardsCapture = clippingOnly || quiltCardOnly || slide1PreviewOnly
       ? null
       : await captureReflectionCardsForNightly(page, dateKey);
 
-    const igContributorCount = clippingOnly || quiltCardOnly
+    const igContributorCount = clippingOnly || quiltCardOnly || slide1PreviewOnly
       ? 1
       : await resolveContributorCountForNightly(page, dateKey);
-    const yesterdayStatsCardsCapture = clippingOnly || quiltCardOnly
+    const yesterdayStatsCardsCapture = clippingOnly || quiltCardOnly || slide1PreviewOnly
       ? null
       : await captureYesterdayStatsCardsForNightly(page, dateKey, igContributorCount);
 
     console.log(
-      `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : quiltCardOnly ? 'live quilt card' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
+      `[nightly-ig] generating ${clippingOnly ? 'newspaper clipping' : quiltCardOnly ? 'live quilt card' : slide1PreviewOnly ? 'slide 1 preview' : 'images'} for ${dateKey} (browser work often 5–12 min; logs tagged [nightly-ig:page])…`
     );
     page.setDefaultTimeout(evaluateTimeoutMs);
     const minNewspaperClippingBytes = Math.max(
@@ -302,6 +303,7 @@ async function runNightlyIgAttempt({
         strictQuote,
         clippingOnly,
         quiltCardOnly,
+        slide1PreviewOnly,
         minNewspaperClippingBytes,
         apiBase,
         reflectionCardsCapture,
@@ -778,6 +780,51 @@ async function runNightlyIgAttempt({
           })
         );
 
+        if (slide1PreviewOnly) {
+          if (!arch.buildCarouselSlide1PreviewImageData) {
+            throw new Error('buildCarouselSlide1PreviewImageData missing — deploy our-daily-beta.html');
+          }
+          if (typeof globalThis.odqPrefetchLayoutBTuneFields === 'function') {
+            try {
+              await globalThis.odqPrefetchLayoutBTuneFields(dateKey, 12000);
+            } catch (_) {
+              /* optional */
+            }
+          }
+          if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
+            arch._clearLayoutBStoryRefStripPlan();
+          }
+          log('generating carousel slide 1 preview…');
+          const slide1Png = await timed('slide 1 preview render', () =>
+            arch.buildCarouselSlide1PreviewImageData(blocks, quote, dateKey)
+          );
+          if (!slide1Png) throw new Error(`Slide 1 preview was not generated for ${dateKey}`);
+          const slide1Jpeg = await new Promise((resolve, reject) => {
+            const im = new Image();
+            im.onload = () => {
+              const maxW = 900;
+              const scale = Math.min(1, maxW / im.naturalWidth);
+              const c = document.createElement('canvas');
+              c.width = Math.max(1, Math.round(im.naturalWidth * scale));
+              c.height = Math.max(1, Math.round(im.naturalHeight * scale));
+              const cx = c.getContext('2d');
+              cx.fillStyle = '#f6f4f1';
+              cx.fillRect(0, 0, c.width, c.height);
+              cx.drawImage(im, 0, 0, c.width, c.height);
+              resolve({ data: c.toDataURL('image/jpeg', 0.9), width: c.width, height: c.height });
+            };
+            im.onerror = () => reject(new Error('Slide 1 preview downscale failed'));
+            im.src = slide1Png;
+          });
+          return {
+            dateKey,
+            slide1PreviewOnly: true,
+            quoteText: String(quote?.text ?? quote?.body ?? '').slice(0, 160),
+            quoteAuthor: String(quote?.author || '').slice(0, 80),
+            imageData: slide1Jpeg.data
+          };
+        }
+
         const blobToDataUrl = async (blob, label) => {
           if (!blob) throw new Error(`${label}: compose returned null`);
           if (typeof Utils.blobToDataUrl !== 'function') {
@@ -1138,8 +1185,26 @@ async function runNightlyIgAttempt({
             doc.storyLayoutBUrl || doc.layoutBStoryUrl || doc.storyLayoutBImageStorageUrl || ''
         };
       },
-      { dateKey, strictQuote, clippingOnly, quiltCardOnly, minNewspaperClippingBytes, apiBase, reflectionCardsCapture, yesterdayStatsCardsCapture }
+      { dateKey, strictQuote, clippingOnly, quiltCardOnly, slide1PreviewOnly, minNewspaperClippingBytes, apiBase, reflectionCardsCapture, yesterdayStatsCardsCapture }
     );
+
+    if (slide1PreviewOnly) {
+      const uploaded = await uploadSlide1Preview({
+        dateKey,
+        imageData: result.imageData,
+        quoteText: result.quoteText,
+        quoteAuthor: result.quoteAuthor
+      });
+      console.log(`[nightly-ig] slide 1 preview uploaded: ${uploaded.url}`);
+      await notifyAdminSlide1Preview({ apiBase, dateKey });
+      return {
+        success: true,
+        date: dateKey,
+        attempt,
+        slide1PreviewOnly: true,
+        slide1PreviewUrl: uploaded.url
+      };
+    }
 
     if (quiltCardOnly) {
       const uploaded = await uploadLiveQuiltCard({
@@ -1313,6 +1378,71 @@ async function uploadLiveQuiltCard({ dateKey, imageData, blockCount }) {
   return { uploaded: true, url, bytes: buf.length };
 }
 
+/**
+ * Admin slide 1 preview: saves a JPEG of today's carousel slide 1 and records it on
+ * instagram-images/{dateKey} as slide1Preview* fields only (never touches Instagram/Zapier fields).
+ */
+async function uploadSlide1Preview({ dateKey, imageData, quoteText, quoteAuthor }) {
+  const crypto = require('crypto');
+  const raw = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  if (!raw) throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is required to upload the slide 1 preview');
+  const m = /^data:image\/jpeg;base64,(.+)$/i.exec(String(imageData || ''));
+  if (!m) throw new Error('Slide 1 preview image data missing or not a JPEG data URL');
+  const buf = Buffer.from(m[1], 'base64');
+  if (buf.length < 5000) throw new Error(`Slide 1 preview JPEG is suspiciously small (${buf.length} bytes)`);
+  const admin = require('firebase-admin');
+  const sa = JSON.parse(raw);
+  const bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'our-daily.firebasestorage.app';
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(sa),
+      projectId: sa.project_id,
+      storageBucket: bucketName
+    });
+  }
+  const token = crypto.randomUUID();
+  const dest = `slide1-preview/${dateKey}.jpg`;
+  await admin.storage().bucket(bucketName).file(dest).save(buf, {
+    resumable: false,
+    metadata: {
+      contentType: 'image/jpeg',
+      cacheControl: 'public, max-age=60',
+      metadata: { firebaseStorageDownloadTokens: token }
+    }
+  });
+  const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(dest)}?alt=media&token=${token}`;
+  await admin.firestore().collection('instagram-images').doc(dateKey).set(
+    {
+      slide1PreviewUrl: url,
+      slide1PreviewUpdatedAt: new Date().toISOString(),
+      slide1PreviewQuote: String(quoteText || ''),
+      slide1PreviewAuthor: String(quoteAuthor || '')
+    },
+    { merge: true }
+  );
+  return { url, bytes: buf.length };
+}
+
+/** Ask the server to push the preview to the admin device. Non-fatal: a failed push never fails the render. */
+async function notifyAdminSlide1Preview({ apiBase, dateKey }) {
+  const token = process.env.RESET_TOKEN;
+  if (!token || !apiBase) {
+    console.warn('[nightly-ig] RESET_TOKEN/apiBase missing — skipping admin push');
+    return;
+  }
+  try {
+    const res = await fetch(`${apiBase}/api/admin-slide1-preview`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-reset-token': token },
+      body: JSON.stringify({ dateKey })
+    });
+    const text = await res.text();
+    console.log(`[nightly-ig] admin push: ${res.status} ${text.slice(0, 200)}`);
+  } catch (err) {
+    console.warn('[nightly-ig] admin push failed:', err?.message || err);
+  }
+}
+
 async function main() {
   const appUrl = process.env.APP_URL;
   if (!appUrl) {
@@ -1324,9 +1454,11 @@ async function main() {
   const now = new Date();
   const clippingOnly = String(process.env.NIGHTLY_IG_CLIPPING_ONLY || '').toLowerCase() === 'true';
   const quiltCardOnly = String(process.env.NIGHTLY_IG_QUILT_CARD_ONLY || '').toLowerCase() === 'true';
+  const slide1PreviewOnly = String(process.env.NIGHTLY_IG_SLIDE1_PREVIEW_ONLY || '').toLowerCase() === 'true';
   if (
     !clippingOnly &&
     !quiltCardOnly &&
+    !slide1PreviewOnly &&
     !process.env.DATE_KEY &&
     process.env.NIGHTLY_IG_SKIP_SCHEDULE_GUARD !== 'true' &&
     now.getUTCHours() < 7
@@ -1338,7 +1470,7 @@ async function main() {
   }
   const dateKey =
     process.env.DATE_KEY ||
-    (clippingOnly || quiltCardOnly ? getActiveQuiltDateKey(now) : getCompletedQuiltDateKey(now));
+    (clippingOnly || quiltCardOnly || slide1PreviewOnly ? getActiveQuiltDateKey(now) : getCompletedQuiltDateKey(now));
   const strictQuote = String(process.env.NIGHTLY_IG_STRICT_QUOTE || 'true').toLowerCase() !== 'false';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     throw new Error(`Invalid DATE_KEY: ${dateKey}`);
@@ -1362,7 +1494,8 @@ async function main() {
         outDir,
         strictQuote,
         clippingOnly,
-        quiltCardOnly
+        quiltCardOnly,
+        slide1PreviewOnly
       });
       console.log('[nightly-ig] result:', JSON.stringify(result, null, 2));
       if (result.newspaperClippingUrl) {

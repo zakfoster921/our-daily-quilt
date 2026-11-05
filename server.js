@@ -4374,6 +4374,35 @@ async function sendAdminNamingReminder() {
   return { sent: true, date: dateKey };
 }
 
+// Admin-only push: today's carousel slide 1 preview (rendered by the nightly "slide 1 preview" workflow).
+async function sendAdminSlide1Preview(dateKeyArg) {
+  const tokenDoc = await db.collection('pushTokens').doc(ADMIN_NAMING_TOKEN_ID).get();
+  if (!tokenDoc.exists) throw new Error('Admin token doc not found');
+  const { token, enabled } = tokenDoc.data();
+  if (!enabled || !token) return { skipped: true, reason: 'token disabled' };
+
+  const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKeyArg || '')) ? String(dateKeyArg) : getAppDateKey();
+  const igDoc = await db.collection('instagram-images').doc(dateKey).get();
+  const ig = igDoc.exists ? igDoc.data() || {} : {};
+  const imageUrl = String(ig.slide1PreviewUrl || '').trim();
+  if (!imageUrl) return { skipped: true, reason: `no slide 1 preview for ${dateKey}` };
+  const quote = String(ig.slide1PreviewQuote || '').trim();
+  const author = String(ig.slide1PreviewAuthor || '').trim();
+  const body = quote ? `${quote.slice(0, 90)}${quote.length > 90 ? '…' : ''}${author ? ` — ${author}` : ''}` : 'Tap to review in the tuner.';
+
+  await admin.messaging().send({
+    token,
+    notification: { title: "Today's slide 1 is ready", body, imageUrl },
+    data: { type: 'admin_slide1_preview', date: dateKey, imageUrl },
+    apns: {
+      payload: { aps: { 'mutable-content': 1 } },
+      fcmOptions: { imageUrl }
+    },
+    android: { notification: { imageUrl } }
+  });
+  return { sent: true, date: dateKey };
+}
+
 function startHeartSweepScheduler() {
   if (heartSweepTimer) return;
   // Delay the first run so startup Firestore reads don't compete with quilt load
@@ -13923,6 +13952,21 @@ app.post('/api/admin-naming-reminder', async (req, res) => {
     return res.json({ ok: true, ...result });
   } catch (err) {
     console.error('❌ Admin naming reminder failed:', err?.message || err);
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+app.post('/api/admin-slide1-preview', async (req, res) => {
+  const expectedToken = process.env.RESET_TOKEN;
+  if (!expectedToken || req.headers['x-reset-token'] !== expectedToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const result = await sendAdminSlide1Preview(req.body?.dateKey);
+    console.log('🖼️ Admin slide 1 preview push:', result);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('❌ Admin slide 1 preview push failed:', err?.message || err);
     return res.status(500).json({ error: err?.message || String(err) });
   }
 });
