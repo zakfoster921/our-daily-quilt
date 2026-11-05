@@ -1437,7 +1437,7 @@ async function notifyAdminSlide1Preview({ apiBase, dateKey }) {
       body: JSON.stringify({ dateKey })
     });
     const text = await res.text();
-    console.log(`[nightly-ig] admin push: ${res.status} ${text.slice(0, 200)}`);
+    console.log(`[nightly-ig] admin push: ${res.status} ${text.slice(0, 1500)}`);
   } catch (err) {
     console.warn('[nightly-ig] admin push failed:', err?.message || err);
   }
