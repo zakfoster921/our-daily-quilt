@@ -786,10 +786,19 @@ async function runNightlyIgAttempt({
           }
           if (typeof globalThis.odqPrefetchLayoutBTuneFields === 'function') {
             try {
-              await globalThis.odqPrefetchLayoutBTuneFields(dateKey, 12000);
-            } catch (_) {
-              /* optional */
+              const tp = await globalThis.odqPrefetchLayoutBTuneFields(dateKey, 12000);
+              log(`slide 1 preview tune prefetch: ${JSON.stringify(tp)}`);
+            } catch (tpErr) {
+              log(`slide 1 preview tune prefetch failed: ${tpErr?.message || tpErr}`);
             }
+          }
+          try {
+            for (const aspect of ['story', 'post']) {
+              const tw = globalThis.odqReadSpeakerCutoutTweakFromLocal?.(dateKey, aspect);
+              log(`slide 1 preview speaker tweak (${aspect}): ${JSON.stringify(tw)}`);
+            }
+          } catch (_) {
+            /* diagnostic only */
           }
           if (typeof arch._clearLayoutBStoryRefStripPlan === 'function') {
             arch._clearLayoutBStoryRefStripPlan();
