@@ -8,8 +8,15 @@ ROOT = File.expand_path('../ios/App', __dir__)
 project_path = File.join(ROOT, 'App.xcodeproj')
 project = Xcodeproj::Project.open(project_path)
 
-if project.targets.any? { |t| t.name == 'NotificationService' }
-  puts 'NotificationService target already exists — nothing to do.'
+existing = project.targets.find { |t| t.name == 'NotificationService' }
+if existing
+  # Repair: an earlier run left PRODUCT_NAME empty, which makes Xcode build a nameless ".appex".
+  existing.build_configurations.each do |c|
+    c.build_settings['PRODUCT_NAME'] = '$(TARGET_NAME)'
+    c.build_settings['PRODUCT_MODULE_NAME'] = 'NotificationService'
+  end
+  project.save
+  puts 'NotificationService target already exists — repaired PRODUCT_NAME.'
   exit 0
 end
 
@@ -26,6 +33,8 @@ ext.add_file_references([src])
 
 ext.build_configurations.each do |c|
   s = c.build_settings
+  s['PRODUCT_NAME'] = '$(TARGET_NAME)'
+  s['PRODUCT_MODULE_NAME'] = 'NotificationService'
   s['PRODUCT_BUNDLE_IDENTIFIER'] = "#{app_bundle}.NotificationService"
   s['INFOPLIST_FILE'] = 'NotificationService/Info.plist'
   s['DEVELOPMENT_TEAM'] = team if team
