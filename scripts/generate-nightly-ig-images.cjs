@@ -808,6 +808,11 @@ async function runNightlyIgAttempt({
             arch.buildCarouselSlide1PreviewImageData(blocks, quote, dateKey)
           );
           if (!slide1Png) throw new Error(`Slide 1 preview was not generated for ${dateKey}`);
+          try {
+            log(`slide 1 speaker debug: ${JSON.stringify(globalThis.__odqSlide1SpeakerDebug || null)}`);
+          } catch (_) {
+            /* diagnostic only */
+          }
           const slide1Jpeg = await new Promise((resolve, reject) => {
             const im = new Image();
             im.onload = () => {
