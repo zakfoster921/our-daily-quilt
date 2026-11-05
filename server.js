@@ -7664,7 +7664,7 @@ Field specs:
 - watch_for: A standalone sentence fragment naming a specific observable behavior. UI prepends "Watch for the moment today when..." so the value continues from that. No adverbs doing interpretive work.
 - community_prompt: Single short question (under 20 words) inviting users to share something from their experience useful to others. One clause, one ask — no compound "and what..." questions. Transferable. Plain language. Does not mention quote or author. Ends with ?
 - notification_text: Format "[Full Name] on [what the quote is about]". The on... part intriguing and human. No period. One line.
-- art_recs: 5 recommendations across music, film, painting, literature, and one wildcard. Format per entry: "Title by Artist: one sentence why it connects". Use a colon after the artist name, not a dash. All 5 in one field.
+- art_recs: 5 recommendations across music, film, painting, literature, and one wildcard. Format: five blocks separated by one blank line, each with exactly four lines: "title: <work title>", "artist: <artist/director/author>", "why: <lowercase clause starting with a verb that continues the sentence \"<title> by <artist> ...\", one sentence, no trailing period>", "type: <music|book|movie|art|other>". No numbering; no \"by\" inside title or artist. All 5 in one field.
 - speaker_guide_line: 1 sentence about who this person was and why their perspective matters. Start with a verb, omit name at start. Grounded in what they actually lived. No reverence.`;
 
 async function postOdqEditorGenerateToClaude({ apiKey, model, system, user }) {
