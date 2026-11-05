@@ -39,6 +39,12 @@ const TUNE_PREFIXES = [
     console.log('[reset-tune] DRY_RUN — nothing changed');
     return;
   }
+  // Back up the full values first so the reset can be undone by hand.
+  const backup = { dateKey, backedUpAt: new Date().toISOString(), fields: {} };
+  for (const f of fields) backup.fields[f] = data[f];
+  const backupId = `${dateKey}_${Date.now()}`;
+  await admin.firestore().collection('layoutBTuneBackups').doc(backupId).set(backup);
+  console.log(`[reset-tune] backed up to layoutBTuneBackups/${backupId}`);
   const update = { layoutBTuneUpdatedAt: new Date().toISOString(), layoutBTuneUpdatedBy: 'reset-to-default' };
   for (const f of fields) update[f] = admin.firestore.FieldValue.delete();
   await ref.update(update);
