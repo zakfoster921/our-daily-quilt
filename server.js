@@ -4376,11 +4376,6 @@ async function sendAdminNamingReminder() {
 
 // Admin-only push: today's carousel slide 1 preview (rendered by the nightly "slide 1 preview" workflow).
 async function sendAdminSlide1Preview(dateKeyArg) {
-  const tokenDoc = await db.collection('pushTokens').doc(ADMIN_NAMING_TOKEN_ID).get();
-  if (!tokenDoc.exists) throw new Error('Admin token doc not found');
-  const { token, enabled } = tokenDoc.data();
-  if (!enabled || !token) return { skipped: true, reason: 'token disabled' };
-
   const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKeyArg || '')) ? String(dateKeyArg) : getAppDateKey();
   const igDoc = await db.collection('instagram-images').doc(dateKey).get();
   const ig = igDoc.exists ? igDoc.data() || {} : {};
@@ -4390,24 +4385,49 @@ async function sendAdminSlide1Preview(dateKeyArg) {
   const author = String(ig.slide1PreviewAuthor || '').trim();
   const body = quote ? `${quote.slice(0, 90)}${quote.length > 90 ? '…' : ''}${author ? ` — ${author}` : ''}` : 'Tap to review in the tuner.';
 
-  const tokenData = tokenDoc.data() || {};
-  const device = {};
-  for (const [k, v] of Object.entries(tokenData)) {
-    if (k === 'token') continue;
-    if (['string', 'number', 'boolean'].includes(typeof v)) device[k] = typeof v === 'string' ? v.slice(0, 80) : v;
-  }
-  device.tokenTail = String(token).slice(-6);
-  const messageId = await admin.messaging().send({
-    token,
-    notification: { title: "Today's slide 1 is ready", body, imageUrl },
-    data: { type: 'admin_slide1_preview', date: dateKey, imageUrl },
-    apns: {
-      payload: { aps: { 'mutable-content': 1 } },
-      fcmOptions: { imageUrl }
-    },
-    android: { notification: { imageUrl } }
+  // Targets: installs that registered while admin mode was on (most recent 3, last 30 days),
+  // else the legacy admin token doc.
+  const targets = [];
+  const flagged = await db.collection('pushTokens').where('adminPreview', '==', true).get();
+  const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
+  flagged.forEach((d) => {
+    const data = d.data() || {};
+    const t = Date.parse(String(data.updatedAt || ''));
+    if (data.enabled === true && data.token && Number.isFinite(t) && t >= cutoff) {
+      targets.push({ id: d.id, data, at: t });
+    }
   });
-  return { sent: true, date: dateKey, messageId, device };
+  targets.sort((a, b) => b.at - a.at);
+  targets.splice(3);
+  if (!targets.length) {
+    const legacy = await db.collection('pushTokens').doc(ADMIN_NAMING_TOKEN_ID).get();
+    if (legacy.exists && legacy.data()?.enabled && legacy.data()?.token) {
+      targets.push({ id: ADMIN_NAMING_TOKEN_ID, data: legacy.data(), at: 0, legacy: true });
+    }
+  }
+  if (!targets.length) return { skipped: true, reason: 'no admin device registered' };
+
+  const results = [];
+  for (const t of targets) {
+    const token = String(t.data.token);
+    try {
+      const messageId = await admin.messaging().send({
+        token,
+        notification: { title: "Today's slide 1 is ready", body, imageUrl },
+        data: { type: 'admin_slide1_preview', date: dateKey, imageUrl },
+        apns: {
+          headers: { 'apns-priority': '10' },
+          payload: { aps: { 'mutable-content': 1, sound: 'default' } },
+          fcmOptions: { imageUrl }
+        },
+        android: { notification: { imageUrl } }
+      });
+      results.push({ ok: true, tokenTail: token.slice(-6), updatedAt: t.data.updatedAt, legacy: !!t.legacy, messageId });
+    } catch (err) {
+      results.push({ ok: false, tokenTail: token.slice(-6), updatedAt: t.data.updatedAt, legacy: !!t.legacy, error: err?.code || err?.message || String(err) });
+    }
+  }
+  return { sent: results.some((r) => r.ok), date: dateKey, results };
 }
 
 function startHeartSweepScheduler() {
@@ -12245,6 +12265,7 @@ app.post('/api/push/register', limitPushRegister, async (req, res) => {
         notificationTypes,
         dailyQuotePreferredHour: preferredHour,
         enabled: req.body?.enabled !== false,
+        ...(req.body?.adminPreview === true ? { adminPreview: true, adminPreviewAt: getUtcIsoNow() } : {}),
         updatedAt: getUtcIsoNow(),
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       },
