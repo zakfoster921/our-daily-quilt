@@ -1224,7 +1224,7 @@ async function runNightlyIgAttempt({
     const carouselSlide4Url =
       verify.carouselSlide4Url || result.carouselSlide4Url || '';
     const carouselPostOrderUrls = [
-      verify.carouselSlide0Url || verify.carouselSlide1Url || verify.imageUrl || result.carouselSlide0Url || '',
+      verify.carouselSlide1Url || verify.carouselSlide0Url || verify.imageUrl || result.carouselSlide0Url || '',
       verify.carouselSlide3Url || result.carouselSlide3Url || '',
       carouselSlide4Url,
       verify.carouselSlide2Url || result.carouselSlide2Url || ''

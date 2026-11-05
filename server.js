@@ -5889,7 +5889,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     carouselSlide4Url = imageData.storageCarouselSlide4Url || '';
 
     if (carouselSlide0Url || carouselSlide1Url) {
-      imageUrl = carouselSlide0Url || carouselSlide1Url;
+      imageUrl = carouselSlide1Url || carouselSlide0Url;
     } else if (imageData.imageData) {
       const filename = `instagram-${timestamp}.png`;
       imageStore.set(filename, imageData.imageData);
@@ -5943,7 +5943,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
     // Integrated carousel post order: 0 quote-fit (when present) else 1 layout B, then 3, 4, 2.
     // carouselSlide0bUrl = speaker cutout + vinyl name (parallel asset).
     const carouselPostOrderUrls = [
-      carouselSlide0Url || carouselSlide1Url || imageUrl,
+      carouselSlide1Url || carouselSlide0Url || imageUrl,
       carouselSlide3Url,
       carouselSlide4Url,
       carouselSlide2Url
@@ -6396,7 +6396,7 @@ app.post('/api/push-instagram-assets', limitInstagramAssetPush, optionalInstagra
 
     if (docPayload.carouselSlide0Url || docPayload.carouselSlide1Url || docPayload.carouselSlide2Url || docPayload.classicUrl) {
       docPayload.carouselPostOrderUrls = [
-        docPayload.carouselSlide0Url || docPayload.carouselSlide1Url || docPayload.classicUrl,
+        docPayload.carouselSlide1Url || docPayload.classicUrl || docPayload.carouselSlide0Url,
         docPayload.carouselSlide3Url,
         docPayload.carouselSlide4Url,
         docPayload.carouselSlide2Url
