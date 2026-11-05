@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Quilt render shell</title>
+  <style>
+    html, body { margin: 0; background: #f6f4f1; }
+    #quilt { display: block; width: 273px; height: 720px; }
+  </style>
+</head>
+<body>
+  <svg id="quilt" aria-label="Quilt"></svg>
+  <script src="/lib/app-config.js"></script>
+  <script src="/lib/color-utils-v2.js"></script>
+  <script src="/lib/utils-core.js"></script>
+  <script src="/lib/utils-color.js"></script>
+  <script src="/lib/utils-quilt.js"></script>
+  <script src="/lib/utils-quilt-render.js"></script>
+  <script src="/lib/utils-zapier.js"></script>
+  <script src="/lib/quilt-mirror-layout.js"></script>
+  <script src="/lib/simple-quilt-engine.js"></script>
+  <script src="/lib/quilt-renderer-v2.js"></script>
+  <script>
+    window.Utils = window.UtilsCore;
+    window.__renderQuiltBlocks = function (blocks, submissionCount, dateKey) {
+      const logger = { log() {}, warn() {}, error() {} };
+      const renderer = new QuiltRendererV2(logger);
+      renderer.initialize();
+      renderer.quiltSVG = document.getElementById('quilt');
+      renderer._builderPreviewMode = true;
+      if (typeof renderer.setBuilderPreviewMode === 'function') renderer.setBuilderPreviewMode(true);
+      renderer._exportDateKeyOverride = dateKey || '';
+      renderer.renderBlocks(blocks || [], [], submissionCount || 0);
+      const svg = document.getElementById('quilt');
+      const shapes = svg?.querySelectorAll('#quiltParallaxLayer rect, #quiltParallaxLayer polygon').length || 0;
+      return { blockCount: (blocks || []).length, shapes };
+    };
+    window.__renderReady = true;
+  </script>
+</body>
+</html>

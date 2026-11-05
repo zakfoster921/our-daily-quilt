@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quilt builder</title>
+  <script>
+window.__ODQ_BUILDER_DATE_KEY__ = "2026-07-11";
+window.__ODQ_REPLAY_COLORS__ = ["#d455b2","#ea2cbb","#942121","#e6a817","#828737","#5e302f","#00e6a4","#c4eaa8","#ea0000","#79bd79","#e66700","#ea413f","#ea69d7","#0023ea","#6e0100","#bdace6","#3b4975","#3052c9","#75aaea","#eae7bb","#d45f00","#ea773d","#ea0300","#ab7c24","#ea7675","#dbeac2","#8667a8","#e69b32","#96ea75","#007175","#bbc1ea","#45374f","#cb7ce6","#848494","#bf432a","#ea75cf","#ea211e","#ea700c","#7eea44","#6e1b58","#c775ea","#e6e3ea","#aeb02a","#8cbfac","#1c8ee6","#e0ea52","#872423","#eada75","#4c3a6e","#e0ea75","#ada7c2","#b35967","#ea0300","#ea75c3","#ea7581","#eade3d","#cfa423","#95964b","#d1ea75","#73e6da","#c1dde6","#a7b359","#b8643b","#ea0805","#eac3c2","#d575ea","#7aead5","#4a7a16","#6b003b","#a875ea","#ea6246","#800612","#ea6e25","#accf82","#ea7675","#0f21bf","#aee673","#e65555","#9feaea","#d6ea42","#4c1a82","#b0a1ea","#ea7675","#a17aea","#700301","#8a4645","#c95757","#146b7d","#4a9483","#1c53ea","#b9ea75","#25db80","#7d45a8","#319494","#334cea","#4d2726","#e68600","#0d7ebf","#8575ea","#8f3bea","#ea8246","#1a9160","#917409","#804140","#e6ba1c","#3f287d","#daea60","#ea0300","#5e302f","#ea75cd","#3b6875","#d97eb4","#e075ea","#ea076d","#ea771e","#d14182","#e079d8"];
+window.__ODQ_COLUMNS_PREVIEW__ = true;
+window.__ODQ_AUTO_REPLAY__ = true;
+</script>
+  <style>
+    :root {
+      --bg: #f6f4f1;
+      --ink: #1f1b16;
+      --muted: #6b635a;
+      --accent: #1f1b16;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .lede {
+      margin: 0.15rem 0 0;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    button {
+      font: inherit;
+      border: 1px solid rgba(0, 0, 0, 0.22);
+      background: #fff;
+      color: var(--ink);
+      padding: 0.5rem 0.9rem;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #fffef9; }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    button.primary:hover { opacity: 0.92; }
+    button:disabled { opacity: 0.45; cursor: wait; }
+    label.macro-freeze {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    label.macro-freeze select,
+    label.macro-freeze input[type="text"] {
+      font: inherit;
+      border: 1px solid rgba(0, 0, 0, 0.22);
+      background: #fff;
+      color: var(--ink);
+      padding: 0.45rem 0.55rem;
+      border-radius: 6px;
+    }
+    label.macro-freeze input[type="text"] { width: 7.5rem; }
+    .stats {
+      font-size: 0.82rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 1rem;
+    }
+    .stats strong { color: var(--ink); font-weight: 600; }
+    .swatch {
+      display: inline-block;
+      width: 0.85rem;
+      height: 0.85rem;
+      border-radius: 2px;
+      vertical-align: -0.12rem;
+      margin-right: 0.25rem;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+    }
+    main {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+      min-height: 0;
+      overflow: auto;
+    }
+    .stage {
+      width: min(360px, 100%);
+      aspect-ratio: 273 / 720;
+      background: #fff;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06);
+    }
+    .builder-quilt-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      background: #f6f4f1;
+      overflow: hidden;
+    }
+    .builder-quilt-container #quilt {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="page-title">Quilt builder</h1>
+      <p class="lede" id="page-lede">Live engine — add random Rumi colors. Use columns:preview for real data.</p>
+    </div>
+    <div class="controls">
+      <label class="macro-freeze" for="date-key">
+        Date key
+        <input id="date-key" type="text" value="" placeholder="today" aria-label="Date key" />
+      </label>
+      <label class="macro-freeze" for="macro-freeze-at">
+        Macro freeze
+        <select id="macro-freeze-at" aria-label="Macro freeze at block count">
+          <option value="5">at 5 blocks</option>
+          <option value="10">at 10 blocks</option>
+          <option value="25" selected>at 25 blocks</option>
+          <option value="50">at 50 blocks</option>
+        </select>
+      </label>
+      <button type="button" class="primary" id="add-color">Add color</button>
+      <button type="button" id="add-ten">+10</button>
+      <button type="button" id="replay-all" hidden>Replay all</button>
+      <button type="button" id="undo" disabled>Undo</button>
+      <button type="button" id="reset">Reset</button>
+    </div>
+    <div class="stats" id="stats" aria-live="polite"></div>
+  </header>
+  <main>
+    <div class="stage">
+      <div class="quilt-container builder-quilt-container">
+        <svg id="quilt" aria-label="Quilt preview"></svg>
+      </div>
+    </div>
+  </main>
+
+  <script>window.odqEnableAdminTools = function () { return false; };</script>
+  <script src="/rumi-colors.js"></script>
+  <script src="/lib/app-config.js"></script>
+  <script src="/lib/quote-mood-colors.js"></script>
+  <script src="/lib/color-utils-v2.js"></script>
+  <script src="/lib/utils-core.js"></script>
+  <script src="/lib/utils-color.js"></script>
+  <script src="/lib/utils-client.js"></script>
+  <script src="/lib/utils-quilt.js"></script>
+  <script src="/lib/utils-quilt-render.js"></script>
+  <script src="/lib/utils-zapier.js"></script>
+  <script src="/lib/quilt-mirror-layout.js"></script>
+  <script src="/lib/simple-quilt-engine.js?v=70"></script>
+  <script src="/lib/composition-archetypes.js?v=1"></script>
+  <script src="/lib/quilt-renderer-v2.js?v=70"></script>
+
+  <script>
+    window.Utils = window.UtilsCore;
+    if (typeof rumiColors !== 'undefined' && Array.isArray(rumiColors)) {
+      window.__ODQ_RUMI_COLORS__ = rumiColors;
+    }
+
+    const noopLogger = {
+      log() {},
+      warn(...args) { console.warn(...args); },
+      error(...args) { console.error(...args); }
+    };
+
+    let engine;
+    let renderer;
+    let lastColor = '';
+    let lastError = '';
+    let replayQueue = [];
+    let replayIndex = 0;
+    const undoStack = [];
+    const UNDO_STACK_MAX = 80;
+
+    const isColumnsPreview = window.__ODQ_COLUMNS_PREVIEW__ === true;
+    const embeddedReplay = Array.isArray(window.__ODQ_REPLAY_COLORS__)
+      ? window.__ODQ_REPLAY_COLORS__.filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c))
+      : [];
+
+    function builderDateKey() {
+      const input = document.getElementById('date-key');
+      const manual = String(input?.value || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(manual)) return manual;
+      if (typeof window.__ODQ_BUILDER_DATE_KEY__ === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(window.__ODQ_BUILDER_DATE_KEY__)) {
+        return window.__ODQ_BUILDER_DATE_KEY__;
+      }
+      return typeof Utils.getTodayKey === 'function' ? Utils.getTodayKey() : 'quilt-builder';
+    }
+
+    function syncDateKeyInput() {
+      const input = document.getElementById('date-key');
+      if (!input || input.value.trim()) return;
+      input.value = builderDateKey();
+    }
+
+    function useColumnsArchetype() {
+      return isColumnsPreview || embeddedReplay.length > 0;
+    }
+
+    function selectedMacroFreezeAt() {
+      const sel = document.getElementById('macro-freeze-at');
+      const n = sel ? parseInt(sel.value, 10) : NaN;
+      return Number.isFinite(n) && n >= 2 ? n : SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT;
+    }
+
+    function applyMacroFreezeOverrideToEngine() {
+      if (!engine) return;
+      engine.macroFreezeAtBlockCountOverride = selectedMacroFreezeAt();
+      if (!engine.macroStructureFrozen) {
+        engine.maybeApplyMacroStructureFreezeAfterMutation();
+      }
+    }
+
+    function countMacroRegions(blocks) {
+      const ids = new Set();
+      (blocks || []).forEach((b) => {
+        if (b?.macroRegionId != null) ids.add(b.macroRegionId);
+      });
+      return ids.size;
+    }
+
+    function captureEngineSnapshot() {
+      if (!engine) return null;
+      return {
+        blocks: JSON.parse(JSON.stringify(engine.blocks || [])),
+        submissionCount: Number(engine.submissionCount) || 0,
+        macroStructureFrozen: engine.macroStructureFrozen === true,
+        macroLayoutMode: engine.macroLayoutMode,
+        macroColumnBands: Array.isArray(engine._macroColumnBands)
+          ? JSON.parse(JSON.stringify(engine._macroColumnBands))
+          : null,
+        replayIndex,
+        lastColor
+      };
+    }
+
+    function restoreEngineSnapshot(snap) {
+      if (!engine || !snap) return;
+      engine.blocks = JSON.parse(JSON.stringify(snap.blocks || []));
+      engine.submissionCount = Number(snap.submissionCount) || 0;
+      engine.macroStructureFrozen = snap.macroStructureFrozen === true;
+      engine.macroLayoutMode = snap.macroLayoutMode;
+      engine._macroColumnBands = snap.macroColumnBands
+        ? JSON.parse(JSON.stringify(snap.macroColumnBands))
+        : null;
+      replayIndex = Number(snap.replayIndex) || 0;
+      lastColor = snap.lastColor || '';
+    }
+
+    function pushUndoSnapshot() {
+      const snap = captureEngineSnapshot();
+      if (!snap) return;
+      undoStack.push(snap);
+      if (undoStack.length > UNDO_STACK_MAX) undoStack.shift();
+      updateUndoButton();
+    }
+
+    function undoLastAdd() {
+      const snap = undoStack.pop();
+      if (!snap) {
+        updateUndoButton();
+        return false;
+      }
+      restoreEngineSnapshot(snap);
+      lastError = '';
+      renderQuilt(null);
+      updateUndoButton();
+      return true;
+    }
+
+    function updateUndoButton() {
+      const btn = document.getElementById('undo');
+      if (btn) btn.disabled = undoStack.length === 0;
+    }
+
+    function clearUndoStack() {
+      undoStack.length = 0;
+      updateUndoButton();
+    }
+
+    function rumiPalette() {
+      const raw = Array.isArray(window.__ODQ_RUMI_COLORS__) ? window.__ODQ_RUMI_COLORS__ : [];
+      return raw.filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c));
+    }
+
+    function nextColor() {
+      if (replayIndex < replayQueue.length) {
+        return replayQueue[replayIndex++];
+      }
+      const palette = rumiPalette();
+      return palette.length ? palette[Math.floor(Math.random() * palette.length)] : '#c8a882';
+    }
+
+    function countSpecialFamilies(blocks) {
+      const ids = new Set();
+      (blocks || []).forEach((block) => {
+        if (!block || block.specialPatternType === 'diagonalAxis') return;
+        if (block.patternType === 'special' && block.specialPatternType) {
+          ids.add(block.originalPatternId || block.id);
+        } else if (block.originalPatternId && block.id.includes('_pattern_')) {
+          ids.add(block.originalPatternId);
+        }
+      });
+      return ids.size;
+    }
+
+    function specialTypeSummary(blocks) {
+      const types = new Set();
+      (blocks || []).forEach((b) => {
+        if (b?.specialPatternType && b.specialPatternType !== 'diagonalAxis') {
+          types.add(b.specialPatternType);
+        }
+      });
+      return [...types].sort().join(', ') || '—';
+    }
+
+    function builderStageMetrics() {
+      const ref =
+        typeof QuiltMirrorLayout !== 'undefined' && QuiltMirrorLayout.CANVAS_HEIGHT_REFERENCE
+          ? QuiltMirrorLayout.CANVAS_HEIGHT_REFERENCE
+          : { width: 273, height: 720 };
+      const stageWidth = Math.min(360, document.querySelector('.stage')?.parentElement?.clientWidth || 360);
+      const stageHeight = stageWidth * (ref.height / ref.width);
+      const viewport = { width: stageWidth, height: stageHeight, w: stageWidth, h: stageHeight };
+      return { stageWidth, stageHeight, viewport, aspect: `${ref.width} / ${ref.height}` };
+    }
+
+    function syncBuilderStage() {
+      const stage = document.querySelector('.stage');
+      if (!stage || !renderer) return;
+      const { stageWidth, stageHeight, viewport, aspect } = builderStageMetrics();
+      renderer._renderViewportOverride = viewport;
+      stage.style.width = `${stageWidth}px`;
+      stage.style.height = `${stageHeight}px`;
+      stage.style.aspectRatio = aspect;
+      stage.style.maxHeight = 'none';
+    }
+
+    function configureRenderer(r) {
+      r._builderPreviewMode = true;
+      if (typeof r.setBuilderPreviewMode === 'function') r.setBuilderPreviewMode(true);
+      if (typeof r.setBuilderLayeringSubmissionCap === 'function') {
+        r.setBuilderLayeringSubmissionCap(0);
+      } else {
+        r._builderLayeringSubmissionCap = 0;
+      }
+      r._forcePrimaryOnlyPreview = false;
+      r._exportDisableSplitBandFit = false;
+      r._exportFullQuiltField = false;
+      r._exportDateKeyOverride = builderDateKey();
+      r._gridSeamUnderpaintBleed = () => 2.25;
+      r._renderViewportOverride = builderStageMetrics().viewport;
+      if (typeof r.setBacksidePreviewEnabled === 'function') r.setBacksidePreviewEnabled(false);
+    }
+
+    function renderQuilt(addResult) {
+      syncBuilderStage();
+      const blocks = engine.blocks || [];
+      renderer.setLastAddedIndex(null);
+      if (addResult) {
+        const highlightIds = new Set(
+          (addResult.newBlocks || [])
+            .filter((b) => Number(b?.submissionIndex) === Number(addResult.submissionIndex))
+            .map((b) => b.id)
+        );
+        if (addResult.dedicatedBlockId) highlightIds.add(addResult.dedicatedBlockId);
+        if (highlightIds.size) {
+          const idx = blocks.findIndex((b) => highlightIds.has(b.id));
+          if (idx >= 0) renderer.setLastAddedIndex(idx);
+        }
+      }
+      renderer.renderBlocks(blocks, [], engine.submissionCount || 0);
+      syncBuilderStage();
+      updateStats();
+    }
+
+    function updateStats() {
+      const el = document.getElementById('stats');
+      if (!el) return;
+      const blocks = engine?.blocks?.length || 0;
+      const picks = typeof engine?.getContributorPickCount === 'function'
+        ? engine.getContributorPickCount()
+        : Math.max(0, (engine?.submissionCount || 0) - 1);
+      const specials = countSpecialFamilies(engine?.blocks);
+      const frozen = engine?.macroStructureFrozen ? 'yes' : 'no';
+      const freezeAt = engine?.macroFreezeAtBlockCountOverride ?? SimpleQuiltEngine.MACRO_FREEZE_AT_BLOCK_COUNT;
+      const macroRegions = engine?.macroStructureFrozen ? countMacroRegions(engine.blocks) : '—';
+      const layout = engine?.macroLayoutMode === 'columns' ? 'columns' : 'default';
+      const swatch = lastColor ? `<span class="swatch" style="background:${lastColor}"></span>` : '';
+      const replayLabel = replayQueue.length
+        ? `<span>replay: <strong>${Math.min(replayIndex, replayQueue.length)}</strong> / ${replayQueue.length}</span>`
+        : '';
+      el.innerHTML = `
+        <span><strong>${picks}</strong> colors</span>
+        <span><strong>${blocks}</strong> blocks</span>
+        <span><strong>${specials}</strong> specials</span>
+        <span>macro frozen: <strong>${frozen}</strong></span>
+        <span>freeze at: <strong>${freezeAt}</strong></span>
+        <span>macro regions: <strong>${macroRegions}</strong></span>
+        <span>layout: <strong>${layout}</strong></span>
+        <span>archetype: <strong>${useColumnsArchetype() ? 'columns' : 'baseline'}</strong></span>
+        ${replayLabel}
+        <span>last ${swatch}<strong>${lastColor || '—'}</strong></span>
+        <span>motifs: ${specialTypeSummary(engine?.blocks)}</span>
+        ${lastError ? `<span style="color:#b42318">error: ${lastError}</span>` : ''}
+      `;
+    }
+
+    function installArchetypeBiases() {
+      if (!engine) return;
+      if (typeof CompositionArchetypes?.clearArchetypeBiases === 'function') {
+        CompositionArchetypes.clearArchetypeBiases(engine);
+      }
+      if (useColumnsArchetype() && typeof CompositionArchetypes?.installColumnsArchetype === 'function') {
+        CompositionArchetypes.installColumnsArchetype(engine, { dateKey: builderDateKey() });
+      }
+    }
+
+    function resetEngine() {
+      const columnsMode = useColumnsArchetype();
+      engine = new SimpleQuiltEngine('quilt-builder', {
+        recordColorReplayEvents: false,
+        macroFreezeAtBlockCount: selectedMacroFreezeAt(),
+        bandRowSpecialWeight: columnsMode ? 1 : 0,
+        specialStructureScaleMultiplier: columnsMode ? 1 : 0,
+        macroFlattenedAngledSplitProb: 0.85
+      });
+      engine.recordUserContribution = () => {};
+      engine._suppressSplitWarnings = true;
+      engine.initialize();
+      engine.recordColorReplayEvents = false;
+      engine.setQuiltDateKey(builderDateKey());
+      installArchetypeBiases();
+      lastColor = '';
+      lastError = '';
+      replayIndex = 0;
+      clearUndoStack();
+      renderQuilt(null);
+    }
+
+    function addOneColor() {
+      try {
+        pushUndoSnapshot();
+        const color = nextColor();
+        const result = engine.addColor(color);
+        if (!result) {
+          undoStack.pop();
+          updateUndoButton();
+          lastError = 'addColor returned false — quilt may be full.';
+          updateStats();
+          return false;
+        }
+        lastError = '';
+        lastColor = result.appliedColor || color;
+        renderQuilt(result);
+        return true;
+      } catch (error) {
+        undoStack.pop();
+        updateUndoButton();
+        lastError = error?.message || String(error);
+        updateStats();
+        console.error(error);
+        return false;
+      }
+    }
+
+    function replayAllColors() {
+      const replayBtn = document.getElementById('replay-all');
+      const addBtn = document.getElementById('add-color');
+      if (replayBtn) replayBtn.disabled = true;
+      if (addBtn) addBtn.disabled = true;
+      resetEngine();
+      let added = 0;
+      while (replayIndex < replayQueue.length) {
+        if (!addOneColor()) break;
+        added += 1;
+      }
+      if (replayBtn) replayBtn.disabled = false;
+      if (addBtn) addBtn.disabled = false;
+      if (added < replayQueue.length) {
+        noopLogger.warn(`Replay stopped after ${added} / ${replayQueue.length} colors.`);
+      }
+    }
+
+    function configurePreviewChrome() {
+      if (!embeddedReplay.length) return;
+      replayQueue = embeddedReplay.slice();
+      const title = document.getElementById('page-title');
+      const lede = document.getElementById('page-lede');
+      const replayBtn = document.getElementById('replay-all');
+      if (title) title.textContent = 'Columns preview';
+      if (lede) {
+        lede.textContent = `${builderDateKey()} — ${replayQueue.length} real colors. Space = next pick.`;
+      }
+      if (replayBtn) replayBtn.hidden = false;
+      syncDateKeyInput();
+    }
+
+    function wireUi() {
+      document.getElementById('macro-freeze-at')?.addEventListener('change', () => {
+        applyMacroFreezeOverrideToEngine();
+        renderQuilt(null);
+      });
+      document.getElementById('date-key')?.addEventListener('change', () => {
+        installArchetypeBiases();
+        renderQuilt(null);
+      });
+      document.getElementById('add-color')?.addEventListener('click', () => addOneColor());
+      document.getElementById('undo')?.addEventListener('click', () => undoLastAdd());
+      document.getElementById('reset')?.addEventListener('click', () => resetEngine());
+      document.getElementById('replay-all')?.addEventListener('click', () => replayAllColors());
+      document.getElementById('add-ten')?.addEventListener('click', () => {
+        const addTenBtn = document.getElementById('add-ten');
+        const addBtn = document.getElementById('add-color');
+        addTenBtn.disabled = true;
+        addBtn.disabled = true;
+        let added = 0;
+        for (let i = 0; i < 10; i++) {
+          if (!addOneColor()) break;
+          added += 1;
+        }
+        addTenBtn.disabled = false;
+        addBtn.disabled = false;
+      });
+
+      window.addEventListener('resize', () => {
+        if (!engine || !renderer) return;
+        syncBuilderStage();
+        renderer.renderBlocks(engine.blocks || [], [], engine.submissionCount || 0);
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+        if (e.key === ' ' || e.key === 'a' || e.key === 'A') {
+          e.preventDefault();
+          addOneColor();
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+          e.preventDefault();
+          undoLastAdd();
+        }
+        if (e.key === 'r' || e.key === 'R') resetEngine();
+      });
+    }
+
+    function boot() {
+      try {
+        if (typeof Utils?.polygonPiecesForFirestore !== 'function') {
+          throw new Error('utils-zapier.js did not load');
+        }
+        configurePreviewChrome();
+        renderer = new QuiltRendererV2(noopLogger);
+        configureRenderer(renderer);
+        renderer.initialize();
+        syncBuilderStage();
+        resetEngine();
+        wireUi();
+        if (window.__ODQ_AUTO_REPLAY__ === true && embeddedReplay.length) {
+          requestAnimationFrame(() => replayAllColors());
+        }
+      } catch (error) {
+        lastError = error?.message || String(error);
+        const el = document.getElementById('stats');
+        if (el) el.textContent = `Boot failed: ${lastError}`;
+        console.error(error);
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>
