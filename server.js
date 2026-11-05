@@ -4390,7 +4390,14 @@ async function sendAdminSlide1Preview(dateKeyArg) {
   const author = String(ig.slide1PreviewAuthor || '').trim();
   const body = quote ? `${quote.slice(0, 90)}${quote.length > 90 ? '…' : ''}${author ? ` — ${author}` : ''}` : 'Tap to review in the tuner.';
 
-  await admin.messaging().send({
+  const tokenData = tokenDoc.data() || {};
+  const device = {};
+  for (const [k, v] of Object.entries(tokenData)) {
+    if (k === 'token') continue;
+    if (['string', 'number', 'boolean'].includes(typeof v)) device[k] = typeof v === 'string' ? v.slice(0, 80) : v;
+  }
+  device.tokenTail = String(token).slice(-6);
+  const messageId = await admin.messaging().send({
     token,
     notification: { title: "Today's slide 1 is ready", body, imageUrl },
     data: { type: 'admin_slide1_preview', date: dateKey, imageUrl },
@@ -4400,7 +4407,7 @@ async function sendAdminSlide1Preview(dateKeyArg) {
     },
     android: { notification: { imageUrl } }
   });
-  return { sent: true, date: dateKey };
+  return { sent: true, date: dateKey, messageId, device };
 }
 
 function startHeartSweepScheduler() {
