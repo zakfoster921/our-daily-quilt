@@ -1013,7 +1013,7 @@ function shouldProtectInstagramReelFromNightlyOverwrite(pre) {
 }
 
 /**
- * Reads quilt + quote from Firestore, renders classic 4:5 PNG (same helper as server IG image),
+ * Reads quilt + quote from Firestore, renders classic 3:4 PNG (same helper as server IG image),
  * uploads classic; optionally an 8s H.264 MP4 (static frame, 9:16) when no app reel is present.
  * Intended ~6:30 UTC before /api/daily-reset at 7:00 UTC. Unattended Zapier path when nobody opens the app.
  */
@@ -1086,7 +1086,7 @@ async function runNightlyInstagramSnapshot(options = {}) {
       mergePayload.reelSource = 'nightly_static_mp4';
       mergePayload.reelMood = quoteMood;
       mergePayload.reelNote =
-        'MP4 is an 8s static hold of the classic 4:5 card (GitHub + Railway) with bundled bed music when assets/audio is present. The split synthetic reel only exists if recorded from the app (not required for Zapier).';
+        'MP4 is an 8s static hold of the classic 3:4 card (GitHub + Railway) with bundled bed music when assets/audio is present. The split synthetic reel only exists if recorded from the app (not required for Zapier).';
     } else {
       mergePayload.reelNote =
         'Nightly refreshed classic image only; left existing app/synthetic reel URLs unchanged.';
@@ -1817,7 +1817,7 @@ async function getLabQuiltOverride(dateKey) {
 }
 
 async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
-  const canvas = createCanvas(1080, 1350); // 4:5 ratio for Instagram
+  const canvas = createCanvas(1080, 1440); // 3:4 ratio for Instagram
   const ctx = canvas.getContext('2d');
   
   if (!Array.isArray(blocks) || blocks.length === 0) {
@@ -1826,7 +1826,7 @@ async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
 
   // Fill background with true white to match the client classic card.
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 1080, 1350);
+  ctx.fillRect(0, 0, 1080, 1440);
   
   // Calculate quilt bounds from actual block positions
   const minX = Math.min(...blocks.map(b => b.x));
@@ -1841,7 +1841,7 @@ async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
     throw new Error('Invalid quilt bounds for Instagram image');
   }
 
-  // Classic card: preserve the quilt-screen 9:16 composition inside the 4:5 post.
+  // Classic card: preserve the quilt-screen 9:16 composition inside the 3:4 post.
   const quiltScreenAspect = 9 / 16;
   let sourceX = minX;
   let sourceY = minY;
@@ -1859,7 +1859,7 @@ async function generateInstagramImageFromQuilt(blocks, _quote, opts = {}) {
   // Fit that 9:16 raster into the same thin symmetric inset as the client classic card (pad 2).
   const pad = 2;
   const targetWidth = 1080 - pad * 2;
-  const targetHeight = 1350 - pad * 2;
+  const targetHeight = 1440 - pad * 2;
   let drawHeight = targetHeight;
   let drawWidth = drawHeight * quiltScreenAspect;
   if (drawWidth > targetWidth) {
@@ -4696,7 +4696,7 @@ function pickFinalArchiveQuiltImageUrl(data) {
 }
 
 /**
- * 9:16 quilt-screen preview on warm neutral (not IG 4:5 white card).
+ * 9:16 quilt-screen preview on warm neutral (not IG 3:4 white card).
  * Used for reflection archive and archives/{date}/quilt-preview.png.
  */
 async function generateArchiveQuiltPreviewFromBlocks(blocks) {
@@ -6080,7 +6080,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       readyForInstagram: imageData.readyForInstagram === true,
       lastNightlyIgImagesAt: imageData.lastNightlyIgImagesAt || '',
       note:
-        'Integrated IG carousel: carouselSlide0Url = quote-fit Helvetica on quilt (preferred lead). carouselSlide0bUrl = speaker cutout + vinyl name on mat. carouselSlide1Url = layout B strips (4:5). carouselSlide2Url = reflection when present. carouselSlide3Url = contributors. carouselSlide4Url = quilt-only mat. carouselPostOrderUrls = [0|1,3,4,2]. imageUrl prefers slide 0 then slide 1. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png. readyForInstagram=true after nightly GitHub images job.'
+        'Integrated IG carousel: carouselSlide0Url = quote-fit Helvetica on quilt (preferred lead). carouselSlide0bUrl = speaker cutout + vinyl name on mat. carouselSlide1Url = layout B strips (3:4). carouselSlide2Url = reflection when present. carouselSlide3Url = contributors. carouselSlide4Url = quilt-only mat. carouselPostOrderUrls = [0|1,3,4,2]. imageUrl prefers slide 0 then slide 1. quiltStoryImageUrl/quiltScreen9x16ImageUrl = quilt-screen-9x16.png. storyLayoutBImageUrl = layout-b-story.png. readyForInstagram=true after nightly GitHub images job.'
     };
     
     console.log(

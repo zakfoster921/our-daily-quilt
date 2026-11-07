@@ -34,7 +34,7 @@
   const CREAM_INK = '#f8f6f2';
   const BLACK_INK = '#111111';
   const FORMATS = {
-    post: { w: 1080, h: 1350, label: 'Post 4:5' },
+    post: { w: 1080, h: 1440, label: 'Post 3:4' },
     story: { w: 1080, h: 1920, label: 'Story 9:16' }
   };
 
@@ -281,7 +281,7 @@
   }
 
   function quoteFontPx(lineCount, layoutW, layoutH) {
-    const isPost = layoutW === 1080 && layoutH === 1350;
+    const isPost = layoutW === 1080 && layoutH === 1440;
     let px = isPost ? 118 : 108;
     if (lineCount >= 4) px -= 10;
     if (lineCount >= 6) px -= 10;
@@ -1079,7 +1079,7 @@
 
   function isStoryLayout(layoutW, layoutH) {
     const lw = layoutW || 1080;
-    const lh = layoutH || 1350;
+    const lh = layoutH || 1440;
     return lh >= 1600 && lw / lh < 0.7;
   }
 
@@ -1643,7 +1643,7 @@
    */
   async function composeQuoteCollage(options) {
     const w = options.width || 1080;
-    const h = options.height || 1350;
+    const h = options.height || 1440;
     const washOpacity = options.washOpacity != null ? options.washOpacity : 0.3;
     const speakerWashColor = options.speakerWashColor || '#ea9b9a';
     const dateKey = options.dateKey || new Date().toISOString().split('T')[0];

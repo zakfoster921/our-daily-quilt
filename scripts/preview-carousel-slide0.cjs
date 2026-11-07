@@ -11,7 +11,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const PANEL_W = 1080;
-const PANEL_H = 1350;
+const PANEL_H = 1440;
 
 const DEFAULT_QUOTE = [
   'So I try',

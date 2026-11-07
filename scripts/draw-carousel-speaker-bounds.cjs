@@ -10,7 +10,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const STORY_W = 1080;
-const STORY_H = 1350;
+const STORY_H = 1440;
 const SPEAKER_AVOID_PAD = { top: 6, right: 24, bottom: 24, left: 24 };
 
 function contentRectFromSpeaker(speakerRect) {
@@ -35,7 +35,7 @@ function expandedFromContent(content, pad = SPEAKER_AVOID_PAD) {
 
 function odqLayoutBPostGridSafeRect(layoutW, layoutH, padding = 14) {
   const w = Math.max(1, Number(layoutW) || 1080);
-  const h = Math.max(1, Number(layoutH) || 1350);
+  const h = Math.max(1, Number(layoutH) || 1440);
   const pad = Math.max(0, Number(padding) || 0);
   const safeW = h * (3 / 4);
   const x = (w - safeW) / 2;
