@@ -5208,12 +5208,13 @@ async function captionFromDailyQuoteAssignments(dateKey) {
 }
 
 async function speakerInfoFromDailyQuoteAssignments(dateKey) {
-  const empty = { speakerName: '', speakerDates: '', speakerGuideLine: '' };
+  const empty = { speakerName: '', speakerDates: '', speakerGuideLine: '', blessing: '' };
   if (!db || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ''))) return empty;
   const pick = (d) => ({
     speakerName: String(d?.speakerName || d?.speaker_name || d?.author || d?.authorSnapshot || '').trim(),
     speakerDates: String(d?.speakerDates || d?.speaker_dates || '').trim(),
-    speakerGuideLine: String(d?.speakerGuideLine || d?.speaker_guide_line || '').trim()
+    speakerGuideLine: String(d?.speakerGuideLine || d?.speaker_guide_line || '').trim(),
+    blessing: String(d?.blessing || '').trim()
   });
   try {
     const snap = await db.collection('dailyQuoteAssignments').doc(dateKey).get();
@@ -5228,7 +5229,8 @@ async function speakerInfoFromDailyQuoteAssignments(dateKey) {
         info = {
           speakerName: q.speakerName || info.speakerName,
           speakerDates: q.speakerDates || info.speakerDates,
-          speakerGuideLine: q.speakerGuideLine || info.speakerGuideLine
+          speakerGuideLine: q.speakerGuideLine || info.speakerGuideLine,
+          blessing: q.blessing || info.blessing
         };
       }
     }
@@ -5829,10 +5831,10 @@ async function getTodayInstagramImage(options = {}) {
       console.warn(`⚠️ Could not fetch quote for ${dateUsed}:`, quoteError.message);
     }
 
-    let speakerInfo = { speakerName: '', speakerDates: '', speakerGuideLine: '' };
+    let speakerInfo = { speakerName: '', speakerDates: '', speakerGuideLine: '', blessing: '' };
     for (const dk of [...new Set([dateUsed, typeof raw.date === 'string' ? raw.date.trim() : ''].filter(Boolean))]) {
       speakerInfo = await speakerInfoFromDailyQuoteAssignments(dk);
-      if (speakerInfo.speakerName || speakerInfo.speakerGuideLine) break;
+      if (speakerInfo.speakerName || speakerInfo.speakerGuideLine || speakerInfo.blessing) break;
     }
     const speakerBioLine = [
       [speakerInfo.speakerName, speakerInfo.speakerDates ? `(${speakerInfo.speakerDates})` : ''].filter(Boolean).join(' '),
@@ -5917,6 +5919,7 @@ async function getTodayInstagramImage(options = {}) {
       speakerDates: speakerInfo.speakerDates,
       speakerGuideLine: speakerInfo.speakerGuideLine,
       speakerBioLine,
+      blessing: speakerInfo.blessing,
       blockCount,
       contributorCount,
       readyForInstagram: raw.readyForInstagram === true,
@@ -6110,6 +6113,7 @@ app.post('/api/generate-instagram', limitGenerateInstagram, async (req, res) => 
       speakerDates: imageData.speakerDates || '',
       speakerGuideLine: imageData.speakerGuideLine || '',
       speakerBioLine: imageData.speakerBioLine || '',
+      blessing: imageData.blessing || '',
       captionLength: imageData.quote.length,
       hasPostLayoutB: !!primaryLayoutBImageUrl,
       hasPostLayoutBPlain: hasLayoutB,
