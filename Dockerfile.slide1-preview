@@ -1,0 +1,14 @@
+# Railway cron job: render today's carousel slide 1 and push the preview to the admin device.
+# Replaces the GitHub Actions schedule in .github/workflows/daily-slide1-preview.yml (GitHub delays cron runs by hours).
+# Playwright image ships Chromium + system libs. Keep the tag in step with "playwright" in package-lock.json.
+FROM mcr.microsoft.com/playwright:v1.60.0-jammy
+
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --ignore-scripts && npm cache clean --force
+
+COPY . .
+
+CMD ["node", "scripts/run-slide1-preview-cron.cjs"]
