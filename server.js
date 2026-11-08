@@ -2169,6 +2169,8 @@ function serverCompactLayoutBPostStripPlan(stripPlan) {
     if (s?.authorCutoutLabel === true) row.authorCutoutLabel = true;
     if (s?.isKeywordEmphasis === true) row.isKeywordEmphasis = true;
     if (s?.isKeywordConnector === true) row.isKeywordConnector = true;
+    const planCh = Number(s?.ch);
+    if (Number.isFinite(planCh) && planCh > 0) row.ch = Math.round(planCh);
     const extraPad = Number(s?.extraPaperPadX);
     if (Number.isFinite(extraPad) && extraPad > 0) row.extraPaperPadX = extraPad;
     if (Array.isArray(s?.textRuns) && s.textRuns.length) {
