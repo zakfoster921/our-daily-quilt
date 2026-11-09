@@ -197,8 +197,11 @@ function rgbaLooksSpeakerCutoutXerox(data, width, height) {
       opaque += 1;
       const r = d[i];
       const b = d[i + 2];
-      // Sepia tint: red channel meaningfully higher than blue
-      if (r > b + 4) warm += 1;
+      const g = d[i + 1];
+      // Sepia tint: red meaningfully higher than blue AND green sits at the fixed
+      // sepia ratio between them. Color photos (skin, maroon robes) are warm but
+      // fail the ratio, so they still get toned.
+      if (r > b + 4 && Math.abs(g - b - 0.642 * (r - b)) <= 6) warm += 1;
     }
   }
   return opaque > 400 && warm / opaque > 0.65;
