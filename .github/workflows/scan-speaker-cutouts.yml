@@ -1,0 +1,41 @@
+# READ-ONLY audit: lists every PNG in Storage speaker-cutouts/ and reports which are still full color.
+# Writes nothing to Firestore or Storage. Report appears in the run summary and as a downloadable artifact.
+
+name: Scan speaker cutouts
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: npm ci --ignore-scripts
+
+      - name: Scan cutouts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+        run: node scripts/scan-speaker-cutouts.cjs
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: cutout-scan
+          path: tmp/cutout-scan/
+          if-no-files-found: ignore
