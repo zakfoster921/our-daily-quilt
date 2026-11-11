@@ -1,0 +1,62 @@
+# Batch-tone full-color speaker cutouts that the app would skip toning.
+# mode=preview (default): writes nothing to Firebase; publishes before/after images to the cutout-batch-preview branch.
+# mode=apply: backs up each original to speaker-cutouts-backup/<date>/ then overwrites it (same filename, same download link).
+
+name: Tone speaker cutouts (batch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preview = no writes. apply = back up originals, then overwrite with toned versions."
+        required: false
+        default: "preview"
+      only:
+        description: "Optional comma list of filename prefixes (e.g. audre-lorde,toni-morrison). Empty = all color files the app skips."
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  tone:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        timeout-minutes: 8
+        run: npm ci --ignore-scripts
+
+      - name: Tone cutouts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          MODE: ${{ inputs.mode }}
+          ONLY: ${{ inputs.only }}
+        run: node scripts/tone-speaker-cutouts-batch.cjs
+
+      - name: Publish before/after images to branch
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -d tmp/cutout-batch ] || exit 0
+          rm -rf /tmp/preview && mkdir /tmp/preview && cp tmp/cutout-batch/* /tmp/preview/
+          cd /tmp/preview
+          git init -q -b cutout-batch-preview
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A && git commit -q -m "cutout batch ${{ inputs.mode }}"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" cutout-batch-preview
