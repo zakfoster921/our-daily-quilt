@@ -122,6 +122,10 @@ async function main() {
   fs.writeFileSync(path.join(OUT, 'report.md'), md);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n');
   console.log('[scan] counts', JSON.stringify(counts));
+  for (const r of rows) {
+    if (r.status === 'toned' || r.status === 'toned-but-dark') continue;
+    console.log(`[scan] row ${r.status} ${r.name} warmApp=${r.warmApp} sepia=${r.sepia} medianLum=${r.medianLum}`);
+  }
 }
 
 main().catch((e) => {
