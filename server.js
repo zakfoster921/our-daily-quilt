@@ -312,6 +312,7 @@ const JSON_SIZE_LIMITS = new Map([
   ['/api/social-posts', 24 * ONE_KB],
   ['/api/social-posts/upload-media', 30 * ONE_MB],
   ['/api/social-posts/:postId', 24 * ONE_KB],
+  ['/api/social-posts/:postId/heart', 12 * ONE_KB],
   ['/api/social-posts/:postId/comments', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments/:commentId', 24 * ONE_KB],
   ['/api/social-posts/:postId/comments/:commentId/heart', 12 * ONE_KB],
@@ -641,6 +642,11 @@ const limitSocialCommentHeart = createRateLimiter({
   name: 'social-comment-heart',
   windowMs: 10 * 60 * 1000,
   max: parsePositiveInt(process.env.RATE_LIMIT_SOCIAL_COMMENT_HEART_PER_10_MIN, 60)
+});
+const limitSocialPostHeart = createRateLimiter({
+  name: 'social-post-heart',
+  windowMs: 10 * 60 * 1000,
+  max: parsePositiveInt(process.env.RATE_LIMIT_SOCIAL_POST_HEART_PER_10_MIN, 60)
 });
 const limitReflectionHeart = createRateLimiter({
   name: 'reflection-heart',
@@ -15075,6 +15081,7 @@ function serializeSocialPostDoc(doc) {
     mediaLayout: String(data.mediaLayout || 'single'),
     authorLabel: String(data.authorLabel || 'Our Daily'),
     commentCount: Number.isFinite(Number(data.commentCount)) ? Number(data.commentCount) : 0,
+    likeCount: Math.max(0, Number(data.likeCount) || 0),
     lastCommentAtIso: String(data.lastCommentAtIso || ''),
     createdAtIso,
     publishedAtIso,
@@ -15189,6 +15196,10 @@ app.options('/api/social-posts/:postId/comments/:commentId', (req, res) => {
   res.sendStatus(204);
 });
 app.options('/api/social-posts/:postId/comments/:commentId/heart', (req, res) => {
+  setSocialApiCors(res);
+  res.sendStatus(204);
+});
+app.options('/api/social-posts/:postId/heart', (req, res) => {
   setSocialApiCors(res);
   res.sendStatus(204);
 });
@@ -15740,6 +15751,63 @@ app.patch('/api/social-posts/:postId/comments/:commentId', limitSocialComment, a
     return res.status(500).json({
       success: false,
       error: error.message || 'Social post comment update failed',
+      timestamp: getUtcIsoNow()
+    });
+  }
+});
+
+/** Idempotent post like: body { clientId, liked: boolean }. One like per client; likeCount lives on the post doc. */
+app.post('/api/social-posts/:postId/heart', limitSocialPostHeart, async (req, res) => {
+  setSocialApiCors(res);
+  try {
+    if (!db) throw new Error('Firestore not initialized');
+    const postId = String(req.params.postId || '').trim();
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const clientId = String(body.clientId || body.deviceId || body.userId || '').trim().slice(0, 160);
+    if (!postId) {
+      return res.status(400).json({ success: false, error: 'postId is required' });
+    }
+    if (!clientId) {
+      return res.status(400).json({ success: false, error: 'clientId is required' });
+    }
+    const wantLiked = body.liked !== false;
+
+    const postRef = db.collection('socialPosts').doc(postId);
+    const heartRef = postRef.collection('hearts').doc(socialCommentHeartDocId(clientId));
+    const nowIso = getUtcIsoNow();
+
+    const result = await db.runTransaction(async (tx) => {
+      const postSnap = await tx.get(postRef);
+      if (!postSnap.exists || (postSnap.data() || {}).status !== 'published') {
+        return { notFound: true };
+      }
+      const heartSnap = await tx.get(heartRef);
+      let likeCount = Math.max(0, Number((postSnap.data() || {}).likeCount) || 0);
+      if (wantLiked && !heartSnap.exists) {
+        tx.set(heartRef, {
+          clientId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAtIso: nowIso
+        });
+        likeCount += 1;
+        tx.set(postRef, { likeCount }, { merge: true });
+      } else if (!wantLiked && heartSnap.exists) {
+        tx.delete(heartRef);
+        likeCount = Math.max(0, likeCount - 1);
+        tx.set(postRef, { likeCount }, { merge: true });
+      }
+      return { likeCount };
+    });
+
+    if (result.notFound) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+    return res.json({ success: true, liked: wantLiked, likeCount: result.likeCount });
+  } catch (error) {
+    console.error('❌ Social post heart failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Social post heart failed',
       timestamp: getUtcIsoNow()
     });
   }
