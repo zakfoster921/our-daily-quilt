@@ -30,6 +30,10 @@ on:
         required: false
         type: boolean
         default: false
+      rembg_models:
+        description: "Optional rembg model(s), comma-separated, tried in order (e.g. birefnet-general-lite). Blank = isnet-general-use,u2net"
+        required: false
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -64,11 +68,13 @@ jobs:
           key: rembg-models-${{ runner.os }}-v1
 
       - name: Install rembg
-        timeout-minutes: 8
+        timeout-minutes: 15
+        env:
+          EXTRA_MODELS: ${{ inputs.rembg_models }}
         run: |
           set -euo pipefail
           pip install "rembg[cpu,cli]"
-          for model in isnet-general-use u2net; do rembg d "$model"; done
+          for model in isnet-general-use u2net $(echo "${EXTRA_MODELS:-}" | tr ',' ' '); do rembg d "$model"; done
 
       - name: Validate required secrets
         env:
@@ -86,6 +92,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
+          REMBG_MODELS: ${{ inputs.rembg_models }}
           AUTHOR: ${{ inputs.author }}
           DOC_ID: ${{ inputs.doc }}
           LIMIT: ${{ inputs.limit }}
