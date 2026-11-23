@@ -21,6 +21,7 @@ const {
   logSpeakerCutoutOptimization,
   optimizeSpeakerCutoutPng
 } = require('./lib/optimize-speaker-cutout-png.cjs');
+const { removeBackgroundWithRembg } = require('./lib/rembg-cutout.cjs');
 const {
   portraitUrlHash,
   isFirebaseSpeakerCutoutUrl,
@@ -35,8 +36,6 @@ const {
 const WIKIMEDIA_USER_AGENT =
   process.env.WIKIMEDIA_USER_AGENT || 'OurDailyQuilt/1.0 (https://ourdailyquilt.com; speaker-cutouts)';
 
-/** Fallback only — prefer full-frame cutouts (crop=false); margin if crop is needed for edge cases. */
-const REMOVE_BG_CROP_MARGIN = String(process.env.REMOVE_BG_CROP_MARGIN || '25%').trim() || '25%';
 const RECROP_EXISTING_MARGIN_RATIO = Math.min(
   0.35,
   Math.max(0.1, Number(process.env.SPEAKER_CUTOUT_RECROP_MARGIN_RATIO) || 0.2)
@@ -197,86 +196,10 @@ function isUnknownForegroundError(status, body) {
   return status === 400 && /unknown_foreground/i.test(String(body || ''));
 }
 
-/** Full canvas first (bg removal only); crop is a last resort for unknown_foreground. */
-const REMOVE_BG_STRATEGIES = [
-  { label: 'person+full', type: 'person', crop: false },
-  { label: 'auto+full', type: 'auto', crop: false },
-  { label: 'person+crop', type: 'person', crop: true, crop_margin: REMOVE_BG_CROP_MARGIN },
-  { label: 'auto+crop', type: 'auto', crop: true, crop_margin: REMOVE_BG_CROP_MARGIN }
-];
-
-async function callRemoveBg(buffer, contentType, imageUrl, apiKey, strategy) {
-  const form = new FormData();
-  const blob = new Blob([buffer], { type: contentType || 'image/jpeg' });
-  form.append('image_file', blob, guessImageFilename(imageUrl, contentType));
-  form.append('size', 'auto');
-  form.append('format', 'png');
-  form.append('type', strategy.type || 'auto');
-  if (strategy.crop) {
-    form.append('crop', 'true');
-    if (strategy.crop_margin) form.append('crop_margin', strategy.crop_margin);
-  }
-
-  const res = await fetch('https://api.remove.bg/v1.0/removebg', {
-    method: 'POST',
-    headers: { 'X-Api-Key': apiKey },
-    body: form
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`remove.bg ${res.status}: ${body.slice(0, 500)}`);
-  }
-  return Buffer.from(await res.arrayBuffer());
-}
-
-async function removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey) {
-  let lastError = null;
-
-  for (let i = 0; i < REMOVE_BG_STRATEGIES.length; i += 1) {
-    const strategy = REMOVE_BG_STRATEGIES[i];
-    try {
-      const png = await callRemoveBg(buffer, contentType, imageUrl, apiKey, strategy);
-      if (i > 0) console.log(`[cutout] succeeded with ${strategy.label}`);
-      return png;
-    } catch (error) {
-      lastError = error;
-      if (/unknown_foreground/i.test(error.message || '') && i < REMOVE_BG_STRATEGIES.length - 1) {
-        console.log(`[cutout] ${strategy.label} unknown_foreground; trying ${REMOVE_BG_STRATEGIES[i + 1].label}`);
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  const hint =
-    'remove.bg could not find a person in this portrait (common for old paintings/sepia photos). ' +
-    'Use a clearer photo, or upload a manual PNG via scripts/upload-manual-speaker-cutout-client.mjs --upload-file=...';
-  throw new Error(lastError ? `${lastError.message}\n${hint}` : hint);
-}
-
-/** Download portrait ourselves, then upload bytes — avoids Wikimedia 429 on remove.bg fetchers. */
-async function removeBackgroundFromUrl(imageUrl, apiKey) {
-  try {
-    const { buffer, contentType } = await downloadSpeakerImageBuffer(imageUrl);
-    return removeBackgroundFromBuffer(buffer, contentType, imageUrl, apiKey);
-  } catch (downloadErr) {
-    const form = new FormData();
-    form.append('image_url', imageUrl);
-    form.append('size', 'auto');
-    form.append('format', 'png');
-    form.append('type', 'person');
-
-    const res = await fetch('https://api.remove.bg/v1.0/removebg', {
-      method: 'POST',
-      headers: { 'X-Api-Key': apiKey },
-      body: form
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`remove.bg ${res.status}: ${body.slice(0, 500)} (download: ${downloadErr.message})`);
-    }
-    return Buffer.from(await res.arrayBuffer());
-  }
+/** Download the portrait ourselves, then cut out the subject locally with rembg (no external API). */
+async function removeBackgroundFromUrl(imageUrl) {
+  const { buffer, contentType } = await downloadSpeakerImageBuffer(imageUrl);
+  return removeBackgroundWithRembg(buffer, contentType, imageUrl);
 }
 
 async function downloadBinaryFromUrl(url) {
@@ -343,7 +266,7 @@ function catalogCutoutSourceUrl(data) {
 }
 
 /**
- * Portrait for remove.bg / xerox. Never treat an existing speaker-cutouts PNG as the source photo
+ * Portrait for background removal / xerox. Never treat an existing speaker-cutouts PNG as the source photo
  * (that double-processes and invents a new Storage hash).
  */
 function resolvePortraitImageUrlForCutout(data, rowId = '') {
@@ -616,14 +539,6 @@ async function patchDerivedQuoteDocs(db, quotesCollection, sourceIds, sourceData
 
 async function main() {
   const opts = parseArgs(process.argv);
-  const apiKey = opts.dryRun ? String(process.env.REMOVE_BG_API_KEY || '').trim() : String(process.env.REMOVE_BG_API_KEY || '').trim();
-  if (!opts.dryRun && !opts.recropExisting && !opts.uploadFile && !apiKey) {
-    if (opts.softFail) {
-      console.log('[cutout] REMOVE_BG_API_KEY missing; soft-fail enabled, skipping cutout processing');
-      return;
-    }
-    requireEnv('REMOVE_BG_API_KEY');
-  }
   const db = initFirebase();
   const collectionName = process.env.FIRESTORE_QUOTES_COLLECTION || 'quotes';
   if (opts.todaySpeaker && !opts.doc) {
@@ -735,7 +650,7 @@ async function main() {
         ? fs.readFileSync(opts.uploadFile)
         : opts.recropExisting
           ? await cropTransparentPngWithMargin(await downloadBinaryFromUrl(existing))
-          : await removeBackgroundFromUrl(imageUrl, apiKey);
+          : await removeBackgroundFromUrl(imageUrl);
       const optimized = await optimizeSpeakerCutoutPng(png, {
         xeroxSeed: portraitUrlHash(imageUrl || existing || row.id)
       });
