@@ -48,6 +48,24 @@ jobs:
         timeout-minutes: 8
         run: npm ci --ignore-scripts
 
+      - name: Setup Python (for rembg)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache rembg models
+        uses: actions/cache@v4
+        with:
+          path: ~/.u2net
+          key: rembg-models-${{ runner.os }}-v1
+
+      - name: Install rembg
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          pip install "rembg[cpu,cli]"
+          for model in isnet-general-use u2net; do rembg d "$model"; done
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -82,11 +100,10 @@ jobs:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
-          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
           RESET_URL: ${{ secrets.RESET_URL }}
         run: |
           set -euo pipefail
-          for name in NOTION_TOKEN NOTION_DATABASE_ID GOOGLE_APPLICATION_CREDENTIALS_JSON REMOVE_BG_API_KEY RESET_URL; do
+          for name in NOTION_TOKEN NOTION_DATABASE_ID GOOGLE_APPLICATION_CREDENTIALS_JSON RESET_URL; do
             eval "val=\${${name}:-}"
             if [ -z "${val}" ]; then
               echo "Missing required secret: ${name}"
@@ -120,7 +137,6 @@ jobs:
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
           FIRESTORE_ASSIGNMENTS_COLLECTION: ${{ secrets.FIRESTORE_ASSIGNMENTS_COLLECTION }}
-          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
           RESET_URL: ${{ secrets.RESET_URL }}
           APP_URL: http://127.0.0.1:8765/our-daily-beta.html
           PAGE_ID: ${{ steps.resolve.outputs.page_id }}

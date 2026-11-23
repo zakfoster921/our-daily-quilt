@@ -21,12 +21,12 @@ on:
         type: boolean
         default: false
       recrop_existing:
-        description: "Crop the existing transparent cutout locally without calling remove.bg"
+        description: "Crop the existing transparent cutout locally without re-running background removal"
         required: false
         type: boolean
         default: false
       dry_run:
-        description: "Preview matches without calling remove.bg"
+        description: "Preview matches without running background removal"
         required: false
         type: boolean
         default: false
@@ -52,20 +52,31 @@ jobs:
         timeout-minutes: 8
         run: npm ci --ignore-scripts
 
+      - name: Setup Python (for rembg)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache rembg models
+        uses: actions/cache@v4
+        with:
+          path: ~/.u2net
+          key: rembg-models-${{ runner.os }}-v1
+
+      - name: Install rembg
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          pip install "rembg[cpu,cli]"
+          for model in isnet-general-use u2net; do rembg d "$model"; done
+
       - name: Validate required secrets
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
-          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
-          DRY_RUN: ${{ inputs.dry_run }}
-          RECROP_EXISTING: ${{ inputs.recrop_existing }}
         run: |
           set -euo pipefail
           if [ -z "${GOOGLE_APPLICATION_CREDENTIALS_JSON:-}" ]; then
             echo "Missing required secret: GOOGLE_APPLICATION_CREDENTIALS_JSON"
-            exit 1
-          fi
-          if [ "${DRY_RUN}" != "true" ] && [ "${RECROP_EXISTING}" != "true" ] && [ -z "${REMOVE_BG_API_KEY:-}" ]; then
-            echo "Missing required secret for non-dry run: REMOVE_BG_API_KEY"
             exit 1
           fi
 
@@ -75,7 +86,6 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
           FIRESTORE_QUOTES_COLLECTION: ${{ secrets.FIRESTORE_QUOTES_COLLECTION }}
-          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
           AUTHOR: ${{ inputs.author }}
           DOC_ID: ${{ inputs.doc }}
           LIMIT: ${{ inputs.limit }}

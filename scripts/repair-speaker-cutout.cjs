@@ -4,7 +4,7 @@
  * One-shot repair when speaker cutout / assignment state is broken:
  * - Clears stale cutout fields on the catalog quote (+ today's denormalized quote doc)
  * - Recreates dailyQuoteAssignments/{dateKey} from Notion date_scheduled (reconcile)
- * - Regenerates cutout from speaker_image_url (remove.bg) with --force
+ * - Regenerates cutout from speaker_image_url (rembg) with --force
  *
  * Usage:
  *   node scripts/repair-speaker-cutout.cjs --date=today
@@ -180,7 +180,7 @@ async function main() {
   }
 
   if (!opts.skipCutout) {
-    console.log('[repair] regenerating speaker cutout (remove.bg)…');
+    console.log('[repair] regenerating speaker cutout (rembg)…');
     runNodeScript('process-speaker-cutouts.cjs', [`--doc=${sourceId}`, '--force', '--limit=1']);
   }
 

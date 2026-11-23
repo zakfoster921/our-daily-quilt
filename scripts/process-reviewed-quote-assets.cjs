@@ -8,7 +8,7 @@
  *   node scripts/process-reviewed-quote-assets.cjs --page-id=<notion-page-id>
  *
  * Env: NOTION_TOKEN, NOTION_DATABASE_ID, GOOGLE_APPLICATION_CREDENTIALS_JSON,
- *      REMOVE_BG_API_KEY (cutout), APP_URL + RESET_URL (clipping via Playwright),
+ *      rembg (cutout, installed in the workflow), APP_URL + RESET_URL (clipping via Playwright),
  *      FIREBASE_STORAGE_BUCKET, FIRESTORE_* collections.
  */
 try {
