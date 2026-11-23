@@ -31,7 +31,7 @@ on:
         type: boolean
         default: false
       rembg_models:
-        description: "Optional rembg model(s), comma-separated, tried in order (e.g. birefnet-general-lite). Blank = isnet-general-use,u2net"
+        description: "Optional rembg model(s), comma-separated, tried in order (e.g. birefnet-general-lite). Blank = birefnet-portrait,birefnet-general-lite,isnet-general-use"
         required: false
         default: ""
 
@@ -65,7 +65,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.u2net
-          key: rembg-models-${{ runner.os }}-v1
+          key: rembg-models-${{ runner.os }}-v2
 
       - name: Install rembg
         timeout-minutes: 15
@@ -74,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           pip install "rembg[cpu,cli]"
-          for model in isnet-general-use u2net $(echo "${EXTRA_MODELS:-}" | tr ',' ' '); do rembg d "$model"; done
+          for model in birefnet-portrait birefnet-general-lite isnet-general-use $(echo "${EXTRA_MODELS:-}" | tr ',' ' '); do rembg d "$model"; done
 
       - name: Validate required secrets
         env:

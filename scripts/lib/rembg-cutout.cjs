@@ -6,7 +6,7 @@
  * Env:
  *   REMBG_BIN     path to the rembg executable (default: "rembg")
  *   REMBG_MODELS  comma-separated model names, tried in order until one yields a usable subject
- *                 (default: "isnet-general-use,u2net")
+ *                 (default: "birefnet-portrait,birefnet-general-lite,isnet-general-use")
  */
 const fs = require('fs');
 const os = require('os');
@@ -15,7 +15,7 @@ const { spawnSync } = require('child_process');
 const { PNG } = require('pngjs');
 
 const REMBG_BIN = String(process.env.REMBG_BIN || 'rembg').trim() || 'rembg';
-const DEFAULT_MODELS = 'isnet-general-use,u2net';
+const DEFAULT_MODELS = 'birefnet-portrait,birefnet-general-lite,isnet-general-use';
 
 function rembgModels() {
   return String(process.env.REMBG_MODELS || DEFAULT_MODELS)
